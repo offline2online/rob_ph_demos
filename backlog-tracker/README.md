@@ -2755,7 +2755,10 @@ The profile menu has First name / Last name inputs (`#profile-name-form`, handle
 The team's own task board, a Jira replacement, at `#staff-kanban` (sidebar →
 Build → Staff Kanban), separate from the Agent Board. Spec, test plan and the
 signed-off prototype are in `kanban-staff-board/` (project "Staff Kanban" on
-the board); the code is here:
+the board). Every ticket has its own address, `#staff-kanban/ticket/PH-<n>`:
+a card opens it in a new tab, and the ticket's header has a Share link button
+that copies it (`kanban-staff-board/REQUIREMENTS.md` → KB-LINK-1 to KB-LINK-3).
+The code is here:
 
 | File | What it does |
 |---|---|

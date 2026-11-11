@@ -52,7 +52,8 @@ separate entries under Build; the page heading and browser title read "Staff
 Kanban". AC: both entries present; the active one is highlighted; on a phone
 it is in the tab bar's Build sheet (the console's tab bar stays at four tabs:
 Build, Publish, Search, Profile). Route `#staff-kanban`, with
-`#staff-kanban/report?…` and `#staff-kanban/settings`.
+`#staff-kanban/report?…`, `#staff-kanban/settings` and one address per ticket,
+`#staff-kanban/ticket/PH-<n>` (KB-LINK-1).
 
 **KB-NAV-2** The Staff Kanban page header holds the title, task count, search
 box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: the
@@ -60,6 +61,41 @@ cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
 **Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
+
+**Ticket links (console build, 11 Nov 2026).** So staff can pass a ticket to
+each other, for example in Slack:
+
+**KB-LINK-1 One address per ticket.** Every saved ticket has its own stable
+address, `<console>/#staff-kanban/ticket/PH-<n>`: the PH key, never a database
+id. Clicking a card on the board (or Enter / Space on a focused card) opens
+that address in a **new browser tab**, where the ticket is open over the board.
+Where the browser refuses a new tab (a blocked pop-up) the ticket opens in the
+same tab instead. A ticket opened any other way (the bell, search, a child or
+linked ticket, a report row) opens in place, and while it is open the address
+bar holds its address; closing it puts back the address of the page
+underneath. The browser tab is titled with the key and title. AC: click PH-20
+on the board, a new tab opens ending `#staff-kanban/ticket/PH-20` showing
+PH-20, and the first tab stays on the board; paste that address into another
+browser and, after sign-in if needed, the same ticket opens; opening a ticket
+by address writes nothing.
+
+**KB-LINK-2 Addresses can be edited.** Changing the key in the address bar and
+pressing Enter opens that ticket. `PH-124`, `ph-124` and `124` all name PH-124,
+and the address is tidied to `PH-124`. A key that names no ticket (never
+created, or deleted), or text that is not a key, shows **Ticket not found**
+with the key that was typed and a **Go to Staff Kanban** button, in place of
+the board. AC: from `…/ticket/PH-21` change to `ph-22`, PH-22 opens and the
+address reads `PH-22`; change to `PH-9999`, "Ticket not found" names PH-9999
+and no ticket or board is shown; Go to Staff Kanban returns to the board.
+
+**KB-LINK-3 Share link.** A saved ticket's header has a **Share link** icon
+button (link icon, beside Watch and Flag; not shown on a new, unsaved
+ticket). One click copies the ticket's address to the clipboard and confirms
+with a "Link copied" toast and a tick on the button for two seconds. If the
+browser will not copy, the toast shows the address to copy by hand. On a phone
+the header's Watch and Flag buttons are icon-only so the five controls fit on
+one line. AC: open PH-20, click Share link, the clipboard holds
+`…#staff-kanban/ticket/PH-20`, "Link copied" shows, and that link opens PH-20.
 
 ## 4. Board
 

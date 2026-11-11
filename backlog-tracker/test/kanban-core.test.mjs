@@ -167,4 +167,18 @@ t("an edit writes one activity line per changed field, with old and new values",
   assert.deepEqual(k.editActivity(before, { ...before }), []);
   assert.deepEqual(k.editActivity({ ...before, assignee: "d@x" }, before, { person: () => "Duong" }), ["unassigned (was Duong)"]);
 });
+t("ticket addresses: the PH key in, the PH key out", () => {
+  assert.equal(k.ticketHash("PH-123"), "#staff-kanban/ticket/PH-123");
+  assert.equal(k.ticketSub("PH-7"), "ticket/PH-7");
+  for (const [sub, key] of [["ticket/PH-123", "PH-123"], ["ticket/ph-123", "PH-123"], ["ticket/123", "PH-123"], ["ticket/PH123", "PH-123"], ["ticket/PH-007", "PH-7"], ["ticket/PH-12/", "PH-12"], ["ticket/%50H-9", "PH-9"]]) {
+    assert.equal(k.ticketFromSub(sub).key, key, sub);
+  }
+  assert.deepEqual(k.ticketFromSub("ticket/banana"), { key: "", raw: "banana" });
+  assert.deepEqual(k.ticketFromSub("ticket/PH-12x"), { key: "", raw: "PH-12x" });
+  assert.deepEqual(k.ticketFromSub("ticket"), { key: "", raw: "" });
+  assert.deepEqual(k.ticketFromSub("ticket/"), { key: "", raw: "" });
+  assert.deepEqual(k.ticketFromSub("ticket/%"), { key: "", raw: "%" });
+  for (const sub of ["", "report", "settings", "tickets/PH-1", undefined]) assert.equal(k.ticketFromSub(sub), null, String(sub));
+  assert.equal(k.ticketFromSub(k.ticketSub("PH-42")).key, "PH-42");
+});
 console.log(`\n${n} passed`);

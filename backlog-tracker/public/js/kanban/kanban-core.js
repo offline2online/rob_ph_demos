@@ -145,6 +145,23 @@ export const remaining = (t) => (t.status === "done" ? 0 : Math.max((+t.estimate
 export const keyNumber = (key) => { const m = /^PH-(\d+)$/i.exec(String(key || "")); return m ? +m[1] : null; };
 export const keyOf = (n) => `PH-${n}`;
 
+// Every ticket has its own address, #staff-kanban/ticket/PH-123 (KB-LINK-1):
+// the PH key, never a database id, so it can be read, shared and edited.
+export const ticketSub = (key) => `ticket/${encodeURIComponent(key)}`;
+export const ticketHash = (key) => `#staff-kanban/${ticketSub(key)}`;
+// What a ticket address names. null when `sub` isn't a ticket address; else
+// { key, raw }: key is the PH key ("PH-124" from "PH-124", "ph-124" or "124")
+// or "" when what was typed can't be a key, raw is what was typed.
+export function ticketFromSub(sub) {
+  const m = /^ticket(?:\/(.*))?$/.exec(String(sub || ""));
+  if (!m) return null;
+  let raw = m[1] || "";
+  try { raw = decodeURIComponent(raw); } catch (e) { /* a stray %: shown as typed */ }
+  raw = raw.trim().replace(/\/+$/, "");
+  const k = /^(?:PH-?)?0*(\d{1,9})$/i.exec(raw);
+  return { key: k ? keyOf(+k[1]) : "", raw };
+}
+
 // Hours to "1d 4h" (1d = 8h), rounded to the half hour.
 export function fmtH(h) {
   if (h == null || h === "" || isNaN(h)) return "—";

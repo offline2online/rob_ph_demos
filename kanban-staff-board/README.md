@@ -118,6 +118,10 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
 - **Task modal layout**. The details column runs the full height of the modal, with its panel button at the top of the column (or the "Details" tab when folded) and the Flag button on the same line as Priority. It folds the details column away to
   the right, so the description gets the full width. The choice is remembered, and it reopens by itself if a
   required field in it is empty.
+- **Ticket links** (console build only, 11 Nov 2026; the prototype still opens a ticket in place). Clicking a card
+  opens the ticket in a new tab at its own address, `#staff-kanban/ticket/PH-123`. The address can be copied, shared and
+  edited (change the number and press Enter; an unknown number shows "Ticket not found"). The ticket's header has a
+  **Share link** icon that copies the address and says "Link copied". REQUIREMENTS.md → KB-LINK-1 to KB-LINK-3.
 - **Finding tickets**. "Add an existing ticket" on an epic and "Linked tickets" use a search box, not a dropdown. Type a
   number (`36`, `PH-36`) or any words from the title or description. Description matches show a highlighted snippet.
   Only the best 50 results are listed, so it stays quick however many tickets there are. Use the arrow keys and Enter, or click.

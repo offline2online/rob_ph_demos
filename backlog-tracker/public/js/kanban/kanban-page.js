@@ -13,7 +13,7 @@ import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
-  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
+  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -276,15 +276,114 @@ export function mountStaffKanban(ctx) {
   let current = { route: "kanban", params: new URLSearchParams() };
   function go(route, params) { ctx.go(route === "kanban" ? "" : route, params || null); }
   function show(sub, params) {
-    current = { route: sub || "kanban", params: params || new URLSearchParams() };
+    // "ticket/PH-123" is one ticket's own address: the board, with it open.
+    const link = ticketFromSub(sub);
+    if (link && !$("#task-backdrop").hidden) { returnTo = null; closeTask({ keepAddress: true }); }
+    current = { route: link ? "kanban" : sub || "kanban", params: params || new URLSearchParams(), ticket: link };
+    addressTicket = link ? link.key || link.raw || " " : null;
+    addressBefore = null;
     // The board's project filter lives in the address (#staff-kanban?project=<id>).
     if (current.route === "kanban" && current.params.has("project")) board.project = current.params.get("project") || "";
     root.dataset.page = "staff-kanban";
     render();
+    if (link) openTicketAddress(link);
   }
   function hide() {
     if (root.dataset.page === "staff-kanban") delete root.dataset.page;
-    if (!$("#task-backdrop").hidden) closeTask();
+    // The address already names another page: leave it alone.
+    if (!$("#task-backdrop").hidden) { returnTo = null; closeTask({ keepAddress: true }); }
+    addressTicket = null; addressBefore = null; current.ticket = null;
+  }
+
+  // ── Ticket addresses (KB-LINK-1..3) ─────────────────────────────────────
+  // While a saved ticket is open the address bar holds its own address,
+  // …#staff-kanban/ticket/PH-123, so it can be copied, shared and edited;
+  // closing the ticket puts back the address of the page underneath.
+  let addressTicket = null, addressBefore = null;
+  const ticketUrl = (key) => window.location.origin + window.location.pathname + window.location.search + ticketHash(key);
+  const boardHash = () => "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
+  const setAddress = (h) => { if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the address just isn't kept */ } } };
+  function showTicketAddress(t) {
+    if (pageEl.hidden) return;
+    if (addressBefore == null) addressBefore = current.route === "kanban" || ticketFromSub(window.location.hash.replace(/^#staff-kanban\/?/, "")) ? boardHash() : window.location.hash;
+    addressTicket = t.key;
+    setAddress(ticketHash(t.key));
+    document.title = `${t.key} ${t.title || ""}`.trim() + " — PH Agent Console";
+  }
+  function restoreAddress() {
+    const was = addressTicket, back = addressBefore;
+    addressTicket = null; addressBefore = null; current.ticket = null;
+    if (!was || pageEl.hidden || window.location.hash !== ticketHash(was)) return;
+    setAddress(back || boardHash());
+    document.title = ({ report: "Release report", settings: "Kanban settings" }[current.route] || "Staff Kanban") + " — PH Agent Console";
+  }
+  // A card opens its ticket in a new tab at the ticket's address. Where the
+  // browser won't open one (a blocked pop-up), the ticket opens here instead.
+  function openTicketTab(key) {
+    let tab = null;
+    try { tab = window.open(ticketUrl(key), "_blank"); } catch (e) { /* opens here */ }
+    if (!tab) { openTask(key); return; }
+    try { tab.opener = null; } catch (e) { /* nothing to cut */ }
+  }
+  // The people and settings lists fill the ticket's selects: wait for them (briefly) on a cold open.
+  const listsLoaded = () => new Promise((done) => {
+    const t0 = Date.now();
+    (function check() { if ((store.state.membersLoaded && store.state.settingsLoaded) || Date.now() - t0 > 8000) done(); else setTimeout(check, 50); })();
+  });
+  async function openTicketAddress(link) {
+    const here = () => current.ticket === link && !pageEl.hidden;
+    if (!link.key) { renderTicketMissing(link.raw); return; }
+    setAddress(ticketHash(link.key));
+    let t;
+    try { t = await store.fetchTask(link.key); }
+    catch (e) {
+      console.warn("staff kanban: couldn't open", link.key, e);
+      if (here()) { restoreAddress(); toast(e && e.code === "permission-denied" ? "You don't have access to that ticket." : `<b>${esc(link.key)}</b> couldn't be opened. Check your connection and try again.`); }
+      return;
+    }
+    if (!here()) return;
+    if (!t) { renderTicketMissing(link.key); return; }
+    await listsLoaded();
+    if (!here()) return;
+    openTask(link.key, { loaded: true });
+  }
+  function renderTicketMissing(named) {
+    current.route = "missing";
+    document.title = "Ticket not found — PH Agent Console";
+    $("#kb-view").innerHTML = `
+      <div class="page-header"><h2>Staff Kanban</h2></div>
+      <div class="kb-notfound" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">link_off</span>
+        <h3>Ticket not found</h3>
+        <p>${named ? `There is no ticket <b>${esc(named)}</b>. It may have been deleted, or the number in the address is wrong.` : "The address doesn't name a ticket. A ticket address ends with its number, like PH-123."}</p>
+        <button type="button" class="btn-primary" id="kb-notfound-board">Go to Staff Kanban</button>
+      </div>`;
+    $("#kb-notfound-board").addEventListener("click", () => go("kanban"));
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* older browsers, or no permission: the selection route */ }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:absolute;left:-9999px;top:0";
+      (document.querySelector(".kb-task-panel") || document.body).appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  let shareTimer;
+  async function copyTicketLink() {
+    if (!draft || draftIsNew) return;
+    const url = ticketUrl(draft.key), b = $("#task-share");
+    if (await copyText(url)) {
+      toast("Link copied");
+      if (b) { b.classList.add("on"); $(".material-symbols-outlined", b).textContent = "done"; clearTimeout(shareTimer); shareTimer = setTimeout(() => { b.classList.remove("on"); $(".material-symbols-outlined", b).textContent = "link"; }, 2000); }
+    } else toast(`The link couldn't be copied. Copy it from here: <span class="kb-toast-url">${esc(url)}</span>`);
+  }
+  function syncModalShare() {
+    const b = $("#task-share");
+    if (b) b.hidden = !draft || draftIsNew;
   }
   function render() {
     const view = $("#kb-view");
@@ -296,7 +395,7 @@ export function mountStaffKanban(ctx) {
   }
   // A redraw that keeps the reader where they are (data arriving, a save).
   function renderCurrent() {
-    if (pageEl.hidden) return;
+    if (pageEl.hidden || current.route === "missing") return;
     if (current.route === "kanban" && $("#kb-board")) { renderKanbanBoard(); refreshFilterCounts(); return; }
     keepPosition(() => render());
   }
@@ -380,8 +479,9 @@ export function mountStaffKanban(ctx) {
   const opt = (v, label, sel) => `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(label)}</option>`;
 
   function syncBoardUrl() {
-    const h = "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
-    if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the filter just isn't kept in the address */ } }
+    // An open ticket's address stays until the ticket closes.
+    if (addressTicket) return;
+    setAddress(boardHash());
   }
   function renderKanban(view) {
     // A project that no longer exists would filter the board to nothing.
@@ -843,12 +943,12 @@ export function mountStaffKanban(ctx) {
       if (suppressClick) { suppressClick = false; e.preventDefault(); return; }
       const fb = e.target.closest("[data-flag]");
       if (fb) { toggleFlag(taskByKey(fb.dataset.flag)); return; }
-      openTask(card.dataset.key);
+      openTicketTab(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && drag && drag.active) { e.preventDefault(); endDrag(false); return; }
       const card = e.target.closest && e.target.closest(".kb-card");
-      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTask(card.dataset.key); }
+      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTicketTab(card.dataset.key); }
     });
   }
   function startDrag(x, y) {
@@ -1032,6 +1132,8 @@ export function mountStaffKanban(ctx) {
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
     syncModalWatch();
+    syncModalShare();
+    if (t) showTicketAddress(t);
     renderForm();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
@@ -1122,9 +1224,10 @@ export function mountStaffKanban(ctx) {
     changeTimer = setInterval(syncSaveState, 100);
     syncSaveState();
   }
-  function closeTask() {
+  function closeTask(opts) {
     clearInterval(changeTimer); changeBase = null; editBase = null;
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
+    if (!(opts && opts.keepAddress)) restoreAddress();
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
   }
@@ -2074,7 +2177,17 @@ export function mountStaffKanban(ctx) {
       store.setWatching(draft.key, on).catch(fail);
       toast(on ? `Watching <b>${esc(draft.key)}</b>` : `Stopped watching <b>${esc(draft.key)}</b>`);
     });
-    $("#task-close").addEventListener("click", closeTask);
+    // Share link (KB-LINK-3). Added here, not in index.html, so a page cached
+    // from before this shipped still gets the button.
+    if (!$("#task-share")) {
+      const share = document.createElement("button");
+      share.type = "button"; share.id = "task-share"; share.className = "kb-task-flag kb-task-share"; share.hidden = true;
+      share.title = "Copy link"; share.setAttribute("aria-label", "Copy a link to this ticket");
+      share.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">link</span>';
+      $(".kb-modal-head-actions").insertBefore(share, $("#task-watch"));
+    }
+    $("#task-share").addEventListener("click", copyTicketLink);
+    $("#task-close").addEventListener("click", () => closeTask());
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
   }
