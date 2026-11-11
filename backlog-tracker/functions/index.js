@@ -2279,6 +2279,11 @@ exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstanc
 // queues a run (leadEnrich); the two triggers below run it, and also run one
 // for every lead and prospect when it is created.
 const LEAD_ENRICH_ANTHROPIC_KEY = defineSecret("ANTHROPIC_API_KEY");
+// The workspace that key's requests run in, for a key made for the whole
+// organisation: Anthropic refuses those without it (every run failed that way
+// on 11 Nov 2026). "unset" when the key is already tied to a workspace.
+const LEAD_ENRICH_ANTHROPIC_WORKSPACE = defineSecret("ANTHROPIC_WORKSPACE_ID");
+const LEAD_ENRICH_SECRETS = [LEAD_ENRICH_ANTHROPIC_KEY, LEAD_ENRICH_ANTHROPIC_WORKSPACE];
 const { createLeadEnrich } = require("./lead-enrich");
 let leadEnrichApi = null;
 function leadEnrichInstance() {
@@ -2289,16 +2294,17 @@ function leadEnrichInstance() {
       verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
       resolveConsoleUser: (email) => mcp.resolveConsoleUser(email),
       anthropicKey: () => { try { return LEAD_ENRICH_ANTHROPIC_KEY.value(); } catch { return ""; } },
+      anthropicWorkspace: () => { try { return LEAD_ENRICH_ANTHROPIC_WORKSPACE.value(); } catch { return ""; } },
       serverTimestamp: () => FieldValue.serverTimestamp(),
       logger,
     });
   }
   return leadEnrichApi;
 }
-exports.leadEnrich = onRequest({ secrets: [LEAD_ENRICH_ANTHROPIC_KEY], cors: false, timeoutSeconds: 60, maxInstances: 5 }, (req, res) => leadEnrichInstance().handle(req, res));
-exports.enrichLeadOnWrite = onDocumentWritten({ document: "leads/{leadId}", secrets: [LEAD_ENRICH_ANTHROPIC_KEY], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
+exports.leadEnrich = onRequest({ secrets: LEAD_ENRICH_SECRETS, cors: false, timeoutSeconds: 60, maxInstances: 5 }, (req, res) => leadEnrichInstance().handle(req, res));
+exports.enrichLeadOnWrite = onDocumentWritten({ document: "leads/{leadId}", secrets: LEAD_ENRICH_SECRETS, timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
   (event) => leadEnrichInstance().onEnrichWrite("leads", event));
-exports.enrichProspectOnWrite = onDocumentWritten({ document: "prospects/{prospectId}", secrets: [LEAD_ENRICH_ANTHROPIC_KEY], timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
+exports.enrichProspectOnWrite = onDocumentWritten({ document: "prospects/{prospectId}", secrets: LEAD_ENRICH_SECRETS, timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 },
   (event) => leadEnrichInstance().onEnrichWrite("prospects", event));
 
 // Promote › Leads: website form submissions (lead-ingest.js). Server-to-server,

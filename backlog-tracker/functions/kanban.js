@@ -176,9 +176,11 @@ const AGENT_SYSTEM = [
 ].join(" ");
 
 // Returns the draft in the page's shape, or null.
-async function claudeDraft(apiKey, transcript, context, { Anthropic } = {}) {
+async function claudeDraft(apiKey, transcript, context, { Anthropic, workspaceId } = {}) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
-  const client = new Client({ apiKey, timeout: 25000, maxRetries: 1 });
+  // A key made for the whole organisation needs the workspace named on each request.
+  const headers = require("./lead-enrich").workspaceHeaders(workspaceId);
+  const client = new Client({ apiKey, timeout: 25000, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
   const res = await client.beta.messages.create({
     model: AGENT_MODEL,
     max_tokens: 4000,
@@ -248,7 +250,7 @@ async function handleAgentFill(req, res, h) {
   try {
     // The speaker is whoever the token says, never what the page claims.
     const context = cleanContext(Object.assign({}, body.context || {}, { me: who.user.email }));
-    const draft = await claudeDraft(key, transcript, context, { Anthropic: h.Anthropic });
+    const draft = await claudeDraft(key, transcript, context, { Anthropic: h.Anthropic, workspaceId: h.anthropicWorkspace ? h.anthropicWorkspace() : "" });
     res.status(200).json(draft ? { draft, source: "claude" } : { draft: null, reason: "no-draft" });
   } catch (err) {
     logger.warn("kanban agent fill failed", { email: who.user.email, error: String(err && err.message ? err.message : err) });
