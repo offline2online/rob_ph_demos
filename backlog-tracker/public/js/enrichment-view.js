@@ -55,13 +55,13 @@ const link = (u, text) => { const h = safeUrl(u); return h ? `<a href="${esc(h)}
 
 // What the research says about retail media and personalisation, in reading order.
 const INSIGHTS = [
-  ["Why they fit", "fit"], ["Retail media", "retailMedia"], ["Personalisation", "personalisation"],
-  ["In-store screens and signage", "inStoreDigital"], ["Loyalty", "loyalty"],
-  ["Estate", "estate"], ["Strategy and pressures", "strategy"],
+  ["Why they fit", (e) => e.fit], ["Retail media", (e) => e.retailMedia], ["Personalisation", (e) => e.personalisation],
+  ["In-store screens and signage", (e) => e.inStoreDigital], ["Loyalty", (e) => e.loyalty],
+  ["Estate", (e) => e.estate], ["Strategy and pressures", (e) => e.strategy],
 ];
 const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
 const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");
-const insightsOf = (e) => INSIGHTS.map(([label, k]) => [label, e && e[k]]).filter(([, v]) => v);
+const insightsOf = (e) => (e ? INSIGHTS.map(([label, get]) => [label, get(e)]).filter(([, v]) => v) : []);
 const peopleOf = (e) => (Array.isArray(e && e.people) ? e.people.filter((p) => p && p.name) : []);
 const linkedinOf = (u) => { const h = safeUrl(u); try { return h && /(^|\.)linkedin\.com$/i.test(new URL(h).hostname) ? h : ""; } catch { return ""; } };
 
