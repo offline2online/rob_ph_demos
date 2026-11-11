@@ -15,7 +15,11 @@
 //     existing ANTHROPIC_API_KEY) researches the company by name and website
 //     and answers with industry, countries, HQ, store count, size, tech stack
 //     and vendors, LinkedIn page, summary, logo, recent news and recent
-//     financials, each news item and financial source with its link and date;
+//     financials, each news item and financial source with its link and date,
+//     and what matters for selling retail media and personalisation: its
+//     retail media network, personalisation and loyalty, in-store screens,
+//     primary cloud, its estate and strategy, the people who own those areas,
+//     why it is a fit and openers for a first meeting or email;
 //   • the company's own home page (title, description, LinkedIn link and the
 //     icon it declares), read directly.
 // What is found is written to the record AND to the record it is linked to
@@ -39,8 +43,12 @@ const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
 const FETCH_TIMEOUT_MS = 8000;
 const MAX_HTML_BYTES = 400 * 1024;
 const AGENT_MODEL = "claude-opus-5-5";
-const AGENT_TIMEOUT_MS = 150000;
-const MAX_CONTINUATIONS = 3;
+// One request is streamed (a web-research turn runs for minutes; an unstreamed
+// call timed out before it finished), and the whole run stops asking for more
+// before the trigger's own 540 s limit.
+const AGENT_TIMEOUT_MS = 300000;
+const AGENT_BUDGET_MS = 420000;
+const MAX_CONTINUATIONS = 4;
 const COMPANY_COLLECTION = "prospectCompanies";
 
 // ── Only ever call public addresses ──────────────────────────────────────
@@ -65,6 +73,17 @@ function hostOf(website) {
 
 const entity = (s) => String(s || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/\s+/g, " ").trim();
 const str = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+// Prose kept to n characters without stopping mid-word: cut at the last
+// sentence end when one falls in the second half, else at the last word, with "…".
+function clip(v, n) {
+  const s = String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+  if (s.length <= n) return s;
+  const head = s.slice(0, n - 1);
+  const stop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("; "));
+  if (stop >= n / 2) return head.slice(0, stop + 1).trim().replace(/;$/, ".");
+  const sp = head.lastIndexOf(" ");
+  return `${(sp > n / 2 ? head.slice(0, sp) : head).replace(/[\s,;:–-]+$/, "")}…`;
+}
 // Addresses written to a record: http(s) only, at most 500 characters.
 function httpUrl(v) {
   const s = String(v == null ? "" : v).trim();
@@ -89,7 +108,7 @@ function readPage(html, base) {
   const meta = (name) => {
     for (const tag of metas) {
       const n = (tag.match(/(?:name|property)\s*=\s*["']([^"']+)["']/i) || [])[1];
-      if (n && n.toLowerCase() === name) return entity((tag.match(/content\s*=\s*["']([^"']*)["']/i) || [])[1]);
+      if (n && n.toLowerCase() === name) { const c = tag.match(/content\s*=\s*(?:"([^"]*)"|'([^']*)')/i) || []; return entity(c[1] != null ? c[1] : c[2]); }
     }
     return "";
   };
@@ -111,17 +130,36 @@ function readPage(html, base) {
 
 // ── The agent ────────────────────────────────────────────────────────────
 const AGENT_SYSTEM = [
-  "You research a company for a B2B sales team, using web search and web fetch. Use only public sources; never guess.",
-  "Find, where available: the company's industry; the countries and markets it trades in; its head-office city and country; how many stores or sites it has;",
-  "its size (employees, annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, cloud, digital signage);",
+  "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
+  "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
+  "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
+  "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
+  "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
-  "its recent news (up to five items from the last twelve months, newest first, each with the article's link and date);",
+  "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
+  "Then research what matters for retail media and personalisation, each as one to three plain sentences, empty when nothing public is known:",
+  "retailMedia: whether it runs or is building a retail media network or sells advertising to its suppliers and brands, what it is called, who powers it, which channels it covers (online, app, in-store screens) and anything said about its scale or plans. When it has none, say so. Either way, run a separate search for the retail media or in-venue media networks of its two or three closest competitors, by the competitors' names, and name what they run; and run a separate search of its careers site and job boards for media, advertising, partnerships, loyalty and data roles it is hiring for, and name them;",
+  "personalisation: how it personalises offers, content or pricing for customers today, what it has said it will do next, its customer data and the platforms behind it;",
+  "inStoreDigital: its in-store screens, digital signage, digital menu boards, kiosks, electronic shelf labels or digital out-of-home estate, and the suppliers named;",
+  "loyalty: its loyalty programme or app, with member or user numbers when published;",
+  "primaryCloud: its main cloud provider (AWS, Microsoft Azure or Google Cloud) when a public source says so;",
+  "estate: how its sites split by brand or format and by managed, franchised or leased, and whether the estate is growing or shrinking;",
+  "strategy: its stated priorities, investment programme, cost pressures and restructuring, and its sustainability commitments, in up to four sentences;",
+  "people: up to ten senior people who would own or influence retail media, marketing, digital, customer or loyalty, data and technology, commercial and supplier partnerships, store operations or finance, including anyone announced but not yet in post, each with name, job title, their LinkedIn profile link when you find one, and a note (when they started or start, where they came from, or what they have said on these subjects). This list matters most for booking meetings, so run at least two separate searches for it: one for the executive team or board, and one for appointments in the last eighteen months (\"appoints\" with chief commercial, marketing, customer, digital, data, technology, information, operating and financial officer). Always include the chief executive, the finance chief and whoever leads commercial, marketing or customer, digital or data or technology, and operations when a public source names them; leave out the owner's or investors' people unless they sit on the company's own executive team. Only list someone when a source from the last eighteen months shows them in that role; leave out anyone who has left or whose role was removed, and say \"not confirmed since\" with the year in the note when the newest source is older than twelve months;",
+  "fit: two or three sentences on why this company is or is not a good prospect for in-store retail media and personalisation, based only on what you found;",
+  "talkingPoints: up to six specific openers for a first meeting or an email, each one sentence tied to a fact you found (a recent announcement, a new appointment, a stated plan, a gap against a competitor).",
+  "Also name its media and creative agencies and its website platform, digital signage, app, booking, loyalty, till, network and Wi-Fi suppliers in vendors when a public source names them (suppliers' own case studies are a good source). Each techStack and vendors entry is a name with at most a few words in brackets.",
+  "Check the news for brands, sites or businesses it has sold or closed in the last twelve months and do not describe those as current. Where two sources disagree on a figure or a date, use the company's own and keep it the same in every field.",
+  "Keep each text field complete and within its length: summary 900 characters; retailMedia, personalisation, inStoreDigital, estate, fit 800; strategy 1,000; loyalty 500; each talking point 300; each person's note 300; each fact's value 250. Never end a field mid-sentence.",
   "Put any other useful fact you find (ownership, parent company, founded, CEO, stock ticker) in facts.",
   "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
   "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
-  '{"name":"","website":"","industry":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
+  '{"name":"","website":"","industry":"","sector":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"employees":"","revenue":"",',
   '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
+  '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","estate":"","strategy":"","fit":"",',
+  '"talkingPoints":[""],',
+  '"people":[{"name":"","title":"","linkedin":"","note":""}],',
   '"news":[{"title":"","url":"","date":"YYYY-MM-DD","source":""}],',
   '"financials":{"summary":"","period":"","sources":[{"title":"","url":"","date":"YYYY-MM-DD"}]},',
   '"facts":[{"label":"","value":""}]}',
@@ -139,6 +177,12 @@ function parseAgentJson(text) {
   return null;
 }
 
+// A person's LinkedIn profile (linkedin.com/in/...), else nothing.
+function personLinkedin(v) {
+  const u = httpUrl(v);
+  try { return u && /(^|\.)linkedin\.com$/i.test(new URL(u).hostname) && /^\/in\//i.test(new URL(u).pathname) ? u : ""; } catch { return ""; }
+}
+
 // Anything the agent said -> the clean shape the records take. Nothing unchecked
 // reaches Firestore: lengths are capped and every address is http(s).
 function cleanFindings(raw) {
@@ -148,62 +192,113 @@ function cleanFindings(raw) {
   const sc = typeof o.storeCount === "number" ? o.storeCount : (scText ? Number(scText) : null);
   const li = prospectsCore.normaliseLinkedinUrl(o.linkedinCompany);
   const link = (x) => ({ title: str(x && x.title, 200), url: httpUrl(x && x.url), date: day(x && x.date) });
-  const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 5);
+  const news = (Array.isArray(o.news) ? o.news : []).map((x) => ({ ...link(x), source: str(x && x.source, 80) })).filter((x) => x.title && x.url).slice(0, 8);
   const f = o.financials && typeof o.financials === "object" ? o.financials : {};
-  const fin = { summary: str(f.summary, 600), period: str(f.period, 60), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
+  const fin = { summary: clip(f.summary, 900), period: clip(f.period, 100), sources: (Array.isArray(f.sources) ? f.sources : []).map(link).filter((x) => x.url).slice(0, 4) };
   return {
     name: str(o.name, 120),
     website: site || "",
     industry: str(o.industry, 120),
-    countries: uniq((Array.isArray(o.countries) ? o.countries : []).map(prospectsCore.canonicalCountry), 40, 60),
+    sector: prospectsCore.INDUSTRIES.some((i) => i.label === str(o.sector, 60)) ? str(o.sector, 60) : "",
+    countries: uniq((Array.isArray(o.countries) ? o.countries : []).map((c) => prospectsCore.canonicalCountry(String(c == null ? "" : c).replace(/\s*\(.*$/, ""))), 40, 60),
     hqCity: str(o.hqCity, 80),
     hqCountry: str(prospectsCore.canonicalCountry(o.hqCountry), 60),
     storeCount: typeof sc === "number" && Number.isFinite(sc) && sc > 0 ? Math.round(sc) : null,
-    employees: str(o.employees, 60),
-    revenue: str(o.revenue, 80),
-    techStack: uniq(Array.isArray(o.techStack) ? o.techStack : [], 40, 80),
-    vendors: uniq(Array.isArray(o.vendors) ? o.vendors : [], 40, 80),
+    employees: clip(o.employees, 80),
+    revenue: clip(o.revenue, 120),
+    techStack: uniq((Array.isArray(o.techStack) ? o.techStack : []).map((x) => clip(x, 120)), 40, 120),
+    vendors: uniq((Array.isArray(o.vendors) ? o.vendors : []).map((x) => clip(x, 120)), 40, 120),
     linkedinCompany: li || "",
-    summary: str(o.summary, 1000),
+    summary: clip(o.summary, 1000),
     logoUrl: httpUrl(o.logoUrl),
+    retailMedia: clip(o.retailMedia, 1000),
+    personalisation: clip(o.personalisation, 1000),
+    inStoreDigital: clip(o.inStoreDigital, 1000),
+    loyalty: clip(o.loyalty, 600),
+    primaryCloud: str(o.primaryCloud, 60),
+    estate: clip(o.estate, 1000),
+    strategy: clip(o.strategy, 1200),
+    fit: clip(o.fit, 1000),
+    talkingPoints: uniq((Array.isArray(o.talkingPoints) ? o.talkingPoints : []).map((x) => clip(x, 360)), 6, 360),
+    people: (Array.isArray(o.people) ? o.people : []).map((x) => ({ name: str(x && x.name, 100), title: str(x && x.title, 120), linkedin: personLinkedin(x && x.linkedin), note: clip(x && x.note, 360) })).filter((x) => x.name && x.title).slice(0, 10),
     news,
     financials: fin.summary || fin.sources.length ? fin : null,
-    facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: str(x && x.value, 200) })).filter((x) => x.label && x.value).slice(0, 12),
+    facts: (Array.isArray(o.facts) ? o.facts : []).map((x) => ({ label: str(x && x.label, 60), value: clip(x && x.value, 300) })).filter((x) => x.label && x.value).slice(0, 12),
   };
 }
 
-async function claudeResearch({ apiKey, Anthropic, company, website, country }) {
+// An Anthropic key made for the whole organisation (not inside one workspace)
+// is refused unless each request names the workspace to bill and limit it
+// under. ANTHROPIC_WORKSPACE_ID holds that ID ("unset" or blank = send none).
+function workspaceHeaders(id) {
+  const v = String(id == null ? "" : id).trim();
+  return v && v !== "unset" && /^[A-Za-z0-9_-]{1,120}$/.test(v) ? { "anthropic-workspace-id": v } : undefined;
+}
+
+// One request. Streamed where the SDK offers it: a research turn runs for
+// minutes, longer than an unstreamed call is allowed to stay open.
+async function send(client, params) {
+  const m = client.beta.messages;
+  if (typeof m.stream === "function") return m.stream(params).finalMessage();
+  return m.create(params);
+}
+// The answer's words. Web-search citations split one sentence across several
+// text blocks, so they are joined with nothing between them: a newline there
+// lands inside a JSON string and breaks it.
+const textOf = (res) => ((res && res.content) || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+
+// Researches one company. Returns the agent's JSON, or throws with the reason
+// (which the record then shows): a refusal, a cut-off answer, no JSON at all.
+async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
-  const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1 });
+  const headers = workspaceHeaders(workspaceId);
+  const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
   const ask = [
     `Company: ${company}`,
     website ? `Website: ${website}` : "Website: not known (find it).",
     country ? `Country of interest: ${country}` : "",
     `Today is ${new Date().toISOString().slice(0, 10)}.`,
   ].filter(Boolean).join("\n");
+  const base = { model: AGENT_MODEL, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"], system: AGENT_SYSTEM };
   const messages = [{ role: "user", content: ask }];
+  const started = clock();
   let res;
   for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
-    res = await client.beta.messages.create({
-      model: AGENT_MODEL,
-      max_tokens: 16000,
+    res = await send(client, {
+      ...base,
+      max_tokens: 32000,
+      // The research loop re-reads everything found so far on each step; caching
+      // the growing conversation bills those re-reads at the cache rate.
+      cache_control: { type: "ephemeral" },
       output_config: { effort: "medium" },
-      fallbacks: "default",
-      betas: ["server-side-fallback-2026-07-01"],
-      system: AGENT_SYSTEM,
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 8 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 6 },
+        { type: "web_search_20260209", name: "web_search", max_uses: 22 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10, max_content_tokens: 12000 },
       ],
       messages,
     });
     if (res.stop_reason !== "pause_turn") break;
+    if (clock() - started > AGENT_BUDGET_MS) break;
     // A long server-tool turn paused: send it back as it is and the server resumes it.
     messages.push({ role: "assistant", content: res.content });
   }
-  if (!res || res.stop_reason === "refusal") return null;
-  const text = (res.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-  return parseAgentJson(text);
+  if (!res) throw new Error("no answer came back");
+  if (res.stop_reason === "refusal") throw new Error("the model declined to research this company");
+  const text = textOf(res);
+  const found = parseAgentJson(text);
+  if (found) return found;
+  if (!text.trim()) throw new Error(res.stop_reason === "pause_turn" ? "the research ran out of time before it answered" : `the research ended with no answer (${res.stop_reason || "unknown"})`);
+  // It researched but the answer isn't readable JSON (cut off, or prose around
+  // it): one short call with no tools turns those notes into the JSON.
+  const fix = await send(client, {
+    ...base,
+    max_tokens: 16000,
+    output_config: { effort: "low" },
+    messages: [{ role: "user", content: `${ask}\n\nThese are your research notes on this company. Reply with only the JSON object described, in a \`\`\`json code block, using only what the notes say.\n\n<notes>\n${text.slice(-60000)}\n</notes>` }],
+  });
+  const fixed = fix && fix.stop_reason !== "refusal" ? parseAgentJson(textOf(fix)) : null;
+  if (!fixed) throw new Error("the research finished but its answer could not be read");
+  return fixed;
 }
 
 // ── Merging, kept apart from the fetching so the test can drive it ──────
@@ -213,6 +308,13 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function ownable(current, filledBefore) { return blank(current) || (filledBefore !== undefined && same(current, filledBefore)); }
 const union = (have, add, n, len) => uniq([...(have || []), ...(add || [])], n, len);
 const keep = (next, prev) => (blank(next) ? (prev === undefined ? (Array.isArray(next) ? [] : next == null ? null : "") : prev) : next);
+
+// The first of each key, in order (the newest run's entries come first), at most n.
+function mergeBy(list, key, n) {
+  const seen = new Set(), out = [];
+  for (const x of list) { const k = key(x); if (!k || seen.has(k)) continue; seen.add(k); out.push(x); }
+  return out.slice(0, n);
+}
 
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
@@ -228,7 +330,18 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     techStack: union(p.techStack, f.techStack, 60, 80),
     vendors: union(p.vendors, f.vendors, 60, 80),
     linkedinCompany: keep(f.linkedinCompany, p.linkedinCompany),
-    news: f.news.length ? f.news : (Array.isArray(p.news) ? p.news : []),
+    retailMedia: keep(f.retailMedia, p.retailMedia),
+    personalisation: keep(f.personalisation, p.personalisation),
+    inStoreDigital: keep(f.inStoreDigital, p.inStoreDigital),
+    loyalty: keep(f.loyalty, p.loyalty),
+    primaryCloud: keep(f.primaryCloud, p.primaryCloud),
+    estate: keep(f.estate, p.estate),
+    strategy: keep(f.strategy, p.strategy),
+    fit: keep(f.fit, p.fit),
+    talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
+    // A refresh adds to people and news: one run can miss a person the last one found.
+    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
     sources,
@@ -242,7 +355,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const company = { ...((data && data.company) || {}) };
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
-  set("industry", str(f.industry, 120));
+  set("industry", f.sector || str(f.industry, 120));
   set("storeCount", f.storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
@@ -260,7 +373,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const changed = [];
   const stored = (k) => (data || {})[k];
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
-  set("industry", prospectsCore.normaliseIndustry(f.industry));
+  set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
   set("storeCount", f.storeCount);
   set("linkedinUrl", f.linkedinCompany);
@@ -284,6 +397,7 @@ function applyToProfile(profile, f, logoUrl, filledBefore, today) {
   const put = (k, v) => { if (blank(v) || same(cur[k], v) || !ownable(cur[k], filled[k])) return; set[k] = v; filled[k] = v; };
   put("summary", str(f.summary || f.siteDescription, 2000));
   put("logoUrl", logoUrl);
+  put("primaryCloud", str(f.primaryCloud, 60));
   const newsLine = f.news.slice(0, 3).map((n) => `${n.date ? `${n.date} · ` : ""}${n.title}${n.source ? ` (${n.source})` : ""}`).join("\n").slice(0, 1000);
   put("latestNews", newsLine);
   const stack = uniq([...(Array.isArray(cur.techStack) ? cur.techStack : []), ...f.techStack], 40, 40);
@@ -292,8 +406,21 @@ function applyToProfile(profile, f, logoUrl, filledBefore, today) {
   return { set, filled };
 }
 
+// Why the agent call failed, in words a person can act on.
+function agentError(err) {
+  const status = err && err.status;
+  const msg = String(err && err.message ? err.message : err).replace(/\s+/g, " ").slice(0, 160);
+  if (/not scoped to a workspace|anthropic-workspace-id/i.test(msg)) return "the ANTHROPIC_API_KEY isn't tied to a workspace. Add the workspace's ID as the ANTHROPIC_WORKSPACE_ID repository secret, or replace the key with one created inside a workspace, then redeploy.";
+  if (status === 401 || status === 403) return "the ANTHROPIC_API_KEY was refused (check the key and its workspace).";
+  if (status === 429) return "the Anthropic account is rate limited or out of credit. Try again shortly.";
+  if (status === 400) return `the request was rejected (${msg}).`;
+  if (status >= 500 || status === 529) return "Anthropic's service was unavailable. Try again shortly.";
+  if (/timed? ?out|timeout|aborted/i.test(msg)) return "it took too long and was stopped. Try again.";
+  return /[.!?]$/.test(msg) ? msg : `${msg}.`;
+}
+
 function createLeadEnrich({
-  db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", Anthropic,
+  db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
   research, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
@@ -363,14 +490,16 @@ function createLeadEnrich({
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearch)({ apiKey: key, Anthropic, company, website, country });
+      const raw = await (research || claudeResearch)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
+      if (blank(Object.values(cleanFindings(raw)).filter((v) => !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
       const n = [found.industry, found.hqCountry, found.storeCount, found.summary, found.logoUrl, found.linkedinCompany].filter((x) => !blank(x)).length + found.techStack.length + found.news.length + (found.financials ? 1 : 0);
       return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.`, found };
     } catch (err) {
-      logger.warn("enrichment agent failed", { company, error: String(err && err.message ? err.message : err) });
-      return { source: "agent", status: "error", message: `The research agent failed: ${String(err && err.message ? err.message : err).slice(0, 120)}` };
+      const why = agentError(err);
+      logger.warn("enrichment agent failed", { company, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) });
+      return { source: "agent", status: "error", message: `The research agent failed: ${why}` };
     }
   }
 
@@ -418,8 +547,11 @@ function createLeadEnrich({
     }
     const at = now();
     const meta = { at, by: by || req.by || "auto" };
-    const ok = result.sources.some((s) => s.status === "ok");
-    const done = { ...req, status: ok ? "done" : "error", startedAt, finishedAt: at, message: result.sources.map((s) => s.message).join(" ") };
+    // The run is done when the agent answered. The home page alone (a title
+    // and an icon) is still written, but the run says the research failed.
+    const ok = result.sources.some((s) => s.source === "agent" && s.status === "ok");
+    const wrote = ok || result.sources.some((s) => s.status === "ok");
+    const done = { ...req, status: ok ? "done" : "error", startedAt, finishedAt: at, message: result.sources.filter((s) => ok || s.status !== "ok").map((s) => s.message).join(" ") };
     const out = { collection, id, changed: [], linked: null };
 
     // Re-read: a person may have edited the record while the research ran.
@@ -462,7 +594,24 @@ function createLeadEnrich({
       const lid = str(data.leadId, 120);
       if (lid) out.linked = { collection: "leads", id: lid, changed: await writeLead(db.collection("leads").doc(lid), false) };
     }
-    return { ok, ...out, sources: result.sources };
+    return { ok, wrote, ...out, sources: result.sources };
+  }
+
+  // A website lead for a company not yet in the TAM creates the TAM record and
+  // the lead together (lead-ingest.js). The lead's own run fills both, so the
+  // new TAM record does not start a second, identical research run.
+  async function coveredByNewLead(prospect) {
+    const lid = str(prospect && prospect.leadId, 120);
+    if (!lid) return false;
+    try {
+      const snap = await db.collection("leads").doc(lid).get();
+      if (!snap.exists) return false;
+      const lead = snap.data() || {};
+      if (lead.test === true) return false;
+      const c = lead.createdAt;
+      const made = c && typeof c.toDate === "function" ? c.toDate() : (c ? new Date(c) : null);
+      return Boolean(made) && !Number.isNaN(made.getTime()) && Math.abs(now() - made) < 2 * 60 * 1000;
+    } catch { return false; }
   }
 
   // The Firestore trigger: a created record, or a newly queued request.
@@ -478,6 +627,7 @@ function createLeadEnrich({
     if (!created && !queued) return null;
     if (collection === "leads" && after.test === true) return null;
     try {
+      if (created && !queued && collection === "prospects" && (await coveredByNewLead(after))) return null;
       return await enrichRecord(collection, String(id), queued ? ra.by : "auto", created && !queued ? "created" : "requested");
     } catch (err) {
       logger.error("enrichment run failed", { collection, id, error: String(err && err.message ? err.message : err) });
@@ -520,5 +670,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, clip, claudeResearch, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

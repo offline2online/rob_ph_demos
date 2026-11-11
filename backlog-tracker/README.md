@@ -2578,7 +2578,13 @@ every destination already existed.
   run at `/leadEnrich/v1/enrich` (`enrichment.request`); the findings arrive
   through the page's snapshot. Results go to the record and the record it is
   linked to (and the TAM company profile); it only adds or updates, never blanks,
-  and never overwrites a field a person typed. The page side is
+  and never overwrites a field a person typed. Since 11 Nov 2026 the run also
+  researches retail media, personalisation, in-store screens, loyalty, primary cloud,
+  key people and fit; a failed run says why on the record; and a key made for the
+  whole Anthropic organisation needs the **`ANTHROPIC_WORKSPACE_ID`** repo secret
+  (every run failed without it). `.github/workflows/lead-enrich-probe.yml`
+  (`scripts/lead-enrich-probe.js`) runs the real agent for one company on a runner
+  to check it. The page side is
   `public/js/enrichment-view.js`. **Convert and link
   account** moves the lead to Closed Won and records the customer account.
   Agents manage the whole pipeline over MCP (`functions/leads.js`): `list_leads`,
@@ -2774,7 +2780,8 @@ notifications written only by the server and private to their recipient) and `st
 The voice fill uses Claude once the **`ANTHROPIC_API_KEY`** repo secret is set
 (the deploy workflow syncs it into Secret Manager, as "unset" until then). Until
 then, or when Claude doesn't answer, the page fills the ticket with its local
-stand-in, as the prototype did.
+stand-in, as the prototype did. A key created for the whole Anthropic organisation
+(not inside a workspace) also needs the **`ANTHROPIC_WORKSPACE_ID`** repo secret.
 
 Tests: `test/ui/staff-kanban.test.mjs` (the 25 signed-off cases plus 4 console
 ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),
