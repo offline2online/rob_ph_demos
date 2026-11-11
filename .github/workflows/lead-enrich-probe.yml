@@ -27,10 +27,6 @@ on:
         description: 'RSA public key (PEM, newlines as \n): the full findings are printed encrypted to it'
         type: string
         default: ''
-  # TEMPORARY (11 Nov 2026 test of one real lead from the fix branch, re-run with the workspace set, then three times more after the brief was tightened): removed again once it has run.
-  push:
-    branches: ['claude/eager-dijkstra-*']
-    paths: ['.github/workflows/lead-enrich-probe.yml']
 
 concurrency:
   group: lead-enrich-probe
@@ -57,27 +53,14 @@ jobs:
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           COMPANY: ${{ inputs.company || 'Tesco' }}
           WEBSITE: ${{ inputs.website }}
-          LEAD_ID: ${{ inputs.lead_id || (github.event_name == 'push' && 'ACbnYppp031ZNSXMM7Z3') || '' }}
+          LEAD_ID: ${{ inputs.lead_id }}
           PROBE_PUBLIC_KEY_INPUT: ${{ inputs.public_key }}
         run: |
           if [ -n "$LEAD_ID" ]; then
             echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/probe-sa.json"
             export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/probe-sa.json"
           fi
-          if [ -n "$PROBE_PUBLIC_KEY_INPUT" ]; then export PROBE_PUBLIC_KEY="$(printf '%b' "$PROBE_PUBLIC_KEY_INPUT")"; elif [ "${{ github.event_name }}" = "push" ]; then export PROBE_PUBLIC_KEY="$(cat <<'PEM'
-          -----BEGIN PUBLIC KEY-----
-          MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAyDJpZXDV12icFrv/VVlZ
-          NKanuBWjsgwzjbd5T26qTkdJn/2m3s5rI5YYJVgrM+4WIVbG1/zj3X30+wX3pgo+
-          vpoqdaG02Mfs0AKNtfuVHjr2vLFq3Bi2PbIYOeuBwKwhBxLPGH3fu/fvoyPUlylE
-          H5pmh8hZOq8vq96SeY8QS4AUhnkmqWjdo4ZmH41wHm0idEj585FVK8OwCYWRhNSJ
-          HS16YQOkrmrmaQxgcuRLVi2Dvxy8PIy7GzIilgwGmRikIgubuiBXBUWuRArBQHlh
-          P8A9LvnABURT6ODGCln++/aQCUOROjwo4Ve9jArE3gyMyrAYicf4YgLi+FYWY/BH
-          Cc+EiSxwD23DSrLAnCdOjOPiYMzuoPXAhUNIUObaXTc7LWBHXzk2n3dn1sz/2m9R
-          32Uqtx6kGOqsnoZp3usoFJpMcOo79nok8ictzYRhftNnvAF95L3hLr4OcFpObeso
-          UVwx4Au2dbsXLtHG4+SbNUPARY10jRvC9MhsMH02N6ljAgMBAAE=
-          -----END PUBLIC KEY-----
-          PEM
-          )"; fi
+          if [ -n "$PROBE_PUBLIC_KEY_INPUT" ]; then export PROBE_PUBLIC_KEY="$(printf '%b' "$PROBE_PUBLIC_KEY_INPUT")"; fi
           code=0
           node backlog-tracker/scripts/lead-enrich-probe.js "$COMPANY" "$WEBSITE" || code=$?
           rm -f "$RUNNER_TEMP/probe-sa.json"

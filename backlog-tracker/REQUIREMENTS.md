@@ -4202,7 +4202,13 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     limit or credit, timed out), and the page shows it under the button.
     What the home page gave (description, icon) is still kept.
   - **The agent call**: streamed (a research turn runs for minutes; the first
-    version's unstreamed 150 s limit was too short), up to 18 searches and 10
+    version's unstreamed 150 s limit was too short), up to 22 searches and 10
+    page reads (12,000 tokens each), the conversation cached
+    (`cache_control`) so the loop's re-reads bill at the cache rate: a
+    measured run fell from 0.7–1.6 million full-price input tokens to about
+    0.9 million cached plus 80 thousand written, roughly a quarter of the
+    cost (about one US dollar a company at November 2026 prices). Searches
+    and
     fetches, a paused turn resumed up to four times within seven minutes. The
     answer's text blocks are joined as written (web-search citations split a
     sentence across blocks, and a newline between them broke the JSON). Notes
@@ -4213,6 +4219,21 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     (`scripts/lead-enrich-probe.js`) and lists the live functions' recent
     agent failures. Logs are public, so it prints sizes and timings only.
     Run it when enrichment is reported broken, before reading code.
+  - **Checked against a real company (11 Nov 2026)**: four runs on one
+    pub-company lead were graded against an independent web research pass.
+    What that changed: the agent now names its `sector` from the nine
+    industries itself (the free-text industry had been filed under Quick
+    Service Restaurants); countries lose anything in brackets; long text is
+    cut at a sentence or word, never mid-word (`clip`); the brief requires
+    separate searches for competitors' media networks, for roles being hired
+    and for the executive team and recent appointments, lists only people
+    confirmed in role in the last eighteen months, and does not describe sold
+    brands as current. Runs differ in what they find, so a refresh **merges**
+    people (by name, 12) and news (by link, 10, newest first) with what was
+    there, as tech stack and vendors already did. Still not reliably found
+    from public sources: primary cloud, till and CRM suppliers, LinkedIn
+    profiles for most people. Treat people, figures and dates as leads to
+    check, not as verified.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
