@@ -134,7 +134,7 @@ const AGENT_SYSTEM = [
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
   "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
-  "its size (employees, annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
+  "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
   "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
@@ -146,7 +146,7 @@ const AGENT_SYSTEM = [
   "primaryCloud: its main cloud provider (AWS, Microsoft Azure or Google Cloud) when a public source says so;",
   "estate: how its sites split by brand or format and by managed, franchised or leased, and whether the estate is growing or shrinking;",
   "strategy: its stated priorities, investment programme, cost pressures and restructuring, and its sustainability commitments, in up to four sentences;",
-  "people: up to ten senior people who would own or influence retail media, marketing, digital, customer or loyalty, data and technology, commercial and supplier partnerships, store operations or finance, including anyone announced but not yet in post, each with name, job title, their LinkedIn profile link when you find one, and a note (when they started or start, where they came from, or what they have said on these subjects); search for appointments in the last eighteen months;",
+  "people: up to ten senior people who would own or influence retail media, marketing, digital, customer or loyalty, data and technology, commercial and supplier partnerships, store operations or finance, including anyone announced but not yet in post, each with name, job title, their LinkedIn profile link when you find one, and a note (when they started or start, where they came from, or what they have said on these subjects). This list matters most for booking meetings, so run at least two separate searches for it: one for the executive team or board, and one for appointments in the last eighteen months (\"appoints\" with chief commercial, marketing, customer, digital, data, technology, information, operating and financial officer). Always include the chief executive, the finance chief and whoever leads commercial, marketing or customer, digital or data or technology, and operations when a public source names them; leave out the owner's or investors' people unless they sit on the company's own executive team;",
   "fit: two or three sentences on why this company is or is not a good prospect for in-store retail media and personalisation, based only on what you found;",
   "talkingPoints: up to six specific openers for a first meeting or an email, each one sentence tied to a fact you found (a recent announcement, a new appointment, a stated plan, a gap against a competitor).",
   "Also name its media and creative agencies and its website platform, digital signage, app, booking, loyalty, till, network and Wi-Fi suppliers in vendors when a public source names them (suppliers' own case studies are a good source). Each techStack and vendors entry is a name with at most a few words in brackets.",
@@ -306,6 +306,13 @@ function ownable(current, filledBefore) { return blank(current) || (filledBefore
 const union = (have, add, n, len) => uniq([...(have || []), ...(add || [])], n, len);
 const keep = (next, prev) => (blank(next) ? (prev === undefined ? (Array.isArray(next) ? [] : next == null ? null : "") : prev) : next);
 
+// The first of each key, in order (the newest run's entries come first), at most n.
+function mergeBy(list, key, n) {
+  const seen = new Set(), out = [];
+  for (const x of list) { const k = key(x); if (!k || seen.has(k)) continue; seen.add(k); out.push(x); }
+  return out.slice(0, n);
+}
+
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
@@ -329,8 +336,9 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     strategy: keep(f.strategy, p.strategy),
     fit: keep(f.fit, p.fit),
     talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
-    people: f.people.length ? f.people : (Array.isArray(p.people) ? p.people : []),
-    news: f.news.length ? f.news : (Array.isArray(p.news) ? p.news : []),
+    // A refresh adds to people and news: one run can miss a person the last one found.
+    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
     sources,

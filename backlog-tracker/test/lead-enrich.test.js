@@ -369,6 +369,12 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     await again.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
     assert.equal(again.db.state.leads.l1.enrichment.retailMedia, more.retailMedia);
     assert.equal(again.db.state.leads.l1.enrichment.people.length, 2);
+    // A refresh that finds other people and news adds them and keeps the earlier ones, newest news first.
+    const third = make({ agent: { ...AGENT, people: [{ name: "Cy Dee", title: "CCO" }, { name: "ann lee", title: "CMO and CCO" }], news: [{ title: "Later", url: "https://news.example/b", date: "2026-11-01", source: "MA" }, { title: "Same story", url: "https://news.example/a/", date: "2026-10-01", source: "x" }] }, seed: again.db.state });
+    await third.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e3 = third.db.state.leads.l1.enrichment;
+    assert.deepEqual(e3.people.map((x) => x.name), ["Cy Dee", "ann lee", "Bo Ray"]);
+    assert.deepEqual(e3.news.map((x) => x.url), ["https://news.example/b", "https://news.example/a/"]);
   });
   await test("a website lead that creates its TAM record is researched once, not twice", async () => {
     const at = new Date("2026-11-10T09:59:30Z");
