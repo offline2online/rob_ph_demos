@@ -7,6 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
+  claudeResearch, agentError, workspaceHeaders,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -281,6 +282,104 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(sent[1].messages.length, 2); assert.equal(sent[1].messages[1].role, "assistant");
     assert.equal(db.state.leads.l1.company.industry, "Pubs & Hospitality");
     assert.equal(db.state.leads.l1.enrichment.financials.summary, "Revenue rose 5% to £2.4bn.");
+  });
+  // ── 11 Nov 2026: every live run failed; these are the reasons it could ──
+  const fake = (answers, sent = [], seen = {}) => class {
+    constructor(opts) { seen.opts = opts; this.beta = { messages: {
+      stream: (params) => ({ finalMessage: async () => { sent.push(JSON.parse(JSON.stringify(params))); const a = answers[Math.min(sent.length, answers.length) - 1]; if (a instanceof Error) throw a; return a; } }),
+    } }; }
+  };
+  const text = (...parts) => ({ stop_reason: "end_turn", content: parts.map((t) => ({ type: "text", text: t })) });
+  await test("a key made for the whole organisation sends the workspace on every request, and never a malformed one", async () => {
+    assert.deepEqual(workspaceHeaders("wrkspc_01AbC"), { "anthropic-workspace-id": "wrkspc_01AbC" });
+    for (const v of ["", "unset", null, undefined, "two words", "a\nb"]) assert.equal(workspaceHeaders(v), undefined);
+    const seen = {};
+    await claudeResearch({ apiKey: "k", workspaceId: "wrkspc_01AbC", Anthropic: fake([text("```json\n" + JSON.stringify(AGENT) + "\n```")], [], seen), company: "Greene King" });
+    assert.deepEqual(seen.opts.defaultHeaders, { "anthropic-workspace-id": "wrkspc_01AbC" });
+    const none = {};
+    await claudeResearch({ apiKey: "k", workspaceId: "unset", Anthropic: fake([text(JSON.stringify(AGENT))], [], none), company: "Greene King" });
+    assert.equal("defaultHeaders" in none.opts, false);
+  });
+  await test("the research request is streamed, with room to answer and a limit longer than a research turn", async () => {
+    const sent = [], seen = {};
+    await claudeResearch({ apiKey: "k", Anthropic: fake([text(JSON.stringify(AGENT))], sent, seen), company: "Greene King" });
+    assert.ok(seen.opts.timeout >= 240000, "an unstreamed 150 s limit cut research turns off");
+    assert.ok(sent[0].max_tokens >= 32000);
+    assert.deepEqual(sent[0].tools.map((t) => t.name), ["web_search", "web_fetch"]);
+  });
+  await test("an answer that citations split across text blocks is read as one", async () => {
+    const json = "```json\n" + JSON.stringify(AGENT) + "\n```";
+    const cut = json.indexOf("pub retailer") + 4; // inside the summary string
+    const out = await claudeResearch({ apiKey: "k", Anthropic: fake([text("Done.", json.slice(0, cut), json.slice(cut))]), company: "Greene King" });
+    assert.equal(out.summary, AGENT.summary);
+    assert.equal(parseAgentJson([json.slice(0, cut), json.slice(cut)].join("\n")), null, "joined with newlines (as before) it cannot be read");
+  });
+  await test("research notes with no readable JSON are turned into the JSON by one short call with no tools", async () => {
+    const sent = [];
+    const out = await claudeResearch({ apiKey: "k", Anthropic: fake([text("Greene King is a pub retailer with about 2,600 pubs. {broken"), text("```json\n" + JSON.stringify(AGENT) + "\n```")], sent), company: "Greene King" });
+    assert.equal(out.storeCount, 2600);
+    assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
+    assert.match(sent[1].messages[0].content, /2,600 pubs/);
+  });
+  await test("a refusal, an empty answer and an unreadable answer each fail with the reason", async () => {
+    await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "refusal", content: [] }]), company: "X" }), /declined/);
+    await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "max_tokens", content: [] }]), company: "X" }), /no answer \(max_tokens\)/);
+    await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([text("notes only"), text("still not json")]), company: "X" }), /could not be read/);
+  });
+  await test("a failed agent run is reported as failed on the record even when the home page was read, and says what to do", async () => {
+    const err = Object.assign(new Error('400 {"type":"error","error":{"type":"invalid_request_error","message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}}'), { status: 400 });
+    assert.match(agentError(err), /ANTHROPIC_WORKSPACE_ID repository secret/);
+    assert.match(agentError(Object.assign(new Error("x"), { status: 401 })), /was refused/);
+    assert.match(agentError(Object.assign(new Error("x"), { status: 429 })), /rate limited or out of credit/);
+    assert.match(agentError(new Error("Request timed out.")), /took too long/);
+    const { api, db } = make({ agent: () => { throw err; } });
+    db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    const out = await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    const e = db.state.leads.l1.enrichment;
+    assert.equal(out.ok, false);
+    assert.equal(e.request.status, "error");
+    assert.match(e.request.message, /^The research agent failed: the ANTHROPIC_API_KEY isn't tied to a workspace/);
+    assert.equal(e.logoUrl, "https://www.greeneking.co.uk/apple-touch-icon.png", "what the home page gave is still kept");
+    const empty = make({ agent: {} });
+    await empty.api.onEnrichWrite("leads", created("leads", "l1", empty.db.state));
+    assert.equal(empty.db.state.leads.l1.enrichment.request.status, "error");
+  });
+  await test("a home page description with an apostrophe is read whole", () => {
+    const p = readPage(`<meta name="description" content="Greene King is the country's leading pub company"><meta property='og:description' content='x'>`, "https://gk.example/");
+    assert.equal(p.description, "Greene King is the country's leading pub company");
+  });
+  await test("the research covers retail media and personalisation, and is kept on the lead, the TAM record and the profile", async () => {
+    for (const k of ["retailMedia", "personalisation", "inStoreDigital", "loyalty", "primaryCloud", "people", "fit"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
+    assert.match(AGENT_SYSTEM, /retail media network/);
+    const more = { ...AGENT, retailMedia: "Runs Greene King Media with in-pub screens.", personalisation: "App offers by visit history.", inStoreDigital: "Screens in 1,600 pubs.", loyalty: "App with 2m users.", primaryCloud: "Microsoft Azure", fit: "A large estate with screens already in place.",
+      people: [{ name: "Ann Lee", title: "Chief Marketing Officer", linkedin: "https://www.linkedin.com/in/ann-lee" }, { name: "Bo Ray", title: "CIO", linkedin: "https://evil.example/in/bo" }, { name: "No Title", title: "" }] };
+    const f = cleanFindings(more);
+    assert.deepEqual(f.people, [{ name: "Ann Lee", title: "Chief Marketing Officer", linkedin: "https://www.linkedin.com/in/ann-lee" }, { name: "Bo Ray", title: "CIO", linkedin: "" }]);
+    const { api, db } = make({ agent: more });
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    for (const rec of [db.state.leads.l1, db.state.prospects.p1]) {
+      assert.equal(rec.enrichment.retailMedia, more.retailMedia); assert.equal(rec.enrichment.fit, more.fit);
+      assert.equal(rec.enrichment.primaryCloud, "Microsoft Azure"); assert.equal(rec.enrichment.people.length, 2);
+    }
+    assert.equal(Object.values(db.state.prospectCompanies)[0].profile.primaryCloud, "Microsoft Azure");
+    // A later run that finds less keeps what was known.
+    const again = make({ agent: AGENT, seed: db.state });
+    await again.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(again.db.state.leads.l1.enrichment.retailMedia, more.retailMedia);
+    assert.equal(again.db.state.leads.l1.enrichment.people.length, 2);
+  });
+  await test("a website lead that creates its TAM record is researched once, not twice", async () => {
+    const at = new Date("2026-11-10T09:59:30Z");
+    const { api, db, asked } = make({ seed: { leads: { l1: { ...LEAD, prospectId: "p1", createdAt: at } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} } });
+    assert.equal(await api.onEnrichWrite("prospects", created("prospects", "p1", db.state)), null, "the new lead's own run fills both");
+    assert.equal(asked.length, 0);
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.equal(asked.length, 1);
+    assert.equal(db.state.prospects.p1.enrichment.summary, AGENT.summary);
+    // A new TAM record linked to a lead that already existed is researched itself.
+    const old = make({ seed: { leads: { l1: { ...LEAD, prospectId: "p1", createdAt: new Date("2026-11-01T00:00:00Z") } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} } });
+    await old.api.onEnrichWrite("prospects", created("prospects", "p1", old.db.state));
+    assert.equal(old.asked.length, 1);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

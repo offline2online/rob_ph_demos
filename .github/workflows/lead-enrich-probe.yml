@@ -19,11 +19,6 @@ on:
         description: 'Its website (optional)'
         type: string
         default: ''
-  push:
-    branches: ['claude/eager-dijkstra-*']
-    paths:
-      - 'backlog-tracker/scripts/lead-enrich-probe.js'
-      - '.github/workflows/lead-enrich-probe.yml'
 
 concurrency:
   group: lead-enrich-probe

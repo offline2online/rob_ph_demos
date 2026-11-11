@@ -4171,6 +4171,47 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     The company's home page (the agent's website when none is known) is read
     directly for its description, LinkedIn link and declared icon. Without
     the key the agent reports "not set up" and only the website is read.
+  - **Retail media and personalisation (11 Nov 2026)**: the same run also
+    researches what the sales team needs: `retailMedia` (whether the company
+    runs or is building a retail media network, its name, who powers it, its
+    channels), `personalisation`, `inStoreDigital` (screens, signage, menu
+    boards, kiosks and their suppliers), `loyalty`, `primaryCloud`, `fit` (why
+    it is or is not a prospect) and `people[] {name, title, linkedin}` (up to
+    eight senior people who own those areas, from public sources; they are
+    shown under "Key people" and are not added as contacts). All are kept in
+    the `enrichment` map on the lead and the TAM record; `primaryCloud` also
+    fills the company profile when blank. `get_lead` returns them as
+    `research`.
+  - **The workspace (11 Nov 2026)**: an Anthropic key created for the whole
+    organisation, not inside one workspace, is refused unless each request
+    names the workspace ("This API key is not scoped to a workspace"). Every
+    live run failed that way after the 10 Nov release, while the record still
+    showed an enriched date because the home page had been read. The
+    `ANTHROPIC_WORKSPACE_ID` repository secret holds that workspace's ID
+    (Claude Console, Settings, Workspaces); the deploy syncs it ("unset" when
+    absent) and research and Staff Kanban's agent fill send it as the
+    `anthropic-workspace-id` header. A key created inside a workspace needs
+    no ID.
+  - **A failed run says so (11 Nov 2026)**: the run is `done` only when the
+    agent answered. Otherwise `enrichment.request.status` is `error`, its
+    message gives the reason and what to do (key refused, no workspace, rate
+    limit or credit, timed out), and the page shows it under the button.
+    What the home page gave (description, icon) is still kept.
+  - **The agent call**: streamed (a research turn runs for minutes; the first
+    version's unstreamed 150 s limit was too short), up to 12 searches and 8
+    fetches, a paused turn resumed up to four times within seven minutes. The
+    answer's text blocks are joined as written (web-search citations split a
+    sentence across blocks, and a newline between them broke the JSON). Notes
+    with no readable JSON go through one short call with no tools that turns
+    them into the JSON.
+  - **Checking it live**: `.github/workflows/lead-enrich-probe.yml` runs the
+    real agent call for one company on a runner
+    (`scripts/lead-enrich-probe.js`) and lists the live functions' recent
+    agent failures. Logs are public, so it prints sizes and timings only.
+    Run it when enrichment is reported broken, before reading code.
+  - **One run per company**: a website lead for a company not yet in the TAM
+    creates the TAM record and the lead together; the lead's run fills both,
+    so the new TAM record does not start a second one.
   - **Logo**: the site's apple-touch-icon, else its icon, else the agent's logo
     link, else `/favicon.ico` when it is an image. Stored as
     `enrichment.logoUrl`; shown on the lead drawer and form, and on the TAM
