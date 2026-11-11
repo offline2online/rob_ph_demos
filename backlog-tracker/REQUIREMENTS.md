@@ -4457,6 +4457,54 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
 
+### Leads: Apple-style board, form and detail view (10 Nov 2026)
+
+Ticket iAY4X9RF5K16vLEGYswi applies the console's design rules 1-11 (ticket
+5TbkrO71BsFoaKiclUvO) to Promote › Leads as markup and layout changes, not an
+overlay. Presentation only: every field, action and datum is still there.
+
+- **Board**: no sideways scroll at any width. The lanes wrap (container query on
+  `.leads-board-wrap`: 6 across from 1100px of board, 3 from 760, 2 from 560, else
+  1). Lanes are neutral (no coloured top borders; an uppercase title and a count
+  pill); tiles are white inset cards on an 8pt grid: logo (or initials) and name,
+  the industry chip (neutral, the industry's colour only on its dot), the inbound
+  pill, a one-line company line, the account summary (buying roles as plain text,
+  the first gap, the AWS team's names) and assignee and source. A tile holds no
+  links: emailing the AWS team is done from the detail view. **New lead** is the
+  one primary action (top right; on a phone, sticky at the bottom above the tab
+  bar); the ACE section's New opportunity is a secondary button and its KPI icons
+  are neutral. The page title carries an (i) with what the page does. Empty
+  state: one line, "No leads yet", and a New lead action.
+- **AWS tile**: one inset grouped disclosure row (AWS, count, chevron); each
+  person a row with an email button and Attach to account; the attach form is
+  rows. Its status line is a status, never turned into an (i).
+- **Detail view** (`#lead-summary-panel`): header with the company logo (56px,
+  initials when there is none), name, company line and industry chip; then inset
+  grouped cards in this order: **Contacts** (inbound count beside the title; each
+  contact a row with role pill, job title, email, and 44px email and LinkedIn
+  buttons; "No contacts yet" with Add contact), **AWS team** (the company's
+  `awsTeam` plus the ACE seller, each with an email button), **Company research**
+  (summary, facts, LinkedIn, tech stack, Updated with the sources in its (i);
+  a failed source stays visible), **Recent news**, **Recent financials · period**
+  (the three inside `#lead-sum-research`), then **Lead** (Stage select, assignee,
+  inbound, source, created/updated, customer account), **Company**, TAM record,
+  Prospect record, Website activity, Notes and history. Links use the accent.
+  Actions: Delete (red text, left), Refresh info, Edit (primary). A bottom sheet
+  on a phone, a right-hand drawer otherwise; both open with a short transition.
+- **Form**: a sheet of grouped rows (label left, field right, 44px rows):
+  Company, one card per contact (Remove contact in red at its foot), Add contact,
+  Pipeline, then for a saved lead the research cards with Enrich / Refresh info,
+  and Customer account (Linked account as a value row, then the convert rows).
+  Save stays off until something changes (modal-polish.js). The form's Delete
+  asks to confirm on its own button (it used to arm the drawer's).
+- **Shared components**: `public/js/ap-components.js` (`group`, `row`,
+  `stackRow`, `lineRow`, `iconLink`, `pill`, `tip`) with the styles in
+  `css/apple.css` → "Inset grouped cards and rows" (`.ap-group`, `.ap-row`,
+  `.ap-row-btn`, `.ap-icon-btn`, `.ap-pill`, `.ap-status`, `.ap-empty`,
+  `.ap-field`). Any page may build from them.
+- Light and dark (`data-theme="dark"`), reduced motion respected, 44px targets.
+  Test: `test/ui/leads-apple.test.mjs` at 390/820/1180/1440 px in both themes.
+
 ### Leads: inbound leads matched to Prospects (TAM), one lead per company per country, AWS as its own record (10 Nov 2026)
 
 - **Matching.** A lead that comes in (the website form, `functions/lead-ingest.js`,

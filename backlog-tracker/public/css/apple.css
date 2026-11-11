@@ -190,3 +190,67 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 /* Save that has nothing to save */
 .modal-panel.ap-sheet button.btn-primary:disabled, .modal-panel.ap-sheet button[type="submit"]:disabled { opacity: .4; cursor: not-allowed; transform: none; }
 @media (prefers-reduced-motion: reduce) { .modal-panel.ap-sheet * { transition: none !important; } }
+
+/* ── Inset grouped cards and rows (js/ap-components.js): the shared set for
+   detail views and forms, first used by Promote › Leads (ticket
+   iAY4X9RF5K16vLEGYswi). A titled card of 44px rows on an 8pt grid; label
+   left, value right; hairlines inset 16px; links, row buttons and icon
+   buttons in the one accent; red only for a destructive action. ── */
+.ap-grouped { display: flex; flex-direction: column; gap: var(--ap-s3); }
+.ap-section, fieldset.ap-section { min-width: 0; min-inline-size: 0; margin: 0; padding: 0; border: 0; }
+.ap-group-title { display: flex; align-items: center; gap: var(--ap-s1); float: none; width: auto; box-sizing: border-box; margin: 0 0 var(--ap-s1); padding: 0 var(--ap-s2); font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.ap-group-title .info-tip { margin-left: 0; }
+.ap-group-aside { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; text-transform: none; letter-spacing: 0; }
+.ap-group { min-width: 0; overflow: hidden; border-radius: 12px; background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider); }
+.ap-group:has(.info-tip) { overflow: visible; }
+.ap-row { position: relative; display: flex; align-items: center; gap: var(--ap-s2); min-height: 44px; box-sizing: border-box; padding: 10px var(--ap-s2); font-size: 15px; line-height: 1.35; color: var(--text); }
+.ap-group .ap-row::before, .ap-group .ap-row-btn::before { content: ""; position: absolute; top: 0; left: var(--ap-s2); right: 0; border-top: .5px solid var(--ap-divider); }
+.ap-group > :first-child::before, .ap-group > :first-child > :first-child::before, .ap-group > :first-child > :first-child > :first-child::before { content: none; }
+.ap-row-label { flex: 0 0 120px; min-width: 0; color: var(--text-muted); overflow-wrap: anywhere; }
+.ap-row-value { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ap-row-stack { align-items: center; }
+.ap-row-main { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.ap-row-main p { margin: 0; }
+.ap-row-main > .ap-row-label { flex: none; }
+.ap-row-text { overflow-wrap: anywhere; }
+.ap-row-sub { font-size: 13px; color: var(--text-muted); overflow-wrap: anywhere; }
+.ap-row-actions { display: flex; flex: none; align-items: center; gap: 4px; margin: -8px -8px -8px 0; }
+.ap-row-line { color: var(--text-muted); }
+.ap-row-btn { position: relative; display: flex; align-items: center; gap: var(--ap-s1); width: 100%; min-height: 44px; box-sizing: border-box; margin: 0; padding: 10px var(--ap-s2); border: 0; border-radius: 0; background: none; color: var(--primary-text); font: inherit; font-size: 15px; text-align: left; cursor: pointer; }
+.ap-row-btn:hover { background: rgba(120, 120, 128, .08); }
+.ap-row-btn:disabled { color: var(--text-muted); cursor: default; }
+.ap-row-btn .material-symbols-outlined { font-size: 20px; }
+.ap-destructive, .btn-ghost.ap-destructive, .ap-row-btn.ap-destructive { color: var(--danger); }
+.btn-ghost.ap-destructive { background: none; }
+.btn-ghost.ap-destructive:hover { background: var(--danger-tint, rgba(255, 77, 79, .1)); }
+.ap-field input::placeholder, .ap-field textarea::placeholder { color: var(--text-muted); opacity: .6; }
+.ap-accent-btn, .btn-ghost.ap-accent-btn { color: var(--primary-text); font-weight: 600; }
+.ap-group a { color: var(--primary-text); text-decoration: none; }
+.ap-group a:hover { text-decoration: underline; }
+.ap-icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; border-radius: 50%; color: var(--primary-text); }
+.ap-group a.ap-icon-btn:hover { background: var(--primary-tint); text-decoration: none; }
+.ap-icon-btn .material-symbols-outlined { font-size: 20px; }
+.ap-pill { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .14); color: var(--text); font-size: 12px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.ap-status { margin: var(--ap-s1) var(--ap-s2) 0; font-size: 13px; color: var(--text-muted); }
+.ap-status:empty { display: none; }
+.ap-error { margin: 0 var(--ap-s2); font-size: 14px; color: var(--danger); }
+.ap-error[hidden] { display: none; }
+.ap-empty { display: flex; flex-direction: column; align-items: center; gap: var(--ap-s1); padding: var(--ap-s4) var(--ap-s2); border-radius: var(--ap-radius); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider); text-align: center; }
+.ap-empty[hidden] { display: none; }
+.ap-empty-text { margin: 0; font-size: 15px; color: var(--text-muted); }
+/* A form field in a row: borderless, filling the rest of the row (also inside sheets, which style bare inputs). */
+.ap-field input, .ap-field select, .ap-field textarea, .ap-row-value select {
+  flex: 1; width: auto; min-width: 0; min-height: 44px; box-sizing: border-box; margin: -10px 0; padding: 0 !important;
+  border: 0 !important; border-radius: 0 !important; background: transparent !important; color: var(--text); font: inherit; font-size: 15px;
+}
+.ap-row-value select { width: 100%; color: var(--primary-text); }
+.ap-field input:focus-visible, .ap-field select:focus-visible, .ap-row-value select:focus-visible { outline: none !important; }
+.ap-field:focus-within { box-shadow: inset 3px 0 0 var(--primary); }
+.ap-group .enrich-summary, .ap-group .enrich-fin { margin: 0; line-height: 1.45; }
+.ap-group .enrich-meta { display: block; margin-top: 2px; font-size: 13px; color: var(--text-muted); }
+.ap-group .enrich-updated .info-tip { margin-left: var(--ap-s1); }
+@keyframes ap-sheet-up { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+@keyframes ap-drawer-in { from { opacity: 0; transform: translateX(32px); } to { opacity: 1; transform: none; } }
+@media (max-width: 640px) {
+  .ap-field input, .ap-field select, .ap-field textarea, .ap-row-value select { font-size: 16px; } /* 16px: iOS does not zoom into the field */
+}

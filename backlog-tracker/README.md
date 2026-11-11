@@ -2591,6 +2591,19 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
+- **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
+  the lead form and the lead detail view follow the console's Apple-style rules
+  (`REQUIREMENTS.md` → "Leads: Apple-style board, form and detail view"). The
+  lanes wrap into rows (6 / 3 / 2 / 1 across by width, a container query) instead
+  of scrolling sideways; tiles and lanes are neutral, with the industry colour
+  only on a small dot; **New lead** is the page's one primary action (top right,
+  bottom on a phone). The detail view opens with the logo header, then Contacts
+  (with the inbound count), AWS team, Company research, Recent news and Recent
+  financials, then Lead, Company and the rest, each an inset grouped card. The
+  form is grouped rows. Both are built from the shared components in
+  `public/js/ap-components.js` (styles in `css/apple.css`, "Inset grouped cards
+  and rows"); `researchGroupsHTML` in `enrichment-view.js` draws the research.
+  Test: `test/ui/leads-apple.test.mjs` (390/820/1180/1440 px, light and dark).
 - **Inbound leads matched to Prospects (TAM) (10 Nov 2026):** a website or New lead
   submission is matched to a TAM record by company name and business email domain in
   its country (`planInbound` in `prospects-core.js`); no match makes a new record

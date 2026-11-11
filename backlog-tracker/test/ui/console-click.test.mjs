@@ -1507,7 +1507,7 @@ const scenarios = [
         for (const el of document.querySelectorAll(".lead-card")) {
           const lane = el.closest(".lead-lane-body").getBoundingClientRect(); const r = el.getBoundingClientRect();
           out[el.dataset.leadId] = { industry: el.dataset.industry, inside: r.left >= lane.left - 1 && r.right <= lane.right + 1, scrollOk: el.scrollWidth <= el.clientWidth + 1,
-            text: el.textContent, chip: getComputedStyle(el.querySelector(".lead-chip")).backgroundColor, bar: getComputedStyle(el).borderLeftColor, badge: !!el.querySelector(".lead-test-badge") };
+            text: el.textContent, chip: getComputedStyle(el.querySelector(".lead-chip .lead-ind-dot")).backgroundColor, bar: getComputedStyle(el.querySelector(".lead-ind-dot")).backgroundColor, neutral: getComputedStyle(el.querySelector(".lead-chip")).backgroundColor, badge: !!el.querySelector(".lead-test-badge") };
         }
         return out;
       });
@@ -1516,6 +1516,7 @@ const scenarios = [
       assert.strictEqual(info.n1.industry, "other");
       assert.notStrictEqual(info.w1.chip, info.p1.chip, "industries have their own colours");
       assert.notStrictEqual(info.p1.bar, info.n1.bar);
+      assert.strictEqual(info.w1.neutral, info.p1.neutral, "the chip itself is neutral; only its dot carries the industry colour");
       for (const id of ["w1", "p1", "n1"]) { assert.ok(info[id].inside && info[id].scrollOk, `${id} stays inside its lane`); assert.ok(info[id].badge, `${id} has the Test badge`); }
       assert.ok(!info.w1.text.includes("personalisationhub.com"), "the tile shows no URL");
       // Click -> summary drawer.
@@ -2103,10 +2104,11 @@ const scenarios = [
       await c.visible(".lead-card .lead-card-detail", "the lead card shows a compact view");
       const card = await c.text(".lead-card .lead-card-detail");
       assert.ok(card.includes("Decision maker") && card.includes("Amy AWS"), "buying-role summary and AWS contact on the card");
-      assert.strictEqual(await c.page.locator('.lead-card .lead-card-detail a[href^="mailto:amy@aws.example"]').count(), 1, "an email icon for the AWS contact");
+      assert.strictEqual(await c.page.locator(".lead-card .lead-card-detail a").count(), 0, "no links nested inside the tile");
       // The lead form takes the company's and a contact's AWS account ID.
       await c.page.click(".lead-card");
       await c.visible("#lead-sum-body", "the lead summary opens");
+      assert.strictEqual(await c.page.locator('#lead-sum-aws a.ap-icon-btn[href^="mailto:amy@aws.example"]').count(), 1, "the detail view's AWS team has an email button for the AWS contact");
     },
   },
   {

@@ -8,6 +8,8 @@
 // Used by leads-page.js (the lead drawer and form) and prospect-detail.js (the
 // TAM record). Everything here is escaped and every address is http(s) only:
 // an agent writes these fields.
+import { group, row, stackRow, lineRow, tip } from "./ap-components.js";
+
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 export const safeUrl = (u) => { try { const x = new URL(String(u)); return x.protocol === "https:" || x.protocol === "http:" ? x.href : ""; } catch { return ""; } };
 
@@ -70,6 +72,41 @@ export function wireLogoFallback(root, cls = "enrich-logo") {
       im.replaceWith(s);
     });
   });
+}
+
+// The same findings as three inset grouped cards (ap-components.js), for the
+// Leads detail view and lead form: Company research (summary, facts, LinkedIn,
+// tech stack, when it was updated, with the sources in its (i)), Recent news
+// and Recent financials. Nothing known is left out; an empty group is not drawn.
+export function researchGroupsHTML(e) {
+  if (!e || !e.at) return group("Company research", lineRow("Not enriched yet", "enrich-none"));
+  const at = enrichedAt(e);
+  const facts = [
+    ["Head office", e.hq], ["Employees", e.employees], ["Revenue", e.revenue],
+    ...(Array.isArray(e.facts) ? e.facts.map((f) => [f.label, f.value]) : []),
+  ].filter(([, v]) => v);
+  const stack = [...new Set([...(Array.isArray(e.techStack) ? e.techStack : []), ...(Array.isArray(e.vendors) ? e.vendors : [])])];
+  const news = Array.isArray(e.news) ? e.news.filter((n) => n && n.title) : [];
+  const fin = e.financials && (e.financials.summary || (e.financials.sources || []).length) ? e.financials : null;
+  const sources = Array.isArray(e.sources) ? e.sources : [];
+  const li = safeUrl(e.linkedinCompany);
+  const failed = sources.filter((s) => s.status === "error");
+  const research = [
+    e.summary ? stackRow(`<p class="enrich-summary">${esc(e.summary)}</p>`) : "",
+    ...facts.map(([k, v]) => row(k, esc(v))),
+    li ? row("LinkedIn", link(li, "Company page")) : "",
+    stack.length ? stackRow(`<span class="ap-row-label">Tech stack and vendors</span><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`) : "",
+    ...failed.map((s) => `<div class="ap-row ap-row-line lead-source-error">${esc(s.message)}</div>`),
+    at ? `<div class="ap-row enrich-updated"><span class="ap-row-label">Updated</span><span class="ap-row-value">${esc(at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${tip(sources.map((s) => s.message).filter(Boolean).join(" · "), "Sources checked")}</span></div>` : "",
+  ].join("");
+  const newsRows = news.map((n) => stackRow(`${link(n.url, n.title)}<span class="enrich-meta">${esc([n.source, fmtDay(n.date)].filter(Boolean).join(" · "))}</span>`, "", "enrich-news-row")).join("");
+  const finRows = fin ? [
+    fin.summary ? stackRow(`<p class="enrich-fin">${esc(fin.summary)}</p>`) : "",
+    ...(fin.sources || []).map((s) => stackRow(`${link(s.url, s.title || s.url)}<span class="enrich-meta">${esc(fmtDay(s.date))}</span>`, "", "enrich-news-row")),
+  ].join("") : "";
+  return group("Company research", research || lineRow("Nothing found yet"))
+    + group("Recent news", newsRows)
+    + group(fin && fin.period ? `Recent financials · ${fin.period}` : "Recent financials", finRows);
 }
 
 // The findings: company facts, recent news and recent financials, each with its sources and dates.
