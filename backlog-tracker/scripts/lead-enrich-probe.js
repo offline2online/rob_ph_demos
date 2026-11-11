@@ -6,6 +6,13 @@
 //
 //   ANTHROPIC_API_KEY=... node backlog-tracker/scripts/lead-enrich-probe.js "Tesco" [website] [country]
 //
+// To test a real record without naming it in a public log:
+//   LEAD_ID=<leads doc id> PROBE_PUBLIC_KEY="<RSA public key, PEM>" node …/lead-enrich-probe.js
+// reads the company and website from that lead (Firestore, application default
+// credentials), never prints them, and prints the full findings encrypted to
+// that public key (AES-256-GCM, the key wrapped with RSA-OAEP); only the
+// holder of the private key can read them.
+//
 // Run on a runner by .github/workflows/lead-enrich-probe.yml, where the key
 // already is. Actions logs on this repo are public, so only field names, sizes
 // and timings are printed, never what was found. Exit 1 when the agent fails.
@@ -16,7 +23,30 @@ const { claudeResearch, cleanFindings, parseAgentJson, agentError } = require(pa
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
-const [company = "Tesco", website = "", country = ""] = process.argv.slice(2);
+let [company = "Tesco", website = "", country = ""] = process.argv.slice(2);
+const leadId = (process.env.LEAD_ID || "").trim();
+const publicKey = (process.env.PROBE_PUBLIC_KEY || "").trim();
+const crypto = require("crypto");
+
+// The company behind a lead id, kept out of the log.
+async function fromLead(id) {
+  const fnRequire = require("module").createRequire(path.join(fn, "index.js"));
+  const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
+  const { getFirestore } = fnRequire("firebase-admin/firestore");
+  initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
+  const snap = await getFirestore().collection("leads").doc(id).get();
+  if (!snap.exists) throw new Error("no such lead");
+  const c = (snap.data() || {}).company || {};
+  for (const v of [c.name, c.website]) if (v) console.log(`::add-mask::${v}`);
+  return { name: String(c.name || ""), website: String(c.website || "") };
+}
+function sealed(obj) {
+  const key32 = crypto.randomBytes(32), iv = crypto.randomBytes(12);
+  const ci = crypto.createCipheriv("aes-256-gcm", key32, iv);
+  const body = Buffer.concat([ci.update(JSON.stringify(obj), "utf8"), ci.final()]);
+  const wrapped = crypto.publicEncrypt({ key: publicKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: "sha256" }, key32);
+  return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
+}
 const key = process.env.ANTHROPIC_API_KEY || "";
 if (!key || key === "unset") { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
@@ -61,6 +91,11 @@ async function findWorkspace() {
 }
 
 (async () => {
+  if (leadId) {
+    try { const l = await fromLead(leadId); company = l.name; website = l.website; country = ""; } catch (err) { console.error(`Couldn't read that lead: ${String(err && err.message || err).slice(0, 200)}`); process.exit(1); }
+    if (!company) { console.error("That lead has no company name."); process.exit(1); }
+    console.log("Researching the company on that lead (its name is not printed).");
+  }
   console.log(`Workspace header: ${process.env.ANTHROPIC_WORKSPACE_ID ? "sent (ANTHROPIC_WORKSPACE_ID is set)" : "not sent (ANTHROPIC_WORKSPACE_ID is not set)"}`);
   console.log(`Researching one company with ${require(path.join(fn, "lead-enrich.js")).AGENT_MODEL}, SDK ${require(path.join(fn, "node_modules", "@anthropic-ai", "sdk", "package.json")).version}…`);
   let raw;
@@ -87,6 +122,12 @@ async function findWorkspace() {
   for (const [k, v] of Object.entries(f)) console.log(`  ${k.padEnd(16)} ${size(v)}`);
   const filled = Object.values(f).filter((v) => (Array.isArray(v) ? v.length : v != null && v !== "")).length;
   console.log(`\n${filled} of ${Object.keys(f).length} fields filled.`);
+  if (publicKey) {
+    const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });
+    console.log("\n-----BEGIN SEALED FINDINGS-----");
+    for (let i = 0; i < blob.length; i += 120) console.log(blob.slice(i, i + 120));
+    console.log("-----END SEALED FINDINGS-----");
+  }
   if (needsWorkspace) { console.error("The research works, but only with a workspace named: set the ANTHROPIC_WORKSPACE_ID repository secret (or use a key created inside a workspace) and redeploy."); process.exit(1); }
   if (filled < 8) { console.error("Too little came back for a well-known company."); process.exit(1); }
 })();
