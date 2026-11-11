@@ -62,7 +62,7 @@ class Probe {
       const blocks = {};
       for (const b of res.content || []) blocks[b.type] = (blocks[b.type] || 0) + 1;
       const texts = (res.content || []).filter((b) => b.type === "text").map((b) => b.text);
-      console.log(`request ${n}: ${secs(Date.now() - started)}, stop_reason=${res.stop_reason}, model=${res.model}, blocks=${JSON.stringify(blocks)}, usage=${JSON.stringify({ in: res.usage && res.usage.input_tokens, out: res.usage && res.usage.output_tokens, tools: res.usage && res.usage.server_tool_use })}`);
+      console.log(`request ${n}: ${secs(Date.now() - started)}, stop_reason=${res.stop_reason}, model=${res.model}, blocks=${JSON.stringify(blocks)}, usage=${JSON.stringify({ in: res.usage && res.usage.input_tokens, cacheRead: res.usage && res.usage.cache_read_input_tokens, cacheWrite: res.usage && res.usage.cache_creation_input_tokens, out: res.usage && res.usage.output_tokens, tools: res.usage && res.usage.server_tool_use })}`);
       if (texts.length) console.log(`  answer: ${texts.length} text block(s); readable joined as written: ${Boolean(parseAgentJson(texts.join("")))}; readable joined with newlines (how it was read before 11 Nov 2026): ${Boolean(parseAgentJson(texts.join("\n")))}`);
       return res;
     };
