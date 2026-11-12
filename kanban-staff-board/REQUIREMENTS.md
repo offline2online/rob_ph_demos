@@ -297,7 +297,9 @@ toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
 alignment, lists, quote, inline code, code block, Note/Important/Warning
 callouts, link, image (with alt text), video, tables with row/column controls,
 clear formatting. Plus: **@mentions** of staff (notified when the ticket or comment is saved, by the notification trigger), **URLs that
-link themselves**, **screenshots** (upload, paste or drop; downscaled to ≤1400 px and held in
+link themselves**, **screenshots** (the toolbar's image button opens the computer's file picker at once and
+what is chosen is inserted where the cursor was, several at a time, each with its file name as alt text, with no
+dialog in between; Shift-click opens the dialog for an image by link; or paste or drop; downscaled to ≤1400 px and held in
 Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact

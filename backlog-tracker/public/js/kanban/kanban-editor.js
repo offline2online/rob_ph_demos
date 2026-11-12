@@ -144,7 +144,7 @@ export const KBEditor = (function () {
   ];
   const TITLES = {
     bold: "Bold", italic: "Italic", underline: "Underline", strike: "Strikethrough", blockquote: "Quote", code: "Inline code",
-    "code-block": "Code block", link: "Link", image: "Screenshot or image", video: "Embed video (URL)", faqtable: "Table",
+    "code-block": "Code block", link: "Link", image: "Insert a screenshot or image from your computer (Shift-click: from a link)", video: "Embed video (URL)", faqtable: "Table",
     mention: "Mention someone (@)", screenrec: "Record your screen", clean: "Clear formatting", list: "List",
   };
 
@@ -190,7 +190,9 @@ export const KBEditor = (function () {
           container: opts.compact ? TOOLBAR_COMPACT : TOOLBAR_FULL,
           handlers: {
             faqtable() { tableDialog(q); },
-            image() { imageDialog(q, opts.upload, notice); },
+            // Straight to the computer's file picker: choosing the files inserts them (KB-TASK: no steps in between).
+            // Shift-click opens the dialog for an image that is already on the web.
+            image() { if (imageByLink) imageDialog(q, opts.upload, notice); else pickImages(q, opts.upload, notice); },
             mention() {
               const r = q.getSelection(true);
               q.insertText(r.index, "@", "user");
@@ -208,6 +210,8 @@ export const KBEditor = (function () {
       const key = [...b.classList].map((c) => c.replace(/^ql-/, "")).find((c) => TITLES[c]);
       if (key) b.setAttribute("title", TITLES[key]);
     });
+    const imageBtn = toolbar.querySelector(".ql-image");
+    if (imageBtn) imageBtn.addEventListener("click", (e) => { imageByLink = e.shiftKey; }, true);
 
     // Table row/column buttons
     q.root.addEventListener("click", (e) => {
@@ -361,6 +365,39 @@ export const KBEditor = (function () {
     const first = p.querySelector("input, textarea");
     if (first) setTimeout(() => first.focus(), 20);
     return p;
+  }
+  // The toolbar's image button: the file picker opens at once and what is chosen goes in where the cursor was,
+  // one after another, each named after its file for screen readers. Nothing else to click.
+  let imageByLink = false;
+  function pickImages(q, upload, notice) {
+    const range = q.getSelection(true) || { index: q.getLength() };
+    q.container.querySelectorAll(".kb-ed-file").forEach((el) => el.remove());
+    const file = document.createElement("input");
+    file.type = "file"; file.accept = "image/*"; file.multiple = true; file.className = "kb-ed-file"; file.hidden = true;
+    file.setAttribute("aria-hidden", "true"); file.tabIndex = -1;
+    q.container.appendChild(file);
+    file.addEventListener("change", async () => {
+      const files = [...file.files];
+      file.remove();
+      if (!files.length) return;
+      const btn = q.getModule("toolbar").container.querySelector(".ql-image");
+      if (btn) btn.classList.add("kb-ed-busy");
+      let i = Math.min(range.index, q.getLength());
+      for (const f of files) {
+        if (!/^image\//.test(f.type)) { notice(`<b>${esc(f.name)}</b> isn't an image.`); continue; }
+        try {
+          const url = await imageUrlFor(f, upload);
+          if (!q.root.isConnected) return; // the ticket was closed while it uploaded
+          i = Math.min(i, q.getLength());
+          q.insertEmbed(i, "image", url, "user");
+          q.formatText(i, 1, "alt", (f.name || "Screenshot").replace(/\.[^.]+$/, ""), "user");
+          i++;
+        } catch (e) { notice("That image couldn't be uploaded. Try again."); }
+      }
+      if (btn) btn.classList.remove("kb-ed-busy");
+      q.setSelection(i, 0, "user");
+    });
+    file.click();
   }
   function imageDialog(q, upload, notice) {
     panel(q, `<div class="kb-ed-panel-title">Add a screenshot or image</div>

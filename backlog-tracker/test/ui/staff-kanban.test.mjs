@@ -1320,6 +1320,51 @@ T("KB-C21", "a field changed before the editor has loaded still switches Save on
   await p.done();
 });
 
+T("KB-C22", "the image button opens the computer's file picker at once; choosing files inserts them, with nothing in between", async (prof) => {
+  const p = await open(prof);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor', btn = '[data-field="description"] .ql-image';
+  await p.waitForSelector(ed);
+  // A real PNG (2×2), so the page can shrink it as it does a screenshot.
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVQIW2P8z8DwnwEImBigAMwAAC0EAgGkP6pJAAAAAElFTkSuQmCC", "base64");
+  const shot = (name) => ({ name, mimeType: "image/png", buffer: png });
+  const before = await p.$$eval(`${ed} img`, (e) => e.length);
+  // One press: the picker is what opens, not a dialog in the editor.
+  const [chooser] = await Promise.all([p.waitForEvent("filechooser", { timeout: 5000 }), press(p, btn)]);
+  assert.equal(await p.$(".kb-ed-panel"), null, "no dialog to click through");
+  assert.ok(chooser.isMultiple(), "several screenshots can be chosen at once");
+  await chooser.setFiles([shot("Checkout error.png"), shot("Basket total.png")]);
+  // Choosing is the last step: both are uploaded under the ticket and are in the description.
+  await eventually(async () => assert.equal(await p.$$eval(`${ed} img`, (e) => e.length), before + 2, "both images are in the description"));
+  const imgs = await p.$$eval(`${ed} img`, (e) => e.slice(-2).map((i) => ({ src: i.getAttribute("src"), alt: i.getAttribute("alt") })));
+  assert.deepEqual(imgs.map((i) => i.alt), ["Checkout error", "Basket total"], "in the order chosen, each named after its file");
+  for (const i of imgs) assert.match(i.src, /firebasestorage.*kanban%2FPH-20%2F/, "held in the ticket's storage, not inline");
+  const up = await p.evaluate(() => Object.keys(globalThis.__fbStub.uploads || {}));
+  assert.equal(up.filter((k) => /^kanban\/PH-20\//.test(k)).length, 2, `two uploads under the ticket: ${up}`);
+  assert.equal(await p.$(`${btn}.kb-ed-busy`), null, "the button is ready again");
+  // Saved with the ticket.
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal(((await stored(p, "PH-20")).description.match(/<img /g) || []).length, before + 2, "the saved description holds both"));
+  // Closing the picker without choosing adds nothing and leaves no dialog.
+  await press(p, '.kb-card[data-key="PH-21"]');
+  await until(async () => /PH-21/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-21 to open");
+  await p.waitForSelector(ed);
+  const had = await p.$$eval(`${ed} img`, (e) => e.length);
+  const [again] = await Promise.all([p.waitForEvent("filechooser", { timeout: 5000 }), press(p, btn)]);
+  await again.setFiles([]);
+  await sleep(200);
+  assert.equal(await p.$$eval(`${ed} img`, (e) => e.length), had, "nothing chosen, nothing added");
+  assert.equal(await p.$(".kb-ed-panel"), null);
+  // An image that is already on the web: Shift-click still opens the link dialog (mouse only).
+  if (!prof.touch) {
+    await p.click(btn, { modifiers: ["Shift"] });
+    await p.waitForSelector('.kb-ed-panel [data-f="url"]');
+    await p.click('.kb-ed-panel [data-x="cancel"]');
+  }
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");
