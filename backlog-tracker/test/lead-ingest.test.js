@@ -52,10 +52,29 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     await api.handle(req(FORM, "unset"), r); assert.equal(r.code, 401);
     assert.equal(db.docs.size, 0);
   });
-  await test("only POST /v1/submit is served", async () => {
+  await test("only POST /v1/submit and /v1/brand are served", async () => {
     const { api } = mkApi(); const r = res();
     await api.handle(req(FORM, "k", "GET"), r); assert.equal(r.code, 405);
     await api.handle(req(FORM, "k", "POST", "/leadIngest/v1/other"), r); assert.equal(r.code, 404);
+  });
+  await test("the brand lookup returns a listed company's logos and nothing else, with the same key", async () => {
+    const { db, api } = mkApi();
+    const BRAND = "/leadIngest/v1/brand";
+    db.prospects.set("greene-king-united-kingdom", { name: "Greene King", country: "United Kingdom", website: "https://www.greeneking.co.uk", industry: "Pubs & Hospitality", leadId: "lead1", notes: "private",
+      enrichment: { logoUrl: "https://www.greeneking.co.uk/icon.png", logos: { light: "https://brand.example/gk.svg", dark: "" }, summary: "private research" } });
+    db.docs.set("lead1", { company: { name: "Greene King" }, contacts: [{ name: "Private Person", email: "p@greeneking.co.uk" }], enrichment: { logos: { light: "", dark: "https://brand.example/gk-white.svg" } } });
+    db.docs.set("lead2", { company: { name: "Corner Shop Co", industry: "Fuel & Convenience" }, enrichment: { logoUrl: "https://cornershop.example/icon.png", logos: { light: "https://cornershop.example/logo.png", dark: "javascript:x" } } });
+    db.docs.set("lead3", { test: true, company: { name: "Test Co" }, enrichment: { logos: { light: "https://t.example/l.png" } } });
+    let r = res(); await api.handle(req({ company: "Greene King" }, "nope", "POST", BRAND), r); assert.equal(r.code, 401);
+    r = res(); await api.handle(req({}, "k", "POST", BRAND), r); assert.equal(r.code, 400);
+    r = res(); await api.handle(req({ company: "greene king" }, "k", "POST", BRAND), r);
+    assert.deepEqual(r.body, { found: true, name: "Greene King", industry: "Pubs & Hospitality", logos: { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.svg", icon: "https://www.greeneking.co.uk/icon.png" }, darkFromLight: false });
+    r = res(); await api.handle(req({ company: "Someone Else", email: "jo@greeneking.co.uk" }, "k", "POST", BRAND), r);
+    assert.equal(r.body.name, "Greene King", "matched by the work email's domain");
+    r = res(); await api.handle(req({ company: "Corner Shop Co" }, "k", "POST", BRAND), r);
+    assert.deepEqual(r.body, { found: true, name: "Corner Shop Co", industry: "Fuel & Convenience", logos: { light: "https://cornershop.example/logo.png", dark: "", icon: "https://cornershop.example/icon.png" }, darkFromLight: true });
+    for (const company of ["Unknown Ltd", "Test Co"]) { r = res(); await api.handle(req({ company }, "k", "POST", BRAND), r); assert.deepEqual(r.body, { found: false }, company); }
+    assert.equal(db.docs.size, 3, "a lookup stores nothing"); assert.ok(!JSON.stringify(r.body).includes("private"));
   });
   await test("a real submission becomes a Lead-lane website lead with page and industry", async () => {
     const { db, api } = mkApi(); const r = res();

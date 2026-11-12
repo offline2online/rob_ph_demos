@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -64,7 +64,8 @@ const AGENT = {
   financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [{ title: "Annual report", url: "https://gk.example/ar.pdf", date: "2025-06-30" }] },
   facts: [{ label: "Owner", value: "CK Asset Holdings" }],
 };
-const resp = (status, body, headers = {}) => ({ status, ok: status >= 200 && status < 300, headers: { get: (k) => headers[k.toLowerCase()] || null }, text: async () => (typeof body === "string" ? body : JSON.stringify(body)), json: async () => body });
+const resp = (status, body, headers = {}) => ({ status, ok: status >= 200 && status < 300, headers: { get: (k) => headers[k.toLowerCase()] || null }, text: async () => (typeof body === "string" ? body : JSON.stringify(body)), json: async () => body,
+  arrayBuffer: async () => { const b = Buffer.from(typeof body === "string" ? body : JSON.stringify(body)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
 const res = () => { const r = { code: 0, body: null, status(c) { r.code = c; return r; }, set() { return r; }, json(b) { r.body = b; return r; } }; return r; };
 const req = (body, token = "tok", method = "POST", path = "/leadEnrich/v1/enrich") => ({ method, path, body, get: (h) => (h.toLowerCase() === "x-firebase-id-token" ? token : "") });
 const created = (c, id, state) => ({ params: c === "leads" ? { leadId: id } : { prospectId: id }, data: { before: { exists: false }, after: { exists: true, data: () => state[c][id] } } });
@@ -74,7 +75,8 @@ const LEAD = { company: { name: "Greene King", website: "", industry: "", countr
 const PROSPECT = { name: "Greene King", country: "United Kingdom", website: "", industry: "", markets: [], vendors: [], storeCount: null, leadId: "" };
 
 const PASS = { real: true, physicalRetail: true, sites: "about 2,500 pubs", reason: "A UK pub operator." };
-function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed, verdict = PASS } = {}) {
+function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed, verdict = PASS, store = false } = {}) {
+  const saved = [];
   const db = fakeDb(seed || { leads: { l1: { ...LEAD, prospectId: "p1" } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} });
   const calls = [], asked = [], screened = [];
   const api = createLeadEnrich({
@@ -82,13 +84,14 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     resolveConsoleUser: async (e) => (e === "sam@ph.com" ? { email: e, role } : null),
     anthropicKey: () => key,
     research: async (a) => { asked.push(a); return typeof agent === "function" ? agent(a) : agent; },
+    ...(store ? { bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
     screen: async (a) => { screened.push(a); if (verdict instanceof Error) throw verdict; return typeof verdict === "function" ? verdict(a) : verdict; },
     lookup: async (h) => (h === "internal.test" ? [{ address: "10.0.0.5" }] : [{ address: "93.184.216.34" }]),
     fetch: fetchImpl || (async (url) => { calls.push(url); return resp(200, HOME); }),
     logger: { warn() {}, error() {} },
     now: () => new Date("2026-11-10T10:00:00Z"),
   });
-  return { api, db, calls, asked, screened };
+  return { api, db, calls, asked, screened, saved };
 }
 
 (async () => {
@@ -97,7 +100,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) assert.ok(!isPrivateAddress(ip), ip);
   });
   await test("readPage takes the title, description, LinkedIn page and the apple-touch-icon over the plain icon", () => {
-    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png" });
+    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { light: "", dark: "" } });
   });
   await test("the agent is told to research without paid providers and to answer with news and financials", () => {
     assert.match(AGENT_SYSTEM, /web search/); assert.match(AGENT_SYSTEM, /news/); assert.match(AGENT_SYSTEM, /financials/); assert.match(AGENT_SYSTEM, /logo/);
@@ -241,7 +244,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   await test("a website on a private address, or redirecting to one, is not fetched", async () => {
     const a = make({ key: "unset" }); a.db.state.leads.l1.company.website = "https://internal.test";
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
-    assert.equal(a.calls.length, 0);
+    assert.equal(a.calls.filter((u) => u.includes("internal.test")).length, 0, "the private address itself is never requested");
     assert.equal(a.db.state.leads.l1.enrichment.sources[1].status, "error");
     assert.equal(a.db.state.leads.l1.enrichment.request.status, "error");
     const b = make({ key: "unset", fetchImpl: async () => resp(302, "", { location: "http://internal.test/admin" }) });
@@ -484,6 +487,80 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(c.db.state.leads.l1.company.storeCount, 2500);
     assert.match(c.db.state.leads.l1.enrichment.storeCountBreakdown, /from the first check/);
     assert.equal(cleanFindings({ storeCountSource: { url: "javascript:x" } }).storeCountSource, null);
+  });
+  // ── Logos for the branded walkthrough demo (12 Nov 2026) ──
+  await test("the full logo for light and for dark backgrounds is found, checked as an image and kept", async () => {
+    const page = `<header><img class="site-logo" src="/img/gk-logo.svg" alt="Greene King"><img src="/img/hero.jpg" alt="A pub"><img alt="Greene King logo" data-src="/img/gk-logo-white.svg"></header>`;
+    assert.deepEqual(readPage(page, "https://www.greeneking.co.uk/").logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
+    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x), { light: "", dark: "" });
+    for (const k of ["logoLight", "logoDark"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
+    assert.match(AGENT_SYSTEM, /never build or guess an address/);
+    const types = { "https://brand.example/gk-full.svg": "image/svg+xml", "https://brand.example/gk-white.png": "image/png", "https://www.greeneking.co.uk/img/gk-logo.svg": "image/svg+xml", "https://brand.example/not-an-image": "text/html" };
+    const fetchImpl = async (url) => (types[url] ? resp(200, "x", { "content-type": types[url] }) : resp(200, page, { "content-type": "text/html" }));
+    // The agent's links win when they are images; a link that is not an image falls back to the home page's own logo.
+    const a = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk-full.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    assert.deepEqual(a.db.state.leads.l1.enrichment.logos, { light: "https://brand.example/gk-full.svg", dark: "https://brand.example/gk-white.png" });
+    assert.deepEqual(a.db.state.prospects.p1.enrichment.logos, a.db.state.leads.l1.enrichment.logos, "the TAM record gets them too");
+    const b = make({ agent: { ...AGENT, logoLight: "https://brand.example/not-an-image", logoDark: "javascript:alert(1)" }, fetchImpl });
+    b.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await b.api.onEnrichWrite("leads", created("leads", "l1", b.db.state));
+    assert.deepEqual(b.db.state.leads.l1.enrichment.logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "" });
+    // A later run that finds none keeps the earlier ones.
+    const c = make({ agent: AGENT, seed: a.db.state });
+    await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(c.db.state.leads.l1.enrichment.logos.dark, "https://brand.example/gk-white.png");
+  });
+  await test("a logo is also taken from the site's structured data and from Wikimedia Commons, only for the right company", async () => {
+    const ld = `<script type="application/ld+json">{"@graph":[{"@type":"WebSite"},{"@type":"Organization","logo":{"@type":"ImageObject","url":"/assets/brand.svg"}}]}</script>`;
+    assert.equal(readPage(ld, "https://acme.example/").logos.light, "https://acme.example/assets/brand.svg");
+    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.light, "");
+    const commons = { query: { pages: {
+      1: { index: 2, title: "File:Greene King logo.png", imageinfo: [{ url: "https://upload.wikimedia.org/gk.png", mime: "image/png" }] },
+      2: { index: 1, title: "File:Greene King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk.svg", mime: "image/svg+xml" }] },
+      3: { index: 3, title: "File:Greene King logo white.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk-white.svg", mime: "image/svg+xml" }] },
+      4: { index: 0, title: "File:Burger King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/bk.svg", mime: "image/svg+xml" }] },
+      5: { index: 4, title: "File:Greene King pub in Bury.jpg", imageinfo: [{ url: "https://upload.wikimedia.org/pub.jpg", mime: "image/jpeg" }] },
+    } } };
+    assert.deepEqual(commonsLogos(commons, "Greene King"), { light: "https://upload.wikimedia.org/gk.svg", dark: "https://upload.wikimedia.org/gk-white.svg" });
+    assert.deepEqual(commonsLogos(commons, "Acme Stores"), { light: "", dark: "" });
+    assert.deepEqual(commonsLogos({}, "Greene King"), { light: "", dark: "" });
+    // In a run: nothing on the home page, so Commons supplies them.
+    const fetchImpl = async (url) => {
+      if (url.startsWith("https://commons.wikimedia.org/w/api.php")) return resp(200, commons, { "content-type": "application/json" });
+      if (url.startsWith("https://upload.wikimedia.org/")) return resp(200, "x", { "content-type": url.endsWith(".png") ? "image/png" : "image/svg+xml" });
+      return resp(200, HOME, { "content-type": "text/html" });
+    };
+    const a = make({ fetchImpl });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    assert.deepEqual(a.db.state.leads.l1.enrichment.logos, { light: "https://upload.wikimedia.org/gk.svg", dark: "https://upload.wikimedia.org/gk-white.svg" });
+  });
+  await test("logos are copied into the console's own storage, once per image, and the original link is the fallback", async () => {
+    const STORE = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/brand%2Fgreeneking%2F";
+    const files = { "https://brand.example/gk.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"], "https://brand.example/gk-white.png": ["image/png", "PNGDATA"], "https://brand.example/evil.svg": ["image/svg+xml", "<svg onload='x()'><script>1</script></svg>"], "https://www.greeneking.co.uk/apple-touch-icon.png": ["image/png", "ICON"] };
+    const fetchImpl = async (url) => (files[url] ? resp(200, files[url][1], { "content-type": files[url][0] }) : resp(200, HOME, { "content-type": "text/html" }));
+    const a = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl, store: true });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const e = a.db.state.leads.l1.enrichment;
+    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.svg", "image/svg+xml"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]]);
+    assert.ok(e.logos.light.startsWith(`${STORE}light-`) && e.logos.light.includes("?alt=media&token="), e.logos.light);
+    assert.ok(e.logos.dark.startsWith(`${STORE}dark-`)); assert.ok(e.logoUrl.startsWith(`${STORE}icon-`));
+    assert.deepEqual(e.logoSources, { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.png", icon: "https://www.greeneking.co.uk/apple-touch-icon.png" });
+    assert.equal(a.db.state.prospects.p1.enrichment.logos.light, e.logos.light, "the TAM record points at the same copy");
+    // A refresh that finds the same files copies nothing again and keeps the same addresses.
+    const b = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl, store: true, seed: a.db.state });
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(b.saved.length, 0); assert.equal(b.db.state.leads.l1.enrichment.logos.light, e.logos.light);
+    // An SVG that carries script is not copied; storage being down is not fatal. Both keep the original link.
+    const c = make({ agent: { ...AGENT, logoLight: "https://brand.example/evil.svg" }, fetchImpl, store: true });
+    await c.api.onEnrichWrite("leads", created("leads", "l1", c.db.state));
+    assert.equal(c.db.state.leads.l1.enrichment.logos.light, "https://brand.example/evil.svg"); assert.ok(!c.saved.some((x) => x.path.includes("light-")));
+    const d = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg" }, fetchImpl, store: "broken" });
+    await d.api.onEnrichWrite("leads", created("leads", "l1", d.db.state));
+    assert.equal(d.db.state.leads.l1.enrichment.logos.light, "https://brand.example/gk.svg"); assert.equal(d.db.state.leads.l1.enrichment.request.status, "done");
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

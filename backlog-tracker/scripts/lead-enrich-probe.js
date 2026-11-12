@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -48,7 +48,7 @@ function sealed(obj) {
   return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
 }
 const key = process.env.ANTHROPIC_API_KEY || "";
-if (!key || key === "unset") { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
+if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
@@ -106,7 +106,25 @@ async function screenOnly(names) {
   process.exit(bad ? 1 : 0);
 }
 
+// LOGO_COMPANIES="Name|https://site, Name2|https://site2": only look for each
+// company's logos the way a run does (home page, then Wikimedia Commons). Free:
+// no model call. Prints which were found and the host they came from.
+async function logosOnly(list) {
+  const { createLeadEnrich } = require(path.join(fn, "lead-enrich.js"));
+  const api = createLeadEnrich({ db: null, verifyIdToken: async () => ({}), resolveConsoleUser: async () => null });
+  const host = (u) => { try { return new URL(u).hostname; } catch { return "none"; } };
+  for (const item of list) {
+    const [name, site = ""] = item.split("|").map((x) => x.trim());
+    const web = await api.websiteSource(site);
+    const logos = await api.logosFor(name, (web.page || {}).logos, {});
+    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, its own logo images light ${web.page.logos.light ? "yes" : "no"} / dark ${web.page.logos.dark ? "yes" : "no"}` : ""}`);
+  }
+  process.exit(0);
+}
+
 (async () => {
+  const forLogos = (process.env.LOGO_COMPANIES || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (forLogos.length) return logosOnly(forLogos);
   const toScreen = (process.env.SCREEN_COMPANIES || "").split("|").map((x) => x.trim()).filter(Boolean);
   if (toScreen.length) return screenOnly(toScreen);
   if (leadId) {
@@ -140,6 +158,14 @@ async function screenOnly(names) {
   for (const [k, v] of Object.entries(f)) console.log(`  ${k.padEnd(16)} ${size(v)}`);
   const filled = Object.values(f).filter((v) => (Array.isArray(v) ? v.length : v != null && v !== "")).length;
   console.log(`\n${filled} of ${Object.keys(f).length} fields filled.`);
+  // The logos for the walkthrough demo: does each link the agent gave answer as an image,
+  // and does the home page itself show a logo image? (Kinds only, never the address.)
+  const kind = async (u) => { if (!u) return "none given"; try { const r = await fetch(u, { redirect: "follow", headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } }); return `HTTP ${r.status}, ${r.headers.get("content-type") || "no type"}`; } catch (err) { return `not reachable (${String(err && err.message || err).slice(0, 60)})`; } };
+  console.log(`\nlogoLight: ${await kind(f.logoLight)}\nlogoDark:  ${await kind(f.logoDark)}`);
+  try {
+    const site = website || f.website;
+    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = readPage(html, site).logos; console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
+  } catch (err) { console.log(`home page not read: ${String(err && err.message || err).slice(0, 80)}`); }
   if (publicKey) {
     const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });
     console.log("\n-----BEGIN SEALED FINDINGS-----");

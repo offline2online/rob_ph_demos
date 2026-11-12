@@ -2585,7 +2585,10 @@ every destination already existed.
   (every run failed without it). Since 12 Nov 2026 a cheap check runs first: obvious
   spam is stopped by free rules, then a small call confirms a real company with
   physical customer-facing sites; a record that fails is not researched and the
-  button reads **Research anyway**. `.github/workflows/lead-enrich-probe.yml`
+  button reads **Research anyway**. Each run also keeps the company's full logo for
+  light and for dark backgrounds (`enrichment.logos`), and
+  `POST /leadIngest/v1/brand` (the website's key) returns a listed company's logos for
+  a branded walkthrough demo. `.github/workflows/lead-enrich-probe.yml`
   (`scripts/lead-enrich-probe.js`) runs the real agent for one company on a runner
   to check it. The page side is
   `public/js/enrichment-view.js`. **Convert and link

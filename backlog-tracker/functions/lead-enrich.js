@@ -56,6 +56,12 @@ const AGENT_TIMEOUT_MS = 300000;
 const AGENT_BUDGET_MS = 420000;
 const MAX_CONTINUATIONS = 4;
 const COMPANY_COLLECTION = "prospectCompanies";
+// Logos are copied into the console's own storage (brand/<company>/...), so a
+// demo keeps working when a company moves its file. One file is 1.5 MB at most.
+const LOGO_BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+const MAX_LOGO_BYTES = 1536 * 1024;
+const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif", "image/avif": "avif", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico" };
+const isStored = (u) => typeof u === "string" && u.startsWith(`https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/brand%2F`);
 // The screen that runs before any research is paid for: a cheaper model with
 // three searches at most decides whether this is a real company that runs
 // physical customer-facing sites.
@@ -136,7 +142,68 @@ function readPage(html, base) {
     if (!icons.touch && /apple-touch-icon/.test(rel)) icons.touch = abs(href);
     else if (!icons.icon && /(^|\s)icon(\s|$)/.test(rel)) icons.icon = abs(href);
   }
-  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li, iconUrl: icons.touch || icons.icon };
+  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li, iconUrl: icons.touch || icons.icon, logos: pageLogos(h, abs) };
+}
+
+// The logo images a home page shows: <img> tags whose address, alt text, class
+// or id says "logo". A file name saying white, light, reverse, negative or
+// inverse is the version for dark backgrounds; the first other one is the
+// version for light backgrounds.
+const FOR_DARK = /(^|[^a-z])(white|light|reverse[d]?|negative|inverse|inverted|knockout|wht)([^a-z]|$)/i;
+function pageLogos(html, abs) {
+  const out = { light: "", dark: "" };
+  for (const m of String(html || "").matchAll(/<img\s[^>]*>/gi)) {
+    const tag = m[0];
+    const src = (tag.match(/\ssrc\s*=\s*["']([^"']+)["']/i) || [])[1] || (tag.match(/\sdata-src\s*=\s*["']([^"']+)["']/i) || [])[1];
+    if (!src || /^data:/i.test(src) || !/logo/i.test(tag)) continue;
+    const url = abs(src);
+    if (!url) continue;
+    const file = url.split("?")[0].split("/").pop() || "";
+    if (FOR_DARK.test(file)) { if (!out.dark) out.dark = url; } else if (!out.light) out.light = url;
+    if (out.light && out.dark) break;
+  }
+  // The logo the site declares for itself in its structured data (schema.org Organization.logo).
+  if (!out.light) {
+    for (const m of String(html || "").matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+      let found = "";
+      const walk = (v, depth) => {
+        if (found || !v || depth > 6) return;
+        if (Array.isArray(v)) { v.forEach((x) => walk(x, depth + 1)); return; }
+        if (typeof v !== "object") return;
+        const l = v.logo;
+        const u = typeof l === "string" ? l : (l && typeof l === "object" ? (l.url || l.contentUrl || "") : "");
+        if (u && typeof u === "string") { found = abs(u); if (found) return; }
+        Object.values(v).forEach((x) => walk(x, depth + 1));
+      };
+      try { walk(JSON.parse(m[1]), 0); } catch { /* not JSON */ }
+      if (found) { if (FOR_DARK.test(found.split("?")[0].split("/").pop() || "")) { if (!out.dark) out.dark = found; } else out.light = found; break; }
+    }
+  }
+  return out;
+}
+
+// Wikimedia Commons' own search results -> the company's logo files. A file
+// counts only when its title has every word of the company's name and the
+// word "logo"; SVG first. A title saying white, reversed or negative is the
+// dark-background version.
+function commonsLogos(json, company) {
+  const words = String(company || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").split(/\s+/).filter((w) => w.length > 1 && !["the", "plc", "ltd", "limited", "group", "inc", "and", "co"].includes(w));
+  const out = { light: "", dark: "" };
+  if (!words.length) return out;
+  const pages = Object.values((json && json.query && json.query.pages) || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+  const pick = (want) => {
+    for (const mime of ["image/svg+xml", "image/png"]) {
+      for (const p of pages) {
+        const title = String(p.title || "").toLowerCase().replace(/[^a-z0-9. ]+/g, " ");
+        const info = (p.imageinfo || [])[0] || {};
+        if (info.mime !== mime || !/\blogo\b/.test(title) || !words.every((w) => new RegExp(`\\b${w}\\b`).test(title))) continue;
+        if (FOR_DARK.test(title) === want) return httpUrl(info.url);
+      }
+    }
+    return "";
+  };
+  out.light = pick(false); out.dark = pick(true);
+  return out;
 }
 
 // ── The agent ────────────────────────────────────────────────────────────
@@ -148,6 +215,7 @@ const AGENT_SYSTEM = [
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
+  "its logo as image files, for use in a demo mock-up branded for this company: logoLight is the full logo as it appears on a white or light background, and logoDark is the white or reversed version made for dark backgrounds. Each is a direct link to an SVG or PNG file that you saw in a page you fetched (the company's own site header or footer, its brand, media or press page, or Wikimedia Commons). Leave one empty when you did not see such a file; never build or guess an address;",
   "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
   "Then research what matters for retail media and personalisation, each as one to three plain sentences, empty when nothing public is known:",
@@ -168,7 +236,7 @@ const AGENT_SYSTEM = [
   "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
   "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
   '{"name":"","website":"","industry":"","sector":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"storeCountBreakdown":"","storeCountSource":{"title":"","url":"","date":"YYYY-MM-DD"},"employees":"","revenue":"",',
-  '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
+  '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"","logoLight":"","logoDark":"",',
   '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","estate":"","strategy":"","fit":"",',
   '"talkingPoints":[""],',
   '"people":[{"name":"","title":"","linkedin":"","note":""}],',
@@ -225,6 +293,8 @@ function cleanFindings(raw) {
     linkedinCompany: li || "",
     summary: clip(o.summary, 1000),
     logoUrl: httpUrl(o.logoUrl),
+    logoLight: httpUrl(o.logoLight),
+    logoDark: httpUrl(o.logoDark),
     retailMedia: clip(o.retailMedia, 1000),
     personalisation: clip(o.personalisation, 1000),
     inStoreDigital: clip(o.inStoreDigital, 1000),
@@ -381,11 +451,18 @@ function mergeBy(list, key, n) {
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
+  const was = p.logos && typeof p.logos === "object" ? p.logos : {};
+  const got = f.logos && typeof f.logos === "object" ? f.logos : {};
   const hq = [f.hqCity, f.hqCountry].filter(Boolean).join(", ");
   return {
     at: meta.at, by: meta.by,
     summary: f.summary || p.summary || f.siteDescription || "",
     logoUrl: keep(logoUrl, p.logoUrl),
+    // The full logo for light and for dark backgrounds (checked image files),
+    // for the branded walkthrough demo; "" when none was found.
+    logos: { light: got.light || was.light || "", dark: got.dark || was.dark || "" },
+    // Where each stored logo was copied from (the company's own file or Wikimedia Commons).
+    logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
     storeCount: f.storeCount || p.storeCount || null,
@@ -490,7 +567,7 @@ function agentError(err) {
 
 function createLeadEnrich({
   db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
-  research, screen, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
+  research, screen, bucket, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
@@ -525,7 +602,8 @@ function createLeadEnrich({
       try {
         const r = await fetchImpl(current, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" }, redirect: "manual", signal: ctl.signal });
         if (r.status >= 300 && r.status < 400 && r.headers.get("location")) { current = new URL(r.headers.get("location"), current).href; continue; }
-        return { status: r.status, ok: r.ok, url: current, headers: r.headers, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES) };
+        return { status: r.status, ok: r.ok, url: current, headers: r.headers, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES),
+          bytes: async () => Buffer.from(await r.arrayBuffer()) };
       } finally { clearTimeout(timer); }
     }
     throw new Error("too many redirects");
@@ -553,6 +631,89 @@ function createLeadEnrich({
       const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "");
       return r.ok && /^image\//i.test(type) ? httpUrl(r.url) : "";
     } catch { return ""; }
+  }
+
+  // The first of these addresses that answers as an image (public addresses only).
+  async function firstImage(urls) {
+    for (const u of urls) {
+      const url = httpUrl(u);
+      if (!url) continue;
+      try {
+        const r = await safeGet(url);
+        const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "");
+        if (r.ok && /^image\/(svg\+xml|png|webp|jpeg|gif|avif)/i.test(type)) return httpUrl(r.url);
+      } catch { /* next */ }
+    }
+    return "";
+  }
+
+  // Copies one logo into the console's storage and returns its address there,
+  // or "" when it can't be copied (not an image, too big, an SVG that carries
+  // script). The file name carries a hash of its bytes, so the same image is
+  // stored once.
+  async function storeLogo(company, kind, url) {
+    if (!bucket || !url) return "";
+    try {
+      const r = await safeGet(url);
+      const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "").split(";")[0].trim().toLowerCase();
+      const ext = LOGO_TYPES[type];
+      if (!r.ok || !ext || typeof r.bytes !== "function") return "";
+      const bytes = await r.bytes();
+      if (!bytes.length || bytes.length > MAX_LOGO_BYTES) return "";
+      if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
+      const hash = crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.${ext}`;
+      const token = crypto.randomUUID();
+      await bucket().file(path).save(bytes, { contentType: type, resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
+      return `https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+    } catch (err) {
+      logger.warn("logo not copied", { kind, error: String(err && err.message ? err.message : err).slice(0, 200) });
+      return "";
+    }
+  }
+  // The run's logos, copied into storage. A logo whose source is the one already
+  // copied is left as it is; one that can't be copied keeps its original address.
+  async function keepLogos(company, result, prevEnrichment) {
+    const prev = prevEnrichment && typeof prevEnrichment === "object" ? prevEnrichment : {};
+    const was = { ...(prev.logos || {}), icon: prev.logoUrl };
+    const wasFrom = prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
+    const found = { light: result.f.logos.light, dark: result.f.logos.dark, icon: result.logoUrl };
+    const out = {}, from = {};
+    for (const kind of ["light", "dark", "icon"]) {
+      const src = found[kind];
+      if (!src) { out[kind] = ""; continue; }
+      if (isStored(src)) { out[kind] = src; from[kind] = wasFrom[kind] || ""; continue; }
+      if (wasFrom[kind] === src && isStored(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
+      out[kind] = (await storeLogo(company, kind, src)) || src;
+      from[kind] = src;
+    }
+    result.f.logos = { light: out.light, dark: out.dark };
+    result.f.logoSources = from;
+    result.logoUrl = out.icon;
+  }
+
+  // The company's full logos, each from the first source that answers as an
+  // image: the agent's link, the home page's own logo images, then Wikimedia Commons.
+  async function logosFor(company, pageSeen, f) {
+    const seen = pageSeen || {};
+    const got = f || {};
+    let commons = { light: "", dark: "" };
+    const need = { light: !(await firstImage([got.logoLight, seen.light])), dark: !(await firstImage([got.logoDark, seen.dark])) };
+    if ((need.light || need.dark) && company) {
+      try {
+        // Files whose title has the company's name and "logo" first; then a plain
+        // search, which also finds names a title search misses (hyphens, "The").
+        const clean = String(company).replace(/"/g, "");
+        for (const query of [`intitle:"${clean}" intitle:logo filetype:drawing|bitmap`, `${clean} logo`]) {
+          const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
+          if (!r.ok) continue;
+          const found = commonsLogos(JSON.parse(await r.text()), company);
+          commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
+          if (commons.light) break;
+        }
+      } catch { /* none */ }
+    }
+    return { light: await firstImage([got.logoLight, seen.light, commons.light]), dark: await firstImage([got.logoDark, seen.dark, commons.dark]) };
   }
 
   async function agentSource(company, website, country) {
@@ -585,6 +746,9 @@ function createLeadEnrich({
     if (!f.linkedinCompany && page.linkedinCompany) f.linkedinCompany = prospectsCore.normaliseLinkedinUrl(page.linkedinCompany) || "";
     if (!f.website && site) f.website = site;
     const logoUrl = page.iconUrl || f.logoUrl || (web.status === "ok" ? await faviconOf(site) : "");
+    // The full logos: the agent's links first, then the home page's own logo
+    // images; each is kept only when it really answers as an image.
+    f.logos = await logosFor(company, page.logos, f);
     const sources = [agent, web].map((r) => ({ source: r.source, status: r.status, message: r.message }));
     return { f, logoUrl, sources };
   }
@@ -652,6 +816,7 @@ function createLeadEnrich({
       await ref.update({ "enrichment.request": { ...req, status: "error", startedAt, finishedAt: now(), message: String(err && err.message ? err.message : err).slice(0, 200) } });
       return { ok: false, error: "enrichment failed" };
     }
+    await keepLogos(name, result, data.enrichment);
     // The research gave no site count but the check found one: use it, and say where it came from.
     if (!result.f.storeCount && screened && screened.siteCount) {
       result.f.storeCount = screened.siteCount;
@@ -777,10 +942,10 @@ function createLeadEnrich({
     return send(res, 202, { ok: true, queued: true, requestId: request.id, collection, id });
   }
 
-  return { handle, onEnrichWrite, enrichRecord };
+  return { handle, onEnrichWrite, enrichRecord, logosFor, websiteSource };
 }
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };
