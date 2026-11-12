@@ -19,6 +19,10 @@ on:
         description: 'Its website (optional)'
         type: string
         default: ''
+      screen:
+        description: 'Only run the check that precedes research on these names, separated by | (public names only: they are printed)'
+        type: string
+        default: ''
       lead_id:
         description: 'Or a lead id: its company is read from the board and never printed'
         type: string
@@ -54,6 +58,7 @@ jobs:
           COMPANY: ${{ inputs.company || 'Tesco' }}
           WEBSITE: ${{ inputs.website }}
           LEAD_ID: ${{ inputs.lead_id }}
+          SCREEN_COMPANIES: ${{ inputs.screen }}
           PROBE_PUBLIC_KEY_INPUT: ${{ inputs.public_key }}
         run: |
           if [ -n "$LEAD_ID" ]; then

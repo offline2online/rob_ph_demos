@@ -48,6 +48,7 @@ function researchView(e) {
   const list = (v) => (Array.isArray(v) ? v : []);
   const r = e.request && typeof e.request === "object" ? e.request : null;
   return {
+    storeCount: typeof e.storeCount === "number" ? e.storeCount : null, storeCountBreakdown: t(e.storeCountBreakdown), storeCountSource: e.storeCountSource || null,
     hq: t(e.hq), employees: t(e.employees), revenue: t(e.revenue), linkedinCompany: t(e.linkedinCompany), logoUrl: t(e.logoUrl),
     primaryCloud: t(e.primaryCloud), retailMedia: t(e.retailMedia), personalisation: t(e.personalisation),
     inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), estate: t(e.estate), strategy: t(e.strategy), fit: t(e.fit),
