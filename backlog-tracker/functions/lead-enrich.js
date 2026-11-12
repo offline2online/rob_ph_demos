@@ -647,10 +647,16 @@ function createLeadEnrich({
     const need = { light: !(await firstImage([got.logoLight, seen.light])), dark: !(await firstImage([got.logoDark, seen.dark])) };
     if ((need.light || need.dark) && company) {
       try {
-        // Files whose title has the company's name and "logo", drawings and bitmaps only.
-        const q = encodeURIComponent(`intitle:"${String(company).replace(/"/g, "")}" intitle:logo filetype:drawing|bitmap`);
-        const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${q}&prop=imageinfo&iiprop=url%7Cmime`);
-        if (r.ok) commons = commonsLogos(JSON.parse(await r.text()), company);
+        // Files whose title has the company's name and "logo" first; then a plain
+        // search, which also finds names a title search misses (hyphens, "The").
+        const clean = String(company).replace(/"/g, "");
+        for (const query of [`intitle:"${clean}" intitle:logo filetype:drawing|bitmap`, `${clean} logo`]) {
+          const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
+          if (!r.ok) continue;
+          const found = commonsLogos(JSON.parse(await r.text()), company);
+          commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
+          if (commons.light) break;
+        }
       } catch { /* none */ }
     }
     return { light: await firstImage([got.logoLight, seen.light, commons.light]), dark: await firstImage([got.logoDark, seen.dark, commons.dark]) };
