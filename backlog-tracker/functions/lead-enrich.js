@@ -56,6 +56,12 @@ const AGENT_TIMEOUT_MS = 300000;
 const AGENT_BUDGET_MS = 420000;
 const MAX_CONTINUATIONS = 4;
 const COMPANY_COLLECTION = "prospectCompanies";
+// Logos are copied into the console's own storage (brand/<company>/...), so a
+// demo keeps working when a company moves its file. One file is 1.5 MB at most.
+const LOGO_BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+const MAX_LOGO_BYTES = 1536 * 1024;
+const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif", "image/avif": "avif", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico" };
+const isStored = (u) => typeof u === "string" && u.startsWith(`https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/brand%2F`);
 // The screen that runs before any research is paid for: a cheaper model with
 // three searches at most decides whether this is a real company that runs
 // physical customer-facing sites.
@@ -455,6 +461,8 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     // The full logo for light and for dark backgrounds (checked image files),
     // for the branded walkthrough demo; "" when none was found.
     logos: { light: got.light || was.light || "", dark: got.dark || was.dark || "" },
+    // Where each stored logo was copied from (the company's own file or Wikimedia Commons).
+    logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
     storeCount: f.storeCount || p.storeCount || null,
@@ -559,7 +567,7 @@ function agentError(err) {
 
 function createLeadEnrich({
   db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
-  research, screen, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
+  research, screen, bucket, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
@@ -594,7 +602,8 @@ function createLeadEnrich({
       try {
         const r = await fetchImpl(current, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" }, redirect: "manual", signal: ctl.signal });
         if (r.status >= 300 && r.status < 400 && r.headers.get("location")) { current = new URL(r.headers.get("location"), current).href; continue; }
-        return { status: r.status, ok: r.ok, url: current, headers: r.headers, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES) };
+        return { status: r.status, ok: r.ok, url: current, headers: r.headers, text: async () => String(await r.text()).slice(0, MAX_HTML_BYTES),
+          bytes: async () => Buffer.from(await r.arrayBuffer()) };
       } finally { clearTimeout(timer); }
     }
     throw new Error("too many redirects");
@@ -636,6 +645,51 @@ function createLeadEnrich({
       } catch { /* next */ }
     }
     return "";
+  }
+
+  // Copies one logo into the console's storage and returns its address there,
+  // or "" when it can't be copied (not an image, too big, an SVG that carries
+  // script). The file name carries a hash of its bytes, so the same image is
+  // stored once.
+  async function storeLogo(company, kind, url) {
+    if (!bucket || !url) return "";
+    try {
+      const r = await safeGet(url);
+      const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "").split(";")[0].trim().toLowerCase();
+      const ext = LOGO_TYPES[type];
+      if (!r.ok || !ext || typeof r.bytes !== "function") return "";
+      const bytes = await r.bytes();
+      if (!bytes.length || bytes.length > MAX_LOGO_BYTES) return "";
+      if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
+      const hash = crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12);
+      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.${ext}`;
+      const token = crypto.randomUUID();
+      await bucket().file(path).save(bytes, { contentType: type, resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
+      return `https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+    } catch (err) {
+      logger.warn("logo not copied", { kind, error: String(err && err.message ? err.message : err).slice(0, 200) });
+      return "";
+    }
+  }
+  // The run's logos, copied into storage. A logo whose source is the one already
+  // copied is left as it is; one that can't be copied keeps its original address.
+  async function keepLogos(company, result, prevEnrichment) {
+    const prev = prevEnrichment && typeof prevEnrichment === "object" ? prevEnrichment : {};
+    const was = { ...(prev.logos || {}), icon: prev.logoUrl };
+    const wasFrom = prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
+    const found = { light: result.f.logos.light, dark: result.f.logos.dark, icon: result.logoUrl };
+    const out = {}, from = {};
+    for (const kind of ["light", "dark", "icon"]) {
+      const src = found[kind];
+      if (!src) { out[kind] = ""; continue; }
+      if (isStored(src)) { out[kind] = src; from[kind] = wasFrom[kind] || ""; continue; }
+      if (wasFrom[kind] === src && isStored(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
+      out[kind] = (await storeLogo(company, kind, src)) || src;
+      from[kind] = src;
+    }
+    result.f.logos = { light: out.light, dark: out.dark };
+    result.f.logoSources = from;
+    result.logoUrl = out.icon;
   }
 
   // The company's full logos, each from the first source that answers as an
@@ -762,6 +816,7 @@ function createLeadEnrich({
       await ref.update({ "enrichment.request": { ...req, status: "error", startedAt, finishedAt: now(), message: String(err && err.message ? err.message : err).slice(0, 200) } });
       return { ok: false, error: "enrichment failed" };
     }
+    await keepLogos(name, result, data.enrichment);
     // The research gave no site count but the check found one: use it, and say where it came from.
     if (!result.f.storeCount && screened && screened.siteCount) {
       result.f.storeCount = screened.siteCount;

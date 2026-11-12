@@ -4271,8 +4271,17 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     answers as an image (public addresses only); a later run that finds none
     keeps the earlier ones. They are saved on the lead and on its TAM
     record, shown on both ("Logos for the walkthrough demo", one on a light
-    tile and one on a dark tile) and returned by `get_lead`. The addresses
-    point at the company's own files: nothing is copied or re-hosted.
+    tile and one on a dark tile) and returned by `get_lead`. **Copied into
+    the console's storage** (`keepLogos` / `storeLogo`): each logo and the
+    icon is downloaded (public addresses only, image types only, 1.5 MB at
+    most) and saved to Firebase Storage at `brand/<company>/<light|dark|
+    icon>-<hash of the bytes>.<ext>` with a download token, and that address
+    is what the record and the brand lookup carry, so a demo keeps working
+    when the company moves its file. `enrichment.logoSources {light, dark,
+    icon}` records where each came from. The same image is copied once: a
+    refresh that finds the same source keeps the stored address. An SVG that
+    carries script or event handlers is not copied, and when a copy fails
+    (storage down, too big) the original address is kept instead.
     **`POST /leadIngest/v1/brand`** (the website's `X-Lead-Key`, body
     `{company, email?, country?}`) is how a walkthrough demo gets them: it
     matches the company as an inbound lead is matched (name, or the work

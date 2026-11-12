@@ -64,7 +64,8 @@ const AGENT = {
   financials: { summary: "Revenue rose 5% to £2.4bn.", period: "FY2024", sources: [{ title: "Annual report", url: "https://gk.example/ar.pdf", date: "2025-06-30" }] },
   facts: [{ label: "Owner", value: "CK Asset Holdings" }],
 };
-const resp = (status, body, headers = {}) => ({ status, ok: status >= 200 && status < 300, headers: { get: (k) => headers[k.toLowerCase()] || null }, text: async () => (typeof body === "string" ? body : JSON.stringify(body)), json: async () => body });
+const resp = (status, body, headers = {}) => ({ status, ok: status >= 200 && status < 300, headers: { get: (k) => headers[k.toLowerCase()] || null }, text: async () => (typeof body === "string" ? body : JSON.stringify(body)), json: async () => body,
+  arrayBuffer: async () => { const b = Buffer.from(typeof body === "string" ? body : JSON.stringify(body)); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
 const res = () => { const r = { code: 0, body: null, status(c) { r.code = c; return r; }, set() { return r; }, json(b) { r.body = b; return r; } }; return r; };
 const req = (body, token = "tok", method = "POST", path = "/leadEnrich/v1/enrich") => ({ method, path, body, get: (h) => (h.toLowerCase() === "x-firebase-id-token" ? token : "") });
 const created = (c, id, state) => ({ params: c === "leads" ? { leadId: id } : { prospectId: id }, data: { before: { exists: false }, after: { exists: true, data: () => state[c][id] } } });
@@ -74,7 +75,8 @@ const LEAD = { company: { name: "Greene King", website: "", industry: "", countr
 const PROSPECT = { name: "Greene King", country: "United Kingdom", website: "", industry: "", markets: [], vendors: [], storeCount: null, leadId: "" };
 
 const PASS = { real: true, physicalRetail: true, sites: "about 2,500 pubs", reason: "A UK pub operator." };
-function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed, verdict = PASS } = {}) {
+function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed, verdict = PASS, store = false } = {}) {
+  const saved = [];
   const db = fakeDb(seed || { leads: { l1: { ...LEAD, prospectId: "p1" } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} });
   const calls = [], asked = [], screened = [];
   const api = createLeadEnrich({
@@ -82,13 +84,14 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     resolveConsoleUser: async (e) => (e === "sam@ph.com" ? { email: e, role } : null),
     anthropicKey: () => key,
     research: async (a) => { asked.push(a); return typeof agent === "function" ? agent(a) : agent; },
+    ...(store ? { bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
     screen: async (a) => { screened.push(a); if (verdict instanceof Error) throw verdict; return typeof verdict === "function" ? verdict(a) : verdict; },
     lookup: async (h) => (h === "internal.test" ? [{ address: "10.0.0.5" }] : [{ address: "93.184.216.34" }]),
     fetch: fetchImpl || (async (url) => { calls.push(url); return resp(200, HOME); }),
     logger: { warn() {}, error() {} },
     now: () => new Date("2026-11-10T10:00:00Z"),
   });
-  return { api, db, calls, asked, screened };
+  return { api, db, calls, asked, screened, saved };
 }
 
 (async () => {
@@ -533,6 +536,31 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
     assert.deepEqual(a.db.state.leads.l1.enrichment.logos, { light: "https://upload.wikimedia.org/gk.svg", dark: "https://upload.wikimedia.org/gk-white.svg" });
+  });
+  await test("logos are copied into the console's own storage, once per image, and the original link is the fallback", async () => {
+    const STORE = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/brand%2Fgreeneking%2F";
+    const files = { "https://brand.example/gk.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"], "https://brand.example/gk-white.png": ["image/png", "PNGDATA"], "https://brand.example/evil.svg": ["image/svg+xml", "<svg onload='x()'><script>1</script></svg>"], "https://www.greeneking.co.uk/apple-touch-icon.png": ["image/png", "ICON"] };
+    const fetchImpl = async (url) => (files[url] ? resp(200, files[url][1], { "content-type": files[url][0] }) : resp(200, HOME, { "content-type": "text/html" }));
+    const a = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl, store: true });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const e = a.db.state.leads.l1.enrichment;
+    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.svg", "image/svg+xml"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]]);
+    assert.ok(e.logos.light.startsWith(`${STORE}light-`) && e.logos.light.includes("?alt=media&token="), e.logos.light);
+    assert.ok(e.logos.dark.startsWith(`${STORE}dark-`)); assert.ok(e.logoUrl.startsWith(`${STORE}icon-`));
+    assert.deepEqual(e.logoSources, { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.png", icon: "https://www.greeneking.co.uk/apple-touch-icon.png" });
+    assert.equal(a.db.state.prospects.p1.enrichment.logos.light, e.logos.light, "the TAM record points at the same copy");
+    // A refresh that finds the same files copies nothing again and keeps the same addresses.
+    const b = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl, store: true, seed: a.db.state });
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(b.saved.length, 0); assert.equal(b.db.state.leads.l1.enrichment.logos.light, e.logos.light);
+    // An SVG that carries script is not copied; storage being down is not fatal. Both keep the original link.
+    const c = make({ agent: { ...AGENT, logoLight: "https://brand.example/evil.svg" }, fetchImpl, store: true });
+    await c.api.onEnrichWrite("leads", created("leads", "l1", c.db.state));
+    assert.equal(c.db.state.leads.l1.enrichment.logos.light, "https://brand.example/evil.svg"); assert.ok(!c.saved.some((x) => x.path.includes("light-")));
+    const d = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg" }, fetchImpl, store: "broken" });
+    await d.api.onEnrichWrite("leads", created("leads", "l1", d.db.state));
+    assert.equal(d.db.state.leads.l1.enrichment.logos.light, "https://brand.example/gk.svg"); assert.equal(d.db.state.leads.l1.enrichment.request.status, "done");
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
