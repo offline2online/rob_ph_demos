@@ -558,8 +558,14 @@ the same comparison on the server.
   listener callbacks are coalesced into one render per animation frame, and a
   redraw keeps every card whose markup is unchanged, so a colleague's move
   patches that one card. Search is debounced 150 ms and matches against
-  per-ticket text prepared once. Measured with the console's UI suite (2,000 and
-  5,000 open tickets): first cards under 1.5 s, My tasks under 150 ms.
+  per-ticket text prepared once. Targets with 2,000 and 5,000 open tickets:
+  first cards under 1.5 s, My tasks under 150 ms. The console's UI suite
+  (KB-SCALE) checks this without a stopwatch limit, because a shared CI runner
+  can be several times slower from one run to the next: the big board is timed
+  beside the 39-ticket board on the same runner and may take at most 5× as long
+  to show its first cards and 10× for My tasks, and the cards and elements a
+  redraw makes are counted (a page per column, however many tickets). The run
+  prints the milliseconds for reading against the targets.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
 - **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and

@@ -84,6 +84,28 @@ condition with a timeout; never add a fixed sleep. **A ticket that changes
 console UI adds or updates a scenario here** — if it adds a Firebase SDK call
 the stub lacks, implement it in `firebase-stub.mjs`.
 
+`ui/staff-kanban.test.mjs` (the last file of `npm run test:ui`) is the Staff
+Kanban test plan against the real console, every case in every profile of the
+viewport matrix, four profiles at a time (`kanban-staff-board/docs/E2E-TEST-PLAN.md`
+has the cases and the `KB_*` switches). Two rules keep it reliable on a shared
+runner, both learned on 12 Nov 2026 when three runs failed on three different
+cases with nothing in the board changed:
+
+- **Wait on the condition, never for a time.** The board redraws on the next
+  animation frame (or a 100 ms timer) and CSS transitions only advance when a
+  frame is drawn; a busy runner can hold a frame back longer than any sleep.
+  Wrap what you are about to assert in `eventually(...)` (it repeats the
+  assertion and, when time runs out, throws the assertion's own message) or
+  `until(...)`. TC-18 measured a column 250 ms into a 200 ms transition that
+  had not finished.
+- **Never compare milliseconds with a fixed limit.** KB-SCALE times the 2,000
+  and 5,000-ticket boards beside the 39-ticket board on the same runner and
+  limits the ratio (`SCALE` in the file), and counts the cards and elements a
+  redraw makes. It prints the milliseconds, so a trend is still visible.
+
+A case that passes only on its retry is printed as `FLAKY`: treat that as a
+defect in the case and fix it the same way.
+
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
 imports the real `public/js/app.js` under jsdom with the Firebase SDK
