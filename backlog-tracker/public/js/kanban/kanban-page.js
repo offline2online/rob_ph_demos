@@ -114,7 +114,18 @@ export function mountStaffKanban(ctx) {
     const s = (String(first || "").trim().charAt(0) + String(last || "").trim().charAt(0)).toUpperCase();
     return s || initialOf(email);
   }
+  // Built once for each change to the members, the settings or the signed-in person's own record, not once for
+  // every avatar and name on the board (a redraw asks for a few hundred). The list is shared: copy it to change it.
+  let peopleKey = [], peopleList = [], peopleById = new Map();
   function people() {
+    const self0 = canonicalEmail(me);
+    const key = [store.state.members, store.state.settings, getAvatarMember(self0), ctx.auth.currentUser && ctx.auth.currentUser.displayName];
+    if (key.every((v, i) => v === peopleKey[i]) && peopleKey.length) return peopleList;
+    peopleList = buildPeople(); peopleKey = key;
+    peopleById = new Map(peopleList.map((u) => [u.id, u]));
+    return peopleList;
+  }
+  function buildPeople() {
     const named = store.state.settings.firstNames || {};
     const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
       const name = String(m.displayName || "").trim() || [m.firstName, m.lastName].filter(Boolean).join(" ").trim() || String(m.email).split("@")[0];
@@ -128,7 +139,7 @@ export function mountStaffKanban(ctx) {
     }
     return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
   }
-  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
+  const user = (id) => (id ? (people(), peopleById.get(canonicalEmail(id))) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
   const firstName = (id) => (user(id) || {}).first || "Unassigned";
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
@@ -191,7 +202,8 @@ export function mountStaffKanban(ctx) {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
     const ph = photoOf(u.id);
-    if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${esc(ph)}')"></span>`;
+    const src = KBEditor.cssUrl(ph);
+    if (src) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${src}')"></span>`;
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
@@ -344,7 +356,10 @@ export function mountStaffKanban(ctx) {
     if (hit && Date.now() - hit.at < PREFETCH_MS) return;
     const p = store.fetchTask(key);
     p.catch(() => { if (prefetched.get(key) && prefetched.get(key).p === p) prefetched.delete(key); });
-    prefetched.set(key, { p, at: Date.now() });
+    const entry = { p, at: Date.now() };
+    prefetched.set(key, entry);
+    // A read nobody used is let go, so a day of resting on cards doesn't hold a day of tickets.
+    setTimeout(() => { if (prefetched.get(key) === entry) prefetched.delete(key); }, PREFETCH_MS + 1000);
   }
   function takePrefetch(key) {
     const hit = prefetched.get(key);
@@ -559,7 +574,7 @@ export function mountStaffKanban(ctx) {
       <div class="kb-sticky" id="kb-sticky">
         <div class="kb-filters" role="search">
           <div class="kb-people" role="group" aria-label="Filter by assignee">
-            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${u.id}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
+            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${esc(u.id)}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
             <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
           </div>
           <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
@@ -953,7 +968,7 @@ export function mountStaffKanban(ctx) {
           ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
-          ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
+          ${t.commentCount > 0 ? `<span class="kb-meta-ic kb-comment-chip" title="${t.commentCount} comment${t.commentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.commentCount}</span>` : ""}
           ${t.acTotal ? `<span class="kb-meta-ic kb-ac-chip${t.acDone === t.acTotal ? " done" : ""}" title="${t.acDone} of ${t.acTotal} acceptance criteria done"><span class="material-symbols-outlined" aria-hidden="true">checklist</span>AC ${t.acDone}/${t.acTotal}</span>` : ""}
           ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
@@ -1314,7 +1329,7 @@ export function mountStaffKanban(ctx) {
 
   // The people list, plus whoever the ticket already names if they've left.
   function peopleWith(id) {
-    const list = people();
+    const list = people().slice();
     if (id && !list.some((u) => u.id === id)) { const u = user(id); if (u) list.push(u); }
     return list;
   }
@@ -1525,7 +1540,7 @@ export function mountStaffKanban(ctx) {
   };
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
-  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${a.url ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
+  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
   // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
   let editingComment = "", editQ = null;
   const commentMenuHTML = (c) => {
@@ -2392,7 +2407,7 @@ export function mountStaffKanban(ctx) {
       <section class="docs-block kb-report-block">
         <div class="docs-block-header"><h3>Remaining effort by staff member${tip(capPer ? `Bar length is remaining effort. Capacity assumes 6 focused hours per working day until release: ${fmtH(capPer)} each.` : "Bar length is remaining effort.")}</h3></div>
         <div class="kb-bars" id="rp-bars">
-          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${p.id || "none"}" data-tip="${esc(`${firstName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
+          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${esc(p.id || "none")}" data-tip="${esc(`${firstName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
             <span class="kb-bar-name">${avatar(p.id)}${esc(firstName(p.id))}</span>
             <span class="kb-bar-track">${capPer && p.id ? `<span class="kb-bar-cap" style="left:${(capPer / scale) * 100}%"></span>` : ""}<span class="kb-bar-fill" style="width:${(p.rem / scale) * 100}%"></span></span>
             <span class="kb-bar-val">${fmtH(p.rem)}</span>
@@ -2407,7 +2422,7 @@ export function mountStaffKanban(ctx) {
           <table class="archive-table kb-table">
             <thead><tr><th>Staff member</th><th class="num">Tasks</th>${statusCols.map((s) => `<th class="num">${esc(s.short)}</th>`).join("")}<th class="num">Estimate</th><th class="num">Logged</th><th class="num">Remaining</th>${capPer ? "<th>Capacity</th>" : ""}</tr></thead>
             <tbody>
-              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${p.id || "none"}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
+              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${esc(p.id || "none")}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
             </tbody>
             ${rows.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter(s.match).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
           </table>

@@ -34,6 +34,9 @@ const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
 const CARDS = "kanbanCards";
 const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+// A ticket's attachment names its file by path, and a ticket is written by members. The server removes a file
+// only from that ticket's own folder (or the folder for files uploaded before their ticket had a key).
+const ownsFile = (key, path) => typeof path === "string" && !path.includes("..") && (path.startsWith(`kanban/${key}/`) || path.startsWith("kanban/new/"));
 
 // Current members' pronunciations, keyed by first name without accents.
 // Hidden from the board; only agents read them (kanban_get_staff_names).
@@ -717,7 +720,7 @@ function kanbanTools(h) {
       return attachments.length;
     });
     if (count == null) return fail(`No ticket ${item.key}.`);
-    for (const old of replaced) { try { if (old.path) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
+    for (const old of replaced) { try { if (ownsFile(key, old.path)) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
     return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, selectors: selectors.length ? selectors : undefined, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
   }
 
@@ -1761,7 +1764,7 @@ function kanbanTools(h) {
         });
         if (left == null) return toolError(`${key} no longer has that attachment.`);
         let fileDeleted = false;
-        if (target.path) {
+        if (ownsFile(key, target.path)) {
           try { const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET); await bucket.file(target.path).delete(); fileDeleted = true; }
           catch (err) { logger.warn("kanban attachment file not deleted", { key, path: target.path, error: String(err && err.message ? err.message : err) }); }
         }

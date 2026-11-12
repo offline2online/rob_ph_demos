@@ -727,6 +727,19 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   await p.done();
 });
 
+T("KB-C2f", "notifications bell: the owner signed in with his second address sees the notifications addressed to his first", async (prof) => {
+  const seed = bellSeed();
+  seed.user = { email: "rob@personalisationhub.com", role: "admin" };
+  const p = await open(prof, "#staff-kanban", { seed });
+  await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
+  await press(p, "#kb-bell");
+  assert.match(await p.textContent("#kb-bell-panel"), /PH-20[\s\S]*Huy mentioned you in a comment/);
+  await press(p, ".kb-bell-item");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await eventually(async () => assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, true, "opening it marks it read"));
+  await p.done();
+});
+
 T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all, Mark all as read clears them, and it is in the topbar of every page", async (prof) => {
   const seed = kanbanSeed({ extra: { kanbanNotifications: Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`n${i}`, { to: ROB, from: HUY, taskKey: i % 2 ? "PH-20" : "PH-21", taskTitle: i % 2 ? "Menu board preview shows RRP" : "Other", kind: i === 149 ? "assigned" : "commented", read: false, at: { $ts: Date.UTC(2026, 9, 29, 0, 0, i) } }])) } });
   const p = await open(prof, "#staff-kanban", { seed });
@@ -1363,6 +1376,103 @@ T("KB-C22", "the image button opens the computer's file picker at once; choosing
     await p.click('.kb-ed-panel [data-x="cancel"]');
   }
   await p.done();
+});
+
+T("KB-SEC-1", "stored text never runs as script: a description, a member's photo address, an assignee on the report, an attachment link, a comment", async (prof) => {
+  const hit = `window.__xss = (window.__xss || 0) + 1`;
+  const seed = kanbanSeed();
+  // A description as another writer could have stored it.
+  seed.docs.kanbanTasks["PH-20"].description = `<p>Before</p><img src="x" onerror="${hit}"><svg onload="${hit}"></svg><form action="https://example.test"><input name="password"></form><p style="position:fixed;inset:0">After</p><table><tbody><tr><td><img src="x" onerror="${hit}"></td></tr></tbody></table>`;
+  seed.docs.kanbanTasks["PH-20"].attachments = [{ name: "notes.txt", url: `javascript:${hit}`, size: 10 }, { name: "ok.txt", url: "https://example.test/ok.txt", size: 10 }];
+  seed.docs.kanbanCards["PH-20"].attachmentCount = 2;
+  // A member's own photo address, as that member could have set it.
+  const bad = `https://firebasestorage.googleapis.com/v0/b/x/o/avatars"><img src=x onerror="${hit}">');background:url('https://example.test/x`;
+  seed.docs.memberDirectory[HUY].photoUrl = bad; seed.docs.consoleUsers[HUY].photoUrl = bad;
+  // A ticket in the current release assigned to something that is not an address.
+  const who = `x@x"><img src=x onerror="${hit}">`;
+  seed.docs.kanbanTasks["PH-21"].assignee = who; seed.docs.kanbanCards["PH-21"].assignee = who;
+  seed.docs["kanbanTasks/PH-20/comments"] = { c1: { author: HUY, at: { $ts: Date.parse("2026-10-20T09:00:00Z") }, text: "hello", html: `<p>hello</p><img src=x onerror="${hit}"><iframe src="javascript:${hit}"></iframe><form action="https://example.test"><input type="password"></form><p style="position:fixed;inset:0;z-index:99999">cover</p>` } };
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor';
+  await p.waitForSelector(ed);
+  await until(async () => /Before/.test(await p.textContent(ed)), "the description in the editor");
+  assert.match(await p.textContent(ed), /After/, "the text is kept");
+  assert.equal(await p.$$eval(`${ed} form, ${ed} input, ${ed} svg, ${ed} [style*="fixed"], ${ed} [onerror], ${ed} [onload]`, (e) => e.length), 0, "nothing active is left in the description");
+  // The comment, cleaned the same way.
+  await until(() => p.$(".kb-comment-text"), "the comment");
+  assert.equal(await p.$$eval(".kb-comment-text form, .kb-comment-text input, .kb-comment-text iframe, .kb-comment-text [style], .kb-comment-text [onerror]", (e) => e.length), 0, "nothing active is left in the comment");
+  // The attachment with a script address is listed, not linked.
+  assert.deepEqual(await p.$$eval("#f-attachments a", (e) => e.map((a) => a.getAttribute("href"))), ["https://example.test/ok.txt"]);
+  // The @ list draws every member's picture.
+  await p.click(ed); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu");
+  await p.waitForSelector(".kb-mention-item");
+  assert.equal(await p.$$eval(".kb-mention-box img, .kb-mention-item img", (e) => e.length), 0, "the photo address added no element");
+  await p.keyboard.press("Escape");
+  await press(p, "#f-cancel");
+  // The board's own avatars and the report's rows.
+  assert.equal(await p.$$eval("#kb-view img[src='x']", (e) => e.length), 0);
+  const q = await open(prof, "#staff-kanban/report?status=all", { seed });
+  await q.waitForSelector("#kb-view .page-header");
+  await until(() => q.$("[data-person]"), "the report's people");
+  assert.equal(await q.$$eval("#kb-view img[src='x']", (e) => e.length), 0, "the assignee added no element to the report");
+  assert.ok((await q.$$eval("[data-person]", (e) => e.map((x) => x.dataset.person))).includes(who), "the assignee is carried as text");
+  // A real photo address is used exactly as it is stored.
+  const real = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fhuy.le%40personalisationhub.com.jpg?alt=media&token=0a1b2c3d-0000-4000-8000-123456789abc";
+  assert.equal(await q.evaluate(async (u) => (await import("/js/kanban/kanban-editor.js")).KBEditor.cssUrl(u), real), real);
+  await sleep(300); // long enough for an image that had been added to fail and fire
+  for (const page of [p, q]) assert.equal(await page.evaluate(() => window.__xss || 0), 0, "no stored script ran");
+  // (the harmless <img src="x"> that is left asks the server for /x)
+  const allow = /404 \(Not Found\) \(http:\/\/127\.0\.0\.1:\d+\/x\)/;
+  await q.done({ allow }); await p.done({ allow });
+});
+
+T("KB-R1", "an editor (every team member but the owner) creates, moves, edits, flags and comments under their own name; Kanban settings are read-only for them", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { seed: kanbanSeed({ user: { email: LINH, role: "editor" } }), ...TALL });
+  // Create.
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Raised by an editor");
+  await press(p, "#f-save");
+  const made = await until(async () => (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Raised by an editor")))[0], "the new ticket");
+  assert.equal(made[1].createdBy, LINH); assert.equal(made[1].reporter, LINH);
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the new ticket's modal to close");
+  // Edit, move by the Status menu and flag, in one ticket.
+  await press(p, '.kb-card[data-key="PH-34"]');
+  await until(async () => /PH-34/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-34 to open");
+  assert.ok(await p.isEnabled("#f-title"), "an editor can change a ticket");
+  await p.fill("#f-title", "Edited by an editor");
+  await p.selectOption("#f-status", "ready-for-dev");
+  await press(p, "#task-flag");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save")));
+  await press(p, "#f-save");
+  await eventually(async () => { const t = await stored(p, "PH-34"); assert.deepEqual([t.title, t.status, t.flagged, t.updatedBy], ["Edited by an editor", "ready-for-dev", true, LINH]); });
+  await eventually(async () => assert.equal((await where(p, "PH-34")).status, "ready-for-dev", "the card moved"));
+  // Comment.
+  await press(p, '.kb-card[data-key="PH-34"]');
+  await until(async () => /PH-34/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-34 to open again");
+  await p.waitForSelector('[data-field="comments"] .ql-editor');
+  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.type("Looked at this today");
+  await press(p, "#f-comment-add");
+  const c = await until(async () => (await writes(p, /^kanbanTasks\/PH-34\/comments\//))[0], "the comment to be written");
+  assert.equal(c.data.author, LINH);
+  await press(p, "#f-cancel");
+  // Everything written to a ticket, its card or its log carries the editor's own address: the rules refuse anything else.
+  const all = await writes(p, /^kanban(Tasks|Cards)\//);
+  assert.ok(all.length >= 4, `${all.length} writes`);
+  for (const w of all) {
+    if (!w.data) continue;
+    if (/\/activity\//.test(w.path)) assert.equal(w.data.who, LINH, `${w.path} who`);
+    else if (/\/comments\//.test(w.path)) assert.equal(w.data.author, LINH, `${w.path} author`);
+    else if ("updatedBy" in w.data) assert.equal(w.data.updatedBy, LINH, `${w.path} updatedBy`);
+  }
+  assert.equal((await writes(p, /^kanban(Settings|Sprints|Notifications)\//)).length, 0, "an editor writes no settings, sprints or notifications");
+  await p.done();
+  // Settings: shown, not changeable.
+  const q = await open(prof, "#staff-kanban/settings", { seed: kanbanSeed({ user: { email: LINH, role: "editor" } }) });
+  await q.waitForSelector("[data-show]");
+  assert.equal(await q.$$eval("[data-show]:not([disabled]), [data-req]:not([disabled])", (e) => e.length), 0, "every field switch is disabled");
+  assert.equal(await q.$("#st-sprint-add"), null, "no Add sprint");
+  await q.done();
 });
 
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {

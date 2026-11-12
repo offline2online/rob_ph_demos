@@ -1072,6 +1072,22 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const gone = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: uploaded.path });
     assert.ok(gone.isError);
   });
+  await test("kanban_remove_attachment: an attachment naming a file outside the ticket's folder is unlinked, and that file is left alone", async () => {
+    // A ticket's attachments are written by members; one can name any path. The server must not delete it.
+    const outside = "avatars/someone-else.jpg", otherTicket = "kanban/PH-2/secret.png";
+    env.authState.uploads[outside] = { size: 1 }; env.authState.uploads[otherTicket] = { size: 1 };
+    const t0 = task("PH-1");
+    env.store.col("kanbanTasks").set("PH-1", { ...t0, attachments: [...(t0.attachments || []), { name: "a.jpg", url: "https://example.test/a", path: outside }, { name: "b.png", url: "https://example.test/b", path: otherTicket }, { name: "c.png", url: "https://example.test/c", path: "kanban/PH-1/../PH-2/secret.png" }] });
+    for (const p of [outside, otherTicket, "kanban/PH-1/../PH-2/secret.png"]) {
+      const r = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: p });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.fileDeleted, false, `${p} is not deleted`);
+      assert.ok(!task("PH-1").attachments.some((x) => x.path === p), "the attachment is off the ticket");
+    }
+    assert.ok(env.authState.uploads[outside], "a file outside kanban/ stays");
+    assert.ok(env.authState.uploads[otherTicket], "another ticket's file stays");
+    delete env.authState.uploads[outside]; delete env.authState.uploads[otherTicket];
+  });
   await test("kanban_remove_attachment: by name; an ambiguous name asks for the path; unknown, no argument, unknown ticket and viewer are refused", async () => {
     const a = await attach(sam, { name: "dup.png", data: realPng(300).toString("base64") });
     const b = await attach(sam, { name: "dup.png", data: realPng(310).toString("base64") });
@@ -1295,6 +1311,16 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["commented"], "a watcher");
     assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "comment"]]);
     assert.strictEqual(notesFor(HUY).length, 0, "the commenter is told nothing");
+  });
+
+  await test("fan-out: two people whose addresses differ only by punctuation are each told", async () => {
+    env.store.col("kanbanNotifications").clear();
+    env.store.col("kanbanTasks").set("PH-51", { ...base, watchers: [] });
+    const c = { author: HUY, mentions: ["linh.tran@personalisationhub.com", "linh_tran@personalisationhub.com", "linh-tran@personalisationhub.com"] };
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who} has their own notification`);
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who}: a redelivery adds nothing`);
   });
 
   await test("fan-out: editing a comment tells only the people it newly mentions", async () => {

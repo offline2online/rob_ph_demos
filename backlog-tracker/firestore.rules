@@ -1224,13 +1224,20 @@ service cloud.firestore {
     // Notifications (KB-NAV-2, KB-MOD-3): written only by the Kanban fan-out
     // trigger (functions/kanban-notify.js, the admin SDK), never by a client.
     // Only the person notified reads theirs, marks it read or clears it.
+    // The owner's second sign-in address is the same person (PERSON_ALIASES in
+    // kanban-core.js): notifications are always addressed to the first, so
+    // signed in with the second he reads and clears those.
+    function kanbanNotifiedIs(to) {
+      return to == callerEmail()
+        || (callerEmail() == "rob@personalisationhub.com" && to == "rob@offline2online.com");
+    }
     match /kanbanNotifications/{noteId} {
-      allow read: if signedIn() && resource.data.to == callerEmail();
+      allow read: if signedIn() && kanbanNotifiedIs(resource.data.to);
       allow create: if false;
-      allow update: if signedIn() && resource.data.to == callerEmail()
+      allow update: if signedIn() && kanbanNotifiedIs(resource.data.to)
         && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
       // Only a read one: the bell prunes the person's own read notifications older than 30 days.
-      allow delete: if signedIn() && resource.data.to == callerEmail() && resource.data.read == true;
+      allow delete: if signedIn() && kanbanNotifiedIs(resource.data.to) && resource.data.read == true;
     }
     // Names and photos of every member, for assignee lists and avatars.
     // consoleUsers itself is admin-only to list; functions/index.js keeps

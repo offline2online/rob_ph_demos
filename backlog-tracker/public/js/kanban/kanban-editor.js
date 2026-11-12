@@ -23,6 +23,13 @@ export const KBEditor = (function () {
 
   const CALLOUT_LEVELS = ["note", "important", "warning"];
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // A web address for use inside style="background-image:url('…')": https (or a picture held inline as data:), with every character that could
+  // end the url(), the declaration or the attribute encoded. Anything else gives "" (no picture).
+  const cssUrl = (u) => {
+    const v = String(u || "");
+    if (/^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) return v; // a picture held inline
+    return /^https:\/\//i.test(v) ? v.replace(/['"()\\<>;\s]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, "0")) : "";
+  };
 
   // ── Tables (as the FAQ editor) ──────────────────────────────────────────
   function rowsToHtml(rows) {
@@ -310,7 +317,7 @@ export const KBEditor = (function () {
     };
     const fold = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
     const draw = () => {
-      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}">${u.photo ? `<span class="kb-avatar kb-avatar-img" style="background-image:url('${u.photo}')"></span>` : `<span class="kb-avatar" style="background:${u.color}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`}${esc(u.first)}<span class="kb-mention-full">${esc(u.full || "")}</span></button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
+      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}">${cssUrl(u.photo) ? `<span class="kb-avatar kb-avatar-img" style="background-image:url('${cssUrl(u.photo)}')"></span>` : `<span class="kb-avatar" style="background:${u.color}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`}${esc(u.first)}<span class="kb-mention-full">${esc(u.full || "")}</span></button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
     };
     q.on("editor-change", () => {
       const sel = q.getSelection();
@@ -484,7 +491,8 @@ export const KBEditor = (function () {
     return String(text || "").split(/\n{2,}/).map((para) => "<p>" + esc(para).replace(/\n/g, "<br>") + "</p>").join("");
   }
   function setHtml(q, value) {
-    const html = looksLikeHtml(value) ? value : plainToHtml(value);
+    // Stored HTML is cleaned before the editor parses it: a description can be written from outside this page.
+    const html = sanitize(looksLikeHtml(value) ? value : plainToHtml(value));
     q.setContents(q.clipboard.convert(html), "silent");
     upgradeTables(q.root);
   }
@@ -507,13 +515,24 @@ export const KBEditor = (function () {
     t.content.querySelectorAll("p, div, li, h1, h2, h3, h4, br").forEach((n) => n.append("\n"));
     return (t.content.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
-  // Rendering stored HTML outside the editor (comments): sanitised.
+  // Stored HTML, cleaned for showing (comments) and for loading into an editor. No scripts or handlers; no forms,
+  // inline styles or style sheets either (nothing the editor writes uses them, and they can dress a comment up as
+  // part of the console); an embedded frame must be an https page.
   function sanitize(html) {
-    return window.DOMPurify ? DOMPurify.sanitize(html, { ADD_TAGS: ["video", "iframe"], ADD_ATTR: ["controls", "playsinline", "data-user", "data-name", "allowfullscreen", "frameborder", "target"] }) : esc(html);
+    if (!window.DOMPurify) return esc(html);
+    const clean = DOMPurify.sanitize(html, {
+      ADD_TAGS: ["video", "iframe"], ADD_ATTR: ["controls", "playsinline", "data-user", "data-name", "allowfullscreen", "frameborder", "target"],
+      FORBID_TAGS: ["form", "input", "button", "textarea", "select", "option", "style", "link", "meta", "base", "object", "embed"], FORBID_ATTR: ["style", "srcdoc", "formaction"],
+      RETURN_DOM_FRAGMENT: true,
+    });
+    clean.querySelectorAll("iframe").forEach((el) => { if (!/^https:\/\//i.test(el.getAttribute("src") || "")) el.remove(); });
+    clean.querySelectorAll("a[target]").forEach((el) => el.setAttribute("rel", "noopener noreferrer"));
+    const box = document.createElement("div"); box.appendChild(clean);
+    return box.innerHTML;
   }
 
   // Resolves once Quill is loaded; call before create().
   async function ready() { Quill = await loadQuill(); }
 
-  return { ready, create, setHtml, getHtml, getText, toText, sanitize, mentionsIn, looksLikeHtml };
+  return { ready, create, setHtml, getHtml, getText, toText, sanitize, mentionsIn, looksLikeHtml, cssUrl };
 })();

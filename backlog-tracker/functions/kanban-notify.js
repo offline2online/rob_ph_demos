@@ -74,7 +74,9 @@ async function write(eventId, key, task, actor, recipients) {
   await Promise.all([...recipients].map(async ([to, r]) => {
     const doc = { to, from: clean(actor) || null, taskKey: key, taskTitle: title, kind: r.kind, read: false, at: FieldValue.serverTimestamp() };
     if (r.via) doc.via = r.via;
-    try { await col.doc(`${eventId}_${to.replace(/[^a-z0-9]/g, "_")}`).create(doc); written++; }
+    // One document per event and person, so a redelivered event writes nothing twice. The address is encoded
+    // exactly ("a.b@" and "a_b@" are two people), not folded to underscores.
+    try { await col.doc(`${eventId}_${encodeURIComponent(to).replace(/\./g, "%2E")}`).create(doc); written++; }
     catch (err) { if (err && (err.code === 6 || /ALREADY_EXISTS/.test(String(err.message)))) return; throw err; }
   }));
   return written;

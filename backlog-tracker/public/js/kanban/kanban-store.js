@@ -190,12 +190,15 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     if (releaseWatched) { const r = releaseWatched; releaseWatched = ""; watchRelease(r); }
   }
   const countOf = async (ref) => (await getCountFromServer(ref)).data().count;
-  const cardsBehind = async () => (await countOf(cardsRef)) < (await countOf(tasksRef));
+  // (the two counts are asked for together: the board waits on one round trip, not two)
+  const cardsBehind = async () => { const [cards, tasks] = await Promise.all([countOf(cardsRef), countOf(tasksRef)]); return cards < tasks; };
   // Which collection the board reads. Behind: read the tickets, ask the server
   // to fill the cards, and move to them when they have caught up.
   async function chooseBoard() {
     let behind = false;
-    try { behind = await cardsBehind(); } catch (e) { behind = true; }
+    // A count that can't be read (offline, a dropped connection) says nothing about the cards: stay on them.
+    // Reading every open ticket in full instead is the costly path, for the one case the cards are known behind.
+    try { behind = await cardsBehind(); } catch (e) { behind = false; }
     boardColl = behind ? "kanbanTasks" : "kanbanCards";
     listenBoard();
     if (!behind || !backfill) return;
