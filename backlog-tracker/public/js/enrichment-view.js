@@ -78,7 +78,9 @@ const logoTiles = (e) => {
   const light = safeUrl(l.light), dark = safeUrl(l.dark);
   if (!light && !dark) return "";
   const tile = (u, cls, label) => (u ? `<a class="enrich-logo-tile ${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(label)}"><img src="${esc(u)}" alt="${esc(label)}" loading="lazy" referrerpolicy="no-referrer"></a>` : `<span class="enrich-logo-tile ${cls} enrich-logo-tile-none">${esc(label)}: not found</span>`);
-  return `<div class="enrich-logo-tiles">${tile(light, "enrich-logo-tile-light", "Logo for light backgrounds")}${tile(dark, "enrich-logo-tile-dark", "Logo for dark backgrounds")}</div>`;
+  // No separate dark-background file (companies rarely publish one): the light logo shown in white.
+  const derived = !dark && light ? `<span class="enrich-logo-tile enrich-logo-tile-dark enrich-logo-tile-derived" title="No dark-background file was found. This is the light logo shown in white, as the walkthrough demo can do."><img src="${esc(light)}" alt="Logo shown in white for dark backgrounds" loading="lazy" referrerpolicy="no-referrer"></span>` : "";
+  return `<div class="enrich-logo-tiles">${tile(light, "enrich-logo-tile-light", "Logo for light backgrounds")}${derived || tile(dark, "enrich-logo-tile-dark", "Logo for dark backgrounds")}</div>${derived ? '<span class="enrich-meta">Dark background: no separate file found, so the light logo is shown in white.</span>' : ""}`;
 };
 const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
 const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");

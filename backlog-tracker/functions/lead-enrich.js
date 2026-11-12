@@ -647,8 +647,9 @@ function createLeadEnrich({
     const need = { light: !(await firstImage([got.logoLight, seen.light])), dark: !(await firstImage([got.logoDark, seen.dark])) };
     if ((need.light || need.dark) && company) {
       try {
-        const q = encodeURIComponent(`${company} logo`);
-        const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch=${q}&prop=imageinfo&iiprop=url%7Cmime`);
+        // Files whose title has the company's name and "logo", drawings and bitmaps only.
+        const q = encodeURIComponent(`intitle:"${String(company).replace(/"/g, "")}" intitle:logo filetype:drawing|bitmap`);
+        const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${q}&prop=imageinfo&iiprop=url%7Cmime`);
         if (r.ok) commons = commonsLogos(JSON.parse(await r.text()), company);
       } catch { /* none */ }
     }

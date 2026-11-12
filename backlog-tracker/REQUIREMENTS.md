@@ -4277,7 +4277,12 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `{company, email?, country?}`) is how a walkthrough demo gets them: it
     matches the company as an inbound lead is matched (name, or the work
     email's domain, in the TAM; else a lead by name) and answers `{found,
-    name, industry, logos: {light, dark, icon}}`, or `{found: false}`.
+    name, industry, logos: {light, dark, icon}, darkFromLight}`, or
+    `{found: false}`. A separate dark-background file is rare (none was
+    found for eight large retailers tested on 12 Nov 2026; a light one for
+    five): when `dark` is empty and `light` is set, `darkFromLight` is true
+    and the demo shows the light logo in white (CSS `filter: brightness(0)
+    invert(1)`) or on a white tile, as the console's own dark tile does.
     A logo a person set on the company profile is used as `light`. Nothing
     else about the record is returned, test and archived leads are never
     matched, and the call is server-to-server so the list of companies never

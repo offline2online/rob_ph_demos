@@ -2610,6 +2610,7 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .enrich-logo-tile { display: flex; align-items: center; justify-content: center; width: 168px; max-width: 100%; height: 72px; padding: 10px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; text-align: center; text-decoration: none; }
 .enrich-logo-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .enrich-logo-tile-light { background: #fff; color: rgba(0, 0, 0, .45); }
+.enrich-logo-tile-derived img { filter: brightness(0) invert(1); }
 .enrich-logo-tile-dark { background: #1f1f1f; color: rgba(255, 255, 255, .65); border-color: #1f1f1f; }
 .enrich-updated { margin: 8px 0 2px; }
 .pd-enrich-status { margin: 4px 0 8px; }

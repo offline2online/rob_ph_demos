@@ -14,7 +14,9 @@
 // the Prospects (TAM) database or is a lead: {found, name, industry,
 // logos: {light, dark, icon}}. light is the logo for light backgrounds, dark
 // the one for dark backgrounds, icon the square site icon; each is an image
-// address or "". Nothing else about the record is returned, and a company
+// address or "". A separate dark-background file is rare: when dark is "" and
+// light is set, darkFromLight is true and the demo can show the light logo in
+// white (CSS filter: brightness(0) invert(1)) or on a white tile. Nothing else about the record is returned, and a company
 // that is not listed answers {found: false}. Called server-to-server like
 // /submit, so the key and the list of companies never reach a browser.
 // Anyone from AWS is added as a contact on the AWS record instead of a lead.
@@ -133,7 +135,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       if (hit) { const d = hit.data() || {}; out = { name: String((d.company || {}).name || ""), industry: String((d.company || {}).industry || ""), logos: logosOf(d.enrichment) }; }
     }
     if (!out) return [200, { found: false }];
-    return [200, { found: true, ...out }];
+    return [200, { found: true, ...out, darkFromLight: Boolean(out.logos.light && !out.logos.dark) }];
   }
 
   async function handle(req, res) {

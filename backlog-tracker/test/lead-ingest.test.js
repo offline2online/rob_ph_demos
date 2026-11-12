@@ -68,11 +68,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     let r = res(); await api.handle(req({ company: "Greene King" }, "nope", "POST", BRAND), r); assert.equal(r.code, 401);
     r = res(); await api.handle(req({}, "k", "POST", BRAND), r); assert.equal(r.code, 400);
     r = res(); await api.handle(req({ company: "greene king" }, "k", "POST", BRAND), r);
-    assert.deepEqual(r.body, { found: true, name: "Greene King", industry: "Pubs & Hospitality", logos: { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.svg", icon: "https://www.greeneking.co.uk/icon.png" } });
+    assert.deepEqual(r.body, { found: true, name: "Greene King", industry: "Pubs & Hospitality", logos: { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.svg", icon: "https://www.greeneking.co.uk/icon.png" }, darkFromLight: false });
     r = res(); await api.handle(req({ company: "Someone Else", email: "jo@greeneking.co.uk" }, "k", "POST", BRAND), r);
     assert.equal(r.body.name, "Greene King", "matched by the work email's domain");
     r = res(); await api.handle(req({ company: "Corner Shop Co" }, "k", "POST", BRAND), r);
-    assert.deepEqual(r.body, { found: true, name: "Corner Shop Co", industry: "Fuel & Convenience", logos: { light: "https://cornershop.example/logo.png", dark: "", icon: "https://cornershop.example/icon.png" } });
+    assert.deepEqual(r.body, { found: true, name: "Corner Shop Co", industry: "Fuel & Convenience", logos: { light: "https://cornershop.example/logo.png", dark: "", icon: "https://cornershop.example/icon.png" }, darkFromLight: true });
     for (const company of ["Unknown Ltd", "Test Co"]) { r = res(); await api.handle(req({ company }, "k", "POST", BRAND), r); assert.deepEqual(r.body, { found: false }, company); }
     assert.equal(db.docs.size, 3, "a lookup stores nothing"); assert.ok(!JSON.stringify(r.body).includes("private"));
   });
