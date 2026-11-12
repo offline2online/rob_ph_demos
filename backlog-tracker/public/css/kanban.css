@@ -178,6 +178,13 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 @media (hover: none) { .kb-flag-btn { opacity: .55; } }
 .kb-flag-btn:hover { background: rgba(250, 173, 20, .18); color: #b07800; }
 .kb-flag-btn.on { color: #b07800; }
+/* Copy link on a card (KB-LINK-4): the flag button's shape, shown the same way. */
+.kb-link-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; min-height: 26px; padding: 0; margin: -4px -4px -4px 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0; }
+.kb-link-btn .material-symbols-outlined { font-size: 17px; }
+.kb-card:hover .kb-link-btn, .kb-card:focus-within .kb-link-btn, .kb-link-btn.on { opacity: 1; }
+@media (hover: none) { .kb-link-btn { opacity: .55; } }
+.kb-link-btn:hover { background: rgba(22, 155, 194, .12); color: var(--primary); }
+.kb-link-btn.on { color: var(--primary); }
 .kb-flag-btn.on .material-symbols-outlined, .kb-flag-mini, .kb-task-flag.on .material-symbols-outlined, .kb-kpi-flag .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
 .kb-card.kb-flagged { background: #fff7e0; box-shadow: 0 0 0 1px rgba(250, 173, 20, .55); }
 .kb-card.kb-flagged:hover { box-shadow: 0 0 0 1px rgba(250, 173, 20, .8), 0 3px 10px rgba(0, 0, 0, .08); }

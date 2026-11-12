@@ -170,13 +170,15 @@ TC-26 onwards:
 | KB-C6 | KB-NAV-1 | (Runs once, Chromium.) iPad 1210x696 with touch: send pointerdown and pointerup on Staff Kanban with no click (what Chrome on Rob's iPad did, 21 Oct 2026); then tap it normally | The board opens from the touch alone, clicked once by the menu's touch fallback; a normal tap still clicks exactly once |
 | KB-C7 | KB-MOD-2, KB-MOD-4a | Android user agent; + New task, Record task; the stub recogniser says "add a new Epic to the board", then "Jack Johnson", as Android does (each guess the whole utterance so far) | Live transcript "add a new Epic to the board Jack Johnson", each phrase once; no session runs in continuous mode; the agent's description has no repeats |
 | KB-C8 | KB-MOD-4, KB-MOD-4a | Desktop user agent (Android with "Desktop site" on); open PH-23, comment mic; the recogniser sends every guess as a final in continuous mode | The comment box reads "Add a new Epic to the board Jack Johnson"; the first session is continuous, the next is not |
-| KB-C15 | KB-LINK-1 | (Chromium only.) Click or tap PH-20 on the board | A new tab opens at `…#staff-kanban/ticket/PH-20` showing PH-20; the first tab stays on the board |
+| KB-C15 | KB-LINK-1 | (Chromium only.) Click or tap PH-20 on the board; close it; Cmd/Ctrl-click PH-21 (mouse profiles) | PH-20 opens over the board with no new tab, address `…#staff-kanban/ticket/PH-20`; closing returns to `#staff-kanban`; the Cmd/Ctrl-click opens a new tab at PH-21's address and the first tab stays on the board |
 | KB-C16 | KB-LINK-1, KB-LINK-2 | Open `#staff-kanban/ticket/PH-21`; change the address to `ph-22`, then `23`; close; change to `PH-9999`, then `banana` | Each ticket opens and the address is tidied to its key; closing leaves the board at `#staff-kanban`; "Ticket not found" names what was typed, with no ticket or board behind it; nothing written |
 | KB-C17 | KB-LINK-3 | Open PH-20; click Share link; open the copied link; refuse the copy and click again | Clipboard holds `…#staff-kanban/ticket/PH-20`; "Link copied"; the link opens PH-20; a refused copy shows the link in the toast; no Share link on a new task |
 | KB-C18 | KB-LINK-1 | (1024 px up.) On the report, open a ticket row and close it | The ticket's address while open, the report's once closed |
+| KB-C20 | KB-PPL-2 | Look at Linh's filter chip; save Minh's first/last name as Minh / Nguyen; look at PH-23's card; open PH-20 | Linh's chip reads "TT"; Minh's chip and card read "MN"; every card avatar without a photo shows initials; Huy's comment on PH-20 reads "LQ" |
+| KB-C19 | KB-LINK-4 | On the board click PH-20's Copy link icon | Clipboard holds `…#staff-kanban/ticket/PH-20`; "Link to PH-20 copied"; the icon shows a tick; no ticket opens; the card's top row still fits; nothing is written |
 
-Every console case except KB-C15 runs with new tabs refused, so a card opens
-its ticket in the same page, as it does for a blocked pop-up.
+Every console case except KB-C15 runs with new tabs refused, so a Cmd/Ctrl-click
+opens its ticket in the same page, as it does for a blocked pop-up.
 
 Server side, `backlog-tracker/test/kanban-mcp.test.js` covers KB-MCP-1 (every
 tool over JSON-RPC as an editor and a viewer, keys from the counter, the

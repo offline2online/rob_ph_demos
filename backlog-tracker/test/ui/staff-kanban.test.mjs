@@ -1167,16 +1167,67 @@ const modalKey = (page) => page.$eval("#task-title-h", (e) => e.textContent.trim
 const hashOf = (page) => page.evaluate(() => location.hash);
 const modalOpen = (page) => page.$eval("#task-backdrop", (e) => !e.hidden);
 
-T("KB-C15", "a card opens its ticket in a new tab, at an address holding its PH key", { on: (p) => p.engine === "chromium" }, async (prof) => {
+T("KB-C15", "a click opens the ticket here, over the board, at its PH-key address; Cmd/Ctrl-click opens a new tab", { on: (p) => p.engine === "chromium" }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { newTab: true });
-  const [tab] = await Promise.all([p.ctx.waitForEvent("page"), press(p, '.kb-card[data-key="PH-20"]')]);
-  await tab.waitForSelector("#task-backdrop:not([hidden])", { timeout: 20000 });
-  assert.match(tab.url(), /#staff-kanban\/ticket\/PH-20$/, "the new tab's address ends with the PH key");
-  assert.equal(await modalKey(tab), "PH-20");
-  assert.match(await tab.title(), /^PH-20 /, "the tab is named after the ticket");
-  assert.equal(await modalOpen(p), false, "the board's own tab stays on the board");
+  let tabs = 0;
+  p.ctx.on("page", () => { tabs++; });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  assert.equal(tabs, 0, "a plain click opens no new tab (no second copy of the console to load)");
+  assert.equal(await modalKey(p), "PH-20");
+  assert.equal(await hashOf(p), "#staff-kanban/ticket/PH-20", "the address bar holds the ticket's address");
+  assert.match(await p.title(), /^PH-20 /, "the tab is named after the ticket");
+  assert.ok(await p.$(".kb-card"), "the board is still underneath");
+  await press(p, "#task-close");
   assert.equal(await hashOf(p), "#staff-kanban");
-  await tab.close();
+  // Cmd/Ctrl-click: the ticket in a new tab, the board left as it was.
+  if (!prof.touch) {
+    const [tab] = await Promise.all([p.ctx.waitForEvent("page"), p.click('.kb-card[data-key="PH-21"] .card-title', { modifiers: ["ControlOrMeta"] })]);
+    await tab.waitForSelector("#task-backdrop:not([hidden])", { timeout: 20000 });
+    assert.match(tab.url(), /#staff-kanban\/ticket\/PH-21$/, "the new tab's address ends with the PH key");
+    assert.equal(await modalKey(tab), "PH-21");
+    assert.equal(await modalOpen(p), false, "the board's own tab stays on the board");
+    assert.equal(await hashOf(p), "#staff-kanban");
+    await tab.close();
+  }
+  await p.done();
+});
+
+T("KB-C19", "a card's copy-link icon copies the ticket's address without opening it", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied = t; } } }); });
+  const btn = '.kb-card[data-key="PH-20"] .kb-link-btn';
+  assert.equal(await p.getAttribute(btn, "aria-label"), "Copy a link to PH-20");
+  await p.hover('.kb-card[data-key="PH-20"]').catch(() => {});
+  await press(p, btn);
+  await until(async () => /Link to PH-20 copied/.test(await toastText(p)), "the Link copied confirmation");
+  assert.equal(await p.evaluate(() => window.__copied), (await p.evaluate(() => location.origin + location.pathname)) + "#staff-kanban/ticket/PH-20");
+  assert.equal(await p.$eval(btn + " .material-symbols-outlined", (e) => e.textContent), "done", "the icon confirms too");
+  assert.equal(await modalOpen(p), false, "copying doesn't open the ticket");
+  assert.equal(await hashOf(p), "#staff-kanban");
+  // The card's top row still fits: key, priority, link and flag inside the card.
+  const fits = await p.$eval('.kb-card[data-key="PH-20"]', (c) => { const r = c.getBoundingClientRect(); return [...c.querySelectorAll(".kb-card-top > *")].every((e) => { const b = e.getBoundingClientRect(); return b.right <= r.right + 1 && b.left >= r.left - 1; }); });
+  assert.ok(fits, "the card's top row fits inside the card");
+  assert.deepEqual(await writes(p, /kanban/), [], "copying a link writes nothing");
+  await p.done();
+});
+
+T("KB-C20", "a person with no photo shows their first and last initials on cards, the people filter and the ticket", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  const chip = (who) => p.$eval(`.kb-person-chip[data-person="${who}"] .kb-avatar`, (e) => e.textContent.trim());
+  // Only a display name: its first two words, as Users shows them.
+  assert.equal(await chip(LINH), "TT", "Trần Thị Linh");
+  // First and last name saved in Users win over the display name.
+  await p.evaluate((m) => { const b = globalThis.__fbStub; const c = b.col("memberDirectory"); c.set(m, { ...c.get(m), firstName: "Minh", lastName: "Nguyen" }); b.notify(); }, MINH);
+  await until(async () => (await chip(MINH)) === "MN", "Minh's chip to read MN");
+  const card = await p.$$eval(".kb-card .kb-card-footer .kb-avatar:not(.kb-avatar-img):not(.kb-avatar-none)", (e) => e.map((x) => x.textContent.trim()));
+  assert.ok(card.length && card.every((t) => /^[A-ZÀ-Ỹ]{1,2}$/u.test(t)), "every card avatar without a photo shows initials: " + card.join(","));
+  await until(() => p.$('.kb-card[data-key="PH-23"]'), "PH-23 on the board");
+  assert.equal(await p.$eval('.kb-card[data-key="PH-23"] .kb-card-footer .kb-avatar', (e) => e.textContent.trim()), "MN", "Minh's card");
+  // In a ticket: the comment from Huy (Lê Quang Huy, no first/last name saved) shows LQ, as Users does.
+  await press(p, '.kb-card[data-key="PH-20"] .card-title');
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await until(async () => (await p.$$eval("#task-backdrop .kb-comment .kb-avatar", (e) => e.map((x) => x.textContent.trim()))).includes("LQ"), "Huy's comment to show LQ");
   await p.done();
 });
 

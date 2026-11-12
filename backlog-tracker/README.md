@@ -2756,8 +2756,10 @@ The team's own task board, a Jira replacement, at `#staff-kanban` (sidebar →
 Build → Staff Kanban), separate from the Agent Board. Spec, test plan and the
 signed-off prototype are in `kanban-staff-board/` (project "Staff Kanban" on
 the board). Every ticket has its own address, `#staff-kanban/ticket/PH-<n>`:
-a card opens it in a new tab, and the ticket's header has a Share link button
-that copies it (`kanban-staff-board/REQUIREMENTS.md` → KB-LINK-1 to KB-LINK-3).
+a card opens it in place over the board with that address in the address bar
+(Cmd/Ctrl-click for a new tab), and both the ticket's header (Share link) and
+each card (Copy link) copy it (`kanban-staff-board/REQUIREMENTS.md` → KB-LINK-1
+to KB-LINK-4).
 The code is here:
 
 | File | What it does |

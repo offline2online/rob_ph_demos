@@ -95,6 +95,10 @@ function directoryEntry(email, row) {
   return {
     email,
     displayName: typeof row.displayName === "string" ? row.displayName.slice(0, 120) : "",
+    // First and last name (Users → edit name), so the Staff Kanban's avatars
+    // show both initials exactly rather than guessing from displayName.
+    firstName: typeof row.firstName === "string" ? row.firstName.slice(0, 60) : "",
+    lastName: typeof row.lastName === "string" ? row.lastName.slice(0, 60) : "",
     photoUrl: typeof row.photoUrl === "string" ? row.photoUrl : "",
     photoUpdatedAt: row.photoUpdatedAt || null,
     disabled: row.disabled === true,
@@ -113,7 +117,7 @@ async function syncMemberDirectoryWrite(event) {
   }
   const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   // A sign-in stamp (lastLoginAt) changes nothing the directory holds.
-  const same = before && ["displayName", "photoUrl", "disabled"].every((k) => before[k] === after[k])
+  const same = before && ["displayName", "firstName", "lastName", "photoUrl", "disabled"].every((k) => before[k] === after[k])
     && String(before.photoUpdatedAt && before.photoUpdatedAt.toMillis ? before.photoUpdatedAt.toMillis() : before.photoUpdatedAt || "") === String(after.photoUpdatedAt && after.photoUpdatedAt.toMillis ? after.photoUpdatedAt.toMillis() : after.photoUpdatedAt || "");
   if (same) {
     const cur = await ref.get();
