@@ -7,7 +7,7 @@
 // mountStaffKanban() once; show() is then called on every route change.
 import { createStore } from "./kanban-store.js";
 import { KBEditor } from "./kanban-editor.js";
-import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember } from "../avatar.js";
+import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember, initialOf, splitName } from "../avatar.js";
 import { createResultReader, useContinuousMode, isAndroidDevice } from "../dictation-results.js";
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
@@ -105,20 +105,30 @@ export function mountStaffKanban(ctx) {
   // anyone a ticket names who isn't in it (a removed member keeps their name
   // on old tickets as their address). An alias address (PERSON_ALIASES) is
   // never a person of its own: it shows, and is picked, as its owner.
+  // A person's initials for their circle: first + last name (Users →
+  // first/last name), else the words of their display name, else the console's
+  // own record of them (initialOf), else their address.
+  function initialsOfRow(m, email) {
+    let first = m && m.firstName, last = m && m.lastName;
+    if (!first && !last && m && m.displayName) ({ firstName: first, lastName: last } = splitName(m.displayName));
+    const s = (String(first || "").trim().charAt(0) + String(last || "").trim().charAt(0)).toUpperCase();
+    return s || initialOf(email);
+  }
   function people() {
     const named = store.state.settings.firstNames || {};
     const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
-      const name = String(m.displayName || "").trim() || String(m.email).split("@")[0];
-      return { id: m.email, first: String(named[m.email] || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email) };
+      const name = String(m.displayName || "").trim() || [m.firstName, m.lastName].filter(Boolean).join(" ").trim() || String(m.email).split("@")[0];
+      return { id: m.email, first: String(named[m.email] || "").trim() || String(m.firstName || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email), initials: initialsOfRow(m, m.email) };
     });
     const self = canonicalEmail(me);
     if (!list.some((u) => u.id === self)) {
       const name = (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || self.split("@")[0];
-      list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self) });
+      const own = getAvatarMember(self) || { displayName: name };
+      list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self), initials: initialsOfRow(own, self) });
     }
     return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
   }
-  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id) } : null) : null);
+  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
   const firstName = (id) => (user(id) || {}).first || "Unassigned";
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
@@ -182,7 +192,7 @@ export function mountStaffKanban(ctx) {
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
     const ph = photoOf(u.id);
     if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${esc(ph)}')"></span>`;
-    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.first.charAt(0).toUpperCase())}</span>`;
+    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
   let toastTimer;
@@ -317,8 +327,49 @@ export function mountStaffKanban(ctx) {
     setAddress(back || boardHash());
     document.title = ({ report: "Release report", settings: "Kanban settings" }[current.route] || "Staff Kanban") + " — PH Agent Console";
   }
-  // A card opens its ticket in a new tab at the ticket's address. Where the
-  // browser won't open one (a blocked pop-up), the ticket opens here instead.
+  // A card opens its ticket here, over the board, and the address bar takes
+  // the ticket's own address (showTicketAddress), so it is shareable without
+  // a new tab having to load the whole console again. Cmd/Ctrl/Shift-click or
+  // a middle click still opens it in a new tab.
+  //
+  // The full ticket is read as the pointer comes to rest on a card, or is
+  // pressed, so the read is usually done by the time the click lands. A read
+  // is used once and only within PREFETCH_MS: the modal still opens on a
+  // fresh ticket, never on one read long ago.
+  const PREFETCH_MS = 10000;
+  const prefetched = new Map();
+  function prefetchTask(key) {
+    if (!key) return;
+    const hit = prefetched.get(key);
+    if (hit && Date.now() - hit.at < PREFETCH_MS) return;
+    const p = store.fetchTask(key);
+    p.catch(() => { if (prefetched.get(key) && prefetched.get(key).p === p) prefetched.delete(key); });
+    prefetched.set(key, { p, at: Date.now() });
+  }
+  function takePrefetch(key) {
+    const hit = prefetched.get(key);
+    prefetched.delete(key);
+    return hit && Date.now() - hit.at < PREFETCH_MS ? hit.p : store.fetchTask(key);
+  }
+  let hoverTimer = 0, hoverKey = "";
+  function openCard(key, e) {
+    if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) { openTicketTab(key); return; }
+    openTask(key);
+  }
+  let cardCopyTimer = 0;
+  async function copyCardLink(btn) {
+    const key = btn.dataset.copyLink, url = ticketUrl(key);
+    if (await copyText(url)) {
+      toast(`Link to <b>${esc(key)}</b> copied`);
+      $$(".kb-link-btn.on").forEach((b) => { b.classList.remove("on"); $(".material-symbols-outlined", b).textContent = "link"; });
+      const ic = $(".material-symbols-outlined", btn);
+      btn.classList.add("on"); ic.textContent = "done";
+      clearTimeout(cardCopyTimer);
+      cardCopyTimer = setTimeout(() => { btn.classList.remove("on"); ic.textContent = "link"; }, 2000);
+    } else toast(`The link couldn't be copied. Copy it from here: <span class="kb-toast-url">${esc(url)}</span>`);
+  }
+  // A new tab at the ticket's address. Where the browser won't open one (a
+  // blocked pop-up), the ticket opens here instead.
   function openTicketTab(key) {
     let tab = null;
     try { tab = window.open(ticketUrl(key), "_blank"); } catch (e) { /* opens here */ }
@@ -883,11 +934,13 @@ export function mountStaffKanban(ctx) {
     const kidsLive = kids ? kids.filter((k) => res(k) !== "withdrawn") : null;
     const kidsDone = kids ? kids.filter((k) => res(k) === "completed").length : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
+    const linkBtn = `<button type="button" class="kb-link-btn" data-copy-link="${esc(t.key)}" title="Copy link" aria-label="Copy a link to ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>`;
     return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
         <span class="kb-prio kb-prio-${pr.key}" title="${pr.label} priority"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span></span>
+        ${linkBtn}
         ${state.settings.fields.flag.show || t.flagged ? flagBtn : ""}
       </div>
       <p class="card-title">${esc(t.title)}</p>
@@ -915,7 +968,8 @@ export function mountStaffKanban(ctx) {
   function initDrag() {
     document.addEventListener("pointerdown", (e) => {
       const card = e.target.closest(".kb-card");
-      if (!card || e.button !== 0 || !$("#kb-board") || pageEl.hidden || !canWrite() || e.target.closest("[data-flag]")) return;
+      if (card && pageEl.contains(card) && !e.target.closest("[data-flag], [data-copy-link]")) prefetchTask(card.dataset.key);
+      if (!card || e.button !== 0 || !$("#kb-board") || pageEl.hidden || !canWrite() || e.target.closest("[data-flag], [data-copy-link]")) return;
       drag = { card, key: card.dataset.key, x: e.clientX, y: e.clientY, type: e.pointerType, active: false, id: e.pointerId };
       if (e.pointerType !== "mouse") {
         drag.timer = setTimeout(() => { if (drag && !drag.active) startDrag(drag.x, drag.y); }, 260);
@@ -943,12 +997,34 @@ export function mountStaffKanban(ctx) {
       if (suppressClick) { suppressClick = false; e.preventDefault(); return; }
       const fb = e.target.closest("[data-flag]");
       if (fb) { toggleFlag(taskByKey(fb.dataset.flag)); return; }
+      const cl = e.target.closest("[data-copy-link]");
+      if (cl) { copyCardLink(cl); return; }
+      openCard(card.dataset.key, e);
+    });
+    // A middle click opens the ticket in a new tab, as a link would.
+    document.addEventListener("auxclick", (e) => {
+      const card = e.button === 1 && e.target.closest(".kb-card");
+      if (!card || !pageEl.contains(card) || e.target.closest("[data-flag], [data-copy-link]")) return;
+      e.preventDefault();
       openTicketTab(card.dataset.key);
+    });
+    // Read the ticket while the pointer rests on its card (not while it only passes over).
+    document.addEventListener("pointerover", (e) => {
+      if (e.pointerType !== "mouse") return;
+      const card = e.target.closest && e.target.closest(".kb-card");
+      const key = card && pageEl.contains(card) ? card.dataset.key : "";
+      if (key === hoverKey) return;
+      hoverKey = key; clearTimeout(hoverTimer);
+      if (key) hoverTimer = setTimeout(() => { if (hoverKey === key) prefetchTask(key); }, 120);
+    });
+    document.addEventListener("focusin", (e) => {
+      const card = e.target.closest && e.target.closest(".kb-card");
+      if (card && pageEl.contains(card) && e.target === card) prefetchTask(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && drag && drag.active) { e.preventDefault(); endDrag(false); return; }
       const card = e.target.closest && e.target.closest(".kb-card");
-      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTicketTab(card.dataset.key); }
+      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ") && e.target === card) { e.preventDefault(); openCard(card.dataset.key, e); }
     });
   }
   function startDrag(x, y) {
@@ -1105,7 +1181,7 @@ export function mountStaffKanban(ctx) {
   // another release) fetches it first.
   // The board holds cards, so a ticket's modal reads the full ticket first.
   async function openTaskByKey(key, preset) {
-    try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
+    try { if (!(await takePrefetch(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
     catch (e) { fail(e); return; }
     openTask(key, { ...preset, loaded: true });
   }
