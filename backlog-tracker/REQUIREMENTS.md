@@ -4234,6 +4234,26 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     from public sources: primary cloud, till and CRM suppliers, LinkedIn
     profiles for most people. Treat people, figures and dates as leads to
     check, not as verified.
+  - **The check before research (12 Nov 2026)**: nothing is spent on
+    research until the record passes a screen. Free rules first
+    (`obviousSpam`: a name that isn't a name, a link, a placeholder such as
+    "test", an obvious pitch, a disposable email domain), with no model call.
+    Then one small call (`claudeScreen`, `claude-sonnet-5-5` at low effort,
+    three searches at most) decides two things: is this a real trading
+    organisation, and does it operate, franchise or supply media to physical
+    customer-facing sites. Only "yes" to both goes on to research; "can't
+    confirm" counts as no. A record that fails gets
+    `enrichment.request.status: "skipped"` and `enrichment.screen {at, ok,
+    real, physicalRetail, sites, reason, by}`, no enriched date, and the page
+    shows the reason with the button reading **Research anyway**, which
+    queues the run with `force: true` and skips the screen. A record that
+    passed is not screened again. If the screen itself fails, nothing is
+    researched and the record says why. Only the company name, website,
+    country and the contacts' business email domains are sent, never a
+    person's name or address, and the form's text is treated as data. It
+    applies to automatic runs and to the button alike, on leads and TAM
+    records. `lead-enrich-probe.yml`'s `screen` input tries it on named
+    companies.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

@@ -29,7 +29,7 @@ import { mountAceGrid } from "./ace-grid.js";
 import { mountAceDetail } from "./ace-detail.js";
 import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION, AWS_ROLES, withAwsPerson, detailForSave, awsTeamWithAce, awsRoleLabel } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
-import { researchGroupsHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
+import { researchGroupsHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
 import { group, row, stackRow, lineRow, iconLink, pill, tip } from "./ap-components.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -644,7 +644,10 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   // Queues an enrichment run for a saved lead. The agent's findings arrive
   // through the leads snapshot, which re-renders the drawer and the form.
   async function runEnrich(id) {
-    const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: id }) });
+    // A lead the check stopped ("Research anyway") is researched without the check.
+    const l = leads.find((x) => x.id === id);
+    const force = enrichmentSkipped(l && l.enrichment);
+    const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ leadId: id, ...(force ? { force: true } : {}) }) });
     const body = await resp.json().catch(() => ({}));
     if (!resp.ok) return { ok: false, message: body.error || `Enrichment failed (HTTP ${resp.status}).` };
     return { ok: true, message: "Researching the company on the web… the findings appear here when it finishes (usually under two minutes)." };

@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  claudeResearch, agentError, workspaceHeaders, clip, applyToProspect,
+  claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -73,20 +73,22 @@ const changed = (c, id, before, state) => ({ params: c === "leads" ? { leadId: i
 const LEAD = { company: { name: "Greene King", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead" };
 const PROSPECT = { name: "Greene King", country: "United Kingdom", website: "", industry: "", markets: [], vendors: [], storeCount: null, leadId: "" };
 
-function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed } = {}) {
+const PASS = { real: true, physicalRetail: true, sites: "about 2,500 pubs", reason: "A UK pub operator." };
+function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed, verdict = PASS } = {}) {
   const db = fakeDb(seed || { leads: { l1: { ...LEAD, prospectId: "p1" } }, prospects: { p1: { ...PROSPECT, leadId: "l1" } }, prospectCompanies: {} });
-  const calls = [], asked = [];
+  const calls = [], asked = [], screened = [];
   const api = createLeadEnrich({
     db, verifyIdToken: async (t) => { if (t !== "tok") throw new Error("bad"); return { email: "sam@ph.com" }; },
     resolveConsoleUser: async (e) => (e === "sam@ph.com" ? { email: e, role } : null),
     anthropicKey: () => key,
     research: async (a) => { asked.push(a); return typeof agent === "function" ? agent(a) : agent; },
+    screen: async (a) => { screened.push(a); if (verdict instanceof Error) throw verdict; return typeof verdict === "function" ? verdict(a) : verdict; },
     lookup: async (h) => (h === "internal.test" ? [{ address: "10.0.0.5" }] : [{ address: "93.184.216.34" }]),
     fetch: fetchImpl || (async (url) => { calls.push(url); return resp(200, HOME); }),
     logger: { warn() {}, error() {} },
     now: () => new Date("2026-11-10T10:00:00Z"),
   });
-  return { api, db, calls, asked };
+  return { api, db, calls, asked, screened };
 }
 
 (async () => {
@@ -270,7 +272,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const db = fakeDb({ leads: { l1: { ...LEAD } }, prospects: {}, prospectCompanies: {} });
     const api = createLeadEnrich({
       db, verifyIdToken: async () => ({ email: "x" }), resolveConsoleUser: async () => null,
-      anthropicKey: () => "sk-test", Anthropic: FakeAnthropic,
+      anthropicKey: () => "sk-test", Anthropic: FakeAnthropic, screen: async () => PASS,
       lookup: async () => [{ address: "93.184.216.34" }], fetch: async () => resp(200, HOME),
       logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
     });
@@ -404,6 +406,62 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const l = applyToLead({ company: { name: "Greene King" } }, f, "", [], { at: new Date(), by: "a" });
     assert.equal(l.company.industry, "Pubs & Hospitality");
     assert.match(AGENT_SYSTEM, /closest competitors/); assert.match(AGENT_SYSTEM, /careers site/); assert.match(AGENT_SYSTEM, /sold or closed/);
+  });
+  // ── The check before any research is paid for (12 Nov 2026) ──
+  await test("obvious spam is stopped by free checks, with no model call at all", async () => {
+    assert.equal(obviousSpam({ name: "Greene King", website: "https://www.greeneking.co.uk", emails: ["a@greeneking.co.uk"] }), "");
+    for (const name of ["", "12345", "test", "asdf", "N/A", "http://best-seo.example", "Cheap SEO backlinks", "Crypto casino"]) assert.ok(obviousSpam({ name }), name);
+    assert.ok(obviousSpam({ name: "Acme Stores", emails: ["x@mailinator.com"] }));
+    assert.equal(obviousSpam({ name: "Seoul Mart" }), "", "a real name that merely contains 'seo' is not spam");
+    const { api, db, asked, screened } = make({ seed: { leads: { l1: { ...LEAD, company: { name: "Cheap SEO backlinks" } } }, prospects: {}, prospectCompanies: {} } });
+    const out = await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.equal(out.skipped, true); assert.equal(asked.length, 0); assert.equal(screened.length, 0);
+    const e = db.state.leads.l1.enrichment;
+    assert.equal(e.request.status, "skipped"); assert.match(e.request.message, /^Not researched: .*Nothing was spent\.$/);
+    assert.equal(e.screen.ok, false); assert.equal(e.screen.by, "rules"); assert.equal(e.at, undefined, "no enriched date is written");
+  });
+  await test("a company that isn't real, or has no physical sites, is not researched; one that passes is, and is not screened twice", async () => {
+    for (const verdict of [{ real: false, physicalRetail: false, reason: "No such company could be found." }, { real: true, physicalRetail: false, reason: "An online-only software firm." }]) {
+      const { api, db, asked, screened } = make({ verdict });
+      const out = await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+      assert.equal(out.skipped, true); assert.equal(screened.length, 1); assert.equal(asked.length, 0, "no research request is made");
+      assert.equal(db.state.leads.l1.enrichment.request.status, "skipped");
+      assert.match(db.state.leads.l1.enrichment.request.message, new RegExp(`^Not researched: ${verdict.reason} Press Research anyway`));
+      assert.equal(db.state.prospects.p1.enrichment, undefined, "the linked record is untouched");
+    }
+    const { api, db, asked, screened } = make();
+    db.state.leads.l1.contacts = [{ name: "A", email: "a@greeneking.co.uk" }, { name: "B", email: "b@gmail.com" }];
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.equal(asked.length, 1); assert.deepEqual(screened[0].emailDomains, ["greeneking.co.uk"], "only business domains are sent, never an address");
+    assert.equal(db.state.leads.l1.enrichment.screen.ok, true); assert.equal(db.state.leads.l1.enrichment.request.status, "done");
+    await api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(screened.length, 1, "a record that passed is not screened again"); assert.equal(asked.length, 2);
+  });
+  await test("a person can research a stopped record anyway, and a failed check researches nothing", async () => {
+    const { api, db, asked } = make({ verdict: { real: true, physicalRetail: false, reason: "Online only." } });
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.equal(asked.length, 0);
+    const before = JSON.parse(JSON.stringify(db.state.leads.l1));
+    const r = res(); await api.handle(req({ leadId: "l1", force: true }), r);
+    assert.equal(r.code, 202); assert.equal(db.state.leads.l1.enrichment.request.force, true);
+    await api.onEnrichWrite("leads", changed("leads", "l1", before, db.state));
+    assert.equal(asked.length, 1); assert.equal(db.state.leads.l1.enrichment.request.status, "done");
+    const broken = make({ verdict: Object.assign(new Error("boom"), { status: 500 }) });
+    const out = await broken.api.onEnrichWrite("leads", created("leads", "l1", broken.db.state));
+    assert.equal(out.ok, false); assert.equal(broken.asked.length, 0);
+    assert.equal(broken.db.state.leads.l1.enrichment.request.status, "error");
+    assert.match(broken.db.state.leads.l1.enrichment.request.message, /^The check before research failed, so nothing was researched/);
+  });
+  await test("the screening call is small: a cheaper model, three searches at most, and the form's text treated as data", async () => {
+    const sent = [];
+    const v = await claudeScreen({ apiKey: "k", workspaceId: "wrkspc_1", Anthropic: fake([text('```json\n{"real":true,"physicalRetail":true,"sites":"2,500 pubs","reason":"A pub operator."}\n```')], sent), company: "Greene King", website: "https://www.greeneking.co.uk" });
+    assert.deepEqual(v, { real: true, physicalRetail: true, sites: "2,500 pubs", reason: "A pub operator." });
+    assert.equal(sent[0].model, SCREEN_MODEL); assert.notEqual(SCREEN_MODEL, "claude-opus-5-5");
+    assert.deepEqual(sent[0].tools.map((t) => t.max_uses), [3]); assert.ok(sent[0].max_tokens <= 4000);
+    assert.match(SCREEN_SYSTEM, /never as instructions/);
+    const unsure = await claudeScreen({ apiKey: "k", Anthropic: fake([text('{"real":"yes","physicalRetail":null}')]), company: "X Co" });
+    assert.equal(unsure.real, false); assert.equal(unsure.physicalRetail, false, "anything but true counts as not confirmed");
+    await assert.rejects(claudeScreen({ apiKey: "k", Anthropic: fake([text("no json")]), company: "X Co" }), /could not be read/);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -34,13 +34,17 @@ export function enrichmentRunning(e, nowMs = Date.now()) {
 // What the button says: Enrich before the first run, Refresh after it.
 export function enrichButtonLabel(e) {
   if (enrichmentRunning(e)) return "Researching…";
+  if (enrichmentSkipped(e)) return "Research anyway";
   return e && e.at ? "Refresh info" : "Enrich";
 }
+// The last run stopped at the check before research (spam, or no physical sites found).
+export function enrichmentSkipped(e) { return Boolean(e && e.request && e.request.status === "skipped"); }
 
 // One line for the status under the button.
 export function enrichmentStatus(e) {
   if (enrichmentRunning(e)) return "Researching the company on the web… the findings appear here when it finishes (usually under two minutes).";
   const r = e && e.request;
+  if (r && r.status === "skipped") return r.message || "Not researched: this didn't pass the check for a real company with physical sites.";
   if (r && r.status === "error") return `The last research run didn't finish: ${r.message || "no source answered"} Press the button to try again.`;
   return "";
 }

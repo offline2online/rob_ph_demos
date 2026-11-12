@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, cleanFindings, parseAgentJson, agentError } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -90,7 +90,25 @@ async function findWorkspace() {
   return "";
 }
 
+// SCREEN_COMPANIES="A|B|C": only run the check that precedes research on each
+// name (free rules, then the screening model) and print the verdicts.
+async function screenOnly(names) {
+  let bad = 0;
+  for (const name of names) {
+    const s0 = Date.now();
+    const spam = obviousSpam({ name });
+    if (spam) { console.log(`screen "${name}": stopped by the free rules (${spam}) — no request made`); continue; }
+    try {
+      const v = await claudeScreen({ apiKey: key, workspaceId: process.env.ANTHROPIC_WORKSPACE_ID || "", Anthropic: Probe, company: name });
+      console.log(`screen "${name}": real=${v.real} physicalRetail=${v.physicalRetail} → ${v.real && v.physicalRetail ? "RESEARCH" : "SKIP"} in ${secs(Date.now() - s0)} — ${v.reason}`);
+    } catch (err) { bad++; console.error(`screen "${name}" FAILED: status=${err && err.status} ${String(err && err.message ? err.message : err).slice(0, 400)}`); }
+  }
+  process.exit(bad ? 1 : 0);
+}
+
 (async () => {
+  const toScreen = (process.env.SCREEN_COMPANIES || "").split("|").map((x) => x.trim()).filter(Boolean);
+  if (toScreen.length) return screenOnly(toScreen);
   if (leadId) {
     try { const l = await fromLead(leadId); company = l.name; website = l.website; country = ""; } catch (err) { console.error(`Couldn't read that lead: ${String(err && err.message || err).slice(0, 200)}`); process.exit(1); }
     if (!company) { console.error("That lead has no company name."); process.exit(1); }
