@@ -1495,6 +1495,28 @@ T("KB-C24", "typing in a table cell of the description switches Save on, and wha
   await p.done();
 });
 
+T("KB-C25", "a tag written over MCP shows as a mention in the ticket and survives a save from the board", async (prof) => {
+  // The markup kanban_create_task / kanban_update_task write for `mention` (functions/kanban.js tagPeople).
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].description = `<p>Please look at the offer banner.</p><p><span class="kb-mention" data-user="${HUY}" data-name="Huy">@Huy</span></p>`;
+  seed.docs.kanbanTasks["PH-20"].mentions = [HUY];
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor';
+  await p.waitForSelector(`${ed} .kb-mention`);
+  assert.deepEqual(await p.$$eval(`${ed} .kb-mention`, (e) => e.map((m) => [m.dataset.user, m.textContent.trim()])), [[HUY, "@Huy"]]);
+  await sleep(350);
+  assert.ok(await p.isDisabled("#f-save"), "opening it changes nothing");
+  await p.fill("#f-title", "Offer banner, retitled");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save")));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal((await stored(p, "PH-20")).title, "Offer banner, retitled"));
+  const t = await stored(p, "PH-20");
+  assert.deepEqual(t.mentions, [HUY], "the tag is still on the ticket, so nobody is told a second time");
+  assert.match(t.description, new RegExp(`data-user="${HUY.replace(/\./g, "\\.")}"`));
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");
