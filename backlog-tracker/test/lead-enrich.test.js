@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -97,7 +97,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) assert.ok(!isPrivateAddress(ip), ip);
   });
   await test("readPage takes the title, description, LinkedIn page and the apple-touch-icon over the plain icon", () => {
-    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png" });
+    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { light: "", dark: "" } });
   });
   await test("the agent is told to research without paid providers and to answer with news and financials", () => {
     assert.match(AGENT_SYSTEM, /web search/); assert.match(AGENT_SYSTEM, /news/); assert.match(AGENT_SYSTEM, /financials/); assert.match(AGENT_SYSTEM, /logo/);
@@ -484,6 +484,30 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(c.db.state.leads.l1.company.storeCount, 2500);
     assert.match(c.db.state.leads.l1.enrichment.storeCountBreakdown, /from the first check/);
     assert.equal(cleanFindings({ storeCountSource: { url: "javascript:x" } }).storeCountSource, null);
+  });
+  // ── Logos for the branded walkthrough demo (12 Nov 2026) ──
+  await test("the full logo for light and for dark backgrounds is found, checked as an image and kept", async () => {
+    const page = `<header><img class="site-logo" src="/img/gk-logo.svg" alt="Greene King"><img src="/img/hero.jpg" alt="A pub"><img alt="Greene King logo" data-src="/img/gk-logo-white.svg"></header>`;
+    assert.deepEqual(readPage(page, "https://www.greeneking.co.uk/").logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
+    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x), { light: "", dark: "" });
+    for (const k of ["logoLight", "logoDark"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
+    assert.match(AGENT_SYSTEM, /never build or guess an address/);
+    const types = { "https://brand.example/gk-full.svg": "image/svg+xml", "https://brand.example/gk-white.png": "image/png", "https://www.greeneking.co.uk/img/gk-logo.svg": "image/svg+xml", "https://brand.example/not-an-image": "text/html" };
+    const fetchImpl = async (url) => (types[url] ? resp(200, "x", { "content-type": types[url] }) : resp(200, page, { "content-type": "text/html" }));
+    // The agent's links win when they are images; a link that is not an image falls back to the home page's own logo.
+    const a = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk-full.svg", logoDark: "https://brand.example/gk-white.png" }, fetchImpl });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    assert.deepEqual(a.db.state.leads.l1.enrichment.logos, { light: "https://brand.example/gk-full.svg", dark: "https://brand.example/gk-white.png" });
+    assert.deepEqual(a.db.state.prospects.p1.enrichment.logos, a.db.state.leads.l1.enrichment.logos, "the TAM record gets them too");
+    const b = make({ agent: { ...AGENT, logoLight: "https://brand.example/not-an-image", logoDark: "javascript:alert(1)" }, fetchImpl });
+    b.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await b.api.onEnrichWrite("leads", created("leads", "l1", b.db.state));
+    assert.deepEqual(b.db.state.leads.l1.enrichment.logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "" });
+    // A later run that finds none keeps the earlier ones.
+    const c = make({ agent: AGENT, seed: a.db.state });
+    await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(c.db.state.leads.l1.enrichment.logos.dark, "https://brand.example/gk-white.png");
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -9,6 +9,14 @@
 // in inboundCount. No matching record: a new one is made for that company and
 // country and linked to the lead; creating it starts enrichment (lead-enrich.js
 // onEnrichWrite runs on every new TAM record and lead).
+//   POST /leadIngest/v1/brand    same key   {company, email?, country?}
+// The company's logos for a branded walkthrough demo, when the company is in
+// the Prospects (TAM) database or is a lead: {found, name, industry,
+// logos: {light, dark, icon}}. light is the logo for light backgrounds, dark
+// the one for dark backgrounds, icon the square site icon; each is an image
+// address or "". Nothing else about the record is returned, and a company
+// that is not listed answers {found: false}. Called server-to-server like
+// /submit, so the key and the list of companies never reach a browser.
 // Anyone from AWS is added as a contact on the AWS record instead of a lead.
 // A submission with test=true is stored as a test lead: it is never matched
 // with a real lead or a TAM record, and is excluded from enrichment
@@ -94,10 +102,51 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
     return [201, { ...out, created: true }];
   }
 
+  const httpUrl = (v) => { try { const u = new URL(String(v || "")); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; } catch { return ""; } };
+  // The logos one record carries: research's full logos and icon, and a logo a person set on the company profile.
+  const logosOf = (e, profileLogo) => {
+    const x = e && typeof e === "object" ? e : {};
+    const l = x.logos && typeof x.logos === "object" ? x.logos : {};
+    return { light: httpUrl(profileLogo) || httpUrl(l.light), dark: httpUrl(l.dark), icon: httpUrl(x.logoUrl) };
+  };
+  async function brand(body) {
+    const name = String(body.company || "").trim().slice(0, 120);
+    const email = String(body.email || "").trim().slice(0, 200);
+    if (!name && !email) return [400, { error: "company or email is required" }];
+    const [pSnap, lSnap] = await Promise.all([db.collection("prospects").get(), db.collection("leads").get()]);
+    const raw = new Map(pSnap.docs.map((d) => [d.id, d.data() || {}]));
+    const prospects = pSnap.docs.map((d) => tam.normaliseProspect(d.id, d.data()));
+    const m = tam.matchProspect(prospects, { name, email, country: String(body.country || "") });
+    let out = null;
+    if (m && m.prospect) {
+      const p = m.prospect, data = raw.get(p.id) || {};
+      let profileLogo = "";
+      const ckey = tam.slugId(p.name);
+      if (ckey) { try { const c = await db.collection("prospectCompanies").doc(ckey).get(); profileLogo = c.exists ? (((c.data() || {}).profile || {}).logoUrl || "") : ""; } catch { /* none */ } }
+      out = { name: p.name, industry: p.industry || "", logos: logosOf(data.enrichment, profileLogo) };
+      // The lead it became may hold logos the TAM record lacks.
+      const ld = p.leadId && lSnap.docs.find((d) => d.id === p.leadId);
+      if (ld) { const more = logosOf((ld.data() || {}).enrichment); for (const k of ["light", "dark", "icon"]) if (!out.logos[k]) out.logos[k] = more[k]; }
+    } else if (name) {
+      // A lead that is not in the TAM yet, by company name.
+      const hit = lSnap.docs.find((d) => (d.data() || {}).test !== true && (d.data() || {}).archived !== true && tam.companyKey(((d.data() || {}).company || {}).name) === tam.companyKey(name));
+      if (hit) { const d = hit.data() || {}; out = { name: String((d.company || {}).name || ""), industry: String((d.company || {}).industry || ""), logos: logosOf(d.enrichment) }; }
+    }
+    if (!out) return [200, { found: false }];
+    return [200, { found: true, ...out }];
+  }
+
   async function handle(req, res) {
     if (req.method !== "POST") { res.set("Allow", "POST"); return send(res, 405, { error: "POST only" }); }
-    if (!/\/v1\/submit\/?$/.test(req.path || "")) return send(res, 404, { error: "not found" });
+    const isBrand = /\/v1\/brand\/?$/.test(req.path || "");
+    if (!isBrand && !/\/v1\/submit\/?$/.test(req.path || "")) return send(res, 404, { error: "not found" });
     if (!keyMatches(req.get("x-lead-key"), key())) return send(res, 401, { error: "invalid key" });
+    if (isBrand) {
+      try { const [status, body] = await brand(req.body && typeof req.body === "object" ? req.body : {}); return send(res, status, body); } catch (err) {
+        if (logger) logger.error("leadIngest brand failed", { error: String(err && err.message || err) });
+        return send(res, 500, { error: "could not look the company up" });
+      }
+    }
     const r = core.leadFromWebsite(req.body && typeof req.body === "object" ? req.body : {});
     if (r.errors.length) return send(res, 400, { error: r.errors.join(" ") });
 

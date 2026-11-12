@@ -4254,6 +4254,30 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     applies to automatic runs and to the button alike, on leads and TAM
     records. `lead-enrich-probe.yml`'s `screen` input tries it on named
     companies.
+  - **Logos for the walkthrough demo (12 Nov 2026)**: besides the square
+    icon (`enrichment.logoUrl`), each run looks for the company's full logo
+    as image files: `enrichment.logos {light, dark}`, the version for light
+    backgrounds and the white or reversed version for dark ones. Sources, in
+    order: the links the agent saw in a fetched page (`logoLight`,
+    `logoDark`: the company's own header, footer, brand or press page, or
+    Wikimedia Commons), then the home page's own `<img>` tags that say
+    "logo" (`pageLogos`; a file name saying white, light, reverse, negative
+    or inverse is the dark-background one). An address is kept only when it
+    answers as an image (public addresses only); a later run that finds none
+    keeps the earlier ones. They are saved on the lead and on its TAM
+    record, shown on both ("Logos for the walkthrough demo", one on a light
+    tile and one on a dark tile) and returned by `get_lead`. The addresses
+    point at the company's own files: nothing is copied or re-hosted.
+    **`POST /leadIngest/v1/brand`** (the website's `X-Lead-Key`, body
+    `{company, email?, country?}`) is how a walkthrough demo gets them: it
+    matches the company as an inbound lead is matched (name, or the work
+    email's domain, in the TAM; else a lead by name) and answers `{found,
+    name, industry, logos: {light, dark, icon}}`, or `{found: false}`.
+    A logo a person set on the company profile is used as `light`. Nothing
+    else about the record is returned, test and archived leads are never
+    matched, and the call is server-to-server so the list of companies never
+    reaches a browser. The tour on personalisationhub.com does not call it
+    yet (a PH Website ticket).
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

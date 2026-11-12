@@ -136,7 +136,27 @@ function readPage(html, base) {
     if (!icons.touch && /apple-touch-icon/.test(rel)) icons.touch = abs(href);
     else if (!icons.icon && /(^|\s)icon(\s|$)/.test(rel)) icons.icon = abs(href);
   }
-  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li, iconUrl: icons.touch || icons.icon };
+  return { title: title.slice(0, 200), description: description.slice(0, 400), linkedinCompany: li, iconUrl: icons.touch || icons.icon, logos: pageLogos(h, abs) };
+}
+
+// The logo images a home page shows: <img> tags whose address, alt text, class
+// or id says "logo". A file name saying white, light, reverse, negative or
+// inverse is the version for dark backgrounds; the first other one is the
+// version for light backgrounds.
+const FOR_DARK = /(^|[^a-z])(white|light|reverse[d]?|negative|inverse|inverted|knockout|wht)([^a-z]|$)/i;
+function pageLogos(html, abs) {
+  const out = { light: "", dark: "" };
+  for (const m of String(html || "").matchAll(/<img\s[^>]*>/gi)) {
+    const tag = m[0];
+    const src = (tag.match(/\ssrc\s*=\s*["']([^"']+)["']/i) || [])[1] || (tag.match(/\sdata-src\s*=\s*["']([^"']+)["']/i) || [])[1];
+    if (!src || /^data:/i.test(src) || !/logo/i.test(tag)) continue;
+    const url = abs(src);
+    if (!url) continue;
+    const file = url.split("?")[0].split("/").pop() || "";
+    if (FOR_DARK.test(file)) { if (!out.dark) out.dark = url; } else if (!out.light) out.light = url;
+    if (out.light && out.dark) break;
+  }
+  return out;
 }
 
 // ── The agent ────────────────────────────────────────────────────────────
@@ -148,6 +168,7 @@ const AGENT_SYSTEM = [
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
   "its LinkedIn company page; a two or three sentence summary of what it does; a direct link to its logo or icon image;",
+  "its logo as image files, for use in a demo mock-up branded for this company: logoLight is the full logo as it appears on a white or light background, and logoDark is the white or reversed version made for dark backgrounds. Each is a direct link to an SVG or PNG file that you saw in a page you fetched (the company's own site header or footer, its brand, media or press page, or Wikimedia Commons). Leave one empty when you did not see such a file; never build or guess an address;",
   "its recent news (up to eight items from the last twelve months, newest first, each with the article's link and date; include leadership changes, strategy announcements, results, technology and marketing news, from the company's newsroom and the trade press);",
   "and its most recent financials (latest reported revenue, profit or trading update, with the period and source links and dates).",
   "Then research what matters for retail media and personalisation, each as one to three plain sentences, empty when nothing public is known:",
@@ -168,7 +189,7 @@ const AGENT_SYSTEM = [
   "Leave a field empty, or the list empty, when you cannot find it. Write in British English.",
   "When you are done, reply with ONE JSON object in a ```json code block, and nothing after it, with exactly these keys:",
   '{"name":"","website":"","industry":"","sector":"","countries":[],"hqCity":"","hqCountry":"","storeCount":null,"storeCountBreakdown":"","storeCountSource":{"title":"","url":"","date":"YYYY-MM-DD"},"employees":"","revenue":"",',
-  '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"",',
+  '"techStack":[],"vendors":[],"linkedinCompany":"","summary":"","logoUrl":"","logoLight":"","logoDark":"",',
   '"retailMedia":"","personalisation":"","inStoreDigital":"","loyalty":"","primaryCloud":"","estate":"","strategy":"","fit":"",',
   '"talkingPoints":[""],',
   '"people":[{"name":"","title":"","linkedin":"","note":""}],',
@@ -225,6 +246,8 @@ function cleanFindings(raw) {
     linkedinCompany: li || "",
     summary: clip(o.summary, 1000),
     logoUrl: httpUrl(o.logoUrl),
+    logoLight: httpUrl(o.logoLight),
+    logoDark: httpUrl(o.logoDark),
     retailMedia: clip(o.retailMedia, 1000),
     personalisation: clip(o.personalisation, 1000),
     inStoreDigital: clip(o.inStoreDigital, 1000),
@@ -381,11 +404,16 @@ function mergeBy(list, key, n) {
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
+  const was = p.logos && typeof p.logos === "object" ? p.logos : {};
+  const got = f.logos && typeof f.logos === "object" ? f.logos : {};
   const hq = [f.hqCity, f.hqCountry].filter(Boolean).join(", ");
   return {
     at: meta.at, by: meta.by,
     summary: f.summary || p.summary || f.siteDescription || "",
     logoUrl: keep(logoUrl, p.logoUrl),
+    // The full logo for light and for dark backgrounds (checked image files),
+    // for the branded walkthrough demo; "" when none was found.
+    logos: { light: got.light || was.light || "", dark: got.dark || was.dark || "" },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
     storeCount: f.storeCount || p.storeCount || null,
@@ -555,6 +583,20 @@ function createLeadEnrich({
     } catch { return ""; }
   }
 
+  // The first of these addresses that answers as an image (public addresses only).
+  async function firstImage(urls) {
+    for (const u of urls) {
+      const url = httpUrl(u);
+      if (!url) continue;
+      try {
+        const r = await safeGet(url);
+        const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "");
+        if (r.ok && /^image\/(svg\+xml|png|webp|jpeg|gif|avif)/i.test(type)) return httpUrl(r.url);
+      } catch { /* next */ }
+    }
+    return "";
+  }
+
   async function agentSource(company, website, country) {
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
@@ -585,6 +627,10 @@ function createLeadEnrich({
     if (!f.linkedinCompany && page.linkedinCompany) f.linkedinCompany = prospectsCore.normaliseLinkedinUrl(page.linkedinCompany) || "";
     if (!f.website && site) f.website = site;
     const logoUrl = page.iconUrl || f.logoUrl || (web.status === "ok" ? await faviconOf(site) : "");
+    // The full logos: the agent's links first, then the home page's own logo
+    // images; each is kept only when it really answers as an image.
+    const seen = page.logos || {};
+    f.logos = { light: await firstImage([f.logoLight, seen.light]), dark: await firstImage([f.logoDark, seen.dark]) };
     const sources = [agent, web].map((r) => ({ source: r.source, status: r.status, message: r.message }));
     return { f, logoUrl, sources };
   }
@@ -782,5 +828,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, pageLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };
