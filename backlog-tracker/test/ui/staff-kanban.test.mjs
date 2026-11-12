@@ -1295,6 +1295,31 @@ T("KB-C20", "a person with no photo shows their first and last initials on cards
   await p.done();
 });
 
+T("KB-C21", "a field changed before the editor has loaded still switches Save on", async (prof) => {
+  const p = await open(prof);
+  // The editor downloads the first time a ticket opens. Hold it back, as a slow connection or a busy runner does.
+  let release; const held = new Promise((r) => { release = r; });
+  await p.route(/\/quill\/1\.3\.7\/quill\.min\.js$/, async (route) => { await held; await route.fallback(); });
+  await press(p, '.kb-card[data-key="PH-26"]');
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title");
+  assert.equal(await p.$("#f-description .ql-editor"), null, "the editor has not arrived");
+  assert.ok(await p.isDisabled("#f-save"), "nothing has changed: Save is off");
+  await p.fill("#f-title", "Changed before the editor loaded");
+  release();
+  await p.waitForSelector("#f-description .ql-editor");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on: the title changed"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal((await stored(p, "PH-26")).title, "Changed before the editor loaded"));
+  // Nothing changed this time, and the editor is already here: Save stays off.
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the saved ticket to close");
+  await press(p, '.kb-card[data-key="PH-27"]');
+  await until(async () => /PH-27/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-27 to open");
+  await p.waitForSelector("#f-description .ql-editor");
+  await sleep(300); // Save's state is re-read every 100 ms: long enough for a wrong "changed" to show
+  assert.ok(await p.isDisabled("#f-save"), "an untouched ticket keeps Save off");
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");
