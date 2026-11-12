@@ -1285,10 +1285,14 @@ export function mountStaffKanban(ctx) {
     const cs = $("[data-comment-save]");
     if (cs) cs.disabled = !editQ || editBase == null || KBEditor.getHtml(editQ) === editBase;
   }
-  function watchChanges() {
+  // `loaded` is the form as it was drawn, before the editors arrived (Quill downloads the first time a modal
+  // opens). A field changed in that gap is a change: only the editors' own text is taken from now.
+  function watchChanges(loaded) {
     clearInterval(changeTimer);
     if (!draft) return;
-    changeBase = formState();
+    const now = formState();
+    if (loaded && now) { const n = JSON.parse(now); changeBase = JSON.stringify({ ...JSON.parse(loaded), desc: n.desc, comment: n.comment }); }
+    else changeBase = now;
     // A typed, pasted or dictated edit in either editor counts at once.
     [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
     const form = $("#task-form");
@@ -1690,7 +1694,8 @@ export function mountStaffKanban(ctx) {
     });
     const ca = $("#f-comment-add");
     if (ca) ca.addEventListener("click", () => { addCommentFromEditor(); });
-    bindEditors().finally(watchChanges);
+    const loaded = draft, asDrawn = formState();
+    bindEditors().finally(() => watchChanges(draft === loaded ? asDrawn : ""));
     bindVoice();
     bindChildren(form);
     bindCriteria(form);
