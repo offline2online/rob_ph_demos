@@ -32,10 +32,7 @@ same switches: `KB_PROFILES`, `KB_ENGINES`, `KB_ONLY`, `KB_RETRIES`, `KB_JOBS` (
 is `backlog-tracker/test/kanban-mcp.test.js` (`npm run test:mcp`).
 
 Each case opens a fresh browser context (clean `localStorage`, so the demo data is the starting state) and fails on any uncaught page
-error. A case that fails is run once more in a fresh context; a pass on the retry is printed as `FLAKY`. A `FLAKY` line is a
-defect in the case, to be fixed: the board redraws on the next animation frame and a busy runner can hold a frame back for longer than
-any fixed sleep, so a case waits on what it is about to assert (`eventually` / `until` in the console suite), never for a set time, and
-never compares milliseconds with a fixed limit (KB-SCALE compares with the 39-ticket board on the same runner). Speech recognition and the
+error. A case that fails is run once more in a fresh context; a pass on the retry is printed as `FLAKY`. Speech recognition and the
 microphone are stubbed with a scripted transcript; screen recording needs a real screen and is a manual check (M-1).
 
 **Three kinds of line in the output besides ok / not ok.** `CONFIRM TC-nn: question → observed: …` is a result the spec doesn't define
