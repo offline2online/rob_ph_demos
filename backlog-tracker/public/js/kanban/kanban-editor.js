@@ -522,7 +522,7 @@ export const KBEditor = (function () {
     if (!window.DOMPurify) return esc(html);
     const clean = DOMPurify.sanitize(html, {
       ADD_TAGS: ["video", "iframe"], ADD_ATTR: ["controls", "playsinline", "data-user", "data-name", "allowfullscreen", "frameborder", "target"],
-      FORBID_TAGS: ["form", "input", "button", "textarea", "select", "option", "style", "link", "meta", "base", "object", "embed"], FORBID_ATTR: ["style", "srcdoc", "formaction"],
+      FORBID_TAGS: "form input button textarea select option style link meta base object embed".split(" "), FORBID_ATTR: "style srcdoc formaction".split(" "),
       RETURN_DOM_FRAGMENT: true,
     });
     clean.querySelectorAll("iframe").forEach((el) => { if (!/^https:\/\//i.test(el.getAttribute("src") || "")) el.remove(); });
