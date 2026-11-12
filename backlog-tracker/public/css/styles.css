@@ -2604,6 +2604,8 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .enrich-meta { display: block; font-size: 12px; color: var(--text-muted); }
 .enrich-fin { margin: 2px 0 4px; line-height: 1.5; }
 .enrich-insight { margin: 2px 0 4px; line-height: 1.5; overflow-wrap: anywhere; }
+.enrich-sites-count { display: block; font-size: 22px; font-weight: 700; line-height: 1.2; }
+.enrich-sites { margin-bottom: 6px; }
 .enrich-updated { margin: 8px 0 2px; }
 .pd-enrich-status { margin: 4px 0 8px; }
 @media (max-width: 640px) {

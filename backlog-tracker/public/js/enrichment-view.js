@@ -1,7 +1,8 @@
 // Promote › Leads and Prospects (TAM): how a record's company enrichment reads
 // on the page. The enrichment map is written by functions/lead-enrich.js (an
 // agent's web research plus the company's own home page):
-//   { at, by, summary, logoUrl, hq, employees, revenue, techStack[], vendors[],
+//   { at, by, summary, logoUrl, storeCount, storeCountBreakdown,
+//     storeCountSource{title, url, date}, hq, employees, revenue, techStack[], vendors[],
 //     linkedinCompany, retailMedia, personalisation, inStoreDigital, loyalty,
 //     primaryCloud, estate, strategy, fit, talkingPoints[],
 //     people[{name, title, linkedin, note}],
@@ -63,6 +64,14 @@ const INSIGHTS = [
   ["In-store screens and signage", (e) => e.inStoreDigital], ["Loyalty", (e) => e.loyalty],
   ["Estate", (e) => e.estate], ["Strategy and pressures", (e) => e.strategy],
 ];
+// The number of sites, first on every view: the count, what it is made of and where it came from.
+const sitesOf = (e) => {
+  const n = e && Number(e.storeCount);
+  if (!n || !Number.isFinite(n)) return null;
+  const src = e.storeCountSource && safeUrl(e.storeCountSource.url) ? e.storeCountSource : null;
+  return { count: Math.round(n).toLocaleString("en-GB"), breakdown: e.storeCountBreakdown || "", src };
+};
+const sitesHTML = (s) => `<span class="enrich-sites-count">${esc(s.count)}</span>${s.breakdown ? `<p class="enrich-insight">${esc(s.breakdown)}</p>` : ""}${s.src ? `<span class="enrich-meta">${link(s.src.url, s.src.title || "Source")}${s.src.date ? ` · ${esc(fmtDay(s.src.date))}` : ""}</span>` : ""}`;
 const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
 const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");
 const insightsOf = (e) => (e ? INSIGHTS.map(([label, get]) => [label, get(e)]).filter(([, v]) => v) : []);
@@ -110,7 +119,9 @@ export function researchGroupsHTML(e) {
   const sources = Array.isArray(e.sources) ? e.sources : [];
   const li = safeUrl(e.linkedinCompany);
   const failed = sources.filter((s) => s.status === "error");
+  const sites = sitesOf(e);
   const research = [
+    sites ? stackRow(`<span class="ap-row-label">Sites</span>${sitesHTML(sites)}`, "", "enrich-sites") : "",
     e.summary ? stackRow(`<p class="enrich-summary">${esc(e.summary)}</p>`) : "",
     ...facts.map(([k, v]) => row(k, esc(v))),
     li ? row("LinkedIn", link(li, "Company page")) : "",
@@ -147,7 +158,9 @@ export function enrichmentHTML(e) {
   const fin = e.financials && (e.financials.summary || (e.financials.sources || []).length) ? e.financials : null;
   const sources = Array.isArray(e.sources) ? e.sources : [];
   const li = safeUrl(e.linkedinCompany);
+  const sites = sitesOf(e);
   return `<div class="enrich-view">
+    ${sites ? `<div class="enrich-sites"><p class="enrich-label">Sites</p>${sitesHTML(sites)}</div>` : ""}
     ${e.summary ? `<p class="enrich-summary">${esc(e.summary)}</p>` : ""}
     ${facts.length ? `<dl class="enrich-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
     ${li ? `<p class="enrich-line">${link(li, "Company LinkedIn page")}</p>` : ""}

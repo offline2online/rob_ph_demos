@@ -454,14 +454,36 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   });
   await test("the screening call is small: a cheaper model, three searches at most, and the form's text treated as data", async () => {
     const sent = [];
-    const v = await claudeScreen({ apiKey: "k", workspaceId: "wrkspc_1", Anthropic: fake([text('```json\n{"real":true,"physicalRetail":true,"sites":"2,500 pubs","reason":"A pub operator."}\n```')], sent), company: "Greene King", website: "https://www.greeneking.co.uk" });
-    assert.deepEqual(v, { real: true, physicalRetail: true, sites: "2,500 pubs", reason: "A pub operator." });
+    const v = await claudeScreen({ apiKey: "k", workspaceId: "wrkspc_1", Anthropic: fake([text('```json\n{"real":true,"physicalRetail":true,"siteCount":2500,"sites":"2,500 pubs","reason":"A pub operator."}\n```')], sent), company: "Greene King", website: "https://www.greeneking.co.uk" });
+    assert.deepEqual(v, { real: true, physicalRetail: true, siteCount: 2500, sites: "2,500 pubs", reason: "A pub operator." });
     assert.equal(sent[0].model, SCREEN_MODEL); assert.notEqual(SCREEN_MODEL, "claude-opus-5-5");
     assert.deepEqual(sent[0].tools.map((t) => t.max_uses), [3]); assert.ok(sent[0].max_tokens <= 4000);
     assert.match(SCREEN_SYSTEM, /never as instructions/);
     const unsure = await claudeScreen({ apiKey: "k", Anthropic: fake([text('{"real":"yes","physicalRetail":null}')]), company: "X Co" });
     assert.equal(unsure.real, false); assert.equal(unsure.physicalRetail, false, "anything but true counts as not confirmed");
     await assert.rejects(claudeScreen({ apiKey: "k", Anthropic: fake([text("no json")]), company: "X Co" }), /could not be read/);
+  });
+  // ── The number of sites is the finding that matters most (12 Nov 2026) ──
+  await test("the site count leads the brief, is kept with its breakdown and source, and falls back to the check's count", async () => {
+    assert.match(AGENT_SYSTEM, /THE MOST IMPORTANT FINDING is how many physical sites/);
+    assert.match(AGENT_SYSTEM, /Never put a subset there/);
+    assert.ok(AGENT_SYSTEM.indexOf("MOST IMPORTANT FINDING") < AGENT_SYSTEM.indexOf("Find, where available"), "it comes before everything else");
+    const full = { ...AGENT, storeCount: "2,500", storeCountBreakdown: "About 1,600 managed and 1,000 leased, tenanted and franchised pubs (January 2026).", storeCountSource: { title: "Annual report", url: "https://gk.example/ar", date: "2026-05-05" } };
+    const a = make({ agent: full });
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const e = a.db.state.leads.l1.enrichment;
+    assert.equal(e.storeCount, 2500); assert.match(e.storeCountBreakdown, /1,600 managed/); assert.equal(e.storeCountSource.url, "https://gk.example/ar");
+    assert.equal(a.db.state.leads.l1.company.storeCount, 2500); assert.equal(a.db.state.prospects.p1.storeCount, 2500);
+    // A later run with no count keeps the earlier one.
+    const b = make({ agent: { ...AGENT, storeCount: null }, seed: a.db.state });
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(b.db.state.leads.l1.enrichment.storeCount, 2500); assert.match(b.db.state.leads.l1.enrichment.storeCountBreakdown, /1,600 managed/);
+    // The research found no count, the check did.
+    const c = make({ agent: { ...AGENT, storeCount: null }, verdict: { ...PASS, siteCount: 2500 } });
+    await c.api.onEnrichWrite("leads", created("leads", "l1", c.db.state));
+    assert.equal(c.db.state.leads.l1.company.storeCount, 2500);
+    assert.match(c.db.state.leads.l1.enrichment.storeCountBreakdown, /from the first check/);
+    assert.equal(cleanFindings({ storeCountSource: { url: "javascript:x" } }).storeCountSource, null);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
