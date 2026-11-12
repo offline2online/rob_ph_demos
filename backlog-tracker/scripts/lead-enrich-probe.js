@@ -48,7 +48,7 @@ function sealed(obj) {
   return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
 }
 const key = process.env.ANTHROPIC_API_KEY || "";
-if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
+if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
@@ -122,7 +122,36 @@ async function logosOnly(list) {
   process.exit(0);
 }
 
+// LEAD_STATUS=<leads doc id>: what the last run on that lead (and its TAM record)
+// did, read from the board: the request's status and message and the check's
+// verdict. The company's name and website are masked in the log.
+async function leadStatus(id) {
+  const fnRequire = require("module").createRequire(path.join(fn, "index.js"));
+  const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
+  const { getFirestore } = fnRequire("firebase-admin/firestore");
+  initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
+  const db = getFirestore();
+  const t = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : v || null);
+  const show = (label, d) => {
+    const c = d.company || {};
+    for (const v of [c.name, d.name, c.website, d.website]) if (v) console.log(`::add-mask::${v}`);
+    const e = d.enrichment || {};
+    const r = e.request || null, s = e.screen || null;
+    console.log(`${label}: created ${t(d.createdAt)} by ${d.createdByEmail || "?"}, updated ${t(d.updatedAt)}, website ${c.website || d.website ? "set" : "blank"}, test ${d.test === true}, enriched at ${t(e.at)}`);
+    console.log(`  request: ${r ? JSON.stringify({ status: r.status, trigger: r.trigger, force: r.force === true, by: r.by ? "set" : "", at: t(r.at), startedAt: t(r.startedAt), finishedAt: t(r.finishedAt), message: r.message }) : "none"}`);
+    console.log(`  check:   ${s ? JSON.stringify({ ok: s.ok, real: s.real, physicalRetail: s.physicalRetail, by: s.by, siteCount: s.siteCount, at: t(s.at), reason: s.reason }) : "none"}`);
+    console.log(`  sources: ${JSON.stringify((e.sources || []).map((x) => ({ source: x.source, status: x.status, message: x.message })))}`);
+    return d;
+  };
+  const lead = await db.collection("leads").doc(id).get();
+  if (!lead.exists) { console.error("no such lead"); process.exit(1); }
+  const d = show("lead", lead.data() || {});
+  if (d.prospectId) { const p = await db.collection("prospects").doc(String(d.prospectId)).get(); if (p.exists) show("TAM record", p.data() || {}); else console.log("TAM record: missing"); }
+  process.exit(0);
+}
+
 (async () => {
+  if ((process.env.LEAD_STATUS || "").trim()) return leadStatus(process.env.LEAD_STATUS.trim());
   const forLogos = (process.env.LOGO_COMPANIES || "").split(",").map((x) => x.trim()).filter(Boolean);
   if (forLogos.length) return logosOnly(forLogos);
   const toScreen = (process.env.SCREEN_COMPANIES || "").split("|").map((x) => x.trim()).filter(Boolean);

@@ -27,6 +27,10 @@ on:
         description: 'Only look for logos (free, no research): "Name|https://site, Name2|https://site2" (public names only: they are printed)'
         type: string
         default: ''
+      lead_status:
+        description: 'Only report what the last run on this lead id did (status, message, the check) and the functions recent log lines'
+        type: string
+        default: ''
       lead_id:
         description: 'Or a lead id: its company is read from the board and never printed'
         type: string
@@ -64,9 +68,10 @@ jobs:
           LEAD_ID: ${{ inputs.lead_id }}
           SCREEN_COMPANIES: ${{ inputs.screen }}
           LOGO_COMPANIES: ${{ inputs.logos }}
+          LEAD_STATUS: ${{ inputs.lead_status }}
           PROBE_PUBLIC_KEY_INPUT: ${{ inputs.public_key }}
         run: |
-          if [ -n "$LEAD_ID" ]; then
+          if [ -n "$LEAD_ID" ] || [ -n "$LEAD_STATUS" ]; then
             echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/probe-sa.json"
             export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/probe-sa.json"
           fi
@@ -84,7 +89,7 @@ jobs:
         run: |
           echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
-          gcloud logging read 'resource.type="cloud_run_revision" AND (resource.labels.service_name="enrichleadonwrite" OR resource.labels.service_name="enrichprospectonwrite") AND severity>=WARNING' \
-            --project backlog-tracker-e4ed2 --freshness=3d --limit 20 \
+          gcloud logging read 'resource.type="cloud_run_revision" AND (resource.labels.service_name="enrichleadonwrite" OR resource.labels.service_name="enrichprospectonwrite" OR resource.labels.service_name="leadenrich" OR resource.labels.service_name="leadingest") AND severity>=WARNING' \
+            --project backlog-tracker-e4ed2 --freshness=1d --limit 40 \
             --format='table[no-heading](timestamp, resource.labels.service_name, severity, jsonPayload.status, jsonPayload.error, jsonPayload.message)' || echo "Couldn't read the functions' logs."
           rm -f "$RUNNER_TEMP/firebase-sa.json"
