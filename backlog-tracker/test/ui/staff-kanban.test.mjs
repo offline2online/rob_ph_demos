@@ -65,9 +65,11 @@ const RETRIES = +(process.env.KB_RETRIES ?? 1);
 const LIVE = [];
 const sweep = () => Promise.all(LIVE.splice(0).map((c) => c().catch(() => {})));
 async function withRetry(id, prof, fn) {
+  let why = "";
   for (let attempt = 0; ; attempt++) {
-    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt}`); FLAKY.push({ id, profile: prof.id }); } return; }
-    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; console.log(`# RETRY ${id} [${prof.id}]: ${String(e && e.message).split("\n")[0]}`); }
+    // The FLAKY line carries the first failure, so the run's summary says what to chase (a passing profile's output is not printed).
+    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt} — ${why}`); FLAKY.push({ id, profile: prof.id, why }); } return; }
+    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; why = String(e && e.message).split("\n").slice(0, 3).join(" ").slice(0, 300); console.log(`# RETRY ${id} [${prof.id}]: ${why}`); }
   }
 }
 function T(id, title, opts, fn) {
