@@ -426,8 +426,7 @@ T("TC-13", "rich description: link, @mention, screenshot, table and callout are 
   const ed = '[data-field="description"] .ql-editor';
   await p.click(ed); await p.keyboard.press("Control+End");
   await p.keyboard.type(" See https://offline2online.com/menu-board for the preview. Ask @mi");
-  await p.waitForTimeout(150);
-  assert.ok((await p.$$eval('[data-field="description"] .kb-mention-item', (e) => e.length)) >= 1);
+  await p.waitForSelector('[data-field="description"] .kb-mention-item.on');
   await p.keyboard.press("Enter");
   await p.evaluate(async () => {
     const c = document.createElement("canvas"); c.width = 300; c.height = 160; c.getContext("2d").fillRect(0, 0, 300, 160);
@@ -444,6 +443,8 @@ T("TC-13", "rich description: link, @mention, screenshot, table and callout are 
   await press(p, "#f-save");
   await until(async () => /PH-20/.test(await p.textContent("#kb-toast")), "saved");
   const html = (await stored(p, "PH-20")).description;
+  // The tag is stored on the ticket: that list, not the toast, is what the server notifies from.
+  assert.deepEqual((await stored(p, "PH-20")).mentions, [MINH], "the ticket lists who its description tags");
   assert.match(html, /<a href="https:\/\/offline2online\.com\/menu-board"/);
   assert.match(html, new RegExp(`data-user="${MINH.replace(/\./g, "\\.")}"`));
   assert.match(html, /<img src="https:\/\/firebasestorage\.googleapis\.com\//, "the screenshot went to Storage, not inline");
@@ -468,7 +469,7 @@ T("TC-14", "comments: rich comment with @mention, and a dictated comment via the
   assert.equal(await p.textContent("#f-comment-mic"), "stop");
   await press(p, "#f-comment-mic"); await p.waitForTimeout(400);
   assert.equal(await p.textContent("#f-comment-mic"), "mic");
-  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu"); await p.waitForTimeout(100); await p.keyboard.press("Enter");
+  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu"); await p.waitForSelector(".kb-mention-item.on"); await p.keyboard.press("Enter");
   await press(p, "#f-comment-add"); await p.waitForTimeout(200);
   const last = await p.$$eval(".kb-comment-text", (e) => e[e.length - 1].innerHTML);
   assert.match(last, /Checked this on the Covent Garden store and it is fixed/);
@@ -476,6 +477,7 @@ T("TC-14", "comments: rich comment with @mention, and a dictated comment via the
   assert.match(await p.textContent("#kb-toast"), /Huy notified/);
   const c = await writes(p, /^kanbanTasks\/PH-23\/comments\//);
   assert.equal(c.length, 1); assert.equal(c[0].data.author, ROB); assert.match(c[0].data.text, /Covent Garden/);
+  assert.deepEqual(c[0].data.mentions, [HUY], "the comment lists who it tags: the server notifies from that");
   assert.equal((await stored(p, "PH-23")).commentCount, 1);
   await p.done();
 });
@@ -1473,6 +1475,24 @@ T("KB-R1", "an editor (every team member but the owner) creates, moves, edits, f
   assert.equal(await q.$$eval("[data-show]:not([disabled]), [data-req]:not([disabled])", (e) => e.length), 0, "every field switch is disabled");
   assert.equal(await q.$("#st-sprint-add"), null, "no Add sprint");
   await q.done();
+});
+
+T("KB-C24", "typing in a table cell of the description switches Save on, and what was typed is saved", async (prof) => {
+  // A table cell is edited in place: the editor reports no text change for it, so Save has to notice by itself.
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].description = '<p>Steps</p><div class="faq-table"><table><thead><tr><th>Step</th><th>Expected</th></tr></thead><tbody><tr><td>1</td><td>Offer shows</td></tr></tbody></table></div><p>End</p>';
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const cell = '[data-field="description"] .ql-editor td >> nth=1';
+  await p.waitForSelector('[data-field="description"] .ql-editor td');
+  await sleep(350); // Save's state is re-read every 100 ms: it has settled as "nothing changed"
+  assert.ok(await p.isDisabled("#f-save"), "nothing changed yet");
+  await p.locator(cell).click();
+  await p.keyboard.press("End"); await p.keyboard.type(" on the board");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on after typing in the cell"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.match((await stored(p, "PH-20")).description, /Offer shows on the board/));
+  await p.done();
 });
 
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {

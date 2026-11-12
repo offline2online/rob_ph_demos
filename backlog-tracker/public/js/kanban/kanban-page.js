@@ -245,7 +245,7 @@ export function mountStaffKanban(ctx) {
     return new Promise((resolve) => {
       const wrap = document.createElement("div");
       wrap.className = "modal-backdrop"; wrap.id = "kb-tester-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them. Only they are notified.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
       document.body.appendChild(wrap);
       const pick = wrap.querySelector("#kb-tester-pick"), ok = wrap.querySelector("#kb-tester-ok");
       const done = (v) => { wrap.remove(); resolve(v); };
@@ -1274,7 +1274,7 @@ export function mountStaffKanban(ctx) {
     const on = implicit || (!!draft && (draft.watchers || []).includes(me));
     b.hidden = !draft || draftIsNew;
     b.disabled = implicit;
-    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments and changes";
+    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments on this ticket";
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", String(on));
     $("#task-watch-label").textContent = on ? "Watching" : "Watch";
@@ -1290,9 +1290,19 @@ export function mountStaffKanban(ctx) {
       v: TRACKED.map((id) => { const el = $("#" + id, form); return el ? el.value : null; }),
       type: draft.type, labels: draft.labels, links: draft.links, flagged: !!draft.flagged,
       att: (draft.attachments || []).map((a) => a.url || a.name || ""),
-      desc: descQ ? KBEditor.getHtml(descQ) : null,
-      comment: commentQ ? KBEditor.getHtml(commentQ) : null,
+      desc: editorHtml("desc", descQ),
+      comment: editorHtml("comment", commentQ),
     });
+  }
+  // Reading an editor's HTML copies its whole document. Save's state is re-read ten times a second while a ticket
+  // is open, so the copy is kept until something could have changed it: the editor says its text changed, or the
+  // form saw a key, a click or an input (a table cell is typed into without the editor hearing of it).
+  const edHtml = { desc: null, comment: null };
+  const edStale = () => { edHtml.desc = null; edHtml.comment = null; };
+  function editorHtml(which, q) {
+    if (!q) return null;
+    if (!edHtml[which] || edHtml[which].q !== q) edHtml[which] = { q, html: KBEditor.getHtml(q) };
+    return edHtml[which].html;
   }
   function syncSaveState() {
     const b = $("#f-save");
@@ -1309,10 +1319,11 @@ export function mountStaffKanban(ctx) {
     if (loaded && now) { const n = JSON.parse(now); changeBase = JSON.stringify({ ...JSON.parse(loaded), desc: n.desc, comment: n.comment }); }
     else changeBase = now;
     // A typed, pasted or dictated edit in either editor counts at once.
-    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
+    edStale();
+    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", () => { edStale(); syncSaveState(); }); });
     const form = $("#task-form");
     if (!form._changeBound) {
-      ["input", "change", "click", "keyup"].forEach((ev) => form.addEventListener(ev, () => setTimeout(syncSaveState, 0)));
+      ["input", "change", "click", "keyup", "paste", "drop"].forEach((ev) => form.addEventListener(ev, () => { edStale(); setTimeout(() => { edStale(); syncSaveState(); }, 0); }));
       form._changeBound = true;
     }
     // Dictation, uploads and the flag change the page without a form event.

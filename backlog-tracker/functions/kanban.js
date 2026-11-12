@@ -1903,7 +1903,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_list_notifications",
-      description: "Staff Kanban: your notifications — assigned to you, handed to you for testing, comments on tickets you own or watch, @mentions, your tickets closed — unread first, newest first. Answers \"what's new for me on the board?\".",
+      description: "Staff Kanban: your notifications — assigned to you, comments on tickets you own or watch, @mentions (a move between columns notifies nobody) — unread first, newest first. Answers \"what's new for me on the board?\".",
       scope: "board.read",
       inputSchema: {
         type: "object",

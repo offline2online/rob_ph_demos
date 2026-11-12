@@ -1278,12 +1278,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(SAM).length, 1);
   });
 
-  await test("fan-out: Ready for Testing hands it to the tester, and sending it back returns it", async () => {
+  await test("fan-out: a move between columns tells nobody: not the tester it is handed to, not the developer it returns to", async () => {
     env.store.col("kanbanNotifications").clear();
     await notify.taskWritten(ev("e4", "PH-50", { ...base, assignee: HUY }, { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing", updatedBy: HUY }));
-    assert.strictEqual(notesFor(ROB)[0].kind, "testing");
     await notify.taskWritten(ev("e5", "PH-50", { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing" }, { ...base, assignee: HUY, previousAssignee: HUY, status: "in-progress", updatedBy: ROB }));
-    assert.strictEqual(notesFor(HUY)[0].kind, "returned");
+    await notify.taskWritten(ev("e5b", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0, "no notification for any of the three moves");
+    // Someone tagged in the same save is still told, and so is a person made the assignee by hand while it moves.
+    await notify.taskWritten(ev("e5c", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", mentions: [SAM], updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(SAM).map((n) => n.kind), ["mention"]);
+    await notify.taskWritten(ev("e5d", "PH-50", { ...base, assignee: HUY, status: "backlog" }, { ...base, assignee: KIT, status: "in-progress", updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["assigned"]);
   });
 
   await test("fan-out: a description @mention notifies once, and wins over assigned", async () => {
@@ -1295,11 +1300,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(HUY).length, 1, "an old mention is not repeated by an unrelated edit");
   });
 
-  await test("fan-out: closing someone else's ticket tells its assignee and reporter, not the closer", async () => {
+  await test("fan-out: closing a ticket is a move too and tells nobody", async () => {
     env.store.col("kanbanNotifications").clear();
-    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", updatedBy: SAM }));
-    assert.deepStrictEqual([HUY, ROB].map((e) => notesFor(e).map((n) => n.kind)), [["closed"], ["closed"]]);
-    assert.strictEqual(notesFor(SAM).length, 0);
+    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", resolution: "completed", updatedBy: SAM }));
+    await notify.taskWritten(ev("e8b", "PH-50", { ...base }, { ...base, status: "done", resolution: "withdrawn", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0);
   });
 
   await test("fan-out: a comment tells the assignee, reporter and watchers, not its author", async () => {

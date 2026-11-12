@@ -6,12 +6,14 @@
 // Never to the person who acted. A doc is named from the trigger's event id
 // and the recipient, so a retried delivery writes nothing twice. Events:
 //
-//   assigned   assigned to you (create, edit, drag, kanban_assign_task, MCP create)
-//   testing    handed to you for testing (moved to Ready for Testing)
-//   returned   returned to you from testing
+//   assigned   assigned to you (create, edit, lane drag, kanban_assign_task, MCP create)
 //   commented  a comment on a ticket you are assignee or reporter of, or watching
 //   mention    @mentioned in a description or comment, or added to a comment by editing it (wins over the above)
-//   closed     your ticket (assignee/reporter) closed by someone else
+//
+// A move between columns tells nobody (12 Nov 2026): not the tester a ticket
+// is handed to on its way into Ready for Testing, not the developer it goes
+// back to, not its people when it is closed. Notifications written before
+// then carry the kinds testing, returned and closed; the bell still words them.
 //
 // pruneReadFor() deletes one member's read notifications older than 30 days;
 // it runs when that member marks notifications read (no scheduled job).
@@ -43,18 +45,18 @@ function recipientsForTask(before, after, actor) {
   if (!after) return out;
   const created = !before;
   const b = before || {};
+  // Moving a ticket between columns tells nobody (Rob, 12 Nov 2026: moves are agreed in person). That covers the
+  // two hand-offs a move makes by itself, to the tester on the way into Ready for Testing and back to the
+  // developer on the way out, and closing a ticket. Being made the assignee any other way still tells them.
   const assigneeChanged = clean(after.assignee) !== clean(b.assignee);
   if (assigneeChanged && after.assignee) {
-    if (after.status === "ready-for-testing" && b.status !== "ready-for-testing") add(out, after.assignee, "testing");
-    else if (b.status === "ready-for-testing" && after.status !== "ready-for-testing" && clean(after.assignee) === clean(b.previousAssignee)) add(out, after.assignee, "returned");
-    else add(out, after.assignee, "assigned");
+    const toTesting = after.status === "ready-for-testing" && b.status !== "ready-for-testing";
+    const handedBack = b.status === "ready-for-testing" && after.status !== "ready-for-testing" && clean(after.assignee) === clean(b.previousAssignee);
+    if (!toTesting && !handedBack) add(out, after.assignee, "assigned");
   }
+  // Tagged in the description: only people the change newly names.
   const had = new Set(list(b.mentions).map(clean));
   for (const m of list(after.mentions)) if (!had.has(clean(m))) add(out, m, "mention", "description");
-  if (!created && after.status === "done" && b.status !== "done") {
-    add(out, after.assignee, "closed");
-    add(out, after.reporter, "closed");
-  }
   out.delete(clean(actor));
   return out;
 }
