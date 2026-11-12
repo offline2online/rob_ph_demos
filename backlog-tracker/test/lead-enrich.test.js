@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  pageLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -241,7 +241,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   await test("a website on a private address, or redirecting to one, is not fetched", async () => {
     const a = make({ key: "unset" }); a.db.state.leads.l1.company.website = "https://internal.test";
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
-    assert.equal(a.calls.length, 0);
+    assert.equal(a.calls.filter((u) => u.includes("internal.test")).length, 0, "the private address itself is never requested");
     assert.equal(a.db.state.leads.l1.enrichment.sources[1].status, "error");
     assert.equal(a.db.state.leads.l1.enrichment.request.status, "error");
     const b = make({ key: "unset", fetchImpl: async () => resp(302, "", { location: "http://internal.test/admin" }) });
@@ -508,6 +508,31 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const c = make({ agent: AGENT, seed: a.db.state });
     await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
     assert.equal(c.db.state.leads.l1.enrichment.logos.dark, "https://brand.example/gk-white.png");
+  });
+  await test("a logo is also taken from the site's structured data and from Wikimedia Commons, only for the right company", async () => {
+    const ld = `<script type="application/ld+json">{"@graph":[{"@type":"WebSite"},{"@type":"Organization","logo":{"@type":"ImageObject","url":"/assets/brand.svg"}}]}</script>`;
+    assert.equal(readPage(ld, "https://acme.example/").logos.light, "https://acme.example/assets/brand.svg");
+    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.light, "");
+    const commons = { query: { pages: {
+      1: { index: 2, title: "File:Greene King logo.png", imageinfo: [{ url: "https://upload.wikimedia.org/gk.png", mime: "image/png" }] },
+      2: { index: 1, title: "File:Greene King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk.svg", mime: "image/svg+xml" }] },
+      3: { index: 3, title: "File:Greene King logo white.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk-white.svg", mime: "image/svg+xml" }] },
+      4: { index: 0, title: "File:Burger King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/bk.svg", mime: "image/svg+xml" }] },
+      5: { index: 4, title: "File:Greene King pub in Bury.jpg", imageinfo: [{ url: "https://upload.wikimedia.org/pub.jpg", mime: "image/jpeg" }] },
+    } } };
+    assert.deepEqual(commonsLogos(commons, "Greene King"), { light: "https://upload.wikimedia.org/gk.svg", dark: "https://upload.wikimedia.org/gk-white.svg" });
+    assert.deepEqual(commonsLogos(commons, "Acme Stores"), { light: "", dark: "" });
+    assert.deepEqual(commonsLogos({}, "Greene King"), { light: "", dark: "" });
+    // In a run: nothing on the home page, so Commons supplies them.
+    const fetchImpl = async (url) => {
+      if (url.startsWith("https://commons.wikimedia.org/w/api.php")) return resp(200, commons, { "content-type": "application/json" });
+      if (url.startsWith("https://upload.wikimedia.org/")) return resp(200, "x", { "content-type": url.endsWith(".png") ? "image/png" : "image/svg+xml" });
+      return resp(200, HOME, { "content-type": "text/html" });
+    };
+    const a = make({ fetchImpl });
+    a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    assert.deepEqual(a.db.state.leads.l1.enrichment.logos, { light: "https://upload.wikimedia.org/gk.svg", dark: "https://upload.wikimedia.org/gk-white.svg" });
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

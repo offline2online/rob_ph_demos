@@ -4260,9 +4260,14 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     backgrounds and the white or reversed version for dark ones. Sources, in
     order: the links the agent saw in a fetched page (`logoLight`,
     `logoDark`: the company's own header, footer, brand or press page, or
-    Wikimedia Commons), then the home page's own `<img>` tags that say
-    "logo" (`pageLogos`; a file name saying white, light, reverse, negative
-    or inverse is the dark-background one). An address is kept only when it
+    Wikimedia Commons; in the first real run the agent gave none, since
+    it reads page text, not image tags), then the home page's own `<img>`
+    tags that say "logo" and the logo its structured data declares
+    (`pageLogos`; a file name saying white, light, reverse, negative or
+    inverse is the dark-background one), then Wikimedia Commons' file search
+    (`commonsLogos`: a file counts only when its title has every word of the
+    company's name and "logo"; SVG first). `lead-enrich-probe.yml`'s `logos`
+    input tries this on named companies with no model call. An address is kept only when it
     answers as an image (public addresses only); a later run that finds none
     keeps the earlier ones. They are saved on the lead and on its TAM
     record, shown on both ("Logos for the walkthrough demo", one on a light
