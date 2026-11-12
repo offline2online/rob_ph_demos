@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -140,6 +140,14 @@ async function screenOnly(names) {
   for (const [k, v] of Object.entries(f)) console.log(`  ${k.padEnd(16)} ${size(v)}`);
   const filled = Object.values(f).filter((v) => (Array.isArray(v) ? v.length : v != null && v !== "")).length;
   console.log(`\n${filled} of ${Object.keys(f).length} fields filled.`);
+  // The logos for the walkthrough demo: does each link the agent gave answer as an image,
+  // and does the home page itself show a logo image? (Kinds only, never the address.)
+  const kind = async (u) => { if (!u) return "none given"; try { const r = await fetch(u, { redirect: "follow", headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } }); return `HTTP ${r.status}, ${r.headers.get("content-type") || "no type"}`; } catch (err) { return `not reachable (${String(err && err.message || err).slice(0, 60)})`; } };
+  console.log(`\nlogoLight: ${await kind(f.logoLight)}\nlogoDark:  ${await kind(f.logoDark)}`);
+  try {
+    const site = website || f.website;
+    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = readPage(html, site).logos; console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
+  } catch (err) { console.log(`home page not read: ${String(err && err.message || err).slice(0, 80)}`); }
   if (publicKey) {
     const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });
     console.log("\n-----BEGIN SEALED FINDINGS-----");
