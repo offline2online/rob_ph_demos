@@ -967,7 +967,7 @@ function createLeadEnrich({
     const queued = ra && ra.status === "queued" && (!rb || rb.id !== ra.id);
     if (!created && !queued) return null;
     if (collection === "leads" && after.test === true) return null;
-    // A franchise opportunity is a person, not a company: nothing to research.
+    // A network operator inquiry is a person, not a company: nothing to research.
     if (collection === "leads" && after.leadType === "franchise") return null;
     try {
       if (created && !queued && collection === "prospects" && (await coveredByNewLead(after))) return null;
@@ -995,7 +995,7 @@ function createLeadEnrich({
     if (!snap.exists) return send(res, 404, { error: leadId ? "no such lead" : "no such prospect" });
     const data = snap.data() || {};
     if (leadId && data.test === true) return send(res, 400, { error: "test leads are not enriched" });
-    if (leadId && data.leadType === "franchise") return send(res, 400, { error: "franchise opportunities are people, not companies, and are not enriched" });
+    if (leadId && data.leadType === "franchise") return send(res, 400, { error: "network operator inquiries are people, not companies, and are not enriched" });
     const name = leadId ? str(data.company && data.company.name, 120) : str(data.name, 120);
     if (!name) return send(res, 400, { error: "Name the company first; that's what is researched." });
     const cur = requestOf(data);

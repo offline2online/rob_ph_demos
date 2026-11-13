@@ -5,9 +5,10 @@
 // generated CommonJS copy, the MCP tools (functions/leads.js). Pure functions
 // only: no DOM, no Firestore, so test/leads.test.mjs drives them directly.
 //
-// One document per company (or, for a franchise opportunity, per person) in `leads/{id}`:
+// One document per company (or, for a network operator inquiry, per person) in `leads/{id}`:
 //   leadType       "company" (the default, a retail/company lead) or "franchise" (an individual
-//                  applying for a franchise, from the Franchise page's product tour gate)
+//                  asking about becoming a network operator, from the Be Your Own Boss page's
+//                  product tour gate; shown as "Network operator inquiry", the key is unchanged)
 //   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
 //                  (name is required for a company lead; a franchise lead usually has none)
 //   franchise      { region, background } on a franchise lead: where they plan to operate and
@@ -39,11 +40,11 @@ const STAGES = [
 const STAGE_KEYS = STAGES.map((s) => s.key);
 const DEFAULT_STAGE = "lead";
 
-// Franchise opportunities are individuals, not companies: their own type and
+// Network operator inquiries (key "franchise") are individuals, not companies: their own type and
 // their own pipeline, so they are never mixed with retail/company leads.
 const LEAD_TYPES = [
   { key: "company", label: "Retail / company" },
-  { key: "franchise", label: "Franchise opportunity" },
+  { key: "franchise", label: "Network operator inquiry" },
 ];
 const LEAD_TYPE_KEYS = LEAD_TYPES.map((t) => t.key);
 const DEFAULT_LEAD_TYPE = "company";
@@ -57,7 +58,7 @@ const FRANCHISE_STAGES = [
 const FRANCHISE_STAGE_KEYS = FRANCHISE_STAGES.map((s) => s.key);
 const FRANCHISE_DEFAULT_STAGE = "applied";
 const ALL_STAGE_KEYS = [...STAGE_KEYS, ...FRANCHISE_STAGE_KEYS];
-// "Your background" on the Franchise page's gate form.
+// "Your background" on the Be Your Own Boss page's gate form.
 const BACKGROUNDS = [
   { key: "agency", label: "Agency media or account management" },
   { key: "adtech", label: "Ad-tech sales or partnerships" },
@@ -65,7 +66,7 @@ const BACKGROUNDS = [
   { key: "marketing", label: "Marketing" },
   { key: "other", label: "Something else" },
 ];
-const FRANCHISE_SOURCE_LABEL = "Franchise page – product tour";
+const FRANCHISE_SOURCE_LABEL = "Be Your Own Boss page – product tour";
 
 const BUYING_ROLES = [
   { key: "decision-maker", label: "Decision maker" },
@@ -86,8 +87,10 @@ const roleLabel = (key) => (BUYING_ROLES.find((r) => r.key === key) || { label: 
 const isStage = (key) => ALL_STAGE_KEYS.includes(key);
 const isClosed = (stage) => stage === "closed-won" || stage === "closed-lost" || stage === "approved" || stage === "not-a-fit";
 
-// "franchise" for anything naming a franchise ("Franchise opportunity", "franchise"), else "company".
-const leadTypeOf = (v) => (/franchise/i.test(String(v == null ? "" : v)) ? "franchise" : DEFAULT_LEAD_TYPE);
+// "franchise" (the network operator type) for anything naming a franchise or an
+// operator ("franchise", "operator", "network operator", "Network operator inquiry"),
+// else "company". The website sends "franchise" today and may switch to "operator".
+const leadTypeOf = (v) => (/franchise|\boperator\b/i.test(String(v == null ? "" : v)) ? "franchise" : DEFAULT_LEAD_TYPE);
 const leadTypeLabel = (key) => (LEAD_TYPES.find((t) => t.key === key) || LEAD_TYPES[0]).label;
 const stagesFor = (type) => (type === "franchise" ? FRANCHISE_STAGES : STAGES);
 const defaultStageFor = (type) => (type === "franchise" ? FRANCHISE_DEFAULT_STAGE : DEFAULT_STAGE);
@@ -229,7 +232,8 @@ function leadFromForm(form) {
 // keys (name/company, website, industry, countries, storeCount, contactName,
 // jobTitle, email, linkedin) plus page, industry and test. `test` is true for
 // true/"1"/"true"/"yes"/"on". Returns { errors } or { errors: [], fields, contact, test }.
-// lead_type "Franchise opportunity" (or leadType) is the Franchise page's gate:
+// lead_type "franchise" / "operator" / "Network operator inquiry" (or leadType) is
+// the Be Your Own Boss page's gate:
 // see franchiseFromWebsite.
 const truthy = (v) => v === true || ["1", "true", "yes", "on"].includes(String(v == null ? "" : v).trim().toLowerCase());
 function leadFromWebsite(p) {
@@ -255,12 +259,12 @@ function leadFromWebsite(p) {
   };
 }
 
-// The Franchise page's product tour gate -> a franchise lead: an individual,
+// The Be Your Own Boss page's product tour gate -> a network operator inquiry: an individual,
 // no company. Fields: full_name (or fullName/contactName/name), email,
 // linkedin (optional; an address that isn't one is dropped rather than losing
 // the lead), operating_region (or operatingRegion/region/where_operate/location),
 // background (a BACKGROUNDS key or label), lead_source (stored as sourceLabel,
-// "Franchise page – product tour" when not sent), page and test.
+// "Be Your Own Boss page – product tour" when not sent), page and test.
 function franchiseFromWebsite(p) {
   const x = p || {};
   const test = truthy(x.test);
@@ -410,7 +414,7 @@ function mergeInbound(cur, fields, newContacts) {
 // "3 inbound" on a card and the summary; "" when nobody has come in.
 const inboundLabel = (l) => (l && l.inboundCount ? `${l.inboundCount} inbound` : "");
 
-// A short line for a card: "250 stores · UK, France"; for a franchise lead
+// A short line for a card: "250 stores · UK, France"; for a network operator inquiry
 // "Where they plan to operate · Background".
 function companyLine(l) {
   if (l && l.leadType === "franchise") {
