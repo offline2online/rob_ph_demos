@@ -27,7 +27,7 @@ $llms = "# PH\n\n## Industries\n\n- x\n\n## Pricing and trial\n\n- y\n";
 
 /* 1. Telco Retail today */
 $d = tooldef();
-ok( $d && true === $d['annotations']['readOnlyHint'] && $d['inputSchema']['properties']['industry']['enum'] === array( 'telco', 'pharmacy' ), 'tool lists telco and pharmacy' );
+ok( $d && true === $d['annotations']['readOnlyHint'] && $d['inputSchema']['properties']['industry']['enum'] === array( 'telco', 'pharmacy', 'pubs' ), 'tool lists telco, pharmacy and pubs' );
 ok( false !== strpos( $d['description'], 'Telco Retail' ) && false !== strpos( $d['description'], 'Pharmacy' ) && false !== strpos( $d['description'], 'instant' ), 'description names Telco Retail and the instant result' );
 $cat = tool( array() );
 ok( empty( $cat['isError'] ) && 'telco' === $cat['structuredContent']['calculators'][0]['industry'] && count( $cat['structuredContent']['calculators'][0]['inputs'] ) === 7, 'no arguments lists the calculators and their 7 inputs' );
@@ -48,7 +48,7 @@ ok( ! empty( tool( array( 'industry' => 'telco', 'inputs' => array( 'stores' => 
 ok( ! empty( tool( array( 'inputs' => array( 'stores' => 5 ) ) )['isError'] ), 'inputs without an industry rejected' );
 ok( 5000 == tool( array( 'industry' => 'telco', 'inputs' => array( 'stores' => 99999 ) ) )['structuredContent']['inputsUsed']['stores'], 'values clamp to the field range' );
 $ll = calc_llms_filter( $llms );
-ok( 1 === substr_count( $ll, '## Business model calculator' ) && strpos( $ll, '## Business model calculator' ) < strpos( $ll, '## Pricing and trial' ) && false !== strpos( $ll, 'https://personalisationhub.com/industries/telco/' ) && false !== strpos( $ll, 'Supported industries: Telco Retail, Pharmacy' ) && false !== strpos( $ll, 'https://personalisationhub.com/industries/pharmacy/' ), 'llms.txt section lists the calculator, industries and URL' );
+ok( 1 === substr_count( $ll, '## Business model calculator' ) && strpos( $ll, '## Business model calculator' ) < strpos( $ll, '## Pricing and trial' ) && false !== strpos( $ll, 'https://personalisationhub.com/industries/telco/' ) && false !== strpos( $ll, 'Supported industries: Telco Retail, Pharmacy, Pubs & Hospitality' ) && false !== strpos( $ll, 'https://personalisationhub.com/industries/pharmacy/' ), 'llms.txt section lists the calculator, industries and URL' );
 ok( calc_llms_filter( $ll ) === $ll, 'llms.txt section is not added twice' );
 $j = json_decode( calc_jsonld( 'telco' ), true );
 ok( 'WebApplication' === $j['@type'] && 'https://schema.org' === $j['@context'] && 'BusinessApplication' === $j['applicationCategory'] && true === $j['isAccessibleForFree'], 'JSON-LD is a WebApplication' );
@@ -60,6 +60,20 @@ $pc = calc_page_config( 'pharmacy' );
 ok( 'pharmacy' === $pc['industry'] && 6 === count( $pc['fields'] ) && $pc['download'] && $pc['gated'], 'pharmacy page config for the WebMCP script' );
 ok( ! preg_match( '/\bDSP\b|programmatic|personaliz/i', json_encode( calculators()['pharmacy'] ) . $ll . calc_jsonld( 'pharmacy' ) ), 'pharmacy copy rules: no DSP, programmatic or US spelling' );
 ok( false === stripos( calc_jsonld( 'telco' ), '</script' ), 'JSON-LD cannot close the script tag' );
+/* Pubs & Hospitality: entry 'pubs', on the hospitality page (page key 'hospitality') */
+$pb = tool( array( 'industry' => 'pubs', 'inputs' => array( 'venues' => 80, 'reach' => 50 ) ) );
+$pbs = $pb['structuredContent'];
+ok( empty( $pb['isError'] ) && 'pubs' === $pbs['industry'] && 'Pubs & Hospitality business model calculator' === $pbs['title'] && 5 === count( $pbs['inputs'] ) && 'xlsx' === $pbs['downloadFormat'] && false !== strpos( $pbs['downloadRequires'], 'own full name' ), 'pubs: title, five inputs, gated xlsx' );
+ok( 0 === strpos( $pbs['link'], 'https://personalisationhub.com/industries/hospitality/?venues=80' ) && false !== strpos( $pbs['link'], 'reach=50' ), 'pubs: deep link pre-fills the hospitality page' );
+ok( 'Estimated 3-year incremental revenue (USD)' === $pbs['estimate']['label'] && abs( $pbs['estimate']['total'] - round( AngieSnippets\PhIndustryEnhancements_10063\pubs_calc( AngieSnippets\PhIndustryEnhancements_10063\pubs_clean( array( 'venues' => 80, 'reach' => 50 ) ) )['total'] ) ) < 1 && 3 === count( $pbs['estimate']['byYear'] ), 'pubs estimate equals the on-page model' );
+ok( 14782500 === (int) round( AngieSnippets\PhIndustryEnhancements_10063\pubs_calc( AngieSnippets\PhIndustryEnhancements_10063\pubs_clean( array() ) )['total'] ), 'pubs defaults: 4,927,500 a year, 14,782,500 over three years' );
+$hj = json_decode( calc_jsonld( 'hospitality' ), true );
+ok( 'WebApplication' === $hj['@type'] && 'Pubs & Hospitality business model calculator' === $hj['name'] && 'Pub groups and hospitality venue operators' === $hj['audience']['audienceType'] && 'https://personalisationhub.com/industries/hospitality/#business-model-calculator' === $hj['@id'] && false !== strpos( $hj['description'], 'Share of guests reached by personalised offers' ) && in_array( 'Downloadable XLSX business model', $hj['featureList'], true ), 'pubs JSON-LD on the hospitality page' );
+$hc = calc_page_config( 'hospitality' );
+ok( 'pubs' === $hc['industry'] && 'venues,guests,revenue,reach,uplift' === implode( ',', array_column( $hc['fields'], 'id' ) ) && $hc['download'] && $hc['gated'], 'pubs page config for the WebMCP script on the hospitality page' );
+ok( false !== strpos( $ll, 'Pubs & Hospitality business model calculator' ) && false !== strpos( $ll, 'https://personalisationhub.com/industries/hospitality/' ), 'pubs in llms.txt' );
+ok( ! preg_match( '/\bDSP\b|programmatic|personaliz/i', json_encode( calculators()['pubs'] ) . calc_jsonld( 'hospitality' ) ), 'pubs copy rules: no DSP, programmatic or US spelling' );
+ok( '' === calc_jsonld( 'convenience' ) && null === calc_page_config( 'convenience' ), 'fuel & convenience still has no calculator entry' );
 $cfg = calc_page_config( 'telco' );
 ok( 'telco' === $cfg['industry'] && 7 === count( $cfg['fields'] ) && $cfg['download'] && $cfg['gated'] && null === calc_page_config( 'qsr' ), 'page config for the WebMCP script' );
 
@@ -71,11 +85,11 @@ $extra = array( 'zztest' => array(
 	'calc' => function ( $v ) { return array( 'total' => $v['units'] * 1000 ); },
 ) );
 $d2 = tooldef();
-ok( $d2['inputSchema']['properties']['industry']['enum'] === array( 'telco', 'pharmacy', 'zztest' ) && false !== strpos( $d2['description'], 'Zz Test Retail' ) && isset( $d2['inputSchema']['properties']['inputs']['properties']['units'] ), 'new industry: MCP tool lists it and its input' );
+ok( $d2['inputSchema']['properties']['industry']['enum'] === array( 'telco', 'pharmacy', 'pubs', 'zztest' ) && false !== strpos( $d2['description'], 'Zz Test Retail' ) && isset( $d2['inputSchema']['properties']['inputs']['properties']['units'] ), 'new industry: MCP tool lists it and its input' );
 $r2 = tool( array( 'industry' => 'zztest', 'inputs' => array( 'units' => 20 ) ) );
 ok( empty( $r2['isError'] ) && 20000 === (int) $r2['structuredContent']['estimate']['total'] && false !== strpos( $r2['structuredContent']['link'], '/industries/zztest/?units=20' ) && null === $r2['structuredContent']['downloadFormat'], 'new industry: tool runs it; no download claimed' );
 $ll2 = calc_llms_filter( $llms );
-ok( false !== strpos( $ll2, '/industries/zztest/' ) && false !== strpos( $ll2, 'Supported industries: Telco Retail, Pharmacy, Zz Test Retail' ), 'new industry: llms.txt' );
+ok( false !== strpos( $ll2, '/industries/zztest/' ) && false !== strpos( $ll2, 'Supported industries: Telco Retail, Pharmacy, Pubs & Hospitality, Zz Test Retail' ), 'new industry: llms.txt' );
 $j2 = json_decode( calc_jsonld( 'zztest' ), true );
 ok( 'WebApplication' === $j2['@type'] && false !== strpos( $j2['description'], 'Number of units' ) && false === strpos( implode( ' ', $j2['featureList'] ), 'Downloadable' ), 'new industry: JSON-LD' );
 $c2 = calc_page_config( 'zztest' );
