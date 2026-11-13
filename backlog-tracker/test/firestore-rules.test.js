@@ -364,6 +364,13 @@ async function main() {
   await check("A stranger cannot read a lead", "deny", () => getDoc(doc(as(STRANGER), "leads/l1")));
   await check("A lead counts its inbound arrivals", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { inboundCount: 2, prospectId: "acme-uk" }));
   await check("A lead's inbound count is a whole number, not negative", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { inboundCount: -1 }));
+  const FRANCHISE = { ...LEAD, leadType: "franchise", company: { ...LEAD.company, name: "" }, franchise: { region: "Leeds, UK", background: "adtech" }, stage: "applied" };
+  await check("A franchise opportunity needs no company name", "allow", () => setDoc(doc(as(MEMBER), "leads/f1"), FRANCHISE));
+  await check("A franchise opportunity moves through its own stages", "allow", () => updateDoc(doc(as(MEMBER), "leads/f1"), { stage: "intro-call" }));
+  await check("A franchise opportunity cannot take a company stage", "deny", () => updateDoc(doc(as(MEMBER), "leads/f1"), { stage: "hot-lead" }));
+  await check("A company lead cannot take a franchise stage", "deny", () => setDoc(doc(as(MEMBER), "leads/f2"), { ...LEAD, stage: "applied" }));
+  await check("A lead type is company or franchise", "deny", () => setDoc(doc(as(MEMBER), "leads/f3"), { ...LEAD, leadType: "partner" }));
+  await check("A franchise opportunity's details take no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/f4"), { ...FRANCHISE, franchise: { region: "x", salary: 1 } }));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
   const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
