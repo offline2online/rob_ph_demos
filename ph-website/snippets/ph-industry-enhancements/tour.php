@@ -9,6 +9,7 @@
  *   (generated from tour-assets/retail-media/SHA256SUMS on tag tour-assets-retail-media-v1); served from a file cache in uploads, filled from the tag and checked by sha256; single byte ranges answer 206.
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
  *   No nonce: the page is edge-cached, so a stale wp_rest nonce would 403 anonymous callers (PH_TOUR.nonce is "").
+ * - POST ph-site/v1/tour-brand: the visitor's company logos for the walkthrough, from the console (key stays on the server), see tour_brand_handle().
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -45,7 +46,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = 'e2f3925457a57918d5dec25027f49f789bbd72a23e9d302078bb9cc112df1625';
+const TOUR_PAGE_SHA256  = '14ca65a0ff204e197f0069c076d69bff80ba9ea0dcbce35c9be7b60ab384b7e4';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**
@@ -428,6 +429,96 @@ function tour_handle( array $b ) {
 	return array( 200, array( 'ok' => true ) );
 }
 
+/**
+ * Visitor brand for the walkthrough (12 Nov 2026): POST ph-site/v1/tour-brand {company, email} answers the company's logos from the
+ * console's brand lookup (POST /leadIngest/v1/brand, server to server with the lead key, which never reaches the browser), or {found:false}.
+ * It answers only for a company and work email this site captured as a real lead (the grant set on ph_lead_captured, or an existing
+ * ph_lead with that email and company), so it cannot be used to list which companies the console knows. Throttled per address like
+ * tour-lead. Any failure (no key, timeout, error, not found) answers {found:false}, and the tour keeps the initials.
+ */
+const TOUR_BRAND_URL     = 'https://backlog-tracker-e4ed2.web.app/leadIngest/v1/brand';
+const TOUR_BRAND_GRANT   = 'ph_tour_brand_ok_';
+const TOUR_BRAND_TIMEOUT = 3;
+
+function tour_brand_grant_key( $email, $company ) {
+	return TOUR_BRAND_GRANT . md5( strtolower( trim( (string) $email ) ) . '|' . strtolower( trim( (string) $company ) ) );
+}
+
+/** ph_lead_captured (every form on the site): a real, not test, lead may ask for its own company's logos for 30 days. */
+function tour_brand_grant( $lead ) {
+	if ( ! is_array( $lead ) || ! empty( $lead['test'] ) || empty( $lead['email'] ) || empty( $lead['company'] ) ) {
+		return;
+	}
+	set_transient( tour_brand_grant_key( $lead['email'], $lead['company'] ), 1, 30 * 24 * HOUR_IN_SECONDS );
+}
+
+add_action( 'ph_lead_captured', __NAMESPACE__ . '\\tour_brand_grant', 5 );
+
+function tour_brand_allowed( $email, $company ) {
+	if ( false !== get_transient( tour_brand_grant_key( $email, $company ) ) ) {
+		return true;
+	}
+	$id = lead_find_existing( $email, false );
+	return $id && 0 === strcasecmp( trim( (string) get_post_meta( $id, 'ph_lead_company', true ) ), trim( (string) $company ) );
+}
+
+function tour_brand_throttled() {
+	$ip  = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+	$key = 'ph_tour_brand_rl_' . md5( $ip );
+	$n   = (int) get_transient( $key );
+	if ( $n >= 10 ) {
+		return true;
+	}
+	set_transient( $key, $n + 1, HOUR_IN_SECONDS );
+	return false;
+}
+
+/** An https image address from the console, else ''. */
+function tour_brand_url( $v ) {
+	$v = is_string( $v ) ? trim( $v ) : '';
+	return ( strlen( $v ) <= 2048 && 1 === preg_match( '#^https://[^\s"\'<>\\\\]+$#i', $v ) ) ? $v : '';
+}
+
+/** Returns array( status, body ): only found, logos {light, dark, icon} and darkFromLight. Pure of routing, so it is unit-tested. */
+function tour_brand_handle( array $b ) {
+	$none = array( 'found' => false );
+	if ( tour_brand_throttled() ) {
+		return array( 429, array( 'error' => 'Too many requests. Try again later.' ) );
+	}
+	$company = isset( $b['company'] ) && is_string( $b['company'] ) ? trim( sanitize_text_field( $b['company'] ) ) : '';
+	$email   = isset( $b['email'] ) && is_string( $b['email'] ) ? sanitize_email( $b['email'] ) : '';
+	if ( '' === $company || strlen( $company ) > 120 || ! is_email( $email ) ) {
+		return array( 400, array( 'error' => 'Company and work email are required.' ) );
+	}
+	if ( ! tour_brand_allowed( $email, $company ) ) {
+		return array( 200, $none );
+	}
+	$key = defined( 'PH_LEAD_INGEST_KEY' ) ? PH_LEAD_INGEST_KEY : (string) get_option( 'ph_lead_ingest_key', '' );
+	if ( '' === $key ) {
+		return array( 200, $none );
+	}
+	$res = wp_remote_post( TOUR_BRAND_URL, array(
+		'timeout' => TOUR_BRAND_TIMEOUT,
+		'headers' => array( 'Content-Type' => 'application/json', 'X-Lead-Key' => $key ),
+		'body'    => wp_json_encode( array( 'company' => $company, 'email' => $email ) ),
+	) );
+	if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+		return array( 200, $none );
+	}
+	$j = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+	if ( ! is_array( $j ) || true !== ( $j['found'] ?? null ) || ! is_array( $j['logos'] ?? null ) ) {
+		return array( 200, $none );
+	}
+	$logos = array();
+	foreach ( array( 'light', 'dark', 'icon' ) as $k ) {
+		$logos[ $k ] = tour_brand_url( $j['logos'][ $k ] ?? '' );
+	}
+	if ( '' === implode( '', $logos ) ) {
+		return array( 200, $none );
+	}
+	return array( 200, array( 'found' => true, 'logos' => $logos, 'darkFromLight' => true === ( $j['darkFromLight'] ?? false ) && '' === $logos['dark'] && '' !== $logos['light'] ) );
+}
+
 add_action( 'template_redirect', function () {
 	$method = isset( $_SERVER['REQUEST_METHOD'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) : 'GET';
 	$uri    = isset( $_SERVER['REQUEST_URI'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
@@ -470,6 +561,15 @@ add_action( 'rest_api_init', function () {
 		'callback'            => function ( \WP_REST_Request $req ) {
 			$b = $req->get_json_params();
 			list( $status, $out ) = tour_handle( is_array( $b ) ? $b : array() );
+			return new \WP_REST_Response( $out, $status );
+		},
+	) );
+	register_rest_route( 'ph-site/v1', '/tour-brand', array(
+		'methods'             => 'POST',
+		'permission_callback' => '__return_true',
+		'callback'            => function ( \WP_REST_Request $req ) {
+			$b = $req->get_json_params();
+			list( $status, $out ) = tour_brand_handle( is_array( $b ) ? $b : array() );
 			return new \WP_REST_Response( $out, $status );
 		},
 	) );

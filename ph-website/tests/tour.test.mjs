@@ -52,8 +52,8 @@ try {
   assert.ok(/width:\s*100%/.test(await fr.getAttribute("style")) && /border:\s*0/.test(await fr.getAttribute("style")), "full width, no border");
   assert.ok(await p.evaluate(() => parseFloat(getComputedStyle(document.querySelector(".ph-ind-tour-frame")).minHeight) >= 0), "min-height style readable");
   // Config for the tour.
-  const cfg = await p.evaluate(() => ({ e: window.PH_TOUR.endpoint, n: window.PH_TOUR.nonce, t: typeof window.PH_TOUR.arrangeDemo }));
-  assert.deepStrictEqual(cfg, { e: "/wp-json/ph-site/v1/tour-lead", n: "", t: "function" }, "window.PH_TOUR");
+  const cfg = await p.evaluate(() => ({ e: window.PH_TOUR.endpoint, n: window.PH_TOUR.nonce, b: window.PH_TOUR.brandEndpoint, t: typeof window.PH_TOUR.arrangeDemo }));
+  assert.deepStrictEqual(cfg, { e: "/wp-json/ph-site/v1/tour-lead", n: "", b: "/wp-json/ph-site/v1/tour-brand", t: "function" }, "window.PH_TOUR");
   // Arrange a Demo -> the header Calendly popup + ph_ind_cta.
   await p.evaluate(() => window.PH_TOUR.arrangeDemo());
   assert.strictEqual(await p.evaluate(() => window.__cal.length), 1, "Calendly popup opened");
@@ -890,6 +890,79 @@ try {
       assert.strictEqual(await t.locator(".g-flow").count(), 3, "gate offers the three flows");
       assert.ok(/Scene|Sam/.test(await t.locator("#stage").innerText()), "teaser shows the shopper journey");
       assert.deepStrictEqual(errs, [], "no page errors in the teaser"); await t.close(); }
+  }
+  // Visitor brand: the company's real logo replaces the initials (sidebar on dark, header and store logo on light), never delays the tour,
+  // and falls back to the initials on found:false, an error, a slow answer or an image that does not load. No call in test mode.
+  { const brandSrc = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
+    const L = "https://logos.test/acme-light.svg", Dk = "https://logos.test/acme-dark.svg", I = "https://logos.test/acme-icon.png";
+    const svgOf = (fill) => `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" fill="${fill}"/></svg>`;
+    const brandOpen = async ({ answer, status = 200, delay = 0, badImg = false, search = "", ind = "telco" }) => {
+      const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
+      const seen = { brand: [], other: [] };
+      await t.route("**/*", async (r) => {
+        const u = r.request().url();
+        if (/\/wp-json\/ph-site\/v1\/tour-brand$/.test(u)) { seen.brand.push(JSON.parse(r.request().postData())); if (delay) await new Promise((res) => setTimeout(res, delay)); return r.fulfill({ status, contentType: "application/json", body: JSON.stringify(answer) }).catch(() => {}); }
+        if (u.startsWith("https://logos.test/")) return badImg ? r.fulfill({ status: 404, body: "" }) : r.fulfill({ contentType: "image/svg+xml", body: svgOf(/dark/.test(u) ? "#fff" : "#123") });
+        if (u.startsWith("http://x.test/")) return r.fulfill({ contentType: "text/html", body: brandSrc });
+        seen.other.push(u); return r.abort();
+      });
+      await t.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "", brandEndpoint: "/wp-json/ph-site/v1/tour-brand" }; localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Acme Test Mobile", email: "sam@acmetest.example" })); });
+      const t0 = Date.now();
+      await t.goto(`http://x.test/industries/${ind}/tour/?embed=1${search}`);
+      await t.waitForSelector("#stage .side .logo", { timeout: 3000 });
+      const startMs = Date.now() - t0;
+      return { t, seen, startMs };
+    };
+    const marks = (t) => t.evaluate(() => {
+      const m = (sel) => { const el = document.querySelector(sel); if (!el) return null; const img = el.querySelector("img.blogo"); return img ? { img: img.getAttribute("src"), inv: img.getAttribute("data-inv"), filter: img.style.filter, ok: img.complete && img.naturalWidth > 0 } : { initials: !!el.querySelector("svg[data-bm] text") }; };
+      return { side: m("#stage .side .logo"), hdr: m("#stage .hdr") };
+    });
+    const found = { found: true, logos: { light: L, dark: Dk, icon: I }, darkFromLight: false };
+    // 1. Logo for "Acme Test Mobile": light logo on the light header, dark logo on the dark sidebar; the request carries only company and email.
+    { const { t, seen } = await brandOpen({ answer: found });
+      await t.waitForFunction(() => document.querySelectorAll("#stage img.blogo").length >= 2);
+      await t.waitForFunction(() => [...document.querySelectorAll("#stage img.blogo")].every((i) => i.complete && i.naturalWidth > 0));
+      const m = await marks(t);
+      assert.deepStrictEqual(m.side, { img: Dk, inv: "0", filter: "", ok: true }, "dark sidebar shows the dark logo: " + JSON.stringify(m));
+      assert.deepStrictEqual(m.hdr, { img: L, inv: "0", filter: "", ok: true }, "light header shows the light logo: " + JSON.stringify(m));
+      assert.deepStrictEqual(seen.brand, [{ company: "Acme Test Mobile", email: "sam@acmetest.example" }], "one lookup with {company, email}");
+      assert.ok(!seen.other.some((u) => /leadIngest|backlog-tracker/.test(u)), "the browser never calls the console");
+      const page = await t.content();
+      assert.ok(!/X-Lead-Key|leadIngest/i.test(page), "no lead key or console route in the page");
+      // Steps rendered later keep the logo (here the next flow's shell).
+      await t.click('.chip[data-k="1"]'); await t.waitForSelector("#stage .side .logo");
+      assert.strictEqual((await marks(t)).side.img, Dk, "a later screen draws the logo straight away");
+      await t.close(); }
+    // 2. No dark logo, darkFromLight: the light logo in white on the dark sidebar.
+    { const { t } = await brandOpen({ answer: { found: true, logos: { light: L, dark: "", icon: "" }, darkFromLight: true } });
+      await t.waitForSelector("#stage .side .logo img.blogo");
+      const m = await marks(t);
+      assert.ok(m.side.img === L && m.side.inv === "1" && /brightness\(0\)\s*invert\(1\)/.test(m.side.filter), "dark surface shows the light logo in white: " + JSON.stringify(m));
+      assert.ok(m.hdr.img === L && m.hdr.filter === "", "light surface shows the light logo as is");
+      await t.close(); }
+    // 3. found:false, a 500 and a slow answer: the tour starts at once with the initials.
+    for (const [label, o] of [["found false", { answer: { found: false } }], ["500", { answer: { error: "x" }, status: 500 }], ["slow", { answer: found, delay: 6000 }]]) {
+      const { t, startMs } = await brandOpen(o);
+      assert.ok(startMs < 2500, `${label}: the tour is up without waiting (${startMs} ms)`);
+      assert.ok(await t.evaluate(() => document.getElementById("gate").hidden), `${label}: unlocked straight away`);
+      await t.waitForTimeout(label === "slow" ? 4200 : 600);
+      const m = await marks(t);
+      assert.ok(m.side.initials && m.hdr.initials, `${label}: initials stay: ` + JSON.stringify(m));
+      await t.close();
+    }
+    // 4. The logo address fails to load: the initials come back.
+    { const { t } = await brandOpen({ answer: { found: true, logos: { light: L, dark: Dk, icon: "" }, darkFromLight: false }, badImg: true });
+      await t.waitForTimeout(800);
+      const m = await marks(t);
+      assert.ok(m.side.initials && m.hdr.initials, "image error: initials: " + JSON.stringify(m));
+      assert.strictEqual(await t.locator("#stage img.blogo").count(), 0, "no broken logo image left");
+      await t.close(); }
+    // 5. Test mode: no lookup at all.
+    { const { t, seen } = await brandOpen({ answer: found, search: "&ph_test=1" });
+      await t.waitForTimeout(600);
+      assert.deepStrictEqual(seen.brand, [], "ph_test=1 does not call tour-brand");
+      assert.ok((await marks(t)).side.initials, "test mode keeps the initials");
+      await t.close(); }
   }
   console.log("tour js: all passed");
 } finally { await browser.close(); }

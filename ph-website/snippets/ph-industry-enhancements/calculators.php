@@ -10,7 +10,8 @@
  *   4. the schema.org WebApplication JSON-LD on that industry's page (calc_jsonld()).
  *
  * An entry needs: name, path, title, summary, outcome, fields (array, or a closure returning one). Optional: calc (closure
- * taking cleaned values, returning ['total' => number, ...]), clean (closure), download (array: gated workbook), audience.
+ * taking cleaned values, returning ['total' => number, ...]), clean (closure), download (array: gated workbook), audience,
+ * page (the industry page key, main.php page_key(), when it differs from the entry's slug: 'pubs' lives on 'hospitality').
  * Without `calc` the tool still lists the calculator and deep-links to it; without `download` it says no workbook exists.
  * The list is filterable (`ph_calculators`) so a test or a later snippet can add an industry.
  *
@@ -24,6 +25,7 @@ if ( ! defined( 'ABSPATH' ) && ! defined( 'PH_TELCO_MODEL_TEST' ) ) {
 
 require_once __DIR__ . '/telco-model.php';
 require_once __DIR__ . '/pharmacy-model.php';
+require_once __DIR__ . '/pubs-model.php';
 
 const PH_CALC_SITE = 'https://personalisationhub.com';
 
@@ -61,6 +63,26 @@ function calculators() {
 			},
 			'clean'    => __NAMESPACE__ . '\pharm_clean',
 			'calc'     => __NAMESPACE__ . '\pharm_calc',
+			'download' => array(
+				'format'  => 'xlsx',
+				'gated'   => true,
+				'summary' => 'The .xlsx business model (36 months, live formulas, pre-filled with the figures above) downloads from the calculator page once the person enters their full name, company and work email and agrees to be contacted. Those details and that agreement must come from the person themselves: an agent must not invent them or tick the box for them.',
+			),
+		),
+		'pubs' => array(
+			'name'     => 'Pubs & Hospitality',
+			'page'     => 'hospitality',
+			'path'     => '/industries/hospitality/',
+			'title'    => 'Pubs & Hospitality business model calculator',
+			'summary'  => 'Enter five figures about a pub or hospitality estate (venues, guests per venue per day, average revenue per head, the share of guests reached by personalised offers and the uplift in revenue per head) and get an estimated 3-year incremental revenue, with a 36-month business model workbook (.xlsx) pre-filled with those figures. All figures in USD.',
+			'label'    => 'Estimated 3-year incremental revenue (USD)',
+			'outcome'  => 'Estimated 3-year incremental revenue (USD), from a higher average revenue per head among the guests reached by personalised offers: venues × guests per day × 365 × share reached × average revenue per head × uplift, over three years.',
+			'audience' => 'Pub groups and hospitality venue operators',
+			'fields'   => function () {
+				return pubs_spec()['fields'];
+			},
+			'clean'    => __NAMESPACE__ . '\pubs_clean',
+			'calc'     => __NAMESPACE__ . '\pubs_calc',
 			'download' => array(
 				'format'  => 'xlsx',
 				'gated'   => true,
@@ -253,10 +275,27 @@ function calc_jsonld_node( $slug, array $e ) {
 	return $node;
 }
 
+/** The calculator slug for an industry page key: the slug itself, or the entry whose `page` names that key. '' when none. */
+function calc_slug_for_page( $key, array $cals ) {
+	if ( '' === (string) $key ) {
+		return '';
+	}
+	if ( isset( $cals[ $key ] ) ) {
+		return (string) $key;
+	}
+	foreach ( $cals as $slug => $e ) {
+		if ( isset( $e['page'] ) && $e['page'] === $key ) {
+			return (string) $slug;
+		}
+	}
+	return '';
+}
+
 /** The inline JSON-LD for a page key, or '' when that page has no calculator. */
 function calc_jsonld( $key, ?array $cals = null ) {
 	$cals = null === $cals ? calculators() : $cals;
-	if ( ! isset( $cals[ $key ] ) ) {
+	$key  = calc_slug_for_page( $key, $cals );
+	if ( '' === $key ) {
 		return '';
 	}
 	return wp_json_encode_safe( array_merge( array( '@context' => 'https://schema.org' ), calc_jsonld_node( $key, $cals[ $key ] ) ) );
@@ -269,7 +308,8 @@ function wp_json_encode_safe( $v ) {
 /** What calc-webmcp.js needs on the page: the entry's id, names and fields. Nothing private. */
 function calc_page_config( $key, ?array $cals = null ) {
 	$cals = null === $cals ? calculators() : $cals;
-	if ( ! isset( $cals[ $key ] ) ) {
+	$key  = calc_slug_for_page( $key, $cals );
+	if ( '' === $key ) {
 		return null;
 	}
 	$e = $cals[ $key ];

@@ -98,7 +98,7 @@ Higher revenue per head, fuller quiet periods and more guests who come back.
 - **Sunday lunch · lapsed family:** localisation (Sun 12:10pm · lunch; Sunny · 23°C; Garden · 12 tables free); customer data (Lapsed · 90 days; Family · Sunday lunch; Win-back · kids eat free with a roast); campaign "Sunday roast is on." shown on venue website, venue app, entrance screen and bar screen.
 
 ## Benefits calculator
-Inputs: venues, guests per venue per day, average revenue per head. Assumptions: uplift in revenue per head from personalised offers (default 10%). Venues × guests per day × 365 × average revenue per head × the uplift percentage.
+Five inputs, all in USD, led by average revenue per head: venues (default 50), guests per venue per day (default 200), average revenue per head (default USD 45), the share of guests reached by personalised offers (default 60%; not every guest is reached) and the uplift in revenue per head from personalised offers (default 5%). Annual uplift = venues × guests per day × 365 × share reached × average revenue per head × uplift. Output: estimated three-year incremental revenue, with the monthly run-rate by month 36. A detailed 36-month business model workbook (.xlsx), pre-filled with those figures and with live formulas (assumptions, monthly model, 3-year summary and a sensitivity table of reach against uplift), downloads from the calculator once the person gives their full name, company and work email and agrees to be contacted.
 
 ## FAQ
 **Do we need new screens?**

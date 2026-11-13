@@ -940,9 +940,28 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&
 const initials = n => (n.trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("") || "Y").toUpperCase();
 let gid = 0;
 
-function logoSVG(size, onDark) {
+/* The visitor's real logo (ph-site/v1/tour-brand, see fetchBrand): S.logo = {for, light, dark, icon, darkFromLight} while S.brand is still that
+   company, else the initials. Light surfaces use light, dark ones dark (or light shown in white when darkFromLight); then icon; then initials.
+   Every initials mark carries data-bm="height,max width,dark" so a logo that arrives after the screen is drawn replaces it in place. */
+function logoPick(dark) {
+  const g = S.logo; if (!g || !S.custom || g.for !== S.brand) return null;
+  if (dark && g.dark) return { src: g.dark, inv: false };
+  if (dark && g.darkFromLight && g.light) return { src: g.light, inv: true };
+  if (!dark && g.light) return { src: g.light, inv: false };
+  return g.icon ? { src: g.icon, inv: false } : null;
+}
+function brandImg(h, w, dark, fb) {
+  const p = logoPick(dark); if (!p) return fb;
+  return `<img class="blogo" src="${esc(p.src)}" alt="" data-bm="${h},${w},${dark ? 1 : 0}" data-inv="${p.inv ? 1 : 0}" data-fb="${esc(fb)}" referrerpolicy="no-referrer" style="height:${h}px;width:auto;max-width:${w}px;object-fit:contain;flex:0 0 auto${p.inv ? ";filter:brightness(0) invert(1)" : ""}">`;
+}
+function brandRefresh() {
+  document.querySelectorAll("[data-bm]").forEach(el => { if (el.tagName === "IMG") return; const [h, w, d] = el.getAttribute("data-bm").split(",").map(Number), fb = el.outerHTML, html = brandImg(h, w, !!d, fb); if (html !== fb) el.outerHTML = html; });
+}
+/* A logo that fails to load: back to the initials, here and on every later screen. */
+document.addEventListener("error", e => { const t = e.target; if (!t || t.tagName !== "IMG" || !t.classList.contains("blogo")) return; S.logo = null; document.querySelectorAll("img.blogo").forEach(i => { i.outerHTML = i.getAttribute("data-fb"); }); }, true);
+function logoSVG(size, onDark, maxW = size * 2) {
   const c = C(), ini = esc(initials(B()));
-  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${IS_RM ? RMI().accent : D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
+  return brandImg(size, maxW, onDark, `<svg data-bm="${size},${maxW},${onDark ? 1 : 0}" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${IS_RM ? RMI().accent : D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`);
 }
 function illo(x, y, s, a, dark) {
   if (S.ind === "retail-media") return `<g transform="translate(${x} ${y + 6 * s}) scale(${s})">
@@ -1023,7 +1042,7 @@ const NAV1 = [["campaign","Campaigns"],["desktop_windows","Displays & Devices"],
 const NAV2 = [["settings","Company Settings"],["assignment","Platform Admin"]];
 function shell(inner, crumbs, navOn = "Campaigns") {
   const nav = (arr, on) => arr.map(([i,l]) => `<div class="${l===on?"on":""}"><span class="ms">${i}</span>${l}</div>`).join("");
-  return `<div class="app"><aside class="side"><div class="logo">${logoSVG(44)}<span class="wm">${esc(B())}</span></div>
+  return `<div class="app"><aside class="side"><div class="logo">${logoSVG(44, true)}<span class="wm">${esc(B())}</span></div>
     <div class="nav">${nav(IS_RM && S.flow === 1 ? NAV1.filter(n => n[1] === "Campaigns" || n[1] === "Insights / Analytics") : NAV1,navOn)}</div><div class="nav bottom">${nav(IS_RM && S.flow === 1 ? [] : NAV2,navOn)}</div></aside>
     <div class="mainc"><div class="hdr"><span class="ms" style="color:#666">menu</span><span class="ph"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></span>
       ${IS_RM && S.flow === 1 ? `<span class="env"><span class="ms" style="font-size:15px">badge</span>Advertiser · ${esc(ADV().brand)}</span>` : `<span class="env"><span class="ms" style="font-size:15px">rocket_launch</span>Production<span class="ms" style="font-size:14px">edit</span></span>`}${logoSVG(34)}</div>
@@ -1368,7 +1387,7 @@ function storeDetailScreen(o) {
   const F = (lab, val, req=false, cls="") => `<div class="f"><label>${req?"<i>*</i>":""}${lab}</label><div class="in ${cls}">${val}</div></div>`;
   const dd = (id, ph, vals) => `<div class="in tags sdd" id="${id}">${vals.length?tags(vals):P(ph)}<span class="ms chev">expand_more</span></div>`;
   return shell(`<div class="row"><div class="title">${esc(B())} ${esc(f.name)}</div><span class="row" style="gap:6px"><span class="ms" style="font-size:18px">open_in_new</span>Visit Retail Manager's Website</span></div>
-    <div class="stabs" id="stabs">${tabs}</div><div class="slogo"><div>${logoSVG(70)}</div></div><div class="form" id="sfmain" style="margin-top:6px">
+    <div class="stabs" id="stabs">${tabs}</div><div class="slogo"><div>${logoSVG(70, false, 92)}</div></div><div class="form" id="sfmain" style="margin-top:6px">
     ${F("Store Name", `${esc(B())} ${esc(f.name)}`, true)}${F("Brand Name", esc(B()))}${F("Business Categories", `<span class="tag">${l.category} ×</span>`, true, "tags")}
     ${F("Store Code", esc(storeCode(f.code)))}${F("Maximum People in Store", P("Maximum People in Store"))}${F("Localised Copy", P("Localised Copy"))}
     ${F("Address", esc(f.addr))}${F("Phone Number", esc(f.phone))}${F("Website", esc(brandWeb(f.web)))}
@@ -1632,7 +1651,7 @@ function avatarSVG() {
 function screenHTML(st) {
   const p = P3(), c = C(), ini = esc(initials(B()));
   if (st === "notif") return `<div class="ph-lock"><div class="ph-time">${p.time.replace(/\d$/, d => String(Math.max(0, +d - 1)))}</div><div class="ph-date">${IS_RM ? "Tuesday 8 December" : "Friday 6 November"}</div>
-      <div class="ph-note" id="pnote"><div class="pn-top"><span class="ph-logo sm" style="background:${c}">${ini}</span>${esc(B())}<small>now</small></div>
+      <div class="ph-note" id="pnote"><div class="pn-top">${brandImg(20, 48, false, `<span class="ph-logo sm" data-bm="20,48,0" style="background:${c}">${ini}</span>`)}${esc(B())}<small>now</small></div>
       ${p.conv ? `<b>Welcome to ${IS_RM ? esc(p.store) : "pump 4"}, ${p.person}</b><span>Tap to check in and earn rewards.</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
   if (st === "pump") { const camp = promoHTML("camp");
     return `<div class="ss" style="--bc:${c};--bg2:${mix(c,"#ffffff",.86)}"><div class="ss-top home"><span class="ss-brand">${logoSVG(28)}<span>${esc(B())}</span></span></div><div class="ss-store">Pump 4 · ${esc(p.store)}</div><div class="ss-body">
@@ -2076,7 +2095,7 @@ const RM = IS_RM ? (() => {
   const brandOv = () => {
     const b = B(), c = C(); if (b === RMI().brand && c === RMI().color) return "";
     const w = b.trim().split(/\s+/), ini = esc(initials(b)), l2 = w.slice(1).join(" ");
-    return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb"><span class="rm-ovm" style="background:${c}">${ini}</span><span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova"><span class="rm-ovm sm" style="background:${c}">${ini}</span></div></div>`;
+    return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb">${brandImg(40, 80, true, `<span class="rm-ovm" data-bm="40,80,1" style="background:${c}">${ini}</span>`)}<span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova">${brandImg(34, 40, true, `<span class="rm-ovm sm" data-bm="34,40,1" style="background:${c}">${ini}</span>`)}</div></div>`;
   };
   /* A new screenshot never fades in over white: the screen on show stays on top until the new one is decoded,
      then fades out over it (a short crossfade). Only the first screen of a flow fades in. */
@@ -2432,8 +2451,23 @@ function renderGate() {
   form.onsubmit = e => { e.preventDefault(); if (!check(true)) return; const lead = { name: form.name.value.trim(), company: form.company.value.trim(), email: form.email.value.trim(), source: "Interactive product tour", flow: TSEL, ts: Date.now() };
     saveLead(lead); sendLead(lead); unlock(lead, true); };
 }
+/* After unlock: ask the site (ph-site/v1/tour-brand, which asks the console server to server) for the company's logos. Never awaited: the tour
+   starts at once with the initials, and a logo that arrives (3.5 s at most) replaces them. Not in test mode (ph_test=1). */
+let BRAND_RUN = 0;
+function fetchBrand(lead) {
+  const id = ++BRAND_RUN, cfg = PCFG(), want = S.brand; S.logo = null;
+  if (!cfg.brandEndpoint || !want || !lead || !lead.company || !lead.email || /[?&]ph_test=1/.test(location.search)) return;
+  const ctl = window.AbortController ? new AbortController() : null, tm = setTimeout(() => { if (ctl) ctl.abort(); }, 3500);
+  const u = v => (typeof v === "string" && /^https:\/\//i.test(v)) ? v : "";
+  try {
+    fetch(cfg.brandEndpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, email: lead.email }), signal: ctl ? ctl.signal : undefined })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (id !== BRAND_RUN || S.brand !== want || !j || j.found !== true || !j.logos) return; S.logo = { for: want, light: u(j.logos.light), dark: u(j.logos.dark), icon: u(j.logos.icon), darkFromLight: j.darkFromLight === true }; brandRefresh(); })
+      .catch(() => {}).then(() => clearTimeout(tm));
+  } catch (e) { clearTimeout(tm); }
+}
 function lock() {
-  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
+  fsExit(); BRAND_RUN++; S.logo = null; LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
   document.getElementById("h1").textContent = IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
   document.getElementById("sub").textContent = IS_RM ? "Short guided demos: a retailer selling its screens, a brand creating a campaign by talking, and one shopper followed from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
@@ -2441,6 +2475,7 @@ function lock() {
 function unlock(lead, autostart) {
   LOCKED = false; RUN++; gate.hidden = true; gate.innerHTML = ""; wrap.classList.remove("locked"); stage.classList.remove("teasing");
   if (lead && lead.company) { S.custom = true; S.brand = lead.company.trim().slice(0, 32); co.value = S.brand; }
+  fetchBrand(lead);
   S.welcome = lead && lead.name ? lead.name.trim().split(/\s+/)[0] : "";
   flows.hidden = FOCUS; setFlow(TSEL); tourEvent("unlock", { via: autostart ? "tour form" : "existing details" });
   if (autostart) startFlow();
