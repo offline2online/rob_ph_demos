@@ -2580,7 +2580,22 @@ every destination already existed.
   run at `/leadEnrich/v1/enrich` (`enrichment.request`); the findings arrive
   through the page's snapshot. Results go to the record and the record it is
   linked to (and the TAM company profile); it only adds or updates, never blanks,
-  and never overwrites a field a person typed. The page side is
+  and never overwrites a field a person typed. Since 11 Nov 2026 the run also
+  researches retail media, personalisation, in-store screens, loyalty, primary cloud,
+  key people and fit; a failed run says why on the record; and a key made for the
+  whole Anthropic organisation needs the **`ANTHROPIC_WORKSPACE_ID`** repo secret
+  (every run failed without it). Since 12 Nov 2026 a cheap check runs first: obvious
+  spam is stopped by free rules, then a small call confirms a real company with
+  physical customer-facing sites; a record that fails is not researched and the
+  button reads **Research anyway**. A missing website is worked out (the contact's
+  email domain, then the check, then the research) and shown with how sure the run
+  is; a real company the check holds back still gets the free basics (website, logos,
+  sector, a one-line description). Each run also keeps the company's full logo for
+  light and for dark backgrounds (`enrichment.logos`), and
+  `POST /leadIngest/v1/brand` (the website's key) returns a listed company's logos for
+  a branded walkthrough demo. `.github/workflows/lead-enrich-probe.yml`
+  (`scripts/lead-enrich-probe.js`) runs the real agent for one company on a runner
+  to check it. The page side is
   `public/js/enrichment-view.js`. **Convert and link
   account** moves the lead to Closed Won and records the customer account.
   Agents manage the whole pipeline over MCP (`functions/leads.js`): `list_leads`,
@@ -2593,6 +2608,14 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
+  **Franchise opportunities (13 Nov 2026)**: a submission with `lead_type`
+  "Franchise opportunity" (the Franchise page's product tour gate) is an individual,
+  not a company: `leadType: "franchise"`, the person as the one contact, `franchise
+  {region, background}`, its own stages (Applied, Screening, Intro call, Approved,
+  Not a fit), and no TAM matching, AWS routing or enrichment. The board's
+  **Companies / Franchise opportunities** switch shows one pipeline at a time;
+  `list_leads` filters by `leadType`. See REQUIREMENTS.md → "Leads: Franchise
+  opportunities".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules
   (`REQUIREMENTS.md` → "Leads: Apple-style board, form and detail view"). The
@@ -2751,7 +2774,12 @@ The profile menu has First name / Last name inputs (`#profile-name-form`, handle
 The team's own task board, a Jira replacement, at `#staff-kanban` (sidebar →
 Build → Staff Kanban), separate from the Agent Board. Spec, test plan and the
 signed-off prototype are in `kanban-staff-board/` (project "Staff Kanban" on
-the board); the code is here:
+the board). Every ticket has its own address, `#staff-kanban/ticket/PH-<n>`:
+a card opens it in place over the board with that address in the address bar
+(Cmd/Ctrl-click for a new tab), and both the ticket's header (Share link) and
+each card (Copy link) copy it (`kanban-staff-board/REQUIREMENTS.md` → KB-LINK-1
+to KB-LINK-4).
+The code is here:
 
 | File | What it does |
 |---|---|
@@ -2773,7 +2801,8 @@ notifications written only by the server and private to their recipient) and `st
 The voice fill uses Claude once the **`ANTHROPIC_API_KEY`** repo secret is set
 (the deploy workflow syncs it into Secret Manager, as "unset" until then). Until
 then, or when Claude doesn't answer, the page fills the ticket with its local
-stand-in, as the prototype did.
+stand-in, as the prototype did. A key created for the whole Anthropic organisation
+(not inside a workspace) also needs the **`ANTHROPIC_WORKSPACE_ID`** repo secret.
 
 Tests: `test/ui/staff-kanban.test.mjs` (the 25 signed-off cases plus 4 console
 ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),

@@ -7,13 +7,13 @@
 // mountStaffKanban() once; show() is then called on every route change.
 import { createStore } from "./kanban-store.js";
 import { KBEditor } from "./kanban-editor.js";
-import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember } from "../avatar.js";
+import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember, initialOf, splitName } from "../avatar.js";
 import { createResultReader, useContinuousMode, isAndroidDevice } from "../dictation-results.js";
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
-  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity,
+  canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -105,20 +105,30 @@ export function mountStaffKanban(ctx) {
   // anyone a ticket names who isn't in it (a removed member keeps their name
   // on old tickets as their address). An alias address (PERSON_ALIASES) is
   // never a person of its own: it shows, and is picked, as its owner.
+  // A person's initials for their circle: first + last name (Users →
+  // first/last name), else the words of their display name, else the console's
+  // own record of them (initialOf), else their address.
+  function initialsOfRow(m, email) {
+    let first = m && m.firstName, last = m && m.lastName;
+    if (!first && !last && m && m.displayName) ({ firstName: first, lastName: last } = splitName(m.displayName));
+    const s = (String(first || "").trim().charAt(0) + String(last || "").trim().charAt(0)).toUpperCase();
+    return s || initialOf(email);
+  }
   function people() {
     const named = store.state.settings.firstNames || {};
     const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
-      const name = String(m.displayName || "").trim() || String(m.email).split("@")[0];
-      return { id: m.email, first: String(named[m.email] || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email) };
+      const name = String(m.displayName || "").trim() || [m.firstName, m.lastName].filter(Boolean).join(" ").trim() || String(m.email).split("@")[0];
+      return { id: m.email, first: String(named[m.email] || "").trim() || String(m.firstName || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email), initials: initialsOfRow(m, m.email) };
     });
     const self = canonicalEmail(me);
     if (!list.some((u) => u.id === self)) {
       const name = (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || self.split("@")[0];
-      list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self) });
+      const own = getAvatarMember(self) || { displayName: name };
+      list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self), initials: initialsOfRow(own, self) });
     }
     return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
   }
-  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id) } : null) : null);
+  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
   const firstName = (id) => (user(id) || {}).first || "Unassigned";
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
@@ -182,7 +192,7 @@ export function mountStaffKanban(ctx) {
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
     const ph = photoOf(u.id);
     if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${esc(ph)}')"></span>`;
-    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.first.charAt(0).toUpperCase())}</span>`;
+    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
   let toastTimer;
@@ -276,15 +286,155 @@ export function mountStaffKanban(ctx) {
   let current = { route: "kanban", params: new URLSearchParams() };
   function go(route, params) { ctx.go(route === "kanban" ? "" : route, params || null); }
   function show(sub, params) {
-    current = { route: sub || "kanban", params: params || new URLSearchParams() };
+    // "ticket/PH-123" is one ticket's own address: the board, with it open.
+    const link = ticketFromSub(sub);
+    if (link && !$("#task-backdrop").hidden) { returnTo = null; closeTask({ keepAddress: true }); }
+    current = { route: link ? "kanban" : sub || "kanban", params: params || new URLSearchParams(), ticket: link };
+    addressTicket = link ? link.key || link.raw || " " : null;
+    addressBefore = null;
     // The board's project filter lives in the address (#staff-kanban?project=<id>).
     if (current.route === "kanban" && current.params.has("project")) board.project = current.params.get("project") || "";
     root.dataset.page = "staff-kanban";
     render();
+    if (link) openTicketAddress(link);
   }
   function hide() {
     if (root.dataset.page === "staff-kanban") delete root.dataset.page;
-    if (!$("#task-backdrop").hidden) closeTask();
+    // The address already names another page: leave it alone.
+    if (!$("#task-backdrop").hidden) { returnTo = null; closeTask({ keepAddress: true }); }
+    addressTicket = null; addressBefore = null; current.ticket = null;
+  }
+
+  // ── Ticket addresses (KB-LINK-1..3) ─────────────────────────────────────
+  // While a saved ticket is open the address bar holds its own address,
+  // …#staff-kanban/ticket/PH-123, so it can be copied, shared and edited;
+  // closing the ticket puts back the address of the page underneath.
+  let addressTicket = null, addressBefore = null;
+  const ticketUrl = (key) => window.location.origin + window.location.pathname + window.location.search + ticketHash(key);
+  const boardHash = () => "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
+  const setAddress = (h) => { if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the address just isn't kept */ } } };
+  function showTicketAddress(t) {
+    if (pageEl.hidden) return;
+    if (addressBefore == null) addressBefore = current.route === "kanban" || ticketFromSub(window.location.hash.replace(/^#staff-kanban\/?/, "")) ? boardHash() : window.location.hash;
+    addressTicket = t.key;
+    setAddress(ticketHash(t.key));
+    document.title = `${t.key} ${t.title || ""}`.trim() + " — PH Agent Console";
+  }
+  function restoreAddress() {
+    const was = addressTicket, back = addressBefore;
+    addressTicket = null; addressBefore = null; current.ticket = null;
+    if (!was || pageEl.hidden || window.location.hash !== ticketHash(was)) return;
+    setAddress(back || boardHash());
+    document.title = ({ report: "Release report", settings: "Kanban settings" }[current.route] || "Staff Kanban") + " — PH Agent Console";
+  }
+  // A card opens its ticket here, over the board, and the address bar takes
+  // the ticket's own address (showTicketAddress), so it is shareable without
+  // a new tab having to load the whole console again. Cmd/Ctrl/Shift-click or
+  // a middle click still opens it in a new tab.
+  //
+  // The full ticket is read as the pointer comes to rest on a card, or is
+  // pressed, so the read is usually done by the time the click lands. A read
+  // is used once and only within PREFETCH_MS: the modal still opens on a
+  // fresh ticket, never on one read long ago.
+  const PREFETCH_MS = 10000;
+  const prefetched = new Map();
+  function prefetchTask(key) {
+    if (!key) return;
+    const hit = prefetched.get(key);
+    if (hit && Date.now() - hit.at < PREFETCH_MS) return;
+    const p = store.fetchTask(key);
+    p.catch(() => { if (prefetched.get(key) && prefetched.get(key).p === p) prefetched.delete(key); });
+    prefetched.set(key, { p, at: Date.now() });
+  }
+  function takePrefetch(key) {
+    const hit = prefetched.get(key);
+    prefetched.delete(key);
+    return hit && Date.now() - hit.at < PREFETCH_MS ? hit.p : store.fetchTask(key);
+  }
+  let hoverTimer = 0, hoverKey = "";
+  function openCard(key, e) {
+    if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) { openTicketTab(key); return; }
+    openTask(key);
+  }
+  let cardCopyTimer = 0;
+  async function copyCardLink(btn) {
+    const key = btn.dataset.copyLink, url = ticketUrl(key);
+    if (await copyText(url)) {
+      toast(`Link to <b>${esc(key)}</b> copied`);
+      $$(".kb-link-btn.on").forEach((b) => { b.classList.remove("on"); $(".material-symbols-outlined", b).textContent = "link"; });
+      const ic = $(".material-symbols-outlined", btn);
+      btn.classList.add("on"); ic.textContent = "done";
+      clearTimeout(cardCopyTimer);
+      cardCopyTimer = setTimeout(() => { btn.classList.remove("on"); ic.textContent = "link"; }, 2000);
+    } else toast(`The link couldn't be copied. Copy it from here: <span class="kb-toast-url">${esc(url)}</span>`);
+  }
+  // A new tab at the ticket's address. Where the browser won't open one (a
+  // blocked pop-up), the ticket opens here instead.
+  function openTicketTab(key) {
+    let tab = null;
+    try { tab = window.open(ticketUrl(key), "_blank"); } catch (e) { /* opens here */ }
+    if (!tab) { openTask(key); return; }
+    try { tab.opener = null; } catch (e) { /* nothing to cut */ }
+  }
+  // The people and settings lists fill the ticket's selects: wait for them (briefly) on a cold open.
+  const listsLoaded = () => new Promise((done) => {
+    const t0 = Date.now();
+    (function check() { if ((store.state.membersLoaded && store.state.settingsLoaded) || Date.now() - t0 > 8000) done(); else setTimeout(check, 50); })();
+  });
+  async function openTicketAddress(link) {
+    const here = () => current.ticket === link && !pageEl.hidden;
+    if (!link.key) { renderTicketMissing(link.raw); return; }
+    setAddress(ticketHash(link.key));
+    let t;
+    try { t = await store.fetchTask(link.key); }
+    catch (e) {
+      console.warn("staff kanban: couldn't open", link.key, e);
+      if (here()) { restoreAddress(); toast(e && e.code === "permission-denied" ? "You don't have access to that ticket." : `<b>${esc(link.key)}</b> couldn't be opened. Check your connection and try again.`); }
+      return;
+    }
+    if (!here()) return;
+    if (!t) { renderTicketMissing(link.key); return; }
+    await listsLoaded();
+    if (!here()) return;
+    openTask(link.key, { loaded: true });
+  }
+  function renderTicketMissing(named) {
+    current.route = "missing";
+    document.title = "Ticket not found — PH Agent Console";
+    $("#kb-view").innerHTML = `
+      <div class="page-header"><h2>Staff Kanban</h2></div>
+      <div class="kb-notfound" role="alert">
+        <span class="material-symbols-outlined" aria-hidden="true">link_off</span>
+        <h3>Ticket not found</h3>
+        <p>${named ? `There is no ticket <b>${esc(named)}</b>. It may have been deleted, or the number in the address is wrong.` : "The address doesn't name a ticket. A ticket address ends with its number, like PH-123."}</p>
+        <button type="button" class="btn-primary" id="kb-notfound-board">Go to Staff Kanban</button>
+      </div>`;
+    $("#kb-notfound-board").addEventListener("click", () => go("kanban"));
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* older browsers, or no permission: the selection route */ }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "position:absolute;left:-9999px;top:0";
+      (document.querySelector(".kb-task-panel") || document.body).appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch (e) { return false; }
+  }
+  let shareTimer;
+  async function copyTicketLink() {
+    if (!draft || draftIsNew) return;
+    const url = ticketUrl(draft.key), b = $("#task-share");
+    if (await copyText(url)) {
+      toast("Link copied");
+      if (b) { b.classList.add("on"); $(".material-symbols-outlined", b).textContent = "done"; clearTimeout(shareTimer); shareTimer = setTimeout(() => { b.classList.remove("on"); $(".material-symbols-outlined", b).textContent = "link"; }, 2000); }
+    } else toast(`The link couldn't be copied. Copy it from here: <span class="kb-toast-url">${esc(url)}</span>`);
+  }
+  function syncModalShare() {
+    const b = $("#task-share");
+    if (b) b.hidden = !draft || draftIsNew;
   }
   function render() {
     const view = $("#kb-view");
@@ -296,7 +446,7 @@ export function mountStaffKanban(ctx) {
   }
   // A redraw that keeps the reader where they are (data arriving, a save).
   function renderCurrent() {
-    if (pageEl.hidden) return;
+    if (pageEl.hidden || current.route === "missing") return;
     if (current.route === "kanban" && $("#kb-board")) { renderKanbanBoard(); refreshFilterCounts(); return; }
     keepPosition(() => render());
   }
@@ -380,8 +530,9 @@ export function mountStaffKanban(ctx) {
   const opt = (v, label, sel) => `<option value="${esc(v)}"${v === sel ? " selected" : ""}>${esc(label)}</option>`;
 
   function syncBoardUrl() {
-    const h = "#staff-kanban" + (board.project ? "?project=" + encodeURIComponent(board.project) : "");
-    if (window.location.hash !== h) { try { history.replaceState(null, "", h); } catch (e) { /* the filter just isn't kept in the address */ } }
+    // An open ticket's address stays until the ticket closes.
+    if (addressTicket) return;
+    setAddress(boardHash());
   }
   function renderKanban(view) {
     // A project that no longer exists would filter the board to nothing.
@@ -783,11 +934,13 @@ export function mountStaffKanban(ctx) {
     const kidsLive = kids ? kids.filter((k) => res(k) !== "withdrawn") : null;
     const kidsDone = kids ? kids.filter((k) => res(k) === "completed").length : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
+    const linkBtn = `<button type="button" class="kb-link-btn" data-copy-link="${esc(t.key)}" title="Copy link" aria-label="Copy a link to ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>`;
     return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
       <div class="kb-card-top">
         <span class="kb-type kb-type-${ty.key}" title="${ty.label}"><span class="material-symbols-outlined" aria-hidden="true">${ty.icon}</span></span>
         <span class="kb-key">${esc(t.key)}</span>
         <span class="kb-prio kb-prio-${pr.key}" title="${pr.label} priority"><span class="material-symbols-outlined" aria-hidden="true">${pr.icon}</span></span>
+        ${linkBtn}
         ${state.settings.fields.flag.show || t.flagged ? flagBtn : ""}
       </div>
       <p class="card-title">${esc(t.title)}</p>
@@ -815,7 +968,8 @@ export function mountStaffKanban(ctx) {
   function initDrag() {
     document.addEventListener("pointerdown", (e) => {
       const card = e.target.closest(".kb-card");
-      if (!card || e.button !== 0 || !$("#kb-board") || pageEl.hidden || !canWrite() || e.target.closest("[data-flag]")) return;
+      if (card && pageEl.contains(card) && !e.target.closest("[data-flag], [data-copy-link]")) prefetchTask(card.dataset.key);
+      if (!card || e.button !== 0 || !$("#kb-board") || pageEl.hidden || !canWrite() || e.target.closest("[data-flag], [data-copy-link]")) return;
       drag = { card, key: card.dataset.key, x: e.clientX, y: e.clientY, type: e.pointerType, active: false, id: e.pointerId };
       if (e.pointerType !== "mouse") {
         drag.timer = setTimeout(() => { if (drag && !drag.active) startDrag(drag.x, drag.y); }, 260);
@@ -843,12 +997,34 @@ export function mountStaffKanban(ctx) {
       if (suppressClick) { suppressClick = false; e.preventDefault(); return; }
       const fb = e.target.closest("[data-flag]");
       if (fb) { toggleFlag(taskByKey(fb.dataset.flag)); return; }
-      openTask(card.dataset.key);
+      const cl = e.target.closest("[data-copy-link]");
+      if (cl) { copyCardLink(cl); return; }
+      openCard(card.dataset.key, e);
+    });
+    // A middle click opens the ticket in a new tab, as a link would.
+    document.addEventListener("auxclick", (e) => {
+      const card = e.button === 1 && e.target.closest(".kb-card");
+      if (!card || !pageEl.contains(card) || e.target.closest("[data-flag], [data-copy-link]")) return;
+      e.preventDefault();
+      openTicketTab(card.dataset.key);
+    });
+    // Read the ticket while the pointer rests on its card (not while it only passes over).
+    document.addEventListener("pointerover", (e) => {
+      if (e.pointerType !== "mouse") return;
+      const card = e.target.closest && e.target.closest(".kb-card");
+      const key = card && pageEl.contains(card) ? card.dataset.key : "";
+      if (key === hoverKey) return;
+      hoverKey = key; clearTimeout(hoverTimer);
+      if (key) hoverTimer = setTimeout(() => { if (hoverKey === key) prefetchTask(key); }, 120);
+    });
+    document.addEventListener("focusin", (e) => {
+      const card = e.target.closest && e.target.closest(".kb-card");
+      if (card && pageEl.contains(card) && e.target === card) prefetchTask(card.dataset.key);
     });
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && drag && drag.active) { e.preventDefault(); endDrag(false); return; }
       const card = e.target.closest && e.target.closest(".kb-card");
-      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openTask(card.dataset.key); }
+      if (card && pageEl.contains(card) && (e.key === "Enter" || e.key === " ") && e.target === card) { e.preventDefault(); openCard(card.dataset.key, e); }
     });
   }
   function startDrag(x, y) {
@@ -1005,7 +1181,7 @@ export function mountStaffKanban(ctx) {
   // another release) fetches it first.
   // The board holds cards, so a ticket's modal reads the full ticket first.
   async function openTaskByKey(key, preset) {
-    try { if (!(await store.fetchTask(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
+    try { if (!(await takePrefetch(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
     catch (e) { fail(e); return; }
     openTask(key, { ...preset, loaded: true });
   }
@@ -1032,6 +1208,8 @@ export function mountStaffKanban(ctx) {
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
     syncModalFlag();
     syncModalWatch();
+    syncModalShare();
+    if (t) showTicketAddress(t);
     renderForm();
     setSideCollapsed(sideCollapsed);
     syncCreateCta();
@@ -1122,9 +1300,10 @@ export function mountStaffKanban(ctx) {
     changeTimer = setInterval(syncSaveState, 100);
     syncSaveState();
   }
-  function closeTask() {
+  function closeTask(opts) {
     clearInterval(changeTimer); changeBase = null; editBase = null;
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
+    if (!(opts && opts.keepAddress)) restoreAddress();
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
   }
@@ -2074,7 +2253,17 @@ export function mountStaffKanban(ctx) {
       store.setWatching(draft.key, on).catch(fail);
       toast(on ? `Watching <b>${esc(draft.key)}</b>` : `Stopped watching <b>${esc(draft.key)}</b>`);
     });
-    $("#task-close").addEventListener("click", closeTask);
+    // Share link (KB-LINK-3). Added here, not in index.html, so a page cached
+    // from before this shipped still gets the button.
+    if (!$("#task-share")) {
+      const share = document.createElement("button");
+      share.type = "button"; share.id = "task-share"; share.className = "kb-task-flag kb-task-share"; share.hidden = true;
+      share.title = "Copy link"; share.setAttribute("aria-label", "Copy a link to this ticket");
+      share.innerHTML = '<span class="material-symbols-outlined" aria-hidden="true">link</span>';
+      $(".kb-modal-head-actions").insertBefore(share, $("#task-watch"));
+    }
+    $("#task-share").addEventListener("click", copyTicketLink);
+    $("#task-close").addEventListener("click", () => closeTask());
     $("#task-backdrop").addEventListener("click", (e) => { if (e.target.id === "task-backdrop") closeTask(); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#task-backdrop").hidden) closeTask(); });
   }

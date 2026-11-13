@@ -148,6 +148,23 @@ const remaining = (t) => (t.status === "done" ? 0 : Math.max((+t.estimate || 0) 
 const keyNumber = (key) => { const m = /^PH-(\d+)$/i.exec(String(key || "")); return m ? +m[1] : null; };
 const keyOf = (n) => `PH-${n}`;
 
+// Every ticket has its own address, #staff-kanban/ticket/PH-123 (KB-LINK-1):
+// the PH key, never a database id, so it can be read, shared and edited.
+const ticketSub = (key) => `ticket/${encodeURIComponent(key)}`;
+const ticketHash = (key) => `#staff-kanban/${ticketSub(key)}`;
+// What a ticket address names. null when `sub` isn't a ticket address; else
+// { key, raw }: key is the PH key ("PH-124" from "PH-124", "ph-124" or "124")
+// or "" when what was typed can't be a key, raw is what was typed.
+function ticketFromSub(sub) {
+  const m = /^ticket(?:\/(.*))?$/.exec(String(sub || ""));
+  if (!m) return null;
+  let raw = m[1] || "";
+  try { raw = decodeURIComponent(raw); } catch (e) { /* a stray %: shown as typed */ }
+  raw = raw.trim().replace(/\/+$/, "");
+  const k = /^(?:PH-?)?0*(\d{1,9})$/i.exec(raw);
+  return { key: k ? keyOf(+k[1]) : "", raw };
+}
+
 // Hours to "1d 4h" (1d = 8h), rounded to the half hour.
 function fmtH(h) {
   if (h == null || h === "" || isNaN(h)) return "—";
@@ -719,4 +736,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

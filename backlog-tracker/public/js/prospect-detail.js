@@ -23,7 +23,7 @@ import {
   companyDocId, COMPANY_COLLECTION, normaliseDetail, normaliseAwsAccountId,
 } from "./prospect-detail-core.js";
 import { sizeBandLabel, statusLabel } from "./prospects-core.js";
-import { enrichmentHTML, enrichmentRunning, enrichButtonLabel, enrichmentStatus } from "./enrichment-view.js";
+import { enrichmentHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus } from "./enrichment-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const TABS = [["profile", "Profile"], ["org", "Org chart"], ["aws", "AWS account team"], ["docs", "Documents"]];
@@ -393,7 +393,10 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     const rid = id;
     enrichNote = "Starting the research…"; render();
     try {
-      const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ prospectId: rid }) });
+      // A record the check stopped ("Research anyway") is researched without the check.
+      const cur = row();
+      const force = enrichmentSkipped(cur && cur.enrichment);
+      const resp = await fetch("/leadEnrich/v1/enrich", { method: "POST", headers: await apiHeaders(), body: JSON.stringify({ prospectId: rid, ...(force ? { force: true } : {}) }) });
       const body = await resp.json().catch(() => ({}));
       enrichNote = resp.ok ? "" : (body.error || `Enrichment failed (HTTP ${resp.status}).`);
       if (resp.ok) say("Researching the company on the web… the findings appear here when it finishes.");

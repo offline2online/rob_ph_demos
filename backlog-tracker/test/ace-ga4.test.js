@@ -68,7 +68,8 @@ const quiet = { info() {}, warn() {}, error() {} };
   });
 
   await test("live catalogue: sends each milestone once, records it, and a re-run sends nothing", async () => {
-    const db = fakeDb([{ ...LEAD, stage: "closed-won" }, { ...LEAD, id: "T", test: true }, { ...LEAD, id: "N", gaClientIds: [] }]);
+    const db = fakeDb([{ ...LEAD, stage: "closed-won" }, { ...LEAD, id: "T", test: true }, { ...LEAD, id: "N", gaClientIds: [] },
+      { ...LEAD, id: "F", leadType: "franchise", gaClientIds: [{ clientId: "999.1731000000", sessionId: "", leadSource: "franchise", at: "x" }] }]);
     const fetch = fakeFetch(() => ({ status: 204, text: async () => "" }));
     const pc = { aceOpportunities: async () => ({ catalog: "AWS", opportunities: [{ ...OPP, stage: "Launched" }] }) };
     const job = ace.createAceGa4Job({ db, partnerCentral: pc, apiSecret: () => "s3cret", fetch, logger: quiet, now: () => new Date("2026-11-09T12:00:00Z") });
@@ -76,7 +77,7 @@ const quiet = { info() {}, warn() {}, error() {} };
     assert.equal(r1.sent, 3);
     assert.deepEqual(fetch.calls.map((c) => c.body.events[0].name), ["ace_opportunity_qualified", "ace_opportunity_launched", "ace_opportunity_won"]);
     assert.ok(fetch.calls.every((c) => c.url.startsWith("https://www.google-analytics.com/mp/collect?measurement_id=G-LBEF15GKVQ&api_secret=s3cret")));
-    assert.ok(fetch.calls.every((c) => c.body.client_id === "111.1731000000"), "test lead and lead without client id never sent");
+    assert.ok(fetch.calls.every((c) => c.body.client_id === "111.1731000000"), "test lead, franchise applicant and lead without client id never sent");
     assert.deepEqual(Object.keys(db.cols.aceGa4Sync.get("O1").sent).sort(), ["launched", "qualified", "won"]);
     const r2 = await job.run();
     assert.equal(r2.sent, 0); assert.equal(fetch.calls.length, 3);
@@ -145,6 +146,12 @@ const quiet = { info() {}, warn() {}, error() {} };
     r = res(); await api.handle(req({ ...FORM, email: "cy@acme.example", contactName: "Cy" }), r);
     assert.equal(leads()[0].gaClientIds.length, 2, "a submission without a client_id leaves the list alone");
     r = res(); await api.handle(req({ ...FORM, company: "Testco", website: "testco.example", email: "t@testco.example", test: true, gaClientId: "3.1731000000" }), r);
+    const GATE = { lead_type: "Franchise opportunity", lead_source: "Franchise page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", operating_region: "Leeds", page: "/franchise/" };
+    r = res(); await api.handle(req({ ...GATE, gaClientId: "7.1731000000" }), r);
+    r = res(); await api.handle(req({ ...GATE, gaClientId: "8.1731000000" }), r);
+    const f = [...col("leads").values()].filter((l) => l.leadType === "franchise");
+    assert.equal(f.length, 1, "one franchise lead per email");
+    assert.deepEqual(f[0].gaClientIds.map((g) => g.clientId), ["7.1731000000", "8.1731000000"], "franchise create and repeat both keep the GA4 id");
     const t = [...col("leads").values()].find((l) => l.test === true);
     assert.ok(t, "test lead stored"); assert.deepEqual(t.gaClientIds, [], "a test lead never carries a GA4 id");
   });

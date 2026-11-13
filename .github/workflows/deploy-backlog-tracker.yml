@@ -110,6 +110,13 @@ jobs:
       # backlog-automation.yml's own schedule). NOTIFY_WEBHOOK_URL and the
       # Routine pair are skipped when unset, as before.
       #
+      # ANTHROPIC_WORKSPACE_ID goes with ANTHROPIC_API_KEY: a key created for
+      # the whole organisation (not inside one workspace) is refused by
+      # Anthropic unless each request names the workspace ("This API key is
+      # not scoped to a workspace", every Leads/TAM research run on 11 Nov
+      # 2026). Set it to that workspace's ID (Claude Console, Settings,
+      # Workspaces). Leave it unset when the key was created in a workspace.
+      #
       # LEAD_INGEST_KEY (functions/lead-ingest.js, the website's lead
       # submissions) is the same: PR #520 declared it with defineSecret() but
       # nothing created it, so the deploy stopped on the CLI's "Enter a value
@@ -125,6 +132,7 @@ jobs:
           GH_DISPATCH_TOKEN: ${{ secrets.GH_DISPATCH_TOKEN }}
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           LEAD_INGEST_KEY: ${{ secrets.LEAD_INGEST_KEY }}
           GA4_MP_API_SECRET: ${{ secrets.GA4_MP_API_SECRET }}
         run: |
@@ -140,6 +148,7 @@ jobs:
           sync GH_DISPATCH_TOKEN "${GH_DISPATCH_TOKEN:-unset}"
           sync BOARD_API_KEY "${BOARD_API_KEY:-unset}"
           sync ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-unset}"
+          sync ANTHROPIC_WORKSPACE_ID "${ANTHROPIC_WORKSPACE_ID:-unset}"
           sync LEAD_INGEST_KEY "${LEAD_INGEST_KEY:-unset}"
           # GA4 Measurement Protocol secret for aceToGa4 (functions/ace-ga4.js). Unset, the job sends nothing.
           sync GA4_MP_API_SECRET "${GA4_MP_API_SECRET:-unset}"

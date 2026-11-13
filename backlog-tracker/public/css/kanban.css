@@ -178,6 +178,13 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 @media (hover: none) { .kb-flag-btn { opacity: .55; } }
 .kb-flag-btn:hover { background: rgba(250, 173, 20, .18); color: #b07800; }
 .kb-flag-btn.on { color: #b07800; }
+/* Copy link on a card (KB-LINK-4): the flag button's shape, shown the same way. */
+.kb-link-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; min-height: 26px; padding: 0; margin: -4px -4px -4px 0; border: 0; border-radius: 6px; background: transparent; color: var(--text-muted); cursor: pointer; opacity: 0; }
+.kb-link-btn .material-symbols-outlined { font-size: 17px; }
+.kb-card:hover .kb-link-btn, .kb-card:focus-within .kb-link-btn, .kb-link-btn.on { opacity: 1; }
+@media (hover: none) { .kb-link-btn { opacity: .55; } }
+.kb-link-btn:hover { background: rgba(22, 155, 194, .12); color: var(--primary); }
+.kb-link-btn.on { color: var(--primary); }
 .kb-flag-btn.on .material-symbols-outlined, .kb-flag-mini, .kb-task-flag.on .material-symbols-outlined, .kb-kpi-flag .material-symbols-outlined { font-variation-settings: 'FILL' 1; }
 .kb-card.kb-flagged { background: #fff7e0; box-shadow: 0 0 0 1px rgba(250, 173, 20, .55); }
 .kb-card.kb-flagged:hover { box-shadow: 0 0 0 1px rgba(250, 173, 20, .8), 0 3px 10px rgba(0, 0, 0, .08); }
@@ -192,6 +199,21 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 .kb-task-flag[hidden] { display: none; }
 .kb-task-flag .material-symbols-outlined { font-size: 18px; }
 .kb-task-flag.on { background: #faad14; color: #3d2a00; }
+/* Share link: an icon-only pill beside Watch and Flag; turns green for a moment once copied. */
+.kb-task-share { width: 36px; padding: 0; justify-content: center; flex: none; }
+/* On a phone the header holds the key and five controls: Watch and Flag become icon-only (their words stay for screen readers). */
+@media (max-width: 640px) {
+  .kb-modal-head-actions { gap: 4px; }
+  .kb-modal-head-actions .kb-task-flag { width: 36px; padding: 0; justify-content: center; flex: none; }
+  .kb-modal-head-actions .kb-task-flag > span:not(.material-symbols-outlined) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+.kb-task-share.on { background: #e6f6ec; color: #1a7f37; }
+.kb-toast-url { display: block; margin-top: 4px; word-break: break-all; user-select: all; -webkit-user-select: all; }
+/* A ticket address that names no ticket. */
+.kb-notfound { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 64px 16px; text-align: center; }
+.kb-notfound > .material-symbols-outlined { font-size: 40px; color: var(--text-muted); }
+.kb-notfound h3 { margin: 4px 0 0; font-size: 20px; font-weight: 600; }
+.kb-notfound p { margin: 0 0 12px; max-width: 420px; color: var(--text-muted); font-size: 14px; }
 .kb-task-panel.kb-panel-flagged { box-shadow: 0 0 0 2px #faad14, 0 8px 40px rgba(0, 0, 0, .25); }
 
 /* Epics */

@@ -15,8 +15,12 @@ const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString
 
 function view(id, data) {
   const l = core.normaliseLead(id, data);
+  const fr = l.franchise || null;
   return {
     id,
+    leadType: l.leadType,
+    leadTypeLabel: core.leadTypeLabel(l.leadType),
+    name: core.leadName(l),
     company: l.company.name,
     website: l.company.website || null,
     industry: l.company.industry || null,
@@ -28,6 +32,9 @@ function view(id, data) {
     source: l.source || null,
     sourceLabel: l.sourceLabel || "",
     sourceDetail: l.sourceDetail || "",
+    region: fr ? fr.region || null : null,
+    background: fr ? fr.background || null : null,
+    backgroundLabel: fr && fr.background ? core.backgroundLabel(fr.background) : null,
     websiteActivity: l.websiteActivity.map(({ at, label, detail, page }) => ({ at, label, detail, page })),
     assignee: l.assignee || null,
     customerAccount: l.customerAccount,
@@ -41,6 +48,27 @@ function view(id, data) {
   };
 }
 
+// What the research agent found (lead-enrich.js), as get_lead returns it.
+function researchView(e) {
+  // Also returned for a lead no run has filled yet, so the reason a run stopped can be read.
+  if (!e || typeof e !== "object" || (!e.at && !e.request)) return null;
+  const t = (v) => (typeof v === "string" && v ? v : null);
+  const list = (v) => (Array.isArray(v) ? v : []);
+  const r = e.request && typeof e.request === "object" ? e.request : null;
+  return {
+    storeCount: typeof e.storeCount === "number" ? e.storeCount : null, storeCountBreakdown: t(e.storeCountBreakdown), storeCountSource: e.storeCountSource || null,
+    logos: { light: t(e.logos && e.logos.light), dark: t(e.logos && e.logos.dark), icon: t(e.logoUrl) },
+    hq: t(e.hq), employees: t(e.employees), revenue: t(e.revenue), linkedinCompany: t(e.linkedinCompany), logoUrl: t(e.logoUrl),
+    primaryCloud: t(e.primaryCloud), retailMedia: t(e.retailMedia), personalisation: t(e.personalisation),
+    inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), estate: t(e.estate), strategy: t(e.strategy), fit: t(e.fit),
+    talkingPoints: list(e.talkingPoints),
+    vendors: list(e.vendors), people: list(e.people), news: list(e.news), financials: e.financials || null, facts: list(e.facts),
+    level: t(e.level), websiteGuess: e.websiteGuess && typeof e.websiteGuess === "object" ? { url: t(e.websiteGuess.url), confidence: e.websiteGuess.confidence || null, from: t(e.websiteGuess.from) } : null,
+    check: e.screen && typeof e.screen === "object" ? { passed: e.screen.ok === true, real: e.screen.real === true, physicalRetail: e.screen.physicalRetail === true, reason: t(e.screen.reason) } : null,
+    lastRun: r ? { status: r.status || null, message: r.message || null } : null,
+  };
+}
+
 // get_lead: everything the drawer shows, plus the history.
 function fullView(id, data) {
   const l = core.normaliseLead(id, data);
@@ -51,6 +79,7 @@ function fullView(id, data) {
     sourceIndustry: l.sourceIndustry || null,
     contacts: l.contacts.map((c) => ({ id: c.id, name: c.name, jobTitle: c.jobTitle || null, buyingRole: c.buyingRole || null, email: c.email || null, linkedin: c.linkedin || null, awsAccountId: c.awsAccountId || null })),
     enrichmentSummary: l.enrichment && l.enrichment.summary ? l.enrichment.summary : null,
+    research: researchView(l.enrichment),
     createdAt: iso(d.createdAt),
     createdBy: d.createdByEmail || null,
     updatedBy: d.updatedByEmail || null,
@@ -61,6 +90,7 @@ function fullView(id, data) {
 
 const norm = (v) => String(v == null ? "" : v).trim().toLowerCase();
 const nameOf = (d) => String(((d.data() || {}).company || {}).name || "");
+const displayOf = (d) => core.leadName(core.normaliseLead(d.id, d.data()));
 
 function leadsTools(h) {
   const { textResult, toolError, audit } = h;
@@ -72,12 +102,13 @@ function leadsTools(h) {
       return snap.exists ? { snap } : { error: `No lead with id ${a.leadId}. Call list_leads first.` };
     }
     if (a.company) {
+      // A franchise opportunity has no company: it is found by the person's name.
       const name = norm(a.company);
       const all = (await db().collection(COLLECTION).get()).docs;
-      const exact = all.filter((d) => norm(nameOf(d)) === name);
-      const hits = exact.length ? exact : all.filter((d) => norm(nameOf(d)).includes(name));
+      const exact = all.filter((d) => norm(displayOf(d)) === name);
+      const hits = exact.length ? exact : all.filter((d) => norm(displayOf(d)).includes(name));
       if (!hits.length) return { error: `No lead for a company called "${a.company}". Call list_leads first.` };
-      if (hits.length > 1) return { error: `More than one lead matches "${a.company}": ${hits.map((d) => `${nameOf(d)} (${d.id})`).join(", ")}. Pass the leadId.` };
+      if (hits.length > 1) return { error: `More than one lead matches "${a.company}": ${hits.map((d) => `${displayOf(d)} (${d.id})`).join(", ")}. Pass the leadId.` };
       return { snap: hits[0] };
     }
     return { error: "Give a leadId or a company name." };
@@ -100,7 +131,10 @@ function leadsTools(h) {
     countries: { type: "array", items: { type: "string" }, description: "Countries it operates in." },
     storeCount: { type: ["number", "null"] },
     awsAccountId: { type: "string", description: "Exactly 12 digits (dashes and spaces are tidied)." },
-    stage: { type: "string", enum: core.STAGE_KEYS, description: `One of: ${core.STAGE_KEYS.join(", ")}. Default ${core.DEFAULT_STAGE} when creating.` },
+    leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: `company (default, a retail/company lead) or franchise (a Franchise opportunity: an individual, no company needed; give the person as the first contact). Set when creating; it can't be changed later.` },
+    region: { type: "string", description: "Franchise opportunities: where they plan to operate." },
+    background: { type: "string", enum: ["", ...core.BACKGROUNDS.map((b) => b.key)], description: `Franchise opportunities: ${core.BACKGROUNDS.map((b) => `${b.key} (${b.label})`).join(", ")}.` },
+    stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")} (default ${core.DEFAULT_STAGE}). Franchise opportunities: ${core.FRANCHISE_STAGE_KEYS.join(", ")} (default ${core.FRANCHISE_DEFAULT_STAGE}).` },
     source: { type: "string", description: 'Where it came from; "Manual" when blank.' },
     sourceDetail: { type: "string", description: "Which form or demo, up to 120 characters." },
     assignee: { type: "string", description: "A member's email, or \"\" for unassigned." },
@@ -115,6 +149,7 @@ function leadsTools(h) {
     company: { type: "string", description: "The company's name, when you don't have its leadId (exact, or a unique part of it)." },
   };
   const formOf = (a) => ({
+    leadType: a.leadType, region: a.region, background: a.background,
     name: a.company, website: a.website, industry: a.industry, countries: a.countries, storeCount: a.storeCount,
     awsAccountId: a.awsAccountId, stage: a.stage, source: a.source, assignee: a.assignee, contacts: a.contacts || [],
   });
@@ -123,7 +158,7 @@ function leadsTools(h) {
     const r = core.leadFromForm(formOf(a));
     if (r.errors.length) return { created: false, error: r.errors.join(" ") };
     const key = norm(r.fields.company.name);
-    const dup = seen.get(key) || await findByName(r.fields.company.name);
+    const dup = key ? seen.get(key) || await findByName(r.fields.company.name) : null;
     if (dup) {
       const data = typeof dup.data === "function" ? dup.data() : dup;
       return { created: false, duplicate: true, error: `A lead called "${r.fields.company.name}" already exists.`, existing: view(dup.id, data) };
@@ -137,19 +172,20 @@ function leadsTools(h) {
       createdByEmail: session.email, updatedByEmail: session.email,
     };
     const ref = await db().collection(COLLECTION).add(doc);
-    seen.set(key, { id: ref.id, ...doc });
+    if (key) seen.set(key, { id: ref.id, ...doc });
     return { created: true, lead: view(ref.id, { ...doc, history: doc.history }) };
   }
 
   const tools = [
     {
       name: "list_leads",
-      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Stages: ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}. Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
+      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or franchise (Franchise opportunities: individuals from the Franchise page, with region and background and their own stages ${core.FRANCHISE_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
       scope: "board.read",
       inputSchema: {
         type: "object",
         properties: {
-          stage: { type: "string", enum: core.STAGE_KEYS, description: "Only leads in this stage. Omit for every stage." },
+          leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: "Only company leads, or only franchise opportunities. Omit for both." },
+          stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: "Only leads in this stage. Omit for every stage." },
           company: { type: "string", description: "Only companies whose name contains this text (case-insensitive)." },
           assignee: { type: "string", description: "A member's email, or \"unassigned\"." },
           source: { type: "string", description: "Only leads whose source contains this text." },
@@ -171,15 +207,16 @@ function leadsTools(h) {
           if (data.test === true) return; // test leads stay out of reporting
           if (data.archivedAt && !a.includeArchived) return;
           const v = view(d.id, data);
+          if (a.leadType && v.leadType !== a.leadType) return;
           if (a.stage && v.stage !== a.stage) return;
           if (want && !v.company.toLowerCase().includes(want)) return;
           if (who && (who === "unassigned" ? v.assignee : norm(v.assignee) !== who)) return;
           if (src && !norm(`${v.source} ${v.sourceLabel} ${v.sourceDetail}`).includes(src)) return;
           if (ind && !norm(v.industry).includes(ind)) return;
-          if (q && !norm([v.company, v.website, v.industry, v.countries.join(" "), v.source, v.sourceLabel, v.sourceDetail, v.assignee, v.contacts.map((c) => `${c.name} ${c.email || ""} ${c.jobTitle || ""}`).join(" ")].join(" ")).includes(q)) return;
+          if (q && !norm([v.company, v.region || "", v.backgroundLabel || "", v.website, v.industry, v.countries.join(" "), v.source, v.sourceLabel, v.sourceDetail, v.assignee, v.contacts.map((c) => `${c.name} ${c.email || ""} ${c.jobTitle || ""}`).join(" ")].join(" ")).includes(q)) return;
           leads.push(v);
         });
-        leads.sort((x, y) => core.STAGE_KEYS.indexOf(x.stage) - core.STAGE_KEYS.indexOf(y.stage) || x.company.localeCompare(y.company));
+        leads.sort((x, y) => core.ALL_STAGE_KEYS.indexOf(x.stage) - core.ALL_STAGE_KEYS.indexOf(y.stage) || x.name.localeCompare(y.name));
         const total = leads.length;
         const offset = Math.max(0, Number(a.offset) || 0);
         const limit = Math.min(200, Math.max(1, Number(a.limit) || 100));
@@ -189,7 +226,7 @@ function leadsTools(h) {
     },
     {
       name: "get_lead",
-      description: "One lead in full: company fields, stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
+      description: "One lead in full: its lead type (company or franchise), company fields (or, for a franchise opportunity, region and background), stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
       scope: "board.read",
       inputSchema: { type: "object", properties: { ...REF_PROPS }, additionalProperties: false },
       async run(args) {
@@ -200,12 +237,12 @@ function leadsTools(h) {
     },
     {
       name: "create_lead",
-      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
+      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. For a Franchise opportunity (an individual) pass leadType franchise with the person as the only contact, plus region and background; no company is needed and it starts in applied. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
       scope: "board.write",
       inputSchema: {
         type: "object",
         properties: { ...LEAD_PROPS, contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: CONTACT_PROPS, required: ["name"], additionalProperties: false } } },
-        required: ["company"], additionalProperties: false,
+        additionalProperties: false,
       },
       async run(args, session) {
         const out = await createOne(args || {}, session, new Map());
@@ -220,7 +257,7 @@ function leadsTools(h) {
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { leads: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", properties: { ...LEAD_PROPS, contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: CONTACT_PROPS, required: ["name"], additionalProperties: false } } }, required: ["company"], additionalProperties: false } } },
+        properties: { leads: { type: "array", minItems: 1, maxItems: 50, items: { type: "object", properties: { ...LEAD_PROPS, contacts: { type: "array", maxItems: core.LIMITS.contacts, items: { type: "object", properties: CONTACT_PROPS, required: ["name"], additionalProperties: false } } }, additionalProperties: false } } },
         required: ["leads"], additionalProperties: false,
       },
       async run(args, session) {
@@ -231,7 +268,7 @@ function leadsTools(h) {
         const results = [];
         for (const item of list) {
           const out = await createOne(item || {}, session, seen);
-          results.push({ company: String((item || {}).company || ""), ...out });
+          results.push({ company: String((item || {}).company || (out.lead && out.lead.name) || ""), ...out });
         }
         const created = results.filter((r) => r.created).length;
         await audit(session, "create_leads", { requested: list.length, created });
@@ -240,7 +277,7 @@ function leadsTools(h) {
     },
     {
       name: "update_lead",
-      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage. Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
+      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage (and, on a franchise opportunity, region and background; its lead type can't change). Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
       scope: "board.write",
       inputSchema: { type: "object", properties: { ...REF_PROPS, ...LEAD_PROPS, newCompany: { type: "string", description: "Rename the company to this." } }, additionalProperties: false },
       async run(args, session) {
@@ -249,7 +286,12 @@ function leadsTools(h) {
         if (r.error) return toolError(r.error);
         const before = core.normaliseLead(r.snap.id, r.snap.data());
         const has = (k) => Object.prototype.hasOwnProperty.call(a, k);
+        if (has("leadType") && a.leadType !== before.leadType) return toolError("A lead's type can't be changed: create a new lead of the other type instead.");
+        const fr = before.franchise || { region: "", background: "" };
         const form = {
+          leadType: before.leadType,
+          region: has("region") ? a.region : fr.region,
+          background: has("background") ? a.background : fr.background,
           name: a.newCompany != null ? a.newCompany : before.company.name,
           website: has("website") ? a.website : before.company.website,
           industry: has("industry") ? a.industry : before.company.industry,
@@ -259,26 +301,29 @@ function leadsTools(h) {
           stage: has("stage") ? a.stage : before.stage,
           source: has("source") ? a.source : before.source,
           assignee: has("assignee") ? a.assignee : before.assignee,
-          contacts: [],
+          contacts: before.leadType === "franchise" ? before.contacts : [],
         };
         const v = core.leadFromForm(form);
         if (v.errors.length) return toolError(v.errors.join(" "));
-        if (norm(v.fields.company.name) !== norm(before.company.name)) {
+        if (v.fields.company.name && norm(v.fields.company.name) !== norm(before.company.name)) {
           const dup = await findByName(v.fields.company.name);
           if (dup && dup.id !== r.snap.id) return toolError(`Another lead is already called "${v.fields.company.name}" (${dup.id}).`);
         }
         const fields = { company: v.fields.company, stage: v.fields.stage, source: v.fields.source, assignee: v.fields.assignee };
+        if (v.fields.franchise) fields.franchise = v.fields.franchise;
         if (has("sourceDetail")) fields.sourceDetail = String(a.sourceDetail == null ? "" : a.sourceDetail).trim().slice(0, core.LIMITS.sourceDetail);
         if (v.fields.stage !== before.stage) fields.stageChangedAt = FieldValue.serverTimestamp();
         const changed = [];
         const was = r.snap.data() || {};
         for (const k of ["name", "website", "industry", "storeCount", "awsAccountId"]) if (JSON.stringify(v.fields.company[k]) !== JSON.stringify(k === "name" ? before.company.name : before.company[k])) changed.push(k === "name" ? "company name" : k);
         if (JSON.stringify(v.fields.company.countries) !== JSON.stringify(before.company.countries)) changed.push("countries");
+        if (v.fields.franchise && v.fields.franchise.region !== fr.region) changed.push("region");
+        if (v.fields.franchise && v.fields.franchise.background !== fr.background) changed.push("background");
         if (v.fields.source !== before.source) changed.push("source");
         if (has("sourceDetail") && fields.sourceDetail !== String(was.sourceDetail || "")) changed.push("source detail");
         if (v.fields.assignee !== before.assignee) changed.push("assignee");
         if (v.fields.stage !== before.stage) changed.push(`stage ${before.stage} → ${v.fields.stage}`);
-        if (!changed.length) return textResult({ updated: false, leadId: r.snap.id, company: before.company.name, note: "Nothing to change." });
+        if (!changed.length) return textResult({ updated: false, leadId: r.snap.id, company: core.leadName(before), note: "Nothing to change." });
         await change(session, r.snap, fields, v.fields.stage !== before.stage ? "stage" : "update", `Changed ${changed.join(", ")}.`);
         await audit(session, "update_lead", { leadId: r.snap.id, changed });
         const after = await r.snap.ref.get();
@@ -291,16 +336,17 @@ function leadsTools(h) {
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { ...REF_PROPS, stage: { type: "string", enum: core.STAGE_KEYS, description: `One of: ${core.STAGE_KEYS.join(", ")}.` } },
+        properties: { ...REF_PROPS, stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")}. Franchise opportunities: ${core.FRANCHISE_STAGE_KEYS.join(", ")}.` } },
         required: ["stage"], additionalProperties: false,
       },
       async run(args, session) {
         const a = args || {};
-        if (!core.isStage(a.stage)) return toolError(`stage must be one of: ${core.STAGE_KEYS.join(", ")}.`);
+        if (!core.isStage(a.stage)) return toolError(`stage must be one of: ${core.ALL_STAGE_KEYS.join(", ")}.`);
         const r = await resolve(a);
         if (r.error) return toolError(r.error);
         const snap = r.snap;
         const before = core.normaliseLead(snap.id, snap.data());
+        if (!core.isStageFor(before.leadType, a.stage)) return toolError(`A ${core.leadTypeLabel(before.leadType).toLowerCase()} lead's stage is one of: ${core.stagesFor(before.leadType).map((s) => s.key).join(", ")}.`);
         if (before.stage === a.stage) return textResult({ updated: false, leadId: snap.id, company: before.company.name, stage: a.stage, note: "Already in that stage." });
         await change(session, snap, { stage: a.stage, stageChangedAt: FieldValue.serverTimestamp() }, "stage", `Moved from ${core.stageLabel(before.stage)} to ${core.stageLabel(a.stage)}.`);
         await audit(session, "update_lead_stage", { leadId: snap.id, from: before.stage, to: a.stage });
@@ -318,7 +364,7 @@ function leadsTools(h) {
         if (r.error) return toolError(r.error);
         const lead = core.normaliseLead(r.snap.id, r.snap.data());
         const contact = { id: core.newContactId(), name: a.name, jobTitle: a.jobTitle, buyingRole: a.buyingRole, email: a.email, linkedin: a.linkedin, awsAccountId: a.awsAccountId };
-        const v = core.leadFromForm({ name: lead.company.name, contacts: [...lead.contacts, contact] });
+        const v = core.leadFromForm({ leadType: lead.leadType, name: lead.company.name, contacts: [...lead.contacts, contact] });
         if (v.errors.length) return toolError(v.errors.join(" "));
         await change(session, r.snap, { contacts: v.fields.contacts }, "contact", `Added contact ${String(a.name).trim()}${a.buyingRole ? ` (${core.roleLabel(a.buyingRole)})` : ""}.`);
         await audit(session, "add_lead_contact", { leadId: r.snap.id, contact: contact.id });
@@ -341,7 +387,7 @@ function leadsTools(h) {
         for (const k of Object.keys(CONTACT_PROPS)) if (Object.prototype.hasOwnProperty.call(a, k)) patch[k] = a[k];
         if (!Object.keys(patch).length) return toolError("Send at least one contact field to change.");
         const contacts = lead.contacts.map((c) => (c.id === m.contact.id ? { ...c, ...patch } : c));
-        const v = core.leadFromForm({ name: lead.company.name, contacts });
+        const v = core.leadFromForm({ leadType: lead.leadType, name: lead.company.name, contacts });
         if (v.errors.length) return toolError(v.errors.join(" "));
         await change(session, r.snap, { contacts: v.fields.contacts }, "contact", `Updated contact ${m.contact.name}: ${Object.keys(patch).join(", ")}.`);
         await audit(session, "update_lead_contact", { leadId: r.snap.id, contact: m.contact.id });
@@ -361,7 +407,7 @@ function leadsTools(h) {
         const m = findContact(lead, a);
         if (m.error) return toolError(m.error);
         const rest = lead.contacts.filter((c) => c.id !== m.contact.id).map((c) => ({ ...c }));
-        const v = core.leadFromForm({ name: lead.company.name, contacts: rest });
+        const v = core.leadFromForm({ leadType: lead.leadType, name: lead.company.name, contacts: rest });
         if (v.errors.length) return toolError(v.errors.join(" "));
         await change(session, r.snap, { contacts: v.fields.contacts }, "contact", `Removed contact ${m.contact.name}.`);
         await audit(session, "remove_lead_contact", { leadId: r.snap.id, contact: m.contact.id });
@@ -397,6 +443,7 @@ function leadsTools(h) {
         const c = core.conversionFields({ id: a.accountId, name: a.accountName });
         if (c.error) return toolError(c.error);
         const before = core.normaliseLead(r.snap.id, r.snap.data());
+        if (before.leadType === "franchise") return toolError("A franchise opportunity is a person, not a customer company: it has no customer account. Move it with update_lead_stage.");
         const move = a.moveToClosedWon !== false && before.stage !== "closed-won";
         const fields = { customerAccount: c.fields.customerAccount };
         if (move) { fields.stage = "closed-won"; fields.stageChangedAt = FieldValue.serverTimestamp(); }
@@ -429,6 +476,7 @@ function leadsTools(h) {
         const a = args || {};
         const r = await resolve(a);
         if (r.error) return toolError(r.error);
+        if ((r.snap.data() || {}).leadType === "franchise") return toolError("A franchise opportunity is a person, not a company: it is never linked to a Prospects (TAM) record.");
         const pref = db().collection("prospects").doc(String(a.prospectId));
         const p = await pref.get();
         if (!p.exists) return toolError(`No prospect with id ${a.prospectId}. Call list_prospects first.`);

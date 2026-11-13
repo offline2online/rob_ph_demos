@@ -602,17 +602,29 @@ service cloud.firestore {
     // is written by the enrichment function as the service account (rules
     // bypassed); an editor's save keeps it, since request.resource is the whole document.
     function isLead(d) {
+      // A franchise opportunity (leadType "franchise") is a person, not a
+      // company: its company name may be blank, it has its own stages, and
+      // `franchise` holds where they plan to operate and their background.
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
+          "leadType", "franchise",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
-        && d.company is map && isNonEmptyBoundedString(d.company.get("name", null), 120)
+        && d.get("leadType", "company") in ["company", "franchise"]
+        && d.company is map
+        && (isNonEmptyBoundedString(d.company.get("name", null), 120)
+          || (d.get("leadType", "company") == "franchise" && d.company.get("name", "") is string && d.company.get("name", "").size() <= 120))
+        && (d.get("franchise", null) == null || (d.get("franchise", null) is map
+          && d.franchise.keys().hasOnly(["region", "background"])
+          && d.franchise.get("region", "") is string && d.franchise.get("region", "").size() <= 200
+          && d.franchise.get("background", "") is string && d.franchise.get("background", "").size() <= 40))
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
         && d.company.get("industry", "") is string && d.company.get("industry", "").size() <= 120
         && d.company.get("countries", []) is list && d.company.get("countries", []).size() <= 60
         && (d.company.get("storeCount", null) == null || d.company.get("storeCount", null) is number)
         && d.company.get("awsAccountId", "") is string && (d.company.get("awsAccountId", "") == "" || d.company.get("awsAccountId", "").matches("^[0-9]{12}$"))
         && d.get("contacts", []) is list && d.get("contacts", []).size() <= 25 && awsAcctFirstTen(d.get("contacts", []))
-        && d.stage in ["lead", "hot-lead", "demo", "post-demo", "closed-won", "closed-lost"]
+        && ((d.get("leadType", "company") == "company" && d.stage in ["lead", "hot-lead", "demo", "post-demo", "closed-won", "closed-lost"])
+          || (d.get("leadType", "company") == "franchise" && d.stage in ["applied", "screening", "intro-call", "approved", "not-a-fit"]))
         && d.get("source", "") is string && d.get("source", "").size() <= 80
         && d.get("assignee", "") is string && d.get("assignee", "").size() <= 200
         && (d.get("customerAccount", null) == null || d.get("customerAccount", null) is map)

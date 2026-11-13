@@ -2487,12 +2487,17 @@ body { overflow-x: clip; }
 .leads-add { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 16px 0 12px; }
 .leads-add .material-symbols-outlined { font-size: 20px; }
 .leads-page > .ap-empty { margin-bottom: 24px; }
+/* Lead type: Companies / Franchise opportunities (a segmented control, css/apple.css .seg). */
+.leads-type { margin: 0 0 16px; }
+.leads-type > button { min-height: 44px; } /* 44px touch targets, like every control on the board */
+.leads-type .leads-type-count { color: var(--text-muted); font-weight: 400; }
+.leads-type .leads-type-count:empty { display: none; }
 /* The board: lanes wrap into rows instead of scrolling sideways (6 across on a wide screen, 3 on a tablet, 1 on a phone). */
 .leads-board-wrap { container-type: inline-size; min-width: 0; }
 .leads-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 @container (min-width: 560px) { .leads-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @container (min-width: 760px) { .leads-board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@container (min-width: 1100px) { .leads-board { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; } }
+@container (min-width: 1100px) { .leads-board { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; } .leads-board[data-lead-type="franchise"] { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 .lead-lane { min-width: 0; padding: 8px; border-radius: 14px; background: rgba(120, 120, 128, .08); transition: background-color var(--ap-fast, .16s), box-shadow var(--ap-fast, .16s); }
 .lead-lane.lead-drop-target { background: var(--primary-tint); box-shadow: inset 0 0 0 2px var(--primary); }
 .lead-lane-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; padding: 0 8px 8px; }
@@ -2603,6 +2608,15 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .enrich-news li { margin: 3px 0; overflow-wrap: anywhere; }
 .enrich-meta { display: block; font-size: 12px; color: var(--text-muted); }
 .enrich-fin { margin: 2px 0 4px; line-height: 1.5; }
+.enrich-insight { margin: 2px 0 4px; line-height: 1.5; overflow-wrap: anywhere; }
+.enrich-sites-count { display: block; font-size: 22px; font-weight: 700; line-height: 1.2; }
+.enrich-sites { margin-bottom: 6px; }
+.enrich-logo-tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+.enrich-logo-tile { display: flex; align-items: center; justify-content: center; width: 168px; max-width: 100%; height: 72px; padding: 10px; box-sizing: border-box; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; text-align: center; text-decoration: none; }
+.enrich-logo-tile img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.enrich-logo-tile-light { background: #fff; color: rgba(0, 0, 0, .45); }
+.enrich-logo-tile-derived img { filter: brightness(0) invert(1); }
+.enrich-logo-tile-dark { background: #1f1f1f; color: rgba(255, 255, 255, .65); border-color: #1f1f1f; }
 .enrich-updated { margin: 8px 0 2px; }
 .pd-enrich-status { margin: 4px 0 8px; }
 @media (max-width: 640px) {
