@@ -1,6 +1,6 @@
 // Promote › Leads (#promote/leads): the board and the lead form.
 //
-// One card per company in `leads/{id}`; the lanes are leads-core.js STAGES.
+// One card per company in `leads/{id}`; the lanes are leads-core.js STAGES (FRANCHISE_STAGES for franchise opportunities).
 // A tile drags between lanes (HTML5 drag and drop); clicking it (or Enter)
 // opens the lead summary drawer, whose stage select moves it without a pointer
 // drag, which is how it moves on a tablet. Tiles are coloured by industry
@@ -16,12 +16,17 @@
 // planInbound): a second person from the same company and country joins that
 // company's lead, and anyone from AWS goes to the AWS tile, from which an editor
 // attaches them to a customer account's AWS team (prospectCompanies awsTeam).
+// Franchise opportunities (leadType "franchise", from the Franchise page's
+// product tour gate) are people, not companies: the Companies / Franchise
+// opportunities switch shows one pipeline at a time, each with its own lanes,
+// and a franchise lead is never matched to Prospects (TAM) or researched.
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
-  STAGES, BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
-  companyLine, conversionFields, isStage, mergeInbound, inboundLabel,
+  BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
+  companyLine, conversionFields, isStageFor, mergeInbound, inboundLabel,
+  stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel,
 } from "./leads-core.js";
 import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
@@ -49,6 +54,11 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
+  // Which pipeline the board shows: "company" or "franchise" (kept per browser).
+  let view = "company";
+  try { if (localStorage.getItem("bt-leads-type") === "franchise") view = "franchise"; } catch { /* storage blocked */ }
+  let formType = "company"; // the type of the lead in the form
+  const isFranchise = (l) => !!l && l.leadType === "franchise";
   const detailCache = new Map(); // companyDocId -> the company's shared detail (org chart, AWS team), read once
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
@@ -82,6 +92,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
   function loadDetails() {
     for (const l of leads) {
+      if (isFranchise(l)) continue;
       const key = companyDocId(l.company.name);
       if (!key || detailCache.has(key)) continue;
       detailCache.set(key, null);
@@ -201,7 +212,25 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const isWebsite = (l) => /^web/i.test(l.source);
   const sourceLabel = (l) => (isWebsite(l) ? "Website" : (l.source && l.source.toLowerCase() !== "manual" ? l.source : "Manual"));
   const chipHTML = (l) => `<span class="lead-chip" title="${esc(industryChipText(l))}"><span class="lead-ind-dot" aria-hidden="true"></span>${esc(industryChipText(l))}</span>`;
+  const typeChipHTML = (l) => (isFranchise(l) ? `<span class="lead-chip lead-type-chip">${esc(leadTypeLabel(l.leadType))}</span>` : "");
+  const sourceText = (l) => (l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l));
+  // A franchise opportunity's tile: the person, their lead type, where they plan to operate and their background.
+  function franchiseCardHTML(l) {
+    const line = companyLine(l);
+    const who = l.assignee ? memberName(l.assignee) : "";
+    const name = leadName(l);
+    return `<article class="lead-card lead-card-franchise" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-lead-type="franchise" tabindex="0" role="button" aria-label="${esc(name)}, franchise opportunity, open lead summary">
+      <div class="lead-card-top">${logoHTML(null, name, "lead-logo")}<h4 class="lead-card-name">${esc(name)}</h4></div>
+      <div class="lead-card-chips">${typeChipHTML(l)}${l.inboundCount > 1 ? `<span class="lead-inbound" title="Submissions from this person">${esc(inboundLabel(l))}</span>` : ""}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
+      ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
+      <div class="lead-card-foot">
+        <span class="lead-card-who" title="${esc(who || "Unassigned")}">${who ? `<span class="lead-avatar" aria-hidden="true">${esc(initials(who))}</span><span class="visually-hidden">${esc(who)}</span>` : "Unassigned"}</span>
+        <span class="lead-card-source" title="${esc(sourceText(l))}"><span class="material-symbols-outlined" aria-hidden="true">${isWebsite(l) ? "public" : "edit"}</span>${esc(isWebsite(l) ? "Website" : sourceLabel(l))}</span>
+      </div>
+    </article>`;
+  }
   function cardHTML(l) {
+    if (isFranchise(l)) return franchiseCardHTML(l);
     const line = companyLine(l);
     const entry = leadIndustryEntry(l);
     const who = l.assignee ? memberName(l.assignee) : "";
@@ -217,14 +246,25 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     </article>`;
   }
 
+  function renderTypeSwitch() {
+    for (const t of ["company", "franchise"]) {
+      const tab = $(`leads-type-${t}`);
+      tab.setAttribute("aria-selected", String(view === t));
+      tab.classList.toggle("active", view === t);
+      const n = leads.filter((l) => (l.leadType === t)).length;
+      $(`leads-type-${t}-count`).textContent = n ? String(n) : "";
+    }
+  }
   function render() {
     if (page.hidden) return;
-    const shown = leads;
-    const lanes = groupByStage(shown);
-    $("leads-empty-text").textContent = "No leads yet";
+    renderTypeSwitch();
+    const shown = leads.filter((l) => l.leadType === view);
+    const lanes = groupByStage(shown, view);
+    $("leads-empty-text").textContent = view === "franchise" ? "No franchise opportunities yet" : "No leads yet";
     $("leads-empty-add").hidden = !canEdit();
     $("leads-empty").hidden = shown.length > 0;
-    board.innerHTML = STAGES.map((s) => `<section class="lead-lane lead-lane-${s.key}" data-stage="${s.key}" aria-label="${esc(s.label)}">
+    board.dataset.leadType = view;
+    board.innerHTML = stagesFor(view).map((s) => `<section class="lead-lane lead-lane-${s.key}" data-stage="${s.key}" aria-label="${esc(s.label)}">
       <header class="lead-lane-head"><h3>${esc(s.label)}</h3><span class="lead-lane-count">${lanes[s.key].length}</span></header>
       <div class="lead-lane-body">${lanes[s.key].map(cardHTML).join("")}</div>
     </section>`).join("");
@@ -233,15 +273,22 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (openId && !backdrop.hidden) { const open = leads.find((x) => x.id === openId); if (open) renderEnrichment(open); }
     if (aceRows) renderAce();
   }
+  $("leads-type").addEventListener("click", (e) => {
+    const tab = e.target.closest && e.target.closest("[data-lead-type]");
+    if (!tab || tab.dataset.leadType === view) return;
+    view = tab.dataset.leadType === "franchise" ? "franchise" : "company";
+    try { localStorage.setItem("bt-leads-type", view); } catch { /* storage blocked */ }
+    render();
+  });
 
   async function moveTo(id, stage) {
     const l = leads.find((x) => x.id === id);
-    if (!l || !isStage(stage) || l.stage === stage || !canEdit()) return;
+    if (!l || !isStageFor(l.leadType, stage) || l.stage === stage || !canEdit()) return;
     l.stage = stage; render(); // optimistic; the snapshot confirms or corrects it
     try {
       await updateDoc(doc(db, "leads", id), { stage, stageChangedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByEmail: me() });
     } catch (err) {
-      showBoardError(`Couldn't move ${l.company.name}: ${err && err.message ? err.message : err}`);
+      showBoardError(`Couldn't move ${leadName(l)}: ${err && err.message ? err.message : err}`);
     }
   }
   function showBoardError(msg) { $("leads-empty-text").textContent = msg; $("leads-empty-add").hidden = true; $("leads-empty").hidden = false; }
@@ -326,12 +373,49 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       iconLink(mailto(m.email, `${l.company.name} opportunity`), "mail", `Email ${m.name}`))).join("");
     return group("AWS team", rows || lineRow("No AWS team yet"), { id: "lead-sum-aws" });
   }
+  // A franchise opportunity's summary: the person, their details, the pipeline, website activity and history.
+  function renderFranchiseSummary(l) {
+    const stageOptions = stagesFor(l.leadType).map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
+    const f = l.franchise || {};
+    const name = leadName(l);
+    $("lead-sum-title").textContent = name;
+    $("lead-sum-sub").textContent = companyLine(l);
+    $("lead-sum-logo").innerHTML = logoHTML(null, name);
+    const panel = $("lead-summary-panel");
+    panel.style.cssText = ""; panel.dataset.industry = ""; panel.dataset.leadType = "franchise";
+    $("lead-sum-badges").innerHTML = `${typeChipHTML(l)}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
+    const keepStage = document.activeElement && document.activeElement.id === "lead-sum-stage";
+    $("lead-sum-body").innerHTML = `
+      ${contactsHTML(l)}
+      ${group("Franchise opportunity", [
+        row("Where they plan to operate", esc(f.region || "")),
+        row("Background", esc(backgroundLabel(f.background))),
+      ].join(""), { id: "lead-sum-franchise" })}
+      ${group("Lead", [
+        row("Type", esc(leadTypeLabel(l.leadType))),
+        row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
+        row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned")),
+        row("Source", esc(sourceText(l))),
+        row("Source page", pageLink(l)),
+        row("Created", esc(fmtDate(l.createdAtMs))),
+        row("Updated", esc(fmtDate(l.updatedAtMs))),
+      ].join(""), { id: "lead-sum-lead" })}
+      ${l.websiteActivity.length ? group("Website activity", [...l.websiteActivity].reverse().map((a) => stackRow(`<p class="ap-row-text">${esc(a.label || "Website form")}${a.detail ? ` · ${esc(a.detail)}` : ""}</p><p class="ap-row-sub">${esc(a.atMs ? fmtDate(a.atMs) : "")}</p>`)).join(""), { id: "lead-sum-activity" }) : ""}
+      ${historyHTML(l)}`;
+    $("lead-sum-delete").hidden = !canEdit();
+    $("lead-sum-enrich").hidden = true; // a person, not a company: nothing to research
+    $("lead-sum-status").textContent = "";
+    if (keepStage) $("lead-sum-stage").focus();
+  }
   function renderSummary() {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
+    if (isFranchise(l)) { renderFranchiseSummary(l); return; }
+    $("lead-sum-enrich").hidden = !canEdit();
+    $("lead-summary-panel").dataset.leadType = "company";
     const entry = leadIndustryEntry(l);
     const e = l.enrichment;
-    const stageOptions = STAGES.map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
+    const stageOptions = stagesFor(l.leadType).map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
     $("lead-sum-title").textContent = l.company.name;
     $("lead-sum-sub").textContent = companyLine(l);
     $("lead-sum-logo").innerHTML = logoHTML(e, l.company.name);
@@ -349,7 +433,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
         row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned")),
         row("Inbound", esc(inboundLabel(l))),
-        row("Source", esc(l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l))),
+        row("Source", esc(sourceText(l))),
         row("Source page", pageLink(l)),
         row("Source industry", esc(l.sourceIndustry)),
         row("Created", esc(fmtDate(l.createdAtMs))),
@@ -428,8 +512,19 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   });
 
   // ── The form ────────────────────────────────────────────────────────────
-  function fillStages() {
-    $("lead-stage").innerHTML = STAGES.map((s) => `<option value="${s.key}">${esc(s.label)}</option>`).join("");
+  function fillStages(type = "company") {
+    $("lead-stage").innerHTML = stagesFor(type).map((s) => `<option value="${s.key}">${esc(s.label)}</option>`).join("");
+  }
+  $("lead-background").innerHTML = `<option value="">Not given</option>` + BACKGROUNDS.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("");
+  // The form for a company lead or a franchise opportunity (a person: no company, one contact).
+  function setFormType(type) {
+    formType = type === "franchise" ? "franchise" : "company";
+    const fr = formType === "franchise";
+    $("lead-backdrop").dataset.leadType = formType;
+    $("lead-company-section").hidden = fr;
+    $("lead-franchise-section").hidden = !fr;
+    $("lead-add-contact-section").hidden = fr;
+    fillStages(formType);
   }
   function fillAssignees(selected) {
     const sel = $("lead-assignee");
@@ -445,18 +540,20 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const roles = `<option value="">None</option>` + BUYING_ROLES.map((r) => `<option value="${r.key}"${r.key === c.buyingRole ? " selected" : ""}>${esc(r.label)}</option>`).join("");
     const e = c.enrichment;
     const note = e ? `<div class="ap-row ap-row-line lead-contact-enriched">Enriched${e.added && e.added.length ? `: added ${esc(e.added.join(", "))}` : ""}${e.listedAs ? ` · listed as ${esc(e.listedAs)}` : ""}</div>` : "";
-    const field = (label, input) => `<label class="ap-row ap-field"><span class="ap-row-label">${label}</span>${input}</label>`;
+    // A franchise opportunity is one person: name, email and LinkedIn only.
+    const fr = formType === "franchise";
+    const field = (label, input, companyOnly) => `<label class="ap-row ap-field"${companyOnly && fr ? " hidden" : ""}><span class="ap-row-label">${label}</span>${input}</label>`;
     return `<fieldset class="lead-contact ap-section" data-index="${i}">
-      <legend class="ap-group-title">Contact ${i + 1}</legend>
+      <legend class="ap-group-title">${fr ? "Person" : `Contact ${i + 1}`}</legend>
       <div class="ap-group">
-        ${field("Name", `<input type="text" class="lc-name" maxlength="120" value="${esc(c.name)}" autocomplete="off">`)}
-        ${field("Job title", `<input type="text" class="lc-title" maxlength="120" value="${esc(c.jobTitle)}" autocomplete="off">`)}
-        ${field("Buying role", `<select class="lc-role" aria-label="Buying role">${roles}</select>`)}
+        ${field(fr ? "Full name" : "Name", `<input type="text" class="lc-name" maxlength="120" value="${esc(c.name)}" autocomplete="off">`)}
+        ${field("Job title", `<input type="text" class="lc-title" maxlength="120" value="${esc(c.jobTitle)}" autocomplete="off">`, true)}
+        ${field("Buying role", `<select class="lc-role" aria-label="Buying role">${roles}</select>`, true)}
         ${field("Email", `<input type="text" class="lc-email" maxlength="200" value="${esc(c.email)}" autocomplete="off">`)}
         ${field("LinkedIn", `<input type="text" class="lc-linkedin" maxlength="300" value="${esc(c.linkedin)}" placeholder="linkedin.com/in/…" autocomplete="off">`)}
-        ${field("AWS account ID", `<input type="text" class="lc-aws" maxlength="14" inputmode="numeric" value="${esc(c.awsAccountId)}" placeholder="12 digits, if known" autocomplete="off">`)}
+        ${field("AWS account ID", `<input type="text" class="lc-aws" maxlength="14" inputmode="numeric" value="${esc(c.awsAccountId)}" placeholder="12 digits, if known" autocomplete="off">`, true)}
         ${note}
-        <button type="button" class="ap-row-btn ap-destructive lc-remove" data-editor-only>Remove contact</button>
+        ${fr ? "" : '<button type="button" class="ap-row-btn ap-destructive lc-remove" data-editor-only>Remove contact</button>'}
       </div>
     </fieldset>`;
   }
@@ -507,6 +604,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   }
 
   function fill(l) {
+    setFormType(l.leadType);
+    $("lead-region").value = (l.franchise && l.franchise.region) || "";
+    $("lead-background").value = (l.franchise && l.franchise.background) || "";
     $("lead-name").value = l.company.name;
     $("lead-website").value = l.company.website;
     $("lead-industry").value = l.company.industry;
@@ -524,24 +624,27 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     openId = id || null;
     const l = id ? leads.find((x) => x.id === id) : null;
     if (id && !l) return;
-    $("lead-title").textContent = l ? l.company.name : "New lead";
+    const type = l ? l.leadType : view;
+    $("lead-title").textContent = l ? leadName(l) : (type === "franchise" ? "New franchise opportunity" : "New lead");
     setError("");
     $("lead-enrich-status").textContent = "";
-    $("lead-existing").hidden = !l;
+    $("lead-existing").hidden = !l || type === "franchise"; // research and customer accounts are for companies
     $("lead-delete").hidden = !l;
-    if (l) { fill(l); renderEnrichment(l); renderAccount(l); }
+    if (l) { fill(l); if (type !== "franchise") { renderEnrichment(l); renderAccount(l); } }
     else {
-      fill({ company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: "lead", source: "Manual", assignee: me() });
+      fill({ leadType: type, franchise: { region: "", background: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
     }
     backdrop.hidden = false;
-    $("lead-name").focus();
+    (type === "franchise" ? $("lead-contacts").querySelector(".lc-name") : $("lead-name")).focus();
   }
   function closeLead() { backdrop.hidden = true; openId = null; }
 
   function gather() {
     readContacts();
+    const fr = formType === "franchise";
     return leadFromForm({
-      name: $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
+      leadType: formType, region: fr ? $("lead-region").value : "", background: fr ? $("lead-background").value : "",
+      name: fr ? "" : $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
       countries: $("lead-countries").value, storeCount: $("lead-stores").value, awsAccountId: $("lead-aws-account").value,
       contacts: draft.contacts, stage: $("lead-stage").value, source: $("lead-source").value, assignee: $("lead-assignee").value,
     });
@@ -553,7 +656,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (r.errors.length) { setError(r.errors.join(" ")); return null; }
     setError("");
     const f = r.fields;
-    if (!openId && !extra) {
+    if (!openId && !extra && f.leadType !== "franchise") { // a person is never matched to Prospects (TAM)
       const placed = await placeNew(f);
       if (placed) { if (placed.id) openId = placed.id; return placed; }
     }
