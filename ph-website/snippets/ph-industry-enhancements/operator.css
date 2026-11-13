@@ -1,4 +1,4 @@
-/* PH Franchise page (/franchise/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
+/* PH Be Your Own Boss page (/be-your-own-boss/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
    body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. */
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
 body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
@@ -97,7 +97,7 @@ body .phf a.phf-pill:hover{background:#F27DB7;color:#0F1424}
 body .phf a.phf-pill-o{background:transparent;color:#FFFFFF;border-color:#3A4360}
 body .phf a.phf-pill-o:hover{background:#1C2540;color:#FFFFFF}
 
-/* Info tooltips: hover, keyboard focus and tap (.open, franchise.js) */
+/* Info tooltips: hover, keyboard focus and tap (.open, operator.js) */
 body .phf .phf-tip{position:relative;display:inline-flex;align-items:center}
 body .phf button.phf-tip-b{flex:none;width:16px;height:16px;min-height:0;border-radius:999px;border:1px solid #5A6479;background:transparent;color:#5A6479;font-family:inherit;font-size:10px;font-weight:400;line-height:1;padding:0;margin:0;cursor:help;text-transform:none;letter-spacing:0;box-shadow:none;position:relative}
 body .phf button.phf-tip-b::after{content:"";position:absolute;inset:-14px}
@@ -106,8 +106,17 @@ body .phf .phf-tipbox{display:none;position:absolute;left:50%;bottom:calc(100% +
 body .phf .phf-tip:hover .phf-tipbox,body .phf .phf-tip:focus-within .phf-tipbox,body .phf .phf-tip.open .phf-tipbox{display:block}
 body .phf .phf-tip.phf-tip-l .phf-tipbox{left:0;transform:none}
 body .phf .phf-tip.phf-tip-r .phf-tipbox{left:auto;right:0;transform:none}
+/* Touch (tablets, phones): each "i" stays a 16px circle, but its hit area is at least 44x44 (a pseudo-element: 46x46 round the
+   circle, and 46px tall round "How it's calculated", raised above the row's label and input so nothing covers it). The buttons' own
+   boxes and .phf-tip are unchanged, so every tooltip opens where it did. */
+@media (pointer:coarse){
+body .phf button.phf-tip-b{z-index:2;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-tip-b::after{inset:-15px;border-radius:0}
+body .phf button.phf-how-b{position:relative;z-index:2;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-how-b::after{content:"";position:absolute;left:-15px;right:0;top:50%;height:46px;margin-top:-23px}
+}
 
-/* Product tour band and the franchise gate */
+/* Product tour band and the gate */
 body .phf h2.phf-h2-tour{margin:0 0 16px;max-width:18em}
 body .phf .phf-tour-p{margin:0 0 40px;font-size:18px;color:#5A6479;max-width:36em}
 body .phf .phf-in{margin:-16px 0 24px}

@@ -150,7 +150,7 @@
     // the fields and consent box are hidden and the button is ready. Consent was ticked when that lead was captured.
     var known = el("p", "ph-ind-gate-k"); known.hidden = true; form.insertBefore(known, btn);
     var applyKnown = function () {
-      // Known only with a name, company and email: a franchise enquiry (an individual, company "") still has to give a company here.
+      // Known only with a name, company and email: a network operator inquiry (an individual, company "") still has to give a company here.
       var l = readLead(), f = form.elements;
       if (!l || !String(l.name || "").trim() || !String(l.company || "").trim()) return;
       f.name.value = l.name || ""; f.company.value = l.company || ""; f.email.value = l.email;

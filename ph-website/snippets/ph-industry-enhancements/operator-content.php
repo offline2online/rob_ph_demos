@@ -1,9 +1,9 @@
 <?php
 /**
- * The /franchise/ page body (13 Nov 2026), rendered by the [ph_franchise] shortcode inside the site's own header and footer.
- * Copy, section order, colours, type and spacing follow the approved design (Franchise page design, Main.dc.html). A sales pitch
- * only: no setup fee, minimum, revenue split or share figure is ever printed (the calculator's share lives in franchise.js and
- * franchise_calc() only). The calculator outputs are rendered with the defaults so the page reads correctly before JS runs.
+ * The /be-your-own-boss/ page body (13 Nov 2026), rendered by the [ph_operator] shortcode inside the site's own header and footer.
+ * Copy, section order, colours, type and spacing follow the approved design (Main.dc.html). A sales pitch
+ * only: no setup fee, minimum, revenue split or share figure is ever printed (the calculator's share lives in operator.js and
+ * operator_calc() only). The calculator outputs are rendered with the defaults so the page reads correctly before JS runs.
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -11,36 +11,36 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const FRANCHISE_VENUE_TYPES = array( 'Car dealerships', 'Golf clubs', 'Sailing clubs and marinas', 'Fuel and convenience', 'Trade suppliers', 'Rural and farm supplies', 'Independent grocery', 'Liquor stores', 'Hardware', 'Utility shopfronts', 'Gyms and leisure centres', 'Cafés and bakeries' );
+const OPERATOR_VENUE_TYPES = array( 'Car dealerships', 'Golf clubs', 'Sailing clubs and marinas', 'Fuel and convenience', 'Trade suppliers', 'Rural and farm supplies', 'Independent grocery', 'Liquor stores', 'Hardware', 'Utility shopfronts', 'Gyms and leisure centres', 'Cafés and bakeries' );
 
-/** One "i" info tooltip: a real button, the text in a role=tooltip box it describes. Opens on hover, focus and tap (franchise.js). */
-function franchise_tip( $id, $label, $text ) {
+/** One "i" info tooltip: a real button, the text in a role=tooltip box it describes. Opens on hover, focus and tap (operator.js). */
+function operator_tip( $id, $label, $text ) {
 	return '<span class="phf-tip"><button type="button" class="phf-tip-b" aria-label="' . esc_attr( $label ) . '" aria-describedby="' . esc_attr( $id ) . '" aria-expanded="false">i</button><span class="phf-tipbox" role="tooltip" id="' . esc_attr( $id ) . '">' . esc_html( $text ) . '</span></span>';
 }
 
-function franchise_in_row( $id, $label, $tip, $value, $prefix = '' ) {
-	return '<div class="phf-crow"><span class="phf-clab"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label>' . franchise_tip( $id . '-tip', 'About ' . strtolower( $label ), $tip ) . '</span>'
+function operator_in_row( $id, $label, $tip, $value, $prefix = '' ) {
+	return '<div class="phf-crow"><span class="phf-clab"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label>' . operator_tip( $id . '-tip', 'About ' . strtolower( $label ), $tip ) . '</span>'
 		. '<div class="phf-cin">' . ( '' !== $prefix ? '<span class="phf-cpre">' . esc_html( $prefix ) . '</span>' : '' )
 		. '<input id="' . esc_attr( $id ) . '" type="number" min="0" step="any" inputmode="decimal" value="' . esc_attr( $value ) . '"></div></div>';
 }
 
-function franchise_range_row( $id, $label, $tip, $value, $min, $max ) {
-	return '<div class="phf-crow phf-crow-r"><span class="phf-clab"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label>' . franchise_tip( $id . '-tip', 'About ' . strtolower( $label ), $tip ) . '</span>'
+function operator_range_row( $id, $label, $tip, $value, $min, $max ) {
+	return '<div class="phf-crow phf-crow-r"><span class="phf-clab"><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label>' . operator_tip( $id . '-tip', 'About ' . strtolower( $label ), $tip ) . '</span>'
 		. '<input id="' . esc_attr( $id ) . '" type="range" min="' . (int) $min . '" max="' . (int) $max . '" step="1" value="' . esc_attr( $value ) . '">'
 		. '<span class="phf-cval" id="' . esc_attr( $id ) . '-v">' . esc_html( $value . '%' ) . '</span></div>';
 }
 
-function franchise_out_row( $key, $label, $value ) {
+function operator_out_row( $key, $label, $value ) {
 	return '<div class="phf-orow"><span>' . esc_html( $label ) . '</span><span data-out="' . esc_attr( $key ) . '">' . esc_html( $value ) . '</span></div>';
 }
 
-function franchise_card( $color, $title, $text, $class = 'phf-card' ) {
+function operator_card( $color, $title, $text, $class = 'phf-card' ) {
 	return '<div class="' . esc_attr( $class ) . '" style="border-top-color:' . esc_attr( $color ) . '"><p class="phf-ct">' . esc_html( $title ) . '</p><p>' . esc_html( $text ) . '</p></div>';
 }
 
-function franchise_html() {
-	$d   = franchise_defaults();
-	$out = franchise_view( franchise_calc( $d ) );
+function operator_html() {
+	$d   = operator_defaults();
+	$out = operator_view( operator_calc( $d ) );
 	$h   = '<div class="phf" id="phf">';
 
 	/* Hero */
@@ -64,7 +64,7 @@ function franchise_html() {
 	$h .= '<section class="phf-sec phf-white" aria-labelledby="why"><div class="phf-wrap"><div class="phf-split">'
 		. '<h2 id="why">Your head start in a changing industry</h2><div class="phf-split-c">'
 		. '<p class="phf-lead">AI is reshaping agencies, ad tech, design and marketing. Roles are changing fast, and many experienced people are choosing to go out on their own.</p>'
-		. '<p class="phf-lead">We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, a Personalisation Hub franchise gives you a head start: your own retail media network, ready to sell from day one.</p>'
+		. '<p class="phf-lead">We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one.</p>'
 		. '</div></div></div></section>';
 
 	/* Built for people who know media */
@@ -76,7 +76,7 @@ function franchise_html() {
 		array( '#FE9226', 'Ad-tech sales and partnerships', 'Package in-store screens as new inventory for the buyers you know.' ),
 		array( '#60D838', 'Retail media specialists', 'You know retail media inside out. Now run your own network, in an industry you know end to end.' ),
 	) as $c ) {
-		$h .= franchise_card( $c[0], $c[1], $c[2], 'phf-who' );
+		$h .= operator_card( $c[0], $c[1], $c[2], 'phf-who' );
 	}
 	$h .= '</div></div></section>';
 
@@ -94,7 +94,7 @@ function franchise_html() {
 	/* Any business with a physical presence */
 	$h .= '<section class="phf-sec phf-dark" aria-labelledby="venues"><div class="phf-wrap"><h2 id="venues" class="phf-h2s">Any business with a physical presence</h2>'
 		. '<p class="phf-intro phf-intro-d">If it has a physical location, it can be part of your network, with or without screens today.</p><ul class="phf-chips">';
-	foreach ( FRANCHISE_VENUE_TYPES as $v ) {
+	foreach ( OPERATOR_VENUE_TYPES as $v ) {
 		$h .= '<li>' . esc_html( $v ) . '</li>';
 	}
 	$h .= '</ul></div></section>';
@@ -114,28 +114,28 @@ function franchise_html() {
 		array( '#EF61A6', 'Secure, with no lock-in', 'Runs in your own AWS environment. Shopper data stays private and the network stays yours.' ),
 		array( '#FE9226', 'AI-native, with full MCP support', 'Manage your retail media network end to end from the AI tools you already use every day.' ),
 	) as $c ) {
-		$h .= franchise_card( $c[0], $c[1], $c[2], 'phf-card phf-card-b' );
+		$h .= operator_card( $c[0], $c[1], $c[2], 'phf-card phf-card-b' );
 	}
 	$h .= '</div></div></section>';
 
 	/* Benefits calculator */
 	$h .= '<section id="calculator" class="phf-sec phf-tint" aria-labelledby="calc"><div class="phf-wrap phf-wrap-calc">'
 		. '<p class="phf-eb">Benefits calculator</p><h2 id="calc" class="phf-h2b">What could it be worth to you?</h2>'
-		. '<div class="phf-calc"><div class="phf-cin-card"><p class="phf-cin-h">Your franchise network</p><p class="phf-cgrp">Your figures</p>'
-		. franchise_in_row( 'c-ven', 'Venues', 'The number of venues on your network, e.g. stores, clubs, dealerships and forecourts.', $d['ven'] )
-		. franchise_in_row( 'c-dis', 'Displays per venue', 'The average number of screens showing ads in each venue. Each display a visitor sees counts as an ad view.', $d['dis'] )
-		. franchise_in_row( 'c-vis', 'Visitors per venue per day', 'The average number of people who come into each venue on a typical day.', $d['vis'] )
-		. franchise_in_row( 'c-cpm', 'Average CPM', 'What advertisers pay for every 1,000 views of their ads.', $d['cpm'], '$' )
-		. franchise_in_row( 'c-atv', 'Average transaction value', 'The average amount a visitor spends in the venue. Used to estimate the extra sales venues make when promotions feature endemic brands, i.e. products they sell.', $d['atv'], '$' )
+		. '<div class="phf-calc"><div class="phf-cin-card"><p class="phf-cin-h">Your network</p><p class="phf-cgrp">Your figures</p>'
+		. operator_in_row( 'c-ven', 'Venues', 'The number of venues on your network, e.g. stores, clubs, dealerships and forecourts.', $d['ven'] )
+		. operator_in_row( 'c-dis', 'Displays per venue', 'The average number of screens showing ads in each venue. Each display a visitor sees counts as an ad view.', $d['dis'] )
+		. operator_in_row( 'c-vis', 'Visitors per venue per day', 'The average number of people who come into each venue on a typical day.', $d['vis'] )
+		. operator_in_row( 'c-cpm', 'Average CPM', 'What advertisers pay for every 1,000 views of their ads.', $d['cpm'], '$' )
+		. operator_in_row( 'c-atv', 'Average transaction value', 'The average amount a visitor spends in the venue. Used to estimate the extra sales venues make when promotions feature endemic brands, i.e. products they sell.', $d['atv'], '$' )
 		. '<p class="phf-cgrp phf-cgrp-a">Assumptions</p>'
-		. franchise_range_row( 'c-view', 'Visitors who view the ads', 'The share of visitors who see an ad on the screens during their visit.', $d['view'], 5, 100 )
-		. franchise_range_row( 'c-up', 'Uplift from personalised offers', 'The extra spend from visitors who see personalised offers for products the venue sells. 15% is a typical uplift from personalisation.', $d['up'], 0, 50 )
+		. operator_range_row( 'c-view', 'Visitors who view the ads', 'The share of visitors who see an ad on the screens during their visit.', $d['view'], 5, 100 )
+		. operator_range_row( 'c-up', 'Uplift from personalised offers', 'The extra spend from visitors who see personalised offers for products the venue sells. 15% is a typical uplift from personalisation.', $d['up'], 0, 50 )
 		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l">Your potential income a year</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
-		. franchise_out_row( 'venues', 'Venues in your network', $out['venues'] )
-		. franchise_out_row( 'displays', 'Displays in your network', $out['displays'] )
-		. franchise_out_row( 'visitors', 'Visitors a month across your network', $out['visitors'] )
-		. franchise_out_row( 'views', 'Ad views a month', $out['views'] )
-		. franchise_out_row( 'extraSales', 'Extra sales for your venues a year', $out['extraSales'] )
+		. operator_out_row( 'venues', 'Venues in your network', $out['venues'] )
+		. operator_out_row( 'displays', 'Displays in your network', $out['displays'] )
+		. operator_out_row( 'visitors', 'Visitors a month across your network', $out['visitors'] )
+		. operator_out_row( 'views', 'Ad views a month', $out['views'] )
+		. operator_out_row( 'extraSales', 'Extra sales for your venues a year', $out['extraSales'] )
 		. '<div class="phf-how"><span class="phf-tip"><button type="button" class="phf-how-b" aria-describedby="c-how-tip" aria-expanded="false"><span class="phf-how-i" aria-hidden="true">i</span>How it&#39;s calculated</button><span class="phf-tipbox" role="tooltip" id="c-how-tip">Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers.</span></span></div>'
 		. '<div class="phf-cctas"><a class="phf-pill" href="#tour">Request further information</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
 		. '</div></div></div></section>';
@@ -152,11 +152,11 @@ function franchise_html() {
 		array( '#FE9226', 'Conversion you keep improving', 'You continually optimise each venue\'s own promotions, personalised to the customers in front of them, so more visitors buy.' ),
 		array( '#60D838', 'A way to fight back', 'Extra income and extra sales help them hold their own on price and experience against the big chains.' ),
 	) as $c ) {
-		$h .= franchise_card( $c[0], $c[1], $c[2] );
+		$h .= operator_card( $c[0], $c[1], $c[2] );
 	}
 	$h .= '</div></div></section>';
 
-	/* Product tour band and franchise lead */
+	/* Product tour band and the network operator lead */
 	$h .= '<section id="tour" class="phf-sec phf-white" aria-labelledby="tour-h"><div class="phf-wrap phf-wrap-tour">'
 		. '<p class="phf-eb">Interactive product tour</p><h2 id="tour-h" class="phf-h2b phf-h2-tour">See a retail media network run end to end</h2>'
 		. '<p class="phf-tour-p">Watch a venue sell its screens, a brand create a campaign by talking, and one visitor&#39;s journey from arrival to checkout.</p>'
@@ -169,14 +169,14 @@ function franchise_html() {
 		. '<div class="phf-ph-grid"><div><i style="width:70%;background:#EF60A7"></i></div><div><i style="width:55%;background:#FE9226"></i></div><div><i style="width:80%;background:#60D838"></i></div><div class="phf-ph-wide"></div></div></div></div>'
 		. '<div class="phf-gate" id="phf-gate"><div class="phf-gate-card">'
 		. '<p class="phf-gate-h">Unlock the product tour</p>'
-		. '<p class="phf-gate-p">Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the franchise opportunity.</p>'
+		. '<p class="phf-gate-p">Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.</p>'
 		. '<form class="phf-form" id="phf-form" novalidate><div class="phf-fgrid">'
 		. '<div class="phf-f"><label for="t-fn">Full name</label><input id="t-fn" name="name" type="text" autocomplete="name" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-em">Email</label><input id="t-em" name="email" type="email" autocomplete="email" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-li">LinkedIn profile (optional)</label><input id="t-li" name="linkedin" type="url" inputmode="url" autocomplete="url" maxlength="300"></div>'
 		. '<div class="phf-f"><label for="t-rg">Where you plan to operate</label><input id="t-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-bg">Your background</label><select id="t-bg" name="background" required><option value="" selected disabled>Select your background</option>';
-	foreach ( FRANCHISE_BACKGROUNDS as $b ) {
+	foreach ( OPERATOR_BACKGROUNDS as $b ) {
 		$h .= '<option>' . esc_html( $b ) . '</option>';
 	}
 	$h .= '</select></div></div>'
