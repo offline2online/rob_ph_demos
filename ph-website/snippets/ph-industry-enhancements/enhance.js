@@ -224,7 +224,7 @@
     if (band && !band.id) band.id = "ph-tour"; // anchor for links from other tours (e.g. /industries/convenience/ -> /industries/retail-media/#ph-tour)
     if (location.hash === "#ph-tour" && band && band.scrollIntoView) setTimeout(function () { band.scrollIntoView(); }, 0);
     window.PH_TOUR = {
-      endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "",
+      endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "", brandEndpoint: "/wp-json/ph-site/v1/tour-brand",
       arrangeDemo: function () { if (typeof window.PH_SITE_DEMO === "function") window.PH_SITE_DEMO(band); }
     };
     var f = el("iframe", "ph-ind-tour-frame");

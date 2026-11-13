@@ -236,6 +236,66 @@ ok( 1 === count( $GLOBALS['posts'] ) && array( 'Interactive product tour – Tel
 ok( 'ph_lead_captured' === end( $GLOBALS['fired'] )[0] && 'pharmacy' === end( $GLOBALS['fired'] )[1]['industry'], 'the pharmacy capture still reaches the console with industry pharmacy' );
 $GLOBALS['dedupe'] = false;
 
+/* POST ph-site/v1/tour-brand: the visitor's logos from the console, only for a lead this site captured, key never in the answer. */
+$GLOBALS['brand_http'] = array(); $GLOBALS['brand_res'] = null;
+function wp_remote_post( $u, $a = array() ) { $GLOBALS['brand_http'][] = array( $u, $a ); return $GLOBALS['brand_res']; }
+function wp_remote_retrieve_response_code( $r ) { return $r['code'] ?? 0; }
+function wp_remote_retrieve_body( $r ) { return $r['body'] ?? ''; }
+$broute = $GLOBALS['routes']['ph-site/v1/tour-brand'] ?? null;
+ok( $broute && 'POST' === $broute['methods'], 'POST ph-site/v1/tour-brand is registered' );
+$bcall = function ( array $b, $ip = null ) use ( $broute, &$n_ip ) { $_SERVER['REMOTE_ADDR'] = $ip ?? '20.0.0.' . ( ++$n_ip ); return $broute['callback']( new WP_REST_Request( $b ) ); };
+$ns = '\\AngieSnippets\\PhIndustryEnhancements_10063\\';
+$GLOBALS['tr'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['posts'] = array(); $GLOBALS['opts']['ph_lead_ingest_key'] = 'secret-lead-key';
+$console = array( 'found' => true, 'name' => 'Acme Test Mobile', 'industry' => 'Telco', 'logos' => array( 'light' => 'https://firebasestorage.googleapis.com/v0/b/x/o/brand%2Facme%2Flight.svg?alt=media', 'dark' => 'https://upload.wikimedia.org/acme-white.svg', 'icon' => 'https://acme.example/icon.png' ), 'darkFromLight' => false );
+$GLOBALS['brand_res'] = array( 'code' => 200, 'body' => json_encode( $console ) );
+$ab = array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example' );
+$r = $bcall( $ab );
+ok( 200 === $r->status && false === $r->data['found'] && ! $GLOBALS['brand_http'], 'a company nobody submitted: found false, the console is not asked' );
+call_user_func( $ns . 'tour_brand_grant', array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example', 'test' => true ) );
+$r = $bcall( $ab );
+ok( false === $r->data['found'] && ! $GLOBALS['brand_http'], 'a test lead grants nothing' );
+call_user_func( $ns . 'tour_brand_grant', array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example', 'test' => false ) );
+$r = $bcall( array( 'company' => 'acme test mobile ', 'email' => 'SAM@acmetest.example' ) );
+ok( 200 === $r->status && true === $r->data['found'], 'after the visitor submitted it (ph_lead_captured): found, case and spaces ignored' );
+ok( array( 'found', 'logos', 'darkFromLight' ) === array_keys( $r->data ) && $console['logos'] === $r->data['logos'] && false === $r->data['darkFromLight'], 'answers only the logos: ' . json_encode( $r->data ) );
+ok( false === strpos( json_encode( $r->data ), 'secret-lead-key' ), 'the lead key is not in the answer' );
+list( $u, $a ) = $GLOBALS['brand_http'][0];
+ok( 'https://backlog-tracker-e4ed2.web.app/leadIngest/v1/brand' === $u && 'secret-lead-key' === $a['headers']['X-Lead-Key'] && 3 === $a['timeout'], 'server to server: the brand route, X-Lead-Key, 3 s timeout' );
+ok( array( 'company' => 'acme test mobile', 'email' => 'SAM@acmetest.example' ) === json_decode( $a['body'], true ), 'body is {company, email}' );
+$r = $bcall( array( 'company' => 'Other Corp', 'email' => 'sam@acmetest.example' ) );
+ok( false === $r->data['found'] && 1 === count( $GLOBALS['brand_http'] ), 'another company with the same email is not looked up' );
+/* a lead captured before the grant existed: its stored company and email allow it */
+$GLOBALS['dedupe'] = true; $GLOBALS['meta'][77] = array( 'ph_lead_email' => 'kim@orbit.example', 'ph_lead_company' => 'Orbit Telecom' );
+$r = $bcall( array( 'company' => 'Orbit Telecom', 'email' => 'kim@orbit.example' ) );
+ok( true === $r->data['found'], 'an existing ph_lead with that email and company is allowed' );
+$GLOBALS['dedupe'] = false;
+$cases = array(
+	'dark empty, darkFromLight' => array( array( 'code' => 200, 'body' => json_encode( array( 'found' => true, 'logos' => array( 'light' => 'https://a.example/l.svg', 'dark' => '', 'icon' => '' ), 'darkFromLight' => true ) ) ), function ( $d ) { return true === $d['found'] && '' === $d['logos']['dark'] && true === $d['darkFromLight']; } ),
+	'found false' => array( array( 'code' => 200, 'body' => '{"found":false}' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'500' => array( array( 'code' => 500, 'body' => '{"error":"x"}' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'timeout' => array( array( 'code' => 0, 'body' => '' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'not json' => array( array( 'code' => 200, 'body' => '<html>' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'only unsafe addresses' => array( array( 'code' => 200, 'body' => json_encode( array( 'found' => true, 'logos' => array( 'light' => 'javascript:alert(1)', 'dark' => 'http://a.example/d.png', 'icon' => 'https://a.example/"><script>' ) ) ) ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+);
+foreach ( $cases as $label => $c ) {
+	$GLOBALS['brand_res'] = $c[0];
+	$r = $bcall( $ab );
+	ok( 200 === $r->status && $c[1]( $r->data ), "console $label: " . json_encode( $r->data ) );
+}
+$GLOBALS['brand_res'] = array( 'code' => 200, 'body' => json_encode( $console ) );
+unset( $GLOBALS['opts']['ph_lead_ingest_key'] ); $n = count( $GLOBALS['brand_http'] );
+$r = $bcall( $ab );
+ok( false === $r->data['found'] && $n === count( $GLOBALS['brand_http'] ), 'no lead key on the site: found false, no call' );
+$GLOBALS['opts']['ph_lead_ingest_key'] = 'secret-lead-key';
+$r = $bcall( array( 'company' => '', 'email' => 'sam@acmetest.example' ) ); ok( 400 === $r->status, 'company required' );
+$r = $bcall( array( 'company' => 'Acme Test Mobile', 'email' => 'nope' ) ); ok( 400 === $r->status, 'valid email required' );
+for ( $i = 0; $i < 12; $i++ ) { $r = $bcall( $ab, '21.1.1.1' ); }
+ok( 429 === $r->status, 'tour-brand throttled after 10 per hour per address' );
+$r = $bcall( $ab, '21.1.1.2' ); ok( 200 === $r->status, 'another address is not throttled' );
+$src_t = (string) file_get_contents( $dir . '/tour/tour.html' ) . (string) file_get_contents( $dir . '/enhance.js' );
+ok( false === stripos( $src_t, 'X-Lead-Key' ) && false === strpos( $src_t, 'leadIngest' ), 'the browser code never names the console route or the key header' );
+$GLOBALS['tr'] = array();
+
 /* retail media assets: the same-origin route (allow-list, sha check, file cache, ranges, 404, 503). A child process per request, because the handler exits. */
 $asset = function ( $uri, $mode, $range = '', $method = 'GET' ) {
 	$env = 'ASSET_MODE=' . $mode . ( '' !== $range ? ' HTTP_RANGE=' . escapeshellarg( $range ) : '' );
