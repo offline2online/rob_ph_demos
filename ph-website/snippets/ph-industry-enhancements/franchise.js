@@ -1,5 +1,5 @@
-/* PH Be Your Own Boss page (/be-your-own-boss/, 13 Nov 2026): the calculator, info tooltips, anchors, the header's "Arrange A Demo" (goes to #tour
-   here) and the product tour gate. A network operator lead posts to ph-site/v1/franchise-lead; on success the real retail media tour is
+/* PH Franchise page (/franchise/, 13 Nov 2026): the calculator, info tooltips, anchors, the header's "Arrange A Demo" (goes to #tour
+   here) and the product tour gate. A franchise lead posts to ph-site/v1/franchise-lead; on success the real retail media tour is
    framed in place, unlocked from the stored ph_lead with no second form. */
 (function () {
   "use strict";
@@ -105,7 +105,7 @@
     if (mounted || !box || !mount) return;
     mounted = true;
     var fr = read("ph_franchise"), lead = read("ph_lead");
-    if (!lead && fr) { lead = { name: fr.name, email: fr.email, company: "", source: "Network operator inquiry", ts: Date.now() }; write("ph_lead", lead); }
+    if (!lead && fr) { lead = { name: fr.name, email: fr.email, company: "", source: "Franchise opportunity", ts: Date.now() }; write("ph_lead", lead); }
     window.PH_TOUR = {
       endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "", brandEndpoint: "/wp-json/ph-site/v1/tour-brand",
       arrangeDemo: function () { try { box.scrollIntoView({ block: "start" }); } catch (e) {} }
@@ -162,17 +162,17 @@
             var bad = o.j.field && f[o.j.field]; if (bad && bad.focus) { bad.setAttribute("aria-invalid", "true"); bad.focus(); }
             return;
           }
-          push({ event: "ph_lead_captured", source: "Network operator inquiry" });
+          push({ event: "ph_lead_captured", source: "Franchise opportunity" });
           write("ph_franchise", { name: body.name, email: body.email, ts: Date.now() });
           var lead = read("ph_lead");
-          if (!lead) { lead = { name: body.name, email: body.email, company: "", source: "Network operator inquiry", ts: Date.now() }; write("ph_lead", lead); }
+          if (!lead) { lead = { name: body.name, email: body.email, company: "", source: "Franchise opportunity", ts: Date.now() }; write("ph_lead", lead); }
           try { window.dispatchEvent(new CustomEvent("ph:lead", { detail: lead })); } catch (x) {}
           showIn(body.name); mountTour();
           var h = $("phf-in-h"); if (h) h.focus({ preventScroll: true });
         })
         .catch(function () { done(); msg.className = "phf-msg err"; msg.textContent = "Something went wrong. Please try again."; });
     });
-    // Returning visitors: an inquiry already made (ph_franchise) skips the gate; an industry lead pre-fills name and email.
+    // Returning visitors: a franchise enquiry already made skips the gate; an industry lead pre-fills name and email.
     var fr = read("ph_franchise"), il = read("ph_lead");
     if (fr) { showIn(fr.name); mountTour(); }
     else if (il) { if (il.name) form.elements.name.value = il.name; form.elements.email.value = il.email; }

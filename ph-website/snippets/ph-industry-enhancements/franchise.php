@@ -1,22 +1,17 @@
 <?php
 /**
- * Be Your Own Boss page (13 Nov 2026): personalisationhub.com/be-your-own-boss/, built from the approved design and HIDDEN until launch.
- * The offer is "network operator" (renamed from the first build on 13 Nov 2026 for legal reasons): no visitor-facing text, attribute,
- * title, meta or URL says "franchise". File, function, option and constant names, the REST route, the localStorage keys and the
- * console's leadType "franchise" are internal and stay as they were, so stored leads and today's console routing keep working.
+ * Franchise page (13 Nov 2026): personalisationhub.com/franchise/, built from the approved design and HIDDEN until launch.
  *
  * While FRANCHISE_LIVE is false the page is published but linked from nowhere and not indexed: noindex (wp_robots, SEOPress's own
  * robots meta and X-Robots-Tag), left out of the WordPress and SEOPress sitemaps, and absent from llms.txt, the markdown twins and
- * the agent endpoint (none of their allow-lists names it). The header gets a top-level "Be Your Own Boss" item only on the page itself.
+ * the agent endpoint (none of their allow-lists names it). The header gets a top-level "Franchise" item only on /franchise/ itself.
  * Launching is one change: FRANCHISE_LIVE = true (the item then shows on every page and the noindex is lifted).
  *
- * - The page: page 10776, first created with the slug `franchise`; renamed IN PLACE to `be-your-own-boss` / "Be Your Own Boss" once,
- *   behind the same add_option lock that created it (franchise_ensure_page). A site without the page gets it created with the new
- *   slug (content [ph_franchise], template elementor_header_footer, so the site header and footer and no title bar).
- *   The old path /franchise/ answers 301 to /be-your-own-boss/ (redirects.php).
+ * - The page: created once (slug `franchise`, title "Franchise", content [ph_franchise], template elementor_header_footer, so the site
+ *   header and footer and no title bar) behind an add_option lock, the legacy-copy.php pattern.
  * - [ph_franchise] renders the whole page server side (franchise-content.php). franchise.css / franchise.js load on that page only.
  * - POST ph-site/v1/franchise-lead: the product tour gate's lead. One ph_lead per person (lead_find_existing / lead_add_activity),
- *   fires ph_lead_captured so leads.php forwards it to the console as a "Network operator inquiry" (leadType franchise, unchanged).
+ *   fires ph_lead_captured so leads.php forwards it to the console as a "Franchise opportunity" (leadType franchise).
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -25,20 +20,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const FRANCHISE_LIVE         = false;
-const FRANCHISE_SLUG         = 'be-your-own-boss';
-const FRANCHISE_PATH         = '/be-your-own-boss/';
-const FRANCHISE_TITLE        = 'Be Your Own Boss';
-const FRANCHISE_DOC_TITLE    = 'Be Your Own Boss - Personalisation Hub';
-/** The first build's slug: the page is renamed from it in place, and /franchise/ redirects (redirects.php). */
-const FRANCHISE_OLD_SLUG     = 'franchise';
+const FRANCHISE_SLUG         = 'franchise';
+const FRANCHISE_PATH         = '/franchise/';
+const FRANCHISE_TITLE        = 'Franchise';
 const FRANCHISE_TEMPLATE     = 'elementor_header_footer';
 const FRANCHISE_PAGE_OPTION  = 'ph_franchise_page';
 const FRANCHISE_LOCK_OPTION  = 'ph_franchise_page_lock';
 const FRANCHISE_STATE_OPTION = 'ph_franchise_state';
-/** Internal key (ph_lead_source, industry, lead_type / leadType): today's console routes on it, so it stays "franchise". */
 const FRANCHISE_SOURCE       = 'franchise';
-const FRANCHISE_LABEL        = 'Network operator inquiry';
-const FRANCHISE_DETAIL       = 'Be Your Own Boss page – product tour';
+const FRANCHISE_LABEL        = 'Franchise opportunity';
+const FRANCHISE_DETAIL       = 'Franchise page – product tour';
 const FRANCHISE_BACKGROUNDS  = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Marketing', 'Something else' );
 const FRANCHISE_TOUR_PATH    = '/industries/retail-media/tour/';
 /** Calculator share of ad revenue. Code only: never printed on the page, in a tooltip, the twin or anything an agent reads. */
@@ -99,7 +90,7 @@ function franchise_is_live() {
 	return (bool) apply_filters( 'ph_franchise_live', FRANCHISE_LIVE );
 }
 
-/** True on the /be-your-own-boss/ page itself (a top-level page with that slug). */
+/** True on the /franchise/ page itself (a top-level page with that slug). */
 function franchise_is_page() {
 	if ( ! function_exists( 'is_page' ) || ! is_page() ) {
 		return false;
@@ -109,13 +100,9 @@ function franchise_is_page() {
 }
 
 /**
- * Makes sure the published page `be-your-own-boss` exists. Runs on init. Anything to do happens behind an add_option lock (atomic:
- * two requests can never both act), so it is done once:
- * - the stored page (FRANCHISE_PAGE_OPTION, 10776 on the live site) still on the first build's slug `franchise` is renamed IN PLACE
- *   (post_name be-your-own-boss, post_title "Be Your Own Boss"): no second page, nothing left published at /franchise/;
- * - otherwise a top-level page already on the new slug is kept, else one on the old slug is renamed, else the page is created;
- * - a draft is published.
- * Returns 'exists' | 'renamed' | 'created' | 'published' | 'locked' | 'failed' (an update WordPress refused: retried next request).
+ * Makes sure a published page `franchise` exists. Runs on init; the first request that finds no page creates it, behind an
+ * add_option lock (atomic: two requests can never both create it). An existing page with that slug is kept (published if it was
+ * not); its id is stored in FRANCHISE_PAGE_OPTION. Returns 'exists' | 'created' | 'published' | 'locked'.
  */
 function franchise_ensure_page() {
 	$id   = (int) get_option( FRANCHISE_PAGE_OPTION, 0 );
@@ -130,38 +117,13 @@ function franchise_ensure_page() {
 		}
 		return 'locked';
 	}
-	$ours  = array( FRANCHISE_SLUG, FRANCHISE_OLD_SLUG );
-	$found = null;
-	if ( $post && 'page' === $post->post_type && 0 === (int) $post->post_parent && in_array( $post->post_name, $ours, true ) ) {
-		$found = $post;
-	} else {
-		foreach ( $ours as $slug ) {
-			$p = get_page_by_path( $slug, OBJECT, 'page' );
-			if ( $p && 0 === (int) $p->post_parent ) {
-				$found = $p;
-				break;
-			}
-		}
-	}
+	$found  = get_page_by_path( FRANCHISE_SLUG, OBJECT, 'page' );
 	$status = 'exists';
-	if ( $found ) {
-		$id  = (int) $found->ID;
-		$upd = array( 'ID' => $id );
-		if ( FRANCHISE_SLUG !== $found->post_name ) {
-			$upd['post_name']  = FRANCHISE_SLUG;
-			$upd['post_title'] = FRANCHISE_TITLE;
-			$status            = 'renamed';
-		}
+	if ( $found && 0 === (int) $found->post_parent ) {
+		$id = (int) $found->ID;
 		if ( 'publish' !== $found->post_status ) {
-			$upd['post_status'] = 'publish';
-			$status             = 'renamed' === $status ? 'renamed' : 'published';
-		}
-		if ( count( $upd ) > 1 ) {
-			$res = wp_update_post( $upd, true );
-			if ( ! $res || is_wp_error( $res ) ) {
-				delete_option( FRANCHISE_LOCK_OPTION );
-				return 'failed';
-			}
+			wp_update_post( array( 'ID' => $id, 'post_status' => 'publish' ) );
+			$status = 'published';
 		}
 	} else {
 		$id = wp_insert_post( array(
@@ -218,18 +180,13 @@ function franchise_init() {
 	franchise_sync_state();
 }
 
-/** wp_robots: noindex on the page while it is not live. */
+/** wp_robots: noindex on /franchise/ while it is not live. */
 function franchise_robots( array $robots ) {
 	if ( franchise_is_page() && ! franchise_is_live() ) {
 		unset( $robots['index'] );
 		$robots['noindex'] = true;
 	}
 	return $robots;
-}
-
-/** The browser and SEOPress title on the page: "Be Your Own Boss - Personalisation Hub". Other pages are untouched. */
-function franchise_document_title( $title ) {
-	return franchise_is_page() ? FRANCHISE_DOC_TITLE : $title;
 }
 
 /** Sitemap query args (WordPress core and SEOPress): leave the page out while it is not live. */
@@ -246,7 +203,7 @@ function franchise_sitemap_args( $args ) {
 
 /* ---------- Header menu ---------- */
 
-/** A top-level "Be Your Own Boss" menu item for /be-your-own-boss/ (an object shaped like wp_setup_nav_menu_item's). */
+/** A top-level menu item for /franchise/ (an object shaped like wp_setup_nav_menu_item's). */
 function franchise_menu_item( $current, $order ) {
 	$id   = franchise_page_id();
 	$item = (object) array(
@@ -265,7 +222,7 @@ function franchise_menu_item( $current, $order ) {
 		'target'                => '',
 		'attr_title'            => '',
 		'description'           => '',
-		'classes'               => array( 'menu-item', 'menu-item-type-post_type', 'menu-item-object-page', 'ph-boss-item' ),
+		'classes'               => array( 'menu-item', 'menu-item-type-post_type', 'menu-item-object-page', 'ph-franchise-item' ),
 		'xfn'                   => '',
 		'menu_order'            => $order,
 		'current'               => (bool) $current,
@@ -285,10 +242,9 @@ function franchise_title_is( $item, array $names ) {
 }
 
 /**
- * wp_nav_menu_objects: adds "Be Your Own Boss" to the header's main menu (the one whose top level has Industry and Support; the
- * ElementsKit widget in header 2330) between Industry and Support. Hidden build: only on /be-your-own-boss/. Live: on every page. Any
- * other menu (the footer) is untouched, and a menu that already links to /be-your-own-boss/ is left alone. Pure of globals apart from
- * the arguments.
+ * wp_nav_menu_objects: adds "Franchise" to the header's main menu (the one whose top level has Industry and Support; the ElementsKit
+ * widget in header 2330) between Industry and Support. Hidden build: only on /franchise/. Live: on every page. Any other menu (the
+ * footer) is untouched, and a menu that already links to /franchise/ is left alone. Pure of globals apart from the arguments.
  */
 function franchise_menu_objects( $items, $on_page, $live ) {
 	if ( ! is_array( $items ) || ( ! $on_page && ! $live ) ) {
@@ -316,7 +272,7 @@ function franchise_menu_objects( $items, $on_page, $live ) {
 		return $items;
 	}
 	$items = array_values( $items );
-	if ( $on_page ) { // this page is Be Your Own Boss, not whatever else the menu marked current.
+	if ( $on_page ) { // this page is Franchise, not whatever else the menu marked current.
 		foreach ( $items as $it ) {
 			if ( is_object( $it ) && ! empty( $it->current ) ) {
 				$it->current = false;
@@ -333,7 +289,7 @@ function franchise_menu_objects( $items, $on_page, $live ) {
 	return $items;
 }
 
-/** aria-current="page" on the Be Your Own Boss link while it is the current page. */
+/** aria-current="page" on the Franchise link while it is the current page. */
 function franchise_menu_link_atts( $atts, $item ) {
 	if ( is_object( $item ) && -91063 === (int) $item->ID && ! empty( $item->current ) ) {
 		$atts['aria-current'] = 'page';
@@ -341,7 +297,7 @@ function franchise_menu_link_atts( $atts, $item ) {
 	return $atts;
 }
 
-/* ---------- Network operator lead ---------- */
+/* ---------- Franchise lead ---------- */
 
 /** LinkedIn is optional. Returns array( ok, normalised ): https:// added when missing; the host must be linkedin.com or a subdomain. */
 function franchise_linkedin( $v ) {
@@ -365,7 +321,7 @@ function franchise_linkedin( $v ) {
 	return array( true, strlen( $v ) > 300 ? '' : $v );
 }
 
-/** Validates and stores a network operator lead. Returns array( status, body ). Pure of HTTP, so it is unit-tested. */
+/** Validates and stores a franchise lead. Returns array( status, body ). Pure of HTTP, so it is unit-tested. */
 function franchise_handle( array $b ) {
 	if ( ! empty( $b['website'] ) ) { // honeypot: pretend success.
 		return array( 200, array( 'ok' => true ) );
@@ -402,7 +358,7 @@ function franchise_handle( array $b ) {
 	}
 	$test = lead_is_test( isset( $b['test'] ) ? $b['test'] : false );
 	$id   = lead_find_existing( $lead['email'], $test );
-	if ( $id ) { // already a lead (an industry tour or download): record the network operator inquiry as activity, not a second lead.
+	if ( $id ) { // already a lead (an industry tour or download): record the franchise enquiry as activity, not a second lead.
 		lead_add_activity( $id, FRANCHISE_LABEL, FRANCHISE_DETAIL );
 		foreach ( array( 'linkedin', 'region', 'background' ) as $k ) {
 			if ( '' !== $lead[ $k ] && ! get_post_meta( $id, 'ph_lead_' . $k, true ) ) {
@@ -428,7 +384,7 @@ function franchise_handle( array $b ) {
 		}
 	}
 	do_action( 'ph_lead_captured', array(
-		'company'          => $lead['name'], // today's console needs a company; leadType franchise (internal key) marks it as an individual.
+		'company'          => $lead['name'], // today's console needs a company; leadType franchise marks it as an individual.
 		'company_industry' => FRANCHISE_LABEL,
 		'industry'         => FRANCHISE_SOURCE,
 		'contact_name'     => $lead['name'],
@@ -449,7 +405,7 @@ function franchise_handle( array $b ) {
 		'post_id'          => (int) $id,
 	) );
 	if ( ! $test ) {
-		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry: ' . $lead['name'], "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\nBackground: {$lead['background']}\nPage: " . FRANCHISE_PATH );
+		wp_mail( get_option( 'admin_email' ), 'New franchise enquiry: ' . $lead['name'], "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\nBackground: {$lead['background']}\nPage: " . FRANCHISE_PATH );
 	}
 	return array( 200, array( 'ok' => true ) );
 }
@@ -474,8 +430,6 @@ if ( function_exists( 'add_action' ) && ! defined( 'PH_FRANCHISE_TEST' ) ) {
 	} );
 
 	add_filter( 'wp_robots', __NAMESPACE__ . '\\franchise_robots', 999 );
-	add_filter( 'pre_get_document_title', __NAMESPACE__ . '\\franchise_document_title', 999 );
-	add_filter( 'seopress_titles_title', __NAMESPACE__ . '\\franchise_document_title', 999 );
 	add_action( 'template_redirect', function () {
 		if ( franchise_is_page() && ! franchise_is_live() && ! headers_sent() ) {
 			header( 'X-Robots-Tag: noindex' );

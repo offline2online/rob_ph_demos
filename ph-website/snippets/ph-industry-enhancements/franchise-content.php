@@ -1,7 +1,7 @@
 <?php
 /**
- * The /be-your-own-boss/ page body (13 Nov 2026), rendered by the [ph_franchise] shortcode inside the site's own header and footer.
- * Copy, section order, colours, type and spacing follow the approved design (Main.dc.html). A sales pitch
+ * The /franchise/ page body (13 Nov 2026), rendered by the [ph_franchise] shortcode inside the site's own header and footer.
+ * Copy, section order, colours, type and spacing follow the approved design (Franchise page design, Main.dc.html). A sales pitch
  * only: no setup fee, minimum, revenue split or share figure is ever printed (the calculator's share lives in franchise.js and
  * franchise_calc() only). The calculator outputs are rendered with the defaults so the page reads correctly before JS runs.
  */
@@ -64,7 +64,7 @@ function franchise_html() {
 	$h .= '<section class="phf-sec phf-white" aria-labelledby="why"><div class="phf-wrap"><div class="phf-split">'
 		. '<h2 id="why">Your head start in a changing industry</h2><div class="phf-split-c">'
 		. '<p class="phf-lead">AI is reshaping agencies, ad tech, design and marketing. Roles are changing fast, and many experienced people are choosing to go out on their own.</p>'
-		. '<p class="phf-lead">We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one.</p>'
+		. '<p class="phf-lead">We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, a Personalisation Hub franchise gives you a head start: your own retail media network, ready to sell from day one.</p>'
 		. '</div></div></div></section>';
 
 	/* Built for people who know media */
@@ -121,7 +121,7 @@ function franchise_html() {
 	/* Benefits calculator */
 	$h .= '<section id="calculator" class="phf-sec phf-tint" aria-labelledby="calc"><div class="phf-wrap phf-wrap-calc">'
 		. '<p class="phf-eb">Benefits calculator</p><h2 id="calc" class="phf-h2b">What could it be worth to you?</h2>'
-		. '<div class="phf-calc"><div class="phf-cin-card"><p class="phf-cin-h">Your network</p><p class="phf-cgrp">Your figures</p>'
+		. '<div class="phf-calc"><div class="phf-cin-card"><p class="phf-cin-h">Your franchise network</p><p class="phf-cgrp">Your figures</p>'
 		. franchise_in_row( 'c-ven', 'Venues', 'The number of venues on your network, e.g. stores, clubs, dealerships and forecourts.', $d['ven'] )
 		. franchise_in_row( 'c-dis', 'Displays per venue', 'The average number of screens showing ads in each venue. Each display a visitor sees counts as an ad view.', $d['dis'] )
 		. franchise_in_row( 'c-vis', 'Visitors per venue per day', 'The average number of people who come into each venue on a typical day.', $d['vis'] )
@@ -156,7 +156,7 @@ function franchise_html() {
 	}
 	$h .= '</div></div></section>';
 
-	/* Product tour band and the network operator lead */
+	/* Product tour band and franchise lead */
 	$h .= '<section id="tour" class="phf-sec phf-white" aria-labelledby="tour-h"><div class="phf-wrap phf-wrap-tour">'
 		. '<p class="phf-eb">Interactive product tour</p><h2 id="tour-h" class="phf-h2b phf-h2-tour">See a retail media network run end to end</h2>'
 		. '<p class="phf-tour-p">Watch a venue sell its screens, a brand create a campaign by talking, and one visitor&#39;s journey from arrival to checkout.</p>'
@@ -169,7 +169,7 @@ function franchise_html() {
 		. '<div class="phf-ph-grid"><div><i style="width:70%;background:#EF60A7"></i></div><div><i style="width:55%;background:#FE9226"></i></div><div><i style="width:80%;background:#60D838"></i></div><div class="phf-ph-wide"></div></div></div></div>'
 		. '<div class="phf-gate" id="phf-gate"><div class="phf-gate-card">'
 		. '<p class="phf-gate-h">Unlock the product tour</p>'
-		. '<p class="phf-gate-p">Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.</p>'
+		. '<p class="phf-gate-p">Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the franchise opportunity.</p>'
 		. '<form class="phf-form" id="phf-form" novalidate><div class="phf-fgrid">'
 		. '<div class="phf-f"><label for="t-fn">Full name</label><input id="t-fn" name="name" type="text" autocomplete="name" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-em">Email</label><input id="t-em" name="email" type="email" autocomplete="email" maxlength="120" required></div>'

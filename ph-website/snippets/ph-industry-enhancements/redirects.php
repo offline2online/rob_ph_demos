@@ -13,7 +13,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 function redirect_map() {
 	return [
 		'/retail-media-platform' => '/white-label-retail-media-platform/',
-		'/franchise'             => '/be-your-own-boss/', // 13 Nov 2026: page 10776 renamed in place by franchise.php
 	];
 }
 
