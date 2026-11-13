@@ -333,7 +333,7 @@ const SCREEN_SYSTEM = [
   "Reply with ONE JSON object in a ```json code block and nothing after it:",
   '{"real":true,"physicalRetail":true,"siteCount":null,"sites":"","reason":"","website":"","websiteConfidence":0,"summary":"","sector":""}',
   "website is the organisation's official website. When none is given below, work it out (the contact's email domain is a strong clue; run a search when you are not sure) and give it even when you are not certain; websiteConfidence is how sure you are that it is the right site, from 0 to 100. When a website is given, repeat it with 100 unless it is plainly a different organisation's. summary is one sentence on what the organisation does. sector is exactly one of these when one fits, else empty: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ".",
-  "real and physicalRetail are true or false; use false when you cannot confirm it. siteCount is the total number of physical sites it trades from across all its brands, as a number, or null when you did not find one. sites is a few words on what it runs and roughly how many (empty when none). reason is one plain sentence a salesperson will read, saying what you found.",
+  "real and physicalRetail are true or false; use false when you cannot confirm it. siteCount is the total number of physical sites it trades from across all its brands, as a number, or null when you did not find one. sites is a few words on what it runs and roughly how many (empty when none). reason is one plain sentence a salesperson will read, saying what the organisation is and why it does or does not qualify; do not mention yourself, your searches or how you know.",
 ].join(" ");
 
 // Free checks first: what needs no model to call spam. Returns the reason, or "".

@@ -4297,6 +4297,30 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     matched, and the call is server-to-server so the list of companies never
     reaches a browser. The tour on personalisationhub.com does not call it
     yet (a PH Website ticket).
+  - **A missing website is worked out (13 Nov 2026)**: with no website on
+    the record, the run finds one in this order: the contacts' business email
+    domain when its home page answers (free; 90), the check's own answer
+    (`website`, `websiteConfidence`), then the research's. The record's
+    Website is filled only when it was blank, on the lead and its TAM record,
+    and `enrichment.websiteGuess {url, confidence (0-100), from, at}` says
+    how sure the run is and where the address came from; the page shows
+    "Found automatically, N% sure (from …)". A website a person typed is
+    never replaced.
+  - **The free basics when research is held back (13 Nov 2026)**: a real
+    company the check holds back (no physical sites found) used to be left
+    with an empty record and only the reason (a tour lead tested on 12 Nov).
+    It now gets, at no research cost: its website, icon and logos (copied to
+    storage), LinkedIn page, sector, and a one-line description (the check's
+    `summary`, else the home page's). `enrichment.level` is `light` until a
+    full run makes it `full`; the request is still `skipped`, the message
+    reads "Full research was held back: … Press Research anyway to run the
+    full research", and the page says "Basic profile only". Spam and
+    companies the check cannot find still get nothing. `get_lead` now
+    returns `research` (with `lastRun`, `check`, `level`, `websiteGuess`)
+    for a lead no run has filled, so the reason a run stopped can be read.
+    `lead-enrich-probe.yml`: `pipeline` runs the whole new-lead flow on an
+    in-memory record with the real key; `lead_status` reports what the last
+    run on a lead did.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
