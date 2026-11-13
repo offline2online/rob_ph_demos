@@ -1,6 +1,6 @@
 // Promote › Leads (#promote/leads): the board and the lead form.
 //
-// One card per company in `leads/{id}`; the lanes are leads-core.js STAGES (FRANCHISE_STAGES for franchise opportunities).
+// One card per company in `leads/{id}`; the lanes are leads-core.js STAGES (OPERATOR_STAGES for network operator inquiries).
 // A tile drags between lanes (HTML5 drag and drop); clicking it (or Enter)
 // opens the lead summary drawer, whose stage select moves it without a pointer
 // drag, which is how it moves on a tablet. Tiles are coloured by industry
@@ -16,10 +16,10 @@
 // planInbound): a second person from the same company and country joins that
 // company's lead, and anyone from AWS goes to the AWS tile, from which an editor
 // attaches them to a customer account's AWS team (prospectCompanies awsTeam).
-// Franchise opportunities (leadType "franchise", from the Franchise page's
-// product tour gate) are people, not companies: the Companies / Franchise
-// opportunities switch shows one pipeline at a time, each with its own lanes,
-// and a franchise lead is never matched to Prospects (TAM) or researched.
+// Network operator inquiries (leadType "operator", from the Be Your Own Boss
+// page's product tour gate) are people, not companies: the Companies / Network
+// operators switch shows one pipeline at a time, each with its own lanes,
+// and a network operator inquiry is never matched to Prospects (TAM) or researched.
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
@@ -54,11 +54,11 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   let openId = null;          // the lead in the form, null for a new one
   let draft = { contacts: [] }; // contact rows held in memory while the form is open
   let started = false;
-  // Which pipeline the board shows: "company" or "franchise" (kept per browser).
+  // Which pipeline the board shows: "company" or "operator" (kept per browser).
   let view = "company";
-  try { if (localStorage.getItem("bt-leads-type") === "franchise") view = "franchise"; } catch { /* storage blocked */ }
+  try { if (localStorage.getItem("bt-leads-type") === "operator") view = "operator"; } catch { /* storage blocked */ }
   let formType = "company"; // the type of the lead in the form
-  const isFranchise = (l) => !!l && l.leadType === "franchise";
+  const isOperator = (l) => !!l && l.leadType === "operator";
   const detailCache = new Map(); // companyDocId -> the company's shared detail (org chart, AWS team), read once
 
   const me = () => String((auth.currentUser && auth.currentUser.email) || "").toLowerCase();
@@ -92,7 +92,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   // The compact org chart and AWS team on a card come from the company's shared detail (prospectCompanies).
   function loadDetails() {
     for (const l of leads) {
-      if (isFranchise(l)) continue;
+      if (isOperator(l)) continue;
       const key = companyDocId(l.company.name);
       if (!key || detailCache.has(key)) continue;
       detailCache.set(key, null);
@@ -212,14 +212,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const isWebsite = (l) => /^web/i.test(l.source);
   const sourceLabel = (l) => (isWebsite(l) ? "Website" : (l.source && l.source.toLowerCase() !== "manual" ? l.source : "Manual"));
   const chipHTML = (l) => `<span class="lead-chip" title="${esc(industryChipText(l))}"><span class="lead-ind-dot" aria-hidden="true"></span>${esc(industryChipText(l))}</span>`;
-  const typeChipHTML = (l) => (isFranchise(l) ? `<span class="lead-chip lead-type-chip">${esc(leadTypeLabel(l.leadType))}</span>` : "");
+  const typeChipHTML = (l) => (isOperator(l) ? `<span class="lead-chip lead-type-chip">${esc(leadTypeLabel(l.leadType))}</span>` : "");
   const sourceText = (l) => (l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l));
-  // A franchise opportunity's tile: the person, their lead type, where they plan to operate and their background.
-  function franchiseCardHTML(l) {
+  // A network operator inquiry's tile: the person, their lead type, where they plan to operate and their background.
+  function operatorCardHTML(l) {
     const line = companyLine(l);
     const who = l.assignee ? memberName(l.assignee) : "";
     const name = leadName(l);
-    return `<article class="lead-card lead-card-franchise" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-lead-type="franchise" tabindex="0" role="button" aria-label="${esc(name)}, franchise opportunity, open lead summary">
+    return `<article class="lead-card lead-card-operator" draggable="${canEdit() ? "true" : "false"}" data-lead-id="${esc(l.id)}" data-lead-type="operator" tabindex="0" role="button" aria-label="${esc(name)}, network operator inquiry, open lead summary">
       <div class="lead-card-top">${logoHTML(null, name, "lead-logo")}<h4 class="lead-card-name">${esc(name)}</h4></div>
       <div class="lead-card-chips">${typeChipHTML(l)}${l.inboundCount > 1 ? `<span class="lead-inbound" title="Submissions from this person">${esc(inboundLabel(l))}</span>` : ""}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}</div>
       ${line ? `<p class="lead-card-line">${esc(line)}</p>` : ""}
@@ -230,7 +230,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     </article>`;
   }
   function cardHTML(l) {
-    if (isFranchise(l)) return franchiseCardHTML(l);
+    if (isOperator(l)) return operatorCardHTML(l);
     const line = companyLine(l);
     const entry = leadIndustryEntry(l);
     const who = l.assignee ? memberName(l.assignee) : "";
@@ -247,7 +247,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   }
 
   function renderTypeSwitch() {
-    for (const t of ["company", "franchise"]) {
+    for (const t of ["company", "operator"]) {
       const tab = $(`leads-type-${t}`);
       tab.setAttribute("aria-selected", String(view === t));
       tab.classList.toggle("active", view === t);
@@ -260,7 +260,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     renderTypeSwitch();
     const shown = leads.filter((l) => l.leadType === view);
     const lanes = groupByStage(shown, view);
-    $("leads-empty-text").textContent = view === "franchise" ? "No franchise opportunities yet" : "No leads yet";
+    $("leads-empty-text").textContent = view === "operator" ? "No network operator inquiries yet" : "No leads yet";
     $("leads-empty-add").hidden = !canEdit();
     $("leads-empty").hidden = shown.length > 0;
     board.dataset.leadType = view;
@@ -276,7 +276,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   $("leads-type").addEventListener("click", (e) => {
     const tab = e.target.closest && e.target.closest("[data-lead-type]");
     if (!tab || tab.dataset.leadType === view) return;
-    view = tab.dataset.leadType === "franchise" ? "franchise" : "company";
+    view = tab.dataset.leadType === "operator" ? "operator" : "company";
     try { localStorage.setItem("bt-leads-type", view); } catch { /* storage blocked */ }
     render();
   });
@@ -373,24 +373,24 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       iconLink(mailto(m.email, `${l.company.name} opportunity`), "mail", `Email ${m.name}`))).join("");
     return group("AWS team", rows || lineRow("No AWS team yet"), { id: "lead-sum-aws" });
   }
-  // A franchise opportunity's summary: the person, their details, the pipeline, website activity and history.
-  function renderFranchiseSummary(l) {
+  // A network operator inquiry's summary: the person, their details, the pipeline, website activity and history.
+  function renderOperatorSummary(l) {
     const stageOptions = stagesFor(l.leadType).map((s) => `<option value="${s.key}"${s.key === l.stage ? " selected" : ""}>${esc(s.label)}</option>`).join("");
-    const f = l.franchise || {};
+    const f = l.operator || {};
     const name = leadName(l);
     $("lead-sum-title").textContent = name;
     $("lead-sum-sub").textContent = companyLine(l);
     $("lead-sum-logo").innerHTML = logoHTML(null, name);
     const panel = $("lead-summary-panel");
-    panel.style.cssText = ""; panel.dataset.industry = ""; panel.dataset.leadType = "franchise";
+    panel.style.cssText = ""; panel.dataset.industry = ""; panel.dataset.leadType = "operator";
     $("lead-sum-badges").innerHTML = `${typeChipHTML(l)}${l.test ? '<span class="lead-test-badge">Test</span>' : ""}`;
     const keepStage = document.activeElement && document.activeElement.id === "lead-sum-stage";
     $("lead-sum-body").innerHTML = `
       ${contactsHTML(l)}
-      ${group("Franchise opportunity", [
+      ${group("Network operator", [
         row("Where they plan to operate", esc(f.region || "")),
         row("Background", esc(backgroundLabel(f.background))),
-      ].join(""), { id: "lead-sum-franchise" })}
+      ].join(""), { id: "lead-sum-operator" })}
       ${group("Lead", [
         row("Type", esc(leadTypeLabel(l.leadType))),
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
@@ -410,7 +410,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   function renderSummary() {
     const l = leads.find((x) => x.id === summaryId);
     if (!l) { closeSummary(); return; }
-    if (isFranchise(l)) { renderFranchiseSummary(l); return; }
+    if (isOperator(l)) { renderOperatorSummary(l); return; }
     $("lead-sum-enrich").hidden = !canEdit();
     $("lead-summary-panel").dataset.leadType = "company";
     const entry = leadIndustryEntry(l);
@@ -516,13 +516,13 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-stage").innerHTML = stagesFor(type).map((s) => `<option value="${s.key}">${esc(s.label)}</option>`).join("");
   }
   $("lead-background").innerHTML = `<option value="">Not given</option>` + BACKGROUNDS.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("");
-  // The form for a company lead or a franchise opportunity (a person: no company, one contact).
+  // The form for a company lead or a network operator inquiry (a person: no company, one contact).
   function setFormType(type) {
-    formType = type === "franchise" ? "franchise" : "company";
-    const fr = formType === "franchise";
+    formType = type === "operator" ? "operator" : "company";
+    const fr = formType === "operator";
     $("lead-backdrop").dataset.leadType = formType;
     $("lead-company-section").hidden = fr;
-    $("lead-franchise-section").hidden = !fr;
+    $("lead-operator-section").hidden = !fr;
     $("lead-add-contact-section").hidden = fr;
     fillStages(formType);
   }
@@ -540,8 +540,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const roles = `<option value="">None</option>` + BUYING_ROLES.map((r) => `<option value="${r.key}"${r.key === c.buyingRole ? " selected" : ""}>${esc(r.label)}</option>`).join("");
     const e = c.enrichment;
     const note = e ? `<div class="ap-row ap-row-line lead-contact-enriched">Enriched${e.added && e.added.length ? `: added ${esc(e.added.join(", "))}` : ""}${e.listedAs ? ` · listed as ${esc(e.listedAs)}` : ""}</div>` : "";
-    // A franchise opportunity is one person: name, email and LinkedIn only.
-    const fr = formType === "franchise";
+    // A network operator inquiry is one person: name, email and LinkedIn only.
+    const fr = formType === "operator";
     const field = (label, input, companyOnly) => `<label class="ap-row ap-field"${companyOnly && fr ? " hidden" : ""}><span class="ap-row-label">${label}</span>${input}</label>`;
     return `<fieldset class="lead-contact ap-section" data-index="${i}">
       <legend class="ap-group-title">${fr ? "Person" : `Contact ${i + 1}`}</legend>
@@ -605,8 +605,8 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
 
   function fill(l) {
     setFormType(l.leadType);
-    $("lead-region").value = (l.franchise && l.franchise.region) || "";
-    $("lead-background").value = (l.franchise && l.franchise.background) || "";
+    $("lead-region").value = (l.operator && l.operator.region) || "";
+    $("lead-background").value = (l.operator && l.operator.background) || "";
     $("lead-name").value = l.company.name;
     $("lead-website").value = l.company.website;
     $("lead-industry").value = l.company.industry;
@@ -625,23 +625,23 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const l = id ? leads.find((x) => x.id === id) : null;
     if (id && !l) return;
     const type = l ? l.leadType : view;
-    $("lead-title").textContent = l ? leadName(l) : (type === "franchise" ? "New franchise opportunity" : "New lead");
+    $("lead-title").textContent = l ? leadName(l) : (type === "operator" ? "New network operator inquiry" : "New lead");
     setError("");
     $("lead-enrich-status").textContent = "";
-    $("lead-existing").hidden = !l || type === "franchise"; // research and customer accounts are for companies
+    $("lead-existing").hidden = !l || type === "operator"; // research and customer accounts are for companies
     $("lead-delete").hidden = !l;
-    if (l) { fill(l); if (type !== "franchise") { renderEnrichment(l); renderAccount(l); } }
+    if (l) { fill(l); if (type !== "operator") { renderEnrichment(l); renderAccount(l); } }
     else {
-      fill({ leadType: type, franchise: { region: "", background: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
+      fill({ leadType: type, operator: { region: "", background: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
     }
     backdrop.hidden = false;
-    (type === "franchise" ? $("lead-contacts").querySelector(".lc-name") : $("lead-name")).focus();
+    (type === "operator" ? $("lead-contacts").querySelector(".lc-name") : $("lead-name")).focus();
   }
   function closeLead() { backdrop.hidden = true; openId = null; }
 
   function gather() {
     readContacts();
-    const fr = formType === "franchise";
+    const fr = formType === "operator";
     return leadFromForm({
       leadType: formType, region: fr ? $("lead-region").value : "", background: fr ? $("lead-background").value : "",
       name: fr ? "" : $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
@@ -656,7 +656,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     if (r.errors.length) { setError(r.errors.join(" ")); return null; }
     setError("");
     const f = r.fields;
-    if (!openId && !extra && f.leadType !== "franchise") { // a person is never matched to Prospects (TAM)
+    if (!openId && !extra && f.leadType !== "operator") { // a person is never matched to Prospects (TAM)
       const placed = await placeNew(f);
       if (placed) { if (placed.id) openId = placed.id; return placed; }
     }
