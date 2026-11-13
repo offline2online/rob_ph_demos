@@ -18,6 +18,7 @@ require_once __DIR__ . '/home-industries.php';
 require_once __DIR__ . '/legacy-copy.php';
 require_once __DIR__ . '/legacy-copy-v2.php';
 require_once __DIR__ . '/legacy-copy-v3.php';
+require_once __DIR__ . '/legacy-copy-v4.php';
 require_once __DIR__ . '/legacy-logos.php';
 
 const KEYS = [ 'industries', 'convenience', 'hospitality', 'telco', 'pharmacy', 'retail-media', 'grocery', 'fashion', 'qsr', 'banking' ];
