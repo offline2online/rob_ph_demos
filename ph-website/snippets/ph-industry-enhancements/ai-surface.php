@@ -28,8 +28,10 @@ function ai_tours() {
 /**
  * WordPress's robots.txt output, kept as it is, plus the sitemap and one explicit allow group for the named agents.
  * A crawler that matches a named group ignores the "*" group, so the group repeats the "*" group's Disallow lines.
+ * $allow: extra paths named in that group with their own "Allow:" line (the ph_ai_robots_allow filter, e.g. a page that has just
+ * launched); empty by default.
  */
-function robots_txt_text( $output, $public = true ) {
+function robots_txt_text( $output, $public = true, array $allow = array() ) {
 	$out = rtrim( (string) $output );
 	if ( ! $public ) {
 		return $out . "\n"; // "Discourage search engines" is on: say nothing more.
@@ -48,7 +50,13 @@ function robots_txt_text( $output, $public = true ) {
 		foreach ( PH_AI_AGENTS as $a ) {
 			$out .= 'User-agent: ' . $a . "\n";
 		}
-		$out .= "Allow: /\n" . ( $dis ? implode( "\n", $dis ) . "\n" : '' );
+		$out .= "Allow: /\n";
+		foreach ( $allow as $p ) {
+			if ( is_string( $p ) && preg_match( '#^/[a-z0-9/_-]*$#i', $p ) && '/' !== $p ) {
+				$out .= 'Allow: ' . $p . "\n";
+			}
+		}
+		$out .= $dis ? implode( "\n", $dis ) . "\n" : '';
 	}
 	if ( ! preg_match( '/^\s*Sitemap:\s*' . preg_quote( PH_AI_SITEMAP, '/' ) . '\s*$/mi', $out ) ) {
 		$out = rtrim( $out ) . "\n\nSitemap: " . PH_AI_SITEMAP;
@@ -165,7 +173,7 @@ function ai_tours_llms_filter( $text, ?array $tours = null ) {
 
 if ( function_exists( 'add_filter' ) ) {
 	add_filter( 'robots_txt', function ( $output, $public = true ) {
-		return robots_txt_text( $output, (bool) $public );
+		return robots_txt_text( $output, (bool) $public, (array) apply_filters( 'ph_ai_robots_allow', array() ) );
 	}, 20, 2 );
 
 	add_filter( 'ph_llms_txt', function ( $text ) {

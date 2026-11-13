@@ -187,6 +187,21 @@ function live_pages() {
 	return $pages;
 }
 
+/**
+ * Pages other snippets expose to agents through the ph_agent_extra_pages filter: each item [title, url, summary, md]. The filter's
+ * owner decides when its page is live (the Industries snippet's Run Your Own RMN page adds itself only once launched). Items without
+ * a https://personalisationhub.com address are dropped.
+ */
+function extra_pages() {
+	$out = array();
+	foreach ( (array) apply_filters( 'ph_agent_extra_pages', array() ) as $p ) {
+		if ( is_array( $p ) && ! empty( $p['title'] ) && is_string( $p['url'] ?? null ) && 0 === strpos( $p['url'], \PH_AE_SITE . '/' ) ) {
+			$out[] = array( 'title' => (string) $p['title'], 'url' => $p['url'], 'summary' => (string) ( $p['summary'] ?? '' ), 'md' => (string) ( $p['md'] ?? '' ) );
+		}
+	}
+	return $out;
+}
+
 /** The nine live industry pages: published, public, not noindex, with markdown held by the Industries snippet. */
 function live_industries() {
 	if ( ! function_exists( IND_NS . 'data' ) ) {
@@ -240,6 +255,7 @@ function tool_source() {
 			$post = exposable_post( $id );
 			return $post ? twin_for( $post ) : null;
 		},
+		'extra_pages' => __NAMESPACE__ . '\extra_pages',
 		'industries'  => __NAMESPACE__ . '\live_industries',
 		'industry_md' => function ( $slug ) {
 			foreach ( live_industries() as $r ) {
@@ -457,6 +473,9 @@ function llms_full_body() {
 	}
 	foreach ( live_industries() as $r ) {
 		$docs[] = array( $r[2], industry_md_for( $r[0] ) );
+	}
+	foreach ( extra_pages() as $x ) {
+		$docs[] = array( $x['url'], $x['md'] );
 	}
 	$body = llms_full_text( $llms, $docs );
 	set_transient( $key, $body, 300 );

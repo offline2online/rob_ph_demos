@@ -1,4 +1,4 @@
-/* PH Be Your Own Boss page (/be-your-own-boss/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
    body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. */
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
 body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
@@ -116,6 +116,24 @@ body .phf button.phf-how-b{position:relative;z-index:2;touch-action:manipulation
 body .phf button.phf-how-b::after{content:"";position:absolute;left:-15px;right:0;top:50%;height:46px;margin-top:-23px}
 }
 
+/* Running your own RMN: the FAQ accordion (native <details>; keyboard and tap need no script). Rows are at least 56px tall, so every
+   question is a tap target well over 44x44. */
+body .phf .phf-wrap-faq{max-width:970px}
+body .phf .phf-faq{margin-top:32px;border-top:1px solid #DCE1EB}
+body .phf .phf-faq-i{border-bottom:1px solid #DCE1EB}
+body .phf .phf-faq-q{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:56px;padding:16px 4px;cursor:pointer;list-style:none;font-size:20px;font-weight:600;line-height:1.35;color:#1C2540;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf .phf-faq-q::-webkit-details-marker{display:none}
+body .phf .phf-faq-q::marker{content:""}
+body .phf .phf-faq-q:hover{color:#0E6F8C}
+body .phf .phf-faq-q:focus-visible{outline:3px solid #179BC2;outline-offset:2px}
+body .phf .phf-faq-x{flex:none;position:relative;width:20px;height:20px}
+body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{content:"";position:absolute;left:2px;right:2px;top:9px;height:2px;border-radius:2px;background:#179BC2;transition:transform .2s}
+body .phf .phf-faq-x::after{transform:rotate(90deg)}
+body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
+body .phf .phf-faq-a{padding:0 44px 22px 4px}
+body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
+@media (prefers-reduced-motion:reduce){body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{transition:none}}
+
 /* Product tour band and the gate */
 body .phf h2.phf-h2-tour{margin:0 0 16px;max-width:18em}
 body .phf .phf-tour-p{margin:0 0 40px;font-size:18px;color:#5A6479;max-width:36em}
@@ -175,4 +193,6 @@ body .phf .phf-crow-r{flex-wrap:wrap;row-gap:4px}
 body .phf .phf-crow-r .phf-clab{flex:1 1 100%}
 body .phf .phf-crow-r input[type=range]{flex:1 1 auto;width:auto}
 body .phf .phf-ph-side{width:96px}
+body .phf .phf-faq-q{font-size:18px}
+body .phf .phf-faq-a{padding:0 4px 20px}
 }

@@ -1,14 +1,18 @@
-// node ph-website/tests/operator.test.mjs : the hidden Be Your Own Boss page (/be-your-own-boss/) in Chromium (operator.php's server-rendered body, operator.css,
-// operator.js, site.js), with the real tour.html served at /industries/retail-media/tour/. Copy and section order, the calculator defaults and
-// live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, the body it posts, ph_operator and ph_lead,
-// an existing ph_lead never overwritten), the tour framed in place and unlocked with no form, Start the tour plays a step, returning visitors,
-// the header's Arrange A Demo, no horizontal scroll at 360/390/768/1440, and enhance.js's known-visitor rule (name, company and email).
-// The retired offer name (checked with the pattern fr[a]nch, so this file never contains it) appears nowhere: not in the visible text,
-// any attribute, the title, meta or URL, the loaded CSS/JS file names and contents, localStorage keys or dataLayer events. The three
-// copy replacements are exact; the header item is "Be Your Own Boss"; the dataLayer and ph_lead source say "Network operator inquiry";
-// the gate posts to ph-site/v1/operator-lead. Touch: every "i" info button has a hit area of at least 44x44. Tablets: iPad Mini,
-// iPad (gen 7), iPad Pro 11 and Galaxy Tab S4, portrait and landscape, touch on (iPad user agents on the iPads): no horizontal scroll,
-// calculator, tooltips by tap, the 44x44 hit area, the gate unlocking the tour, the tour playing and its full-screen fallback.
+// node ph-website/tests/operator.test.mjs : the hidden Run Your Own RMN page (/run-your-own-rmn/) in Chromium (operator.php's server-rendered
+// head and body, operator.css, operator.js, site.js), with the real tour.html served at /industries/retail-media/tour/. The H1 and sub-line,
+// copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap), the SEO head (one H1, title, description, canonical,
+// OG, JSON-LD), the calculator defaults and live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid,
+// the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
+// Start the tour plays a step, returning visitors, the header's Arrange A Demo, the estimate_rmn_earnings WebMCP tool (the page's own
+// figures for the defaults; the gate only with the person's details and consent; never the share), no horizontal scroll at
+// 360/390/768/1440, and enhance.js's known-visitor rule (name, company and email).
+// Neither the retired offer name (checked with the pattern fr[a]nch) nor the page's previous name (a bracketed pattern) appears, so this
+// file never contains them: not in the visible text, any attribute, the title, meta or URL, the rendered HTML, the loaded CSS/JS file
+// names and contents, localStorage keys or values, dataLayer events or request URLs. The three copy replacements are exact; the header
+// item is "Run Your Own RMN"; the dataLayer and ph_lead source say "Network operator inquiry"; the gate posts to ph-site/v1/operator-lead.
+// Touch: every "i" info button has a hit area of at least 44x44, and so does every FAQ question. Tablets: iPad Mini, iPad (gen 7),
+// iPad Pro 11 and Galaxy Tab S4, portrait and landscape, touch on (iPad user agents on the iPads): no horizontal scroll, calculator,
+// tooltips and the FAQ by tap, the 44x44 hit areas, the gate unlocking the tour, the tour playing and its full-screen fallback.
 // Skips (exit 0) when Playwright, Chromium or php is not available.
 import { createRequire } from "module";
 import fs from "fs";
@@ -28,10 +32,12 @@ const body = r.stdout;
 const hr = spawnSync("php", [path.join(here, "operator-render.php"), "head"], { encoding: "utf8" });
 assert.strictEqual(hr.status, 0, "operator-render.php head: " + hr.stderr);
 const head = JSON.parse(hr.stdout);
-assert.strictEqual(head.title, "Be Your Own Boss - Personalisation Hub", "document title");
-assert.strictEqual(head.menu.title, "Be Your Own Boss", "menu item title");
-assert.strictEqual(head.menu.url, "http://x.test/be-your-own-boss/", "menu item URL");
+assert.strictEqual(head.title, "Run Your Own Retail Media Network (RMN) - Personalisation Hub", "document title");
+assert.strictEqual(head.menu.title, "Run Your Own RMN", "menu item title");
+assert.strictEqual(head.menu.url, "http://x.test/run-your-own-rmn/", "menu item URL");
 const OLD = /fr[a]nch/i;
+const PREV = /own[ -]bo[s]s|be-your[-]own|ph[-]bo[s]s/i; // the page's previous name, slug and menu class
+const NAMES = (s) => OLD.test(s) || PREV.test(s);
 const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const css = fs.readFileSync(path.join(dir, "operator.css"), "utf8");
 const js = fs.readFileSync(path.join(dir, "operator.js"), "utf8");
@@ -44,10 +50,11 @@ const d = F.view(F.calc({ ven: 90, dis: 3, vis: 800, cpm: 25, atv: 25, view: 60,
 assert.deepStrictEqual(d, { yours: "$591K", venues: "90", displays: "270", visitors: "2,190,000", views: "3,942,000", extraSales: "$59.1M" }, "defaults");
 
 // The site's header (Industry, Support, Arrange A Demo as an Elementor popup link) and footer around the shortcode output.
-const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(head.title)}</title><meta property="og:title" content="${esc(head.title)}"><meta property="og:url" content="${esc(head.menu.url)}"><link rel="canonical" href="${esc(head.menu.url)}"><style>body{margin:0;font-family:Arial}</style><style>${css}</style></head><body>
+const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(head.title)}</title>${head.seo}<style>body{margin:0;font-family:Arial}</style><style>${css}</style></head><body>
 <header class="elementor-location-header" style="position:sticky;top:0;z-index:5;background:#fff;height:72px"><nav><ul><li class="menu-item"><a href="/industries/">Industry</a></li><li class="${esc(head.menu.classes)}"><a href="${esc(head.menu.url)}" aria-current="${esc(head.menu.atts["aria-current"])}">${esc(head.menu.title)}</a></li><li class="menu-item"><a href="/support-centre/">Support</a></li></ul></nav>
 <a class="elementor-button" id="hdr-demo" href="#elementor-action%3Aaction%3Dpopup%3Aopen%26settings%3DeyJpZCI6IjI2NTgi"><span>Arrange A Demo</span></a></header>
 <main>${body}</main><footer class="elementor-location-footer"><a href="/privacy-policy/">Privacy</a></footer>
+<script>window.__tools=[]; try { Object.defineProperty(navigator, "modelContext", { configurable: true, value: { registerTool: function (t) { window.__tools.push(t); } } }); } catch (e) {}</script>
 <script>window.__cal=0; window.Calendly={initPopupWidget:function(){window.__cal++;}}; window.PH_OPERATOR={"endpoint":"/wp-json/ph-site/v1/operator-lead","tour":"/industries/retail-media/tour/"};</script>
 <script>${site}</script><script>${js}</script></body></html>`;
 
@@ -64,6 +71,8 @@ const hitBoxes = (t) => t.evaluate(() => {
   }
   return out;
 });
+// Every FAQ question (summary): its box is at least 44x44 and the point at its centre hits it.
+const faqBoxes = (t) => t.evaluate(() => [...document.querySelectorAll("#faq summary")].map((s) => { s.scrollIntoView({ block: "center", behavior: "instant" }); const r = s.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { w: Math.round(r.width), h: Math.round(r.height), hit: !!e && (e === s || s.contains(e)) }; }).filter((b) => b.w < 44 || b.h < 44 || !b.hit));
 // Where the Average CPM tooltip opens, relative to its button.
 const tipPlace = async (t) => { await t.locator("[aria-describedby=c-cpm-tip]").focus(); return t.evaluate(() => { const b = document.querySelector("[aria-describedby=c-cpm-tip]").getBoundingClientRect(), x = document.getElementById("c-cpm-tip").getBoundingClientRect(); return { dx: Math.round(x.left - b.left), dy: Math.round(x.bottom - b.top), w: Math.round(x.width) }; }); };
 
@@ -88,10 +97,10 @@ try {
       if (/\/assets\/v1\//.test(u)) return rt.fulfill({ status: 404, body: "" });
       if (/\/industries\/retail-media\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
       if (/\/wp-json\//.test(u)) return rt.fulfill({ contentType: "application/json", body: '{"found":false}' });
-      if (u.startsWith("http://x.test/be-your-own-boss/")) return rt.fulfill({ contentType: "text/html", body: page });
+      if (u.startsWith("http://x.test/run-your-own-rmn/")) return rt.fulfill({ contentType: "text/html", body: page });
       return rt.abort();
     });
-    await p.goto("http://x.test/be-your-own-boss/" + search);
+    await p.goto("http://x.test/run-your-own-rmn/" + search);
     return p;
   };
   const text = (p, sel) => p.evaluate((s) => document.querySelector(s).textContent.trim(), sel);
@@ -104,9 +113,11 @@ try {
   // 1. Copy and section order.
   let p = await open();
   const heads = await p.evaluate(() => [...document.querySelectorAll("#phf h1, #phf h2")].map((h) => h.textContent.trim()));
-  assert.deepStrictEqual(heads, ["Be your own boss", "Your head start in a changing industry", "Built for people who know media", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "See a retail media network run end to end"], "section order");
+  assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Built for people who know media", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end"], "section order");
   const all = await p.evaluate(() => document.getElementById("phf").textContent);
-  for (const s of ["Run your own retail media network", "AI has changed what one person can achieve.", "Why it beats anything out there", "Personalisation in physical venues", "Campaigns can be created automatically", "Self-optimising, with proof of results", "Your brand, your own AWS account", "You sign up venues", "You partner with brands and advertisers", "You run it your own way", "Car dealerships", "Cafés and bakeries", "Standardised measurement", "AI-native, with full MCP support", "Your network", "Your potential income a year", "Retail media income", "A way to fight back", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "copy: " + s);
+  ok((await text(p, "#phf h1")) === "Run your own retail media network" && (await text(p, ".phf-hero-sub")) === "Your own RMN on a world-leading white-label platform", "H1 and sub-line");
+  ok((await p.evaluate(() => document.querySelectorAll("h1").length)) === 1, "exactly one H1 on the page");
+  for (const s of ["Run your own retail media network", "Your own RMN on a world-leading white-label platform", "AI has changed what one person can achieve.", "Why it beats anything out there", "Personalisation in physical venues", "Campaigns can be created automatically", "Self-optimising, with proof of results", "Your brand, your own AWS account", "You sign up venues", "You partner with brands and advertisers", "You run it your own way", "Car dealerships", "Cafés and bakeries", "Standardised measurement", "AI-native, with full MCP support", "Your network", "Your potential income a year", "Retail media income", "A way to fight back", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "copy: " + s);
   // The three copy replacements, exact.
   ok(all.includes("We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one."), "copy 1: head-start paragraph");
   ok((await text(p, ".phf-cin-h")) === "Your network", "copy 2: calculator panel heading");
@@ -118,13 +129,18 @@ try {
     for (const el of document.querySelectorAll("*")) { if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue; for (const a of el.attributes) out.push(a.name + "=" + a.value); }
     return out.join("\n");
   });
-  ok(!OLD.test(seen), "no retired offer name in visible text, attributes, title, meta or URL: " + (seen.match(/.{0,60}fr[a]nch.{0,60}/i) || [""])[0]);
+  ok(!NAMES(seen), "no retired offer name or previous page name in visible text, attributes, title, meta or URL: " + (seen.match(/.{0,60}(fr[a]nch|own[ -]bo[s]s|be-your[-]own).{0,60}/i) || [""])[0]);
   // ...nor in the rendered HTML, the page's own CSS/JS (file names and contents) or the inline config.
-  ok(!OLD.test(body) && !OLD.test(page), "no retired offer name in the rendered HTML or the page source");
-  for (const f of ["operator.css", "operator.js", "operator.php", "operator-content.php", "site.js", "enhance.js"]) ok(!OLD.test(f) && !OLD.test(fs.readFileSync(path.join(dir, f), "utf8")), `${f}: no retired offer name in its name or contents`);
-  ok(!fs.readdirSync(dir).some((f) => OLD.test(f)), "no snippet file named after the retired offer");
-  ok((await p.title()) === "Be Your Own Boss - Personalisation Hub", "document title");
-  ok((await p.evaluate(() => { const a = document.querySelector("header a[aria-current=page]"); return a.textContent + "|" + a.getAttribute("href"); })) === "Be Your Own Boss|http://x.test/be-your-own-boss/", "header item Be Your Own Boss, current, links /be-your-own-boss/");
+  ok(!NAMES(body) && !NAMES(page), "no retired offer name or previous page name in the rendered HTML or the page source");
+  for (const f of ["operator.css", "operator.js", "operator.php", "operator-content.php", "site.js", "enhance.js"]) ok(!NAMES(f) && !NAMES(fs.readFileSync(path.join(dir, f), "utf8")), `${f}: neither name in its file name or contents`);
+  ok(!fs.readdirSync(dir).some((f) => NAMES(f)), "no snippet file named after either");
+  ok((await p.title()) === "Run Your Own Retail Media Network (RMN) - Personalisation Hub", "document title");
+  ok((await p.evaluate(() => { const a = document.querySelector("header a[aria-current=page]"); return a.textContent + "|" + a.getAttribute("href"); })) === "Run Your Own RMN|http://x.test/run-your-own-rmn/", "header item Run Your Own RMN, current, links /run-your-own-rmn/");
+  const seo = await p.evaluate(() => ({ d: document.querySelector('meta[name="description"]').content, c: [...document.querySelectorAll('link[rel="canonical"]')].map((l) => l.href), og: document.querySelector('meta[property="og:title"]').content, img: document.querySelector('meta[property="og:image"]').content, tw: document.querySelector('meta[name="twitter:card"]').content, ld: [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => JSON.parse(s.textContent)) }));
+  ok(seo.d.startsWith("Run your own retail media network (RMN)") && seo.c.join() === "https://personalisationhub.com/run-your-own-rmn/" && seo.og === "Run Your Own Retail Media Network (RMN)" && /^https:\/\//.test(seo.img) && seo.tw === "summary_large_image", "head: description, one canonical, og:title, og:image, twitter card: " + JSON.stringify(seo).slice(0, 300));
+  ok(seo.ld.length === 1 && ["WebPage", "Service", "BreadcrumbList", "FAQPage"].every((t) => seo.ld[0]["@graph"].some((n) => n["@type"] === t)), "head: one JSON-LD graph with WebPage, Service, BreadcrumbList and FAQPage");
+  const faqDom = await p.evaluate(() => [...document.querySelectorAll("#faq details")].map((d) => [d.querySelector("summary").textContent.trim(), d.querySelector(".phf-faq-a").textContent.trim()]));
+  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[0]["@graph"].find((n) => n["@type"] === "FAQPage").mainEntity.map((q) => [q.name, q.acceptedAnswer.text])) && faqDom.length >= 5 && faqDom.length <= 6, "the FAQPage JSON-LD equals the visible FAQ");
   ok((await p.evaluate(() => getComputedStyle(document.querySelector("#phf h1")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-hero-sub")).color === "rgb(23, 155, 194)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)"), "design colours");
   // No commercial terms anywhere on the page (text, tooltips, attributes).
@@ -164,7 +180,7 @@ try {
   await p.close();
   { const t = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
-    await t.goto("http://x.test/be-your-own-boss/");
+    await t.goto("http://x.test/run-your-own-rmn/");
     await t.locator("[aria-describedby=c-atv-tip]").tap();
     const g = await t.evaluate(() => { const b = document.getElementById("c-atv-tip").getBoundingClientRect(); return { on: getComputedStyle(document.getElementById("c-atv-tip")).display !== "none", l: b.left, r: b.right, w: innerWidth, exp: document.querySelector("[aria-describedby=c-atv-tip]").getAttribute("aria-expanded") }; });
     ok(g.on && g.exp === "true" && g.l >= 0 && g.r <= g.w, "tooltip on tap, inside the viewport: " + JSON.stringify(g));
@@ -175,14 +191,39 @@ try {
     await t.close(); }
   { const t = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
-    await t.goto("http://x.test/be-your-own-boss/");
+    await t.goto("http://x.test/run-your-own-rmn/");
     const pos = await tipPlace(t);
     const t2 = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
     await t2.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
-    await t2.goto("http://x.test/be-your-own-boss/");
+    await t2.goto("http://x.test/run-your-own-rmn/");
     const pos2 = await tipPlace(t2);
     ok(JSON.stringify(pos) === JSON.stringify(pos2), "touch: the tooltip opens in the same place as with a mouse: " + JSON.stringify([pos, pos2]));
     await t.close(); await t2.close(); }
+
+  // 3b. The FAQ accordion: closed at rest; Enter and Space on the focused question open and close it; a tap opens it.
+  p = await open();
+  const faqOpen = (i) => p.evaluate((n) => document.querySelectorAll("#faq details")[n].open, i);
+  ok((await p.evaluate(() => [...document.querySelectorAll("#faq details")].every((d) => !d.open))) && (await p.evaluate(() => getComputedStyle(document.querySelector("#faq .phf-faq-a")).display === "none" || !document.querySelector("#faq details").open)), "FAQ: every answer closed at rest");
+  await p.locator("#faq summary").first().focus();
+  await p.keyboard.press("Enter");
+  ok(await faqOpen(0), "FAQ: Enter on the focused question opens it");
+  ok(await p.evaluate(() => { const a = document.querySelector("#faq details .phf-faq-a"); return a.getBoundingClientRect().height > 0 && /retail media network sells advertising/.test(a.textContent); }), "FAQ: the answer shows");
+  await p.keyboard.press("Space");
+  ok(!(await faqOpen(0)), "FAQ: Space closes it again");
+  await p.keyboard.press("Tab");
+  ok(await p.evaluate(() => document.activeElement === document.querySelectorAll("#faq summary")[1]), "FAQ: Tab moves to the next question");
+  ok(await p.evaluate(() => getComputedStyle(document.querySelector("#faq summary")).fontFamily.includes("Kantumruy Pro") && getComputedStyle(document.querySelector("#faq summary")).listStyleType === "none"), "FAQ: styled like the page (Kantumruy Pro, no browser marker)");
+  await p.close();
+  { const t = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
+    await t.goto("http://x.test/run-your-own-rmn/");
+    await t.locator("#faq summary").nth(2).tap();
+    ok(await t.evaluate(() => document.querySelectorAll("#faq details")[2].open), "FAQ: a tap opens a question");
+    await t.locator("#faq summary").nth(2).tap();
+    ok(await t.evaluate(() => !document.querySelectorAll("#faq details")[2].open), "FAQ: a second tap closes it");
+    const fb = await faqBoxes(t);
+    ok(fb.length === 0, "touch: every FAQ question is at least 44x44 and hit at its centre: " + JSON.stringify(fb));
+    await t.close(); }
 
   // 4. CTAs and the header's Arrange A Demo go to their anchors; #tour focuses the first empty field.
   p = await open();
@@ -213,7 +254,7 @@ try {
   await p.click("#phf-unlock");
   await p.waitForSelector("#phf-mount iframe");
   assert.strictEqual(posts.length, 1, "one post");
-  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/be-your-own-boss/", test: true, website: "" }, "post body");
+  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "post body");
   const st = await p.evaluate(() => ({ f: JSON.parse(localStorage.getItem("ph_operator")), l: JSON.parse(localStorage.getItem("ph_lead")), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_operator stored");
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
@@ -231,11 +272,11 @@ try {
   await fr.waitForFunction(() => !!document.querySelector('#dots [aria-current="true"]'), null, { timeout: 15000 });
   ok(true, "Start the tour plays a step");
   ok(p.__errs.length === 0, "no page errors: " + p.__errs.join("; "));
-  ok(!OLD.test(await p.evaluate(() => document.body.innerText)), "after unlocking: still no retired offer name in the visible text");
+  ok(!NAMES(await p.evaluate(() => document.body.innerText)), "after unlocking: still neither name in the visible text");
   const keys = await p.evaluate(() => Object.keys(localStorage));
-  ok(keys.includes("ph_operator") && !keys.some((k) => OLD.test(k)) && !OLD.test(await p.evaluate(() => JSON.stringify(Object.fromEntries(Object.entries(localStorage))))), "localStorage: key ph_operator, no retired offer name in any key or value: " + keys.join(","));
-  ok(!OLD.test(await p.evaluate(() => JSON.stringify(window.dataLayer || []))), "dataLayer: no retired offer name in any event");
-  ok(p.__reqs.some((u) => /\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) && !p.__reqs.some((u) => OLD.test(u)), "the gate posts to ph-site/v1/operator-lead; no request names the retired offer");
+  ok(keys.includes("ph_operator") && !keys.some((k) => NAMES(k)) && !NAMES(await p.evaluate(() => JSON.stringify(Object.fromEntries(Object.entries(localStorage))))), "localStorage: key ph_operator, neither name in any key or value: " + keys.join(","));
+  ok(!NAMES(await p.evaluate(() => JSON.stringify(window.dataLayer || []))), "dataLayer: neither name in any event");
+  ok(p.__reqs.some((u) => /\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) && !p.__reqs.some((u) => NAMES(u)), "the gate posts to ph-site/v1/operator-lead; no request names either");
   await p.close();
 
   // 6. Errors: a 400 names the field.
@@ -261,6 +302,32 @@ try {
   await p.waitForSelector("#phf-mount iframe");
   ok(await p.evaluate(() => { const l = JSON.parse(localStorage.getItem("ph_lead")); return getComputedStyle(document.getElementById("phf-gate")).display === "none" && l.email === "ada@gmail.com" && l.source === "Network operator inquiry"; }), "returning visitor skips the gate (ph_lead restored for the tour, source Network operator inquiry)");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/industries/retail-media/tour/?embed=1", "no ph_test outside test mode");
+  await p.close();
+
+  // 8b. WebMCP: estimate_rmn_earnings drives the page's own calculator and returns the page's own figures; the gate only with consent.
+  const wposts = [];
+  p = await open({ search: "?ph_test=1", posts: wposts });
+  const tools = await p.evaluate(() => window.__tools.map((t) => ({ name: t.name, d: t.description, s: t.inputSchema })));
+  ok(tools.length === 1 && tools[0].name === "estimate_rmn_earnings", "WebMCP: one tool, estimate_rmn_earnings, registered on the page");
+  ok(/running your own retail media network \(RMN\)/i.test(tools[0].d) && /consent=true/.test(tools[0].d) && tools[0].s.properties.consent.type === "boolean" && tools[0].s.properties.view.maximum === 100 && JSON.stringify(tools[0].s.properties.background.enum) === JSON.stringify(F.BACKGROUNDS), "WebMCP: described as running your own retail media network; schema from the page");
+  const est = (a) => p.evaluate((args) => window.__tools[0].execute(args), a);
+  let w = await est({});
+  assert.deepStrictEqual(w.structuredContent.figures, d, "WebMCP: the defaults return the page's own figures ($591K, 90, 270, 2,190,000, 3,942,000, $59.1M)");
+  ok(w.structuredContent.inputs.ven === 90 && /Your potential income a year: \$591K/.test(w.content[0].text) && /consent/.test(w.content[0].text) && wposts.length === 0, "WebMCP: figures in the text, asks for the person's details, nothing posted");
+  ok(!/0\.5|50\s*%|\bhalf\b|SHARE/i.test(JSON.stringify([w, tools])), "WebMCP: the share constant is never in the tool or its result");
+  w = await est({ ven: 100 });
+  ok(w.structuredContent.figures.yours === "$657K" && (await p.inputValue("#c-ven")) === "100" && (await text(p, "[data-out=yours]")) === "$657K", "WebMCP: venues 100 fills the page's input and returns what the page shows ($657K)");
+  w = await est({ ven: -5, view: 500 });
+  ok(w.structuredContent.inputs.ven === 0 && w.structuredContent.inputs.view === 100, "WebMCP: figures clamped to the inputs' ranges");
+  await est({ ven: 90, view: 60 });
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
+  ok(/agreement to be contacted/.test(w.content[0].text) && wposts.length === 0 && !(await p.$("#phf-mount iframe")), "WebMCP: details without consent submit nothing");
+  w = await est({ name: "Ada Lovelace", email: "nope", region: "Leeds", background: "Retail media", consent: true });
+  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, "WebMCP: invalid details are not submitted");
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media", consent: true });
+  ok(!w.isError && w.structuredContent.tourUnlocked === true && wposts.length === 1 && wposts[0].email === "ada@gmail.com" && wposts[0].consent === true && wposts[0].test === true && wposts[0].page === "/run-your-own-rmn/", "WebMCP: with the person's details and consent the page's own gate posts once and the tour unlocks");
+  ok((await p.evaluate(() => (window.dataLayer || []).filter((e) => e.event === "ph_agent_tool" && e.tool === "estimate_rmn_earnings").length)) >= 1 && !(await p.evaluate(() => JSON.stringify(window.dataLayer))).includes("ada@"), "WebMCP: a ph_agent_tool event, no contact details in the dataLayer");
+  ok(p.__errs.length === 0 && !NAMES(JSON.stringify(tools)), "WebMCP: no page errors, neither name in the tool");
   await p.close();
 
   // 9. No horizontal scroll at 360, 390, 768 and 1440 (locked and unlocked).
@@ -299,6 +366,12 @@ try {
       ok(await p.evaluate(() => getComputedStyle(document.getElementById("c-atv-tip")).display === "none"), `${name}: a tap elsewhere closes it`);
       const hb = await hitBoxes(p);
       ok(hb.coarse && hb.n === 8 && hb.bad.length === 0, `${name}: every info button's hit box is at least 44x44: ` + JSON.stringify(hb));
+      const fq = await faqBoxes(p);
+      ok(fq.length === 0, `${name}: every FAQ question is at least 44x44: ` + JSON.stringify(fq));
+      await p.evaluate(() => document.querySelector("#faq summary").scrollIntoView({ block: "center", behavior: "instant" })); // clear of the sticky header
+      await p.locator("#faq summary").first().tap();
+      const fo = await p.evaluate(() => ({ open: document.querySelector("#faq details").open, sw: document.documentElement.scrollWidth, w: innerWidth }));
+      ok(fo.open && fo.sw <= fo.w, `${name}: the FAQ opens by tap, no horizontal scroll: ` + JSON.stringify(fo));
       await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
       await p.locator("#t-cs").tap();
       ok(!(await p.locator("#phf-unlock").isDisabled()), `${name}: the gate is usable (Unlock enabled once valid)`);
