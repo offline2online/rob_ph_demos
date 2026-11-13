@@ -4389,6 +4389,64 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
+- **Leads: Franchise opportunities (13 Nov 2026, ticket oed8cP8XYutjPTbQKui7)**.
+  The Franchise page on personalisationhub.com gates its product tour behind a
+  form, and the people who fill it in are individuals applying for a franchise,
+  not companies. They are their own **lead type** and their own pipeline, so they
+  are never mixed with retail/company leads.
+  - **Data** (`leads-core.js`): every lead has `leadType`, `"company"` (the
+    default; a lead saved before this has none and reads as company) or
+    `"franchise"`. A franchise lead needs no company name, website or industry
+    (`company.name` is ""); the person is its single contact (`name`, `email`,
+    `linkedin`), and `franchise {region, background}` holds where they plan to
+    operate (≤200 chars) and their background, one of `agency` (Agency media or
+    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
+    `marketing`, `other` (Something else). Its stages are `FRANCHISE_STAGES`:
+    **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
+    **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
+    allows a blank company name only on a franchise lead, keeps each type to its
+    own stages, and limits `franchise` to `region` and `background`.
+  - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
+    `lead_type` (or `leadType`) naming "Franchise opportunity" is a franchise
+    lead. Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
+    `linkedin` (optional; a value that isn't an address is dropped, not
+    refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
+    `location`), `background` (a key above or the form's label), `lead_source`
+    (stored as `sourceLabel`; "Franchise page – product tour" when not sent),
+    `page` and `test`. `source` is `website`; each submission adds to
+    `websiteActivity`. A name or an email is required and a bad email is a 400.
+    It never reads or writes Prospects (TAM), is never routed to the AWS record,
+    is never matched to a company lead, and is never enriched (the trigger skips
+    it; the Enrich route refuses it). The same email again (same test flag) is
+    the same person: their lead's inbound count and activity grow and blank
+    region/background are filled. **The website side** posts these fields from
+    the Franchise page's gate (PH Website project, `ph-website/`); the console
+    accepts them as named above.
+  - **Board**: a **Companies / Franchise opportunities** switch above the board
+    (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
+    one pipeline at a time with its own lanes. A franchise card shows the person,
+    a "Franchise opportunity" chip, region · background and the source; its
+    summary shows the person, Franchise opportunity (region, background), Lead
+    (type, stage, assignee, source, source page, dates), website activity and
+    history, with no company, AWS team or research, and no Enrich button. New lead
+    on the franchise view opens the form as **New franchise opportunity**: the
+    person's full name, email and LinkedIn, where they plan to operate,
+    background and the pipeline; no company fields, research or customer account.
+  - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
+    `leadType`, `leadTypeLabel`, `name` (the company, or the person),
+    `region`, `background` and `backgroundLabel` alongside `source` /
+    `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
+    `leadType: "franchise"` with the person as the only contact plus `region`
+    and `background` (no company needed); `update_lead` edits region and
+    background but refuses a type change; `update_lead_stage` accepts only the
+    lead's own pipeline's stages; `get_lead`/the others find a franchise lead by
+    the person's name; `link_lead_customer_account` and `link_lead_prospect`
+    refuse a franchise lead.
+  - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
+    address, repeat person, company leads unchanged, the MCP views and filter),
+    `test/lead-enrich.test.js` (never researched), the franchise cases in
+    `test/firestore-rules.test.js`, and the "franchise opportunities" scenario in
+    `test/ui/console-click.test.mjs`.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js` (the agent stubbed), the "company research" scenario in `test/ui/console-click.test.mjs`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.
