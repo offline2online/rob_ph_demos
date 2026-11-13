@@ -2607,7 +2607,7 @@ every destination already existed.
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
   **Network operator inquiries (13 Nov 2026)**: a submission with `lead_type` (or
-  `leadType`) "operator" or "Network operator inquiry" (the Be Your Own Boss page's
+  `leadType`) "operator" or "Network operator inquiry" (the Run Your Own RMN page's
   product tour gate) is an individual, not a company: shown as "Network operator
   inquiry", stored as `leadType: "operator"`, the person as the one contact,
   `operator {region, background}`, its own stages (Applied, Screening, Intro call,

@@ -16,7 +16,7 @@
 // planInbound): a second person from the same company and country joins that
 // company's lead, and anyone from AWS goes to the AWS tile, from which an editor
 // attaches them to a customer account's AWS team (prospectCompanies awsTeam).
-// Network operator inquiries (leadType "operator", from the Be Your Own Boss
+// Network operator inquiries (leadType "operator", from the Run Your Own RMN
 // page's product tour gate) are people, not companies: the Companies / Network
 // operators switch shows one pipeline at a time, each with its own lanes,
 // and a network operator inquiry is never matched to Prospects (TAM) or researched.

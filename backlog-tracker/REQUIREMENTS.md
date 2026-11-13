@@ -4406,9 +4406,10 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7
-  and 6b5y1gKRyX41YlEbm0V3)**.
-  The Be Your Own Boss page on personalisationhub.com gates its product tour
+- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7,
+  6b5y1gKRyX41YlEbm0V3 and LxEl9BwUwujmmz1YoE6C)**.
+  The Run Your Own RMN (Run Your Own Retail Media Network) page on
+  personalisationhub.com, at `/run-your-own-rmn/`, gates its product tour
   behind a form, and the people who fill it in are individuals asking about the
   network operator offer, not companies. They are their own **lead type** and
   their own pipeline, so they are never mixed with retail/company leads.
@@ -4417,7 +4418,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     chip, the lead detail's Type, MCP `list_leads`/`get_lead`), the board switch
     **Companies / Network operators**, the form **New network operator
     inquiry**, the detail's section **Network operator**, and the default source
-    label **Be Your Own Boss page – product tour**. The internal names follow:
+    label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
     {region, background}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
@@ -4447,7 +4448,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
     `location`), `background` (a key above or the form's label), `lead_source`
-    (stored as `sourceLabel`; "Be Your Own Boss page – product tour" when not sent),
+    (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
     It never reads or writes Prospects (TAM), is never routed to the AWS record,
@@ -4455,7 +4456,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
     region/background are filled. **The website side** posts these fields from
-    the Be Your Own Boss page's gate (PH Website project, `ph-website/`); the console
+    the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows

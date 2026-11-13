@@ -1142,7 +1142,7 @@ const scenarios = [
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
       fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech" },
         contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "https://linkedin.com/in/alex" }],
-        stage: "applied", source: "website", sourceLabel: "Be Your Own Boss page – product tour", sourcePage: "/be-your-own-boss/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+        stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – product tour", sourcePage: "/run-your-own-rmn/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }),
     async run(c) {
       await c.boardReady();
@@ -1166,7 +1166,7 @@ const scenarios = [
       await c.page.click('.lead-lane[data-stage="applied"] .lead-card .lead-card-name');
       await c.visible("#lead-sum-operator", "the summary shows the operator details");
       const sum = await c.text("#lead-summary-panel");
-      assert.ok(sum.includes("Be Your Own Boss page – product tour"), "the source shows");
+      assert.ok(sum.includes("Run Your Own RMN page – product tour"), "the source shows");
       assert.ok(sum.includes("Network operator inquiry"), "Type: Network operator inquiry");
       assert.strictEqual((await c.text("#lead-sum-operator h3")).trim(), "Network operator", "the section is headed Network operator");
       assert.ok(!/fr[a]nchis/i.test(sum), "the summary never shows the old word: " + sum);
