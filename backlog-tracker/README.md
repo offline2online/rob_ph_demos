@@ -2608,14 +2608,15 @@ every destination already existed.
   **Website leads** arrive at `/leadIngest/v1/submit` (`functions/lead-ingest.js`, key
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
-  **Franchise opportunities (13 Nov 2026)**: a submission with `lead_type`
-  "Franchise opportunity" (the Franchise page's product tour gate) is an individual,
-  not a company: `leadType: "franchise"`, the person as the one contact, `franchise
-  {region, background}`, its own stages (Applied, Screening, Intro call, Approved,
-  Not a fit), and no TAM matching, AWS routing or enrichment. The board's
-  **Companies / Franchise opportunities** switch shows one pipeline at a time;
-  `list_leads` filters by `leadType`. See REQUIREMENTS.md → "Leads: Franchise
-  opportunities".
+  **Network operator inquiries (13 Nov 2026)**: a submission with `lead_type` (or
+  `leadType`) "operator" or "Network operator inquiry" (the Be Your Own Boss page's
+  product tour gate) is an individual, not a company: shown as "Network operator
+  inquiry", stored as `leadType: "operator"`, the person as the one contact,
+  `operator {region, background}`, its own stages (Applied, Screening, Intro call,
+  Approved, Not a fit), and no TAM matching, AWS routing or enrichment. No other key
+  is accepted for this type. The board's **Companies / Network operators** switch
+  shows one pipeline at a time; `list_leads` filters by `leadType`. See
+  REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules
   (`REQUIREMENTS.md` → "Leads: Apple-style board, form and detail view"). The

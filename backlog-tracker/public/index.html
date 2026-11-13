@@ -1174,13 +1174,13 @@
          summary drawer, whose Stage select moves it without dragging. Rendered by js/leads-page.js. -->
     <section class="faq-admin-page leads-page" id="leads-page" hidden>
       <div class="page-header leads-header">
-        <h2>Leads<button type="button" class="info-tip" data-tip="One card per company, in its stage of the sales pipeline. Drag a card to another stage, or open it to change the stage, edit the lead or refresh its company research. Franchise opportunities are people, not companies, and have their own pipeline." aria-label="About Leads">i</button></h2>
+        <h2>Leads<button type="button" class="info-tip" data-tip="One card per company, in its stage of the sales pipeline. Drag a card to another stage, or open it to change the stage, edit the lead or refresh its company research. Network operator inquiries are people, not companies, and have their own pipeline." aria-label="About Leads">i</button></h2>
         <button type="button" class="btn-primary leads-add" id="leads-add-btn" data-editor-only><span class="material-symbols-outlined" aria-hidden="true">add</span>New lead</button>
       </div>
-      <!-- Lead type: company leads and franchise opportunities (individuals) are separate pipelines. -->
+      <!-- Lead type: company leads and network operator inquiries (individuals, key "operator") are separate pipelines. -->
       <div class="seg leads-type" id="leads-type" role="tablist" aria-label="Lead type">
         <button type="button" role="tab" id="leads-type-company" data-lead-type="company" aria-selected="true">Companies <span class="leads-type-count" id="leads-type-company-count"></span></button>
-        <button type="button" role="tab" id="leads-type-franchise" data-lead-type="franchise" aria-selected="false">Franchise opportunities <span class="leads-type-count" id="leads-type-franchise-count"></span></button>
+        <button type="button" role="tab" id="leads-type-operator" data-lead-type="operator" aria-selected="false">Network operators <span class="leads-type-count" id="leads-type-operator-count"></span></button>
       </div>
       <div class="ap-empty" id="leads-empty" hidden><p class="ap-empty-text" id="leads-empty-text">No leads yet</p><button type="button" class="btn-ghost ap-accent-btn" id="leads-empty-add" data-editor-only>New lead</button></div>
       <!-- People from AWS: contacts on the AWS TAM record, never customer leads (js/leads-page.js). -->
@@ -1304,8 +1304,8 @@
           </section>
 
           <div id="lead-contacts"></div>
-          <section class="ap-section" id="lead-franchise-section" hidden>
-            <h3 class="ap-group-title lead-section">Franchise opportunity</h3>
+          <section class="ap-section" id="lead-operator-section" hidden>
+            <h3 class="ap-group-title lead-section">Network operator</h3>
             <div class="ap-group">
               <div class="ap-row ap-field"><label class="ap-row-label" for="lead-region">Where they plan to operate</label><input type="text" id="lead-region" maxlength="200" autocomplete="off"></div>
               <div class="ap-row ap-field"><label class="ap-row-label" for="lead-background">Background</label><select id="lead-background"></select></div>

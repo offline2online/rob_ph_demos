@@ -25,7 +25,7 @@
 //   • only while Partner Central's catalogue is "AWS": in "Sandbox" every hit
 //     goes to GA4's validation endpoint (/debug/mp/collect) and nothing is
 //     recorded as sent, so sandbox data never lands in reports;
-//   • test leads and franchise applicants are skipped; one GA4 client per opportunity (the newest);
+//   • test leads and network operator inquiries are skipped; one GA4 client per opportunity (the newest);
 //   • aceGa4Sync/{opportunityId} records what was sent, so a re-run sends
 //     nothing twice and a failed send is retried next hour;
 //   • the Measurement Protocol secret is the GA4_MP_API_SECRET function
@@ -95,8 +95,9 @@ function createAceGa4Job({ db, partnerCentral, apiSecret, boardKey = () => "", f
     if (!secret || secret === "unset") { logger.warn("aceToGa4: GA4_MP_API_SECRET is not set, nothing sent"); return { skipped: "no secret" }; }
     const leads = (await db.collection("leads").get()).docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      // A franchise applicant is a person, never an ACE opportunity: matching one by name could credit the wrong visitor.
-      .filter((l) => l.test !== true && l.leadType !== "franchise" && Array.isArray(l.gaClientIds) && l.gaClientIds.some((g) => g && g.clientId));
+      // Only company leads: a network operator inquiry (leadType "operator") is a person, never an ACE
+      // opportunity, so matching one by name could credit the wrong visitor.
+      .filter((l) => l.test !== true && (l.leadType || "company") === "company" && Array.isArray(l.gaClientIds) && l.gaClientIds.some((g) => g && g.clientId));
     if (!leads.length) return { leads: 0, sent: 0 };
     const ace = await partnerCentral.aceOpportunities({ by: "aceToGa4" });
     const live = ace.catalog === "AWS";

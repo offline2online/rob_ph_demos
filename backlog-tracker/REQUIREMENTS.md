@@ -3003,6 +3003,18 @@ MCP `create_faq_article` / `update_faq_article` accept them (update still only
 parks a pending revision) and `get_faq_article` reports `missingSeoFields`.
 The release Help Centre audit flags articles missing them.
 
+**A description is never cut mid-word** (13 Nov 2026). When an article has no
+`metaDescription` and its summary is longer than 155 characters, the export
+and the live feed add a derived `seoDescription`: the summary cut at the last
+word boundary that fits, ending "…" (`descriptionFromSummary` in
+`functions/faq-feed.js`). The Support Centre reads `seoDescription` before
+`metaDescription`, so it never falls back to its own 155-character cut. It is
+derived on every export, never stored in Firestore and never read back by
+`faq-sync.js`; an editor's `metaDescription` suppresses it.
+`test/faq-copy.test.js` checks every published article's description, and
+that the offer's retired name (use "brand"), client names and US spellings stay out of
+published copy.
+
 **Why.** A ticket merging to `main` changes what the product does; the
 public help centre describes what the product does. The old
 `faqAutoFlagOnLive` toggle only ever said "something in this project
@@ -3087,7 +3099,12 @@ flow's own proposals always set it (it's what promotion keys go-live on),
 while an MCP-originated proposal (`update_faq_article`, below) omits it
 entirely, since no backlog ticket triggered it. `faq-sync.js` merges and
 never touches these fields; `faq-export.js` exports only the live fields,
-so a proposal never leaks onto the public site.
+so a proposal never leaks onto the public site. Parking or rejecting a proposal bumps
+`updatedAt` but is not a live edit: `faq-sync.js` treats an article as
+edited in the console only when its live fields no longer hash to the
+`contentHash` its last sync stored (`scripts/faq-sync-lib.js` →
+`editedSinceSync`), so a repo fix still reaches an article with a pending
+revision (13 Nov 2026).
 
 **Also written by a person's own agent, via MCP.** Two write tools on
 `functions/mcp-server.js` (see "Functional requirements — team access & the
@@ -4240,7 +4257,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     "test", an obvious pitch, a disposable email domain), with no model call.
     Then one small call (`claudeScreen`, `claude-sonnet-5-5` at low effort,
     three searches at most) decides two things: is this a real trading
-    organisation, and does it operate, franchise or supply media to physical
+    organisation, and does it operate, license or supply media to physical
     customer-facing sites. Only "yes" to both goes on to research; "can't
     confirm" counts as no. A record that fails gets
     `enrichment.request.status: "skipped"` and `enrichment.screen {at, ok,
@@ -4389,30 +4406,48 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- **Leads: Franchise opportunities (13 Nov 2026, ticket oed8cP8XYutjPTbQKui7)**.
-  The Franchise page on personalisationhub.com gates its product tour behind a
-  form, and the people who fill it in are individuals applying for a franchise,
-  not companies. They are their own **lead type** and their own pipeline, so they
-  are never mixed with retail/company leads.
+- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7
+  and 6b5y1gKRyX41YlEbm0V3)**.
+  The Be Your Own Boss page on personalisationhub.com gates its product tour
+  behind a form, and the people who fill it in are individuals asking about the
+  network operator offer, not companies. They are their own **lead type** and
+  their own pipeline, so they are never mixed with retail/company leads.
+  - **Name and key (6b5y1gKRyX41YlEbm0V3)**: everything a person sees calls
+    this type **Network operator inquiry** (the label, `leadTypeLabel`, the board
+    chip, the lead detail's Type, MCP `list_leads`/`get_lead`), the board switch
+    **Companies / Network operators**, the form **New network operator
+    inquiry**, the detail's section **Network operator**, and the default source
+    label **Be Your Own Boss page – product tour**. The internal names follow:
+    the `leadType` key is `"operator"`, the Firestore field is `operator
+    {region, background}`, the constants are `OPERATOR_*`, the website intake
+    function is `operatorFromWebsite`, and the DOM ids and CSS classes use
+    `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
+    (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
+    this type existed when the key changed (confirm at deploy that `leads` holds
+    no document with another key for this type).
   - **Data** (`leads-core.js`): every lead has `leadType`, `"company"` (the
     default; a lead saved before this has none and reads as company) or
-    `"franchise"`. A franchise lead needs no company name, website or industry
+    `"operator"`. A network operator inquiry needs no company name, website or industry
     (`company.name` is ""); the person is its single contact (`name`, `email`,
-    `linkedin`), and `franchise {region, background}` holds where they plan to
+    `linkedin`), and `operator {region, background}` holds where they plan to
     operate (≤200 chars) and their background, one of `agency` (Agency media or
     account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
-    `marketing`, `other` (Something else). Its stages are `FRANCHISE_STAGES`:
+    `marketing`, `other` (Something else). Its stages are `OPERATOR_STAGES`:
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
-    allows a blank company name only on a franchise lead, keeps each type to its
-    own stages, and limits `franchise` to `region` and `background`.
+    allows a blank company name only on an `operator` lead, keeps each type to its
+    own stages, and limits `operator` to `region` and `background`.
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
-    `lead_type` (or `leadType`) naming "Franchise opportunity" is a franchise
-    lead. Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
+    `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
+    operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
+    network operator inquiry. The website sends `leadType: "operator"`. No other
+    key is accepted for this type: any other value, including the offer's retired
+    key, is a company lead (and `company`, which the website may fill with the
+    person's name, is ignored for an operator lead). Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
     `location`), `background` (a key above or the form's label), `lead_source`
-    (stored as `sourceLabel`; "Franchise page – product tour" when not sent),
+    (stored as `sourceLabel`; "Be Your Own Boss page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
     It never reads or writes Prospects (TAM), is never routed to the AWS record,
@@ -4420,32 +4455,32 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
     region/background are filled. **The website side** posts these fields from
-    the Franchise page's gate (PH Website project, `ph-website/`); the console
+    the Be Your Own Boss page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
-  - **Board**: a **Companies / Franchise opportunities** switch above the board
+  - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
-    one pipeline at a time with its own lanes. A franchise card shows the person,
-    a "Franchise opportunity" chip, region · background and the source; its
-    summary shows the person, Franchise opportunity (region, background), Lead
+    one pipeline at a time with its own lanes. A network operator card shows the
+    person, a "Network operator inquiry" chip, region · background and the source;
+    its summary shows the person, Network operator (region, background), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
-    on the franchise view opens the form as **New franchise opportunity**: the
+    on that view opens the form as **New network operator inquiry**: the
     person's full name, email and LinkedIn, where they plan to operate,
     background and the pipeline; no company fields, research or customer account.
   - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
     `leadType`, `leadTypeLabel`, `name` (the company, or the person),
     `region`, `background` and `backgroundLabel` alongside `source` /
     `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
-    `leadType: "franchise"` with the person as the only contact plus `region`
+    `leadType: "operator"` with the person as the only contact plus `region`
     and `background` (no company needed); `update_lead` edits region and
     background but refuses a type change; `update_lead_stage` accepts only the
-    lead's own pipeline's stages; `get_lead`/the others find a franchise lead by
+    lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
-    refuse a franchise lead.
+    refuse a network operator inquiry.
   - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
     address, repeat person, company leads unchanged, the MCP views and filter),
-    `test/lead-enrich.test.js` (never researched), the franchise cases in
-    `test/firestore-rules.test.js`, and the "franchise opportunities" scenario in
+    `test/lead-enrich.test.js` (never researched), the network operator cases in
+    `test/firestore-rules.test.js`, and the "network operator inquiries" scenario in
     `test/ui/console-click.test.mjs`.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js` (the agent stubbed), the "company research" scenario in `test/ui/console-click.test.mjs`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in

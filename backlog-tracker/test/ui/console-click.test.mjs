@@ -1137,43 +1137,52 @@ const scenarios = [
     },
   },
   {
-    name: "Promote: Leads - franchise opportunities are their own pipeline: filter by type, add a person with no company, move them",
+    name: "Promote: Leads - network operator inquiries are their own pipeline: filter by type, add a person with no company, move them",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
-      fx: { leadType: "franchise", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, franchise: { region: "Leeds, UK", background: "adtech" },
+      fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech" },
         contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "https://linkedin.com/in/alex" }],
-        stage: "applied", source: "website", sourceLabel: "Franchise page – product tour", sourcePage: "/franchise/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+        stage: "applied", source: "website", sourceLabel: "Be Your Own Boss page – product tour", sourcePage: "/be-your-own-boss/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }),
     async run(c) {
       await c.boardReady();
       await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
       await c.visible('.lead-lane[data-stage="demo"] .lead-card', "the company lead is on the Companies board");
-      assert.ok(!(await c.text("#leads-board")).includes("Alex Rivers"), "a franchise opportunity is not mixed into the company pipeline");
+      assert.ok(!(await c.text("#leads-board")).includes("Alex Rivers"), "a network operator inquiry is not mixed into the company pipeline");
       assert.strictEqual(await c.page.getAttribute("#leads-type-company", "aria-selected"), "true");
-      // Filter by type: the franchise pipeline has its own lanes.
-      for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-franchise", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-franchise"); await c.page.waitForTimeout(400); }
-      await c.visible('.lead-lane[data-stage="applied"] .lead-card', "the franchise opportunity is in Applied");
+      // The switch reads "Companies / Network operators" (the key is "operator").
+      assert.strictEqual((await c.text("#leads-type-company")).replace(/\d+/g, "").trim(), "Companies");
+      assert.strictEqual((await c.text("#leads-type-operator")).replace(/\d+/g, "").trim(), "Network operators");
+      assert.strictEqual((await c.text("#leads-type-operator-count")).trim(), "1", "the switch shows the count");
+      // Filter by type: the network operator pipeline has its own lanes.
+      for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-operator", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-operator"); await c.page.waitForTimeout(400); }
+      await c.visible('.lead-lane[data-stage="applied"] .lead-card', "the network operator inquiry is in Applied");
       const lanes = await c.page.evaluate(() => [...document.querySelectorAll("#leads-board .lead-lane-head h3")].map((e) => e.textContent.trim()));
       assert.deepStrictEqual(lanes, ["Applied", "Screening", "Intro call", "Approved", "Not a fit"]);
       const card = await c.text('.lead-lane[data-stage="applied"] .lead-card');
-      assert.ok(card.includes("Alex Rivers") && card.includes("Franchise opportunity") && card.includes("Leeds, UK") && card.includes("Ad-tech sales or partnerships"), card);
-      assert.ok(!(await c.text("#leads-board")).includes("Existing Co"), "company leads are not on the franchise board");
+      assert.ok(card.includes("Alex Rivers") && card.includes("Network operator inquiry") && card.includes("Leeds, UK") && card.includes("Ad-tech sales or partnerships"), card);
+      assert.ok(!(await c.text("#leads-board")).includes("Existing Co"), "company leads are not on the operator board");
       // The summary: the person, region, background, source; no company research.
       await c.page.click('.lead-lane[data-stage="applied"] .lead-card .lead-card-name');
-      await c.visible("#lead-sum-franchise", "the summary shows the franchise details");
+      await c.visible("#lead-sum-operator", "the summary shows the operator details");
       const sum = await c.text("#lead-summary-panel");
-      assert.ok(sum.includes("Franchise page – product tour"), "the source shows");
+      assert.ok(sum.includes("Be Your Own Boss page – product tour"), "the source shows");
+      assert.ok(sum.includes("Network operator inquiry"), "Type: Network operator inquiry");
+      assert.strictEqual((await c.text("#lead-sum-operator h3")).trim(), "Network operator", "the section is headed Network operator");
+      assert.ok(!/fr[a]nchis/i.test(sum), "the summary never shows the old word: " + sum);
+      assert.ok(!/fr[a]nchis/i.test(await c.text("#leads-page")), "the board never shows the old word");
       assert.ok(sum.includes("Leeds, UK") && sum.includes("Ad-tech sales or partnerships") && sum.includes("Alex Rivers"), "region, background and the person show");
       assert.ok(await c.page.locator("#lead-sum-enrich").isHidden(), "a person is not researched");
       assert.strictEqual(await c.page.locator("#lead-sum-company").count(), 0, "no company section");
       await c.page.selectOption("#lead-sum-stage", "intro-call");
       await c.page.keyboard.press("Escape");
       await c.visible('.lead-lane[data-stage="intro-call"] .lead-card', "moved to Intro call");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fx").stage)) === "intro-call", "the franchise stage to persist", 5000);
-      // A new franchise opportunity needs no company.
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fx").stage)) === "intro-call", "the operator stage to persist", 5000);
+      // A new network operator inquiry needs no company.
       for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) { await c.page.click("#leads-add-btn"); await c.page.waitForTimeout(600); }
       await c.visible("#lead-form", "the form opens");
-      assert.strictEqual((await c.text("#lead-title")).trim(), "New franchise opportunity");
+      assert.strictEqual((await c.text("#lead-title")).trim(), "New network operator inquiry");
+      assert.ok(!/fr[a]nchis/i.test(await c.page.evaluate(() => document.getElementById("lead-form").innerText)), "the form never shows the old word");
       assert.ok(await c.page.locator("#lead-company-section").isHidden(), "no company fields");
       await c.page.fill("#lead-region", "Bristol");
       await c.page.click("#lead-save");
@@ -1185,9 +1194,9 @@ const scenarios = [
       await c.page.click("#lead-save");
       await c.visible('.lead-lane[data-stage="applied"] .lead-card', "the new person is in Applied");
       const made = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Sam Field") return v; return null; });
-      assert.ok(made, "the franchise lead was written");
-      assert.strictEqual(made.leadType, "franchise"); assert.strictEqual(made.company.name, "");
-      assert.deepStrictEqual(made.franchise, { region: "Bristol", background: "marketing" });
+      assert.ok(made, "the network operator inquiry was written");
+      assert.strictEqual(made.leadType, "operator"); assert.strictEqual(made.company.name, "");
+      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "marketing" });
       assert.strictEqual(made.prospectId, undefined, "never matched to Prospects (TAM)");
       // Back to the company pipeline.
       for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-company", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-company"); await c.page.waitForTimeout(400); }

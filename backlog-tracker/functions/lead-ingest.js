@@ -23,9 +23,9 @@
 // A submission with test=true is stored as a test lead: it is never matched
 // with a real lead or a TAM record, and is excluded from enrichment
 // (lead-enrich.js) and the MCP tools (leads.js).
-// A submission with lead_type "Franchise opportunity" (the Franchise page's
-// product tour gate) is an individual, not a company: it becomes a franchise
-// lead (leadType "franchise", Applied stage) with the person as its contact,
+// A submission with lead_type (or leadType) "operator" or "Network operator inquiry"
+// (the Be Your Own Boss page's product tour gate) is an individual, not a company:
+// it becomes a network operator inquiry (leadType "operator", Applied stage) with the person as its contact,
 // and never touches Prospects (TAM), the AWS record, company matching or
 // enrichment. The same email again (same test flag) is the same person: the
 // submission is added to their lead's website activity and inbound count.
@@ -111,33 +111,33 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
     return [201, { ...out, created: true }];
   }
 
-  // A franchise applicant: matched to an earlier franchise lead only by email.
-  async function franchise(r, entry) {
+  // A network operator inquiry: matched to an earlier one only by email.
+  async function operator(r, entry) {
     const col = db.collection("leads");
     const email = nameKey(r.contact.email);
     const existing = email ? (await col.get()).docs.find((d) => {
       const x = d.data() || {};
-      return x.leadType === "franchise" && (x.test === true) === r.test && (x.contacts || []).some((c) => nameKey(c && c.email) === email);
+      return x.leadType === "operator" && (x.test === true) === r.test && (x.contacts || []).some((c) => nameKey(c && c.email) === email);
     }) : null;
     if (!existing) {
       const ref = await col.add(newLead(r, entry, { inboundCount: 1 }));
-      return [201, { ok: true, leadId: ref.id, created: true, leadType: "franchise", test: r.test }];
+      return [201, { ok: true, leadId: ref.id, created: true, leadType: "operator", test: r.test }];
     }
     const cur = core.normaliseLead(existing.id, existing.data());
-    const was = cur.franchise || { region: "", background: "" };
+    const was = cur.operator || { region: "", background: "" };
     const contacts = cur.contacts.map(({ enrichment, ...c }) => (enrichment ? { ...c, enrichment } : c));
     const i = contacts.findIndex((c) => nameKey(c.email) === email);
     if (i >= 0) for (const k of ["name", "linkedin"]) if (!contacts[i][k] && r.contact[k]) contacts[i][k] = r.contact[k];
     await existing.ref.update({
       contacts, inboundCount: (cur.inboundCount || 0) + 1,
-      franchise: { region: was.region || r.fields.franchise.region, background: was.background || r.fields.franchise.background },
+      operator: { region: was.region || r.fields.operator.region, background: was.background || r.fields.operator.background },
       ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage }),
       ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
       websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
       ...(r.ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, r.ga) } : {}),
       ...stamps(),
     });
-    return [200, { ok: true, leadId: existing.id, created: false, leadType: "franchise", test: r.test }];
+    return [200, { ok: true, leadId: existing.id, created: false, leadType: "operator", test: r.test }];
   }
 
   const httpUrl = (v) => { try { const u = new URL(String(v || "")); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; } catch { return ""; } };
@@ -167,7 +167,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       if (ld) { const more = logosOf((ld.data() || {}).enrichment); for (const k of ["light", "dark", "icon"]) if (!out.logos[k]) out.logos[k] = more[k]; }
     } else if (name) {
       // A lead that is not in the TAM yet, by company name.
-      const hit = lSnap.docs.find((d) => (d.data() || {}).test !== true && (d.data() || {}).leadType !== "franchise" && (d.data() || {}).archived !== true && tam.companyKey(((d.data() || {}).company || {}).name) === tam.companyKey(name));
+      const hit = lSnap.docs.find((d) => (d.data() || {}).test !== true && (d.data() || {}).leadType !== "operator" && (d.data() || {}).archived !== true && tam.companyKey(((d.data() || {}).company || {}).name) === tam.companyKey(name));
       if (hit) { const d = hit.data() || {}; out = { name: String((d.company || {}).name || ""), industry: String((d.company || {}).industry || ""), logos: logosOf(d.enrichment) }; }
     }
     if (!out) return [200, { found: false }];
@@ -192,7 +192,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
     // The visitor's GA4 client_id (website PH GA4 snippet), for ace-ga4.js. Test leads never reach GA4.
     r.ga = r.test ? null : core.gaEntryFromWebsite(req.body, entry.at);
     try {
-      const [status, body] = r.fields.leadType === "franchise" ? await franchise(r, entry) : r.test ? await byName(r, entry) : await intoTam(r, entry);
+      const [status, body] = r.fields.leadType === "operator" ? await operator(r, entry) : r.test ? await byName(r, entry) : await intoTam(r, entry);
       return send(res, status, body);
     } catch (err) {
       if (logger) logger.error("leadIngest failed", { error: String(err && err.message || err) });
