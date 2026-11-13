@@ -87,6 +87,16 @@ function lead_ingest_body( array $lead ) {
 	if ( '' !== $s( 'source_detail' ) ) {
 		$body['sourceDetail'] = $s( 'source_detail' );
 	}
+	// Franchise page leads (13 Nov 2026): an individual, not a company. Other pages' bodies are unchanged.
+	if ( '' !== $s( 'lead_type' ) ) {
+		$body['leadType'] = $s( 'lead_type' );
+	}
+	if ( '' !== $s( 'region' ) ) {
+		$body['region'] = $s( 'region' );
+	}
+	if ( '' !== $s( 'background' ) ) {
+		$body['background'] = $s( 'background' );
+	}
 	if ( ! empty( $lead['test'] ) ) {
 		$body['test'] = true;
 	}
