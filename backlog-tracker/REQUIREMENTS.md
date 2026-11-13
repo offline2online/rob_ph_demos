@@ -3003,6 +3003,18 @@ MCP `create_faq_article` / `update_faq_article` accept them (update still only
 parks a pending revision) and `get_faq_article` reports `missingSeoFields`.
 The release Help Centre audit flags articles missing them.
 
+**A description is never cut mid-word** (13 Nov 2026). When an article has no
+`metaDescription` and its summary is longer than 155 characters, the export
+and the live feed add a derived `seoDescription`: the summary cut at the last
+word boundary that fits, ending "…" (`descriptionFromSummary` in
+`functions/faq-feed.js`). The Support Centre reads `seoDescription` before
+`metaDescription`, so it never falls back to its own 155-character cut. It is
+derived on every export, never stored in Firestore and never read back by
+`faq-sync.js`; an editor's `metaDescription` suppresses it.
+`test/faq-copy.test.js` checks every published article's description, and
+that the retired word "franchise", client names and US spellings stay out of
+published copy.
+
 **Why.** A ticket merging to `main` changes what the product does; the
 public help centre describes what the product does. The old
 `faqAutoFlagOnLive` toggle only ever said "something in this project
@@ -3087,7 +3099,12 @@ flow's own proposals always set it (it's what promotion keys go-live on),
 while an MCP-originated proposal (`update_faq_article`, below) omits it
 entirely, since no backlog ticket triggered it. `faq-sync.js` merges and
 never touches these fields; `faq-export.js` exports only the live fields,
-so a proposal never leaks onto the public site.
+so a proposal never leaks onto the public site. Parking or rejecting a proposal bumps
+`updatedAt` but is not a live edit: `faq-sync.js` treats an article as
+edited in the console only when its live fields no longer hash to the
+`contentHash` its last sync stored (`scripts/faq-sync-lib.js` →
+`editedSinceSync`), so a repo fix still reaches an article with a pending
+revision (13 Nov 2026).
 
 **Also written by a person's own agent, via MCP.** Two write tools on
 `functions/mcp-server.js` (see "Functional requirements — team access & the

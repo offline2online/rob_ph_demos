@@ -83,7 +83,12 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   and fallback.
 - Bulk content work done in git (like the rewrite) lands in `data/` and the
   same workflow syncs it repo → Firestore on push, without overwriting
-  anything edited in the console since the last sync. A deployment-train
+  anything edited in the console since the last sync. "Edited" means the
+  article's live fields no longer match the `contentHash` the last sync stored
+  (`backlog-tracker/scripts/faq-sync-lib.js`), so an article that only has a
+  pending revision or retire proposal parked on it still takes a repo change
+  (13 Nov 2026: before this, proposing a revision bumped `updatedAt` and every
+  later repo fix to that article was skipped as a conflict). A deployment-train
   merge is made with the workflow's own token and fires no push event, so
   `run-backlog-automation.js`'s `finishTrain` dispatches that sync itself
   whenever the train changed `data/` — before this (25 Sep 2026) a content
@@ -115,6 +120,21 @@ the console's article editor ("SEO & agents") and exported into
 `directAnswer` at the top of the article. The WordPress Support Centre publish
 step reads the rest from the export. See `backlog-tracker/REQUIREMENTS.md` →
 "FAQ revision review".
+
+**Descriptions never cut mid-word (13 Nov 2026).** The Support Centre uses
+`metaDescription` as the page's meta and social description, and with none set
+it used to cut the summary at 155 characters wherever it fell ("…queu",
+"…campai"). Every published article whose summary is longer than 155
+characters now has its own `metaDescription` (155 characters or fewer, ending
+on a full word). For one that doesn't, the export and the live feed add a
+derived `seoDescription` — the summary cut at a word boundary, ending "…"
+(`descriptionFromSummary` in `backlog-tracker/functions/faq-feed.js`) — which
+the Support Centre reads first. It is never stored in Firestore, and an
+editor's `metaDescription` always wins. `backlog-tracker/test/faq-copy.test.js`
+checks every published description, and that the retired word "franchise",
+client names ("One NZ") and US spellings (optimiz-, personaliz-, "Javascript",
+"enroll" other than Google's own "Enroll device" label) stay out of published
+copy.
 
 ## Article scoping (`programId` / `projectId`)
 
