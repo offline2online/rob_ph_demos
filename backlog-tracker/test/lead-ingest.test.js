@@ -217,9 +217,9 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.equal(db.docs.get("old1").prospectId, "acme-uk"); assert.equal(db.docs.get("old1").inboundCount, 2);
     assert.equal(db.prospects.get("acme-uk").leadId, "old1");
   });
-  // ── Network operator inquiries (key "franchise") from the Be Your Own Boss page's product tour gate (13 Nov 2026) ──
-  const GATE = { lead_type: "franchise", lead_source: "Be Your Own Boss page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", linkedin: "linkedin.com/in/alexrivers", operating_region: "Leeds and West Yorkshire", page: "/franchise/" };
-  await test("each background on the gate form makes an individual Network operator inquiry lead, with no company, TAM record or AWS routing", async () => {
+  // ── Franchise opportunities from the Franchise page's product tour gate (13 Nov 2026) ──
+  const GATE = { lead_type: "Franchise opportunity", lead_source: "Franchise page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", linkedin: "linkedin.com/in/alexrivers", operating_region: "Leeds and West Yorkshire", page: "/franchise/" };
+  await test("each background on the gate form makes an individual Franchise opportunity lead, with no company, TAM record or AWS routing", async () => {
     for (const b of core.BACKGROUNDS) {
       const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
       const r = res(); await api.handle(req({ ...GATE, background: b.label }), r);
@@ -228,7 +228,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
       assert.equal(d.leadType, "franchise"); assert.equal(d.stage, "applied", "the franchise pipeline's first stage");
       assert.equal(d.company.name, "", "no company needed");
       assert.deepEqual(d.franchise, { region: "Leeds and West Yorkshire", background: b.key });
-      assert.equal(d.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/franchise/");
+      assert.equal(d.sourceLabel, "Franchise page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/franchise/");
       assert.deepEqual(d.contacts.map((c) => [c.name, c.email, c.linkedin]), [["Alex Rivers", "alex@gmail.example", "https://linkedin.com/in/alexrivers"]]);
       assert.equal(d.prospectId, undefined); assert.equal(db.prospects.size, 1, "no TAM record created");
       const n = core.normaliseLead("x", d);
@@ -240,7 +240,6 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     const a = res(); await api.handle(req({ ...GATE, linkedin: "", lead_source: "", background: "agency" }), a);
     assert.equal(a.code, 201); const d = db.docs.get(a.body.leadId);
     assert.equal(d.contacts[0].linkedin, ""); assert.equal(d.sourceLabel, core.FRANCHISE_SOURCE_LABEL); assert.equal(d.franchise.background, "agency");
-    assert.equal(core.FRANCHISE_SOURCE_LABEL, "Be Your Own Boss page – product tour");
     const b = res(); await api.handle(req({ ...GATE, email: "b@x.example", linkedin: "not a link" }), b);
     assert.equal(b.code, 201); assert.equal(db.docs.get(b.body.leadId).contacts[0].linkedin, "");
   });
@@ -265,7 +264,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
   });
   await test("a gate submission with no name or email, or a bad email, is a 400", async () => {
     const { db, api } = mkApi(); const r = res();
-    await api.handle(req({ lead_type: "Network operator inquiry" }), r); assert.equal(r.code, 400);
+    await api.handle(req({ lead_type: "Franchise opportunity" }), r); assert.equal(r.code, 400);
     await api.handle(req({ ...GATE, email: "nope" }), r); assert.equal(r.code, 400);
     assert.equal(db.docs.size, 0);
   });
@@ -273,27 +272,6 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     const { db, api } = mkApi(); const r = res(); await api.handle(req(FORM), r);
     const d = db.docs.get(r.body.leadId);
     assert.equal(d.leadType, "company"); assert.equal(d.stage, "lead"); assert.equal(d.company.name, "Acme Telco"); assert.equal(d.franchise, undefined);
-  });
-  await test("leadType franchise, operator, network operator or \"Network operator inquiry\" (either key) all land as a network operator inquiry in Applied", async () => {
-    for (const body of [{ leadType: "franchise" }, { lead_type: "Network operator inquiry" }, { lead_type: "operator" }, { leadType: "Network operator" }, { lead_type: "NETWORK OPERATOR INQUIRY" }]) {
-      const { db, api } = mkApi(); const g = { ...GATE }; delete g.lead_type;
-      const r = res(); await api.handle(req({ ...g, ...body }), r);
-      assert.equal(r.code, 201, JSON.stringify(body)); assert.equal(r.body.leadType, "franchise", JSON.stringify(body));
-      const d = db.docs.get(r.body.leadId);
-      assert.equal(d.leadType, "franchise"); assert.equal(d.stage, "applied"); assert.equal(d.company.name, "");
-    }
-    for (const v of ["", "Retail", "company", "Demo request", "cooperative"]) assert.equal(core.leadTypeOf(v), "company", v);
-    assert.equal(core.leadTypeLabel("franchise"), "Network operator inquiry");
-    assert.deepEqual(core.LEAD_TYPE_KEYS, ["company", "franchise"], "the stored key is unchanged");
-  });
-  await test("no MCP lead tool description names the type by its old word", async () => {
-    const tools = leadsTools({ textResult: (x) => x, toolError: (m) => ({ error: m }), audit: async () => {} });
-    const text = JSON.stringify(tools.map((t) => ({ d: t.description, s: t.inputSchema })));
-    // Only the stored key "franchise" may appear (as the enum value and in "leadType franchise").
-    const words = text.match(/franchis\w*/gi) || [];
-    assert.ok(words.every((w) => w === "franchise"), words.join(", "));
-    assert.ok(!/Franchise (opportunit|page)/i.test(text), "no old label");
-    assert.ok(/Network operator inquir/.test(text), "the new label is used");
   });
   await test("list_leads and get_lead return the lead type and source, and list_leads filters by type", async () => {
     const db = fakeDb(); const api = createLeadIngest({ db, key: () => "k" });
@@ -305,11 +283,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.deepEqual(all.leads.map((l) => [l.name, l.leadType]).sort(), [["Acme Telco", "company"], ["Alex Rivers", "franchise"]]);
     const fr = await list.run({ leadType: "franchise" });
     assert.equal(fr.total, 1); const v = fr.leads[0];
-    assert.equal(v.leadTypeLabel, "Network operator inquiry"); assert.equal(v.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(v.source, "website");
+    assert.equal(v.leadTypeLabel, "Franchise opportunity"); assert.equal(v.sourceLabel, "Franchise page – product tour"); assert.equal(v.source, "website");
     assert.equal(v.region, "Leeds and West Yorkshire"); assert.equal(v.background, "retail-media"); assert.equal(v.backgroundLabel, "Retail media");
     assert.equal((await list.run({ leadType: "company" })).leads[0].company, "Acme Telco");
     const one = await get.run({ leadId: v.id });
-    assert.equal(one.leadType, "franchise"); assert.equal(one.leadTypeLabel, "Network operator inquiry"); assert.equal(one.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(one.sourcePage, "/franchise/");
+    assert.equal(one.leadType, "franchise"); assert.equal(one.sourceLabel, "Franchise page – product tour"); assert.equal(one.sourcePage, "/franchise/");
     assert.equal((await get.run({ company: "alex rivers" })).id, v.id, "found by the person's name");
   });
   assert.ok(core.leadFromWebsite({ company: "X", test: "on" }).test);

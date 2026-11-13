@@ -174,13 +174,13 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(prof.lastResearchedAt, "2026-11-10");
     assert.match(prof.latestNews, /Greene King opens new pubs/);
   });
-  await test("a network operator inquiry (a person, not a company) is never researched, by the trigger or the button", async () => {
+  await test("a franchise opportunity (a person, not a company) is never researched, by the trigger or the button", async () => {
     const { api, db, asked } = make();
     db.state.leads.l1.leadType = "franchise";
     assert.equal(await api.onEnrichWrite("leads", created("leads", "l1", db.state)), null);
     assert.equal(asked.length, 0);
     const r = res(); await api.handle(req({ leadId: "l1" }), r);
-    assert.equal(r.code, 400); assert.match(r.body.error, /network operator inquir/);
+    assert.equal(r.code, 400); assert.match(r.body.error, /franchise/);
   });
   await test("the trigger runs on create and on a newly queued request only, so its own writes never loop", async () => {
     const { api, db, asked } = make();

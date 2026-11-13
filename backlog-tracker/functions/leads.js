@@ -102,7 +102,7 @@ function leadsTools(h) {
       return snap.exists ? { snap } : { error: `No lead with id ${a.leadId}. Call list_leads first.` };
     }
     if (a.company) {
-      // A network operator inquiry has no company: it is found by the person's name.
+      // A franchise opportunity has no company: it is found by the person's name.
       const name = norm(a.company);
       const all = (await db().collection(COLLECTION).get()).docs;
       const exact = all.filter((d) => norm(displayOf(d)) === name);
@@ -131,10 +131,10 @@ function leadsTools(h) {
     countries: { type: "array", items: { type: "string" }, description: "Countries it operates in." },
     storeCount: { type: ["number", "null"] },
     awsAccountId: { type: "string", description: "Exactly 12 digits (dashes and spaces are tidied)." },
-    leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: `company (default, a retail/company lead) or franchise (a Network operator inquiry: an individual, no company needed; give the person as the first contact). Set when creating; it can't be changed later.` },
-    region: { type: "string", description: "Network operator inquiries: where they plan to operate." },
-    background: { type: "string", enum: ["", ...core.BACKGROUNDS.map((b) => b.key)], description: `Network operator inquiries: ${core.BACKGROUNDS.map((b) => `${b.key} (${b.label})`).join(", ")}.` },
-    stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")} (default ${core.DEFAULT_STAGE}). Network operator inquiries: ${core.FRANCHISE_STAGE_KEYS.join(", ")} (default ${core.FRANCHISE_DEFAULT_STAGE}).` },
+    leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: `company (default, a retail/company lead) or franchise (a Franchise opportunity: an individual, no company needed; give the person as the first contact). Set when creating; it can't be changed later.` },
+    region: { type: "string", description: "Franchise opportunities: where they plan to operate." },
+    background: { type: "string", enum: ["", ...core.BACKGROUNDS.map((b) => b.key)], description: `Franchise opportunities: ${core.BACKGROUNDS.map((b) => `${b.key} (${b.label})`).join(", ")}.` },
+    stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")} (default ${core.DEFAULT_STAGE}). Franchise opportunities: ${core.FRANCHISE_STAGE_KEYS.join(", ")} (default ${core.FRANCHISE_DEFAULT_STAGE}).` },
     source: { type: "string", description: 'Where it came from; "Manual" when blank.' },
     sourceDetail: { type: "string", description: "Which form or demo, up to 120 characters." },
     assignee: { type: "string", description: "A member's email, or \"\" for unassigned." },
@@ -179,12 +179,12 @@ function leadsTools(h) {
   const tools = [
     {
       name: "list_leads",
-      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or franchise (Network operator inquiries: individuals from the Be Your Own Boss page, with region and background and their own stages ${core.FRANCHISE_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
+      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or franchise (Franchise opportunities: individuals from the Franchise page, with region and background and their own stages ${core.FRANCHISE_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
       scope: "board.read",
       inputSchema: {
         type: "object",
         properties: {
-          leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: "Only company leads (company), or only network operator inquiries (franchise). Omit for both." },
+          leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: "Only company leads, or only franchise opportunities. Omit for both." },
           stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: "Only leads in this stage. Omit for every stage." },
           company: { type: "string", description: "Only companies whose name contains this text (case-insensitive)." },
           assignee: { type: "string", description: "A member's email, or \"unassigned\"." },
@@ -226,7 +226,7 @@ function leadsTools(h) {
     },
     {
       name: "get_lead",
-      description: "One lead in full: its lead type (company, or franchise for a Network operator inquiry), company fields (or, for a network operator inquiry, region and background), stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
+      description: "One lead in full: its lead type (company or franchise), company fields (or, for a franchise opportunity, region and background), stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
       scope: "board.read",
       inputSchema: { type: "object", properties: { ...REF_PROPS }, additionalProperties: false },
       async run(args) {
@@ -237,7 +237,7 @@ function leadsTools(h) {
     },
     {
       name: "create_lead",
-      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. For a Network operator inquiry (an individual) pass leadType franchise with the person as the only contact, plus region and background; no company is needed and it starts in applied. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
+      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. For a Franchise opportunity (an individual) pass leadType franchise with the person as the only contact, plus region and background; no company is needed and it starts in applied. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -277,7 +277,7 @@ function leadsTools(h) {
     },
     {
       name: "update_lead",
-      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage (and, on a network operator inquiry, region and background; its lead type can't change). Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
+      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage (and, on a franchise opportunity, region and background; its lead type can't change). Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
       scope: "board.write",
       inputSchema: { type: "object", properties: { ...REF_PROPS, ...LEAD_PROPS, newCompany: { type: "string", description: "Rename the company to this." } }, additionalProperties: false },
       async run(args, session) {
@@ -336,7 +336,7 @@ function leadsTools(h) {
       scope: "board.write",
       inputSchema: {
         type: "object",
-        properties: { ...REF_PROPS, stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")}. Network operator inquiries: ${core.FRANCHISE_STAGE_KEYS.join(", ")}.` } },
+        properties: { ...REF_PROPS, stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")}. Franchise opportunities: ${core.FRANCHISE_STAGE_KEYS.join(", ")}.` } },
         required: ["stage"], additionalProperties: false,
       },
       async run(args, session) {
@@ -443,7 +443,7 @@ function leadsTools(h) {
         const c = core.conversionFields({ id: a.accountId, name: a.accountName });
         if (c.error) return toolError(c.error);
         const before = core.normaliseLead(r.snap.id, r.snap.data());
-        if (before.leadType === "franchise") return toolError("A network operator inquiry is a person, not a customer company: it has no customer account. Move it with update_lead_stage.");
+        if (before.leadType === "franchise") return toolError("A franchise opportunity is a person, not a customer company: it has no customer account. Move it with update_lead_stage.");
         const move = a.moveToClosedWon !== false && before.stage !== "closed-won";
         const fields = { customerAccount: c.fields.customerAccount };
         if (move) { fields.stage = "closed-won"; fields.stageChangedAt = FieldValue.serverTimestamp(); }
@@ -476,7 +476,7 @@ function leadsTools(h) {
         const a = args || {};
         const r = await resolve(a);
         if (r.error) return toolError(r.error);
-        if ((r.snap.data() || {}).leadType === "franchise") return toolError("A network operator inquiry is a person, not a company: it is never linked to a Prospects (TAM) record.");
+        if ((r.snap.data() || {}).leadType === "franchise") return toolError("A franchise opportunity is a person, not a company: it is never linked to a Prospects (TAM) record.");
         const pref = db().collection("prospects").doc(String(a.prospectId));
         const p = await pref.get();
         if (!p.exists) return toolError(`No prospect with id ${a.prospectId}. Call list_prospects first.`);

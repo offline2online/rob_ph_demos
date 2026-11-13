@@ -23,9 +23,9 @@
 // A submission with test=true is stored as a test lead: it is never matched
 // with a real lead or a TAM record, and is excluded from enrichment
 // (lead-enrich.js) and the MCP tools (leads.js).
-// A submission with lead_type "franchise" / "operator" / "Network operator inquiry"
-// (the Be Your Own Boss page's product tour gate) is an individual, not a company:
-// it becomes a network operator inquiry (leadType "franchise", Applied stage) with the person as its contact,
+// A submission with lead_type "Franchise opportunity" (the Franchise page's
+// product tour gate) is an individual, not a company: it becomes a franchise
+// lead (leadType "franchise", Applied stage) with the person as its contact,
 // and never touches Prospects (TAM), the AWS record, company matching or
 // enrichment. The same email again (same test flag) is the same person: the
 // submission is added to their lead's website activity and inbound count.
@@ -110,7 +110,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
     return [201, { ...out, created: true }];
   }
 
-  // A network operator inquiry: matched to an earlier franchise lead only by email.
+  // A franchise applicant: matched to an earlier franchise lead only by email.
   async function franchise(r, entry) {
     const col = db.collection("leads");
     const email = nameKey(r.contact.email);

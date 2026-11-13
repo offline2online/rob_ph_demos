@@ -2487,7 +2487,7 @@ body { overflow-x: clip; }
 .leads-add { display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 16px 0 12px; }
 .leads-add .material-symbols-outlined { font-size: 20px; }
 .leads-page > .ap-empty { margin-bottom: 24px; }
-/* Lead type: Companies / Network operators (a segmented control, css/apple.css .seg). */
+/* Lead type: Companies / Franchise opportunities (a segmented control, css/apple.css .seg). */
 .leads-type { margin: 0 0 16px; }
 .leads-type > button { min-height: 44px; } /* 44px touch targets, like every control on the board */
 .leads-type .leads-type-count { color: var(--text-muted); font-weight: 400; }
