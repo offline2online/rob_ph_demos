@@ -82,6 +82,15 @@ const logoTiles = (e) => {
   const derived = !dark && light ? `<span class="enrich-logo-tile enrich-logo-tile-dark enrich-logo-tile-derived" title="No dark-background file was found. This is the light logo shown in white, as the walkthrough demo can do."><img src="${esc(light)}" alt="Logo shown in white for dark backgrounds" loading="lazy" referrerpolicy="no-referrer"></span>` : "";
   return `<div class="enrich-logo-tiles">${tile(light, "enrich-logo-tile-light", "Logo for light backgrounds")}${derived || tile(dark, "enrich-logo-tile-dark", "Logo for dark backgrounds")}</div>${derived ? '<span class="enrich-meta">Dark background: no separate file found, so the light logo is shown in white.</span>' : ""}`;
 };
+// A website the run worked out for itself: the address, how sure it is, and where it came from.
+const websiteGuessOf = (e) => {
+  const g = e && e.websiteGuess;
+  const u = g && safeUrl(g.url);
+  if (!u) return "";
+  let host = u; try { host = new URL(u).hostname.replace(/^www\./, ""); } catch { /* as it is */ }
+  const sure = Number(g.confidence) > 0 ? `${Math.round(Number(g.confidence))}% sure` : "not confirmed";
+  return `${link(u, host)}<span class="enrich-meta">Found automatically, ${esc(sure)}${g.from ? ` (from ${esc(g.from)})` : ""}. Check it and correct the Website field if it is wrong.</span>`;
+};
 const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
 const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");
 const insightsOf = (e) => (e ? INSIGHTS.map(([label, get]) => [label, get(e)]).filter(([, v]) => v) : []);
@@ -132,6 +141,8 @@ export function researchGroupsHTML(e) {
   const sites = sitesOf(e);
   const research = [
     sites ? stackRow(`<span class="ap-row-label">Sites</span>${sitesHTML(sites)}`, "", "enrich-sites") : "",
+    websiteGuessOf(e) ? stackRow(`<span class="ap-row-label">Website</span>${websiteGuessOf(e)}`) : "",
+    e.level === "light" ? lineRow("Basic profile only: the full research has not been run for this company.", "enrich-light") : "",
     e.summary ? stackRow(`<p class="enrich-summary">${esc(e.summary)}</p>`) : "",
     ...facts.map(([k, v]) => row(k, esc(v))),
     li ? row("LinkedIn", link(li, "Company page")) : "",
@@ -172,6 +183,8 @@ export function enrichmentHTML(e) {
   const sites = sitesOf(e);
   return `<div class="enrich-view">
     ${sites ? `<div class="enrich-sites"><p class="enrich-label">Sites</p>${sitesHTML(sites)}</div>` : ""}
+    ${websiteGuessOf(e) ? `<p class="enrich-label">Website</p><p class="enrich-line">${websiteGuessOf(e)}</p>` : ""}
+    ${e.level === "light" ? '<p class="field-hint enrich-light">Basic profile only: the full research has not been run for this company.</p>' : ""}
     ${e.summary ? `<p class="enrich-summary">${esc(e.summary)}</p>` : ""}
     ${facts.length ? `<dl class="enrich-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
     ${li ? `<p class="enrich-line">${link(li, "Company LinkedIn page")}</p>` : ""}
