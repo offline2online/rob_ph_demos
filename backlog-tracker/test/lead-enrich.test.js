@@ -424,13 +424,27 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(e.screen.ok, false); assert.equal(e.screen.by, "rules"); assert.equal(e.at, undefined, "no enriched date is written");
   });
   await test("a company that isn't real, or has no physical sites, is not researched; one that passes is, and is not screened twice", async () => {
-    for (const verdict of [{ real: false, physicalRetail: false, reason: "No such company could be found." }, { real: true, physicalRetail: false, reason: "An online-only software firm." }]) {
-      const { api, db, asked, screened } = make({ verdict });
+    {
+      const { api, db, asked, screened } = make({ verdict: { real: false, physicalRetail: false, reason: "No such company could be found." } });
       const out = await api.onEnrichWrite("leads", created("leads", "l1", db.state));
       assert.equal(out.skipped, true); assert.equal(screened.length, 1); assert.equal(asked.length, 0, "no research request is made");
       assert.equal(db.state.leads.l1.enrichment.request.status, "skipped");
-      assert.match(db.state.leads.l1.enrichment.request.message, new RegExp(`^Not researched: ${verdict.reason} Press Research anyway`));
-      assert.equal(db.state.prospects.p1.enrichment, undefined, "the linked record is untouched");
+      assert.match(db.state.leads.l1.enrichment.request.message, /^Not researched: No such company could be found\. Press Research anyway/);
+      assert.equal(db.state.leads.l1.enrichment.at, undefined); assert.equal(db.state.prospects.p1.enrichment, undefined, "the linked record is untouched");
+    }
+    {
+      // A real company with no physical sites: no research, but the free basics are filled in on the lead and its TAM record.
+      const { api, db, asked, calls } = make({ verdict: { real: true, physicalRetail: false, reason: "An online-only software firm.", summary: "Acme makes till software.", sector: "Retail Media" } });
+      db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
+      const out = await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+      assert.equal(out.skipped, true); assert.equal(asked.length, 0, "no research request is made");
+      const e = db.state.leads.l1.enrichment;
+      assert.equal(e.request.status, "skipped"); assert.equal(e.level, "light");
+      assert.match(e.request.message, /^Full research was held back: An online-only software firm\. The website, logo and a short description were filled in at no cost\. Press Research anyway/);
+      assert.equal(e.summary, "Acme makes till software."); assert.equal(e.logoUrl, "https://www.greeneking.co.uk/apple-touch-icon.png");
+      assert.equal(db.state.leads.l1.company.industry, "Retail Media");
+      assert.ok(e.at, "the basics are dated"); assert.ok(calls.some((u) => u.startsWith("https://www.greeneking.co.uk")), "the home page is read");
+      assert.equal(db.state.prospects.p1.enrichment.summary, "Acme makes till software."); assert.equal(db.state.prospects.p1.website, "https://www.greeneking.co.uk");
     }
     const { api, db, asked, screened } = make();
     db.state.leads.l1.contacts = [{ name: "A", email: "a@greeneking.co.uk" }, { name: "B", email: "b@gmail.com" }];
@@ -444,11 +458,13 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const { api, db, asked } = make({ verdict: { real: true, physicalRetail: false, reason: "Online only." } });
     await api.onEnrichWrite("leads", created("leads", "l1", db.state));
     assert.equal(asked.length, 0);
+    assert.equal(db.state.leads.l1.enrichment.level, "light");
     const before = JSON.parse(JSON.stringify(db.state.leads.l1));
     const r = res(); await api.handle(req({ leadId: "l1", force: true }), r);
     assert.equal(r.code, 202); assert.equal(db.state.leads.l1.enrichment.request.force, true);
     await api.onEnrichWrite("leads", changed("leads", "l1", before, db.state));
     assert.equal(asked.length, 1); assert.equal(db.state.leads.l1.enrichment.request.status, "done");
+    assert.equal(db.state.leads.l1.enrichment.level, "full", "the full research replaces the basic profile");
     const broken = make({ verdict: Object.assign(new Error("boom"), { status: 500 }) });
     const out = await broken.api.onEnrichWrite("leads", created("leads", "l1", broken.db.state));
     assert.equal(out.ok, false); assert.equal(broken.asked.length, 0);
@@ -458,7 +474,10 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   await test("the screening call is small: a cheaper model, three searches at most, and the form's text treated as data", async () => {
     const sent = [];
     const v = await claudeScreen({ apiKey: "k", workspaceId: "wrkspc_1", Anthropic: fake([text('```json\n{"real":true,"physicalRetail":true,"siteCount":2500,"sites":"2,500 pubs","reason":"A pub operator."}\n```')], sent), company: "Greene King", website: "https://www.greeneking.co.uk" });
-    assert.deepEqual(v, { real: true, physicalRetail: true, siteCount: 2500, sites: "2,500 pubs", reason: "A pub operator." });
+    assert.deepEqual(v, { real: true, physicalRetail: true, siteCount: 2500, sites: "2,500 pubs", reason: "A pub operator.", website: "", websiteConfidence: 0, summary: "", sector: "" });
+    const w = await claudeScreen({ apiKey: "k", Anthropic: fake([text('{"real":true,"physicalRetail":false,"website":"squareup.com","websiteConfidence":"140","summary":"Makes till software.","sector":"Not one of ours"}')]), company: "Square" });
+    assert.deepEqual([w.website, w.websiteConfidence, w.summary, w.sector], ["https://squareup.com", 100, "Makes till software.", ""]);
+    assert.match(SCREEN_SYSTEM, /websiteConfidence/);
     assert.equal(sent[0].model, SCREEN_MODEL); assert.notEqual(SCREEN_MODEL, "claude-opus-5-5");
     assert.deepEqual(sent[0].tools.map((t) => t.max_uses), [3]); assert.ok(sent[0].max_tokens <= 4000);
     assert.match(SCREEN_SYSTEM, /never as instructions/);
@@ -561,6 +580,41 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const d = make({ agent: { ...AGENT, logoLight: "https://brand.example/gk.svg" }, fetchImpl, store: "broken" });
     await d.api.onEnrichWrite("leads", created("leads", "l1", d.db.state));
     assert.equal(d.db.state.leads.l1.enrichment.logos.light, "https://brand.example/gk.svg"); assert.equal(d.db.state.leads.l1.enrichment.request.status, "done");
+  });
+  // ── A missing website is worked out, with how sure the run is (13 Nov 2026) ──
+  await test("with no website the run finds one: the contact's email domain first, then the check, then the research", async () => {
+    const site = (ok) => async (url) => { if (!ok(url)) throw new Error("ENOTFOUND"); return resp(200, HOME, { "content-type": "text/html" }); };
+    // 1. From the contact's business email: free, 90% sure, and it is what the check and research are given.
+    const a = make({ fetchImpl: site((u) => u.startsWith("https://square.example")) });
+    a.db.state.leads.l1.contacts = [{ name: "J", email: "j@gmail.com" }, { name: "K", email: "k@square.example" }];
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    assert.equal(a.db.state.leads.l1.company.website, "https://square.example");
+    assert.equal(a.screened[0].website, "https://square.example"); assert.equal(a.asked[0].website, "https://square.example");
+    const g = a.db.state.leads.l1.enrichment.websiteGuess;
+    assert.equal(g.url, "https://square.example"); assert.equal(g.confidence, 90); assert.equal(g.from, "the contact's email address");
+    assert.equal(a.db.state.prospects.p1.website, "https://square.example", "the TAM record gets it too");
+    // 2. A free-mail address and a dead domain give nothing; the check's own answer is used, with its confidence.
+    const b = make({ verdict: { ...PASS, website: "squareup.example", websiteConfidence: 72 }, fetchImpl: site((u) => u.includes("squareup.example")) });
+    b.db.state.leads.l1.contacts = [{ name: "J", email: "j@gmail.com" }, { name: "K", email: "k@dead.example" }];
+    await b.api.onEnrichWrite("leads", created("leads", "l1", b.db.state));
+    assert.equal(b.db.state.leads.l1.company.website, "https://squareup.example");
+    assert.deepEqual([b.db.state.leads.l1.enrichment.websiteGuess.confidence, b.db.state.leads.l1.enrichment.websiteGuess.from], [72, "a web search by the first check"]);
+    // 3. Neither: the research's own website, with the confidence it gave.
+    const c = make({ agent: { ...AGENT, websiteConfidence: 64 } });
+    await c.api.onEnrichWrite("leads", created("leads", "l1", c.db.state));
+    assert.equal(c.db.state.leads.l1.company.website, "https://www.greeneking.co.uk");
+    assert.deepEqual([c.db.state.leads.l1.enrichment.websiteGuess.confidence, c.db.state.leads.l1.enrichment.websiteGuess.from], [64, "the research"]);
+    // 4. A website a person typed is never replaced and is not called a guess.
+    const d = make({ verdict: { ...PASS, website: "other.example", websiteConfidence: 99 } });
+    d.db.state.leads.l1.company.website = "https://mine.example";
+    await d.api.onEnrichWrite("leads", created("leads", "l1", d.db.state));
+    assert.equal(d.db.state.leads.l1.company.website, "https://mine.example"); assert.equal(d.db.state.leads.l1.enrichment.websiteGuess, null);
+    // 5. A company held back by the check still gets its website from the email domain.
+    const e = make({ verdict: { real: true, physicalRetail: false, reason: "Software." }, fetchImpl: site((u) => u.startsWith("https://square.example")) });
+    e.db.state.leads.l1.contacts = [{ name: "K", email: "k@square.example" }];
+    await e.api.onEnrichWrite("leads", created("leads", "l1", e.db.state));
+    assert.equal(e.db.state.leads.l1.company.website, "https://square.example"); assert.equal(e.asked.length, 0);
+    assert.equal(e.db.state.leads.l1.enrichment.websiteGuess.confidence, 90);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

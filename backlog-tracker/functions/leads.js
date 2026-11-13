@@ -43,7 +43,8 @@ function view(id, data) {
 
 // What the research agent found (lead-enrich.js), as get_lead returns it.
 function researchView(e) {
-  if (!e || typeof e !== "object" || !e.at) return null;
+  // Also returned for a lead no run has filled yet, so the reason a run stopped can be read.
+  if (!e || typeof e !== "object" || (!e.at && !e.request)) return null;
   const t = (v) => (typeof v === "string" && v ? v : null);
   const list = (v) => (Array.isArray(v) ? v : []);
   const r = e.request && typeof e.request === "object" ? e.request : null;
@@ -55,6 +56,8 @@ function researchView(e) {
     inStoreDigital: t(e.inStoreDigital), loyalty: t(e.loyalty), estate: t(e.estate), strategy: t(e.strategy), fit: t(e.fit),
     talkingPoints: list(e.talkingPoints),
     vendors: list(e.vendors), people: list(e.people), news: list(e.news), financials: e.financials || null, facts: list(e.facts),
+    level: t(e.level), websiteGuess: e.websiteGuess && typeof e.websiteGuess === "object" ? { url: t(e.websiteGuess.url), confidence: e.websiteGuess.confidence || null, from: t(e.websiteGuess.from) } : null,
+    check: e.screen && typeof e.screen === "object" ? { passed: e.screen.ok === true, real: e.screen.real === true, physicalRetail: e.screen.physicalRetail === true, reason: t(e.screen.reason) } : null,
     lastRun: r ? { status: r.status || null, message: r.message || null } : null,
   };
 }

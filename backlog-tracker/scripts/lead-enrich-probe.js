@@ -150,7 +150,36 @@ async function leadStatus(id) {
   process.exit(0);
 }
 
+// PIPELINE="Company|contact@email|https://website": runs the whole flow a new
+// lead goes through (website finder, the check, then the basics or the full
+// research) with the real key, on a record held in memory: nothing on the
+// board is read or written. Prints what the record would end up with. A
+// company the check passes costs one full research run.
+async function pipeline(spec) {
+  const [name, email = "", site = ""] = spec.split("|").map((x) => x.trim());
+  const { createLeadEnrich } = require(path.join(fn, "lead-enrich.js"));
+  const state = { leads: { l1: { company: { name, website: site, industry: "", countries: [], storeCount: null }, contacts: email ? [{ name: "Contact", email }] : [], stage: "lead" } }, prospects: {}, prospectCompanies: {} };
+  const setPath = (o, p, v) => { const ks = p.split("."); let x = o; for (const k of ks.slice(0, -1)) { if (!x[k] || typeof x[k] !== "object") x[k] = {}; x = x[k]; } x[ks[ks.length - 1]] = v; };
+  const db = { collection: (c) => ({ doc: (id) => ({
+    get: async () => ({ exists: Boolean(state[c] && state[c][id]), id, data: () => state[c][id] }),
+    update: async (patch) => { for (const [k, v] of Object.entries(patch)) { if (k.includes(".")) setPath(state[c][id], k, v); else state[c][id][k] = v; } },
+    set: async (d) => { state[c] = state[c] || {}; state[c][id] = { ...(state[c][id] || {}), ...d }; },
+  }) }) };
+  const api = createLeadEnrich({ db, verifyIdToken: async () => ({}), resolveConsoleUser: async () => null, anthropicKey: () => key, anthropicWorkspace: () => process.env.ANTHROPIC_WORKSPACE_ID || "", Anthropic: Probe });
+  const out = await api.enrichRecord("leads", "l1", "probe", "created");
+  const l = state.leads.l1, e = l.enrichment || {};
+  const host = (u) => { try { return new URL(u).hostname; } catch { return u ? "set" : "none"; } };
+  console.log(`\npipeline "${name}" (${email ? "contact email given" : "no email"}, ${site ? "website given" : "no website"}) in ${secs(Date.now() - t0)}:`);
+  console.log(`  run:      ${e.request ? e.request.status : "?"} — ${e.request ? e.request.message : ""}`);
+  console.log(`  check:    ${e.screen ? `real=${e.screen.real} physicalRetail=${e.screen.physicalRetail} by=${e.screen.by}` : "not run"}`);
+  console.log(`  website:  ${l.company.website || "still blank"}${e.websiteGuess ? ` (found automatically, ${e.websiteGuess.confidence}% sure, from ${e.websiteGuess.from})` : ""}`);
+  console.log(`  profile:  level=${e.level || "none"}, industry=${l.company.industry || "—"}, sites=${e.storeCount || "—"}, summary ${e.summary ? `${e.summary.length} chars` : "none"}, icon ${host(e.logoUrl)}, logo light ${host(e.logos && e.logos.light)} / dark ${host(e.logos && e.logos.dark)}, LinkedIn ${e.linkedinCompany ? "yes" : "no"}`);
+  console.log(`  result:   ok=${out.ok} skipped=${out.skipped === true}`);
+  process.exit(0);
+}
+
 (async () => {
+  if ((process.env.PIPELINE || "").trim()) return pipeline(process.env.PIPELINE.trim());
   if ((process.env.LEAD_STATUS || "").trim()) return leadStatus(process.env.LEAD_STATUS.trim());
   const forLogos = (process.env.LOGO_COMPANIES || "").split(",").map((x) => x.trim()).filter(Boolean);
   if (forLogos.length) return logosOnly(forLogos);
