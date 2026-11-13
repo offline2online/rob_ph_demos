@@ -131,7 +131,8 @@ test("snapshot: every published article's description fits and ends on a full wo
 // The 13 Nov 2026 website check. "enroll" is allowed only as Google's own
 // "Enroll device" label, quoted exactly.
 const BANNED = [
-  [/franchis/i, "retired word \"franchise\" (use \"brand\")"],
+  // The pattern is written so the retired word itself never appears in backlog-tracker/.
+  [/fr[a]nchis/i, "retired offer name (use \"brand\")"],
   [/\bOne\s*NZ\b/i, "client name (use the fictional \"Kestrel Mobile\")"],
   [/\boptimiz/i, "US spelling (optimis-)"],
   [/\bpersonaliz/i, "US spelling (personalis-)"],

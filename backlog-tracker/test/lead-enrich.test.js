@@ -174,13 +174,13 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(prof.lastResearchedAt, "2026-11-10");
     assert.match(prof.latestNews, /Greene King opens new pubs/);
   });
-  await test("a franchise opportunity (a person, not a company) is never researched, by the trigger or the button", async () => {
+  await test("a network operator inquiry (a person, not a company) is never researched, by the trigger or the button", async () => {
     const { api, db, asked } = make();
-    db.state.leads.l1.leadType = "franchise";
+    db.state.leads.l1.leadType = "operator";
     assert.equal(await api.onEnrichWrite("leads", created("leads", "l1", db.state)), null);
     assert.equal(asked.length, 0);
     const r = res(); await api.handle(req({ leadId: "l1" }), r);
-    assert.equal(r.code, 400); assert.match(r.body.error, /franchise/);
+    assert.equal(r.code, 400); assert.match(r.body.error, /network operator inquir/);
   });
   await test("the trigger runs on create and on a newly queued request only, so its own writes never loop", async () => {
     const { api, db, asked } = make();
@@ -498,7 +498,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.match(AGENT_SYSTEM, /THE MOST IMPORTANT FINDING is how many physical sites/);
     assert.match(AGENT_SYSTEM, /Never put a subset there/);
     assert.ok(AGENT_SYSTEM.indexOf("MOST IMPORTANT FINDING") < AGENT_SYSTEM.indexOf("Find, where available"), "it comes before everything else");
-    const full = { ...AGENT, storeCount: "2,500", storeCountBreakdown: "About 1,600 managed and 1,000 leased, tenanted and franchised pubs (January 2026).", storeCountSource: { title: "Annual report", url: "https://gk.example/ar", date: "2026-05-05" } };
+    const full = { ...AGENT, storeCount: "2,500", storeCountBreakdown: "About 1,600 managed and 1,000 leased, tenanted and licensee-run pubs (January 2026).", storeCountSource: { title: "Annual report", url: "https://gk.example/ar", date: "2026-05-05" } };
     const a = make({ agent: full });
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
     const e = a.db.state.leads.l1.enrichment;
