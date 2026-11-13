@@ -19,6 +19,22 @@ const crypto = require("crypto");
 const hash = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
 const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString().replace(/\.\d{3}Z$/, "Z") : typeof v === "string" ? v : null);
 
+// The longest description the Support Centre (SEOPress) uses, and the
+// console's limit on metaDescription.
+const META_DESCRIPTION_MAX = 155;
+
+// A summary shortened to at most `max` characters, cut at a word boundary
+// and ending "…", or "" when it already fits (the Support Centre then uses
+// the summary itself). Used only when an article has no metaDescription.
+function descriptionFromSummary(summary, max = META_DESCRIPTION_MAX) {
+  const s = String(summary || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return "";
+  const room = s.slice(0, max); // "…" takes the last character
+  const lastSpace = room.lastIndexOf(" ");
+  const cut = (lastSpace > 0 ? room.slice(0, lastSpace) : room.slice(0, max - 1)).replace(/[\s,;:—–-]+$/u, "");
+  return cut + "…";
+}
+
 function categoryRecord(id, c) {
   return { id, name: c.name || "", icon: c.icon || "help", description: c.description || "", order: c.order || 0, parentId: c.parentId || null };
 }
@@ -44,6 +60,14 @@ function articleRecord(id, a, nowIso = new Date().toISOString()) {
     // Centre publish reads these. Only written when set.
     ...(a.seoTitle ? { seoTitle: a.seoTitle } : {}),
     ...(a.metaDescription ? { metaDescription: a.metaDescription } : {}),
+    // No metaDescription and a summary too long for one (m67BT2oDMCiDHXw7ooAq):
+    // the Support Centre fell back to cutting the summary at 155 characters,
+    // mid-word ("…queu", "…campai"). seoDescription is the first name it
+    // reads (ph-website/snippets/ph-support-centre/main.php → upsert), so a
+    // word-boundary cut here is what it publishes. Derived, never stored in
+    // Firestore (faq-sync.js does not read it); an editor's metaDescription
+    // always wins.
+    ...(!a.metaDescription && descriptionFromSummary(a.summary) ? { seoDescription: descriptionFromSummary(a.summary) } : {}),
     ...(a.directAnswer ? { directAnswer: a.directAnswer } : {}),
     ...(Array.isArray(a.questionVariants) && a.questionVariants.length ? { questionVariants: a.questionVariants } : {}),
     ...(a.articleType ? { articleType: a.articleType } : {}),
@@ -169,6 +193,7 @@ function firestoreRefreshStore(db, docPath = "settings/faqRefreshPing") {
 
 module.exports = {
   hash, iso, categoryRecord, articleRecord, releaseRecord, sortReleases, sortCategories,
+  descriptionFromSummary, META_DESCRIPTION_MAX,
   buildIndex, serializeIndex, serializeArticle, serializeReleases,
   articleChangesPublished, categoryChangesPublished,
   createRefreshPinger, firestoreRefreshStore,
