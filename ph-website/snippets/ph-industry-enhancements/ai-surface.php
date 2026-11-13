@@ -18,9 +18,16 @@ const PH_AI_SITEMAP = 'https://personalisationhub.com/sitemaps.xml';
 /** Crawlers and agents named in robots.txt: search and retrieval bots, user-triggered fetchers and training opt-in tokens. */
 const PH_AI_AGENTS = array( 'GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-SearchBot', 'Claude-User', 'PerplexityBot', 'Perplexity-User', 'Google-Extended', 'Applebot-Extended', 'CCBot', 'Bingbot' );
 
-/** The tours, from TOUR_INDUSTRIES (tour.php): key => entry. Empty when tour.php is not loaded. */
+/**
+ * The tours, from TOUR_INDUSTRIES (tour.php): key => entry. Empty when tour.php is not loaded. An entry marked 'operator' (the Run Your Own RMN
+ * page's tour) is left out until that page is live (operator_is_live()), so a hidden page's tour never reaches llms.txt or a twin.
+ */
 function ai_tours() {
-	return defined( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) ? constant( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) : array();
+	$all = defined( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) ? constant( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) : array();
+	$live = function_exists( __NAMESPACE__ . '\operator_is_live' ) && operator_is_live();
+	return array_filter( $all, function ( $t ) use ( $live ) {
+		return empty( $t['operator'] ) || $live;
+	} );
 }
 
 /* ------------------------------------------------------------------ robots.txt */

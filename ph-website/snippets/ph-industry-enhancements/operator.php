@@ -53,7 +53,7 @@ const OPERATOR_SOURCE        = 'operator';
 const OPERATOR_LABEL         = 'Network operator inquiry';
 const OPERATOR_DETAIL        = 'Run Your Own RMN page – product tour';
 const OPERATOR_BACKGROUNDS   = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Marketing', 'Something else' );
-const OPERATOR_TOUR_PATH     = '/industries/retail-media/tour/';
+const OPERATOR_TOUR_PATH     = '/run-your-own-rmn/tour/';
 /** Calculator share of ad revenue. Code only: never printed on the page, in a tooltip, the twin or anything an agent reads. */
 const OPERATOR_INCOME_SHARE  = 0.5;
 

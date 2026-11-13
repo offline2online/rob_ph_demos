@@ -7,6 +7,10 @@
  *   priority 0 so redirect_canonical never sees it.
  * - GET /industries/retail-media/tour/assets/v1/{img|vo}/<file>: the retail media walkthrough's screenshots and voiceover, same-origin (no third-party request from a visitor). Allow-list TOUR_ASSETS
  *   (generated from tour-assets/retail-media/SHA256SUMS on tag tour-assets-retail-media-v1); served from a file cache in uploads, filled from the tag and checked by sha256; single byte ranges answer 206.
+ * - GET /run-your-own-rmn/tour/ and /run-your-own-rmn/tour/assets/v1/{img|vo}/<file> (14 Nov 2026): the Run Your Own RMN walkthrough (a golf club, Fernhollow Golf Club,
+ *   sells its screens to a golf manufacturer, Corvane Golf). Same page and route; its assets live in the repo as base64 text (tour-assets/rmn-golf/<dir>/<file>.b64),
+ *   are fetched once, decoded and checked against TOUR_ASSETS_RMN (from tour-assets/rmn-golf/SHA256SUMS, the decoded files) before they are cached in uploads.
+ *   While the Run Your Own RMN page is hidden (OPERATOR_LIVE false) its tour is noindex like every tour and is left out of llms.txt and the twins (ai_tours()).
  * - POST ph-site/v1/tour-lead: the tour's gate form. Shaped like telco-model: honeypot, throttle, private ph_lead post, `ph_lead_captured`.
  *   No nonce: the page is edge-cached, so a stale wp_rest nonce would 403 anonymous callers (PH_TOUR.nonce is "").
  * - POST ph-site/v1/tour-brand: the visitor's company logos for the walkthrough, from the console (key stays on the server), see tour_brand_handle().
@@ -18,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const TOUR_SOURCE = 'interactive-product-tour';
-const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retailer setup', 'Advertiser creates by talking', 'Shopper journey & outcome', 'Fuel & convenience walkthrough' );
+const TOUR_FLOWS  = array( 'Campaign creation', 'Localisation & scheduling', 'Personalisation', 'Retailer setup', 'Advertiser creates by talking', 'Shopper journey & outcome', 'Fuel & convenience walkthrough', 'Venue setup', 'Member journey & outcome' );
 /** The three demos, as the tour's own gate lists them (GFLOWS in tour/tour.html): name and what it shows. Agent-facing text (twins, llms.txt) is generated from these. */
 const TOUR_DEMOS_STD = array(
 	array( 'Campaign creation', 'Talk a campaign into existence, in your brand.' ),
@@ -30,12 +34,19 @@ const TOUR_DEMOS_RM = array(
 	array( 'Advertiser creates by talking', 'A whole campaign from a spoken brief.' ),
 	array( 'Shopper journey & outcome', 'One shopper, four screens.' ),
 );
+const TOUR_DEMOS_RMN = array(
+	array( 'Venue setup', 'A golf club opens its screens to a brand through a deal.' ),
+	array( 'Advertiser creates by talking', 'A whole campaign from a spoken brief.' ),
+	array( 'Member journey & outcome', 'One member, six screens.' ),
+);
 /** Industries the tour serves: key = the `industry` the tour sends; path = where the page is served; page = the industry page the lead came from; demos = the three demos. */
 const TOUR_INDUSTRIES = array(
 	'telco'    => array( 'name' => 'Telco', 'path' => '/industries/telco/tour', 'page' => '/industries/telco/', 'label' => 'Interactive product tour – Telco', 'demos' => TOUR_DEMOS_STD ),
 	'pharmacy' => array( 'name' => 'Pharmacy', 'path' => '/industries/pharmacy/tour', 'page' => '/industries/pharmacy/', 'label' => 'Interactive product tour – Pharmacy', 'demos' => TOUR_DEMOS_STD ),
 	'retail-media' => array( 'name' => 'Retail Media', 'path' => '/industries/retail-media/tour', 'page' => '/industries/retail-media/', 'label' => 'Interactive product tour – Retail Media', 'demos' => TOUR_DEMOS_RM ),
 	'convenience' => array( 'name' => 'Fuel & Convenience', 'path' => '/industries/convenience/tour', 'page' => '/industries/convenience/', 'label' => 'Interactive product tour – Fuel & Convenience', 'demos' => TOUR_DEMOS_STD ),
+	/* The Run Your Own RMN page's own tour (operator.php OPERATOR_TOUR_PATH). 'operator' => true: listed for agents only once that page is live (ai_tours()). */
+	'rmn' => array( 'name' => 'Run Your Own RMN', 'path' => '/run-your-own-rmn/tour', 'page' => '/run-your-own-rmn/', 'label' => 'Interactive product tour – Run Your Own RMN', 'demos' => TOUR_DEMOS_RMN, 'operator' => true ),
 );
 
 /**
@@ -46,7 +57,7 @@ const TOUR_INDUSTRIES = array(
  */
 const TOUR_PAGE_OPTION  = 'ph_tour_page_html';
 const TOUR_PAGE_BACKOFF = 'ph_tour_page_backoff';
-const TOUR_PAGE_SHA256  = '14ca65a0ff204e197f0069c076d69bff80ba9ea0dcbce35c9be7b60ab384b7e4';
+const TOUR_PAGE_SHA256  = '58d400815996f4aca598b9e03ec598471f205ef43d3a8cce7b453ebfa1d77f16';
 const TOUR_PAGE_URL     = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/snippets/ph-industry-enhancements/tour/tour.html';
 
 /**
@@ -211,6 +222,143 @@ const TOUR_ASSETS = array(
 	'vo/manifest.json' => array( 'c631ca72c50018168df97b2b13bce418a01fdab83b2497cd57b1af7b5f939410', 16609 ),
 );
 
+/**
+ * Run Your Own RMN walkthrough assets (golf). Allow-list: name (dir/file) => array( sha256, bytes ) of the DECODED file, generated from tour-assets/rmn-golf/SHA256SUMS
+ * by tools/rmn-golf-tour/allowlist.py. The repo holds each file as base64 text (<dir>/<file>.b64, so the train can carry it); it is fetched once from main
+ * (then the jsDelivr mirror of main), decoded, checked against this list and cached in uploads/ph-tour/rmn-golf/v1/. A changed asset needs a v2 route and map.
+ */
+const TOUR_ASSET_PREFIX_RMN     = '/run-your-own-rmn/tour/assets/v1/';
+const TOUR_ASSET_REPO_URL_RMN   = 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/';
+const TOUR_ASSET_MIRROR_URL_RMN = 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/';
+// rmn-golf allow-list: start (generated by tools/rmn-golf-tour/allowlist.py)
+const TOUR_ASSETS_RMN = array(
+	'img/01-advertiser.jpg' => array( '71602d9090c3f8f6ea38c577f08bfd78f9817b8a1af9ccc7d785ef40034638bb', 150462 ),
+	'img/03-users.jpg' => array( 'b96bb675e859ff27958725f9aea321004ea2c866dfb4e5f73e658ae2b9a615c8', 76313 ),
+	'img/04-add-user.jpg' => array( 'ef057cbea665f9cccfdc67542b87410954b81350c860469ec35305104b2fcf7e', 78001 ),
+	'img/05-deals.jpg' => array( 'd848c1e7e4c7b76eee53539c19eceff1926d7ee61fb86f802f0715711c5417d6', 148380 ),
+	'img/06-new-deal.jpg' => array( '19395c3cb37eef78377b1d7cb02ee5f0da4a33438532357e0b6813fb080c5ca1', 143040 ),
+	'img/07-assign-slot.jpg' => array( 'a6e64c3caa4f8cf609b4bcb6eadd23a77d6dce3913b75bc4408f1224701202e7', 152438 ),
+	'img/07a-blank.jpg' => array( 'f150eafa6b21d67bbc32666c879b976544004166e48232c60b90256e6fa2c54e', 155315 ),
+	'img/07b-assigned-all.jpg' => array( '78f8bebe3f8cfeb1c95c5223d6501f28941440bc37991922f1b25c1b298a1d76', 153516 ),
+	'img/07c1.jpg' => array( '22cae75214dab892bef11a4b16b70cedf521ed5b28822bcce32ab3fa3569d3e6', 157158 ),
+	'img/07c2.jpg' => array( '33e8ffe33fa46e96fbb5929199b79e61a99bca2530077a89b42b5a0eac849577', 156321 ),
+	'img/07c3.jpg' => array( '0eb8014a76c2bb26be64f7c82291bb9b20d6491b4900a3b13334692bd1df2372', 155772 ),
+	'img/07c4.jpg' => array( '8bfbc17ee9e41667fb9479be7d8d2bc0fcf02ac506ad71189adcdbef6fcaae1e', 154893 ),
+	'img/07c5.jpg' => array( '511d831364abf751d8382d15dfd6a07f03d38aaf1486b030d4a30fde7d009699', 154454 ),
+	'img/07d2.jpg' => array( '31b7660bdf2306633a710dc8647b63180c4c34ed76cee5731ac0e788e6345bf4', 154739 ),
+	'img/07d3.jpg' => array( '65bbb7890de1b852d6e561d725c565552df7e4069f65fecb718bb858004b5a53', 156414 ),
+	'img/07d4.jpg' => array( '23d6f64446a3c755e4e4f04550f6b2596ea0d7d8556df807a1a829a684edd852', 155734 ),
+	'img/07d5.jpg' => array( '33f49fe01835c6512f814708ecd22df530d1253cfaf1bcc8f865b3df74b20d4f', 157455 ),
+	'img/07d6.jpg' => array( '40fa5d97b8c4e5c9256525e52df97b2962745ef59690da701bbc59b01ae2046e', 153307 ),
+	'img/08-deal-finalise.jpg' => array( '0c3b1ed2680c5d9a4571d3da1c42a7f4324efc70b95f414eba6626c93db61b78', 143867 ),
+	'img/09-deal-live.jpg' => array( 'f9358766bad29861d45afa1b3c08f13a9d9fc76a25f4b4d550a6558446e5a811', 145640 ),
+	'img/14-approval-table.jpg' => array( '82a8be1482175a59db857d71504262e6d84c462969ac996930be7ad9da01ef49', 113594 ),
+	'img/15-approve.jpg' => array( '3cbeb0d88529264ecd03464e663b3c3db061d2aab2f4133976e0c9c6afd1898e', 120977 ),
+	'img/16-booking-schedule.jpg' => array( '9e67873c22adb356242e85132eb5eab5c5b74982dde2ec4ea6715ee902b1b2e8', 202044 ),
+	'img/16b-booking-flight.jpg' => array( 'f410ec21abdedf3b80585c271dbec9570edaff287195f897c458300c8e76b5aa', 174866 ),
+	'img/22-booking-revenue.jpg' => array( 'cd61fa6df62e5bc0375e119dcbce3173f4a885174b11bd9e3a0d924a584c7221', 176168 ),
+	'img/P1-display-types.jpg' => array( 'd769de7ee826acc54ca8e79af4a5c043160616298e83a6c1a086a876e0da491e', 102038 ),
+	'img/P10-bar.jpg' => array( 'c32f408b571da5351f375852c139fe1bb710b2b6a2cc2b10193a67a79ebfe9d0', 108896 ),
+	'img/P11-saved.jpg' => array( '22232c96b77adfb37ceab1d62fab5c4797a9b4224edc7327599252f40e57051b', 120715 ),
+	'img/P2-playlists.jpg' => array( '110ee441580e3d6c57254915bb8a5ebe3b2de1b821398ae44fc2220345e61fb6', 98720 ),
+	'img/P2b-expanded.jpg' => array( 'c67a0f07f17f5738f264995f56acb0a57e7862c47707b5db279996d09d8755b4', 126949 ),
+	'img/P3-three-slots.jpg' => array( '2c26915354c700069ecd16ceb1ca92d8ae9656e783bbcc5dd61ec0bc3b7a2927', 108276 ),
+	'img/P4-owner.jpg' => array( 'f633a727562a3d8c8496560a1d72a39913c8e24a958d7d39528f289da5e0e09c', 139674 ),
+	'img/P4a-slots.jpg' => array( 'de32920a3129ccbad8555438c454d881e49aad9f9d34adaeac2e52b2ff8b1082', 140851 ),
+	'img/P5-proshop.jpg' => array( '2f99fd3c4e052d2a08ccd2bdd43b3d6e5744a174b3ac808a982c89d0fe2fb5c5', 141096 ),
+	'img/P6-range.jpg' => array( '7ebabafd5e7b34e59e2910c9bb10ac869c7834c4d501c9d29af38e03df4c0009', 135100 ),
+	'img/P7-tee.jpg' => array( 'cb1829adaa78756e73ecf0b66b5a04b982258379aa1db8b637cbf5f0b4eb8403', 129128 ),
+	'img/P8-halfway.jpg' => array( '66ce854d65d8d2d48f1c8d31dadca5e503e4847dec6650484589e33de8a8fa6c', 122310 ),
+	'img/P9-locker.jpg' => array( '6fe969cb31b3064171f77a2e232acfc085b65f2955f278e6d765cbe1f084c5cf', 115424 ),
+	'img/login-bg.jpg' => array( 'c2f822cd33039b3a27c1665c98fd8c87b8a90ff6f408bd5dfd754fe1d0282b0c', 11605 ),
+	'vo/f1-01-1-0ca14d91e8.mp3' => array( 'ddf11dfe90a83d0c6645c27c6ff057cbf63067ef9825e6f9316d824227b5071c', 53229 ),
+	'vo/f1-02-1-019cfa9967.mp3' => array( 'c6cc8614579805501509fff32a614467ba101e6c1e34cfe375dba131b98b6834', 10893 ),
+	'vo/f1-02-2-6a04d41418.mp3' => array( 'cbd4a1ebc6708035bcb6c9725075a8bae31c8d78488c0663b7a667d70d581d07', 30477 ),
+	'vo/f1-02-3-7b0d89f97e.mp3' => array( 'b35672a2f88dc95ddd3753e4c92917785c1a3e68146466c39a8f04b45811bff5', 22557 ),
+	'vo/f1-02-4-3074c07335.mp3' => array( '8ab7365167a5709100febef4d2f43169581d7a5f64e97413d40a80fccaa712b7', 16797 ),
+	'vo/f1-02-5-9f9d0e125b.mp3' => array( 'e79e38fee13f9596603f5490d391afa54740ba19afd12309121960d80c39a83e', 18669 ),
+	'vo/f1-02-6-347b7770f4.mp3' => array( 'bf06dc769fa7dbf82e8bc66cc575b973e88cd8dc6e11ca45ec416fc617c13a02', 32637 ),
+	'vo/f1-03-1-1e0d92d0f9.mp3' => array( '1da7e582d51e9807329e18acc1e4d0a51edbcc1d4af32b11db650ff0e3435806', 41133 ),
+	'vo/f1-03-2-51556feb16.mp3' => array( '198042d9fdf9e0dc372bac8d9b44573808e19a92057f93af716ea8e97b9b54e2', 19965 ),
+	'vo/f1-03-3-ab521c1d61.mp3' => array( '63d0de5701b6bc440635c80aa68114a0fe73ad358988c33eb624c27b7106d86f', 27165 ),
+	'vo/f1-04-1-a88a9779d9.mp3' => array( '6baf0f913eb35e74ccbe9a8c56ca11cd98800469c0f085a814ffccf1277a1f8f', 40125 ),
+	'vo/f1-05-1-815ef1fcf7.mp3' => array( 'd5f8b20c7edbaa1de03d3a6719d913104b4fa6679b6382e045aa898b8340c3b3', 30189 ),
+	'vo/f1-05-2-2ff4f4c6b3.mp3' => array( 'f7f5903f31426e41be7f19f2168b6b760965523483fc5707737da055a53d8d09', 36813 ),
+	'vo/f1-06-1-65160b6df7.mp3' => array( '3c8775380dafb48d255f1a5e59be01e17a49ee0791f456cc4de41e483fc512ae', 27453 ),
+	'vo/f1-06-2-a2b377b099.mp3' => array( '46fece91c25d29f7e2d6de5ade329659ae72bac91b80ed66b1656b2d41ecca77', 23709 ),
+	'vo/f1-06-3-920ae8dfd8.mp3' => array( '5116ad4fbd2d8a2ec71048f7a5923c215db0a6ec724fa75d2bf77519aa1f964a', 24573 ),
+	'vo/f1-06-4-daa95efabb.mp3' => array( 'f054177a331ce335d26be25fd493487bdb8182fb0545387e82637443fb753b17', 14637 ),
+	'vo/f1-06-5-9d85756903.mp3' => array( '46881e2ee1e2f0c13a738b2c946fea1e09c08e2aefcc2952df91644b9082a02b', 31053 ),
+	'vo/f1-06-6-727fafb5dd.mp3' => array( '47b04c9306f0c8c2f03d807d0bf3b1f04326b816b3dbf9c4bb0bedc00807df8a', 34077 ),
+	'vo/f1-07-1-1007aa5f04.mp3' => array( '33f5b75a2ddf4a15e1400903753049052fef509d2b0d7b79bec014bc57c52a0a', 31053 ),
+	'vo/f1-07-2-810f46105a.mp3' => array( '15fbc324bb0be472c012f1fbdfff1b85fe75c36a3951e4a54fb272f85e309f9f', 33933 ),
+	'vo/f1-07-3-1b34406dde.mp3' => array( '6c2587a04c11cf28f48c66ba36a4dc89614828fe71c2a51caf6e63b04f658a5e', 23853 ),
+	'vo/f1-08-1-cfc10cbd0a.mp3' => array( '20cd80cd755caff80aea24c43f271603e37a564a2ec61ef80a68d21554790b83', 32925 ),
+	'vo/f1-08-2-f1dd3ed422.mp3' => array( 'fa8eaa0c7edb3cda2b2cced96a1c5e4e4256c12f6df1b99f690611070d441864', 30045 ),
+	'vo/f1-08-3-9bc2f258d9.mp3' => array( '031eb2d0f32856f54a6283d972838c5f465cbc69c4211b97fb6a3b2c43dcca57', 24573 ),
+	'vo/f2-01-1-c32289aecd.mp3' => array( '4d6a921c9b8e8aca97d4c759ec7f86728ea27c7a95ad8064893be90b9eae9fdd', 47613 ),
+	'vo/f2-01-2-c5591910fd.mp3' => array( '6786902396919eef2d749652b15957c42becc64dc4165e7a52f80ae5325dec47', 21981 ),
+	'vo/f2-02-1-657e007c88.mp3' => array( 'ebc3edd587ba31fac9b8280f413da1b925bbdd940c34f04da797f261ea0f1f8a', 29757 ),
+	'vo/f2-03-1-26a12d399b.mp3' => array( '2bb5d47aecffaf7935dea78381299f8a063a5fc872f6b8c6e288c0bf40da8e9c', 31629 ),
+	'vo/f2-03-2-d18f886bef.mp3' => array( 'edcf08f1f7d1ea467d84e6ae088d3f5ca107b01099c7cb831f08bdf97de38316', 33357 ),
+	'vo/f2-03-3-31c7a5a55a.mp3' => array( '481d62f3b21e90cb0eb334d0488bc57f60a9226664a05b3b84c3b6733b93ee75', 20109 ),
+	'vo/f2-04-1-6c5f3cf27b.mp3' => array( 'd29cac81cab1252d6ad7cf6e1ac140941433a1d046a29ea975452351bb4dfeac', 29325 ),
+	'vo/f2-04-2-635ecc078c.mp3' => array( '21ca3425e532c9660c3d82facd0ec702e0f8b003454d709af4d9a05d3abe1d27', 17805 ),
+	'vo/f2-04-3-23d07dc5f3.mp3' => array( 'b139a035af7cf5e76e962ea380aebcf2d64e5e7f5003bb45241c7a2219aa3dc5', 33645 ),
+	'vo/f2-04-4-7ded1c15ea.mp3' => array( 'dfb02faac4fa01ae02464dbe56da13a846b9052b2af3565877bdc9baacb40e6c', 25869 ),
+	'vo/f2-04-5-3082a3daf1.mp3' => array( 'cb4168c0063e9baea3688b1caa66dc6d3a47d23a594ad1ee51f51daf63a874f4', 17085 ),
+	'vo/f2-05-1-1cea3b8bb4.mp3' => array( '256aebc24254ccf955c4a52b8eca200fe6fbd44865592ebe3a5f7f2b3bf709da', 48333 ),
+	'vo/f2-05-2-67ab4ee24b.mp3' => array( '8a9caf11dbed2829b2a31d1f1e9b2416a8d2804b373a8d0d69e2d62bfad416f5', 18669 ),
+	'vo/f2-06-1-247e067fe8.mp3' => array( '451ddcb73d71564418ab147642903464470dca075581f1633f7b301e86b5f435', 32349 ),
+	'vo/f2-06-2-a80f61db0a.mp3' => array( 'b64af2b22b18fda5a2474097ff7c97509c9bea22d3f921ab9783d9d5c18ce0d5', 34077 ),
+	'vo/f2-06-3-c935bc221a.mp3' => array( '8feb18ed51a9ed601c38c8236500442b3d729d648299c278f76c2fd788070600', 37965 ),
+	'vo/f2-06-4-a4c96f7f72.mp3' => array( 'f5cc1ae9ac92f5cfa4a7a698f250094ae5681ccbf7c1257de41e700e4318fd34', 15501 ),
+	'vo/f2-07-1-8f51435a80.mp3' => array( '45f4f73291815a32ca1c2a69efbba0b9c6f61aef4a3ebd3716a34a665b350fca', 42141 ),
+	'vo/f2-07-2-ff4de61fc3.mp3' => array( '13dec50ccdc9fa8e542ef719104a4bb29ab46bc4fc07a93e580c4918b2008e23', 35085 ),
+	'vo/f2-08-1-f21a7b6059.mp3' => array( 'b31aeea181d2de8eda2b86cc7421b15e34cb41b1ef164936ee0175dc2017988b', 25869 ),
+	'vo/f2-08-2-27180fa2ec.mp3' => array( '01134657587d67fd395914d9de290cde2404608a3dcce2921e6e385dd54d8a61', 27309 ),
+	'vo/f2-08-3-69ba1260a8.mp3' => array( 'a659773162fb86f7253200736aa720a2830b11b2f5b09331839fc7fc88ce43cf', 25869 ),
+	'vo/f2-08-4-290178c496.mp3' => array( '3ac14115597695297a8c9d53eabd1573a16677f583930039acd91f14c4fceb92', 28173 ),
+	'vo/f2-08-5-97015211cb.mp3' => array( 'a15cec8f23d4b08bf76f0a8ddcf27a1edf1864e31030a8e40c023f2b1c40f1ee', 31629 ),
+	'vo/f2-08-6-064787121c.mp3' => array( 'f2673e04bb47fd404419b49aa0a8ce3206ffce99e83b11d0163b6fe559682251', 20829 ),
+	'vo/f2-08-7-125138750f.mp3' => array( '31284e37aec692eb7f67b42f0fa27b7aee48ad400d0d14d570096388faa4e9df', 26733 ),
+	'vo/f2-09-1-eec78fda24.mp3' => array( 'ac2b15d9da6b3346efad3fbf67beee4b7f73f78bb778564dacf6d98ea82ea3e3', 27453 ),
+	'vo/f2-09-2-911c941a99.mp3' => array( '6b3f1928aed86e3aa83dc03803fb9b3f18556928070cbd9e27248ac2d00afcc3', 21981 ),
+	'vo/f2-09-3-0b5161a037.mp3' => array( 'ea91b023d2c866ab7914f84c7a6baf43ba158cbe5d155779d9d2976ec21b7a3c', 41421 ),
+	'vo/f2-09-4-c1c7d2f99f.mp3' => array( 'c8546d78c818fdd0e17cc797c69d7159512187870c9e00c0f8c658389da46266', 41997 ),
+	'vo/f2-09-5-b0bcf5eafb.mp3' => array( '6c802b1dcafe1a780ba4915c04bc182f5528a86edf1e97c7fe10061d61caa14d', 35085 ),
+	'vo/f2-09-6-6b79b73760.mp3' => array( '7a897ee6f41e16dc9cd480ef46ef0072a65167ade5765da8d93bd6c6d02a6052', 29757 ),
+	'vo/f2-10-1-2d827b6951.mp3' => array( 'c1f8e5916b8051a3eb1d01964bc4976f0af66497f5a5b4d609db15a02d4af6c8', 38973 ),
+	'vo/f2-10-2-9c3ee06e5f.mp3' => array( '19b8fa860ce4825e6370ee83645b46cd6fd22ad600191641b26f25727f2d89c1', 38541 ),
+	'vo/f2-10-3-2dbaa4ce3a.mp3' => array( 'b533e3f8a24cd3e8d8573129acdcedda9b10846f7790ea4611a905123d430475', 28461 ),
+	'vo/f3-01-1-be9fd8aa3e.mp3' => array( 'bba98c5fd16de0f2a51f33ebece6a2ccc92e65267fcffe49bdbbf31099866f8d', 27597 ),
+	'vo/f3-01-2-89f707e0f9.mp3' => array( 'f0984274c54abf66038cd47438b7a134edeef2056a0cb0604e794d43ba90d310', 21117 ),
+	'vo/f3-01-3-d4c36ad55f.mp3' => array( '28787d39d0569258f56cabc3c0a69d775fe687ed403064b7f737bbeb623573b2', 14637 ),
+	'vo/f3-01-4-29c7f09a80.mp3' => array( '230a1b373b8a905ac16c47a2df93eec321e80f0b3be81c3b44fc09b88be63d5e', 15501 ),
+	'vo/f3-02-1-6e79fb386e.mp3' => array( '58789a0e0ee12e242b2b0883139aa149e66a14bd5672cbd4a204786ae9c6cce1', 33069 ),
+	'vo/f3-02-2-a74e98a958.mp3' => array( '8abd2ab7811bea1754c8fa4843c4cd660b7d5fd78f29305db068cf6a33ebbf60', 18957 ),
+	'vo/f3-03-1-1a62b7cd0e.mp3' => array( '9234384056287fae2b9a18a17c4cd6c1e363f13fa59297b6785115da14cda4b2', 29469 ),
+	'vo/f3-03-10-211cac9584.mp3' => array( '0e630f766b9c9d76365d01d166377d8cfcdb41871a96ed35a17bcd94dad58d11', 42285 ),
+	'vo/f3-03-2-c8e634bfda.mp3' => array( '5ec811bf637ea021e4dadab32d5ed8323b7a1541a1da0440cfbc2065e1f93a6e', 21117 ),
+	'vo/f3-03-3-26cc7e0c86.mp3' => array( 'd869985eda5fb31a97f996b512e76ca43cbdebab159f3d409d2ca76e6ce3efa6', 6285 ),
+	'vo/f3-03-4-88fe559cf1.mp3' => array( '0e92ca5e0c705c77a1dfe53d87dab9dd1325c6645249928aba6abde9852493e3', 29181 ),
+	'vo/f3-03-5-3ccd70bab6.mp3' => array( '608c7b973e46aaef9500036f8fbed54db7e8571dc20eb4d6d9fbbe9929cdeaa7', 21981 ),
+	'vo/f3-03-6-afe88797ff.mp3' => array( '5e17f38d75865757c7c14ab6305a4e4dd757f7683bba72b007179f9b6e3c2292', 23421 ),
+	'vo/f3-03-7-a006a59c81.mp3' => array( '9c8d06ddef520cb6f8e3edd80d803caaaed93968827359d477e368364a968e64', 23853 ),
+	'vo/f3-03-8-1ba22cb949.mp3' => array( '05692d1e0c7d6e3a1272c82b6a21f62f4b28c9cd70bb403027611cf7a62cff0a', 19821 ),
+	'vo/f3-03-9-28f1d27795.mp3' => array( 'e6ff5146fb1bf1f7e162126c01548f8738322551a4e598a3d8c3c870e0e7653d', 19677 ),
+	'vo/f3-04-1-ceb6f6569d.mp3' => array( 'bf64be90c42a470334753d7b8770fb1f30ef06fa9acb26e5a2693f26c896fb19', 33933 ),
+	'vo/f3-04-2-172960959d.mp3' => array( 'c72a5c2db6a93b2b3fec48f376ce20e2c9c17e8137efb917c8beaca5c86650af', 33213 ),
+	'vo/f3-05-1-27bc91091d.mp3' => array( 'bddbee5700739e8465930ae6792345fd90ebd0f4068bb564e4813a58b0a731fb', 33357 ),
+	'vo/f3-05-2-74cb94aa5e.mp3' => array( '92e91cc604c1148f0f501a1849af1dde3eb9a54c48a873e32a42bd55bd9abe81', 26301 ),
+);
+// rmn-golf allow-list: end
+/** The two asset sets: route prefix, cache folder, sources (name => base URL), whether the source holds base64 text, and the allow-list. */
+const TOUR_ASSET_SETS = array(
+	'retail-media' => array( 'prefix' => TOUR_ASSET_PREFIX, 'cache' => 'retail-media/v1', 'b64' => false, 'sources' => array( 'tag' => TOUR_ASSET_TAG_URL, 'mirror' => TOUR_ASSET_MIRROR_URL ), 'assets' => TOUR_ASSETS ),
+	'rmn-golf'     => array( 'prefix' => TOUR_ASSET_PREFIX_RMN, 'cache' => 'rmn-golf/v1', 'b64' => true, 'sources' => array( 'repo' => TOUR_ASSET_REPO_URL_RMN, 'mirror' => TOUR_ASSET_MIRROR_URL_RMN ), 'assets' => TOUR_ASSETS_RMN ),
+);
+
 /** Same list as FREE_MAIL in tour/tour.html. */
 function tour_free_mail( $email ) {
 	return (bool) preg_match( '/@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|icloud|me|mac|aol|proton|protonmail|gmx|mail|zoho|yandex)\./i', (string) $email );
@@ -226,18 +374,30 @@ function tour_is_request( $path ) {
 	return false;
 }
 
-/** The allow-list key (dir/file) for a request path under TOUR_ASSET_PREFIX, or null. */
+/** The asset set (a TOUR_ASSET_SETS key) whose route prefix a request path is under, or null. */
+function tour_asset_set( $path ) {
+	foreach ( TOUR_ASSET_SETS as $name => $set ) {
+		if ( 0 === strpos( (string) $path, $set['prefix'] ) ) {
+			return $name;
+		}
+	}
+	return null;
+}
+
+/** The allow-list key (dir/file) for a request path under an asset set's prefix, or null. */
 function tour_asset_key( $path ) {
 	$path = (string) $path;
-	if ( 0 !== strpos( $path, TOUR_ASSET_PREFIX ) ) {
+	$name = tour_asset_set( $path );
+	if ( null === $name ) {
 		return null;
 	}
-	$key = substr( $path, strlen( TOUR_ASSET_PREFIX ) );
-	return ( 1 === preg_match( '#^(img|vo)/[A-Za-z0-9._-]+$#', $key ) && isset( TOUR_ASSETS[ $key ] ) ) ? $key : null;
+	$set = TOUR_ASSET_SETS[ $name ];
+	$key = substr( $path, strlen( $set['prefix'] ) );
+	return ( 1 === preg_match( '#^(img|vo)/[A-Za-z0-9._-]+$#', $key ) && isset( $set['assets'][ $key ] ) ) ? $key : null;
 }
 
 function tour_asset_is_request( $path ) {
-	return 0 === strpos( (string) $path, TOUR_ASSET_PREFIX );
+	return null !== tour_asset_set( $path );
 }
 
 function tour_asset_mime( $key ) {
@@ -246,34 +406,41 @@ function tour_asset_mime( $key ) {
 }
 
 /**
- * The bytes of one allow-listed asset. Returns array( bytes|null, reason, code ). Order: the file cache when its sha256 matches; then the tag, then the jsDelivr mirror of the same tag
- * (each accepted only on a 200 whose sha256 matches the allow-list; only then stored). The 60 s back-off is set only when both fail, so a broken upstream is not hammered.
- * code is '' on success, else fetch-failed | sha-mismatch | backoff (the short X-PH-Tour-Reason on the 503; never a URL or error text).
+ * The bytes of one allow-listed asset. Returns array( bytes|null, reason, code ). Order: the file cache when its sha256 matches; then the set's sources in order
+ * (retail media: the tag, then the jsDelivr mirror of the same tag; golf: the repo's main, then its jsDelivr mirror, each holding base64 text that is decoded first),
+ * each accepted only on a 200 whose decoded bytes match the allow-list's sha256 and size; only then stored. The 60 s back-off is set only when every source fails,
+ * so a broken upstream is not hammered. code is '' on success, else fetch-failed | sha-mismatch | backoff (the short X-PH-Tour-Reason on the 503; never a URL or error text).
  */
-function tour_asset_bytes( $key ) {
-	list( $sha, $size ) = TOUR_ASSETS[ $key ];
+function tour_asset_bytes( $key, $set_name = 'retail-media' ) {
+	$set = TOUR_ASSET_SETS[ $set_name ];
+	list( $sha, $size ) = $set['assets'][ $key ];
 	$up   = wp_upload_dir();
-	$file = rtrim( (string) $up['basedir'], '/' ) . '/ph-tour/retail-media/v1/' . $key;
+	$file = rtrim( (string) $up['basedir'], '/' ) . '/ph-tour/' . $set['cache'] . '/' . $key;
+	$off  = TOUR_ASSET_BACKOFF . md5( 'retail-media' === $set_name ? $key : $set_name . '/' . $key );
 	if ( is_file( $file ) ) {
 		$have = (string) file_get_contents( $file );
 		if ( strlen( $have ) === $size && hash( 'sha256', $have ) === $sha ) {
 			return array( $have, '', '' );
 		}
 	}
-	if ( false !== get_transient( TOUR_ASSET_BACKOFF . md5( $key ) ) ) {
+	if ( false !== get_transient( $off ) ) {
 		return array( null, 'asset ' . $key . ': fetch skipped, backing off after an earlier failure', 'backoff' );
 	}
 	$whys     = array();
 	$mismatch = false;
-	foreach ( array( 'tag' => TOUR_ASSET_TAG_URL, 'mirror' => TOUR_ASSET_MIRROR_URL ) as $name => $base ) {
-		$res = wp_remote_get( $base . $key, array( 'timeout' => 15 ) );
+	foreach ( $set['sources'] as $name => $base ) {
+		$res = wp_remote_get( $base . $key . ( $set['b64'] ? '.b64' : '' ), array( 'timeout' => 15 ) );
 		if ( is_wp_error( $res ) ) {
 			$whys[] = $name . ' fetch failed: ' . $res->get_error_message();
 		} elseif ( 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
 			$whys[] = $name . ' fetch answered ' . (int) wp_remote_retrieve_response_code( $res );
 		} else {
 			$body = (string) wp_remote_retrieve_body( $res );
-			if ( hash( 'sha256', $body ) === $sha ) {
+			if ( $set['b64'] ) { // base64 text in the repo: decode strictly; anything that is not base64 fails the sha check below.
+				$dec  = base64_decode( (string) preg_replace( '/\s+/', '', $body ), true );
+				$body = false === $dec ? $body : $dec;
+			}
+			if ( hash( 'sha256', $body ) === $sha && strlen( $body ) === $size ) {
 				wp_mkdir_p( dirname( $file ) );
 				file_put_contents( $file, $body ); // phpcs:ignore WordPress.WP.AlternativeFunctions -- a sha256-checked cache file.
 				return array( $body, '', '' );
@@ -282,7 +449,7 @@ function tour_asset_bytes( $key ) {
 			$whys[]   = $name . ' copy does not match its sha256 (received ' . strlen( $body ) . ' bytes, first 16 as hex ' . bin2hex( substr( $body, 0, 16 ) ) . ')';
 		}
 	}
-	set_transient( TOUR_ASSET_BACKOFF . md5( $key ), 1, MINUTE_IN_SECONDS );
+	set_transient( $off, 1, MINUTE_IN_SECONDS );
 	return array( null, 'asset ' . $key . ': ' . implode( '; ', $whys ), $mismatch ? 'sha-mismatch' : 'fetch-failed' );
 }
 
@@ -311,7 +478,7 @@ function tour_asset_serve( $path, $method, $range ) {
 		echo 'Not found';
 		exit;
 	}
-	list( $bytes, $why, $code ) = tour_asset_bytes( $key );
+	list( $bytes, $why, $code ) = tour_asset_bytes( $key, tour_asset_set( $path ) );
 	if ( '' !== $why ) {
 		error_log( 'ph tour: ' . $why );
 	}

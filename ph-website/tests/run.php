@@ -557,7 +557,7 @@ ok( false !== strpos( file_get_contents( $dir . 'leads.php' ), "'ph_lead_ingest_
 $tsrc = file_get_contents( $dir . 'tour/tour.html' );
 ok( ! file_exists( $dir . 'tour/telco.html' ), 'tour: single source tour/tour.html (telco.html is gone)' );
 ok( false !== strpos( $tsrc, 'IND_FROM_PATH' ) && false !== strpos( $tsrc, 'ind: IND_FROM_PATH' ) && false !== strpos( $tsrc, '/industries\\/pharmacy\\/tour' ), 'tour: S.ind comes from the page path' );
-ok( false !== strpos( $tsrc, 'industry: S.ind' ) && false === strpos( $tsrc, 'industry: "telco"' ), 'tour: events and lead body use S.ind, not a hard-coded telco' );
+ok( false !== strpos( $tsrc, 'industry: IS_GOLF ? "rmn" : S.ind' ) && false === strpos( $tsrc, 'industry: "telco"' ), 'tour: events and lead body use S.ind (rmn on the Run Your Own RMN tour), not a hard-coded telco' );
 ok( false !== strpos( $tsrc, 'Sun Care | 2 for $30 SPF 50+' ) && false !== strpos( $tsrc, 'Gold Members | Extra 20% off sun care' ) && false !== strpos( $tsrc, 'Sunscreen out of stock' ), 'tour: pharmacy is the sun care campaign' );
 ok( 0 === preg_match( '/Scripts Ready|Flu Vaccine|Flu Season|Prescription Ready|Age 68/', $tsrc ), 'tour: no prescription, vaccine or age content left in the pharmacy tour' );
 $tp = file_get_contents( $dir . 'tour.php' );

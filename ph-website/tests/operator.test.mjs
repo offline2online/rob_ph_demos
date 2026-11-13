@@ -1,5 +1,5 @@
 // node ph-website/tests/operator.test.mjs : the hidden Run Your Own RMN page (/run-your-own-rmn/) in Chromium (operator.php's server-rendered
-// head and body, operator.css, operator.js, site.js), with the real tour.html served at /industries/retail-media/tour/. The H1 and sub-line,
+// head and body, operator.css, operator.js, site.js), with the real tour.html served at /run-your-own-rmn/tour/ (the golf club walkthrough). The H1 and sub-line,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap), the SEO head (one H1, title, description, canonical,
 // OG, JSON-LD), the calculator defaults and live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
@@ -55,7 +55,7 @@ const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta n
 <a class="elementor-button" id="hdr-demo" href="#elementor-action%3Aaction%3Dpopup%3Aopen%26settings%3DeyJpZCI6IjI2NTgi"><span>Arrange A Demo</span></a></header>
 <main>${body}</main><footer class="elementor-location-footer"><a href="/privacy-policy/">Privacy</a></footer>
 <script>window.__tools=[]; try { Object.defineProperty(navigator, "modelContext", { configurable: true, value: { registerTool: function (t) { window.__tools.push(t); } } }); } catch (e) {}</script>
-<script>window.__cal=0; window.Calendly={initPopupWidget:function(){window.__cal++;}}; window.PH_OPERATOR={"endpoint":"/wp-json/ph-site/v1/operator-lead","tour":"/industries/retail-media/tour/"};</script>
+<script>window.__cal=0; window.Calendly={initPopupWidget:function(){window.__cal++;}}; window.PH_OPERATOR={"endpoint":"/wp-json/ph-site/v1/operator-lead","tour":"/run-your-own-rmn/tour/"};</script>
 <script>${site}</script><script>${js}</script></body></html>`;
 
 // Every "i" info button: its visible circle and whether the 44x44 square around its centre all hits it (elementFromPoint).
@@ -93,9 +93,9 @@ try {
     await p.route("**/*", (rt) => {
       const u = rt.request().url(); p.__reqs.push(u);
       if (/\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) { if (posts) posts.push(JSON.parse(rt.request().postData())); return rt.fulfill({ status, contentType: "application/json", body: JSON.stringify(reply) }); }
-      if (/\/assets\/v1\/img\//.test(u)) return rt.fulfill({ contentType: "image/jpeg", body: tinyJpg });
+      if (/\/assets\/v1\/img\//.test(u)) { const g = u.match(/\/run-your-own-rmn\/tour\/assets\/v1\/img\/([\w.-]+)$/), f = g && path.join(here, "..", "tour-assets", "rmn-golf", "img", g[1] + ".b64"); return rt.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? Buffer.from(fs.readFileSync(f, "ascii"), "base64") : tinyJpg }); }
       if (/\/assets\/v1\//.test(u)) return rt.fulfill({ status: 404, body: "" });
-      if (/\/industries\/retail-media\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
+      if (/\/run-your-own-rmn\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
       if (/\/wp-json\//.test(u)) return rt.fulfill({ contentType: "application/json", body: '{"found":false}' });
       if (u.startsWith("http://x.test/run-your-own-rmn/")) return rt.fulfill({ contentType: "text/html", body: page });
       return rt.abort();
@@ -260,9 +260,9 @@ try {
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
   ok(st.dl.length === 1 && st.dl[0].source === "Network operator inquiry" && !JSON.stringify(st.dl).includes("ada@"), "dataLayer ph_lead_captured, no contact details");
   ok((await text(p, "#phf-in-h")) === "You’re in, Ada", "You're in, <first name>");
-  ok((await p.getAttribute("#phf-mount iframe", "src")) === "/industries/retail-media/tour/?embed=1&ph_test=1", "iframe src with embed=1 and ph_test=1");
+  ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1&ph_test=1", "iframe src with embed=1 and ph_test=1");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-ph")).display === "none" && getComputedStyle(document.getElementById("phf-gate")).display === "none" && window.PH_TOUR && window.PH_TOUR.endpoint === "/wp-json/ph-site/v1/tour-lead"), "placeholder and gate replaced; window.PH_TOUR set");
-  const fr = p.frames().find((f) => /\/industries\/retail-media\/tour\//.test(f.url()));
+  const fr = p.frames().find((f) => /\/run-your-own-rmn\/tour\//.test(f.url()));
   await fr.waitForSelector("#start", { state: "visible" });
   ok(await fr.evaluate(() => document.getElementById("gate").hidden && !document.querySelector("#gform")), "the tour opens unlocked, with no form");
   ok(await fr.evaluate(() => /Watch full screen/.test(document.getElementById("card").textContent)), "its own Start the tour / Watch full screen card");
@@ -301,7 +301,7 @@ try {
   p = await open({ operator: { name: "Ada Lovelace", email: "ada@gmail.com", ts: 1 } });
   await p.waitForSelector("#phf-mount iframe");
   ok(await p.evaluate(() => { const l = JSON.parse(localStorage.getItem("ph_lead")); return getComputedStyle(document.getElementById("phf-gate")).display === "none" && l.email === "ada@gmail.com" && l.source === "Network operator inquiry"; }), "returning visitor skips the gate (ph_lead restored for the tour, source Network operator inquiry)");
-  ok((await p.getAttribute("#phf-mount iframe", "src")) === "/industries/retail-media/tour/?embed=1", "no ph_test outside test mode");
+  ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1", "no ph_test outside test mode");
   await p.close();
 
   // 8b. WebMCP: estimate_rmn_earnings drives the page's own calculator and returns the page's own figures; the gate only with consent.
@@ -378,11 +378,13 @@ try {
       await p.locator("#phf-unlock").tap();
       await p.waitForSelector("#phf-mount iframe");
       ok(await p.evaluate(() => getComputedStyle(document.getElementById("phf-gate")).display === "none" && getComputedStyle(document.querySelector(".phf-ph")).display === "none"), `${name}: the gate submit unlocks the tour`);
-      const tf = p.frames().find((f) => /\/industries\/retail-media\/tour\//.test(f.url()));
+      const tf = p.frames().find((f) => /\/run-your-own-rmn\/tour\//.test(f.url()));
       await tf.waitForSelector("#start", { state: "visible" });
       await tf.locator("#start").tap();
       await tf.waitForFunction(() => !!document.querySelector('#dots [aria-current="true"]'), null, { timeout: 15000 });
       ok(true, `${name}: the tour plays`);
+      const gt = await tf.evaluate(() => ({ title: document.title, cap: document.getElementById("capT").textContent, img: [...document.querySelectorAll("#stage .rm-shot img")].map((i) => i.complete && i.naturalWidth >= 1600 && /\/run-your-own-rmn\/tour\/assets\/v1\/img\//.test(i.src)) }));
+      ok(/Run Your Own RMN/.test(gt.title) && /six screen types/.test(gt.cap) && gt.img.length > 0 && gt.img.every(Boolean), `${name}: it is the golf club tour, on its real screenshots: ` + JSON.stringify(gt));
       await tf.waitForSelector("#fs", { state: "visible" });
       await tf.locator("#fs").tap();
       await tf.waitForFunction(() => document.documentElement.classList.contains("fs"));

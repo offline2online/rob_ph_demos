@@ -1,6 +1,6 @@
 /* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026): the calculator, info tooltips, anchors, the header's
    "Arrange A Demo" (goes to #tour here), the product tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
-   to ph-site/v1/operator-lead; on success the real retail media tour is framed in place, unlocked from the stored ph_lead with no second
+   to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked from the stored ph_lead with no second
    form. The FAQ is native <details> and needs no script. */
 (function () {
   "use strict";
@@ -28,7 +28,7 @@
   var root = document.getElementById("phf");
   if (!root) return;
   var $ = function (id) { return document.getElementById(id); };
-  var CFG = window.PH_OPERATOR || { endpoint: "/wp-json/ph-site/v1/operator-lead", tour: "/industries/retail-media/tour/" };
+  var CFG = window.PH_OPERATOR || { endpoint: "/wp-json/ph-site/v1/operator-lead", tour: "/run-your-own-rmn/tour/" };
 
   /* ---------- Calculator ---------- */
   var IDS = { ven: "c-ven", dis: "c-dis", vis: "c-vis", cpm: "c-cpm", atv: "c-atv", view: "c-view", up: "c-up" };
@@ -101,7 +101,7 @@
 
   function tourSrc() { return CFG.tour + "?embed=1" + (testMode() ? "&ph_test=1" : ""); }
   function showIn(name) { var w = $("phf-in"), h = $("phf-in-h"); if (!w) return; h.textContent = "You’re in" + (first(name) ? ", " + first(name) : ""); w.hidden = false; }
-  // Frame the real retail media tour, mounted the way enhance.js mounts the industry tours: same origin, height and full-screen messages, window.PH_TOUR.
+  // Frame the Run Your Own RMN tour (a golf club sells its screens to a golf brand; PH_OPERATOR.tour), mounted the way enhance.js mounts the industry tours: same origin, height and full-screen messages, window.PH_TOUR.
   function mountTour() {
     if (mounted || !box || !mount) return;
     mounted = true;
