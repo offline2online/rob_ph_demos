@@ -565,6 +565,21 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));
   await check("The Routine (automation user) can write trainTest", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { trainTest: { sha: "a", state: "running", workflows: [] } }, { merge: true }));
+
+  // Per-ticket model requirement (13 Nov 2026): a person sets which model
+  // must build a ticket; only the sessions record which model actually did.
+  await check("A human editor can mark a ticket Advanced (model)", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { model: "advanced" }, { merge: true }));
+  await check("A human editor can set it back to Standard", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { model: "standard" }, { merge: true }));
+  await check("model accepts only standard or advanced", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { model: "opus" }, { merge: true }));
+  await check("A human editor CANNOT claim which model built it (builtByModel)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { builtByModel: "claude-opus-5-5" }, { merge: true }));
+  await check("A human editor CANNOT claim which model reviewed it (reviewedByModel)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { reviewedByModel: "claude-opus-5-5" }, { merge: true }));
+  await check("The Routine (automation user) can record builtByModel", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));

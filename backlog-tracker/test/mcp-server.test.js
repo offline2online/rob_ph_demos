@@ -433,6 +433,39 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.statusCode, 200);
   });
 
+  // Per-ticket model requirement (t1CU2q6LlxGd5pFB9vwG).
+  await test("model: settable on create and update, read back, and only standard or advanced", async () => {
+    const call = async (name, args) => (await rpc(tokens.access_token, "tools/call", { name, arguments: args })).body.result;
+    let r = await call("create_backlog_item", { projectId: "proj1", desc: "Outcome: owner-only firing for agent tickets, checked server side.", model: "advanced" });
+    const created = JSON.parse(r.content[0].text);
+    assert.strictEqual(created.model, "advanced");
+    assert.strictEqual(env.store.col("backlogItems").get(created.itemId).model, "advanced");
+    r = await call("create_backlog_item", { projectId: "proj1", desc: "Outcome: a plain ticket on the default model." });
+    const plain = JSON.parse(r.content[0].text);
+    assert.strictEqual(plain.model, "standard");
+    assert.ok(!("model" in env.store.col("backlogItems").get(plain.itemId)), "the default is left unset on the card");
+    r = await call("create_backlog_item", { projectId: "proj1", desc: "Outcome: x", model: "opus-please" });
+    assert.strictEqual(r.isError, true);
+
+    r = await call("update_backlog_item", { itemId: plain.itemId, model: "advanced" });
+    assert.deepStrictEqual(JSON.parse(r.content[0].text).changed.filter((k) => k === "model"), ["model"]);
+    assert.strictEqual(env.store.col("backlogItems").get(plain.itemId).model, "advanced");
+    r = await call("update_backlog_item", { itemId: plain.itemId, model: "sonnet" });
+    assert.strictEqual(r.isError, true);
+    assert.strictEqual(env.store.col("backlogItems").get(plain.itemId).model, "advanced", "a refused value changes nothing");
+
+    env.store.col("backlogItems").get(plain.itemId).builtByModel = "claude-opus-5-5";
+    const detail = JSON.parse((await call("get_backlog_item", { itemId: plain.itemId })).content[0].text);
+    assert.strictEqual(detail.model, "advanced");
+    assert.strictEqual(detail.builtByModel, "claude-opus-5-5");
+    assert.strictEqual(detail.reviewedByModel, null);
+    const listed = JSON.parse((await call("list_backlog_items", { projectId: "proj1", status: "backlog" })).content[0].text);
+    assert.strictEqual(listed.items.find((i) => i.id === created.itemId).model, "advanced");
+    // No train field rides in with it.
+    const schema = JSON.stringify(mcp.__test.TOOLS.find((t) => t.name === "update_backlog_item").inputSchema);
+    assert.ok(!schema.includes("builtByModel") && !schema.includes("reviewedByModel"));
+  });
+
   await test("archive_backlog_items / delete_backlog_items: Backlog only, batch, all-or-nothing, audited", async () => {
     const col = env.store.col("backlogItems");
     for (const id of ["bk1", "bk2", "bk3", "bk4"]) col.set(id, { projectId: "proj1", title: `Junk ${id}`, desc: "x", type: "feature", category: "HQ Admin", status: "backlog" });

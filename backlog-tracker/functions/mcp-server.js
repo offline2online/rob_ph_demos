@@ -974,6 +974,7 @@ function unauthorized(res, detail) {
 // ══════════════════════════════════════════════════════════════════════════
 
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
+const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -1750,6 +1751,8 @@ function itemSummary(id, d, projects) {
     updatedAt: tsToISO(d.updatedAt) || tsToISO(d.createdAt),
     createdAt: tsToISO(d.createdAt),
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
+    // Which model the build and review must run on (unset = "standard").
+    model: normaliseModelRequirement(d.model),
     blocked: d.blocked && d.blocked.reason
       ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
       : null,
@@ -1818,6 +1821,9 @@ function itemDetail(id, d, projects) {
     testVersion: d.testVersion || null,
     archivedAt: tsToISO(d.archivedAt),
     noDeploymentRequired: d.noDeploymentRequired === true,
+    // The model that actually built / reviewed it, as those sessions recorded.
+    builtByModel: typeof d.builtByModel === "string" ? d.builtByModel : null,
+    reviewedByModel: typeof d.reviewedByModel === "string" ? d.reviewedByModel : null,
     // Why the last Failed testing / Eject from train happened; never cleared.
     lastFailureReason: d.lastFailureReason && typeof d.lastFailureReason === "object"
       ? {
@@ -2377,7 +2383,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. model (standard by default, or advanced for Claude Opus) says which model must build and review it. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2387,6 +2393,7 @@ const TOOLS = [
         title: { type: "string", description: "Optional short title; derived from desc when omitted." },
         type: { type: "string", enum: ["feature", "bug"], description: "Default feature." },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
+        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
       },
       required: ["projectId", "desc"], additionalProperties: false,
     },
@@ -2404,10 +2411,13 @@ const TOOLS = [
       const title = String(args.title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
       const type = args.type === "bug" || args.type === "feature" ? args.type : intake.type;
       const category = CATEGORIES.includes(args.category) ? args.category : suggestCategory(desc);
+      if (args.model != null && !MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
+      const model = normaliseModelRequirement(args.model);
       const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
         title, desc: intake.desc, type, category,
+        ...(model === "advanced" ? { model } : {}),
         ...(blocked ? { blocked } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
@@ -2421,7 +2431,7 @@ const TOOLS = [
       await audit(session, "create_backlog_item", { itemId: ref.id, projectId: String(args.projectId), title });
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
-        title, type, category, status: "backlog",
+        title, type, category, model, status: "backlog",
         intake: intake.blocked
           ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
           : { passed: true, completedAtBuild: intake.pending.map((g) => g.heading) },
@@ -2431,7 +2441,7 @@ const TOOLS = [
   },
   {
     name: "update_backlog_item",
-    description: "Correct a ticket's title, description, type or area. Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
+    description: "Correct a ticket's title, description, type, area or model requirement (standard, or advanced for Claude Opus). Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2441,6 +2451,7 @@ const TOOLS = [
         desc: { type: "string" },
         type: { type: "string", enum: ["feature", "bug"] },
         category: { type: "string", enum: CATEGORIES },
+        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
       },
       required: ["itemId"], additionalProperties: false,
     },
@@ -2468,7 +2479,11 @@ const TOOLS = [
         if (!CATEGORIES.includes(args.category)) return toolError(`category must be one of: ${CATEGORIES.join(", ")}`);
         fields.category = args.category;
       }
-      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category.");
+      if (args.model != null) {
+        if (!MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
+        fields.model = args.model;
+      }
+      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model.");
       fields.updatedAt = FieldValue.serverTimestamp();
       fields.updatedByEmail = session.email;
       await ref.update(fields);

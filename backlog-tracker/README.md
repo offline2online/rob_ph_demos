@@ -280,6 +280,17 @@ safe and moving:
   blocked cards writes `notifyRoutine` status "error" with the reason.
 - **`buildSession`** — each session reports on its own card; the button
   shows "Deving… N/M" and each card unlocks when its own session reports.
+- **Per-ticket model** (13 Nov 2026) — `backlogItems.model` is `standard`
+  (default) or `advanced` (Claude Opus only), set from New item / Edit item
+  → Model or MCP `create_backlog_item` / `update_backlog_item`. Each fire
+  carries `modelRequirementBlock(item)` (`functions/model-requirement.js`):
+  an Advanced ticket is built on Opus, handed to an Opus subagent, or not
+  built and flagged `blocked.reason: "model-unavailable"` ("Not built: needs
+  Opus", cleared with ×). Sessions record `builtByModel` / `reviewedByModel`
+  (pipeline fields), shown on the card's "Advanced · Opus" chip and in Edit
+  item; `run-backlog-automation.js` refuses an Advanced patch whose
+  `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
+  requirement".
 
 Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 `ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.
