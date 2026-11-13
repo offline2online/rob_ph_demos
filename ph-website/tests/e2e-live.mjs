@@ -7,7 +7,10 @@
  *   node ph-website/tests/e2e-live.mjs --dry-run    list every check, no network
  *   node ph-website/tests/e2e-live.mjs --stress     also push the WordPress tool route past its 429 limit (120/min)
  *   node ph-website/tests/e2e-live.mjs --json       machine-readable results
- *   --site <url>  --help-api <url>                  override the two origins (staging, local)
+ *   --site <url>  --help-api <url>  --mcp <url>     override the origins (staging, local); the help API and MCP
+ *                                                    default to the site's own /help-api and /mcp (the proxy, 1.8.0)
+ *   --console <url>                                  the console's help API, checked only to show it still answers
+ *                                                    (it is never advertised; nothing public may name it)
  *
  * Read-only: GET requests, one JSON-RPC POST, no writes. The only side effect
  * is that the CTA hop records one agent click per CTA (via=e2e) and that the
@@ -22,7 +25,12 @@ const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 const SITE = opt("--site", "https://personalisationhub.com").replace(/\/+$/, "");
-const HELP = opt("--help-api", "https://backlog-tracker-e4ed2.web.app/help-api").replace(/\/+$/, "");
+const HELP = opt("--help-api", `${SITE}/help-api`).replace(/\/+$/, "");
+const MCP = opt("--mcp", `${SITE}/mcp`).replace(/\/+$/, "");
+const CONSOLE_HELP = opt("--console", "https://backlog-tracker-e4ed2.web.app/help-api").replace(/\/+$/, "");
+// Nothing personalisationhub.com serves may name the agent console's host (14 Nov 2026).
+const CONSOLE_HOST = /backlog-tracker|\.web\.app\b|firebaseapp\.com|cloudfunctions\.net/i;
+const noConsole = (text, where) => { const m = String(text).replace(/\\\//g, "/").match(CONSOLE_HOST); ok(!m, `${where} names the console host (${m && m[0]})`); };
 const TOOLS = `${SITE}/wp-json/ph-agent/v1/tools`;
 const TRIAL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76";
 const DEMO = "https://calendly.com/rob-offline2online";
@@ -95,7 +103,8 @@ add("llms.txt", "served as text with the agent sections", async () => {
   const r = await get(`${SITE}/llms.txt`);
   ok(r.status === 200, `/llms.txt answered ${r.status}`);
   for (const h of ["## Industries", "## Platform", "## For AI agents"]) ok(r.text.includes(h), `llms.txt lacks "${h}"`);
-  ok(r.text.includes("/help-api/mcp"), "llms.txt does not name the remote MCP server");
+  ok(r.text.includes(`(${SITE}/mcp)`) && r.text.includes(`(${SITE}/help-api/`), "llms.txt does not give the personalisationhub.com MCP server and help API");
+  noConsole(r.text, "llms.txt");
   ok(!DEMO_NAMES.test(r.text), "llms.txt names a demo or client page");
   ok(!LEAKS.test(r.text), "llms.txt shows a leak");
 });
@@ -105,7 +114,8 @@ add("llms.txt", "every link is on the site or the help API and resolves", async 
   ok(links.length > 5, "llms.txt has almost no links");
   const bad = []; let n = 0;
   for (const u of [...new Set(links)].filter((x) => x.startsWith(SITE)).slice(0, 40)) {
-    n++; const g = await get(u); if (g.status !== 200) bad.push(`${u} ${g.status}`);
+    // /mcp is a JSON-RPC endpoint: a GET there answers 405 (POST only), which is how it resolves.
+    n++; const g = await get(u); const want = u.split("?")[0].replace(/\/+$/, "") === `${SITE}/mcp` ? 405 : 200; if (g.status !== want) bad.push(`${u} ${g.status}`);
   }
   ok(!bad.length, `broken llms.txt links: ${bad.join(", ")}`);
   ok(n > 0, "no site links to check");
@@ -139,7 +149,8 @@ add("ai-search", "llms-full.txt is plain text with llms.txt first and the twins 
 add("ai-search", "/.well-known/mcp.json is a server card whose tools match the REST tool list", async () => {
   const r = await get(`${SITE}/.well-known/mcp.json`); ok(r.status === 200, `answered ${r.status}`);
   const card = JSON.parse(r.text); const live = JSON.parse((await get(TOOLS)).text).tools;
-  ok(card.endpoint === `${HELP}/mcp`, "card endpoint is not the remote MCP server");
+  ok(card.endpoint === MCP && card.endpoint.startsWith(`${SITE}/`), "card endpoint is not the personalisationhub.com MCP server");
+  noConsole(r.text, "/.well-known/mcp.json");
   ok(JSON.stringify(card.tools) === JSON.stringify(live), "card tools differ from /wp-json/ph-agent/v1/tools");
   ok(live.every((t) => t.title && t.description.length >= 80 && t.annotations.readOnlyHint === true && t.annotations.idempotentHint === true && t.annotations.openWorldHint === false), "a tool lacks a title, a description or an annotation");
 });
@@ -214,7 +225,8 @@ add("security", "help API: CORS, nosniff, CSP, no stack traces", async () => {
   ok(/default-src 'none'/.test(r.headers.get("content-security-policy") || ""), `CSP is ${r.headers.get("content-security-policy")}`);
   ok(r.headers.get("x-ratelimit-limit"), "no X-RateLimit-Limit");
   const e = await get(`${HELP}/nope`); ok(e.status === 404 && !LEAKS.test(e.text), `unknown route: ${e.status}`);
-  const m = await get(`${HELP}/mcp`); ok(m.status === 405, `GET /mcp answered ${m.status}`);
+  const m = await get(MCP); ok(m.status === 405, `GET /mcp answered ${m.status}`);
+  noConsole(r.text + e.text + m.text, "help API answers");
   const q = await get(`${HELP}/search?q[]=a&q[]=b&limit=%27%20OR%201=1`); ok(q.status < 500 && !LEAKS.test(q.text), `odd query answered ${q.status}`);
 });
 add("security", "help API article: unknown id is 404, json and markdown do not share a cache entry", async () => {
@@ -229,7 +241,14 @@ add("security", "help API article: unknown id is 404, json and markdown do not s
 });
 
 /* ---- the remote MCP server ---- */
-const rpc = async (body) => get(`${HELP}/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
+// /mcp allows 30 messages a minute per address (a batch counts each): wait out a 429 once rather than fail the run on its own budget.
+const rpc = async (body) => {
+  const send = () => get(MCP, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify(body) });
+  const r = await send();
+  if (r.status !== 429) return r;
+  await new Promise((res) => setTimeout(res, (Math.min(65, Number(r.headers.get("retry-after")) || 60) + 1) * 1000));
+  return send();
+};
 add("mcp", "initialize, tools/list (ten tools), tools/call", async () => {
   const i = (await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } } })).json();
   ok(i.result && i.result.serverInfo, "initialize failed");
@@ -241,6 +260,43 @@ add("mcp", "unknown tool, bad JSON-RPC and oversized batch are clean errors", as
   const u = (await rpc({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "drop_tables", arguments: {} } })).json(); ok(u.error, "unknown tool not an error");
   const g = await rpc({ nope: true }); ok(g.status < 500 && !LEAKS.test(g.text), `garbage answered ${g.status}`);
   const b = await rpc(Array.from({ length: 21 }, (_, i) => ({ jsonrpc: "2.0", id: i, method: "ping" }))); ok(b.status === 400, `21-message batch answered ${b.status}`);
+});
+
+add("mcp", "search_help, get_help_article and calculate_business_model over personalisationhub.com/mcp, no console host anywhere", async () => {
+  const all = [];
+  const call = async (id, name, args) => { const r = await rpc({ jsonrpc: "2.0", id, method: "tools/call", params: { name, arguments: args } }); all.push(r.text); return r.json(); };
+  const i = await rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } } }); all.push(i.text);
+  all.push((await rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" })).text);
+  const s = await call(3, "search_help", { query: "add a store", limit: 3 });
+  const hits = (s.result && s.result.structuredContent && s.result.structuredContent.results) || [];
+  ok(!s.result.isError && hits.length && hits.every((h) => h.url.startsWith(`${SITE}/support-centre/`)), "search_help over /mcp found nothing on the Support Centre");
+  const a = await call(4, "get_help_article", { url: hits[0].url }); ok(!a.result.isError && /^#/m.test(textOf(a.result)), "get_help_article over /mcp");
+  const b = await call(5, "calculate_business_model", { industry: "telco", inputs: { stores: 100 } }); ok(!b.result.isError && b.result.structuredContent.estimate.total > 0, "calculate_business_model over /mcp");
+  noConsole(all.join("\n"), "an MCP answer");
+});
+add("mcp", "the console's own help API still answers (kept for existing clients, never advertised)", async () => {
+  const r = await get(`${CONSOLE_HELP}/search?q=store&limit=1`); ok(r.status === 200 && Array.isArray(r.json().results), `console search answered ${r.status}`);
+});
+
+/* ---- no public output names the console host (sitemap pages, twins, llms, robots, REST tools, proxy) ---- */
+add("no-console-host", "every sitemap URL and its markdown twin, llms.txt, llms-full.txt, robots.txt, the server card and the REST tools", async () => {
+  const seen = new Set(); const pages = []; const queue = [`${SITE}/sitemaps.xml`];
+  while (queue.length && seen.size < 60) {
+    const u = queue.shift(); if (seen.has(u)) continue; seen.add(u);
+    const x = await get(u); if (x.status !== 200) continue;
+    noConsole(x.text, u);
+    for (const m of x.text.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)) { const loc = m[1].replace(/&amp;/g, "&"); if (/\.xml(\?|$)/.test(loc)) queue.push(loc); else pages.push(loc); }
+  }
+  ok(pages.length > 5, `sitemaps list only ${pages.length} pages`);
+  const bad = [];
+  for (const u of [...new Set(pages)].slice(0, 600)) {
+    for (const v of [u, `${u}${u.includes("?") ? "&" : "?"}format=md`]) { const g = await get(v); if (CONSOLE_HOST.test(g.text.replace(/\\\//g, "/"))) bad.push(v); }
+  }
+  for (const p of ["/llms.txt", "/llms-full.txt", "/robots.txt", "/.well-known/mcp.json", "/wp-json/ph-agent/v1/tools", "/help-api/", "/help-api/search?q=store", "/help-api/nope"]) { const g = await get(SITE + p); if (CONSOLE_HOST.test(g.text.replace(/\\\//g, "/"))) bad.push(p); }
+  for (const [n, a] of [["describe_platform"], ["search_help", { query: "store", limit: 3 }], ["get_installation_spec"], ["calculate_business_model", { industry: "telco" }], ["start_free_trial"], ["book_demo"], ["list_industries"]]) {
+    const t = await get(toolUrl(n, a)); if (CONSOLE_HOST.test(t.text.replace(/\\\//g, "/"))) bad.push(`ph-agent/v1/tools/${n}`);
+  }
+  ok(!bad.length, `names the console host: ${bad.slice(0, 8).join(", ")}${bad.length > 8 ? ` (+${bad.length - 8})` : ""}`);
 });
 
 /* ---- 429 ---- */
@@ -280,7 +336,7 @@ for (const [label, path] of [["home", "/"], ["feature page", "/digital-signage/"
 
 /* ---- run ---- */
 if (flag("--dry-run")) {
-  console.log(`e2e-live: ${checks.length} checks (dry run, no network). site=${SITE} help-api=${HELP}`);
+  console.log(`e2e-live: ${checks.length} checks (dry run, no network). site=${SITE} help-api=${HELP} mcp=${MCP}`);
   checks.forEach((c, i) => console.log(`${String(i + 1).padStart(3)}  [${c.group}] ${c.name}${c.last ? "  (runs last)" : ""}`));
   process.exit(0);
 }

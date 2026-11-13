@@ -1,6 +1,6 @@
 <?php
 /**
- * PH Agent Endpoint (Angie snippet). Version 1.7.0
+ * PH Agent Endpoint (Angie snippet). Version 1.8.0
  *
  * Markdown twins (?format=md), one shared JSON-LD graph and llms.txt sections
  * for the allow-listed pages in lib.php. Industries, Blog and Support Centre
@@ -17,6 +17,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once __DIR__ . '/lib.php';
 require_once __DIR__ . '/tools.php';
 require_once __DIR__ . '/faq.php';
+require_once __DIR__ . '/proxy.php';
 
 /** Plain-array view of a post for is_exposable(). No extra queries beyond meta. */
 function post_view( $post ) {
@@ -482,4 +483,80 @@ add_action( 'template_redirect', function () {
 		echo wp_json_encode( server_card(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ); // phpcs:ignore WordPress.Security.EscapeOutput -- JSON.
 		exit;
 	}
+}, 0 );
+
+/* ------------------------------------------------------------------ /help-api/* and /mcp (1.8.0) */
+/* The help API and the remote MCP server on personalisationhub.com, forwarded server side by proxy.php.
+   Runs at parse_request, before the main query, the canonical redirect or any template. */
+
+function proxy_request_from_globals() {
+	$headers = array();
+	foreach ( $_SERVER as $k => $v ) { // phpcs:ignore WordPress.Security
+		if ( 0 === strpos( $k, 'HTTP_' ) && is_string( $v ) ) {
+			$headers[ strtolower( str_replace( '_', '-', substr( $k, 5 ) ) ) ] = $v;
+		}
+	}
+	if ( isset( $_SERVER['CONTENT_TYPE'] ) ) {
+		$headers['content-type'] = (string) $_SERVER['CONTENT_TYPE'];
+	}
+	$method = isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( (string) $_SERVER['REQUEST_METHOD'] ) : 'GET';
+	$body   = 'POST' === $method ? (string) file_get_contents( 'php://input', false, null, 0, PROXY_BODY_MAX + 1 ) : '';
+	return array(
+		'method'  => $method,
+		'path'    => (string) wp_parse_url( isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/', PHP_URL_PATH ), // phpcs:ignore WordPress.Security
+		'query'   => isset( $_SERVER['QUERY_STRING'] ) ? (string) $_SERVER['QUERY_STRING'] : '',
+		'headers' => $headers,
+		'body'    => $body,
+	);
+}
+
+function proxy_io() {
+	return array(
+		'transport' => function ( $method, $url, $headers, $body, $timeout ) {
+			$args = array( 'method' => $method, 'headers' => $headers, 'timeout' => $timeout, 'redirection' => 0, 'limit_response_size' => 2 * 1024 * 1024 );
+			if ( null !== $body ) {
+				$args['body'] = $body;
+			}
+			$r = wp_remote_request( $url, $args );
+			if ( is_wp_error( $r ) ) {
+				$m = strtolower( $r->get_error_message() );
+				return array( 'error' => ( false !== strpos( $m, 'timed out' ) || false !== strpos( $m, 'curl error 28' ) || false !== strpos( $m, 'timeout' ) ) ? 'timeout' : 'unavailable' );
+			}
+			$h = wp_remote_retrieve_headers( $r );
+			$h = is_object( $h ) && method_exists( $h, 'getAll' ) ? $h->getAll() : (array) $h;
+			return array( 'status' => (int) wp_remote_retrieve_response_code( $r ), 'headers' => $h, 'body' => (string) wp_remote_retrieve_body( $r ) );
+		},
+		'rate'      => function ( $bucket, $max, $cost ) {
+			$wait = 0;
+			for ( $i = 0; $i < max( 1, (int) $cost ); $i++ ) {
+				$wait = rate_hit( $bucket, $max );
+			}
+			return $wait;
+		},
+		'cache_get' => function ( $key ) {
+			$v = get_transient( $key );
+			return is_array( $v ) ? $v : null;
+		},
+		'cache_set' => function ( $key, $value, $ttl ) {
+			set_transient( $key, $value, $ttl );
+		},
+	);
+}
+
+add_action( 'parse_request', function () {
+	$path = (string) wp_parse_url( isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : '/', PHP_URL_PATH ); // phpcs:ignore WordPress.Security
+	if ( ! proxy_route( $path ) ) {
+		return;
+	}
+	$out = proxy_handle( proxy_request_from_globals(), proxy_io() );
+	if ( ! $out ) {
+		return;
+	}
+	status_header( $out['status'] );
+	header_remove( 'Access-Control-Allow-Credentials' );
+	foreach ( $out['headers'] as $k => $v ) {
+		header( $k . ': ' . $v );
+	}
+	echo $out['body']; // phpcs:ignore WordPress.Security.EscapeOutput -- JSON or markdown from the help service, console addresses rewritten.
+	exit;
 }, 0 );

@@ -92,7 +92,8 @@ foreach ( array( 'Company', 'For AI agents' ) as $h ) {
 	ok( substr_count( $out, "## $h" ) === 1, "## $h added once" );
 }
 ok( strpos( $out, 'privacy-policy/?format=md' ) !== false && strpos( $out, '/legal/?format=md' ) !== false && strpos( $out, '/support/?format=md' ) !== false, 'legal pages listed' );
-ok( strpos( $out, 'help-api/mcp' ) !== false && strpos( $out, 'WebMCP' ) !== false, 'agents section lists MCP and WebMCP' );
+ok( strpos( $out, '(https://personalisationhub.com/mcp)' ) !== false && strpos( $out, 'WebMCP' ) !== false, 'agents section lists MCP (on personalisationhub.com) and WebMCP' );
+ok( ! preg_match( '#backlog-tracker|\.web\.app|firebaseapp\.com|cloudfunctions\.net#i', $out ), 'llms.txt sections never name the console host' );
 ok( strpos( $out, 'localisation-geo-targeting' ) === false, 'unpublished page is not listed' );
 ok( llms_sections( $out, $pages ) === $out || substr_count( llms_sections( $out, $pages ), '## For AI agents' ) === 1, 'idempotent sections' );
 foreach ( array( 'lindt', 'webdemo', 'mipharmacy', 'amazon-signage' ) as $bad ) {
@@ -389,7 +390,10 @@ ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const 
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
 $scs = file_get_contents( $snips . '/ph-support-centre/main.php' );
-ok( strpos( $scs, "const VER          = '1.4.2'" ) !== false, 'Support Centre is 1.4.2' );
+ok( strpos( $scs, "const VER          = '1.4.3'" ) !== false, 'Support Centre is 1.4.3' );
+ok( strpos( $scs, '"- [Help search API](" . PUBLIC_HELP . "/search' ) !== false && strpos( $scs, '"- [Help MCP server](" . PUBLIC_MCP . ")' ) !== false, 'Support Centre llms.txt lines use the personalisationhub.com addresses' );
+ok( strpos( $scs, "const PUBLIC_HELP  = 'https://personalisationhub.com/help-api'" ) !== false && strpos( $scs, "const PUBLIC_MCP   = 'https://personalisationhub.com/mcp'" ) !== false, 'Support Centre public help API and MCP addresses are on personalisationhub.com' );
+ok( 1 === preg_match_all( '/\bHELP_API\b(?!_)/', preg_replace( '/^const HELP_API .*$/m', '', $scs ) ), 'HELP_API (the console) is used only for the server-side sync sources, never in public output' );
 ok( preg_match( "/const SOURCES\\s*=\\s*\\[\\s*HELP_API \\. '\\/data\\/', 'https:\\/\\/raw\\.githubusercontent\\.com[^']*', 'https:\\/\\/help\\.personalisationhub\\.com\\/data\\/'/", $scs ) === 1, 'sources: live feed, GitHub raw, help site, in that order' );
 ok( strpos( $scs, "const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api'" ) !== false, 'HELP_API is the live console feed' );
 ok( strpos( $scs, "const SYNC_VER     = '2'" ) !== false, 'SYNC_VER unchanged' );
@@ -560,6 +564,7 @@ ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, en
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
 
 require __DIR__ . '/ai-surface.test.php';
+require __DIR__ . '/help-proxy.test.php';
 /* PH Blog abilities: own process (it stubs the hook functions itself) */
 exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/ph-blog-abilities.test.php' ) . ' 2>&1', $abl_out, $abl_rc );
 ok( 0 === $abl_rc, 'ph-blog-abilities.test.php: ' . implode( ' ', $abl_out ) );

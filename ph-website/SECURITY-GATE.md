@@ -12,8 +12,9 @@ The go-live gate for the site-wide agent endpoint release (seven tickets, one re
 | Markdown twins `?format=md` (allow-listed pages, industries, blog, Support Centre) | `ph-agent-endpoint`, `ph-industry-enhancements/md.php`, `ph-blog`, `ph-support-centre` |
 | `/llms-full.txt`, `/.well-known/mcp.json` and the `robots_txt` filter (9 Nov 2026: public, read-only, cached, no input) | `ph-agent-endpoint/main.php`, `tools.php`, `ph-industry-enhancements/ai-surface.php` |
 | `/llms.txt` and the `ph_llms_txt` filter | `ph-industry-enhancements/llms.php` plus each snippet's section |
-| `GET /help-api/search`, `GET /help-api/article` | `backlog-tracker/functions/help-search.js` |
-| `POST /help-api/mcp` (remote MCP server) | same file |
+| `GET /help-api/search`, `GET /help-api/article` | `backlog-tracker/functions/help-search.js`, reached through `https://personalisationhub.com/help-api/*` (`ph-agent-endpoint/proxy.php`, 1.8.0) |
+| `POST /help-api/mcp` (remote MCP server) | same file, reached through `https://personalisationhub.com/mcp` (same proxy) |
+| `https://personalisationhub.com/help-api/*` and `/mcp` (14 Nov 2026): server-side proxy; fixed upstream, allow-listed paths only (no traversal), request headers allow-listed (no cookies or client address forwarded), body ≤ 64 KB, 6 s / 12 s timeouts answering 504/502 with no upstream detail, upstream redirects refused, console addresses rewritten in every answer | `ph-agent-endpoint/proxy.php`, `main.php` |
 | `/go/free-trial/`, `/go/demo/` (tracked CTA hop) | `ph-agent-endpoint/main.php`, `tools.php` |
 | PH Blog snippet output (the blog's open security review) | `snippets/ph-blog/` |
 | `ph-blog/upload-image`, `ph-blog/create-post`, `ph-blog/update-post` (WordPress Abilities API via the MCP Adapter): authenticated, admin-only write abilities, no public route; permissions `upload_files`, `publish_posts`, `edit_post`; schema-validated inputs with unknown keys refused; SSRF guarded by `wp_safe_remote_get` (via `download_url`), https only, 15 MB, image types only | `snippets/ph-blog/abilities.php` |
@@ -97,6 +98,7 @@ Offline: 10 refused URL forms in `tests/run.php`, plus `help-leak.test.js`. Live
 | --- | --- | --- |
 | `/help-api/search`, `/article` | 60 a minute per client | `429`, `Retry-After`, `Cache-Control: no-store`, `X-RateLimit-*`; spoof fixed (PT-01) |
 | `/help-api/mcp` | 30 a minute per client, batch charged per message | Fixed (PT-03) |
+| `personalisationhub.com/help-api/*` and `/mcp` (the proxy) | 60 and 30 a minute per address, MCP batch charged per message, checked before the 60 s shared cache | Added 14 Nov 2026 |
 | `/wp-json/ph-agent/v1/tools/{name}` | 120 a minute per address | Added (PT-04) |
 | `/go/{slug}/` | 30 recorded a minute per address | Added (PT-02) |
 | Body limits | MCP batch ≤ 20, tool `args` ≤ 2000 characters, query ≤ 300 | Pass |
@@ -149,7 +151,7 @@ Do these after Deploy to Main and after publishing the changed snippets (`README
 
 1. **End-to-end check on production:** `node ph-website/tests/e2e-live.mjs`. It covers every page type, every tool, the twins, JSON-LD, llms.txt, the CTA links, 429 on the help API, the headers and the console. Add `--stress` once to see the WordPress route's 429 (it spends that address's minute). Any FAIL stops the release; a `429` from the tool route in the first minute of normal use would mean the R-2 check (closed 4 Nov 2026) no longer holds.
 2. **Alert delivery:** call `helpApiTestAlert` with the board key (it posts the test alert to the webhook) and confirm the alert reaches Rob.
-3. **RevOps:** call `start_free_trial` through the remote MCP server (`/help-api/mcp`) and through a WebMCP page, follow each `trackedUrl`, then check that one `agentToolLog` row (`source: "remote-mcp"`), one `ph_agent_tool` dataLayer event and one `ph_agent_cta` event exist, and that none of them holds an IP, user agent or free text.
+3. **RevOps:** call `start_free_trial` through the remote MCP server (`https://personalisationhub.com/mcp`) and through a WebMCP page, follow each `trackedUrl`, then check that one `agentToolLog` row (`source: "remote-mcp"`), one `ph_agent_tool` dataLayer event and one `ph_agent_cta` event exist, and that none of them holds an IP, user agent or free text.
 4. **Roll back** if (1) fails and the cause is not a flaky page: republish the previous snippet versions from the snapshot taken before the deploy.
 
 ## 6. Sign-off

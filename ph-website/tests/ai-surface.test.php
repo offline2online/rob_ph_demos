@@ -118,7 +118,7 @@ ok( 10 === count( $defs ), 'ten tools' );
 foreach ( $defs as $d ) {
 	ok( 1 === preg_match( '/^  - `' . preg_quote( $d['name'], '/' ) . '`: \S/m', $agents ), 'For AI agents lists ' . $d['name'] . ' on one line' );
 }
-foreach ( array( '`run_business_model_calculator`', 'GET https://personalisationhub.com/wp-json/ph-agent/v1/tools', '?format=md', '/llms-full.txt', '/.well-known/mcp.json', 'help-api/mcp', 'navigator.modelContext' ) as $needle ) {
+foreach ( array( '`run_business_model_calculator`', 'GET https://personalisationhub.com/wp-json/ph-agent/v1/tools', '?format=md', '/llms-full.txt', '/.well-known/mcp.json', '(https://personalisationhub.com/mcp)', '(https://personalisationhub.com/help-api/)', 'navigator.modelContext' ) as $needle ) {
 	ok( false !== strpos( $llms, $needle ), "For AI agents names $needle" );
 }
 ok( false === strpos( $llms, 'search the Support Centre from any MCP client' ), 'the old one-line description of the MCP server is gone' );
@@ -147,7 +147,9 @@ ok( "# A\n\n---\n\nURL: u\n\n# B\n" === llms_full_text( "# A\n", array( array( '
 /* ---- /.well-known/mcp.json ---- */
 $card = json_decode( json_encode( server_card(), JSON_UNESCAPED_SLASHES ), true );
 ok( is_array( $card ) && 'Personalisation Hub' === $card['name'] && strlen( $card['description'] ) > 80, 'server card is JSON with a name and description' );
-ok( 'https://backlog-tracker-e4ed2.web.app/help-api/mcp' === $card['endpoint'] && 'streamable-http' === $card['transport']['type'] && false === $card['authentication']['required'], 'server card: remote endpoint, streamable HTTP, no auth' );
+ok( ! preg_match( '#backlog-tracker|\.web\.app|firebaseapp\.com|cloudfunctions\.net#i', $llms . json_encode( server_card(), JSON_UNESCAPED_SLASHES ) ), 'llms.txt and the server card never name the console host' );
+ok( 'https://personalisationhub.com/help-api/' === $card['links']['helpApi'], 'server card: help API on personalisationhub.com' );
+ok( 'https://personalisationhub.com/mcp' === $card['endpoint'] && 'https://personalisationhub.com/mcp' === $card['transport']['url'] && 'https://personalisationhub.com/mcp' === $card['remotes'][0]['url'] && 'streamable-http' === $card['transport']['type'] && false === $card['authentication']['required'], 'server card: remote endpoint, streamable HTTP, no auth' );
 ok( json_decode( json_encode( $defs ), true ) === $card['tools'], 'server card tools equal the tool contract' );
 ok( 'https://personalisationhub.com/llms.txt' === $card['links']['llms'] && 0 === strpos( $card['links']['documentation'], 'https://personalisationhub.com/' ), 'server card links to llms.txt and the docs' );
 
