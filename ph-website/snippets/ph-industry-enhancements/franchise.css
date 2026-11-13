@@ -1,4 +1,4 @@
-/* PH Franchise page (/franchise/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
+/* PH Be Your Own Boss page (/be-your-own-boss/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
    body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. */
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
 body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
@@ -107,7 +107,7 @@ body .phf .phf-tip:hover .phf-tipbox,body .phf .phf-tip:focus-within .phf-tipbox
 body .phf .phf-tip.phf-tip-l .phf-tipbox{left:0;transform:none}
 body .phf .phf-tip.phf-tip-r .phf-tipbox{left:auto;right:0;transform:none}
 
-/* Product tour band and the franchise gate */
+/* Product tour band and the gate */
 body .phf h2.phf-h2-tour{margin:0 0 16px;max-width:18em}
 body .phf .phf-tour-p{margin:0 0 40px;font-size:18px;color:#5A6479;max-width:36em}
 body .phf .phf-in{margin:-16px 0 24px}

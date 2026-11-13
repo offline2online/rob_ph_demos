@@ -1,8 +1,10 @@
-// node ph-website/tests/franchise.test.mjs : the hidden /franchise/ page in Chromium (franchise.php's server-rendered body, franchise.css,
+// node ph-website/tests/franchise.test.mjs : the hidden Be Your Own Boss page (/be-your-own-boss/) in Chromium (franchise.php's server-rendered body, franchise.css,
 // franchise.js, site.js), with the real tour.html served at /industries/retail-media/tour/. Copy and section order, the calculator defaults and
 // live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, the body it posts, ph_franchise and ph_lead,
 // an existing ph_lead never overwritten), the tour framed in place and unlocked with no form, Start the tour plays a step, returning visitors,
 // the header's Arrange A Demo, no horizontal scroll at 360/390/768/1440, and enhance.js's known-visitor rule (name, company and email).
+// Since the 13 Nov 2026 rename: no "franchise" in the visible text, any attribute, the title or meta; the three copy replacements are
+// exact; the header item is "Be Your Own Boss"; the dataLayer and ph_lead source say "Network operator inquiry".
 // Skips (exit 0) when Playwright, Chromium or php is not available.
 import { createRequire } from "module";
 import fs from "fs";
@@ -19,6 +21,13 @@ const r = spawnSync("php", [path.join(here, "franchise-render.php")], { encoding
 if (r.error) { console.log("franchise: php not installed here; skipping"); process.exit(0); }
 assert.strictEqual(r.status, 0, "franchise-render.php: " + r.stderr);
 const body = r.stdout;
+const hr = spawnSync("php", [path.join(here, "franchise-render.php"), "head"], { encoding: "utf8" });
+assert.strictEqual(hr.status, 0, "franchise-render.php head: " + hr.stderr);
+const head = JSON.parse(hr.stdout);
+assert.strictEqual(head.title, "Be Your Own Boss - Personalisation Hub", "document title");
+assert.strictEqual(head.menu.title, "Be Your Own Boss", "menu item title");
+assert.strictEqual(head.menu.url, "http://x.test/be-your-own-boss/", "menu item URL");
+const esc = (v) => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const css = fs.readFileSync(path.join(dir, "franchise.css"), "utf8");
 const js = fs.readFileSync(path.join(dir, "franchise.js"), "utf8");
 const site = fs.readFileSync(path.join(dir, "site.js"), "utf8");
@@ -30,8 +39,8 @@ const d = F.view(F.calc({ ven: 90, dis: 3, vis: 800, cpm: 25, atv: 25, view: 60,
 assert.deepStrictEqual(d, { yours: "$591K", venues: "90", displays: "270", visitors: "2,190,000", views: "3,942,000", extraSales: "$59.1M" }, "defaults");
 
 // The site's header (Industry, Support, Arrange A Demo as an Elementor popup link) and footer around the shortcode output.
-const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font-family:Arial}</style><style>${css}</style></head><body>
-<header class="elementor-location-header" style="position:sticky;top:0;z-index:5;background:#fff;height:72px"><nav><ul><li class="menu-item"><a href="/industries/">Industry</a></li><li class="menu-item current-menu-item"><a href="/franchise/" aria-current="page">Franchise</a></li><li class="menu-item"><a href="/support-centre/">Support</a></li></ul></nav>
+const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(head.title)}</title><meta property="og:title" content="${esc(head.title)}"><meta property="og:url" content="${esc(head.menu.url)}"><link rel="canonical" href="${esc(head.menu.url)}"><style>body{margin:0;font-family:Arial}</style><style>${css}</style></head><body>
+<header class="elementor-location-header" style="position:sticky;top:0;z-index:5;background:#fff;height:72px"><nav><ul><li class="menu-item"><a href="/industries/">Industry</a></li><li class="${esc(head.menu.classes)}"><a href="${esc(head.menu.url)}" aria-current="${esc(head.menu.atts["aria-current"])}">${esc(head.menu.title)}</a></li><li class="menu-item"><a href="/support-centre/">Support</a></li></ul></nav>
 <a class="elementor-button" id="hdr-demo" href="#elementor-action%3Aaction%3Dpopup%3Aopen%26settings%3DeyJpZCI6IjI2NTgi"><span>Arrange A Demo</span></a></header>
 <main>${body}</main><footer class="elementor-location-footer"><a href="/privacy-policy/">Privacy</a></footer>
 <script>window.__cal=0; window.Calendly={initPopupWidget:function(){window.__cal++;}}; window.PH_FRANCHISE={"endpoint":"/wp-json/ph-site/v1/franchise-lead","tour":"/industries/retail-media/tour/"};</script>
@@ -53,10 +62,10 @@ try {
       if (/\/assets\/v1\//.test(u)) return rt.fulfill({ status: 404, body: "" });
       if (/\/industries\/retail-media\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
       if (/\/wp-json\//.test(u)) return rt.fulfill({ contentType: "application/json", body: '{"found":false}' });
-      if (u.startsWith("http://x.test/franchise/")) return rt.fulfill({ contentType: "text/html", body: page });
+      if (u.startsWith("http://x.test/be-your-own-boss/")) return rt.fulfill({ contentType: "text/html", body: page });
       return rt.abort();
     });
-    await p.goto("http://x.test/franchise/" + search);
+    await p.goto("http://x.test/be-your-own-boss/" + search);
     return p;
   };
   const text = (p, sel) => p.evaluate((s) => document.querySelector(s).textContent.trim(), sel);
@@ -71,7 +80,21 @@ try {
   const heads = await p.evaluate(() => [...document.querySelectorAll("#phf h1, #phf h2")].map((h) => h.textContent.trim()));
   assert.deepStrictEqual(heads, ["Be your own boss", "Your head start in a changing industry", "Built for people who know media", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "See a retail media network run end to end"], "section order");
   const all = await p.evaluate(() => document.getElementById("phf").textContent);
-  for (const s of ["Run your own retail media network", "AI has changed what one person can achieve.", "Why it beats anything out there", "Personalisation in physical venues", "Campaigns can be created automatically", "Self-optimising, with proof of results", "Your brand, your own AWS account", "You sign up venues", "You partner with brands and advertisers", "You run it your own way", "Car dealerships", "Cafés and bakeries", "Standardised measurement", "AI-native, with full MCP support", "Your franchise network", "Your potential income a year", "Retail media income", "A way to fight back", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the franchise opportunity."]) ok(all.includes(s), "copy: " + s);
+  for (const s of ["Run your own retail media network", "AI has changed what one person can achieve.", "Why it beats anything out there", "Personalisation in physical venues", "Campaigns can be created automatically", "Self-optimising, with proof of results", "Your brand, your own AWS account", "You sign up venues", "You partner with brands and advertisers", "You run it your own way", "Car dealerships", "Cafés and bakeries", "Standardised measurement", "AI-native, with full MCP support", "Your network", "Your potential income a year", "Retail media income", "A way to fight back", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "copy: " + s);
+  // The three copy replacements, exact.
+  ok(all.includes("We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one."), "copy 1: head-start paragraph");
+  ok((await text(p, ".phf-cin-h")) === "Your network", "copy 2: calculator panel heading");
+  ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.", "copy 3: tour gate intro");
+  // No "franchise" anywhere a visitor can see it: visible text, tooltips, every attribute (aria-label, title, alt, placeholder, href...),
+  // the document title, meta and the URL. Script and style bodies are code, not page content.
+  const seen = await p.evaluate(() => {
+    const out = [document.body.innerText, document.title, location.href, [...document.querySelectorAll(".phf-tipbox, option")].map((t) => t.textContent).join(" ")];
+    for (const el of document.querySelectorAll("*")) { if (el.tagName === "SCRIPT" || el.tagName === "STYLE") continue; for (const a of el.attributes) out.push(a.name + "=" + a.value); }
+    return out.join("\n");
+  });
+  ok(!/franchise/i.test(seen), "no 'franchise' in visible text, attributes, title, meta or URL: " + (seen.match(/.{0,60}franchise.{0,60}/i) || [""])[0]);
+  ok((await p.title()) === "Be Your Own Boss - Personalisation Hub", "document title");
+  ok((await p.evaluate(() => { const a = document.querySelector("header a[aria-current=page]"); return a.textContent + "|" + a.getAttribute("href"); })) === "Be Your Own Boss|http://x.test/be-your-own-boss/", "header item Be Your Own Boss, current, links /be-your-own-boss/");
   ok((await p.evaluate(() => getComputedStyle(document.querySelector("#phf h1")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-hero-sub")).color === "rgb(23, 155, 194)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)"), "design colours");
   // No commercial terms anywhere on the page (text, tooltips, attributes).
@@ -111,7 +134,7 @@ try {
   await p.close();
   { const t = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
     await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
-    await t.goto("http://x.test/franchise/");
+    await t.goto("http://x.test/be-your-own-boss/");
     await t.locator("[aria-describedby=c-atv-tip]").tap();
     const g = await t.evaluate(() => { const b = document.getElementById("c-atv-tip").getBoundingClientRect(); return { on: getComputedStyle(document.getElementById("c-atv-tip")).display !== "none", l: b.left, r: b.right, w: innerWidth, exp: document.querySelector("[aria-describedby=c-atv-tip]").getAttribute("aria-expanded") }; });
     ok(g.on && g.exp === "true" && g.l >= 0 && g.r <= g.w, "tooltip on tap, inside the viewport: " + JSON.stringify(g));
@@ -148,11 +171,11 @@ try {
   await p.click("#phf-unlock");
   await p.waitForSelector("#phf-mount iframe");
   assert.strictEqual(posts.length, 1, "one post");
-  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/franchise/", test: true, website: "" }, "post body");
+  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/be-your-own-boss/", test: true, website: "" }, "post body");
   const st = await p.evaluate(() => ({ f: JSON.parse(localStorage.getItem("ph_franchise")), l: JSON.parse(localStorage.getItem("ph_lead")), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_franchise stored");
-  ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Franchise opportunity", "ph_lead stored for the tour");
-  ok(st.dl.length === 1 && st.dl[0].source === "Franchise opportunity" && !JSON.stringify(st.dl).includes("ada@"), "dataLayer ph_lead_captured, no contact details");
+  ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
+  ok(st.dl.length === 1 && st.dl[0].source === "Network operator inquiry" && !JSON.stringify(st.dl).includes("ada@"), "dataLayer ph_lead_captured, no contact details");
   ok((await text(p, "#phf-in-h")) === "You’re in, Ada", "You're in, <first name>");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/industries/retail-media/tour/?embed=1&ph_test=1", "iframe src with embed=1 and ph_test=1");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-ph")).display === "none" && getComputedStyle(document.getElementById("phf-gate")).display === "none" && window.PH_TOUR && window.PH_TOUR.endpoint === "/wp-json/ph-site/v1/tour-lead"), "placeholder and gate replaced; window.PH_TOUR set");
@@ -166,6 +189,7 @@ try {
   await fr.waitForFunction(() => !!document.querySelector('#dots [aria-current="true"]'), null, { timeout: 15000 });
   ok(true, "Start the tour plays a step");
   ok(p.__errs.length === 0, "no page errors: " + p.__errs.join("; "));
+  ok(!/franchise/i.test(await p.evaluate(() => document.body.innerText)), "after unlocking: still no 'franchise' in the visible text");
   await p.close();
 
   // 6. Errors: a 400 names the field.
@@ -186,10 +210,10 @@ try {
   ok(JSON.stringify(await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")))) === JSON.stringify(industry), "the industry ph_lead is not overwritten");
   await p.close();
 
-  // 8. Returning franchise visitor: no gate, the tour straight away.
+  // 8. Returning visitor (ph_franchise stored): no gate, the tour straight away; the restored ph_lead carries the new label.
   p = await open({ franchise: { name: "Ada Lovelace", email: "ada@gmail.com", ts: 1 } });
   await p.waitForSelector("#phf-mount iframe");
-  ok(await p.evaluate(() => getComputedStyle(document.getElementById("phf-gate")).display === "none" && JSON.parse(localStorage.getItem("ph_lead")).email === "ada@gmail.com"), "returning visitor skips the gate (ph_lead restored for the tour)");
+  ok(await p.evaluate(() => { const l = JSON.parse(localStorage.getItem("ph_lead")); return getComputedStyle(document.getElementById("phf-gate")).display === "none" && l.email === "ada@gmail.com" && l.source === "Network operator inquiry"; }), "returning visitor skips the gate (ph_lead restored for the tour, source Network operator inquiry)");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/industries/retail-media/tour/?embed=1", "no ph_test outside test mode");
   await p.close();
 
@@ -217,7 +241,7 @@ try {
   const row = '<div class="ph-ind-cf"><span class="ph-ind-cf-l">L</span><span class="ph-ind-cf-v">V</span></div>';
   const ind = "pharmacy", n = CALC[ind].inputs.length + CALC[ind].assumptions.length;
   const ihtml = `<!doctype html><html><head><style>${ecss}</style></head><body><main><section class="ph-ind-sec"><div class="ph-ind-calc"><div class="ph-ind-cin"><p class="ph-ind-label-gap">a</p><p class="ph-ind-label-gap">b</p>${row.repeat(n)}</div><div class="ph-ind-cout"><p class="ph-ind-ctot-l">Total</p><p class="ph-ind-ctot-v">0</p><div class="ph-ind-crow">r</div><div class="ph-ind-crow">r</div><div class="ph-ind-crow">r</div></div></div></section></main><script>window.PH_IND_PAGE="${ind}";</script><script>${enhance}</script></body></html>`;
-  for (const [lead, known] of [[{ name: "Ada Lovelace", email: "ada@gmail.com", company: "", source: "Franchise opportunity" }, false], [{ name: "Ada Lovelace", email: "ada@orbit.example", company: "Orbit", source: "Interactive product tour" }, true], [{ name: "", email: "ada@orbit.example", company: "Orbit" }, false]]) {
+  for (const [lead, known] of [[{ name: "Ada Lovelace", email: "ada@gmail.com", company: "", source: "Network operator inquiry" }, false], [{ name: "Ada Lovelace", email: "ada@orbit.example", company: "Orbit", source: "Interactive product tour" }, true], [{ name: "", email: "ada@orbit.example", company: "Orbit" }, false]]) {
     const q = await browser.newPage();
     await q.addInitScript((l) => localStorage.setItem("ph_lead", JSON.stringify(l)), lead);
     await q.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/industries/pharmacy/") && !/tour/.test(rt.request().url()) ? rt.fulfill({ contentType: "text/html", body: ihtml }) : rt.fulfill({ contentType: "text/html", body: "<p>t</p>" }));
