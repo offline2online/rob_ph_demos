@@ -192,6 +192,11 @@ after the change is theirs and is never put back.
 **KB-FLT-3 Desktop fit.** The filter bar stays on one line from 1024 px wide
 with the sidebar open, with every filter on.
 
+**KB-FLT-4 Picked staff stand out.** A staff avatar that is switched on as a
+filter is drawn about 30% larger than the others (36 px against 28 px) as well
+as ringed in the primary colour, at every width, so the active staff filters
+can be told apart at a glance. Switching it off returns it to 28 px. KB-C21.
+
 **KB-LANE-1 Swimlanes.** Selecting one or more staff splits the board into one
 lane per selected person (Jira's "swimlanes by assignee"), each with a full-
 width header (photo, first name, count, remaining effort) that expands or

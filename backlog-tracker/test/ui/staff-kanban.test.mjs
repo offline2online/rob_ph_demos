@@ -1301,6 +1301,23 @@ T("KB-C20", "a person with no photo shows their first and last initials on cards
   await p.done();
 });
 
+T("KB-C21", "a staff avatar picked as a filter is about 30% larger than the rest, and goes back when it is switched off", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  const size = (who) => p.$eval(`.kb-person-chip[data-person="${who}"] .kb-avatar`, (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  assert.deepEqual(await size(LINH), [28, 28], "not picked: 28px");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  await until(() => p.$(`.kb-person-chip.on[data-person="${LINH}"]`), "Linh's chip to be on");
+  assert.deepEqual(await size(LINH), [36, 36], "picked: 36px, about 30% larger");
+  assert.deepEqual(await size(HUY), [28, 28], "the others keep their size");
+  await press(p, '.kb-person-chip[data-person="none"]');
+  await until(() => p.$('.kb-person-chip.on[data-person="none"]'), "the Unassigned chip to be on");
+  assert.deepEqual(await size("none"), [36, 36], "Unassigned grows too");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  await until(async () => !(await p.$(`.kb-person-chip.on[data-person="${LINH}"]`)), "Linh's chip to be off");
+  assert.deepEqual(await size(LINH), [28, 28], "switched off: back to 28px");
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");

@@ -187,6 +187,20 @@ T("TC-06", "staff filter makes swimlanes; dragging into another lane reassigns",
   await p.done();
 });
 
+T("KB-C21", "a staff avatar picked as a filter is about 30% larger than the rest, and goes back when it is switched off", async (prof) => {
+  const p = await open(prof);
+  const size = (who) => p.$eval(`.kb-person-chip[data-person="${who}"] .kb-avatar`, (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  assert.deepEqual(await size("linh"), [28, 28], "not picked: 28px");
+  await press(p, '.kb-person-chip[data-person="linh"]');
+  assert.deepEqual(await size("linh"), [36, 36], "picked: 36px, about 30% larger");
+  assert.deepEqual(await size("huy"), [28, 28], "the others keep their size");
+  await press(p, '.kb-person-chip[data-person="none"]');
+  assert.deepEqual(await size("none"), [36, 36], "Unassigned grows too");
+  await press(p, '.kb-person-chip[data-person="linh"]');
+  assert.deepEqual(await size("linh"), [28, 28], "switched off: back to 28px");
+  await p.done();
+});
+
 T("TC-07", "My tasks shows only the signed-in person's tasks", async (prof) => {
   const p = await open(prof);
   await press(p, "#kb-mine");

@@ -38,6 +38,10 @@
 .kb-person-chip.on { background: var(--primary-tint); padding: 0 10px 0 4px; }
 .kb-person-chip.on > span:last-child { display: inline; font-weight: 600; color: var(--primary-text); }
 .kb-person-chip.on .kb-avatar { box-shadow: 0 0 0 2px var(--primary); }
+/* A picked person's avatar is about 30% larger (28px to 36px), so the active
+   staff filters stand out from the rest at a glance, at every width. */
+.kb-person-chip.on .kb-avatar { width: 36px; height: 36px; font-size: 15px; }
+.kb-person-chip.on .kb-avatar-none .material-symbols-outlined { font-size: 20px; }
 .kb-header-search { align-self: center; }
 .kb-header-search input { width: 200px; }
 /* Desktop: every filter on one line, even with the sidebar open. Avatars
