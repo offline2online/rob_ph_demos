@@ -2674,6 +2674,13 @@ every destination already existed.
   iPad menu. `/` now has a no-cache header in `firebase.json`, and a failed
   start reloads once by itself (`auth-gate.js`). `test/ui/stale-page.test.mjs`
   checks both; see REQUIREMENTS.md → "Stale page after a release".
+- **A newer page with older scripts** (14 Nov 2026): the Support Inbox menu
+  item showed on the iPad and did nothing. `auth-gate.js` now checks that
+  every sidebar item was wired while the scripts started; if not it reloads
+  once, then says which item can't open and offers Reload.
+  `console-webkit.yml` runs the menu and the Support Inbox in a real WebKit
+  engine as an iPad, against the sources, the minified build and the live
+  site's files.
 - **iPad taps** (3 Nov, widened 5 Nov 2026): every button, link, tab and menu
   item in the console acts on finger-lift through one console-wide handler,
   `installTouchTaps()` in `public/js/touch-click.js`. It survives iPad

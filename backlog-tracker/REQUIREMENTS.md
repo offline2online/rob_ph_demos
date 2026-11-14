@@ -4041,6 +4041,39 @@ Rules:
   whether a reload fixes it. If it does, look at caching and start-up
   errors before tap handling.
 
+#### The reverse: a newer page with older scripts (14 Nov 2026)
+
+After the Support Inbox release its menu item showed on the iPad and tapping
+it did nothing: the previous page stayed. The item is plain markup, so it
+shows as soon as the page is new; the handler is in `app.js`. A page from the
+new release with scripts held from the one before gives exactly that, and it
+is reproduced by serving today's page with the previous release's `app.js`.
+The live files themselves were fine: fetched from the live site and run in a
+real WebKit engine as four iPads, the item opened the page.
+
+Rules:
+
+- **Every sidebar item the page has must have been given a click handler by
+  the scripts.** `auth-gate.js` watches the wiring while `app.js` starts
+  (`watchMenuWiring`). An item left without a handler means the page is newer
+  than the scripts: the console reloads once by itself (the same stamped
+  reload as above), and if the item is still unwired it shows "The console
+  has been updated, and this browser is still holding part of the previous
+  version, so <item> can't open yet" with a Reload button, and shows it
+  again whenever that item is tapped. A menu item is never silently dead.
+- A sidebar item is therefore wired with its own `addEventListener("click")`,
+  not by a delegated listener on the sidebar.
+- `test/ui/stale-page.test.mjs` part 4 serves a page with a menu item the
+  scripts don't know, in landscape and portrait: one self-reload, then the
+  notice, the tap, the Reload button, and the rest of the menu working.
+- **Chromium is not the iPad's engine.** `.github/workflows/console-webkit.yml`
+  runs `test/ui/webkit-ipad.test.mjs` in Playwright's WebKit with iPad
+  profiles: every sidebar item opens its page by touch and the page it came
+  from is gone, then the Support Inbox journey. It runs against the sources,
+  the minified build, and the files fetched from the live console. Run it
+  (Actions → "Console on WebKit (iPad)") when something is reported dead on
+  the iPad, before changing any code. It is WebKit, not iPad Safari itself.
+
 ### Modals and drawers: one set of rules (9 Nov 2026)
 
 Every dialog and side drawer (`.modal-panel` in a `.modal-backdrop`) is handled

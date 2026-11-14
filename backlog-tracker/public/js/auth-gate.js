@@ -466,10 +466,22 @@ async function startApp(user, membership) {
     setBootStatus("Loading the board…");
   }
   try {
+    const unwiredMenuItems = watchMenuWiring();
     appImport = import("./app.js");
     await appImport;
     delete document.documentElement.dataset.booting;
     setBootStatus("");
+    // The reverse of the stale page below: a page from THIS release running
+    // scripts kept from an earlier one. A menu item the page has and the
+    // scripts never wired shows, and tapping it does nothing (the Support Inbox
+    // on the iPad, 14 Nov 2026). Reload once; if that doesn't bring the new
+    // scripts, say so instead of leaving a dead button.
+    const dead = unwiredMenuItems();
+    if (dead.length) {
+      console.error("backlog-tracker: menu items with no handler (page newer than scripts)", dead.map((b) => b.id));
+      if (reloadOnceAfterBootFailure()) return;
+      explainUnwiredMenuItems(dead);
+    }
   } catch (err) {
     // A failed dynamic import (the Firestore SDK didn't arrive, a syntax
     // error in a bad deploy) used to leave a blank page with no way on.
@@ -485,6 +497,53 @@ async function startApp(user, membership) {
     if (reloadOnceAfterBootFailure()) return;
     showRejected("The console didn't finish loading. Check your connection and try again.", { canRetry: true });
   }
+}
+
+// Which sidebar items the scripts gave a click handler to while they started.
+// Call it before app.js loads; the function it returns lists the items that
+// were left without one. Each button's addEventListener is watched only for
+// that time and then put back.
+export function watchMenuWiring(root = document) {
+  const items = [...root.querySelectorAll("#nav-drawer .nav-drawer-item[id]")];
+  const wired = new Set();
+  for (const b of items) {
+    const add = b.addEventListener;
+    b.addEventListener = function (type, ...rest) { if (type === "click") wired.add(b); return add.call(this, type, ...rest); };
+  }
+  return () => {
+    for (const b of items) delete b.addEventListener;
+    return items.filter((b) => !wired.has(b));
+  };
+}
+// A menu item the scripts don't know: say why it can't open and offer the
+// reload, on the page and again whenever the item is tapped.
+function explainUnwiredMenuItems(dead) {
+  const names = dead.map((b) => { const c = b.cloneNode(true); c.querySelectorAll(".material-symbols-outlined,kbd").forEach((e) => e.remove()); return c.textContent.trim() || b.id; });
+  const show = () => {
+    let box = document.getElementById("boot-update-notice");
+    if (!box) {
+      box = document.createElement("div");
+      box.id = "boot-update-notice";
+      box.className = "page-load-error boot-update-notice";
+      box.setAttribute("role", "alert");
+      const text = document.createElement("p");
+      text.textContent = `The console has been updated, and this browser is still holding part of the previous version, so ${names.join(", ")} can't open yet.`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn-primary";
+      btn.textContent = "Reload";
+      btn.addEventListener("click", () => { try { window.sessionStorage.removeItem(BOOT_RELOAD_KEY); } catch { /* private window */ } window.location.reload(); });
+      box.append(text, btn);
+      // Under the top bar, above whichever page is showing.
+      const after = document.getElementById("boot-status");
+      if (after) after.insertAdjacentElement("afterend", box); else document.body.prepend(box);
+    }
+    // On a tablet in portrait the menu slides over the page: close it, or the notice is behind it.
+    for (const id of ["nav-drawer", "nav-drawer-backdrop"]) { const el = document.getElementById(id); if (el) el.classList.remove("open"); }
+    box.scrollIntoView({ block: "nearest" });
+  };
+  for (const b of dead) b.addEventListener("click", show);
+  show();
 }
 
 // Reload the page once after a failed start; false if that was already
