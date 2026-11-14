@@ -80,6 +80,7 @@ function fullView(id, data) {
     contacts: l.contacts.map((c) => ({ id: c.id, name: c.name, jobTitle: c.jobTitle || null, buyingRole: c.buyingRole || null, email: c.email || null, linkedin: c.linkedin || null, awsAccountId: c.awsAccountId || null })),
     enrichmentSummary: l.enrichment && l.enrichment.summary ? l.enrichment.summary : null,
     research: researchView(l.enrichment),
+    tamRecord: l.tam && Object.keys(l.tam).length ? l.tam : null,
     createdAt: iso(d.createdAt),
     createdBy: d.createdByEmail || null,
     updatedBy: d.updatedByEmail || null,

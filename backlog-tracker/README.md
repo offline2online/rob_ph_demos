@@ -2596,7 +2596,8 @@ every destination already existed.
   (every run failed without it). Since 12 Nov 2026 a cheap check runs first: obvious
   spam is stopped by free rules, then a small call confirms a real company with
   physical customer-facing sites; a record that fails is not researched and the
-  button reads **Research anyway**. A missing website is worked out (the contact's
+  button reads **Research anyway**. A lead and its TAM record are kept in step
+  whenever they are linked (contacts, research and the TAM-only fields, both ways). A missing website is worked out (the contact's
   email domain, then the check, then the research) and shown with how sure the run
   is; a real company the check holds back still gets the free basics (website, logos,
   sector, a one-line description). Each run also keeps the company's full logo for

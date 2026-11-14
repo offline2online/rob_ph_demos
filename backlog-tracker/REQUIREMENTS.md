@@ -4394,6 +4394,28 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `.ico`) is redone on the next run. The lead header, the board tile, the
     TAM record's header and the company profile use the full logo
     (`logos.light`) when there is one, and the icon only when there is not.
+  - **A lead and its TAM record carry the same information (14 Nov 2026)**:
+    Convert to lead copied six company fields and left the rest on the TAM
+    record (contacts, research, logos, priority, insights, notes), and the new
+    lead was then researched a second time. Now, whenever the two are linked
+    (a TAM record converted to a lead, a lead matched to or filed under a TAM
+    record, either linked later over MCP), the function that watches both
+    collections brings them into step (`linkMerge` / `syncLinked` in
+    `lead-enrich.js`, run from `onEnrichWrite`): company fields fill each
+    other's blanks; contacts missing on one side are added to the other
+    (matched on email, else name); the research goes to the side that has
+    none or an older copy (each record keeps its own run record); and the
+    lead gets `tam`, a readable copy of the TAM-only fields (country,
+    priority, sub-industry, HQ country, other markets, store presence, size,
+    ownership, insights, decision makers, LinkedIn, AWS region, vendors,
+    campaigns, source, notes), shown as "TAM record" in the lead's detail
+    view and returned by `get_lead` as `tamRecord`. Editing the TAM record
+    refreshes that copy. Nothing a person typed is replaced. A new record
+    that already carries research after this step is not researched again.
+    Test leads and network operator inquiries are left alone.
+    `firestore.rules` allows `tam` (a map) on a lead so an editor's save
+    keeps it. `lead-enrich-probe.yml`: `sync_lead` runs the step for a pair
+    linked before it existed.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

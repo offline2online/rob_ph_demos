@@ -48,7 +48,7 @@ function sealed(obj) {
   return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
 }
 const key = process.env.ANTHROPIC_API_KEY || "";
-if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim() && !(process.env.REFRESH_LEAD || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
+if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim() && !(process.env.REFRESH_LEAD || "").trim() && !(process.env.SYNC_LEAD || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
@@ -202,7 +202,28 @@ async function refreshLead(id) {
   process.exit(0);
 }
 
+// SYNC_LEAD=<leads doc id>: brings that lead and its TAM record into step (the
+// same step the live function runs when the two are linked), for a pair that
+// was linked before that step existed. WRITES to the board; no research cost.
+async function syncLead(id) {
+  const fnRequire = require("module").createRequire(path.join(fn, "index.js"));
+  const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
+  const { getFirestore, FieldValue } = fnRequire("firebase-admin/firestore");
+  initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
+  const db = getFirestore();
+  const snap = await db.collection("leads").doc(id).get();
+  if (!snap.exists) { console.error("no such lead"); process.exit(1); }
+  const pid = String((snap.data() || {}).prospectId || "");
+  if (!pid) { console.log("that lead has no TAM record linked: nothing to do"); process.exit(0); }
+  const { createLeadEnrich } = require(path.join(fn, "lead-enrich.js"));
+  const api = createLeadEnrich({ db, verifyIdToken: async () => ({}), resolveConsoleUser: async () => null, serverTimestamp: () => FieldValue.serverTimestamp() });
+  const out = await api.syncLinked(id, pid);
+  console.log(out ? `lead updated: ${out.lead.join(", ") || "nothing"}; TAM record updated: ${out.prospect.join(", ") || "nothing"}` : "nothing to bring into step");
+  process.exit(0);
+}
+
 (async () => {
+  if ((process.env.SYNC_LEAD || "").trim()) return syncLead(process.env.SYNC_LEAD.trim());
   if ((process.env.REFRESH_LEAD || "").trim()) return refreshLead(process.env.REFRESH_LEAD.trim());
   if ((process.env.PIPELINE || "").trim()) return pipeline(process.env.PIPELINE.trim());
   if ((process.env.LEAD_STATUS || "").trim()) return leadStatus(process.env.LEAD_STATUS.trim());
