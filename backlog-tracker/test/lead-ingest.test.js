@@ -217,8 +217,8 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.equal(db.docs.get("old1").prospectId, "acme-uk"); assert.equal(db.docs.get("old1").inboundCount, 2);
     assert.equal(db.prospects.get("acme-uk").leadId, "old1");
   });
-  // ── Network operator inquiries (key "operator") from the Be Your Own Boss page's product tour gate (13 Nov 2026) ──
-  const GATE = { lead_type: "operator", lead_source: "Be Your Own Boss page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", linkedin: "linkedin.com/in/alexrivers", operating_region: "Leeds and West Yorkshire", page: "/be-your-own-boss/" };
+  // ── Network operator inquiries (key "operator") from the Run Your Own RMN page's product tour gate (13 Nov 2026) ──
+  const GATE = { lead_type: "operator", lead_source: "Run Your Own RMN page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", linkedin: "linkedin.com/in/alexrivers", operating_region: "Leeds and West Yorkshire", page: "/run-your-own-rmn/" };
   await test("each background on the gate form makes an individual Network operator inquiry lead, with no company, TAM record or AWS routing", async () => {
     for (const b of core.BACKGROUNDS) {
       const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
@@ -228,7 +228,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
       assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied", "the operator pipeline's first stage");
       assert.equal(d.company.name, "", "no company needed");
       assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key });
-      assert.equal(d.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/be-your-own-boss/");
+      assert.equal(d.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/run-your-own-rmn/");
       assert.deepEqual(d.contacts.map((c) => [c.name, c.email, c.linkedin]), [["Alex Rivers", "alex@gmail.example", "https://linkedin.com/in/alexrivers"]]);
       assert.equal(d.prospectId, undefined); assert.equal(db.prospects.size, 1, "no TAM record created");
       const n = core.normaliseLead("x", d);
@@ -240,7 +240,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     const a = res(); await api.handle(req({ ...GATE, linkedin: "", lead_source: "", background: "agency" }), a);
     assert.equal(a.code, 201); const d = db.docs.get(a.body.leadId);
     assert.equal(d.contacts[0].linkedin, ""); assert.equal(d.sourceLabel, core.OPERATOR_SOURCE_LABEL); assert.equal(d.operator.background, "agency");
-    assert.equal(core.OPERATOR_SOURCE_LABEL, "Be Your Own Boss page – product tour");
+    assert.equal(core.OPERATOR_SOURCE_LABEL, "Run Your Own RMN page – product tour");
     const b = res(); await api.handle(req({ ...GATE, email: "b@x.example", linkedin: "not a link" }), b);
     assert.equal(b.code, 201); assert.equal(db.docs.get(b.body.leadId).contacts[0].linkedin, "");
   });
@@ -323,11 +323,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.deepEqual(all.leads.map((l) => [l.name, l.leadType]).sort(), [["Acme Telco", "company"], ["Alex Rivers", "operator"]]);
     const fr = await list.run({ leadType: "operator" });
     assert.equal(fr.total, 1); const v = fr.leads[0];
-    assert.equal(v.leadTypeLabel, "Network operator inquiry"); assert.equal(v.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(v.source, "website");
+    assert.equal(v.leadTypeLabel, "Network operator inquiry"); assert.equal(v.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(v.source, "website");
     assert.equal(v.region, "Leeds and West Yorkshire"); assert.equal(v.background, "retail-media"); assert.equal(v.backgroundLabel, "Retail media");
     assert.equal((await list.run({ leadType: "company" })).leads[0].company, "Acme Telco");
     const one = await get.run({ leadId: v.id });
-    assert.equal(one.leadType, "operator"); assert.equal(one.leadTypeLabel, "Network operator inquiry"); assert.equal(one.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(one.sourcePage, "/be-your-own-boss/");
+    assert.equal(one.leadType, "operator"); assert.equal(one.leadTypeLabel, "Network operator inquiry"); assert.equal(one.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(one.sourcePage, "/run-your-own-rmn/");
     assert.equal((await get.run({ company: "alex rivers" })).id, v.id, "found by the person's name");
   });
   assert.ok(core.leadFromWebsite({ company: "X", test: "on" }).test);

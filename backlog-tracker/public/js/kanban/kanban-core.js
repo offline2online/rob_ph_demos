@@ -67,7 +67,7 @@ export const OPTIONAL_FIELDS = [
   { key: "labels", label: "Labels" },
   { key: "comments", label: "Comments" },
   { key: "attachments", label: "Attachments" },
-  { key: "epic", label: "Parent epic" },
+  { key: "epic", label: "Parent" },
   { key: "links", label: "Linked tickets" },
   { key: "flag", label: "Flag" },
 ];
@@ -247,6 +247,98 @@ export function statusChange(task, status, { resolution, tester: chosen, firstNa
   }
   const activity = `${statusLabel(from, fromRes)} → ${statusLabel(status, toRes)}${note ? " · " + note : ""}`;
   return { patch, note, activity, resolution: toRes };
+}
+
+// ── Ticket hierarchy (KB-TASK-14) ─────────────────────────────────────────
+// Tickets nest up to four levels: Epic > Task > Subtask > Sub-subtask. The
+// parent is the `epic` field (the key of the ticket above; the name is kept
+// from when only epics could be parents, so stored tickets need no change).
+// An epic is always top level. Agent Board tickets attach below the lowest
+// level, which is not counted here.
+export const MAX_LEVELS = 4;
+export const LEVEL_NAMES = ["Epic", "Task", "Subtask", "Sub-subtask"];
+// The name of a ticket's level: a top-level ticket is named by its type.
+export function levelName(level, type) {
+  if (level <= 1) return type === "epic" ? "Epic" : typeOf(type).label;
+  return LEVEL_NAMES[Math.min(level, MAX_LEVELS) - 1];
+}
+// The keys above a ticket, nearest first. get(key) returns a ticket or null;
+// the walk stops at a missing ticket or a loop.
+export function ancestorsOf(t, get) {
+  const out = [], seen = new Set([t && t.key]);
+  let p = t && t.type !== "epic" ? t.epic : "";
+  while (p && !seen.has(p) && out.length < 10) {
+    out.push(p); seen.add(p);
+    const up = get(p);
+    p = up && up.type !== "epic" ? up.epic : "";
+  }
+  return out;
+}
+export const levelOf = (t, get) => 1 + ancestorsOf(t, get).length;
+// How many levels a ticket and everything under it take (a leaf is 1).
+// childrenOf(key) lists a ticket's children.
+export function heightOf(key, childrenOf, seen = new Set()) {
+  if (!key || seen.has(key) || seen.size > 1000) return 1;
+  seen.add(key);
+  let h = 0;
+  for (const c of childrenOf(key) || []) h = Math.max(h, heightOf(c.key, childrenOf, seen));
+  return 1 + h;
+}
+// Why `parentKey` can't be the parent of ticket t (null when it can).
+export function parentProblem(t, parentKey, get, childrenOf) {
+  if (!parentKey) return null;
+  const key = t && t.key;
+  if (key && parentKey === key) return "A ticket can't be its own parent.";
+  const p = get(parentKey);
+  if (!p) return `${parentKey} isn't a ticket.`;
+  if (t && t.type === "epic") return "An epic is always at the top level, so it has no parent.";
+  const above = [parentKey, ...ancestorsOf(p, get)];
+  if (key && above.includes(key)) return `${parentKey} is under ${key}, so it can't be its parent.`;
+  const level = above.length + 1;
+  const height = key ? heightOf(key, childrenOf) : 1;
+  if (level + height - 1 > MAX_LEVELS) {
+    const lowest = height > 1 ? `, and ${key} has ${height - 1} level${height > 2 ? "s" : ""} of tickets under it` : "";
+    return `${parentKey} is a ${levelName(above.length, p.type).toLowerCase()} (level ${above.length})${lowest}. Tickets nest at most ${MAX_LEVELS} levels: ${LEVEL_NAMES.join(" > ")}.`;
+  }
+  return null;
+}
+// Can ticket t have children? Not at the lowest level.
+export const canHaveChildren = (t, get) => levelOf(t, get) < MAX_LEVELS;
+const ADVANCE_FROM = ["backlog", "ready-for-dev", "in-progress"];
+// A child counts as done for its parent's progress when it is completed, or
+// when it is a parent whose own children are all done and it has moved on to
+// Ready for Testing or beyond (the automation below moved it there).
+export function isFinished(t, childrenOf, seen = new Set()) {
+  if (!t) return false;
+  if (t.status === "done") return res(t) === "completed";
+  if (ADVANCE_FROM.includes(t.status) || seen.has(t.key)) return false;
+  seen.add(t.key);
+  const live = (childrenOf(t.key) || []).filter((c) => res(c) !== "withdrawn");
+  return live.length > 0 && live.every((c) => isFinished(c, childrenOf, seen));
+}
+// A parent's progress: its children done of its children (withdrawn left out).
+export function rollup(key, childrenOf) {
+  const kids = childrenOf(key) || [];
+  const live = kids.filter((c) => res(c) !== "withdrawn");
+  return { done: live.filter((c) => isFinished(c, childrenOf)).length, total: live.length, withdrawn: kids.length - live.length };
+}
+// The parents to move to Ready for Testing after ticket t changed: walking up
+// from its parent, each one still before testing whose children are now all
+// done, and its own parent in turn if that completes it. Nearest first.
+export function parentsToAdvance(t, get, childrenOf) {
+  const out = [];
+  const moved = new Map();
+  const view = (k) => moved.get(k) || get(k);
+  const kidsOf = (k) => (childrenOf(k) || []).map((c) => moved.get(c.key) || c);
+  for (const pk of ancestorsOf(t, get)) {
+    const p = view(pk);
+    if (!p || !ADVANCE_FROM.includes(p.status)) break;
+    const live = kidsOf(pk).filter((c) => res(c) !== "withdrawn");
+    if (!live.length || !live.every((c) => isFinished(c, kidsOf))) break;
+    out.push(pk);
+    moved.set(pk, { ...p, status: "ready-for-testing" });
+  }
+  return out;
 }
 
 // ── Search ────────────────────────────────────────────────────────────────

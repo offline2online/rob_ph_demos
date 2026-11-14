@@ -648,6 +648,56 @@ const scenarios = [
       assert.strictEqual(adds[0].data.projectId, PID);
       assert.strictEqual(adds[0].data.status, "backlog");
       assert.ok(/dark mode/.test(adds[0].data.desc));
+      assert.ok(!("model" in adds[0].data), "Standard (the default) leaves model unset");
+    },
+  },
+  // Per-ticket model requirement (t1CU2q6LlxGd5pFB9vwG).
+  {
+    name: "New backlog item: Model Advanced is saved on the new card",
+    seed: () => only("r1"),
+    async run(c) {
+      await c.boardReady();
+      await c.click(".new-item-btn", "+ New backlog item");
+      await c.visible("#ni-backdrop");
+      c.at("pick Advanced", "#ni-model-select");
+      await c.page.selectOption("#ni-model-select", "advanced");
+      await c.page.fill("#ni-desc-input", "Scope agent sessions to the ticket owner only");
+      await c.click("#ni-submit", "Add to backlog");
+      const writes = await c.waitWrites(1);
+      const adds = writes.filter((x) => x.op === "add" && x.path.startsWith("backlogItems/"));
+      assert.strictEqual(adds.length, 1, JSON.stringify(writes));
+      assert.strictEqual(adds[0].data.model, "advanced");
+    },
+  },
+  {
+    name: "Model: an Advanced card shows its chip and build log; Edit item switches it back to Standard",
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .model-badge', "Advanced · Opus", "the Advanced chip");
+      const tip = await c.page.getAttribute('.card[data-id="b1"] .model-badge', "title");
+      assert.match(tip, /Built on claude-opus-5-5 · reviewed on claude-opus-5-5/);
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      assert.strictEqual(await c.page.inputValue("#ei-model-select"), "advanced");
+      await c.waitText("#ei-model-log", "Built on claude-opus-5-5", "the model log line");
+      await c.page.selectOption("#ei-model-select", "standard");
+      await c.click("#ei-save", "Save changes");
+      const writes = await c.waitWrites(1);
+      const w = writes.find((x) => x.path === "backlogItems/b1");
+      assert.ok(w, JSON.stringify(writes));
+      assert.strictEqual(w.data.model, "standard");
+      assert.ok(!("title" in w.data) && !("category" in w.data), "only the changed field is written");
+    },
+  },
+  {
+    name: "Model: a card no Opus could build says so, with no Answer button, and clears",
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", blocked: { reason: "model-unavailable", note: "Not built: this ticket needs Claude Opus and none was available to this build session. Clear the flag to try again." } }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-model-unavailable', "Not built: needs Opus", "the flag");
+      assert.strictEqual(await c.page.locator('.card[data-id="b1"] .blocked-answer-btn').count(), 0, "no question to answer");
+      await c.visible('.card[data-id="b1"] .blocked-clear-btn', "the clear control");
     },
   },
   {
@@ -1142,7 +1192,7 @@ const scenarios = [
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
       fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech" },
         contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "https://linkedin.com/in/alex" }],
-        stage: "applied", source: "website", sourceLabel: "Be Your Own Boss page – product tour", sourcePage: "/be-your-own-boss/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+        stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – product tour", sourcePage: "/run-your-own-rmn/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }),
     async run(c) {
       await c.boardReady();
@@ -1166,7 +1216,7 @@ const scenarios = [
       await c.page.click('.lead-lane[data-stage="applied"] .lead-card .lead-card-name');
       await c.visible("#lead-sum-operator", "the summary shows the operator details");
       const sum = await c.text("#lead-summary-panel");
-      assert.ok(sum.includes("Be Your Own Boss page – product tour"), "the source shows");
+      assert.ok(sum.includes("Run Your Own RMN page – product tour"), "the source shows");
       assert.ok(sum.includes("Network operator inquiry"), "Type: Network operator inquiry");
       assert.strictEqual((await c.text("#lead-sum-operator h3")).trim(), "Network operator", "the section is headed Network operator");
       assert.ok(!/fr[a]nchis/i.test(sum), "the summary never shows the old word: " + sum);
