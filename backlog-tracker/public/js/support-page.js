@@ -18,6 +18,8 @@ const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "nume
 async function api(apiHeaders, path, { method = "POST", body } = {}) {
   const resp = await fetch(`/supportMail/v1/${path}`, { method, headers: await apiHeaders(), ...(method === "GET" ? {} : { body: JSON.stringify(body || {}) }) });
   const data = await resp.json().catch(() => ({}));
+  // The console's address cuts a call off after a minute; the server carries on (a first sync of a full mailbox can take longer).
+  if (resp.status === 504) throw new Error("It is taking longer than a minute and is carrying on in the background. Look again shortly.");
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
