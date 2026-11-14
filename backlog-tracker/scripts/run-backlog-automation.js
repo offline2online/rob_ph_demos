@@ -208,7 +208,8 @@ async function patchItem(itemId, fields) {
 // already happened, and the hourly sweep below catches whatever it misses.
 async function dropPatchFiles(itemId) {
   try {
-    const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?updateMask.fieldPaths=patchFiles`, {
+    // (and a patch handed over as a commit: its pointer goes with it)
+    const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommit&updateMask.fieldPaths=patchRef`, {
       method: "PATCH",
       headers: await firestoreHeaders(),
       body: JSON.stringify({ fields: {} }),
@@ -244,7 +245,55 @@ async function patchFilesFor(item) {
   const base = await basePatchFilesFor(item);
   return base.concat(await patchPartFilesFor(item));
 }
+// ── A patch handed over as a commit (14 Nov 2026) ─────────────────────────
+// A build session used to hand its work over only as file contents written
+// to the board (patchFiles). On 14 Nov 2026 a ticket was built and tested and
+// then could not be handed over: the session's environment refused to send
+// repository files that hold the account owner's address to the board, and
+// every ticket touching MCP.md, README.md, REQUIREMENTS.md or mcp-server.js
+// would have stopped the same way. A session can instead commit its change,
+// push it to its own branch, and write only { patchCommit, patchRef,
+// patchBaseSha } on the card: no file content leaves the session except by
+// git. The files are read here from that commit, as the same [{path,
+// content}] list (content null for a deleted path), so everything after this
+// point is unchanged. It also has no size limit, so no patch parts.
+// (SHA_RE, a full 40-character commit id, is declared further down.)
+const REF_RE =/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
+function gitText(args, opts = {}) {
+  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024, ...opts });
+}
+// Pure but for git: the files `commit` changes relative to `base`.
+// Throws with a plain reason when the hand-over can't be used.
+function patchFilesFromCommit(base, commit, opts = {}) {
+  if (!SHA_RE.test(String(commit || ""))) throw new Error(`patchCommit must be a full 40-character commit id, not "${String(commit).slice(0, 60)}"`);
+  if (!SHA_RE.test(String(base || ""))) throw new Error("a patch handed over as a commit needs patchBaseSha, the full commit id it was built on");
+  try { gitText(["merge-base", "--is-ancestor", base, commit], opts); }
+  catch (err) { throw new Error(`patchCommit ${commit.slice(0, 7)} is not built on patchBaseSha ${base.slice(0, 7)}${err && err.status === 1 ? "" : ` (${String(err.message).split("\n")[0]})`}`); }
+  const names = gitText(["diff", "--name-status", "--no-renames", "-z", base, commit], opts).split("\0").filter((s) => s !== "");
+  const binary = new Set(gitText(["diff", "--numstat", "--no-renames", "-z", base, commit], opts).split("\0").filter((l) => /^-\t-\t/.test(l)).map((l) => l.replace(/^-\t-\t/, "")));
+  const files = [];
+  for (let i = 0; i + 1 < names.length; i += 2) {
+    const status = names[i], p = names[i + 1];
+    if (status === "D") { files.push({ path: p, content: null }); continue; }
+    if (binary.has(p)) throw new Error(`${p} is a binary file: a patch can only carry text files`);
+    files.push({ path: p, content: gitText(["show", `${commit}:${p}`], opts) });
+  }
+  return files;
+}
+function fetchPatchCommit(item) {
+  const ref = typeof item.patchRef === "string" && REF_RE.test(item.patchRef) && !item.patchRef.includes("..") ? item.patchRef : "";
+  // The branch the session pushed, else the commit itself.
+  try { run("git", ["fetch", "origin", ref || item.patchCommit, "--quiet"]); }
+  catch (err) { throw new Error(`the commit this patch was handed over as (${String(item.patchCommit).slice(0, 7)}${ref ? ` on ${ref}` : ""}) couldn't be fetched: ${String(err.message).split("\n")[0]}`); }
+}
 async function basePatchFilesFor(item) {
+  if (item.patchCommit) {
+    if (!SHA_RE.test(String(item.patchCommit))) throw new Error(`patchCommit must be a full 40-character commit id, not "${String(item.patchCommit).slice(0, 60)}"`);
+    fetchPatchCommit(item);
+    const files = patchFilesFromCommit(item.patchBaseSha, item.patchCommit);
+    console.log(`[apply-patch] ${item.id}: ${files.length} file(s) read from commit ${item.patchCommit.slice(0, 7)}${item.patchRef ? ` (${item.patchRef})` : ""}`);
+    return files;
+  }
   if (Array.isArray(item.patchFiles) && item.patchFiles.length) return item.patchFiles;
   const res = await fetch(`${FIRESTORE_BASE}/${patchDocPath(item.id)}`, { headers: await firestoreHeaders() });
   if (res.status === 404) return [];
@@ -7576,6 +7625,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits,
+  patchFilesFromCommit,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,

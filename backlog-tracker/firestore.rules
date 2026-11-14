@@ -357,6 +357,9 @@ service cloud.firestore {
         // Parallel builds (4 Oct 2026): the commit a patch was written
         // against (the automation merges from it) and its rebuild counter.
         "patchBaseSha", "autoRebuilds",
+        // A patch handed over as a commit (14 Nov 2026): the commit the
+        // automation reads the files from, and the branch it was pushed to.
+        "patchCommit", "patchRef",
         // Automatic rebuilds (19 Oct 2026): when one was requested, and what
         // became of the fire — only the automation and the notify function write them.
         "rebuildRequestedAt", "lastFire",

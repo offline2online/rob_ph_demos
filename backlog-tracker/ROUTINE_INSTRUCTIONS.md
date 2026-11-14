@@ -522,6 +522,24 @@ ticket once automatically.
    wrong (see `CATEGORIES` in `backlog-tracker/public/js/app.js` for the
    fixed list), bump `updatedAt`, and — this is the part that replaces
    "push + open a PR" — set:
+   - **Hand the patch over as a commit, first choice (14 Nov 2026).** Commit
+     your change on the branch this session was given (one commit or
+     several, on top of your `patchBaseSha`), `git push` it, and set on the
+     card `patchCommit` (the full 40-character id of your last commit),
+     `patchRef` (the branch you pushed), `patchBaseSha`, `patchPartCount: 0`
+     and `patchReady: true`, with NO `patchFiles`. The automation fetches
+     that commit and takes every file it changes relative to `patchBaseSha`
+     (a deleted file as a deletion), then lands them on the train exactly as
+     it lands `patchFiles`. Nothing you changed is sent to the board, so
+     there is no size limit, no patch parts, and no step that reads a
+     repository file in order to upload it: on 14 Nov 2026 a built and
+     tested ticket could not be handed over because the session's
+     environment refuses to send files holding the account owner's address
+     to the board, and five of its eight files did. Text files only. Do not
+     open a pull request, and do not push to `main` or a `deploy/` branch:
+     the automation puts the ticket on the train. Use `patchFiles` (next
+     item) only when the push is refused, or for the "already built" case
+     below, which changes nothing and so has no commit to hand over.
    - `patchFiles`: an array of `{path, content}` objects (write it on the
      card as shown; within seconds a Cloud Function moves it to
      `backlogItems/<ITEM_ID>/pipeline/patch` to keep it out of every open

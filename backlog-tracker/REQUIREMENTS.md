@@ -462,6 +462,16 @@ busy. Now:
   and every 6 hours, up to 12 times (`neverRanRetries`), and its flag says
   "Nothing to answer". A flag a person set (`setBy` an address) is never
   answered for them. Tests: `test/self-heal.test.js`.
+- **A patch can be handed over as a commit (14 Nov 2026)**: a build session
+  commits on its own branch, pushes, and writes only `patchCommit` (full id),
+  `patchRef` and `patchBaseSha` on the card. `basePatchFilesFor` fetches the
+  commit and `patchFilesFromCommit` reads every file it changes relative to
+  the base into the same `[{path, content}]` list (null for a deleted path),
+  so landing is unchanged. No file content goes through the board: no size
+  limit, no patch parts, and no upload for a session's environment to
+  refuse. Text files only; `patchFiles` remains the fallback. Only the
+  automation account may write the two fields (`firestore.rules`). Tests:
+  `test/patch-commit.test.js`.
 - **A question never strands a ticket (30 Oct 2026)**: a card flagged
   `waiting-on-input` takes the senior agent's
   answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
