@@ -716,5 +716,29 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const t = make({ seed: { leads: { lt: { ...lead, test: true } }, prospects: { p9: { ...tam, leadId: "lt" } }, prospectCompanies: {} } });
     assert.equal(await t.api.syncLinked("lt", "p9"), null);
   });
+  // ── What a refresh keeps (from the second live run on one lead, 14 Nov 2026) ──
+  await test("a refresh keeps the most recently dated site count and lists each person once", async () => {
+    const { personKey, mergePeople, newerCount } = require("../functions/lead-enrich");
+    assert.equal(personKey({ name: "Stan Reynolds" }), personKey({ name: "Stanley (Stan) Reynolds" }));
+    assert.notEqual(personKey({ name: "Sam Reynolds-Smith" }), personKey({ name: "Stan Reynolds" }));
+    assert.equal(personKey({ name: "" }), "");
+    const merged = mergePeople([{ name: "Stan Reynolds", title: "President", linkedin: "", note: "" }, { name: "New Person", title: "CMO" }], [{ name: "Stanley (Stan) Reynolds", title: "President", linkedin: "https://www.linkedin.com/in/stan", note: "Was interim co-CEO." }, { name: "Mario Mijares", title: "VP" }], 12);
+    assert.deepEqual(merged.map((x) => x.name), ["Stan Reynolds", "New Person", "Mario Mijares"]);
+    assert.deepEqual([merged[0].linkedin, merged[0].note], ["https://www.linkedin.com/in/stan", "Was interim co-CEO."], "what the earlier entry knew is kept");
+    const june = { storeCount: 12491, storeCountBreakdown: "At 30 June 2026.", storeCountSource: { title: "Q2", url: "https://s.example/q2", date: "2026-10-08" } };
+    const feb = { storeCount: 12712, storeCountBreakdown: "At February 2026.", storeCountSource: { title: "Trade press", url: "https://t.example/a", date: "2026-04-23" } };
+    assert.equal(newerCount(feb, june).storeCount, 12491, "an older figure does not replace a newer one");
+    assert.equal(newerCount(june, feb).storeCount, 12491); assert.equal(newerCount({ storeCount: null }, june).storeCount, 12491);
+    assert.equal(newerCount({ storeCount: 500 }, { storeCount: 400 }).storeCount, 500, "with no dates to compare, the new run's figure stands");
+    // In a run: the record keeps June's count, breakdown and source, on the company field too.
+    const a = make({ agent: { ...AGENT, ...june } });
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const b = make({ agent: { ...AGENT, ...feb, people: [{ name: "Stanley (Stan) Reynolds", title: "President" }] }, seed: a.db.state });
+    b.db.state.leads.l1.enrichment.people = [{ name: "Stan Reynolds", title: "President" }];
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e = b.db.state.leads.l1.enrichment;
+    assert.deepEqual([e.storeCount, e.storeCountBreakdown, e.storeCountSource.date], [12491, "At 30 June 2026.", "2026-10-08"]);
+    assert.equal(b.db.state.leads.l1.company.storeCount, 12491); assert.equal(e.people.length, 1);
+  });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
