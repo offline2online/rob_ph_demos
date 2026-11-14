@@ -4416,6 +4416,14 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `firestore.rules` allows `tam` (a map) on a lead so an editor's save
     keeps it. `lead-enrich-probe.yml`: `sync_lead` runs the step for a pair
     linked before it existed.
+  - **What a refresh keeps (14 Nov 2026)**: a second live run on one lead
+    replaced a site count dated June 2026 with one dated February 2026, and
+    listed one person twice under two spellings, which pushed another off the
+    list. Now the site count kept is the one whose source is dated later
+    (`newerCount`: count, breakdown and source together, on the company field
+    too; with no dates to compare the new run's figure stands), and people
+    are matched on first initial and surname (`personKey`, `mergePeople`),
+    keeping a LinkedIn link or note only the earlier entry had.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
