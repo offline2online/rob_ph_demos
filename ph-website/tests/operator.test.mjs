@@ -1,13 +1,13 @@
 // node ph-website/tests/operator.test.mjs : the hidden Run Your Own RMN page (/run-your-own-rmn/) in Chromium: an Elementor-shaped page
 // (operator-render.php: Elementor containers and widgets for the brief's sections, an Elementor kit stylesheet that restyles headings,
-// buttons and inputs, and the three Shortcode widgets [ph_operator_calculator], [ph_operator_faq], [ph_operator_tour] wrapped as
-// Elementor wraps them) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html served at
-// /run-your-own-rmn/tour/ (the golf club walkthrough). The H1, the blocks inside their Shortcode widgets,
+// buttons and inputs, and the three empty mount containers ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, filled server-side by
+// operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
+// served at /run-your-own-rmn/tour/ (the golf club walkthrough). The H1, the blocks inside their mount containers,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap), the SEO head (one H1, title, description, canonical,
-// OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid,
+// OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
 // Start the tour plays a step, returning visitors, the header's Arrange A Demo, the estimate_rmn_earnings WebMCP tool (the page's own
-// figures for the defaults; the gate only with the person's details and consent; never the share), no horizontal scroll at
+// figures for the defaults in both modes; the gate only with the person's details and consent; never a share), no horizontal scroll at
 // 360/390/768/1440, and enhance.js's known-visitor rule (name, company and email).
 // Neither the retired offer name (checked with the pattern fr[a]nch) nor the page's previous name (a bracketed pattern) appears, so this
 // file never contains them: not in the visible text, any attribute, the title, meta or URL, the rendered HTML, the loaded CSS/JS file
@@ -49,8 +49,14 @@ const tourHtml = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
 const F = require(path.join(dir, "operator.js"));
 
 // Model parity with the design (and operator_calc in PHP).
-const d = F.view(F.calc({ ven: 90, dis: 3, vis: 800, cpm: 25, atv: 25, view: 60, up: 15 }));
+const DEF = { ven: 90, dis: 3, vis: 800, cpm: 25, atv: 25, view: 60, up: 15 };
+const d = F.view(F.calc(DEF));
 assert.deepStrictEqual(d, { yours: "$591K", venues: "90", displays: "270", visitors: "2,190,000", views: "3,942,000", extraSales: "$59.1M" }, "defaults");
+assert.deepStrictEqual(F.view(F.calc(DEF, "operator")), d, "operator is the default mode");
+const dr = F.view(F.calc(DEF, "retailer"));
+assert.deepStrictEqual(dr, { ...d, yours: "$60.0M" }, "retailer mode at the defaults: its share of ad revenue plus the extra sales, $60.0M");
+assert.strictEqual(Math.round(F.calc(DEF, "retailer").income), 59957820, "retailer income at the defaults");
+const OP_LABELS = { venues: "Venues in your network", extraSales: "Extra sales for your venues a year" }, RT_LABELS = { venues: "Stores in your network", extraSales: "Extra sales in your stores a year" };
 
 // The site's header (Industry, Support, Arrange A Demo as an Elementor popup link) and footer around the shortcode output.
 // Elementor's container basics and a kit that restyles headings, buttons, inputs and links the way the site's kit can: the blocks must keep the design.
@@ -79,6 +85,8 @@ const hitBoxes = (t) => t.evaluate(() => {
 });
 // Every FAQ question (summary): its box is at least 44x44 and the point at its centre hits it.
 const faqBoxes = (t) => t.evaluate(() => [...document.querySelectorAll("#faq summary")].map((s) => { s.scrollIntoView({ block: "center", behavior: "instant" }); const r = s.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { w: Math.round(r.width), h: Math.round(r.height), hit: !!e && (e === s || s.contains(e)) }; }).filter((b) => b.w < 44 || b.h < 44 || !b.hit));
+// The two "I am" toggle buttons: each at least 44x44 and hit at its centre.
+const audBoxes = (t) => t.evaluate(() => [...document.querySelectorAll(".phf .phf-aud button")].map((b) => { b.scrollIntoView({ block: "center", behavior: "instant" }); const r = b.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { w: Math.round(r.width), h: Math.round(r.height), hit: !!e && (e === b || b.contains(e)) }; }).filter((b) => b.w < 44 || b.h < 44 || !b.hit));
 // Where the Average CPM tooltip opens, relative to its button.
 const tipPlace = async (t) => { await t.locator("[aria-describedby=c-cpm-tip]").focus(); return t.evaluate(() => { const b = document.querySelector("[aria-describedby=c-cpm-tip]").getBoundingClientRect(), x = document.getElementById("c-cpm-tip").getBoundingClientRect(); return { dx: Math.round(x.left - b.left), dy: Math.round(x.bottom - b.top), w: Math.round(x.width) }; }); };
 
@@ -112,6 +120,7 @@ try {
   const text = (p, sel) => p.evaluate((s) => document.querySelector(s).textContent.trim(), sel);
   const fill = async (p, o) => {
     for (const k of ["name", "email", "linkedin", "region"]) if (o[k] !== undefined) await p.fill(`#phf-form [name=${k}]`, o[k]);
+    if (o.audience) await p.selectOption("#phf-form [name=audience]", o.audience);
     if (o.background) await p.selectOption("#phf-form [name=background]", o.background);
     if (o.consent) await p.check("#phf-form [name=consent]");
   };
@@ -119,17 +128,19 @@ try {
   // 1. Copy and section order.
   let p = await open();
   const heads = await p.evaluate(() => [...document.querySelectorAll("main h1, main h2")].map((h) => h.textContent.trim()));
-  assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Built for people who know media", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end"], "section order");
+  assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Three ways to run your own network", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end"], "section order");
   const all = await p.evaluate(() => document.querySelector("main").textContent);
   ok((await text(p, "main h1")) === "Run your own retail media network", "H1 (an Elementor Heading widget)");
-  const blocks = await p.evaluate(() => [...document.querySelectorAll(".phf")].map((b) => [b.dataset.phf, !!b.closest(".elementor-widget-shortcode .elementor-shortcode"), !!b.closest("[data-elementor-type=wp-page]")]));
-  assert.deepStrictEqual(blocks, [["calculator", true, true], ["faq", true, true], ["tour", true, true]], "the three blocks, each inside an Elementor Shortcode widget on the Elementor page, in the brief's order");
-  ok((await p.evaluate(() => [...document.querySelectorAll(".elementor-element[id]")].map((e) => e.id).join())) === "top,why,who,how,venues,standards,independents" && (await p.evaluate(() => ["calculator", "faq", "tour"].every((id) => document.getElementById(id).closest(".phf")))), "anchors: the Elementor sections' CSS IDs and the blocks' own #calculator, #faq and #tour");
+  const blocks = await p.evaluate(() => [...document.querySelectorAll(".phf")].map((b) => [b.dataset.phf, b.parentElement.id, b.parentElement.children.length, !!b.closest("[data-elementor-type=wp-page]")]));
+  assert.deepStrictEqual(blocks, [["calculator", "ph-rmn-calculator", 1, true], ["faq", "ph-rmn-faq", 1, true], ["tour", "ph-rmn-tour", 1, true]], "the three blocks, each once, the only thing inside its mount container on the Elementor page, in the brief's order");
+  ok(["ph-rmn-calculator", "ph-rmn-faq", "ph-rmn-tour"].every((id) => body.split('id="' + id + '"').length === 2) && ["calculator", "faq", "tour"].every((k) => body.split('data-phf="' + k + '"').length === 2) && body.split('"@type":"FAQPage"').length === 2, "the blocks and the FAQPage JSON-LD are in the server's HTML (the first response), once each, before any script runs");
+  ok((await p.evaluate(() => [...document.querySelectorAll(".elementor-element[id]")].map((e) => e.id).join())) === "top,why,who,how,venues,standards,ph-rmn-calculator,independents,ph-rmn-faq,ph-rmn-tour" && (await p.evaluate(() => ["calculator", "faq", "tour"].every((id) => document.getElementById(id).closest(".phf")))), "anchors: the Elementor sections' and mount containers' CSS IDs, and the blocks' own #calculator, #faq and #tour");
   ok((await p.evaluate(() => document.querySelectorAll("h1").length)) === 1, "exactly one H1 on the page");
-  for (const s of ["Benefits calculator", "Your network", "Your figures", "Assumptions", "Your potential income a year", "How it's calculated", "Running your own RMN", "What is a retail media network?", "How do I get started?", "Interactive product tour", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "block copy: " + s);
+  for (const s of ["Benefits calculator", "Your network", "Your figures", "Assumptions", "Your potential income a year", "How it's calculated", "Running your own RMN", "What is a retail media network?", "How do I get started?", "Interactive product tour", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.", "Operator or team", "Retailer", "For retailers, those extra sales in your stores are added to your income."]) ok(all.includes(s), "block copy: " + s);
+  ok(!/network operator|world-leading/i.test(all), "none of the replaced copy on the page");
   // The blocks' copy replacements, exact (the head-start paragraph is Elementor copy now: the brief carries it, tests/operator.test.php).
   ok((await text(p, ".phf-cin-h")) === "Your network", "copy: calculator panel heading");
-  ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.", "copy: tour gate intro");
+  ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.", "copy: tour gate intro");
   ok(await p.evaluate(() => !document.querySelector(".phf h1, .phf .phf-hero, .phf #top, .phf #why, .phf #who, .phf #how, .phf #venues, .phf #standards, .phf #independents")), "the blocks render none of the Elementor sections (no H1, hero or static section)");
   // The retired offer name nowhere a visitor can see it: visible text, tooltips, every attribute (aria-label, title, alt, placeholder, href...),
   // the document title, meta and the URL. Script and style bodies are code, not page content.
@@ -156,8 +167,8 @@ try {
   // No commercial terms anywhere on the page (text, tooltips, attributes).
   const html = await p.content();
   const bodyText = (await p.evaluate(() => document.body.innerText + " " + [...document.querySelectorAll(".phf-tipbox")].map((t) => t.textContent).join(" "))).toLowerCase();
-  for (const re of [/setup fee/, /minimum/, /\bsplit\b/, /50\s*%/, /\b0\.5\b/, /\bhalf\b/, /ph's share/]) ok(!re.test(bodyText), "no commercial term: " + re);
-  ok(!/0\.5/.test(body), "the share is not in the server HTML");
+  for (const re of [/setup fee/, /minimum/, /\bsplit\b/, /50\s*%/, /\b0\.5\b/, /70\s*%/, /\b0\.7\b/, /\bhalf\b/, /ph's share/]) ok(!re.test(bodyText), "no commercial term: " + re);
+  ok(!/0\.5/.test(body) && !/0\.7/.test(body), "neither share is in the server HTML");
   ok(!/personaliz|organiz/i.test(bodyText), "UK spelling");
 
   // 2. Calculator: defaults, then live updates.
@@ -174,6 +185,37 @@ try {
   o = await outs(); ok(o.yours === "$986K" && (await text(p, "#c-view-v")) === "100%", "slider updates live: " + JSON.stringify(o));
   await p.locator("#c-up").fill("0"); o = await outs();
   ok(o.extraSales === "$0" && (await text(p, "#c-up-v")) === "0%", "uplift 0");
+  await p.locator("#c-view").fill("60"); await p.locator("#c-up").fill("15");
+
+  // 2b. The "I am" toggle: Operator or team (default) / Retailer, by click and by keyboard; aria-pressed, the two renamed rows, $60.0M.
+  const tog = () => p.evaluate(() => ({ group: (() => { const g = document.querySelector(".phf-aud"); return [g.getAttribute("role"), g.getAttribute("aria-label"), g.previousElementSibling.className, g.nextElementSibling.textContent]; })(), b: [...document.querySelectorAll(".phf-aud button")].map((b) => [b.textContent, b.type, b.getAttribute("aria-pressed")]), labels: Object.fromEntries([...document.querySelectorAll(".phf [data-lab]")].map((e) => [e.dataset.lab, e.textContent])), yours: document.querySelector('.phf [data-out="yours"]').textContent }));
+  const lab = (t) => ({ venues: t.labels.venues, extraSales: t.labels.extraSales });
+  let tg = await tog();
+  assert.deepStrictEqual(tg.group, ["group", "I am", "phf-cin-h", "Your figures"], 'toggle: role="group", aria-label "I am", under "Your network" and above the inputs');
+  assert.deepStrictEqual(tg.b, [["Operator or team", "button", "true"], ["Retailer", "button", "false"]], 'toggle: two <button type="button"> with aria-pressed, "Operator or team" pressed by default');
+  assert.deepStrictEqual([lab(tg), tg.yours], [OP_LABELS, "$591K"], "toggle: operator labels and $591K at the defaults");
+  await p.click(".phf-aud button[data-aud=retailer]");
+  tg = await tog();
+  assert.deepStrictEqual([tg.b.map((b) => b[2]), lab(tg), tg.yours], [["false", "true"], RT_LABELS, "$60.0M"], "toggle: a click on Retailer presses it, renames the two rows and shows $60.0M");
+  assert.deepStrictEqual(await outs(), dr, "toggle: Retailer at the defaults shows the retailer figures");
+  await p.fill("#c-ven", "100");
+  ok((await outs()).yours === "$66.6M", "toggle: inputs keep updating in Retailer mode (venues 100 -> $66.6M): " + (await outs()).yours);
+  await p.fill("#c-ven", "90");
+  await p.locator(".phf-aud button[data-aud=operator]").focus();
+  await p.keyboard.press("Enter");
+  tg = await tog();
+  assert.deepStrictEqual([tg.b.map((b) => b[2]), lab(tg), tg.yours], [["true", "false"], OP_LABELS, "$591K"], "toggle: Enter on the focused Operator or team button switches back");
+  await p.keyboard.press("Tab");
+  ok(await p.evaluate(() => document.activeElement.dataset.aud === "retailer"), "toggle: Tab moves to Retailer");
+  await p.keyboard.press("Space");
+  tg = await tog();
+  assert.deepStrictEqual([tg.b.map((b) => b[2]), lab(tg), tg.yours], [["false", "true"], RT_LABELS, "$60.0M"], "toggle: Space on the focused Retailer button presses it");
+  const tcss = await p.evaluate(() => { const g = getComputedStyle(document.querySelector(".phf-aud")), [a, b] = [...document.querySelectorAll(".phf-aud button")].map((x) => { const c = getComputedStyle(x), r = x.getBoundingClientRect(); return { bg: c.backgroundColor, col: c.color, bw: c.borderTopWidth, rad: c.borderTopLeftRadius, fs: c.fontSize, fw: c.fontWeight, h: r.height, w: r.width }; }); return { g: [g.display, g.columnGap, g.backgroundColor, g.borderTopColor, g.borderTopLeftRadius, g.paddingTop, g.marginBottom], hm: getComputedStyle(document.querySelector(".phf-cin-h")).marginBottom, a, b }; });
+  assert.deepStrictEqual(tcss.g, ["flex", "6px", "rgb(255, 255, 255)", "rgb(220, 225, 235)", "999px", "4px", "18px"], "toggle container: flex, gap 6px, white, #DCE1EB border, radius 999px, padding 4px, margin bottom 18px");
+  ok(tcss.hm === "14px", '"Your network" has a 14px margin below it');
+  ok(tcss.a.bg === "rgba(0, 0, 0, 0)" && tcss.a.col === "rgb(28, 37, 64)" && tcss.b.bg === "rgb(28, 37, 64)" && tcss.b.col === "rgb(255, 255, 255)", "toggle: pressed #1C2540 with white text, unpressed transparent with #1C2540 text (against the kit's button colours): " + JSON.stringify(tcss));
+  ok([tcss.a, tcss.b].every((x) => x.bw === "0px" && x.rad === "999px" && x.fs === "15px" && x.fw === "600" && x.h >= 44 && x.w >= 44) && Math.abs(tcss.a.w - tcss.b.w) < 1, "toggle buttons: no border, radius 999px, 15px weight 600, at least 44px tall, equal widths (flex 1): " + JSON.stringify(tcss));
+  ok((await text(p, "#c-how-tip")).endsWith("For retailers, those extra sales in your stores are added to your income."), '"How it\'s calculated" ends with the retailer sentence');
 
   // 3. Tooltips on hover, keyboard focus and tap.
   const tipOn = (id) => p.evaluate((i) => getComputedStyle(document.getElementById(i)).display !== "none", id);
@@ -198,6 +240,10 @@ try {
     ok(!(await t.evaluate(() => getComputedStyle(document.getElementById("c-atv-tip")).display !== "none")), "a tap elsewhere closes it");
     const hb = await hitBoxes(t);
     ok(hb.coarse && hb.n === 8 && hb.bad.length === 0, "touch: every info button has a hit box of at least 44x44 (16px circle kept): " + JSON.stringify(hb));
+    await t.locator(".phf-aud button[data-aud=retailer]").tap();
+    ok(await t.evaluate(() => document.querySelector(".phf-aud button[data-aud=retailer]").getAttribute("aria-pressed") === "true" && document.querySelector(".phf-aud button[data-aud=operator]").getAttribute("aria-pressed") === "false" && document.querySelector('.phf [data-out="yours"]').textContent === "$60.0M" && document.querySelector('.phf [data-lab="venues"]').textContent === "Stores in your network"), "touch (390): a tap on Retailer switches the mode");
+    const ab = await audBoxes(t);
+    ok(ab.length === 0, "touch (390): each toggle button is at least 44x44 and hit at its centre: " + JSON.stringify(ab));
     await t.close(); }
   { const t = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
     await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
@@ -256,15 +302,20 @@ try {
   const dis = () => p.locator("#phf-unlock").isDisabled();
   ok(await dis(), "Unlock disabled when empty");
   await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
+  await p.check("#t-cs");
+  ok(await dis(), 'still disabled without "I am" (it is required)');
+  await p.uncheck("#t-cs");
+  await fill(p, { audience: "A small to medium retailer" });
   ok(await dis(), "still disabled without consent");
   await p.check("#t-cs"); ok(!(await dis()), "enabled once valid (personal email accepted)");
+  ok(await p.evaluate(() => { const s = document.getElementById("t-ia"), f = [...document.querySelectorAll("#phf-form .phf-f label")].map((l) => l.textContent); return s.required && s.name === "audience" && [...s.options].map((o) => o.text).join("|") === "Select one|An individual operator|Part of an operator team|A small to medium retailer" && f.join("|") === "Full name|Email|LinkedIn profile (optional)|Where you plan to operate|I am|Your background"; }), 'the gate has a required select "I am" (three options) after "Where you plan to operate"');
   await p.fill("#t-li", "example.com/ada"); ok(await dis(), "disabled with a non-LinkedIn address");
   await p.fill("#t-li", "linkedin.com/in/ada"); ok(!(await dis()), "a LinkedIn address without https:// is fine");
-  ok(await p.evaluate(() => { const s = document.getElementById("t-bg"); return s.options.length === 6 && [...s.options].slice(1).map((o) => o.text).join("|") === "Agency media or account management|Ad-tech sales or partnerships|Retail media|Marketing|Something else"; }), "the 5 backgrounds");
+  ok(await p.evaluate(() => { const s = document.getElementById("t-bg"); return s.options.length === 8 && [...s.options].slice(1).map((o) => o.text).join("|") === "Agency media or account management|Ad-tech sales or partnerships|Retail media|Creative agency|Retail business owner or manager|Marketing|Something else"; }), "the 7 backgrounds, in the design's order");
   await p.click("#phf-unlock");
   await p.waitForSelector("#phf-mount iframe");
   assert.strictEqual(posts.length, 1, "one post");
-  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "post body");
+  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", audience: "A small to medium retailer", background: "Retail media", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "post body (\"I am\" travels as audience, the label)");
   const st = await p.evaluate(() => ({ f: JSON.parse(localStorage.getItem("ph_operator")), l: JSON.parse(localStorage.getItem("ph_lead")), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_operator stored");
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
@@ -291,7 +342,7 @@ try {
 
   // 6. Errors: a 400 names the field.
   p = await open({ status: 400, reply: { error: "Please tell us where you plan to operate.", field: "region" } });
-  await fill(p, { name: "Ada", email: "ada@x.test", region: "x", background: "Marketing", consent: true });
+  await fill(p, { name: "Ada", email: "ada@x.test", region: "x", audience: "An individual operator", background: "Creative agency", consent: true });
   await p.click("#phf-unlock");
   await p.waitForFunction(() => /where you plan/.test(document.getElementById("phf-msg").textContent));
   ok(await p.evaluate(() => document.activeElement.id === "t-rg" && document.getElementById("t-rg").getAttribute("aria-invalid") === "true" && !localStorage.getItem("ph_operator") && !document.querySelector("#phf-mount iframe")), "400: message, field focused, nothing stored, no tour");
@@ -302,7 +353,7 @@ try {
   p = await open({ lead: industry, posts: [] });
   ok((await p.inputValue("#t-fn")) === "Grace Hopper" && (await p.inputValue("#t-em")) === "grace@orbit.example" && (await p.inputValue("#t-rg")) === "", "industry lead: name and email prefilled, the rest asked");
   ok(await p.locator("#phf-unlock").isDisabled(), "still asks for the remaining fields");
-  await fill(p, { region: "Bristol", background: "Marketing", consent: true });
+  await fill(p, { region: "Bristol", audience: "Part of an operator team", background: "Retail business owner or manager", consent: true });
   await p.click("#phf-unlock"); await p.waitForSelector("#phf-mount iframe");
   ok(JSON.stringify(await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")))) === JSON.stringify(industry), "the industry ph_lead is not overwritten");
   await p.close();
@@ -320,22 +371,39 @@ try {
   const tools = await p.evaluate(() => window.__tools.map((t) => ({ name: t.name, d: t.description, s: t.inputSchema })));
   ok(tools.length === 1 && tools[0].name === "estimate_rmn_earnings", "WebMCP: one tool, estimate_rmn_earnings, registered on the page");
   ok(/running your own retail media network \(RMN\)/i.test(tools[0].d) && /consent=true/.test(tools[0].d) && tools[0].s.properties.consent.type === "boolean" && tools[0].s.properties.view.maximum === 100 && JSON.stringify(tools[0].s.properties.background.enum) === JSON.stringify(F.BACKGROUNDS), "WebMCP: described as running your own retail media network; schema from the page");
+  ok(JSON.stringify(tools[0].s.properties.audience.enum) === '["operator","retailer"]' && /default/.test(tools[0].s.properties.audience.description) && JSON.stringify(tools[0].s.properties.i_am.enum) === JSON.stringify(F.AUDIENCES) && !(tools[0].s.required || []).length, 'WebMCP: an optional audience ("operator" | "retailer", default operator) and i_am (the gate\'s three options)');
   const est = (a) => p.evaluate((args) => window.__tools[0].execute(args), a);
   let w = await est({});
   assert.deepStrictEqual(w.structuredContent.figures, d, "WebMCP: the defaults return the page's own figures ($591K, 90, 270, 2,190,000, 3,942,000, $59.1M)");
   ok(w.structuredContent.inputs.ven === 90 && /Your potential income a year: \$591K/.test(w.content[0].text) && /consent/.test(w.content[0].text) && wposts.length === 0, "WebMCP: figures in the text, asks for the person's details, nothing posted");
-  ok(!/0\.5|50\s*%|\bhalf\b|SHARE/i.test(JSON.stringify([w, tools])), "WebMCP: the share constant is never in the tool or its result");
+  ok(w.structuredContent.audience === "operator" && /Venues in your network: 90/.test(w.content[0].text) && /Extra sales for your venues a year: \$59\.1M/.test(w.content[0].text), "WebMCP: no audience means operator, with the operator labels");
+  ok(!/0\.5|50\s*%|0\.7|70\s*%|\bhalf\b|SHARE/i.test(JSON.stringify([w, tools])), "WebMCP: neither share constant is ever in the tool or its result");
+  w = await est({ audience: "retailer" });
+  assert.deepStrictEqual(w.structuredContent.figures, dr, "WebMCP: audience retailer returns the page's retailer figures ($60.0M)");
+  ok(w.structuredContent.audience === "retailer" && /Your potential income a year: \$60\.0M/.test(w.content[0].text) && /Stores in your network: 90/.test(w.content[0].text) && /Extra sales in your stores a year: \$59\.1M/.test(w.content[0].text) && !/Venues in your network/.test(w.content[0].text), "WebMCP: retailer figures with the retailer labels in the text");
+  ok(await p.evaluate(() => document.querySelector(".phf-aud button[data-aud=retailer]").getAttribute("aria-pressed") === "true" && document.querySelector('.phf [data-out="yours"]').textContent === "$60.0M" && document.querySelector('.phf [data-lab="extraSales"]').textContent === "Extra sales in your stores a year"), "WebMCP: the page's own toggle and figures show the same");
+  ok(!/0\.5|50\s*%|0\.7|70\s*%|\bhalf\b|SHARE/i.test(JSON.stringify(w)), "WebMCP: no share constant in the retailer result");
+  w = await est({ audience: "operator" });
+  assert.deepStrictEqual([w.structuredContent.audience, w.structuredContent.figures], ["operator", d], "WebMCP: audience operator returns the operator figures ($591K)");
+  w = await est({ audience: "retailer", ven: 100 });
+  ok(w.structuredContent.figures.yours === "$66.6M" && w.structuredContent.inputs.ven === 100, "WebMCP: retailer with venues 100 ($66.6M)");
+  w = await est({ ven: 90 });
+  ok(w.structuredContent.audience === "operator" && w.structuredContent.figures.yours === "$591K" && (await p.evaluate(() => document.querySelector(".phf-aud button[data-aud=operator]").getAttribute("aria-pressed"))) === "true", "WebMCP: a call without audience is an operator estimate again");
   w = await est({ ven: 100 });
   ok(w.structuredContent.figures.yours === "$657K" && (await p.inputValue("#c-ven")) === "100" && (await text(p, "[data-out=yours]")) === "$657K", "WebMCP: venues 100 fills the page's input and returns what the page shows ($657K)");
   w = await est({ ven: -5, view: 500 });
   ok(w.structuredContent.inputs.ven === 0 && w.structuredContent.inputs.view === 100, "WebMCP: figures clamped to the inputs' ranges");
   await est({ ven: 90, view: 60 });
-  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "An individual operator", background: "Retail media" });
   ok(/agreement to be contacted/.test(w.content[0].text) && wposts.length === 0 && !(await p.$("#phf-mount iframe")), "WebMCP: details without consent submit nothing");
   w = await est({ name: "Ada Lovelace", email: "nope", region: "Leeds", background: "Retail media", consent: true });
   ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, "WebMCP: invalid details are not submitted");
   w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media", consent: true });
-  ok(!w.isError && w.structuredContent.tourUnlocked === true && wposts.length === 1 && wposts[0].email === "ada@gmail.com" && wposts[0].consent === true && wposts[0].test === true && wposts[0].page === "/run-your-own-rmn/", "WebMCP: with the person's details and consent the page's own gate posts once and the tour unlocks");
+  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, 'WebMCP: without "I am" the details are not submitted');
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "A large retailer", background: "Retail media", consent: true });
+  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, 'WebMCP: an "I am" that is not one of the three is not submitted');
+  w = await est({ audience: "retailer", name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "A small to medium retailer", background: "Retail business owner or manager", consent: true });
+  ok(!w.isError && w.structuredContent.tourUnlocked === true && wposts.length === 1 && wposts[0].email === "ada@gmail.com" && wposts[0].audience === "A small to medium retailer" && wposts[0].background === "Retail business owner or manager" && wposts[0].consent === true && wposts[0].test === true && wposts[0].page === "/run-your-own-rmn/", "WebMCP: with the person's details and consent the page's own gate posts once and the tour unlocks");
   ok((await p.evaluate(() => (window.dataLayer || []).filter((e) => e.event === "ph_agent_tool" && e.tool === "estimate_rmn_earnings").length)) >= 1 && !(await p.evaluate(() => JSON.stringify(window.dataLayer))).includes("ada@"), "WebMCP: a ph_agent_tool event, no contact details in the dataLayer");
   ok(p.__errs.length === 0 && !NAMES(JSON.stringify(tools)), "WebMCP: no page errors, neither name in the tool");
   await p.close();
@@ -369,6 +437,12 @@ try {
       await p.locator("#c-ven").tap(); await p.fill("#c-ven", "100");
       ok((await outs()).yours === "$657K", `${name}: calculator usable (venues 100 -> $657K)`);
       await p.fill("#c-ven", "90");
+      await p.locator(".phf-aud button[data-aud=retailer]").tap();
+      ok(await p.evaluate(() => document.querySelector(".phf-aud button[data-aud=retailer]").getAttribute("aria-pressed") === "true" && document.querySelector('.phf [data-out="yours"]').textContent === "$60.0M" && document.querySelector('.phf [data-lab="venues"]').textContent === "Stores in your network" && document.querySelector('.phf [data-lab="extraSales"]').textContent === "Extra sales in your stores a year"), `${name}: a tap on Retailer shows $60.0M with the retailer labels`);
+      await p.locator(".phf-aud button[data-aud=operator]").tap();
+      ok(await p.evaluate(() => document.querySelector(".phf-aud button[data-aud=operator]").getAttribute("aria-pressed") === "true" && document.querySelector('.phf [data-out="yours"]').textContent === "$591K" && document.querySelector('.phf [data-lab="venues"]').textContent === "Venues in your network"), `${name}: a tap on Operator or team switches back`);
+      const ab = await audBoxes(p);
+      ok(ab.length === 0, `${name}: each toggle button's hit area is at least 44x44: ` + JSON.stringify(ab));
       await p.locator("[aria-describedby=c-atv-tip]").tap();
       ok(await p.evaluate(() => { const t = document.getElementById("c-atv-tip"), r = t.getBoundingClientRect(); return getComputedStyle(t).display !== "none" && r.left >= 0 && r.right <= innerWidth; }), `${name}: an info tooltip opens by tap, inside the viewport`);
       await p.locator("#calc").tap();
@@ -381,9 +455,9 @@ try {
       await p.locator("#faq summary").first().tap();
       const fo = await p.evaluate(() => ({ open: document.querySelector("#faq details").open, sw: document.documentElement.scrollWidth, w: innerWidth }));
       ok(fo.open && fo.sw <= fo.w, `${name}: the FAQ opens by tap, no horizontal scroll: ` + JSON.stringify(fo));
-      await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
+      await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", audience: "An individual operator", background: "Retail media" });
       await p.locator("#t-cs").tap();
-      ok(!(await p.locator("#phf-unlock").isDisabled()), `${name}: the gate is usable (Unlock enabled once valid)`);
+      ok(!(await p.locator("#phf-unlock").isDisabled()), `${name}: the gate is usable (Unlock enabled once valid, with "I am" chosen)`);
       await p.locator("#phf-unlock").tap();
       await p.waitForSelector("#phf-mount iframe");
       ok(await p.evaluate(() => getComputedStyle(document.getElementById("phf-gate")).display === "none" && getComputedStyle(document.querySelector(".phf-ph")).display === "none"), `${name}: the gate submit unlocks the tour`);

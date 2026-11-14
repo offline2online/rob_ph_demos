@@ -1,7 +1,8 @@
-/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the three Shortcode
-   widget blocks (calculator, tour, FAQ), in the approved design, fluid from 1440 down to 360. Loaded on that page only. Every block rule is
-   under body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. The rest of
-   the page is Elementor widgets styled from the site kit (ph-website/elementor/run-your-own-rmn.md). */
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the three blocks
+   (calculator, tour, FAQ) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
+   fluid from 1440 down to 360. Loaded on that page only. Every block rule is under body .phf so the theme and the Elementor kit (link
+   colours, button and input styles, heading sizes) cannot restyle it. The rest of the page is Elementor widgets styled from the site
+   kit (ph-website/elementor/run-your-own-rmn.md). */
 /* The Elementor sections' anchors (their containers' CSS IDs) land below the sticky header, like the blocks' own sections. */
 body :is(#top,#why,#who,#how,#venues,#standards,#independents){scroll-margin-top:96px}
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
@@ -28,7 +29,12 @@ body .phf .phf-eb{margin:0 0 12px;font-size:13px;font-weight:600;color:#C43D82;l
 body .phf h2.phf-h2b{margin:0 0 40px;font-size:clamp(32px,4vw,46px);font-weight:700;color:#1C2540;letter-spacing:-1.38px;line-height:1.06;text-transform:none}
 body .phf .phf-calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:16px;align-items:start}
 body .phf .phf-cin-card{background:#F5F7FB;border-radius:22px;padding:30px;border:.5px solid #DCE1EB;color:#1C2540;min-width:0}
-body .phf .phf-cin-h{margin:0 0 18px;font-size:19px;font-weight:700;letter-spacing:-.19px}
+body .phf .phf-cin-h{margin:0 0 14px;font-size:19px;font-weight:700;letter-spacing:-.19px}
+/* The "I am" toggle under "Your network": a white pill holding two buttons, each at least 44px tall (a touch target on its own). */
+body .phf .phf-aud{display:flex;gap:6px;background:#FFFFFF;border:.5px solid #DCE1EB;border-radius:999px;padding:4px;margin:0 0 18px}
+body .phf button.phf-aud-b{flex:1;min-width:0;min-height:44px;border:0;border-radius:999px;background:transparent;color:#1C2540;font-family:inherit;font-size:15px;font-weight:600;line-height:1.3;letter-spacing:inherit;text-transform:none;padding:0 8px;margin:0;cursor:pointer;box-shadow:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-aud-b:hover,body .phf button.phf-aud-b:focus{background:transparent;color:#1C2540}
+body .phf button.phf-aud-b[aria-pressed=true],body .phf button.phf-aud-b[aria-pressed=true]:hover,body .phf button.phf-aud-b[aria-pressed=true]:focus{background:#1C2540;color:#FFFFFF}
 body .phf .phf-cgrp{margin:0 0 4px;font-size:12px;font-weight:600;color:#5A6479;letter-spacing:1.2px;text-transform:uppercase}
 body .phf .phf-cgrp-a{margin:22px 0 4px}
 body .phf .phf-crow{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:.5px solid #DCE1EB;padding:11px 0}
