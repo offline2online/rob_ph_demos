@@ -121,7 +121,8 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 
 @media (max-width: 820px) {
   .support-inbox { grid-template-columns: 1fr; gap: 12px; }
-  .support-queues { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 4px; }
+  /* Wrapped, not a sideways-scrolling strip: iPad WebKit turns a finger's slight roll on a scrolling strip into a pan and drops the tap. */
+  .support-queues { flex-direction: row; flex-wrap: wrap; gap: 6px; }
   .support-queue { width: auto; flex: 0 0 auto; white-space: nowrap; background: var(--surface-2); }
   .support-row { flex-direction: column; gap: 6px; }
   .support-row-side { flex-direction: row; flex-wrap: wrap; align-items: center; max-width: none; }

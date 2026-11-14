@@ -10837,7 +10837,11 @@ function ensureSupportUi() {
   }
   return supportUiLoading;
 }
+// Every line here tolerates a page that has no Support Inbox yet: a page kept
+// from before this release, running this script, must still start (the iPad's
+// dead menu of 6 Nov 2026 was a script reaching for a button an old page lacked).
 function openSupportPage(route) {
+  if (!supportPage) return;
   if (!pageAllowed("support-inbox")) return;
   if (supportPage.hidden) closeAllSubPages();
   document.getElementById("projects-root").hidden = true;
@@ -10853,13 +10857,13 @@ function openSupportPage(route) {
   });
 }
 function closeSupportPage() {
-  if (supportPage.hidden) return;
+  if (!supportPage || supportPage.hidden) return;
   supportPage.hidden = true;
   if (supportUi) supportUi.hide();
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
-document.getElementById("support-inbox-btn").addEventListener("click", () => { closeNavDrawer(); openSupportPage(supportRoute("#support")); });
+document.getElementById("support-inbox-btn")?.addEventListener("click", () => { closeNavDrawer(); openSupportPage(supportRoute("#support")); });
 // Settings › Support inbox: the mailbox connection and the answering rules.
 let supportSettingsUi = null;
 // Google's sign-in comes back as a fresh page load on "#settings/support?connected=1" (or ?error=…).
@@ -10867,6 +10871,7 @@ let supportSettingsUi = null;
 let supportSettingsReturn = /^#settings\/support\?/.test(window.location.hash) ? window.location.hash.split("?")[1] : "";
 function loadSupportSettings() {
   const host = document.getElementById("support-settings");
+  if (!host) return;
   const returned = supportSettingsReturn;
   supportSettingsReturn = "";
   // Mounted once: the pane can be asked to load again while the module is still arriving.
@@ -12219,7 +12224,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !supportPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

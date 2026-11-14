@@ -4936,6 +4936,16 @@ retailers on the Staff Kanban, and track it all on one stats page.
   reply with no person replying, noting or closing it.
 - **SUP-STAT-4** The chart has a legend and a table of the same figures.
 
+### iPad
+
+- **SUP-IPAD-1** Every control works by touch under each known way iPad
+  WebKit loses a tap (no click, pointercancel, Touch Events only, a late
+  re-aimed click), in landscape and portrait, and acts exactly once.
+- **SUP-IPAD-2** A field being typed in is not rebuilt by incoming data.
+- **SUP-IPAD-3** No tappable control sits in a sideways-scrolling strip.
+- **SUP-IPAD-4** A page cached from before this release starts with this
+  release's scripts, with a working menu.
+
 ### Data model
 
 `supportTickets/{threadId}`: `key`, `number`, `subject`, `customerEmail`,

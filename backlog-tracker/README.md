@@ -2989,6 +2989,34 @@ revokes the sign-in, Settings and the page header say so; connect again.
 A consent screen left as **External / Testing** makes Google expire the
 sign-in after seven days. Use Internal, or publish the app.
 
+### iPad
+
+The page follows the console's iPad rules (root `CLAUDE.md` → "iPad taps" and
+"iPad menu dead after a release"), and `test/ui/support-touch.test.mjs`
+holds it to them:
+
+- Every control is a `<button>`, a tab, a `<summary>` or a labelled
+  checkbox acting on `click`, so the console-wide tap handler
+  (`touch-click.js`) covers all of them. Nothing listens for `mousedown` and
+  nothing is opted out with `data-native-tap`.
+- The test does one person's whole journey with a finger (menu item, every
+  queue, a ticket, the suggested reply, a Help Centre article, a note, Send,
+  Raise on Staff Kanban, Mark as spam and its confirmation, Stats, Sync now,
+  the Settings switch and Save) under each of the five ways iPad WebKit has
+  lost taps, at landscape, the 1024 edge and portrait. Each tap must act
+  exactly once: a doubled Send is two emails to a customer.
+- A field being typed in is never rebuilt: a redraw caused by new data waits
+  until the person leaves the field (rebuilding it closes the iPad keyboard
+  and drops the caret). Search redraws only the list.
+- In portrait the queues wrap. They are not a sideways-scrolling strip,
+  where WebKit turns a finger's slight roll into a pan and drops the tap.
+- `app.js` tolerates a page with no Support Inbox in it, so a page kept from
+  before this release still starts with this release's scripts.
+- **A ticket that adds a control here** uses one of the covered kinds and
+  adds a step to that test. Chromium with touch emulation is not iPad Safari:
+  the test reproduces the known failures, it does not replace a check on the
+  device after a release.
+
 ### Things to know
 
 - **Deploy**: part of the console's normal deploy. The function binds
@@ -3010,5 +3038,6 @@ sign-in after seven days. Use Internal, or publish the app.
 - **Tests**: `node test/support-core.test.js`, `node test/support-mail.test.js`
   (connection, sync, every gate before an automatic send, replies, spam,
   escalation; Firestore, Google and the model stubbed),
-  `node test/support-page-core.test.mjs` and `node test/ui/support-inbox.test.mjs`
-  (the page in Chromium at 390, 820 and 1280 px, light and dark).
+  `node test/support-page-core.test.mjs`, `node test/ui/support-inbox.test.mjs`
+  (the page in Chromium at 390, 820 and 1280 px, light and dark) and
+  `node test/ui/support-touch.test.mjs` (the iPad, above).

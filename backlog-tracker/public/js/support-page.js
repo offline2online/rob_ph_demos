@@ -35,7 +35,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   let messages = [], messagesFor = "", unsubMessages = null, unsubTickets = null;
   let members = null, articles = null;
   let composer = { ticketId: "", text: "", usedDraft: false, faq: "" };
-  let busy = false, syncTimer = null, visible = false;
+  let busy = false, syncTimer = null, visible = false, stale = false;
 
   function start() {
     if (unsubTickets) return;
@@ -96,9 +96,16 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       + (status.lastSyncAt ? ` · synced ${esc(fmtWhen(Date.parse(status.lastSyncAt)))}` : " · not synced yet")
       + (problem ? ` · <span class="support-problem">${esc(problem)}</span>` : "");
   }
-  function render() {
+  // Someone typing in the page (a reply, a search, the assign list open). On the
+  // iPad, rebuilding the field under them closes the keyboard and drops the
+  // caret, so a redraw that nobody asked for waits until they leave the field.
+  const typing = () => { const a = document.activeElement; return !!a && view.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName); };
+  // `force`: the person just did something (opened a page, pressed a button), so draw now.
+  function render(force) {
     if (!visible) return;
     headerLine();
+    if (!force && typing()) { stale = true; return; }
+    stale = false;
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
       const on = b.dataset.supportTab === (route.view === "stats" ? "stats" : "inbox");
       b.classList.toggle("active", on);
@@ -130,23 +137,28 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
 
   function renderInbox() {
     const counts = queueCounts(tickets);
-    const rows = filterTickets(tickets, route.queue, search);
     const rail = QUEUES.map((q) => `<button type="button" class="support-queue${q.key === route.queue ? " active" : ""}" data-support-queue="${q.key}" ${q.key === route.queue ? 'aria-current="true"' : ""}>
       ${icon(q.icon)}<span class="support-queue-label">${esc(q.label)}</span><span class="support-queue-count">${counts[q.key]}</span></button>`).join("");
-    const list = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
+    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="Queues">${rail}</nav>
+      <div class="support-list-wrap">
+        <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
+        <ul class="support-list" id="support-list" aria-label="Tickets"></ul>
+        ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active tickets.</p>` : ""}
+      </div></div>`;
+    renderList();
+  }
+  function renderList() {
+    const box = $("support-list");
+    if (!box) return;
+    const rows = filterTickets(tickets, route.queue, search);
+    box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
           <span class="support-row-from">${esc(t.customerName || t.customerEmail)}${t.account && t.account.name ? ` · ${esc(t.account.name)}` : ""}</span>
           <span class="support-row-snippet">${esc(t.summary || t.snippet)}</span></span>
         <span class="support-row-side"><span class="support-row-when" title="${esc(fullDate(t.lastMessageAt))}">${esc(fmtWhen(t.lastMessageAt))}</span>
           <span class="support-row-key">${esc(t.key)}</span><span class="support-row-badges">${badges(t)}</span></span></button></li>`).join("")
       : `<li class="support-empty-row">${search ? "Nothing matches that search." : "Nothing in this queue."}</li>`;
-    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="Queues">${rail}</nav>
-      <div class="support-list-wrap">
-        <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
-          <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
-        <ul class="support-list" aria-label="Tickets">${list}</ul>
-        ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active tickets.</p>` : ""}
-      </div></div>`;
   }
 
   function messageHtml(m) {
@@ -213,7 +225,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       ${composerHtml}</div>`;
     renderThread();
     renderFaqResults();
-    if (edit && !members) ensureMembers().then(() => { if (route.view === "ticket" && route.ticketId === t.id && document.activeElement !== $("support-reply")) render(); });
+    if (edit && !members) ensureMembers().then(() => { if (route.view === "ticket" && route.ticketId === t.id) render(); });
   }
   function renderFaqResults() {
     const box = $("support-faq-results");
@@ -262,7 +274,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     view.querySelectorAll("button").forEach((b) => { b.disabled = true; });
     try { await fn(); } catch (err) { await alert(`${failure}: ${err.message}`); }
     busy = false;
-    render();
+    render(true);
   }
   async function sendReply(resolve) {
     const t = current();
@@ -278,11 +290,11 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   view.addEventListener("input", (e) => {
     if (e.target.id === "support-search") {
       search = e.target.value;
-      renderInbox();
-      const box = $("support-search"); box.focus(); box.setSelectionRange(search.length, search.length);
+      renderList();
     } else if (e.target.id === "support-reply") composer.text = e.target.value;
     else if (e.target.id === "support-faq-search") { composer.faq = e.target.value; renderFaqResults(); }
   });
+  view.addEventListener("focusout", () => setTimeout(() => { if (stale && !typing()) render(); }, 0));
   view.addEventListener("change", (e) => {
     if (e.target.id !== "support-assign") return;
     const t = current();
@@ -331,7 +343,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       visible = true;
       route = r;
       start();
-      render();
+      render(true);
       if (!syncTimer) {
         syncTimer = setInterval(() => { if (!document.hidden) sync({ quiet: true }); }, SYNC_EVERY_MS);
         // Opening the page reads new mail once the connection status is known.
