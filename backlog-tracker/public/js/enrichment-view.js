@@ -102,8 +102,9 @@ export function initialsOf(name) {
   return ((parts[0] || "")[0] || "").toUpperCase() + ((parts[1] || "")[0] || "").toUpperCase();
 }
 // The company's logo, or its initials when there is none (or the image fails: see wireLogoFallback).
+// The full logo when there is one (a site's icon is small and can be animated), else the icon.
 export function logoHTML(e, name, cls = "enrich-logo") {
-  const u = safeUrl(e && e.logoUrl);
+  const u = safeUrl(e && e.logos && e.logos.light) || safeUrl(e && e.logoUrl);
   return u
     ? `<img class="${cls}" src="${esc(u)}" alt="${esc(name)} logo" loading="lazy" referrerpolicy="no-referrer" data-initials="${esc(initialsOf(name))}">`
     : `<span class="${cls} ${cls}-fallback" aria-hidden="true">${esc(initialsOf(name))}</span>`;

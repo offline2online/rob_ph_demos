@@ -84,7 +84,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     resolveConsoleUser: async (e) => (e === "sam@ph.com" ? { email: e, role } : null),
     anthropicKey: () => key,
     research: async (a) => { asked.push(a); return typeof agent === "function" ? agent(a) : agent; },
-    ...(store ? { bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
+    ...(store ? { toPng: async (bytes, ext) => { if (String(bytes).includes("BROKEN")) throw new Error("not an image"); return Buffer.concat([Buffer.from(`PNG(${ext}):`), bytes.slice(0, 40)]); }, bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
     screen: async (a) => { screened.push(a); if (verdict instanceof Error) throw verdict; return typeof verdict === "function" ? verdict(a) : verdict; },
     lookup: async (h) => (h === "internal.test" ? [{ address: "10.0.0.5" }] : [{ address: "93.184.216.34" }]),
     fetch: fetchImpl || (async (url) => { calls.push(url); return resp(200, HOME); }),
@@ -572,7 +572,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
     const e = a.db.state.leads.l1.enrichment;
-    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.svg", "image/svg+xml"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]]);
+    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.png", "image/png"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]], "every copy is a PNG");
     assert.ok(e.logos.light.startsWith(`${STORE}light-`) && e.logos.light.includes("?alt=media&token="), e.logos.light);
     assert.ok(e.logos.dark.startsWith(`${STORE}dark-`)); assert.ok(e.logoUrl.startsWith(`${STORE}icon-`));
     assert.deepEqual(e.logoSources, { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.png", icon: "https://www.greeneking.co.uk/apple-touch-icon.png" });
@@ -623,6 +623,40 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     await e.api.onEnrichWrite("leads", created("leads", "l1", e.db.state));
     assert.equal(e.db.state.leads.l1.company.website, "https://square.example"); assert.equal(e.asked.length, 0);
     assert.equal(e.db.state.leads.l1.enrichment.websiteGuess.confidence, 90);
+  });
+  // ── A stored logo is a static PNG, never an animated file (14 Nov 2026) ──
+  await test("an animated favicon is never kept as it is, and the header prefers the full logo", async () => {
+    const { isAnimated } = require("../functions/lead-enrich");
+    const frame = Buffer.from([0x21, 0xf9, 0x04, 0, 0, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+    const gif = (n) => Buffer.concat([Buffer.from("GIF89a"), ...Array.from({ length: n }, () => frame)]);
+    assert.equal(isAnimated(gif(10), "ico"), true, "a GIF served as an icon is read for what it is");
+    assert.equal(isAnimated(gif(1), "gif"), false); assert.equal(isAnimated(Buffer.from("\x89PNG...."), "png"), false);
+    assert.equal(isAnimated(Buffer.from("<svg><animate attributeName='x'/></svg>"), "svg"), true);
+    assert.equal(isAnimated(Buffer.from("<svg><style>@keyframes spin{}</style></svg>"), "svg"), true);
+    assert.equal(isAnimated(Buffer.from("<svg><path d='M0 0'/></svg>"), "svg"), false);
+    // The site's only icon is an animated GIF labelled as an icon. Stored: its first frame as a PNG.
+    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><img class="logo" src="/logo.svg"></body></html>`;
+    const files = { "https://seven.example/favicon.ico": ["image/x-icon", gif(10).toString("latin1")], "https://seven.example/logo.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"] };
+    const bin = (type, body) => ({ ...resp(200, body, { "content-type": type }), arrayBuffer: async () => { const b = Buffer.from(body, "latin1"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
+    const fetchImpl = async (url) => (files[url] ? bin(files[url][0], files[url][1]) : resp(200, page, { "content-type": "text/html" }));
+    const a = make({ fetchImpl, store: true });
+    a.db.state.leads.l1.company.website = "https://seven.example";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const e = a.db.state.leads.l1.enrichment;
+    assert.ok(a.saved.every((x) => x.type === "image/png" && x.path.endsWith(".png")), JSON.stringify(a.saved));
+    assert.ok(/icon-[0-9a-f]{12}\.png\?/.test(e.logoUrl) && /light-[0-9a-f]{12}\.png\?/.test(e.logos.light));
+    // Storage is down: the static SVG keeps its own address, the animated icon is dropped rather than linked.
+    const b = make({ fetchImpl, store: "broken" });
+    b.db.state.leads.l1.company.website = "https://seven.example";
+    await b.api.onEnrichWrite("leads", created("leads", "l1", b.db.state));
+    assert.equal(b.db.state.leads.l1.enrichment.logos.light, "https://seven.example/logo.svg");
+    assert.equal(b.db.state.leads.l1.enrichment.logoUrl, "", "an animated file is never the logo");
+    // A copy made before this change (an .svg or .ico in storage) is redone as a PNG on the next run.
+    const old = JSON.parse(JSON.stringify(a.db.state));
+    old.leads.l1.enrichment.logos.light = e.logos.light.replace(".png?", ".svg?"); old.leads.l1.enrichment.logoUrl = e.logoUrl.replace(".png?", ".ico?");
+    const c = make({ fetchImpl, store: true, seed: old });
+    await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(c.saved.length, 2); assert.ok(/light-[0-9a-f]{12}\.png\?/.test(c.db.state.leads.l1.enrichment.logos.light));
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });
