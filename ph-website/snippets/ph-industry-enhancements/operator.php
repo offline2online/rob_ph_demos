@@ -10,10 +10,14 @@
  * - resolves the page (operator_page_id()): the published top-level page on slug `run-your-own-rmn` that is an Elementor document
  *   (`_elementor_edit_mode` = builder). The id is cached in the option ph_operator_page and re-resolved when it stops matching. With no
  *   such page every hook below is a no-op: no menu item, no head tags, no noindex meta, no sitemap change, nothing for agents;
- * - adds the three interactive blocks as shortcodes for Elementor Shortcode widgets (operator-content.php):
- *   [ph_operator_calculator] (the benefits calculator, tooltips, 46x46 touch hit areas), [ph_operator_tour] (the gate, the lead POST and
- *   the golf club tour iframe) and [ph_operator_faq] (the "Running your own RMN" accordion with its FAQPage JSON-LD, generated together).
- *   Each enqueues operator.css / operator.js, on that page only;
+ * - puts the three interactive blocks (operator-content.php) into the page's empty Elementor mount containers, server-side, so they
+ *   are in the first HTML response (operator_mount() on Elementor's frontend content filter; the Elementor MCP cannot add a Shortcode
+ *   widget and atomic widgets do not run shortcodes): CSS ID ph-rmn-calculator gets the benefits calculator (the "I am" toggle,
+ *   tooltips, 46x46 touch hit areas), ph-rmn-faq the "Running your own RMN" accordion with its FAQPage JSON-LD (generated together) and
+ *   ph-rmn-tour the gate, the lead POST and the golf club tour iframe. Each block goes in at most once, a missing container is skipped,
+ *   and other pages and ids are untouched. The shortcodes [ph_operator_calculator], [ph_operator_tour] and [ph_operator_faq] stay
+ *   registered and render the same blocks; a block already in the content (a Shortcode widget) is not mounted a second time.
+ *   operator.css / operator.js are enqueued on that page only, once;
  * - keyed by the resolved id: noindex while hidden (wp_robots, SEOPress's own robots meta and X-Robots-Tag) and no sitemap entry; the
  *   header's "Run Your Own RMN" item only on the page while hidden; the title, meta description, canonical, Open Graph, Twitter card
  *   and JSON-LD (WebPage, Service, BreadcrumbList; the FAQPage comes with the FAQ block); llms.txt, the markdown twin, the agent endpoint
@@ -21,7 +25,7 @@
  * Launching is one change: OPERATOR_LIVE = true.
  * - POST ph-site/v1/operator-lead: the product tour gate's lead. One ph_lead per person (lead_find_existing / lead_add_activity /
  *   lead_insert in leads.php), fires ph_lead_captured so leads.php forwards it to the console as a "Network operator inquiry"
- *   (leadType "operator").
+ *   (leadType "operator"). The gate's "I am" answer travels with it as `audience` (the label).
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -42,8 +46,10 @@ const OPERATOR_OG_TITLE      = 'Run Your Own Retail Media Network (RMN)';
 /** Used for og:image only when neither the home page nor SEOPress names a social image: the home hero, which shows content. */
 const OPERATOR_OG_FALLBACK   = 'https://personalisationhub.com/wp-content/uploads/2026/11/home-hero-bg.webp';
 const OPERATOR_LLMS_SUMMARY  = 'run your own retail media network on a white-label platform with real-time in-store personalisation, in your own AWS account; estimate your earnings with the calculator and take the interactive product tour.';
-/** The Elementor Shortcode widgets' shortcodes: block => tag. */
+/** The blocks' shortcodes: block => tag. */
 const OPERATOR_SHORTCODES    = array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq' );
+/** The page's empty Elementor mount containers, in page order: block => the container's CSS ID (operator_mount_blocks()). */
+const OPERATOR_MOUNTS        = array( 'calculator' => 'ph-rmn-calculator', 'faq' => 'ph-rmn-faq', 'tour' => 'ph-rmn-tour' );
 /** Cache of the resolved page id (operator_page_id()); never the source of truth. */
 const OPERATOR_PAGE_OPTION   = 'ph_operator_page';
 const OPERATOR_STATE_OPTION  = 'ph_operator_state';
@@ -51,10 +57,16 @@ const OPERATOR_STATE_OPTION  = 'ph_operator_state';
 const OPERATOR_SOURCE        = 'operator';
 const OPERATOR_LABEL         = 'Network operator inquiry';
 const OPERATOR_DETAIL        = 'Run Your Own RMN page – product tour';
-const OPERATOR_BACKGROUNDS   = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Marketing', 'Something else' );
+const OPERATOR_BACKGROUNDS   = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Creative agency', 'Retail business owner or manager', 'Marketing', 'Something else' );
+/** The gate's required "I am" select. The chosen label is stored and sent on as `audience`. */
+const OPERATOR_AUDIENCES     = array( 'An individual operator', 'Part of an operator team', 'A small to medium retailer' );
 const OPERATOR_TOUR_PATH     = '/run-your-own-rmn/tour/';
-/** Calculator share of ad revenue. Code only: never printed on the page, in a tooltip, the twin or anything an agent reads. */
-const OPERATOR_INCOME_SHARE  = 0.5;
+/**
+ * Calculator shares of ad revenue: "Operator or team" mode, and "Retailer" mode (which also adds the extra sales in the retailer's own
+ * stores to the income). Code only: never printed on the page, in a tooltip, the twin or anything an agent reads.
+ */
+const OPERATOR_INCOME_SHARE   = 0.5;
+const OPERATOR_RETAILER_SHARE = 0.7;
 
 require_once __DIR__ . '/operator-content.php';
 
@@ -64,19 +76,21 @@ function operator_defaults() {
 	return array( 'ven' => 90, 'dis' => 3, 'vis' => 800, 'cpm' => 25, 'atv' => 25, 'view' => 60, 'up' => 15 );
 }
 
-function operator_calc( array $s ) {
+/** $mode is the "I am" toggle's: 'operator' (the default) or 'retailer'. */
+function operator_calc( array $s, $mode = 'operator' ) {
 	$s              = array_merge( operator_defaults(), $s );
 	$visitors_month = $s['ven'] * $s['vis'] * 365 / 12;
 	$viewers        = $visitors_month * $s['view'] / 100;
 	$views_month    = $viewers * $s['dis'];
 	$ad_revenue     = $views_month * 12 / 1000 * $s['cpm'];
+	$extra_sales    = $viewers * 12 * $s['atv'] * $s['up'] / 100;
 	return array(
 		'venues'        => $s['ven'],
 		'displays'      => $s['ven'] * $s['dis'],
 		'visitorsMonth' => $visitors_month,
 		'viewsMonth'    => $views_month,
-		'income'        => $ad_revenue * OPERATOR_INCOME_SHARE,
-		'extraSales'    => $viewers * 12 * $s['atv'] * $s['up'] / 100,
+		'income'        => 'retailer' === $mode ? $ad_revenue * OPERATOR_RETAILER_SHARE + $extra_sales : $ad_revenue * OPERATOR_INCOME_SHARE,
+		'extraSales'    => $extra_sales,
 	);
 }
 
@@ -418,36 +432,45 @@ function operator_head_html( array $img, $live ) {
 /**
  * The markdown twin (?format=md), built from the lists in operator-content.php: the calculator and FAQ the blocks render, and the copy
  * the Elementor page carries (word for word from the build brief; tests/operator.test.php checks the brief holds every line).
- * The calculator is described by its inputs, outputs, the defaults' figures and the page's own "How it's calculated" text;
- * the share constant is never in it.
+ * The calculator is described by its inputs, outputs, the defaults' figures in both modes and the page's own "How it's calculated"
+ * text; neither share constant is ever in it.
  */
 function operator_twin() {
-	$d   = operator_defaults();
-	$out = operator_view( operator_calc( $d ) );
-	$md  = '# ' . OPERATOR_H1 . "\n\n> " . OPERATOR_META_DESC . "\n\nSource: " . OPERATOR_URL . "\n\n"
-		. '**' . OPERATOR_SUBLINE . ".**\n\n" . OPERATOR_HERO_P . "\n\n## Key facts\n\n";
-	foreach ( operator_why_items() as $w ) {
-		$md .= '- **' . $w[1] . ':** ' . $w[2] . "\n";
-	}
-	$md .= '- **Venues:** any business with a physical presence, with or without screens today, e.g. ' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ".\n"
-		. "- **Who it suits:** people who know media and use AI tools every day: agency media and account leads, ad-tech sales and partnerships, and retail media specialists.\n\n## How it works\n\n";
+	$d     = operator_defaults();
+	$cards = function ( array $rows ) {
+		$md = '';
+		foreach ( $rows as $r ) {
+			$md .= '- **' . $r[1] . ':** ' . $r[2] . "\n";
+		}
+		return $md;
+	};
+	$md = '# ' . OPERATOR_H1 . "\n\n> " . OPERATOR_META_DESC . "\n\nSource: " . OPERATOR_URL . "\n\n"
+		. '**' . OPERATOR_SUBLINE . ".**\n\n" . OPERATOR_HERO_P . "\n\n## Key facts\n\n" . $cards( operator_why_items() )
+		. '- **Venues:** ' . OPERATOR_VENUES_P . ' For example: ' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ".\n\n"
+		. "## Your head start in a changing industry\n\n" . implode( "\n\n", OPERATOR_HEAD_START ) . "\n\n"
+		. "## Three ways to run your own network\n\n" . OPERATOR_WAYS_INTRO . "\n\n" . $cards( operator_ways() ) . "\n## How it works\n\n";
 	foreach ( operator_steps() as $st ) {
 		$md .= $st[0] . '. **' . $st[1] . ':** ' . $st[2] . "\n";
 	}
-	$md .= "\n## Benefits calculator\n\nThe page's benefits calculator (\"What could it be worth to you?\") estimates what your network could earn. Change any input and the figures update.\n\nInputs (default in brackets):\n\n";
+	$md .= "\n## Built to fix retail media's fragmentation\n\n" . implode( "\n\n", OPERATOR_STANDARDS_LEADS ) . "\n\n" . $cards( operator_standards() )
+		. "\n## Give independents a fighting chance\n\n" . implode( "\n\n", OPERATOR_INDEP_LEADS ) . "\n\n**" . OPERATOR_INDEP_BAND[0] . '** ' . OPERATOR_INDEP_BAND[1] . "\n\n" . $cards( operator_independents() )
+		. "\n## Benefits calculator\n\nThe page's benefits calculator (\"What could it be worth to you?\") estimates what your network could earn. Choose \"" . OPERATOR_MODES['operator'] . '" or "' . OPERATOR_MODES['retailer'] . "\", change any input and the figures update.\n\nInputs (default in brackets):\n\n";
 	foreach ( operator_calc_fields() as $k => $f ) {
 		$v   = 'range' === $f['type'] ? $d[ $k ] . '%' : ( '' !== $f['prefix'] ? $f['prefix'] : '' ) . $d[ $k ];
 		$md .= '- ' . $f['label'] . ' (' . $v . '): ' . $f['tip'] . "\n";
 	}
-	$md .= "\nWith the defaults the page shows:\n\n";
-	foreach ( operator_calc_outputs() as $k => $label ) {
-		$md .= '- ' . $label . ': ' . $out[ $k ] . "\n";
+	foreach ( OPERATOR_MODES as $mode => $label ) {
+		$out = operator_view( operator_calc( $d, $mode ) );
+		$md .= "\nWith the defaults, as \"" . $label . "\", the page shows:\n\n";
+		foreach ( operator_calc_outputs( $mode ) as $k => $l ) {
+			$md .= '- ' . $l . ': ' . $out[ $k ] . "\n";
+		}
 	}
-	$md .= "\nHow it's calculated: " . OPERATOR_HOW_CALC . "\n\nOn the page, a browser agent can run the calculator with the WebMCP tool `estimate_rmn_earnings`.\n\n## FAQ\n\n";
+	$md .= "\nHow it's calculated: " . OPERATOR_HOW_CALC . "\n\nOn the page, a browser agent can run the calculator with the WebMCP tool `estimate_rmn_earnings` (its `audience` is \"operator\" or \"retailer\").\n\n## FAQ\n\n";
 	foreach ( operator_faq() as $qa ) {
 		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n";
 	}
-	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, your background and your agreement to be contacted; our team will also follow up with more on becoming a network operator.' . "\n";
+	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, which describes you (' . strtolower( implode( ', ', OPERATOR_AUDIENCES ) ) . '), your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n";
 	return $md;
 }
 
@@ -539,6 +562,10 @@ function operator_handle( array $b ) {
 	if ( '' === $lead['region'] || strlen( $lead['region'] ) > 120 ) {
 		return array( 400, array( 'error' => 'Please tell us where you plan to operate.', 'field' => 'region' ) );
 	}
+	$lead['audience'] = $str( 'audience' ); // the gate's "I am"
+	if ( ! in_array( $lead['audience'], OPERATOR_AUDIENCES, true ) ) {
+		return array( 400, array( 'error' => 'Please tell us which describes you.', 'field' => 'audience' ) );
+	}
 	$lead['background'] = $str( 'background' );
 	if ( ! in_array( $lead['background'], OPERATOR_BACKGROUNDS, true ) ) {
 		return array( 400, array( 'error' => 'Please choose your background.', 'field' => 'background' ) );
@@ -550,7 +577,7 @@ function operator_handle( array $b ) {
 	$id   = lead_find_existing( $lead['email'], $test );
 	if ( $id ) { // already a lead (an industry tour or download): record the network operator inquiry as activity, not a second lead.
 		lead_add_activity( $id, OPERATOR_LABEL, OPERATOR_DETAIL );
-		foreach ( array( 'linkedin', 'region', 'background' ) as $k ) {
+		foreach ( array( 'linkedin', 'region', 'audience', 'background' ) as $k ) {
 			if ( '' !== $lead[ $k ] && ! get_post_meta( $id, 'ph_lead_' . $k, true ) ) {
 				update_post_meta( $id, 'ph_lead_' . $k, $lead[ $k ] );
 			}
@@ -583,6 +610,7 @@ function operator_handle( array $b ) {
 		'job_title'        => $lead['background'],
 		'region'           => $lead['region'],
 		'background'       => $lead['background'],
+		'audience'         => $lead['audience'], // "I am": the label. The console ignores it until it has the field.
 		'lead_type'        => OPERATOR_SOURCE,
 		'source'           => OPERATOR_SOURCE,
 		'source_label'     => OPERATOR_LABEL,
@@ -593,7 +621,7 @@ function operator_handle( array $b ) {
 		'post_id'          => (int) $id,
 	) );
 	if ( ! $test ) {
-		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry: ' . $lead['name'], "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\nBackground: {$lead['background']}\nPage: " . OPERATOR_PATH );
+		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry: ' . $lead['name'], "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\nI am: {$lead['audience']}\nBackground: {$lead['background']}\nPage: " . OPERATOR_PATH );
 	}
 	return array( 200, array( 'ok' => true ) );
 }
@@ -602,7 +630,7 @@ function operator_handle( array $b ) {
 
 /**
  * Enqueues operator.css and operator.js (assets version, handle ph-operator-10063, window.PH_OPERATOR) on the page only, once per request.
- * Called at wp_enqueue_scripts (so the CSS is in the head) and by each block's shortcode.
+ * Called at wp_enqueue_scripts (so the CSS is in the head), by the mount (operator_mount()) and by each block's shortcode.
  */
 function operator_enqueue() {
 	static $done = false;
@@ -616,12 +644,59 @@ function operator_enqueue() {
 	wp_add_inline_script( 'ph-operator-10063', 'window.PH_OPERATOR = ' . wp_json_encode( array( 'endpoint' => '/wp-json/ph-site/v1/operator-lead', 'tour' => OPERATOR_TOUR_PATH ) ) . ';', 'before' );
 }
 
+/* ---------- Mount containers ---------- */
+
+/** A block's HTML by name ('calculator', 'faq', 'tour'), or '' for any other name. */
+function operator_block_html( $name ) {
+	if ( 'calculator' === $name ) {
+		return operator_calculator_html();
+	}
+	if ( 'faq' === $name ) {
+		return operator_faq_html();
+	}
+	return 'tour' === $name ? operator_tour_html() : '';
+}
+
+/**
+ * Fills the page's empty mount containers in Elementor's rendered HTML: for each of OPERATOR_MOUNTS, the block goes in straight after
+ * the opening tag of the first element whose id attribute is that CSS ID, so it sits inside the container. Pure (HTML in, HTML out):
+ * - a container that is not in the HTML is skipped silently, and every other element and id is left exactly as it was;
+ * - each block goes in at most once per document: only the first element with the id is filled, and a block that is already in the
+ *   HTML (its .phf wrapper, e.g. from a Shortcode widget) is not added again. The check is on the HTML, not a per-request flag, so a
+ *   second render of the same document (some plugins render the content more than once) is filled the same way.
+ */
+function operator_mount_blocks( $content ) {
+	$content = (string) $content;
+	foreach ( OPERATOR_MOUNTS as $name => $css_id ) {
+		if ( false === strpos( $content, $css_id ) || false !== strpos( $content, 'data-phf="' . $name . '"' ) ) {
+			continue;
+		}
+		if ( 1 !== preg_match( '/<[a-z][a-z0-9-]*\b[^<>]*?\sid=(["\'])' . preg_quote( $css_id, '/' ) . '\1[^<>]*>/i', $content, $m, PREG_OFFSET_CAPTURE ) ) {
+			continue;
+		}
+		$at      = $m[0][1] + strlen( $m[0][0] );
+		$content = substr( $content, 0, $at ) . operator_block_html( $name ) . substr( $content, $at );
+	}
+	return $content;
+}
+
+/** elementor/frontend/the_content: on the resolved Run Your Own RMN page only, fill its mount containers. Elsewhere: unchanged. */
+function operator_mount( $content ) {
+	if ( ! is_string( $content ) || ! operator_is_page() ) {
+		return $content;
+	}
+	operator_enqueue();
+	return operator_mount_blocks( $content );
+}
+
 /* ---------- Hooks ---------- */
 
 if ( function_exists( 'add_action' ) && ! defined( 'PH_OPERATOR_TEST' ) ) {
 	add_action( 'init', __NAMESPACE__ . '\\operator_init', 25 );
 
-	// The three blocks for Elementor Shortcode widgets. Each enqueues the page's CSS and JS (only on the page; once).
+	// The three blocks go into the page's empty Elementor mount containers, in the first HTML response.
+	add_filter( 'elementor/frontend/the_content', __NAMESPACE__ . '\\operator_mount', 20 );
+	// The same blocks as shortcodes, kept registered. Each enqueues the page's CSS and JS (only on the page; once).
 	add_shortcode( OPERATOR_SHORTCODES['calculator'], function () {
 		operator_enqueue();
 		return operator_calculator_html();
@@ -634,7 +709,7 @@ if ( function_exists( 'add_action' ) && ! defined( 'PH_OPERATOR_TEST' ) ) {
 		operator_enqueue();
 		return operator_faq_html();
 	} );
-	add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\operator_enqueue' ); // in the head on the page, before the widgets render.
+	add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\operator_enqueue' ); // in the head on the page, before the content renders.
 
 	add_filter( 'wp_robots', __NAMESPACE__ . '\\operator_robots', 999 );
 	add_action( 'wp_head', function () {

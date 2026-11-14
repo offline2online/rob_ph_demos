@@ -103,6 +103,10 @@ function lead_ingest_body( array $lead ) {
 	if ( '' !== $s( 'background' ) ) {
 		$body['background'] = $s( 'background' );
 	}
+	// The Run Your Own RMN gate's "I am" (14 Nov 2026): the chosen label.
+	if ( '' !== $s( 'audience' ) ) {
+		$body['audience'] = $s( 'audience' );
+	}
 	if ( ! empty( $lead['test'] ) ) {
 		$body['test'] = true;
 	}
