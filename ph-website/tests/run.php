@@ -92,7 +92,8 @@ foreach ( array( 'Company', 'For AI agents' ) as $h ) {
 	ok( substr_count( $out, "## $h" ) === 1, "## $h added once" );
 }
 ok( strpos( $out, 'privacy-policy/?format=md' ) !== false && strpos( $out, '/legal/?format=md' ) !== false && strpos( $out, '/support/?format=md' ) !== false, 'legal pages listed' );
-ok( strpos( $out, 'help-api/mcp' ) !== false && strpos( $out, 'WebMCP' ) !== false, 'agents section lists MCP and WebMCP' );
+ok( strpos( $out, '(https://personalisationhub.com/mcp)' ) !== false && strpos( $out, 'WebMCP' ) !== false, 'agents section lists MCP (on personalisationhub.com) and WebMCP' );
+ok( ! preg_match( '#backlog-tracker|\.web\.app|firebaseapp\.com|cloudfunctions\.net#i', $out ), 'llms.txt sections never name the console host' );
 ok( strpos( $out, 'localisation-geo-targeting' ) === false, 'unpublished page is not listed' );
 ok( llms_sections( $out, $pages ) === $out || substr_count( llms_sections( $out, $pages ), '## For AI agents' ) === 1, 'idempotent sections' );
 foreach ( array( 'lindt', 'webdemo', 'mipharmacy', 'amazon-signage' ) as $bad ) {
@@ -206,6 +207,9 @@ $li = run_tool( 'list_industries', array(), $src );
 ok( $li['structuredContent']['industries'][0]['slug'] === 'retail-media', 'list_industries returns the live ones' );
 $dp = run_tool( 'describe_platform', array(), $src );
 ok( strpos( $dp['content'][0]['text'], '[Digital Signage](https://personalisationhub.com/digital-signage/)' ) !== false && strpos( $dp['content'][0]['text'], 'Localisation' ) === false, 'describe_platform lists only exposable product areas' );
+ok( false === strpos( $dp['content'][0]['text'], '## More from Personalisation Hub' ) && ! isset( $dp['structuredContent']['morePages'] ), 'describe_platform: no extra pages without the ph_agent_extra_pages source (or while a page is hidden)' );
+$dpx = run_tool( 'describe_platform', array(), array_merge( $src, array( 'extra_pages' => function () { return array( array( 'title' => 'Run your own retail media network (RMN)', 'url' => 'https://personalisationhub.com/run-your-own-rmn/', 'summary' => 'Run your own RMN.', 'md' => '# x' ), array( 'title' => '', 'url' => 'https://personalisationhub.com/x/' ) ); } ) ) );
+ok( false !== strpos( $dpx['content'][0]['text'], "## More from Personalisation Hub\n\n- [Run your own retail media network (RMN)](https://personalisationhub.com/run-your-own-rmn/): Run your own RMN.\n" ) && 1 === count( $dpx['structuredContent']['morePages'] ), 'describe_platform lists a live extra page (Run Your Own RMN, once launched) and drops an untitled one' );
 ok( run_tool( 'start_free_trial', array(), $src )['structuredContent']['url'] === 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76', 'exact free trial link' );
 ok( run_tool( 'book_demo', array(), $src )['structuredContent']['url'] === 'https://calendly.com/rob-offline2online', 'exact demo link' );
 ok( ! empty( run_tool( 'start_free_trial', array( 'a' => 1 ), $src )['isError'] ), 'no-arg tools refuse arguments' );
@@ -389,7 +393,10 @@ ok( strpos( file_get_contents( $snips . '/ph-support-centre/main.php' ), "const 
 
 /* Support Centre 1.4.0: live feed first, refresh endpoint, no Google Fonts request */
 $scs = file_get_contents( $snips . '/ph-support-centre/main.php' );
-ok( strpos( $scs, "const VER          = '1.4.2'" ) !== false, 'Support Centre is 1.4.2' );
+ok( strpos( $scs, "const VER          = '1.4.3'" ) !== false, 'Support Centre is 1.4.3' );
+ok( strpos( $scs, '"- [Help search API](" . PUBLIC_HELP . "/search' ) !== false && strpos( $scs, '"- [Help MCP server](" . PUBLIC_MCP . ")' ) !== false, 'Support Centre llms.txt lines use the personalisationhub.com addresses' );
+ok( strpos( $scs, "const PUBLIC_HELP  = 'https://personalisationhub.com/help-api'" ) !== false && strpos( $scs, "const PUBLIC_MCP   = 'https://personalisationhub.com/mcp'" ) !== false, 'Support Centre public help API and MCP addresses are on personalisationhub.com' );
+ok( 1 === preg_match_all( '/\bHELP_API\b(?!_)/', preg_replace( '/^const HELP_API .*$/m', '', $scs ) ), 'HELP_API (the console) is used only for the server-side sync sources, never in public output' );
 ok( preg_match( "/const SOURCES\\s*=\\s*\\[\\s*HELP_API \\. '\\/data\\/', 'https:\\/\\/raw\\.githubusercontent\\.com[^']*', 'https:\\/\\/help\\.personalisationhub\\.com\\/data\\/'/", $scs ) === 1, 'sources: live feed, GitHub raw, help site, in that order' );
 ok( strpos( $scs, "const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api'" ) !== false, 'HELP_API is the live console feed' );
 ok( strpos( $scs, "const SYNC_VER     = '2'" ) !== false, 'SYNC_VER unchanged' );
@@ -550,7 +557,7 @@ ok( false !== strpos( file_get_contents( $dir . 'leads.php' ), "'ph_lead_ingest_
 $tsrc = file_get_contents( $dir . 'tour/tour.html' );
 ok( ! file_exists( $dir . 'tour/telco.html' ), 'tour: single source tour/tour.html (telco.html is gone)' );
 ok( false !== strpos( $tsrc, 'IND_FROM_PATH' ) && false !== strpos( $tsrc, 'ind: IND_FROM_PATH' ) && false !== strpos( $tsrc, '/industries\\/pharmacy\\/tour' ), 'tour: S.ind comes from the page path' );
-ok( false !== strpos( $tsrc, 'industry: S.ind' ) && false === strpos( $tsrc, 'industry: "telco"' ), 'tour: events and lead body use S.ind, not a hard-coded telco' );
+ok( false !== strpos( $tsrc, 'industry: IS_GOLF ? "rmn" : S.ind' ) && false === strpos( $tsrc, 'industry: "telco"' ), 'tour: events and lead body use S.ind (rmn on the Run Your Own RMN tour), not a hard-coded telco' );
 ok( false !== strpos( $tsrc, 'Sun Care | 2 for $30 SPF 50+' ) && false !== strpos( $tsrc, 'Gold Members | Extra 20% off sun care' ) && false !== strpos( $tsrc, 'Sunscreen out of stock' ), 'tour: pharmacy is the sun care campaign' );
 ok( 0 === preg_match( '/Scripts Ready|Flu Vaccine|Flu Season|Prescription Ready|Age 68/', $tsrc ), 'tour: no prescription, vaccine or age content left in the pharmacy tour' );
 $tp = file_get_contents( $dir . 'tour.php' );
@@ -560,6 +567,7 @@ ok( false !== strpos( $ejs, 'See Personalisation Hub run a pharmacy campaign, en
 ok( 1 === preg_match( "/ASSETS_VERSION_10063 = '(\d+)\.(\d+)\.(\d+)'/", $mp, $vm2 ) && ( (int) $vm2[2] > 9 || ( (int) $vm2[2] === 9 && (int) $vm2[3] >= 3 ) ), 'main.php: assets version bumped to 1.9.3 for the pharmacy tour' );
 
 require __DIR__ . '/ai-surface.test.php';
+require __DIR__ . '/help-proxy.test.php';
 /* PH Blog abilities: own process (it stubs the hook functions itself) */
 exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/ph-blog-abilities.test.php' ) . ' 2>&1', $abl_out, $abl_rc );
 ok( 0 === $abl_rc, 'ph-blog-abilities.test.php: ' . implode( ' ', $abl_out ) );

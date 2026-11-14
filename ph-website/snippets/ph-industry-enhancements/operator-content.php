@@ -1,9 +1,15 @@
 <?php
 /**
- * The /be-your-own-boss/ page body (13 Nov 2026), rendered by the [ph_operator] shortcode inside the site's own header and footer.
- * Copy, section order, colours, type and spacing follow the approved design (Main.dc.html). A sales pitch
- * only: no setup fee, minimum, revenue split or share figure is ever printed (the calculator's share lives in operator.js and
- * operator_calc() only). The calculator outputs are rendered with the defaults so the page reads correctly before JS runs.
+ * The Run Your Own RMN page's three interactive blocks (an Elementor page from 14 Nov 2026), each an Elementor Shortcode widget:
+ * [ph_operator_calculator] operator_calculator_html(), [ph_operator_tour] operator_tour_html() and [ph_operator_faq] operator_faq_html().
+ * Every other section (hero, "Why it beats anything out there", why, who, how, venues, standards, independents) is built in Elementor
+ * from ph-website/elementor/run-your-own-rmn.md; no page copy is rendered here. Styles follow the approved design (operator.css).
+ * A sales pitch only: no setup fee, minimum, revenue split or share figure is ever printed (the calculator's share lives in operator.js
+ * and operator_calc() only). The calculator outputs are rendered with the defaults so the block reads correctly before JS runs.
+ *
+ * The lists below are read by the blocks, the FAQPage JSON-LD and the markdown twin. The twin also reads the Elementor page's copy
+ * (OPERATOR_H1, OPERATOR_SUBLINE, OPERATOR_HERO_P, operator_why_items(), operator_steps(), OPERATOR_VENUE_TYPES): those lines are the
+ * build brief's word for word, and tests/operator.test.php fails if the brief stops carrying any of them.
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -12,8 +18,77 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 const OPERATOR_VENUE_TYPES = array( 'Car dealerships', 'Golf clubs', 'Sailing clubs and marinas', 'Fuel and convenience', 'Trade suppliers', 'Rural and farm supplies', 'Independent grocery', 'Liquor stores', 'Hardware', 'Utility shopfronts', 'Gyms and leisure centres', 'Cafés and bakeries' );
+const OPERATOR_H1          = 'Run your own retail media network';
+const OPERATOR_SUBLINE     = 'Your own RMN on a world-leading white-label platform';
+const OPERATOR_HERO_P      = 'AI has changed what one person can achieve. If you’re driven, and you use AI tools every day rather than just talk about them, you no longer need a large team to create real value. One focused operator can now do the work of an entire organisation. Use those skills to resell the world-leading white-label retail media platform, with real-time personalisation in store and in other physical venues, to independent businesses nationwide and beyond.';
+const OPERATOR_FAQ_TITLE   = 'Running your own RMN';
+const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers.';
+const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
+const OPERATOR_TOUR_P      = 'Watch a venue sell its screens, a brand create a campaign by talking, and one visitor\'s journey from arrival to checkout.';
 
-/** One "i" info tooltip: a real button, the text in a role=tooltip box it describes. Opens on hover, focus and tap (operator.js). */
+/** "Why it beats anything out there": [colour, title, text]. */
+function operator_why_items() {
+	return array(
+		array( '#179BC2', 'Personalisation in physical venues', 'Screens adapt in real time to the person in front of them, in any venue, e.g. stores, clubs, dealerships and forecourts.' ),
+		array( '#EF61A6', 'Campaigns can be created automatically', 'Brands can bring their own creative, or let AI build, target and launch campaigns for them. Independents can do the same for their own promotions.' ),
+		array( '#FE9226', 'Self-optimising, with proof of results', 'Every campaign learns from real in-store sales and improves itself, so advertisers see what they get.' ),
+		array( '#60D838', 'Your brand, your own AWS account', 'White-label from end to end, running in your own AWS account. The data and the relationships are yours.' ),
+	);
+}
+
+/** "How it works": [number, title, text]. */
+function operator_steps() {
+	return array(
+		array( '1', 'You sign up venues', 'Bring physical venues onto your network, whether they already have screens or you help put them in.' ),
+		array( '2', 'You partner with brands and advertisers', 'Sell advertising and experiences across your network, to the brands your venues stock and to local and national advertisers.' ),
+		array( '3', 'You run it your own way', 'You choose the commercial model, from revenue share to subscriptions. We give you a proven framework; how you build the business is up to you.' ),
+	);
+}
+
+/**
+ * The calculator's inputs, in page order: key => [element id, label, tooltip, prefix] for the number inputs, [.., min, max] for the
+ * two sliders (type 'range'). Read by the page, the twin and (through the element ids) the estimate_rmn_earnings WebMCP tool.
+ */
+function operator_calc_fields() {
+	return array(
+		'ven'  => array( 'type' => 'number', 'id' => 'c-ven', 'label' => 'Venues', 'tip' => 'The number of venues on your network, e.g. stores, clubs, dealerships and forecourts.', 'prefix' => '' ),
+		'dis'  => array( 'type' => 'number', 'id' => 'c-dis', 'label' => 'Displays per venue', 'tip' => 'The average number of screens showing ads in each venue. Each display a visitor sees counts as an ad view.', 'prefix' => '' ),
+		'vis'  => array( 'type' => 'number', 'id' => 'c-vis', 'label' => 'Visitors per venue per day', 'tip' => 'The average number of people who come into each venue on a typical day.', 'prefix' => '' ),
+		'cpm'  => array( 'type' => 'number', 'id' => 'c-cpm', 'label' => 'Average CPM', 'tip' => 'What advertisers pay for every 1,000 views of their ads.', 'prefix' => '$' ),
+		'atv'  => array( 'type' => 'number', 'id' => 'c-atv', 'label' => 'Average transaction value', 'tip' => 'The average amount a visitor spends in the venue. Used to estimate the extra sales venues make when promotions feature endemic brands, i.e. products they sell.', 'prefix' => '$' ),
+		'view' => array( 'type' => 'range', 'id' => 'c-view', 'label' => 'Visitors who view the ads', 'tip' => 'The share of visitors who see an ad on the screens during their visit.', 'min' => 5, 'max' => 100 ),
+		'up'   => array( 'type' => 'range', 'id' => 'c-up', 'label' => 'Uplift from personalised offers', 'tip' => 'The extra spend from visitors who see personalised offers for products the venue sells. 15% is a typical uplift from personalisation.', 'min' => 0, 'max' => 50 ),
+	);
+}
+
+/** The calculator's outputs, in page order: data-out key => label. */
+function operator_calc_outputs() {
+	return array(
+		'yours'      => 'Your potential income a year',
+		'venues'     => 'Venues in your network',
+		'displays'   => 'Displays in your network',
+		'visitors'   => 'Visitors a month across your network',
+		'views'      => 'Ad views a month',
+		'extraSales' => 'Extra sales for your venues a year',
+	);
+}
+
+/**
+ * "Running your own RMN": [question, answer]. Plain text. Every answer restates something already on the page (no new figures, no
+ * client or brand names, no income share figure, no country positioning). The visible accordion, the FAQPage JSON-LD and the twin's
+ * FAQ all print this list, so they always match.
+ */
+function operator_faq() {
+	return array(
+		array( 'What is a retail media network?', 'A retail media network sells advertising on the screens in physical venues, such as stores, clubs, dealerships and forecourts, to brands and advertisers. When you run your own RMN, you sign up the venues, partner with brands and advertisers, and run the network your own way, with screens that adapt in real time to the person in front of them.' ),
+		array( 'Who is running your own RMN for?', 'People who know media and use AI tools every day rather than just talk about them: agency media and account leads, ad-tech sales and partnerships people, and retail media specialists. If you already have relationships with brands, retailers or businesses with a physical presence, you have a head start.' ),
+		array( 'Where does my retail media network run?', 'On the world-leading white-label retail media platform, under your own brand and in your own AWS account. The data and the relationships are yours, shopper data stays private, and the network stays yours.' ),
+		array( 'Which venues can join my network?', 'Any business with a physical presence, with or without screens today: for example car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, independent grocery, gyms and leisure centres, and cafés and bakeries.' ),
+		array( 'How does the earnings estimate work?', 'The benefits calculator on this page multiplies your venues, visitors per venue per day, the visitors who view the ads and the displays per venue to give your monthly ad views. Ad views ÷ 1,000 × the average CPM gives ad revenue, and your potential income is your share of it, before costs. It also estimates the extra sales your venues make from personalised offers. Change any figure to see your own estimate.' ),
+		array( 'How do I get started?', 'Take the interactive product tour on this page: tell us a little about yourself to unlock it and request further information. Our team will also follow up with more on becoming a network operator.' ),
+	);
+}
+
 function operator_tip( $id, $label, $text ) {
 	return '<span class="phf-tip"><button type="button" class="phf-tip-b" aria-label="' . esc_attr( $label ) . '" aria-describedby="' . esc_attr( $id ) . '" aria-expanded="false">i</button><span class="phf-tipbox" role="tooltip" id="' . esc_attr( $id ) . '">' . esc_html( $text ) . '</span></span>';
 }
@@ -34,132 +109,83 @@ function operator_out_row( $key, $label, $value ) {
 	return '<div class="phf-orow"><span>' . esc_html( $label ) . '</span><span data-out="' . esc_attr( $key ) . '">' . esc_html( $value ) . '</span></div>';
 }
 
-function operator_card( $color, $title, $text, $class = 'phf-card' ) {
-	return '<div class="' . esc_attr( $class ) . '" style="border-top-color:' . esc_attr( $color ) . '"><p class="phf-ct">' . esc_html( $title ) . '</p><p>' . esc_html( $text ) . '</p></div>';
+/** The number inputs ('number') or the two sliders ('range'), in page order, at the values in $d. */
+function operator_calc_rows( array $d, $type ) {
+	$h = '';
+	foreach ( operator_calc_fields() as $k => $f ) {
+		if ( $type !== $f['type'] ) {
+			continue;
+		}
+		$h .= 'range' === $type
+			? operator_range_row( $f['id'], $f['label'], $f['tip'], $d[ $k ], $f['min'], $f['max'] )
+			: operator_in_row( $f['id'], $f['label'], $f['tip'], $d[ $k ], $f['prefix'] );
+	}
+	return $h;
 }
 
-function operator_html() {
+/** The output rows under the headline figure (every output but "yours"). */
+function operator_out_rows( array $out ) {
+	$h = '';
+	foreach ( operator_calc_outputs() as $k => $label ) {
+		if ( 'yours' !== $k ) {
+			$h .= operator_out_row( $k, $label, $out[ $k ] );
+		}
+	}
+	return $h;
+}
+
+/** The FAQPage JSON-LD for the visible FAQ: the same operator_faq() rows, word for word, part of the page's WebPage. */
+function operator_faq_ld() {
+	$q = array();
+	foreach ( operator_faq() as $qa ) {
+		$q[] = array( '@type' => 'Question', 'name' => $qa[0], 'acceptedAnswer' => array( '@type' => 'Answer', 'text' => $qa[1] ) );
+	}
+	return array( '@context' => 'https://schema.org', '@type' => 'FAQPage', '@id' => OPERATOR_URL . '#faq', 'url' => OPERATOR_URL, 'inLanguage' => 'en-GB', 'isPartOf' => array( '@id' => OPERATOR_URL . '#webpage' ), 'mainEntity' => $q );
+}
+
+/** A block's wrapper: .phf scopes operator.css and marks the block for operator.js. */
+function operator_block( $name, $inner ) {
+	return '<div class="phf phf-block" data-phf="' . esc_attr( $name ) . '">' . $inner . '</div>';
+}
+
+/**
+ * [ph_operator_faq]: "Running your own RMN", one native <details> per operator_faq() row (keyboard, tap and no-JS all work), followed by
+ * its FAQPage JSON-LD built from the same rows, so the accordion and the structured data can never drift apart.
+ */
+function operator_faq_html() {
+	$h = '<section id="faq" class="phf-sec phf-white" aria-labelledby="faq-h"><div class="phf-wrap phf-wrap-faq">'
+		. '<h2 id="faq-h" class="phf-h2s">' . esc_html( OPERATOR_FAQ_TITLE ) . '</h2><div class="phf-faq">';
+	foreach ( operator_faq() as $i => $qa ) {
+		$h .= '<details class="phf-faq-i" id="faq-' . ( $i + 1 ) . '"><summary class="phf-faq-q"><span>' . esc_html( $qa[0] ) . '</span><span class="phf-faq-x" aria-hidden="true"></span></summary>'
+			. '<div class="phf-faq-a"><p>' . esc_html( $qa[1] ) . '</p></div></details>';
+	}
+	$h .= '</div></div></section><script type="application/ld+json">' . operator_json_ld( operator_faq_ld() ) . '</script>';
+	return operator_block( 'faq', $h );
+}
+
+/** [ph_operator_calculator]: "What could it be worth to you?", inputs and tooltips, the result panel at the defaults, its two CTAs. */
+function operator_calculator_html() {
 	$d   = operator_defaults();
 	$out = operator_view( operator_calc( $d ) );
-	$h   = '<div class="phf" id="phf">';
-
-	/* Hero */
-	$h .= '<section id="top" class="phf-sec phf-hero"><div class="phf-wrap phf-hero-in"><div class="phf-hero-copy">'
-		. '<h1>Be your own boss</h1>'
-		. '<p class="phf-hero-sub">Run your own retail media network</p>'
-		. '<p class="phf-hero-p">AI has changed what one person can achieve. If you’re driven, and you use AI tools every day rather than just talk about them, you no longer need a large team to create real value. One focused operator can now do the work of an entire organisation. Use those skills to resell the world-leading white-label retail media platform, with real-time personalisation in store and in other physical venues, to independent businesses nationwide and beyond.</p>'
-		. '<div class="phf-ctas"><a class="phf-btn" href="#calculator">See how much you can earn</a><a class="phf-btn phf-btn-o" href="#tour">Request further information</a></div>'
-		. '</div><div class="phf-why"><p class="phf-why-h">Why it beats anything out there</p><div class="phf-why-l">';
-	foreach ( array(
-		array( '#179BC2', 'Personalisation in physical venues', 'Screens adapt in real time to the person in front of them, in any venue, e.g. stores, clubs, dealerships and forecourts.' ),
-		array( '#EF61A6', 'Campaigns can be created automatically', 'Brands can bring their own creative, or let AI build, target and launch campaigns for them. Independents can do the same for their own promotions.' ),
-		array( '#FE9226', 'Self-optimising, with proof of results', 'Every campaign learns from real in-store sales and improves itself, so advertisers see what they get.' ),
-		array( '#60D838', 'Your brand, your own AWS account', 'White-label from end to end, running in your own AWS account. The data and the relationships are yours.' ),
-	) as $w ) {
-		$h .= '<div class="phf-why-i"><span class="phf-bar" style="background:' . esc_attr( $w[0] ) . '"></span><div><p class="phf-why-t">' . esc_html( $w[1] ) . '</p><p class="phf-why-p">' . esc_html( $w[2] ) . '</p></div></div>';
-	}
-	$h .= '</div></div></div></section>';
-
-	/* Your head start */
-	$h .= '<section class="phf-sec phf-white" aria-labelledby="why"><div class="phf-wrap"><div class="phf-split">'
-		. '<h2 id="why">Your head start in a changing industry</h2><div class="phf-split-c">'
-		. '<p class="phf-lead">AI is reshaping agencies, ad tech, design and marketing. Roles are changing fast, and many experienced people are choosing to go out on their own.</p>'
-		. '<p class="phf-lead">We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one.</p>'
-		. '</div></div></div></section>';
-
-	/* Built for people who know media */
-	$h .= '<section class="phf-sec phf-tint" aria-labelledby="who"><div class="phf-wrap">'
-		. '<h2 id="who" class="phf-h2s">Built for people who know media</h2>'
-		. '<p class="phf-intro">You already have the relationships. Now use them to drive your own advertising revenue, in the real world, where reaching people in person matters more than ever as AI reshapes online media.</p><div class="phf-grid">';
-	foreach ( array(
-		array( '#EF61A6', 'Agency media and account leads', 'Bring the brands you already buy for into venues no one else is selling.' ),
-		array( '#FE9226', 'Ad-tech sales and partnerships', 'Package in-store screens as new inventory for the buyers you know.' ),
-		array( '#60D838', 'Retail media specialists', 'You know retail media inside out. Now run your own network, in an industry you know end to end.' ),
-	) as $c ) {
-		$h .= operator_card( $c[0], $c[1], $c[2], 'phf-who' );
-	}
-	$h .= '</div></div></section>';
-
-	/* How it works */
-	$h .= '<section id="how" class="phf-sec phf-white" aria-labelledby="how-h"><div class="phf-wrap"><h2 id="how-h" class="phf-h2s phf-h2-40">How it works</h2><ol class="phf-grid phf-steps">';
-	foreach ( array(
-		array( '1', 'You sign up venues', 'Bring physical venues onto your network, whether they already have screens or you help put them in.' ),
-		array( '2', 'You partner with brands and advertisers', 'Sell advertising and experiences across your network, to the brands your venues stock and to local and national advertisers.' ),
-		array( '3', 'You run it your own way', 'You choose the commercial model, from revenue share to subscriptions. We give you a proven framework; how you build the business is up to you.' ),
-	) as $s ) {
-		$h .= '<li><p class="phf-n">' . esc_html( $s[0] ) . '</p><p class="phf-ct">' . esc_html( $s[1] ) . '</p><p>' . esc_html( $s[2] ) . '</p></li>';
-	}
-	$h .= '</ol></div></section>';
-
-	/* Any business with a physical presence */
-	$h .= '<section class="phf-sec phf-dark" aria-labelledby="venues"><div class="phf-wrap"><h2 id="venues" class="phf-h2s">Any business with a physical presence</h2>'
-		. '<p class="phf-intro phf-intro-d">If it has a physical location, it can be part of your network, with or without screens today.</p><ul class="phf-chips">';
-	foreach ( OPERATOR_VENUE_TYPES as $v ) {
-		$h .= '<li>' . esc_html( $v ) . '</li>';
-	}
-	$h .= '</ul></div></section>';
-
-	/* Standards */
-	$h .= '<section class="phf-sec phf-white" aria-labelledby="standards"><div class="phf-wrap"><div class="phf-split phf-split-m">'
-		. '<h2 id="standards">Built to fix retail media&#39;s fragmentation</h2><div class="phf-split-c">'
-		. '<p class="phf-lead">Buyers say fragmentation is what holds retail media back. Every network measures, reports and sells differently, so results are hard to compare and campaigns are hard to scale.</p>'
-		. '<p class="phf-lead">Your network is built on the standards the industry is converging on, giving brands one consistent, measurable way to buy across every venue you sign.</p>'
-		. '</div></div><div class="phf-grid phf-grid-300">';
-	foreach ( array(
-		array( '#179BC2', 'Standardised measurement', 'Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel.' ),
-		array( '#EF61A6', 'One buy across many venues', 'Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands.' ),
-		array( '#FE9226', 'Seamless integrations', 'Connects to the programmatic platforms buyers already use, and to venues\' existing systems through open APIs.' ),
-		array( '#60D838', 'Consistent formats and definitions', 'The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework.' ),
-		array( '#179BC2', 'Closed-loop, incremental results', 'Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen.' ),
-		array( '#EF61A6', 'Secure, with no lock-in', 'Runs in your own AWS environment. Shopper data stays private and the network stays yours.' ),
-		array( '#FE9226', 'AI-native, with full MCP support', 'Manage your retail media network end to end from the AI tools you already use every day.' ),
-	) as $c ) {
-		$h .= operator_card( $c[0], $c[1], $c[2], 'phf-card phf-card-b' );
-	}
-	$h .= '</div></div></section>';
-
-	/* Benefits calculator */
-	$h .= '<section id="calculator" class="phf-sec phf-tint" aria-labelledby="calc"><div class="phf-wrap phf-wrap-calc">'
+	$h   = '<section id="calculator" class="phf-sec phf-tint" aria-labelledby="calc"><div class="phf-wrap phf-wrap-calc">'
 		. '<p class="phf-eb">Benefits calculator</p><h2 id="calc" class="phf-h2b">What could it be worth to you?</h2>'
 		. '<div class="phf-calc"><div class="phf-cin-card"><p class="phf-cin-h">Your network</p><p class="phf-cgrp">Your figures</p>'
-		. operator_in_row( 'c-ven', 'Venues', 'The number of venues on your network, e.g. stores, clubs, dealerships and forecourts.', $d['ven'] )
-		. operator_in_row( 'c-dis', 'Displays per venue', 'The average number of screens showing ads in each venue. Each display a visitor sees counts as an ad view.', $d['dis'] )
-		. operator_in_row( 'c-vis', 'Visitors per venue per day', 'The average number of people who come into each venue on a typical day.', $d['vis'] )
-		. operator_in_row( 'c-cpm', 'Average CPM', 'What advertisers pay for every 1,000 views of their ads.', $d['cpm'], '$' )
-		. operator_in_row( 'c-atv', 'Average transaction value', 'The average amount a visitor spends in the venue. Used to estimate the extra sales venues make when promotions feature endemic brands, i.e. products they sell.', $d['atv'], '$' )
+		. operator_calc_rows( $d, 'number' )
 		. '<p class="phf-cgrp phf-cgrp-a">Assumptions</p>'
-		. operator_range_row( 'c-view', 'Visitors who view the ads', 'The share of visitors who see an ad on the screens during their visit.', $d['view'], 5, 100 )
-		. operator_range_row( 'c-up', 'Uplift from personalised offers', 'The extra spend from visitors who see personalised offers for products the venue sells. 15% is a typical uplift from personalisation.', $d['up'], 0, 50 )
-		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l">Your potential income a year</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
-		. operator_out_row( 'venues', 'Venues in your network', $out['venues'] )
-		. operator_out_row( 'displays', 'Displays in your network', $out['displays'] )
-		. operator_out_row( 'visitors', 'Visitors a month across your network', $out['visitors'] )
-		. operator_out_row( 'views', 'Ad views a month', $out['views'] )
-		. operator_out_row( 'extraSales', 'Extra sales for your venues a year', $out['extraSales'] )
-		. '<div class="phf-how"><span class="phf-tip"><button type="button" class="phf-how-b" aria-describedby="c-how-tip" aria-expanded="false"><span class="phf-how-i" aria-hidden="true">i</span>How it&#39;s calculated</button><span class="phf-tipbox" role="tooltip" id="c-how-tip">Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers.</span></span></div>'
+		. operator_calc_rows( $d, 'range' )
+		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l">' . esc_html( operator_calc_outputs()['yours'] ) . '</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
+		. operator_out_rows( $out )
+		. '<div class="phf-how"><span class="phf-tip"><button type="button" class="phf-how-b" aria-describedby="c-how-tip" aria-expanded="false"><span class="phf-how-i" aria-hidden="true">i</span>How it&#39;s calculated</button><span class="phf-tipbox" role="tooltip" id="c-how-tip">' . esc_html( OPERATOR_HOW_CALC ) . '</span></span></div>'
 		. '<div class="phf-cctas"><a class="phf-pill" href="#tour">Request further information</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
 		. '</div></div></div></section>';
+	return operator_block( 'calculator', $h );
+}
 
-	/* Independents */
-	$h .= '<section class="phf-sec phf-tint" aria-labelledby="independents"><div class="phf-wrap"><div class="phf-split phf-split-m">'
-		. '<h2 id="independents">Give independents a fighting chance</h2><div class="phf-split-c">'
-		. '<p class="phf-lead">The big chains now run their own retail media networks. Brands pay to be seen in their stores, and that income funds lower prices and protects their margins. Independent businesses miss out, and it\'s getting harder to compete.</p>'
-		. '<p class="phf-lead">Your network levels the field, and you have two jobs. Drive advertising revenue across your venues, and keep optimising conversion in every one of them, so independents earn more and sell more without building or running anything themselves.</p>'
-		. '</div></div><div class="phf-grid">';
-	foreach ( array(
-		array( '#179BC2', 'Retail media income', 'New income from advertising in their venue, without having to build or run anything themselves.' ),
-		array( '#EF61A6', 'Higher conversion on what they stock', 'Endemic brands promote the products on their shelves, right where customers decide. More of those products sell.' ),
-		array( '#FE9226', 'Conversion you keep improving', 'You continually optimise each venue\'s own promotions, personalised to the customers in front of them, so more visitors buy.' ),
-		array( '#60D838', 'A way to fight back', 'Extra income and extra sales help them hold their own on price and experience against the big chains.' ),
-	) as $c ) {
-		$h .= operator_card( $c[0], $c[1], $c[2] );
-	}
-	$h .= '</div></div></section>';
-
-	/* Product tour band and the network operator lead */
-	$h .= '<section id="tour" class="phf-sec phf-white" aria-labelledby="tour-h"><div class="phf-wrap phf-wrap-tour">'
-		. '<p class="phf-eb">Interactive product tour</p><h2 id="tour-h" class="phf-h2b phf-h2-tour">See a retail media network run end to end</h2>'
-		. '<p class="phf-tour-p">Watch a venue sell its screens, a brand create a campaign by talking, and one visitor&#39;s journey from arrival to checkout.</p>'
+/** [ph_operator_tour]: the product tour band, the network operator gate (posts ph-site/v1/operator-lead) and the tour's mount point. */
+function operator_tour_html() {
+	$h = '<section id="tour" class="phf-sec phf-white" aria-labelledby="tour-h"><div class="phf-wrap phf-wrap-tour">'
+		. '<p class="phf-eb">Interactive product tour</p><h2 id="tour-h" class="phf-h2b phf-h2-tour">' . esc_html( OPERATOR_TOUR_H ) . '</h2>'
+		. '<p class="phf-tour-p">' . esc_html( OPERATOR_TOUR_P ) . '</p>'
 		. '<div class="phf-in" id="phf-in" hidden><p class="phf-in-h" id="phf-in-h" tabindex="-1">You&#39;re in</p><p class="phf-in-p">Three short demos, about two minutes each.</p></div>'
 		. '<div class="phf-tbox" id="phf-tbox"><div class="phf-ph" aria-hidden="true"><div class="phf-ph-side"><i class="phf-ph-logo"></i>';
 	foreach ( array( 90, 110, 80, 100, 70, 95, 85, 105, 75 ) as $w ) {
@@ -185,7 +211,5 @@ function operator_html() {
 		. '<button type="submit" class="phf-unlock" id="phf-unlock" disabled>Unlock the tour</button>'
 		. '<p class="phf-msg" id="phf-msg" role="status" aria-live="polite"></p>'
 		. '</form></div></div><div class="phf-mount" id="phf-mount"></div></div></div></section>';
-
-	$h .= '</div>';
-	return $h;
+	return operator_block( 'tour', $h );
 }

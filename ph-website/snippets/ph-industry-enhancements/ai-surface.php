@@ -18,9 +18,16 @@ const PH_AI_SITEMAP = 'https://personalisationhub.com/sitemaps.xml';
 /** Crawlers and agents named in robots.txt: search and retrieval bots, user-triggered fetchers and training opt-in tokens. */
 const PH_AI_AGENTS = array( 'GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Claude-SearchBot', 'Claude-User', 'PerplexityBot', 'Perplexity-User', 'Google-Extended', 'Applebot-Extended', 'CCBot', 'Bingbot' );
 
-/** The tours, from TOUR_INDUSTRIES (tour.php): key => entry. Empty when tour.php is not loaded. */
+/**
+ * The tours, from TOUR_INDUSTRIES (tour.php): key => entry. Empty when tour.php is not loaded. An entry marked 'operator' (the Run Your Own RMN
+ * page's tour) is left out until that page is live (operator_is_live()), so a hidden page's tour never reaches llms.txt or a twin.
+ */
 function ai_tours() {
-	return defined( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) ? constant( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) : array();
+	$all = defined( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) ? constant( __NAMESPACE__ . '\TOUR_INDUSTRIES' ) : array();
+	$live = function_exists( __NAMESPACE__ . '\operator_is_live' ) && operator_is_live();
+	return array_filter( $all, function ( $t ) use ( $live ) {
+		return empty( $t['operator'] ) || $live;
+	} );
 }
 
 /* ------------------------------------------------------------------ robots.txt */
@@ -28,8 +35,10 @@ function ai_tours() {
 /**
  * WordPress's robots.txt output, kept as it is, plus the sitemap and one explicit allow group for the named agents.
  * A crawler that matches a named group ignores the "*" group, so the group repeats the "*" group's Disallow lines.
+ * $allow: extra paths named in that group with their own "Allow:" line (the ph_ai_robots_allow filter, e.g. a page that has just
+ * launched); empty by default.
  */
-function robots_txt_text( $output, $public = true ) {
+function robots_txt_text( $output, $public = true, array $allow = array() ) {
 	$out = rtrim( (string) $output );
 	if ( ! $public ) {
 		return $out . "\n"; // "Discourage search engines" is on: say nothing more.
@@ -48,7 +57,13 @@ function robots_txt_text( $output, $public = true ) {
 		foreach ( PH_AI_AGENTS as $a ) {
 			$out .= 'User-agent: ' . $a . "\n";
 		}
-		$out .= "Allow: /\n" . ( $dis ? implode( "\n", $dis ) . "\n" : '' );
+		$out .= "Allow: /\n";
+		foreach ( $allow as $p ) {
+			if ( is_string( $p ) && preg_match( '#^/[a-z0-9/_-]*$#i', $p ) && '/' !== $p ) {
+				$out .= 'Allow: ' . $p . "\n";
+			}
+		}
+		$out .= $dis ? implode( "\n", $dis ) . "\n" : '';
 	}
 	if ( ! preg_match( '/^\s*Sitemap:\s*' . preg_quote( PH_AI_SITEMAP, '/' ) . '\s*$/mi', $out ) ) {
 		$out = rtrim( $out ) . "\n\nSitemap: " . PH_AI_SITEMAP;
@@ -165,7 +180,7 @@ function ai_tours_llms_filter( $text, ?array $tours = null ) {
 
 if ( function_exists( 'add_filter' ) ) {
 	add_filter( 'robots_txt', function ( $output, $public = true ) {
-		return robots_txt_text( $output, (bool) $public );
+		return robots_txt_text( $output, (bool) $public, (array) apply_filters( 'ph_ai_robots_allow', array() ) );
 	}, 20, 2 );
 
 	add_filter( 'ph_llms_txt', function ( $text ) {
