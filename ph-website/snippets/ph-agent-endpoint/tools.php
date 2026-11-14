@@ -332,6 +332,8 @@ function help_article_path( $url ) {
  *   pages()           id => [title, summary] for exposable allow-listed pages
  *   page_md(id)       markdown twin or null
  *   industries()      [[slug,title,url,summary]] for live industry pages
+ *   extra_pages()     optional: [[title,url,summary,md]] for pages other snippets expose through the ph_agent_extra_pages filter
+ *                     (each decides when its page is live); listed by describe_platform
  *   industry_md(slug) markdown or null
  *   search(q, limit)  [[title,url,category,folder,summary]] or null when help is off
  *   article_md(path)  markdown or null
@@ -360,8 +362,24 @@ function run_tool( $name, $args, array $src ) {
 						$md     .= '- [' . $pages[ $id ][0] . '](' . page_url( $id ) . ')' . ( '' !== trim( $pages[ $id ][1] ) ? ': ' . trim( $pages[ $id ][1] ) : '' ) . "\n";
 					}
 				}
+				$more = array();
+				foreach ( isset( $src['extra_pages'] ) ? (array) $src['extra_pages']() : array() as $x ) {
+					if ( is_array( $x ) && ! empty( $x['title'] ) && ! empty( $x['url'] ) ) {
+						$more[] = array( 'title' => (string) $x['title'], 'url' => (string) $x['url'], 'summary' => trim( (string) ( $x['summary'] ?? '' ) ) );
+					}
+				}
+				if ( $more ) {
+					$md .= "\n## More from Personalisation Hub\n\n";
+					foreach ( $more as $x ) {
+						$md .= '- [' . $x['title'] . '](' . $x['url'] . ')' . ( '' !== $x['summary'] ? ': ' . $x['summary'] : '' ) . "\n";
+					}
+				}
 				$md .= "\n## Deployment\n\nSelf-hosted in the customer's own AWS account.\n\n## Free trial\n\n[Start a free trial on AWS Marketplace](" . FREE_TRIAL_URL . ")\n";
-				return tool_text( $md, array( 'name' => 'Personalisation Hub', 'url' => PH_AE_SITE . '/', 'deployment' => "Customer's own AWS account", 'productAreas' => $areas, 'freeTrialUrl' => FREE_TRIAL_URL ) );
+				$out = array( 'name' => 'Personalisation Hub', 'url' => PH_AE_SITE . '/', 'deployment' => "Customer's own AWS account", 'productAreas' => $areas, 'freeTrialUrl' => FREE_TRIAL_URL );
+				if ( $more ) {
+					$out['morePages'] = $more;
+				}
+				return tool_text( $md, $out );
 
 			case 'list_industries':
 				$rows = array();

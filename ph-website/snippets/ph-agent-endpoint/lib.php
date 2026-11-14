@@ -11,8 +11,9 @@ if ( ! defined( 'PH_AE_SITE' ) ) {
 const FREE_TRIAL_URL = 'https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76';
 const ENTITY_DESCRIPTION = "Self-hosted, self-optimising omnichannel personalisation and retail media platform for physical retail, deployed in the retailer's own cloud.";
 const DEMO_URL       = 'https://calendly.com/rob-offline2online';
-const MCP_URL        = 'https://backlog-tracker-e4ed2.web.app/help-api/mcp';
-const HELP_API_URL   = 'https://backlog-tracker-e4ed2.web.app/help-api/';
+/* The public addresses agents are given: on personalisationhub.com only (proxy.php forwards them server side). */
+const MCP_URL        = \PH_AE_SITE . '/mcp';
+const HELP_API_URL   = \PH_AE_SITE . '/help-api/';
 
 /**
  * The page allow-list: page id => [path, kind]. The ONLY pages this snippet

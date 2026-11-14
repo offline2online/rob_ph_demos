@@ -11,8 +11,10 @@
  *
  * Endpoints: llms.txt (ph_llms_txt filter), markdown twins, JSON-LD (wp_head), the
  * ph-agent/v1 tools list and every tool call, the WebMCP loader, and the Support
- * Centre's public routes (ph-help/v1/index and /published). The remote MCP server and
- * /help-api/* are covered by backlog-tracker/test/help-leak.test.js.
+ * Centre's public routes (ph-help/v1/index and /published). Every one is also checked for the
+ * console's host (backlog-tracker, *.web.app, firebaseapp.com, cloudfunctions.net). The remote MCP
+ * server and /help-api/* behind the personalisationhub.com proxy are covered by
+ * backlog-tracker/test/help-leak.test.js; the proxy itself by tests/help-proxy.test.php.
  */
 error_reporting( E_ALL );
 $fails = 0;
@@ -34,6 +36,8 @@ function clean( $endpoint, $payload ) {
 		leak_ok( stripos( (string) $text, $m ) === false, "$endpoint exposes $m" );
 	}
 	leak_ok( stripos( (string) $text, 'ph_help_' ) === false, "$endpoint exposes a ph_help_* field name" );
+	/* 14 Nov 2026: no public output names the PH Agent Console's host; agents use personalisationhub.com addresses only. */
+	leak_ok( ! preg_match( '#backlog-tracker|\.web\.app\b|firebaseapp\.com|cloudfunctions\.net#i', str_replace( '\\/', '/', (string) $text ) ), "$endpoint names the console host" );
 }
 
 $dir = dirname( __DIR__ ) . '/snippets/ph-agent-endpoint';
