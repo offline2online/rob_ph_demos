@@ -99,9 +99,20 @@ try {
       if (!slideOver) return;
       await page.evaluate(() => document.getElementById("nav-open-btn").click());
       await until(() => page.evaluate(() => getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible"), "the slide-over menu");
-      // The menu slides in: wait until it has stopped moving and its first item is really under a finger.
-      await until(() => page.evaluate(() => { const b = document.getElementById("nav-ph-console-btn"); const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.left >= 0 && !!top && (top === b || b.contains(top)); }), "the slide-over menu to finish opening", 4000);
-      await page.waitForTimeout(150);
+      // The menu slides in over 220 ms. In WebKit its position can read as "open" for a moment before the
+      // slide has even started, so one reading is not enough: it has arrived when it sits at the left edge
+      // on several readings in a row, a frame apart, with its first item really under a finger.
+      const settled = () => page.evaluate(async () => {
+        const d = document.getElementById("nav-drawer"), b = document.getElementById("nav-ph-console-btn");
+        for (let i = 0; i < 6; i++) {
+          if (Math.round(d.getBoundingClientRect().left) !== 0) return false;
+          await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 40)));
+        }
+        const r = b.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return !!top && (top === b || b.contains(top));
+      });
+      await until(settled, "the slide-over menu to finish opening", 6000);
     };
     let at = "start";
     try {
