@@ -384,6 +384,9 @@ async function main() {
   await check("A blank company name is refused on a company lead", "deny", () => setDoc(doc(as(MEMBER), "leads/f6"), { ...OPERATOR, leadType: "company", operator: null, stage: "lead" }));
   await check("The details live under operator only", "deny", () => setDoc(doc(as(MEMBER), "leads/f7"), { ...OPERATOR, [RETIRED_KEY]: { region: "x", background: "" } }));
   await check("A network operator inquiry's details take no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/f4"), { ...OPERATOR, operator: { region: "x", salary: 1 } }));
+  await check('A network operator inquiry carries "I am" as audience', "allow", () => setDoc(doc(as(MEMBER), "leads/f8"), { ...OPERATOR, operator: { region: "Leeds, UK", background: "creative-agency", audience: "retailer" } }));
+  await check("A blank audience is allowed", "allow", () => setDoc(doc(as(MEMBER), "leads/f9"), { ...OPERATOR, operator: { region: "x", background: "retail-owner", audience: "" } }));
+  await check("An audience outside the list is refused", "deny", () => setDoc(doc(as(MEMBER), "leads/f10"), { ...OPERATOR, operator: { region: "x", background: "", audience: "enterprise" } }));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
   const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };

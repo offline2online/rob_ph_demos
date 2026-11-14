@@ -8,8 +8,9 @@
 //                  product tour gate; shown as "Network operator inquiry")
 //   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
 //                  (name is required for a company lead; a network operator inquiry usually has none)
-//   operator       { region, background } on a network operator inquiry: where they plan to operate and
-//                  their background (a BACKGROUNDS key); the person is the lead's single contact
+//   operator       { region, background, audience } on a network operator inquiry: where they plan to
+//                  operate, their background (a BACKGROUNDS key) and who they are (an AUDIENCES key,
+//                  "I am" on the form; "" on a lead that predates it); the person is the lead's single contact
 //   contacts[]     { id, name, jobTitle, buyingRole, email, linkedin, awsAccountId (12 digits or ""), enrichment? }
 //   stage          one of STAGES (a company lead) or OPERATOR_STAGES (a network operator inquiry)
 //   source         where it came from ("Website form", "Manual", ...)
@@ -60,8 +61,16 @@ export const BACKGROUNDS = [
   { key: "agency", label: "Agency media or account management" },
   { key: "adtech", label: "Ad-tech sales or partnerships" },
   { key: "retail-media", label: "Retail media" },
+  { key: "creative-agency", label: "Creative agency" },
+  { key: "retail-owner", label: "Retail business owner or manager" },
   { key: "marketing", label: "Marketing" },
   { key: "other", label: "Something else" },
+];
+// "I am" on the same form: who is asking.
+export const AUDIENCES = [
+  { key: "individual", label: "An individual operator" },
+  { key: "team", label: "Part of an operator team" },
+  { key: "retailer", label: "A small to medium retailer" },
 ];
 export const OPERATOR_SOURCE_LABEL = "Run Your Own RMN page – product tour";
 
@@ -101,6 +110,14 @@ export function backgroundKey(v) {
   return hit ? hit.key : "other";
 }
 export const backgroundLabel = (key) => (BACKGROUNDS.find((b) => b.key === key) || { label: "" }).label;
+// "I am" as the form sends it (its key or its label, any case) -> its key;
+// "" when blank or not one of the options.
+export function audienceKey(v) {
+  const s = String(v == null ? "" : v).trim().toLowerCase();
+  const hit = s && AUDIENCES.find((a) => a.key === s || a.label.toLowerCase() === s);
+  return hit ? hit.key : "";
+}
+export const audienceLabel = (key) => (AUDIENCES.find((a) => a.key === key) || { label: "" }).label;
 // What a card and the drawer call a lead: the company, or for a network operator inquiry the person.
 export function leadName(l) {
   const c = (l && l.company) || {};
@@ -163,7 +180,7 @@ export function blankLead(email = "", type = DEFAULT_LEAD_TYPE) {
     leadType,
     company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
     contacts: [blankContact()],
-    ...(leadType === "operator" ? { operator: { region: "", background: "" } } : {}),
+    ...(leadType === "operator" ? { operator: { region: "", background: "", audience: "" } } : {}),
     stage: defaultStageFor(leadType), source: "Manual", assignee: email || "", customerAccount: null,
   };
 }
@@ -171,7 +188,7 @@ export function blankLead(email = "", type = DEFAULT_LEAD_TYPE) {
 // The text fields of the form -> the document's fields, or { errors }.
 // `form` is what the page gathers: countries as a string, storeCount as typed.
 // leadType "operator" (an individual): no company name is needed, the person
-// is the first contact and must have a name, and region/background are kept.
+// is the first contact and must have a name, and region/background/audience are kept.
 export function leadFromForm(form) {
   const errors = [];
   const f = form || {};
@@ -216,7 +233,7 @@ export function leadFromForm(form) {
       leadType,
       company: { name, website: website || "", industry: str(f.industry, LIMITS.industry), countries: parseCountries(f.countries), storeCount, awsAccountId: companyAws || "" },
       contacts,
-      ...(operator ? { operator: { region: str(f.region, LIMITS.region), background: backgroundKey(f.background) } } : {}),
+      ...(operator ? { operator: { region: str(f.region, LIMITS.region), background: backgroundKey(f.background), audience: audienceKey(f.audience) } } : {}),
       stage,
       source: str(f.source, LIMITS.source) || "Manual",
       assignee: str(f.assignee, LIMITS.email).toLowerCase(),
@@ -259,7 +276,7 @@ export function leadFromWebsite(p) {
 // no company. Fields: full_name (or fullName/contactName/name), email,
 // linkedin (optional; an address that isn't one is dropped rather than losing
 // the lead), operating_region (or operatingRegion/region/where_operate/location),
-// background (a BACKGROUNDS key or label), lead_source (stored as sourceLabel,
+// background (a BACKGROUNDS key or label), audience ("I am": an AUDIENCES key or label), lead_source (stored as sourceLabel,
 // "Run Your Own RMN page – product tour" when not sent), page and test.
 export function operatorFromWebsite(p) {
   const x = p || {};
@@ -278,7 +295,7 @@ export function operatorFromWebsite(p) {
       leadType: "operator",
       company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
       contacts: [contact],
-      operator: { region, background: backgroundKey(x.background) },
+      operator: { region, background: backgroundKey(x.background), audience: audienceKey(x.audience) },
       stage: OPERATOR_DEFAULT_STAGE, source: "website", assignee: "",
       sourcePage: str(x.page || x.pageUrl || x.page_url, 300), sourceIndustry: "", test,
       sourceLabel: str(x.lead_source || x.leadSource || x.sourceLabel || x.source_label, LIMITS.sourceLabel) || OPERATOR_SOURCE_LABEL,
@@ -296,7 +313,7 @@ export function normaliseLead(id, d) {
   return {
     id,
     leadType,
-    operator: leadType === "operator" ? { region: String(fr.region || ""), background: String(fr.background || "") } : null,
+    operator: leadType === "operator" ? { region: String(fr.region || ""), background: String(fr.background || ""), audience: audienceKey(fr.audience) } : null,
     company: {
       name: String(c.name || ""), website: String(c.website || ""), industry: String(c.industry || ""),
       countries: Array.isArray(c.countries) ? c.countries.map(String) : [],
@@ -411,11 +428,11 @@ export function mergeInbound(cur, fields, newContacts) {
 export const inboundLabel = (l) => (l && l.inboundCount ? `${l.inboundCount} inbound` : "");
 
 // A short line for a card: "250 stores · UK, France"; for a network operator inquiry
-// "Where they plan to operate · Background".
+// "I am · Where they plan to operate · Background".
 export function companyLine(l) {
   if (l && l.leadType === "operator") {
     const f = l.operator || {};
-    return [f.region, backgroundLabel(f.background)].filter(Boolean).join(" · ");
+    return [audienceLabel(f.audience), f.region, backgroundLabel(f.background)].filter(Boolean).join(" · ");
   }
   const parts = [];
   if (l.company.storeCount != null) parts.push(`${l.company.storeCount.toLocaleString("en-GB")} ${l.company.storeCount === 1 ? "store" : "stores"}`);

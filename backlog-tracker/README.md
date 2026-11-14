@@ -2622,10 +2622,16 @@ every destination already existed.
   `leadType`) "operator" or "Network operator inquiry" (the Run Your Own RMN page's
   product tour gate) is an individual, not a company: shown as "Network operator
   inquiry", stored as `leadType: "operator"`, the person as the one contact,
-  `operator {region, background}`, its own stages (Applied, Screening, Intro call,
+  `operator {region, background, audience}`, its own stages (Applied, Screening, Intro call,
   Approved, Not a fit), and no TAM matching, AWS routing or enrichment. No other key
   is accepted for this type. The board's **Companies / Network operators** switch
-  shows one pipeline at a time; `list_leads` filters by `leadType`. See
+  shows one pipeline at a time; `list_leads` filters by `leadType`.
+  **"I am" (14 Nov 2026)**: the gate also asks who is inquiring. The website
+  sends it as `audience` (its label); it is stored as `operator.audience`
+  (`individual`, `team`, `retailer`, or "" when not given), shown first on the
+  card's line, as "I am" in the summary and as a select on the form, and
+  `list_leads` filters by `audience`. Backgrounds gained `creative-agency` and
+  `retail-owner`. See
   REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules

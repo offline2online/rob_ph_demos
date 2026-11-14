@@ -1190,7 +1190,7 @@ const scenarios = [
     name: "Promote: Leads - network operator inquiries are their own pipeline: filter by type, add a person with no company, move them",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
-      fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech" },
+      fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team" },
         contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "https://linkedin.com/in/alex" }],
         stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – product tour", sourcePage: "/run-your-own-rmn/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }),
@@ -1211,6 +1211,7 @@ const scenarios = [
       assert.deepStrictEqual(lanes, ["Applied", "Screening", "Intro call", "Approved", "Not a fit"]);
       const card = await c.text('.lead-lane[data-stage="applied"] .lead-card');
       assert.ok(card.includes("Alex Rivers") && card.includes("Network operator inquiry") && card.includes("Leeds, UK") && card.includes("Ad-tech sales or partnerships"), card);
+      assert.ok(card.indexOf("Part of an operator team") >= 0 && card.indexOf("Part of an operator team") < card.indexOf("Leeds, UK"), '"I am" shows on the card, before the region: ' + card);
       assert.ok(!(await c.text("#leads-board")).includes("Existing Co"), "company leads are not on the operator board");
       // The summary: the person, region, background, source; no company research.
       await c.page.click('.lead-lane[data-stage="applied"] .lead-card .lead-card-name');
@@ -1222,6 +1223,7 @@ const scenarios = [
       assert.ok(!/fr[a]nchis/i.test(sum), "the summary never shows the old word: " + sum);
       assert.ok(!/fr[a]nchis/i.test(await c.text("#leads-page")), "the board never shows the old word");
       assert.ok(sum.includes("Leeds, UK") && sum.includes("Ad-tech sales or partnerships") && sum.includes("Alex Rivers"), "region, background and the person show");
+      assert.ok(/I am\s*Part of an operator team/.test(sum), 'the summary shows "I am": ' + sum);
       assert.ok(await c.page.locator("#lead-sum-enrich").isHidden(), "a person is not researched");
       assert.strictEqual(await c.page.locator("#lead-sum-company").count(), 0, "no company section");
       await c.page.selectOption("#lead-sum-stage", "intro-call");
@@ -1240,13 +1242,16 @@ const scenarios = [
       await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Sam Field");
       await c.page.fill('.lead-contact[data-index="0"] .lc-email', "sam@example.com");
       await c.page.fill("#lead-region", "Bristol");
-      await c.page.selectOption("#lead-background", "marketing");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#lead-audience option")].map((o) => o.textContent)), ["Not given", "An individual operator", "Part of an operator team", "A small to medium retailer"]);
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#lead-background option")].map((o) => o.value)), ["", "agency", "adtech", "retail-media", "creative-agency", "retail-owner", "marketing", "other"]);
+      await c.page.selectOption("#lead-audience", "retailer");
+      await c.page.selectOption("#lead-background", "retail-owner");
       await c.page.click("#lead-save");
       await c.visible('.lead-lane[data-stage="applied"] .lead-card', "the new person is in Applied");
       const made = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Sam Field") return v; return null; });
       assert.ok(made, "the network operator inquiry was written");
       assert.strictEqual(made.leadType, "operator"); assert.strictEqual(made.company.name, "");
-      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "marketing" });
+      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer" });
       assert.strictEqual(made.prospectId, undefined, "never matched to Prospects (TAM)");
       // Back to the company pipeline.
       for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-company", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-company"); await c.page.waitForTimeout(400); }

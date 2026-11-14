@@ -4498,7 +4498,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     inquiry**, the detail's section **Network operator**, and the default source
     label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
-    {region, background}`, the constants are `OPERATOR_*`, the website intake
+    {region, background, audience}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
     `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
     (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
@@ -4508,14 +4508,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     default; a lead saved before this has none and reads as company) or
     `"operator"`. A network operator inquiry needs no company name, website or industry
     (`company.name` is ""); the person is its single contact (`name`, `email`,
-    `linkedin`), and `operator {region, background}` holds where they plan to
-    operate (≤200 chars) and their background, one of `agency` (Agency media or
-    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
-    `marketing`, `other` (Something else). Its stages are `OPERATOR_STAGES`:
+    `linkedin`), and `operator {region, background, audience}` holds where they plan to
+    operate (≤200 chars), their background and who they are. The background
+    (`BACKGROUNDS`) is one of, in this order, `agency` (Agency media or
+    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`
+    (Retail media), `creative-agency` (Creative agency), `retail-owner` (Retail
+    business owner or manager), `marketing` (Marketing), `other` (Something
+    else); a value that is none of them is stored as `other`. **"I am"
+    (14 Nov 2026)** is `audience` (`AUDIENCES`): `individual` (An individual
+    operator), `team` (Part of an operator team) or `retailer` (A small to
+    medium retailer). It is stored as the key; a blank or unknown value is
+    stored as "", and a lead saved before the field existed has none and reads
+    as "" (nothing was migrated). Its stages are `OPERATOR_STAGES`:
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
     allows a blank company name only on an `operator` lead, keeps each type to its
-    own stages, and limits `operator` to `region` and `background`.
+    own stages, and limits `operator` to `region`, `background` and `audience`
+    (one of the three keys, or "").
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
     `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
     operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
@@ -4525,7 +4534,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     person's name, is ignored for an operator lead). Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
-    `location`), `background` (a key above or the form's label), `lead_source`
+    `location`), `background` (a key above or the form's label), `audience`
+    ("I am": a key above or the form's label, any case; the website sends the
+    label), `lead_source`
     (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
@@ -4533,26 +4544,30 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     is never matched to a company lead, and is never enriched (the trigger skips
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
-    region/background are filled. **The website side** posts these fields from
+    region/background/audience are filled. **The website side** posts these fields from
     the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
     one pipeline at a time with its own lanes. A network operator card shows the
-    person, a "Network operator inquiry" chip, region · background and the source;
-    its summary shows the person, Network operator (region, background), Lead
+    person, a "Network operator inquiry" chip, I am · region · background (each
+    only when given) and the source;
+    its summary shows the person, Network operator (I am, region, background), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
     on that view opens the form as **New network operator inquiry**: the
-    person's full name, email and LinkedIn, where they plan to operate,
+    person's full name, email and LinkedIn, "I am" (a select: Not given or one
+    of the three options), where they plan to operate,
     background and the pipeline; no company fields, research or customer account.
   - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
     `leadType`, `leadTypeLabel`, `name` (the company, or the person),
-    `region`, `background` and `backgroundLabel` alongside `source` /
-    `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
-    `leadType: "operator"` with the person as the only contact plus `region`
-    and `background` (no company needed); `update_lead` edits region and
-    background but refuses a type change; `update_lead_stage` accepts only the
+    `region`, `background`, `backgroundLabel`, `audience` and `audienceLabel`
+    (both null when not given, and on a company lead) alongside `source` /
+    `sourceLabel`; `list_leads` takes a `leadType` filter and an `audience`
+    filter (`individual`, `team` or `retailer`). `create_lead(s)` take
+    `leadType: "operator"` with the person as the only contact plus `region`,
+    `background` and `audience` (no company needed); `update_lead` edits region,
+    background and audience but refuses a type change; `update_lead_stage` accepts only the
     lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
     refuse a network operator inquiry.

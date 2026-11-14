@@ -610,7 +610,8 @@ service cloud.firestore {
     function isLead(d) {
       // A network operator inquiry (leadType "operator") is a person, not a
       // company: its company name may be blank, it has its own stages, and
-      // `operator` holds where they plan to operate and their background.
+      // `operator` holds where they plan to operate, their background and who
+      // they are ("I am": individual, team or retailer, or "" when not given).
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
           "leadType", "operator", "tam",
@@ -623,7 +624,8 @@ service cloud.firestore {
         && (isNonEmptyBoundedString(d.company.get("name", null), 120)
           || (d.get("leadType", "company") == "operator" && d.company.get("name", "") is string && d.company.get("name", "").size() <= 120))
         && (d.get("operator", null) == null || (d.get("operator", null) is map
-          && d.operator.keys().hasOnly(["region", "background"])
+          && d.operator.keys().hasOnly(["region", "background", "audience"])
+          && d.operator.get("audience", "") in ["", "individual", "team", "retailer"]
           && d.operator.get("region", "") is string && d.operator.get("region", "").size() <= 200
           && d.operator.get("background", "") is string && d.operator.get("background", "").size() <= 40))
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300
