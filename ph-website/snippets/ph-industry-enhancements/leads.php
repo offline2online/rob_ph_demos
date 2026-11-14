@@ -62,6 +62,12 @@ function lead_add_activity( $id, $label, $detail = '' ) {
 	update_post_meta( (int) $id, 'ph_lead_activity', array_slice( $rows, -50 ) );
 }
 
+/** Creates a private ph_lead post titled $title. Returns its id, or 0 when WordPress refuses. (The Run Your Own RMN gate's leads.) */
+function lead_insert( $title ) {
+	$id = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => (string) $title ) );
+	return ( $id && ! is_wp_error( $id ) ) ? (int) $id : 0;
+}
+
 /** The console body for a captured lead. Pure, so it is unit-tested. */
 function lead_ingest_body( array $lead ) {
 	$s    = function ( $k ) use ( $lead ) {

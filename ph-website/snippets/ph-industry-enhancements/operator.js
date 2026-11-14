@@ -1,7 +1,9 @@
-/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026): the calculator, info tooltips, anchors, the header's
-   "Arrange A Demo" (goes to #tour here), the product tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
-   to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked from the stored ph_lead with no second
-   form. The FAQ is native <details> and needs no script. */
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): drives the three
+   Shortcode widget blocks on the Elementor page (each a .phf element: [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq]),
+   wherever Elementor puts them. The calculator, info tooltips, anchors, the header's "Arrange A Demo" (goes to #tour here), the product
+   tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts to ph-site/v1/operator-lead; on success the Run Your
+   Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked from the stored ph_lead with no second form. The FAQ
+   is native <details> and needs no script. Each part runs only when its block is on the page. */
 (function () {
   "use strict";
   var SHARE = 0.5; // the calculator's share of ad revenue: code only, never shown.
@@ -25,9 +27,9 @@
   }
   if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS }; return; }
 
-  var root = document.getElementById("phf");
-  if (!root) return;
+  if (!document.querySelector(".phf")) return;
   var $ = function (id) { return document.getElementById(id); };
+  var out = function (k) { return document.querySelector('.phf [data-out="' + k + '"]'); };
   var CFG = window.PH_OPERATOR || { endpoint: "/wp-json/ph-site/v1/operator-lead", tour: "/run-your-own-rmn/tour/" };
 
   /* ---------- Calculator ---------- */
@@ -38,7 +40,7 @@
     Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); s[k] = el ? num(el) : 0; });
     ["view", "up"].forEach(function (k) { var o = $(IDS[k] + "-v"); if (o) o.textContent = s[k] + "%"; });
     var v = view(calc(s));
-    Object.keys(v).forEach(function (k) { var o = root.querySelector('[data-out="' + k + '"]'); if (o) o.textContent = v[k]; });
+    Object.keys(v).forEach(function (k) { var o = out(k); if (o) o.textContent = v[k]; });
   }
   Object.keys(IDS).forEach(function (k) {
     var el = $(IDS[k]); if (!el) return;
@@ -48,7 +50,7 @@
   update();
 
   /* ---------- Info tooltips: hover and focus (CSS), tap toggles; Escape or a tap elsewhere closes ---------- */
-  var tips = [].slice.call(root.querySelectorAll(".phf-tip"));
+  var tips = [].slice.call(document.querySelectorAll(".phf .phf-tip"));
   function place(t) {
     var box = t.querySelector(".phf-tipbox"); t.classList.remove("phf-tip-l", "phf-tip-r");
     var r = t.getBoundingClientRect(), w = Math.min(250, window.innerWidth - 32), mid = r.left + r.width / 2;
@@ -185,8 +187,8 @@
     if (!a.closest(".elementor-location-header, header")) return false;
     return /arrange\s+a\s+demo/i.test(a.textContent || "");
   }
-  [].slice.call(document.querySelectorAll("a")).forEach(function (a) {
-    if (!root.contains(a) && headerDemo(a)) { a.setAttribute("href", "#tour"); a.removeAttribute("onclick"); a.removeAttribute("target"); a.setAttribute("data-phf-demo", "1"); }
+  if ($("tour")) [].slice.call(document.querySelectorAll("a")).forEach(function (a) {
+    if (!a.closest(".phf") && headerDemo(a)) { a.setAttribute("href", "#tour"); a.removeAttribute("onclick"); a.removeAttribute("target"); a.setAttribute("data-phf-demo", "1"); }
   });
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href='#tour']") : null;
@@ -207,7 +209,7 @@
   var LABELS = { yours: "Your potential income a year", venues: "Venues in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales for your venues a year" };
   var RANGES = { ven: [0, 100000], dis: [0, 1000], vis: [0, 1000000], cpm: [0, 1000], atv: [0, 100000], view: [5, 100], up: [0, 50] };
   var INPUT_LABELS = { ven: "Venues", dis: "Displays per venue", vis: "Visitors per venue per day", cpm: "Average CPM (USD)", atv: "Average transaction value (USD)", view: "Visitors who view the ads (%)", up: "Uplift from personalised offers (%)" };
-  function figures() { var o = {}; Object.keys(LABELS).forEach(function (k) { var e = root.querySelector('[data-out="' + k + '"]'); o[k] = e ? e.textContent.trim() : ""; }); return o; }
+  function figures() { var o = {}; Object.keys(LABELS).forEach(function (k) { var e = out(k); o[k] = e ? e.textContent.trim() : ""; }); return o; }
   function inputs() { var o = {}; Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); if (el) o[k] = Number(el.value); }); return o; }
   function fire(el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); }
   function toolText(t, extra) { var r = { content: [{ type: "text", text: t }] }; if (extra) r.structuredContent = extra; return r; }
@@ -246,7 +248,7 @@
     });
   }
   var mc = navigator.modelContext;
-  if (mc && mc.registerTool && !window.__phRmnMcp) {
+  if (mc && mc.registerTool && !window.__phRmnMcp && $(IDS.ven)) { // only where the calculator block is on the page
     window.__phRmnMcp = 1;
     var props = {};
     Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); props[k] = { type: "number", minimum: RANGES[k][0], maximum: RANGES[k][1], description: INPUT_LABELS[k] + " (default " + (el ? el.defaultValue : "") + ")" }; });

@@ -1,7 +1,10 @@
-// node ph-website/tests/operator.test.mjs : the hidden Run Your Own RMN page (/run-your-own-rmn/) in Chromium (operator.php's server-rendered
-// head and body, operator.css, operator.js, site.js), with the real tour.html served at /run-your-own-rmn/tour/ (the golf club walkthrough). The H1 and sub-line,
+// node ph-website/tests/operator.test.mjs : the hidden Run Your Own RMN page (/run-your-own-rmn/) in Chromium: an Elementor-shaped page
+// (operator-render.php: Elementor containers and widgets for the brief's sections, an Elementor kit stylesheet that restyles headings,
+// buttons and inputs, and the three Shortcode widgets [ph_operator_calculator], [ph_operator_faq], [ph_operator_tour] wrapped as
+// Elementor wraps them) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html served at
+// /run-your-own-rmn/tour/ (the golf club walkthrough). The H1, the blocks inside their Shortcode widgets,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap), the SEO head (one H1, title, description, canonical,
-// OG, JSON-LD), the calculator defaults and live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid,
+// OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
 // Start the tour plays a step, returning visitors, the header's Arrange A Demo, the estimate_rmn_earnings WebMCP tool (the page's own
 // figures for the defaults; the gate only with the person's details and consent; never the share), no horizontal scroll at
@@ -50,7 +53,10 @@ const d = F.view(F.calc({ ven: 90, dis: 3, vis: 800, cpm: 25, atv: 25, view: 60,
 assert.deepStrictEqual(d, { yours: "$591K", venues: "90", displays: "270", visitors: "2,190,000", views: "3,942,000", extraSales: "$59.1M" }, "defaults");
 
 // The site's header (Industry, Support, Arrange A Demo as an Elementor popup link) and footer around the shortcode output.
-const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(head.title)}</title>${head.seo}<style>body{margin:0;font-family:Arial}</style><style>${css}</style></head><body>
+// Elementor's container basics and a kit that restyles headings, buttons, inputs and links the way the site's kit can: the blocks must keep the design.
+const elementorCss = `.elementor *,.elementor :after,.elementor :before{box-sizing:border-box}.e-con{display:flex;flex-direction:column;width:100%;padding:0}.e-con-inner{width:100%;max-width:1280px;margin:0 auto;padding:40px 16px}.elementor-widget{width:100%}
+.elementor-kit-5 h2{font-size:36px;color:#f00;font-family:serif;overflow-wrap:anywhere}.elementor-kit-5 button{background:#f00;color:#ff0;padding:30px;border:4px solid #000}.elementor-kit-5 input,.elementor-kit-5 select{border:4px solid #f00;padding:20px}.elementor-kit-5 a{color:#0f0}`;
+const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(head.title)}</title>${head.seo}<style>body{margin:0;font-family:Arial}</style><style>${elementorCss}</style><style>${css}</style></head><body class="page-template-elementor_header_footer elementor-kit-5 elementor-page elementor-page-10900">
 <header class="elementor-location-header" style="position:sticky;top:0;z-index:5;background:#fff;height:72px"><nav><ul><li class="menu-item"><a href="/industries/">Industry</a></li><li class="${esc(head.menu.classes)}"><a href="${esc(head.menu.url)}" aria-current="${esc(head.menu.atts["aria-current"])}">${esc(head.menu.title)}</a></li><li class="menu-item"><a href="/support-centre/">Support</a></li></ul></nav>
 <a class="elementor-button" id="hdr-demo" href="#elementor-action%3Aaction%3Dpopup%3Aopen%26settings%3DeyJpZCI6IjI2NTgi"><span>Arrange A Demo</span></a></header>
 <main>${body}</main><footer class="elementor-location-footer"><a href="/privacy-policy/">Privacy</a></footer>
@@ -61,7 +67,7 @@ const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta n
 // Every "i" info button: its visible circle and whether the 44x44 square around its centre all hits it (elementFromPoint).
 const hitBoxes = (t) => t.evaluate(() => {
   const out = { coarse: matchMedia("(pointer: coarse)").matches, n: 0, bad: [] };
-  for (const b of document.querySelectorAll("#phf .phf-tip-b, #phf .phf-how-b")) {
+  for (const b of document.querySelectorAll(".phf .phf-tip-b, .phf .phf-how-b")) {
     b.scrollIntoView({ block: "center", behavior: "instant" });
     const r = (b.querySelector(".phf-how-i") || b).getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2; // the "i" circle
     out.n++;
@@ -112,16 +118,19 @@ try {
 
   // 1. Copy and section order.
   let p = await open();
-  const heads = await p.evaluate(() => [...document.querySelectorAll("#phf h1, #phf h2")].map((h) => h.textContent.trim()));
+  const heads = await p.evaluate(() => [...document.querySelectorAll("main h1, main h2")].map((h) => h.textContent.trim()));
   assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Built for people who know media", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end"], "section order");
-  const all = await p.evaluate(() => document.getElementById("phf").textContent);
-  ok((await text(p, "#phf h1")) === "Run your own retail media network" && (await text(p, ".phf-hero-sub")) === "Your own RMN on a world-leading white-label platform", "H1 and sub-line");
+  const all = await p.evaluate(() => document.querySelector("main").textContent);
+  ok((await text(p, "main h1")) === "Run your own retail media network", "H1 (an Elementor Heading widget)");
+  const blocks = await p.evaluate(() => [...document.querySelectorAll(".phf")].map((b) => [b.dataset.phf, !!b.closest(".elementor-widget-shortcode .elementor-shortcode"), !!b.closest("[data-elementor-type=wp-page]")]));
+  assert.deepStrictEqual(blocks, [["calculator", true, true], ["faq", true, true], ["tour", true, true]], "the three blocks, each inside an Elementor Shortcode widget on the Elementor page, in the brief's order");
+  ok((await p.evaluate(() => [...document.querySelectorAll(".elementor-element[id]")].map((e) => e.id).join())) === "top,why,who,how,venues,standards,independents" && (await p.evaluate(() => ["calculator", "faq", "tour"].every((id) => document.getElementById(id).closest(".phf")))), "anchors: the Elementor sections' CSS IDs and the blocks' own #calculator, #faq and #tour");
   ok((await p.evaluate(() => document.querySelectorAll("h1").length)) === 1, "exactly one H1 on the page");
-  for (const s of ["Run your own retail media network", "Your own RMN on a world-leading white-label platform", "AI has changed what one person can achieve.", "Why it beats anything out there", "Personalisation in physical venues", "Campaigns can be created automatically", "Self-optimising, with proof of results", "Your brand, your own AWS account", "You sign up venues", "You partner with brands and advertisers", "You run it your own way", "Car dealerships", "Cafés and bakeries", "Standardised measurement", "AI-native, with full MCP support", "Your network", "Your potential income a year", "Retail media income", "A way to fight back", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "copy: " + s);
-  // The three copy replacements, exact.
-  ok(all.includes("We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one."), "copy 1: head-start paragraph");
-  ok((await text(p, ".phf-cin-h")) === "Your network", "copy 2: calculator panel heading");
-  ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.", "copy 3: tour gate intro");
+  for (const s of ["Benefits calculator", "Your network", "Your figures", "Assumptions", "Your potential income a year", "How it's calculated", "Running your own RMN", "What is a retail media network?", "How do I get started?", "Interactive product tour", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator."]) ok(all.includes(s), "block copy: " + s);
+  // The blocks' copy replacements, exact (the head-start paragraph is Elementor copy now: the brief carries it, tests/operator.test.php).
+  ok((await text(p, ".phf-cin-h")) === "Your network", "copy: calculator panel heading");
+  ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.", "copy: tour gate intro");
+  ok(await p.evaluate(() => !document.querySelector(".phf h1, .phf .phf-hero, .phf #top, .phf #why, .phf #who, .phf #how, .phf #venues, .phf #standards, .phf #independents")), "the blocks render none of the Elementor sections (no H1, hero or static section)");
   // The retired offer name nowhere a visitor can see it: visible text, tooltips, every attribute (aria-label, title, alt, placeholder, href...),
   // the document title, meta and the URL. Script and style bodies are code, not page content.
   const seen = await p.evaluate(() => {
@@ -138,11 +147,12 @@ try {
   ok((await p.evaluate(() => { const a = document.querySelector("header a[aria-current=page]"); return a.textContent + "|" + a.getAttribute("href"); })) === "Run Your Own RMN|http://x.test/run-your-own-rmn/", "header item Run Your Own RMN, current, links /run-your-own-rmn/");
   const seo = await p.evaluate(() => ({ d: document.querySelector('meta[name="description"]').content, c: [...document.querySelectorAll('link[rel="canonical"]')].map((l) => l.href), og: document.querySelector('meta[property="og:title"]').content, img: document.querySelector('meta[property="og:image"]').content, tw: document.querySelector('meta[name="twitter:card"]').content, ld: [...document.querySelectorAll('script[type="application/ld+json"]')].map((s) => JSON.parse(s.textContent)) }));
   ok(seo.d.startsWith("Run your own retail media network (RMN)") && seo.c.join() === "https://personalisationhub.com/run-your-own-rmn/" && seo.og === "Run Your Own Retail Media Network (RMN)" && /^https:\/\//.test(seo.img) && seo.tw === "summary_large_image", "head: description, one canonical, og:title, og:image, twitter card: " + JSON.stringify(seo).slice(0, 300));
-  ok(seo.ld.length === 1 && ["WebPage", "Service", "BreadcrumbList", "FAQPage"].every((t) => seo.ld[0]["@graph"].some((n) => n["@type"] === t)), "head: one JSON-LD graph with WebPage, Service, BreadcrumbList and FAQPage");
+  ok(seo.ld.length === 2 && ["WebPage", "Service", "BreadcrumbList"].every((t) => seo.ld[0]["@graph"].some((n) => n["@type"] === t)) && !seo.ld[0]["@graph"].some((n) => n["@type"] === "FAQPage") && seo.ld[1]["@type"] === "FAQPage", "JSON-LD: the head graph (WebPage, Service, BreadcrumbList) and the FAQ block's FAQPage, once each");
+  ok(await p.evaluate(() => !!document.querySelector('.phf[data-phf=faq] script[type="application/ld+json"]')), "the FAQPage JSON-LD is printed by the FAQ block itself");
   const faqDom = await p.evaluate(() => [...document.querySelectorAll("#faq details")].map((d) => [d.querySelector("summary").textContent.trim(), d.querySelector(".phf-faq-a").textContent.trim()]));
-  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[0]["@graph"].find((n) => n["@type"] === "FAQPage").mainEntity.map((q) => [q.name, q.acceptedAnswer.text])) && faqDom.length >= 5 && faqDom.length <= 6, "the FAQPage JSON-LD equals the visible FAQ");
-  ok((await p.evaluate(() => getComputedStyle(document.querySelector("#phf h1")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro");
-  ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-hero-sub")).color === "rgb(23, 155, 194)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)"), "design colours");
+  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[1].mainEntity.map((q) => [q.name, q.acceptedAnswer.text])) && faqDom.length >= 5 && faqDom.length <= 6 && seo.ld[1].isPartOf["@id"] === seo.ld[0]["@graph"].find((n) => n["@type"] === "WebPage")["@id"], "the FAQPage JSON-LD equals the visible FAQ and is part of the WebPage");
+  ok((await p.evaluate(() => getComputedStyle(document.querySelector(".phf h2")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro in the blocks, over the kit's heading font");
+  ok(await p.evaluate(() => getComputedStyle(document.querySelector("#calc")).color === "rgb(28, 37, 64)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)" && getComputedStyle(document.querySelector(".phf-tip-b")).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(document.querySelector("#t-fn")).borderTopWidth === "1px"), "design colours and controls kept against the Elementor kit's heading, button and input styles");
   // No commercial terms anywhere on the page (text, tooltips, attributes).
   const html = await p.content();
   const bodyText = (await p.evaluate(() => document.body.innerText + " " + [...document.querySelectorAll(".phf-tipbox")].map((t) => t.textContent).join(" "))).toLowerCase();
@@ -151,7 +161,7 @@ try {
   ok(!/personaliz|organiz/i.test(bodyText), "UK spelling");
 
   // 2. Calculator: defaults, then live updates.
-  const outs = () => p.evaluate(() => Object.fromEntries([...document.querySelectorAll("#phf [data-out]")].map((e) => [e.dataset.out, e.textContent])));
+  const outs = () => p.evaluate(() => Object.fromEntries([...document.querySelectorAll(".phf [data-out]")].map((e) => [e.dataset.out, e.textContent])));
   assert.deepStrictEqual(await outs(), d, "calculator defaults on the page");
   ok(await p.evaluate(() => !document.querySelector("#calculator .phf-cout ~ p, #calculator .phf-calc + p")), "no explanatory copy under the calculator");
   await p.fill("#c-ven", "100");
@@ -227,7 +237,7 @@ try {
 
   // 4. CTAs and the header's Arrange A Demo go to their anchors; #tour focuses the first empty field.
   p = await open();
-  ok((await p.getAttribute(".phf-hero a.phf-btn", "href")) === "#calculator" && (await p.getAttribute(".phf-hero a.phf-btn-o", "href")) === "#tour", "hero CTAs");
+  ok((await p.getAttribute("#top .elementor-button >> nth=0", "href")) === "#calculator" && (await p.getAttribute("#top .elementor-button >> nth=1", "href")) === "#tour", "hero CTAs (Elementor buttons, the brief's anchors)");
   ok((await p.getAttribute(".phf-cctas a:first-child", "href")) === "#tour" && (await p.getAttribute(".phf-cctas a:last-child", "href")) === "#how", "calculator CTAs");
   await p.click(".phf-cctas a:first-child");
   await p.waitForFunction(() => document.activeElement && document.activeElement.id === "t-fn");
@@ -334,13 +344,12 @@ try {
   for (const w of [360, 390, 768, 1440]) {
     for (const fr2 of [null, { name: "A", email: "a@b.test", ts: 1 }]) {
       p = await open({ width: w, height: 800, operator: fr2 });
-      const sw = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll("#phf *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1 && !e.closest(".phf-tipbox, .phf-hp, .phf-ph")).map((e) => e.className || e.tagName).slice(0, 5) }));
+      const sw = await p.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll(".phf *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1 && !e.closest(".phf-tipbox, .phf-hp, .phf-ph")).map((e) => e.className || e.tagName).slice(0, 5) }));
       ok(sw.sw <= sw.w && sw.wide.length === 0, `no horizontal scroll at ${w} (${fr2 ? "unlocked" : "locked"}): ` + JSON.stringify(sw));
       await p.close();
     }
   }
   p = await open({ width: 1440 });
-  ok(await p.evaluate(() => { const r = document.querySelector(".phf-hero-copy").getBoundingClientRect(), s = document.querySelector(".phf-why").getBoundingClientRect(); return Math.abs(r.top - s.top) < 200 && s.left > r.right; }), "1440: hero copy and the 'why' card side by side");
   ok(await p.evaluate(() => { const a = document.querySelector(".phf-cin-card").getBoundingClientRect(), b = document.querySelector(".phf-cout").getBoundingClientRect(); return b.left > a.right && Math.abs(a.top - b.top) < 2; }), "1440: calculator inputs and result side by side");
   await p.close();
   p = await open({ width: 360 });

@@ -1,17 +1,20 @@
 <?php
 /**
- * php ph-website/tests/operator.test.php : the hidden Run Your Own RMN page, /run-your-own-rmn/ (snippet 10063, operator.php).
- * POST ph-site/v1/operator-lead validation (400 with the field), optional and normalised LinkedIn, the background allow-list, honeypot,
- * 429, personal email accepted, one lead per person in both orders, the ph_lead_captured payload and the console ingest body (leadType,
- * source detail "Run Your Own RMN page – product tour"), the test flag and no admin mail in test; the move of page 10776 onto
- * run-your-own-rmn (once, idempotent, behind its own lock apart from the 1.9.21 one; title "Run Your Own RMN", [ph_operator], every
- * _wp_old_slug removed so the earlier slugs 404, only page 10776 and only while it holds a [ph_ shortcode, never a second page); no
- * redirect from the earlier URLs; idempotent page creation behind the lock; the header menu item "Run Your Own RMN" (only on the page
- * while hidden, everywhere when live); noindex and no sitemap while hidden; the document title, meta description (155 characters or
- * fewer, ending on a full word), canonical, Open Graph, Twitter card and JSON-LD (valid; WebPage, Service, BreadcrumbList, FAQPage
- * equal to the visible FAQ); exactly one H1; the FAQ; llms.txt, the markdown twin, the agent endpoint and robots.txt naming the page
- * only when live. Labels say "Network operator inquiry"; the console key leadType is "operator". The retired offer name is checked
- * for with the pattern fr[a]nch, and the page's previous name with a bracketed pattern, so that this file itself never contains them.
+ * php ph-website/tests/operator.test.php : the hidden Run Your Own RMN page, /run-your-own-rmn/ (snippet 10063, operator.php), an
+ * Elementor page built from ph-website/elementor/run-your-own-rmn.md. POST ph-site/v1/operator-lead validation (400 with the field),
+ * optional and normalised LinkedIn, the background allow-list, honeypot, 429, personal email accepted, one lead per person in both
+ * orders, the ph_lead_captured payload and the console ingest body (leadType, source detail "Run Your Own RMN page – product tour"),
+ * the test flag and no admin mail in test. The page: no call path writes a post (operator_init, every hook function and the three
+ * shortcodes are run against a page, a plain page, no page and a stale cache; no wp_insert_post / wp_update_post of a page, no
+ * post_content anywhere in operator*.php); the page resolves only for a published top-level Elementor page on the slug (cached in
+ * ph_operator_page, re-resolved when the cache stops matching); with no page every hook is a no-op. The shortcodes
+ * [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq] (the calculator with its defaults and tooltips, the gate, the FAQ
+ * with its FAQPage JSON-LD equal to the questions). Keyed by the resolved id: the header menu item "Run Your Own RMN" (only on the page
+ * while hidden, everywhere when live); noindex and no sitemap while hidden; the document title, meta description, canonical, Open
+ * Graph, Twitter card and head JSON-LD; llms.txt, the markdown twin, the agent endpoint and robots.txt naming the page only when live
+ * and the page exists. The build brief carries every line the twin publishes, the anchors and the shortcodes in order. The retired
+ * offer name is checked for with the pattern fr[a]nch, and the page's previous name with a bracketed pattern, so that this file itself
+ * never contains them.
  */
 namespace {
 error_reporting( E_ALL );
@@ -30,8 +33,8 @@ function apply_filters( $n, $v ) { return array_key_exists( $n, $GLOBALS['filter
 function wp_unslash( $v ) { return $v; } function sanitize_text_field( $v ) { return trim( strip_tags( (string) $v ) ); }
 function sanitize_email( $v ) { return trim( (string) $v ); } function is_email( $v ) { return (bool) filter_var( $v, FILTER_VALIDATE_EMAIL ); }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v ) { $GLOBALS['tr'][ $k ] = $v; }
-function wp_insert_post( $a ) { $GLOBALS['posts'][] = $a; $id = count( $GLOBALS['posts'] ); if ( ! empty( $a['meta_input'] ) ) { foreach ( $a['meta_input'] as $k => $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; } } return $id; }
-function wp_update_post( $a ) { $GLOBALS['updated'][] = $a; if ( isset( $GLOBALS['pages'][ $a['ID'] ] ) ) { $pg = $GLOBALS['pages'][ $a['ID'] ]; if ( isset( $a['post_name'] ) && $a['post_name'] !== $pg->post_name && empty( $GLOBALS['update_fails'] ) ) { $GLOBALS['meta'][ $a['ID'] ]['_wp_old_slug'] = $pg->post_name; } /* as wp_check_for_changed_slugs does */ foreach ( array( 'post_name', 'post_title', 'post_status', 'post_content', 'post_parent' ) as $k ) { if ( isset( $a[ $k ] ) ) { $pg->$k = $a[ $k ]; } } } return $GLOBALS['update_fails'] ?? false ? 0 : $a['ID']; }
+function wp_insert_post( $a ) { if ( 'ph_lead' !== ( $a['post_type'] ?? '' ) ) { $GLOBALS['page_writes'][] = array( 'insert', $a ); } $GLOBALS['posts'][] = $a; $id = count( $GLOBALS['posts'] ); if ( ! empty( $a['meta_input'] ) ) { foreach ( $a['meta_input'] as $k => $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; } } return $id; }
+function wp_update_post( $a ) { $GLOBALS['page_writes'][] = array( 'update', $a ); $GLOBALS['updated'][] = $a; if ( isset( $GLOBALS['pages'][ $a['ID'] ] ) ) { $pg = $GLOBALS['pages'][ $a['ID'] ]; if ( isset( $a['post_name'] ) && $a['post_name'] !== $pg->post_name && empty( $GLOBALS['update_fails'] ) ) { $GLOBALS['meta'][ $a['ID'] ]['_wp_old_slug'] = $pg->post_name; } /* as wp_check_for_changed_slugs does */ foreach ( array( 'post_name', 'post_title', 'post_status', 'post_content', 'post_parent' ) as $k ) { if ( isset( $a[ $k ] ) ) { $pg->$k = $a[ $k ]; } } } return $GLOBALS['update_fails'] ?? false ? 0 : $a['ID']; }
 function is_wp_error() { return false; }
 function update_post_meta( $id, $k, $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; }
 function delete_post_meta( $id, $k ) { unset( $GLOBALS['meta'][ $id ][ $k ] ); }
@@ -50,7 +53,11 @@ function home_url( $p = '' ) { return 'https://personalisationhub.com' . $p; }
 function wp_strip_all_tags( $v ) { return strip_tags( (string) $v ); }
 $GLOBALS['pages'] = array();
 function get_post( $id ) { return $GLOBALS['pages'][ $id ] ?? null; }
-function get_page_by_path( $p ) { foreach ( $GLOBALS['pages'] as $pg ) { if ( $pg->post_name === $p ) { return $pg; } } return null; }
+function get_page_by_path( $p ) { $GLOBALS['by_path']++; foreach ( $GLOBALS['pages'] as $pg ) { if ( $pg->post_name === $p && 'trash' !== $pg->post_status ) { return $pg; } } return null; }
+$GLOBALS['by_path'] = 0; $GLOBALS['page_writes'] = array();
+function wp_delete_post() { $GLOBALS['page_writes'][] = array( 'delete' ); } function wp_trash_post() { $GLOBALS['page_writes'][] = array( 'trash' ); }
+function wp_enqueue_style( $h ) { $GLOBALS['enq'][] = $h; } function wp_enqueue_script( $h ) { $GLOBALS['enq'][] = $h; } function wp_add_inline_script( $h, $js ) { $GLOBALS['enq'][] = $js; }
+function angie_cs_get_snippet_asset_url( $f, $n ) { return 'https://x.test/' . $n; }
 class WP_Post { public $ID; public $post_name; public $post_title = ''; public $post_content = ''; public $post_parent = 0; public $post_type = 'page'; public $post_status = 'publish'; }
 $GLOBALS['is_page'] = false; $GLOBALS['qo'] = null;
 function is_page() { return $GLOBALS['is_page']; } function get_queried_object() { return $GLOBALS['qo']; }
@@ -63,6 +70,7 @@ require $dir . '/ai-surface.php';
 }
 
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = 'test'; // main.php's, for operator_enqueue()
 $n_ip = 0;
 $call = function ( array $b, $ip = null ) use ( &$n_ip ) { $_SERVER['REMOTE_ADDR'] = $ip ?? '10.0.0.' . ( ++$n_ip ); return operator_handle( $b ); };
 $good = array( 'name' => 'Ada Lovelace', 'email' => 'ada@gmail.com', 'linkedin' => 'linkedin.com/in/ada', 'region' => 'Manchester and the North West', 'background' => 'Retail media', 'consent' => true, 'page' => '/run-your-own-rmn/', 'test' => false, 'website' => '' );
@@ -156,60 +164,86 @@ ok( 1 === count( $GLOBALS['posts'] ), 'test leads dedupe among test leads' );
 list( $st ) = $call( array_merge( $good, array( 'email' => 'test@x.test' ) ) );
 ok( 2 === count( $GLOBALS['posts'] ), 'a real lead is kept apart from a test lead with the same email' );
 
-/* Page creation: idempotent, behind the lock (a site without the page) */
-$reset(); $GLOBALS['opts'] = array( 'admin_email' => 'a@x.test' ); $GLOBALS['pages'] = array(); $GLOBALS['updated'] = array();
-ok( 'created' === operator_ensure_page(), 'first run creates the page' );
-$pg = $GLOBALS['posts'][0];
-ok( 'page' === $pg['post_type'] && 'publish' === $pg['post_status'] && 'run-your-own-rmn' === $pg['post_name'] && 'Run Your Own RMN' === $pg['post_title'] && '[ph_operator]' === $pg['post_content'] && 0 === $pg['post_parent'], 'page: published, slug run-your-own-rmn, title Run Your Own RMN, content [ph_operator], top level' );
-ok( 'elementor_header_footer' === $GLOBALS['meta'][1]['_wp_page_template'], 'page template elementor_header_footer' );
-ok( 1 === $GLOBALS['opts']['ph_operator_page'] && ! isset( $GLOBALS['opts']['ph_operator_page_lock'] ), 'id stored, lock released' );
-$o = new \WP_Post(); $o->ID = 1; $o->post_name = 'run-your-own-rmn'; $o->post_title = 'Run Your Own RMN'; $GLOBALS['pages'][1] = $o;
-ok( 'exists' === operator_ensure_page() && 1 === count( $GLOBALS['posts'] ) && ! $GLOBALS['updated'], 'second run: nothing created or updated' );
-$GLOBALS['opts'] = array( 'ph_operator_page_lock' => (string) time() ); $GLOBALS['pages'] = array();
-ok( 'locked' === operator_ensure_page() && 1 === count( $GLOBALS['posts'] ), 'a held lock: nothing created (another request is creating it)' );
-$GLOBALS['opts'] = array( 'ph_operator_page_lock' => (string) ( time() - 3600 ) );
-ok( 'locked' === operator_ensure_page() && ! isset( $GLOBALS['opts']['ph_operator_page_lock'] ), 'a stale lock is released for the next request' );
-$d = new \WP_Post(); $d->ID = 7; $d->post_name = 'run-your-own-rmn'; $d->post_status = 'draft'; $GLOBALS['pages'] = array( 7 => $d ); $GLOBALS['opts'] = array(); $GLOBALS['updated'] = array();
-ok( 'migrated' === operator_ensure_page() && 7 === $GLOBALS['opts']['ph_operator_page'] && 'publish' === $GLOBALS['updated'][0]['post_status'] && 'publish' === $d->post_status && 1 === count( $GLOBALS['posts'] ), 'an existing draft with the slug is published, not duplicated' );
+/* The page: resolved, never made. A published top-level ELEMENTOR page on the slug (_elementor_edit_mode = builder). */
+$mkpage = function ( $id, $mode = 'builder', $status = 'publish', $parent = 0, $slug = 'run-your-own-rmn' ) {
+	$p = new \WP_Post(); $p->ID = $id; $p->post_name = $slug; $p->post_status = $status; $p->post_parent = $parent; $p->post_title = 'Run Your Own RMN';
+	$GLOBALS['pages'][ $id ] = $p; $GLOBALS['meta'][ $id ]['_elementor_edit_mode'] = $mode;
+	return $p;
+};
+$fresh = function () { $GLOBALS['pages'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['opts'] = array( 'admin_email' => 'a@x.test' ); $GLOBALS['posts'] = array(); $GLOBALS['updated'] = array(); $GLOBALS['page_writes'] = array(); $GLOBALS['is_page'] = false; $GLOBALS['qo'] = null; $GLOBALS['filters'] = array(); };
+$fresh();
+ok( 0 === operator_page_id() && ! isset( $GLOBALS['opts']['ph_operator_page'] ), 'no page: id 0, nothing cached' );
+$plain = $mkpage( 10776, '' ); // the plain WordPress page the hidden build used to be (no Elementor data)
+ok( 0 === operator_page_id(), 'a plain WordPress page on the slug is not the page (not an Elementor document)' );
+$mkpage( 10776, 'builder', 'draft' );
+ok( 0 === operator_page_id(), 'a draft Elementor page on the slug is not the page' );
+$fresh(); $mkpage( 55, 'builder', 'publish', 9 );
+ok( 0 === operator_page_id(), 'a child page on the slug is not the page' );
+$fresh(); $mkpage( 56, 'builder', 'publish', 0, 'something-else' );
+ok( 0 === operator_page_id(), 'an Elementor page on another slug is not the page' );
+$fresh(); $el = $mkpage( 10900 );
+ok( 10900 === operator_page_id() && 10900 === $GLOBALS['opts']['ph_operator_page'], 'a published top-level Elementor page on the slug resolves, and its id is cached in ph_operator_page' );
+$GLOBALS['by_path'] = 0;
+ok( 10900 === operator_page_id() && 0 === $GLOBALS['by_path'], 'a matching cached id answers without looking the slug up again' );
+// The cache stops matching: the old page 10776 trashed (WordPress renames a trashed page's slug) and the Elementor page published.
+$fresh(); $old = $mkpage( 10776, '' ); $GLOBALS['opts']['ph_operator_page'] = 10776; $old->post_status = 'trash'; $old->post_name = 'run-your-own-rmn__trashed'; $mkpage( 10900 );
+ok( 10900 === operator_page_id() && 10900 === $GLOBALS['opts']['ph_operator_page'], 'a stale cached id (page 10776 in the Trash) re-resolves to the Elementor page' );
+$GLOBALS['meta'][10900]['_elementor_edit_mode'] = '';
+ok( 0 === operator_page_id() && ! isset( $GLOBALS['opts']['ph_operator_page'] ), 'a page that stops being an Elementor document stops being the page; the cache is cleared' );
+ok( ! $GLOBALS['page_writes'] && ! $GLOBALS['posts'] && ! $GLOBALS['updated'], 'resolving never writes a post' );
 
-/* The migration: page 10776 (the existing hidden page) is found BY ID and updated in place, once, idempotently, behind the lock */
-$reset(); $GLOBALS['updated'] = array();
-$retired = 'retired-slug'; // stands in for the page's earlier slug, which this file never spells out
-$mkold = function () use ( $retired ) { $p = new \WP_Post(); $p->ID = 10776; $p->post_name = $retired; $p->post_title = 'Old title'; $p->post_content = '[ph_old_shortcode]'; return $p; };
-$live = $mkold();
-$GLOBALS['pages'] = array( 10776 => $live ); $GLOBALS['opts'] = array(); $GLOBALS['meta'][10776] = array( '_wp_old_slug' => 'an-older-slug', '_wp_page_template' => 'elementor_header_footer' );
-ok( 10776 === OPERATOR_PAGE_ID, 'OPERATOR_PAGE_ID is 10776' );
-$GLOBALS['opts']['ph_operator_rmn_move_lock'] = (string) time();
-ok( 'locked' === operator_ensure_page() && ! $GLOBALS['updated'] && $retired === $live->post_name, 'migration: a held move lock means another request is moving it; nothing done here' );
-unset( $GLOBALS['opts']['ph_operator_rmn_move_lock'] );
-ok( 'migrated' === operator_ensure_page(), 'migration: page 10776 found by id (no stored option, not on the new slug) and migrated' );
-ok( 1 === count( $GLOBALS['updated'] ) && 10776 === $GLOBALS['updated'][0]['ID'] && 'run-your-own-rmn' === $GLOBALS['updated'][0]['post_name'] && 'Run Your Own RMN' === $GLOBALS['updated'][0]['post_title'] && '[ph_operator]' === $GLOBALS['updated'][0]['post_content'], 'migration: one wp_update_post of page 10776: slug, title and content [ph_operator]' );
-ok( ! $GLOBALS['posts'], 'migration: no second page is created' );
-ok( 'run-your-own-rmn' === $live->post_name && 'Run Your Own RMN' === $live->post_title && '[ph_operator]' === $live->post_content && 'publish' === $live->post_status, 'migration: page 10776 is now /run-your-own-rmn/ "Run Your Own RMN" with [ph_operator], published' );
-ok( ! isset( $GLOBALS['meta'][10776]['_wp_old_slug'] ) && 'elementor_header_footer' === $GLOBALS['meta'][10776]['_wp_page_template'], 'migration: its _wp_old_slug meta is deleted (the earlier slugs and the one the move itself recorded), other meta kept' );
-ok( null === get_page_by_path( $retired ), 'migration: nothing left on the earlier slug' );
-ok( 10776 === $GLOBALS['opts']['ph_operator_page'] && ! isset( $GLOBALS['opts']['ph_operator_rmn_move_lock'] ), 'migration: id stored in ph_operator_page, move lock released' );
-for ( $i = 0; $i < 3; $i++ ) { ok( 'exists' === operator_ensure_page(), 'migration: later runs do nothing (' . ( $i + 1 ) . ')' ); }
-ok( 1 === count( $GLOBALS['updated'] ) && ! $GLOBALS['posts'], 'migration: done once (idempotent)' );
-// A stored option pointing at 10776 still on the earlier slug (an interrupted run): migrated, never duplicated.
-$o2 = $mkold(); $GLOBALS['pages'] = array( 10776 => $o2 ); $GLOBALS['opts'] = array( 'ph_operator_page' => 10776 ); $GLOBALS['updated'] = array();
-ok( 'migrated' === operator_ensure_page() && 'run-your-own-rmn' === $o2->post_name && ! $GLOBALS['posts'], 'an interrupted migration finishes on the next request' );
-// 10776 missing: the page is created as before (and only once).
-$GLOBALS['pages'] = array(); $GLOBALS['opts'] = array(); $GLOBALS['updated'] = array(); $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array();
-ok( 'created' === operator_ensure_page() && 1 === count( $GLOBALS['posts'] ) && '[ph_operator]' === $GLOBALS['posts'][0]['post_content'] && ! $GLOBALS['updated'], '10776 missing: the page is created' );
-$GLOBALS['pages'][1] = new \WP_Post(); $GLOBALS['pages'][1]->ID = 1; $GLOBALS['pages'][1]->post_name = 'run-your-own-rmn';
-ok( 'exists' === operator_ensure_page() && 1 === count( $GLOBALS['posts'] ), '10776 missing: never a second page' );
-// 10776 being some unrelated page (not one of our shortcode pages) is never touched.
-$other = new \WP_Post(); $other->ID = 10776; $other->post_name = 'about-us'; $other->post_content = '<p>About us</p>';
-$GLOBALS['pages'] = array( 10776 => $other ); $GLOBALS['opts'] = array(); $GLOBALS['updated'] = array(); $GLOBALS['posts'] = array();
-ok( 'created' === operator_ensure_page() && 'about-us' === $other->post_name && ! $GLOBALS['updated'], 'an unrelated page 10776 is never migrated' );
-// A child page on the new slug elsewhere is never taken.
-$ch = new \WP_Post(); $ch->ID = 55; $ch->post_name = 'run-your-own-rmn'; $ch->post_parent = 9; $GLOBALS['pages'] = array( 55 => $ch ); $GLOBALS['opts'] = array(); $GLOBALS['updated'] = array(); $GLOBALS['posts'] = array();
-ok( 'created' === operator_ensure_page() && 9 === $ch->post_parent && ! $GLOBALS['updated'], 'a child page with the slug is not taken' );
-// WordPress refusing the update: nothing stored, lock released, the next request retries.
-$o3 = $mkold(); $GLOBALS['pages'] = array( 10776 => $o3 ); $GLOBALS['opts'] = array(); $GLOBALS['update_fails'] = true;
-ok( 'failed' === operator_ensure_page() && ! isset( $GLOBALS['opts']['ph_operator_rmn_move_lock'] ) && ! isset( $GLOBALS['opts']['ph_operator_page'] ), 'a refused update releases the move lock to retry' );
-unset( $GLOBALS['update_fails'] ); $reset();
+/* No call path writes a post: init, every hook function and the three shortcodes, with a page, a plain page, no page and a stale cache */
+$hooks = function () {
+	operator_init(); operator_sync_state(); operator_is_page(); operator_robots( array( 'index' => true ) ); operator_document_title( 'T' ); operator_sitemap_args( array() );
+	operator_menu_objects( array(), true, true ); operator_head_html( operator_og_image(), true ); operator_llms_filter( 'x', true ); operator_agent_page( true ); operator_robots_allow( array(), true ); operator_seopress_off( 'x' );
+	operator_calculator_html(); operator_tour_html(); operator_faq_html(); operator_twin();
+};
+foreach ( array( 'elementor page' => function () use ( $mkpage ) { $mkpage( 10900 ); }, 'plain page' => function () use ( $mkpage ) { $mkpage( 10776, '' ); }, 'no page' => function () {}, 'stale cache' => function () use ( $mkpage ) { $GLOBALS['opts']['ph_operator_page'] = 10776; } ) as $case => $setup ) {
+	foreach ( array( false, true ) as $onpage ) {
+		$fresh(); $setup(); $GLOBALS['is_page'] = $onpage; $GLOBALS['qo'] = $GLOBALS['pages'][10900] ?? $GLOBALS['pages'][10776] ?? null;
+		$hooks();
+		ok( ! $GLOBALS['page_writes'] && ! $GLOBALS['posts'] && ! $GLOBALS['updated'], "no post written ($case, " . ( $onpage ? 'on the page' : 'elsewhere' ) . '): ' . json_encode( $GLOBALS['page_writes'] ) );
+	}
+}
+$fresh();
+$srcs = '';
+foreach ( glob( $dir . '/operator*.php' ) as $f ) { $srcs .= (string) file_get_contents( $f ); }
+foreach ( array( 'wp_insert_post', 'wp_update_post', 'post_content', 'wp_delete_post', 'wp_trash_post', 'operator_ensure_page', 'operator_create_page', 'operator_move_page', '_wp_page_template', '10776' ) as $w ) {
+	ok( false === strpos( $srcs, $w ), "operator*.php never contains $w" );
+}
+ok( ! preg_match( '/fr[a]nch/i', $srcs ) && ! preg_match( '/own[ ]boss/i', $srcs ), 'operator*.php: neither the retired offer name nor the previous page name' );
+
+/* With no page, every hook is a no-op: even live, on a page with the slug that is not an Elementor document */
+foreach ( array( false, true ) as $lv ) {
+	$fresh(); $plain = $mkpage( 10776, '' ); $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $plain; $GLOBALS['filters']['ph_operator_live'] = $lv;
+	$l = $lv ? 'live' : 'hidden';
+	ok( false === operator_is_page(), "no page ($l): operator_is_page() is false on the plain page" );
+	operator_sync_state();
+	ok( ! isset( $GLOBALS['meta'][10776]['_seopress_robots_index'] ) && ! isset( $GLOBALS['opts']['ph_operator_state'] ), "no page ($l): no noindex meta, no state" );
+	ok( array( 'index' => true ) === operator_robots( array( 'index' => true ) ), "no page ($l): robots unchanged" );
+	ok( 'T' === operator_document_title( 'T' ) && 'x' === operator_seopress_off( 'x' ), "no page ($l): title and SEOPress untouched" );
+	ok( array( 'post_type' => 'page' ) === operator_sitemap_args( array( 'post_type' => 'page' ) ), "no page ($l): sitemaps unchanged" );
+	$mm = array( (object) array( 'ID' => 3, 'title' => 'Industry', 'url' => '/industries/', 'menu_item_parent' => '0', 'classes' => array(), 'current' => false ), (object) array( 'ID' => 5, 'title' => 'Support', 'url' => '/support-centre/', 'menu_item_parent' => '0', 'classes' => array(), 'current' => false ) );
+	ok( 2 === count( operator_menu_objects( $mm, true, $lv ) ) && 2 === count( operator_menu_objects( $mm, false, true ) ), "no page ($l): no menu item" );
+	ok( null === operator_agent_page( true ), "no page ($l): nothing for the agent endpoint" );
+	$GLOBALS['enq'] = array(); operator_enqueue();
+	ok( ! $GLOBALS['enq'], "no page ($l): operator.css and operator.js are not enqueued" );
+}
+$fresh();
+$hsrc = (string) file_get_contents( $dir . '/operator.php' );
+ok( false !== strpos( $hsrc, "operator_llms_filter( \$text, operator_is_live() && operator_page_id() > 0 )" ) && false !== strpos( $hsrc, "operator_robots_allow( \$paths, operator_is_live() && operator_page_id() > 0 )" ), 'no page: llms.txt and robots.txt are only changed when live AND the page exists' );
+ok( false !== strpos( $hsrc, "if ( ! is_array( \$items ) || ( ! \$on_page && ! \$live ) || ! operator_page_id() ) {" ), 'no page: the menu filter returns the menu unchanged' );
+
+/* The shortcodes: three blocks for Elementor Shortcode widgets, each enqueuing the page's assets (on the page only) */
+ok( array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq' ) === OPERATOR_SHORTCODES, 'shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq]' );
+foreach ( array( 'calculator' => 'operator_calculator_html', 'tour' => 'operator_tour_html', 'faq' => 'operator_faq_html' ) as $k => $fn ) {
+	ok( false !== strpos( $hsrc, "add_shortcode( OPERATOR_SHORTCODES['$k'], function () {\n\t\toperator_enqueue();\n\t\treturn $fn();" ), "[ph_operator_$k] enqueues the assets and returns $fn()" );
+}
+ok( false === strpos( $hsrc, "add_shortcode( 'ph_operator'," ) && false === strpos( $hsrc, 'OPERATOR_SHORTCODE,' ), 'the whole-page [ph_operator] shortcode is gone' );
+$fresh(); $el = $mkpage( 10900 ); $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $el; $GLOBALS['enq'] = array();
+operator_enqueue(); operator_enqueue();
+ok( array( 'ph-operator-10063', 'ph-operator-10063' ) === array_slice( $GLOBALS['enq'], 0, 2 ) && 3 === count( $GLOBALS['enq'] ) && false !== strpos( $GLOBALS['enq'][2], 'window.PH_OPERATOR = {"endpoint":"\/wp-json\/ph-site\/v1\/operator-lead","tour":"\/run-your-own-rmn\/tour\/"}' ), 'on the page: operator.css, operator.js and window.PH_OPERATOR, enqueued once however many blocks call it' );
+$fresh();
 
 /* No redirect from the page's earlier URL: it was never public, so it is a 404 */
 ok( array( '/retail-media-platform' ) === array_keys( redirect_map() ), 'redirects.php: only the retail media platform move is mapped' );
@@ -217,8 +251,7 @@ ok( ! in_array( '/run-your-own-rmn/', redirect_map(), true ) && '' === redirect_
 ok( ! preg_match( '/fr[a]nch/i', (string) file_get_contents( $dir . '/redirects.php' ) ), 'redirects.php never names the retired offer' );
 
 /* noindex state and sitemaps */
-$d = new \WP_Post(); $d->ID = 7; $d->post_name = 'run-your-own-rmn';
-$GLOBALS['opts'] = array( 'ph_operator_page' => 7 ); $GLOBALS['meta'][7] = array();
+$d = $mkpage( 7 );
 operator_sync_state();
 ok( 'yes' === $GLOBALS['meta'][7]['_seopress_robots_index'] && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'hidden: SEOPress noindex set on the page' );
 $args = operator_sitemap_args( array( 'post_type' => 'page' ) );
@@ -227,11 +260,8 @@ $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 $r = operator_robots( array( 'index' => true, 'follow' => true ) );
 ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'hidden: wp_robots noindex on /run-your-own-rmn/' );
 ok( 'Run Your Own Retail Media Network (RMN) - Personalisation Hub' === operator_document_title( 'Old - Personalisation Hub' ), 'document title "Run Your Own Retail Media Network (RMN) - Personalisation Hub" on the page' );
-$GLOBALS['qo'] = $live;
-$r = operator_robots( array( 'index' => true ) );
-ok( ! empty( $r['noindex'] ), 'hidden: noindex keyed to the migrated page 10776' );
-$old = new \WP_Post(); $old->ID = 99; $old->post_name = $retired; $GLOBALS['qo'] = $old;
-ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ) && 'T' === operator_document_title( 'T' ), 'the earlier slug is no longer the page' );
+$other = new \WP_Post(); $other->ID = 99; $other->post_name = 'about-us'; $GLOBALS['qo'] = $other;
+ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ) && 'T' === operator_document_title( 'T' ), 'another page: keyed by the resolved id, so untouched' );
 $GLOBALS['qo'] = $d;
 $GLOBALS['is_page'] = false;
 ok( array( 'index' => true ) === operator_robots( array( 'index' => true ) ), 'other pages: robots unchanged' );
@@ -245,7 +275,7 @@ ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ), 'live: in
 unset( $GLOBALS['filters']['ph_operator_live'] ); $GLOBALS['is_page'] = false;
 ok( false === OPERATOR_LIVE, 'OPERATOR_LIVE ships false' );
 
-/* Header menu */
+/* Header menu (the page exists: $d, id 7) */
 $mk = function ( $id, $title, $url, $parent = 0, $cur = false ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => $cur ? array( 'menu-item', 'current-menu-item' ) : array( 'menu-item' ), 'current' => $cur, 'menu_order' => 0 ); };
 $header = array( $mk( 1, 'Features', '/features/' ), $mk( 2, 'Digital signage', '/digital-signage/', 1 ), $mk( 3, 'Industry', '/industries/' ), $mk( 4, 'Telco', '/industries/telco/', 3 ), $mk( 5, 'Support', '/support-centre/' ), $mk( 6, 'Blog', '/blog/' ) );
 $footer = array( $mk( 11, 'Privacy policy', '/privacy-policy/' ), $mk( 12, 'Support', '/support-centre/' ) );
@@ -267,27 +297,53 @@ ok( 1 === count( array_filter( $twice, function ( $i ) { return 'Run Your Own RM
 $hand = array_merge( array_map( function ( $o ) { return clone $o; }, $header ), array( $mk( 7, 'Run your own RMN', 'https://personalisationhub.com/run-your-own-rmn/' ) ) );
 ok( 1 === count( array_filter( operator_menu_objects( $hand, true, true ), function ( $i ) { return false !== strpos( $i->url, '/run-your-own-rmn/' ); } ) ), 'a menu already linking /run-your-own-rmn/ is left alone (the check matches the new path)' );
 
-/* The rendered page: copy, order, and no commercial terms */
-$html = operator_html();
-$text = html_entity_decode( strip_tags( str_replace( '<', ' <', $html ) ), ENT_QUOTES );
-$order = array( 'Run your own retail media network', 'Your own RMN on a world-leading white-label platform', 'Why it beats anything out there', 'Your head start in a changing industry', 'Built for people who know media', 'How it works', 'Any business with a physical presence', 'Built to fix retail media\'s fragmentation', 'What could it be worth to you?', 'Give independents a fighting chance', 'Running your own RMN', 'What is a retail media network?', 'How do I get started?', 'See a retail media network run end to end', 'Unlock the product tour' );
+/* The blocks: copy, defaults and no commercial terms (the rest of the page is Elementor; see the build brief below) */
+$html = operator_calculator_html() . operator_faq_html() . operator_tour_html();
+$text = html_entity_decode( strip_tags( str_replace( '<', ' <', preg_replace( '#<script[^>]*>.*?</script>#s', '', $html ) ) ), ENT_QUOTES );
+$order = array( 'Benefits calculator', 'What could it be worth to you?', 'Your network', 'Running your own RMN', 'What is a retail media network?', 'How do I get started?', 'Interactive product tour', 'See a retail media network run end to end', 'Unlock the product tour' );
 $pos = -1; $in_order = true;
 foreach ( $order as $s ) { $p2 = strpos( $text, $s ); if ( false === $p2 || $p2 < $pos ) { $in_order = false; fwrite( STDERR, "  order: $s\n" ); } $pos = (int) $p2; }
-ok( $in_order, 'the design\'s sections, in order' );
-foreach ( array( '$591K', '>90<', '>270<', '2,190,000', '3,942,000', '$59.1M' ) as $s ) { ok( false !== strpos( $html, $s ), "server-rendered default $s" ); }
-foreach ( array( '/setup fee/i', '/minimum/i', '/\bsplit\b/i', '/\d+\s*%\s*(of|share)/i', '/50\s*%/', '/0\.5/', '/half/i', '/PH\'s share/i' ) as $re ) { ok( ! preg_match( $re, $text ), "no commercial term on the page: $re" ); }
+ok( $in_order, 'the blocks\' copy, in order' );
+foreach ( array( 'calculator' => operator_calculator_html(), 'faq' => operator_faq_html(), 'tour' => operator_tour_html() ) as $k => $b ) {
+	ok( 0 === strpos( $b, '<div class="phf phf-block" data-phf="' . $k . '">' ) && '</div>' === substr( $b, -6 ), "block $k: one .phf wrapper (scopes operator.css, found by operator.js)" );
+	ok( false === strpos( $b, '<h1' ) && ! preg_match( '/id="(top|why|who|how|venues|standards|independents)"/', $b ), "block $k: no H1 and none of the Elementor sections' anchors" );
+}
+ok( false !== strpos( operator_calculator_html(), 'id="calculator"' ) && false !== strpos( operator_faq_html(), 'id="faq"' ) && false !== strpos( operator_tour_html(), 'id="tour"' ), 'anchors #calculator, #faq and #tour come with their blocks' );
+foreach ( array( 'Your head start in a changing industry', 'Built for people who know media', 'Built to fix retail media', 'Give independents a fighting chance', 'Why it beats anything out there', OPERATOR_HERO_P ) as $s ) { ok( false === strpos( html_entity_decode( $html, ENT_QUOTES ), $s ), 'static copy is Elementor\'s now, not rendered by a block: ' . substr( $s, 0, 40 ) ); }
+foreach ( array( '$591K', '>90<', '>270<', '2,190,000', '3,942,000', '$59.1M' ) as $s ) { ok( false !== strpos( operator_calculator_html(), $s ), "calculator: server-rendered default $s" ); }
+foreach ( array( '/setup fee/i', '/minimum/i', '/\bsplit\b/i', '/\d+\s*%\s*(of|share)/i', '/50\s*%/', '/0\.5/', '/half/i', '/PH\'s share/i' ) as $re ) { ok( ! preg_match( $re, $text ), "no commercial term in the blocks: $re" ); }
 ok( false !== strpos( $html, 'I agree to be contacted. See the <a href="/privacy-policy/">privacy policy</a>.' ), 'consent line links the privacy policy' );
 ok( 5 === substr_count( $html, '<option>' ), 'the 5 backgrounds' );
 ok( false !== strpos( $html, 'name="website"' ) && false !== strpos( $html, 'LinkedIn profile (optional)' ), 'honeypot and optional LinkedIn' );
 ok( ! preg_match( '/personaliz|organiz/i', $text ), 'UK spelling' );
-ok( ! preg_match( '/fr[a]nch/i', $html ), 'the rendered page (text and every attribute) never names the retired offer' );
-foreach ( array( 'If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one.', '<p class="phf-cin-h">Your network</p>', 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.' ) as $s ) {
+ok( ! preg_match( '/fr[a]nch/i', $html ), 'the blocks (text and every attribute) never name the retired offer' );
+foreach ( array( '<p class="phf-cin-h">Your network</p>', 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on becoming a network operator.' ) as $s ) {
 	ok( false !== strpos( html_entity_decode( $html, ENT_QUOTES ), $s ), 'exact copy: ' . substr( $s, 0, 70 ) );
 }
-ok( 7 <= substr_count( $html, 'role="tooltip"' ), 'a tooltip on every input and on How it\'s calculated' );
+ok( 8 === substr_count( operator_calculator_html(), 'role="tooltip"' ), 'a tooltip on every input and on How it\'s calculated' );
 $c = operator_calc( operator_defaults() );
 ok( 591300.0 === round( $c['income'], 1 ) && 59130000.0 === round( $c['extraSales'], 1 ), 'operator_calc defaults' );
 ok( '$950' === operator_money( 950 ) && '$1K' === operator_money( 1000 ) && '$1.0M' === operator_money( 1e6 ), 'money format' );
+
+/* The Elementor build brief (ph-website/elementor/run-your-own-rmn.md): every line the twin publishes, the anchors and the blocks in order */
+$bf = dirname( __DIR__ ) . '/elementor/run-your-own-rmn.md';
+$brief = is_file( $bf ) ? (string) file_get_contents( $bf ) : '';
+ok( '' !== $brief, 'the build brief exists: ph-website/elementor/run-your-own-rmn.md' );
+$lines = array( OPERATOR_H1, OPERATOR_SUBLINE, OPERATOR_HERO_P, 'We want to back them. If you have relationships with brands, retailers or businesses with a physical presence, becoming a Personalisation Hub network operator gives you a head start: your own retail media network, ready to sell from day one.' );
+foreach ( operator_why_items() as $w ) { $lines[] = '"' . $w[1] . '": "' . $w[2] . '"'; }
+foreach ( operator_steps() as $st ) { $lines[] = $st[0] . '. "' . $st[1] . '": "' . $st[2] . '"'; }
+foreach ( OPERATOR_VENUE_TYPES as $v ) { $lines[] = '"' . $v . '"'; }
+foreach ( $lines as $l ) { ok( false !== strpos( $brief, $l ), 'brief carries the twin\'s line word for word: ' . substr( $l, 0, 60 ) ); }
+ok( 12 === count( OPERATOR_VENUE_TYPES ) && 4 === count( operator_why_items() ) && 3 === count( operator_steps() ), '12 venues, four "why" items, three steps' );
+ok( false !== strpos( $brief, '**H1**: "Run your own retail media network"' ) && 1 === substr_count( $brief, '**H1**' ), 'brief: one H1, "Run your own retail media network"' );
+$marks = array( 'CSS ID `top`', 'CSS ID `why`', 'CSS ID `who`', 'CSS ID `how`', 'CSS ID `venues`', 'CSS ID `standards`', 'Shortcode widget `[ph_operator_calculator]`', 'CSS ID `independents`', 'Shortcode widget `[ph_operator_faq]`', 'Shortcode widget `[ph_operator_tour]`' );
+$pos = -1; $in = true;
+foreach ( $marks as $m ) { $q = strpos( $brief, $m ); if ( false === $q || $q < $pos ) { $in = false; fwrite( STDERR, "  brief order: $m\n" ); } $pos = (int) $q; }
+ok( $in, 'brief: the sections in order, each with its anchor, and the three Shortcode widgets where they go' );
+foreach ( array( 'elementor-create-page', '`elementor_header_footer`', '`_elementor_edit_mode` is `builder`', 'global colours and global fonts', 'Kantumruy Pro', 'elementor-get-page-structure', 'never writes a post' ) as $w ) { ok( false !== strpos( $brief, $w ), "brief: $w" ); }
+foreach ( array( "Built to fix retail media's fragmentation", 'Give independents a fighting chance', 'Built for people who know media', 'Your head start in a changing industry', 'Any business with a physical presence', 'Standardised measurement', 'AI-native, with full MCP support', 'A way to fight back' ) as $w ) { ok( false !== strpos( $brief, $w ), "brief copy: $w" ); }
+ok( ! preg_match( '/fr[a]nch/i', $brief ) && ! preg_match( '/own[ ]boss|be-your[-]own/i', $brief ), 'brief: neither the retired offer name nor the previous page name' );
+foreach ( array( '/setup fee/i', '/\b50\s*%/', '/0\.5/', '/PH\'s share/i' ) as $re ) { ok( ! preg_match( $re, $brief ), "brief: no commercial term $re" ); }
 
 /* The static agent files never name the page: only operator.php adds it, and only once live (below) */
 foreach ( array( 'llms.php', 'md.php', 'ld.php', 'ai-surface.php', 'ai-hygiene.php', 'calculators.php' ) as $f ) {
@@ -296,28 +352,6 @@ foreach ( array( 'llms.php', 'md.php', 'ld.php', 'ai-surface.php', 'ai-hygiene.p
 }
 $al = (string) file_get_contents( dirname( __DIR__ ) . '/snippets/ph-agent-endpoint/lib.php' );
 ok( ! preg_match( '/fr[a]nch/i', $al ) && false === stripos( $al, 'run-your-own-rmn' ), 'agent endpoint allow-list does not include it (it is added through ph_agent_extra_pages, only when live)' );
-
-/* The rename (14 Nov 2026): from the 1.9.21 state, page 10776 moves once onto run-your-own-rmn behind its OWN lock */
-$reset(); $GLOBALS['updated'] = array();
-$prev = 'previous-slug'; // stands in for the 1.9.21 slug, which this file never spells out
-$p21  = new \WP_Post(); $p21->ID = 10776; $p21->post_name = $prev; $p21->post_title = 'Previous title'; $p21->post_content = '[ph_operator]';
-$GLOBALS['pages'] = array( 10776 => $p21 );
-$GLOBALS['opts']  = array( 'ph_operator_page' => 10776, 'ph_operator_state' => 'hidden:10776', 'ph_operator_page_lock' => (string) time() ); // the 1.9.21 lock, still held
-$GLOBALS['meta'][10776] = array( '_wp_old_slug' => 'the-slug-before-that', '_wp_page_template' => 'elementor_header_footer' );
-ok( 'ph_operator_rmn_move_lock' === OPERATOR_MOVE_LOCK && OPERATOR_MOVE_LOCK !== OPERATOR_LOCK_OPTION, 'the move has its own lock option, apart from the 1.9.21 one' );
-ok( 'migrated' === operator_ensure_page(), 'rename: the 1.9.21 page is moved even while the 1.9.21 lock is held' );
-ok( 1 === count( $GLOBALS['updated'] ) && 10776 === $GLOBALS['updated'][0]['ID'] && 'run-your-own-rmn' === $p21->post_name && 'Run Your Own RMN' === $p21->post_title && '[ph_operator]' === $p21->post_content && 'publish' === $p21->post_status, 'rename: page 10776 is now /run-your-own-rmn/ "Run Your Own RMN" with [ph_operator], published' );
-ok( ! isset( $GLOBALS['meta'][10776]['_wp_old_slug'] ), 'rename: no _wp_old_slug left (neither the 1.9.21 slug nor the one before it), so both earlier URLs answer 404' );
-ok( ! $GLOBALS['posts'] && null === get_page_by_path( $prev ), 'rename: no second page, nothing left on the 1.9.21 slug' );
-ok( ! isset( $GLOBALS['opts']['ph_operator_rmn_move_lock'] ) && 10776 === $GLOBALS['opts']['ph_operator_page'], 'rename: move lock released, id kept' );
-for ( $i = 0; $i < 3; $i++ ) { operator_ensure_page(); }
-ok( 1 === count( $GLOBALS['updated'] ) && ! $GLOBALS['posts'] && 'exists' === operator_ensure_page(), 'rename: idempotent (one update, however many requests)' );
-ok( false === array_search( '/' . $prev . '/', redirect_map(), true ) && '' === redirect_target( '/' . $prev . '/' ), 'rename: the 1.9.21 URL is not redirected (never public: a 404)' );
-// Only page 10776 and only while it holds a [ph_ shortcode: a stored id pointing at an unrelated page is never moved.
-$x = new \WP_Post(); $x->ID = 321; $x->post_name = 'contact'; $x->post_content = '<p>Contact us</p>';
-$GLOBALS['pages'] = array( 321 => $x ); $GLOBALS['opts'] = array( 'ph_operator_page' => 321 ); $GLOBALS['updated'] = array(); $GLOBALS['posts'] = array();
-ok( 'created' === operator_ensure_page() && 'contact' === $x->post_name && ! $GLOBALS['updated'], 'rename: a stored id naming a page without our shortcode is never moved' );
-$reset(); $GLOBALS['opts'] = array( 'admin_email' => 'a@x.test' ); $GLOBALS['pages'] = array(); $GLOBALS['updated'] = array();
 
 /* Title and menu */
 ok( 'Run Your Own RMN' === OPERATOR_TITLE && 'Run Your Own Retail Media Network (RMN) - Personalisation Hub' === OPERATOR_DOC_TITLE && 'run-your-own-rmn' === OPERATOR_SLUG && '/run-your-own-rmn/' === OPERATOR_PATH, 'constants: slug, path, title and document title' );
@@ -355,7 +389,8 @@ $ld = json_decode( $ldn->item( 0 )->textContent, true );
 ok( is_array( $ld ) && 'https://schema.org' === $ld['@context'] && is_array( $ld['@graph'] ), 'JSON-LD is valid JSON with an @graph' );
 $byType = array(); foreach ( $ld['@graph'] as $n ) { $byType[ $n['@type'] ] = $n; }
 $ids = array_column( $ld['@graph'], '@id' );
-foreach ( array( 'WebPage', 'Service', 'BreadcrumbList', 'FAQPage' ) as $t ) { ok( isset( $byType[ $t ] ), "JSON-LD has a $t" ); }
+foreach ( array( 'WebPage', 'Service', 'BreadcrumbList' ) as $t ) { ok( isset( $byType[ $t ] ), "head JSON-LD has a $t" ); }
+ok( ! isset( $byType['FAQPage'] ), 'the head JSON-LD has no FAQPage: the FAQ block prints it, once' );
 $wp = $byType['WebPage'];
 ok( 'en-GB' === $wp['inLanguage'] && in_array( $wp['isPartOf']['@id'], $ids, true ) && 'WebSite' === $byType['WebSite']['@type'] && 'https://personalisationhub.com/#website' === $wp['isPartOf']['@id'] && 'Retail media network' === $wp['about']['name'], 'WebPage: en-GB, isPartOf the WebSite, about "Retail media network"' );
 $sv = $byType['Service'];
@@ -363,18 +398,20 @@ ok( 'Run your own retail media network' === $sv['name'] && 'White-label retail m
 ok( false === strpos( json_encode( $ld ), 'areaServed' ), 'no areaServed anywhere (the business is global)' );
 $bl = $byType['BreadcrumbList']['itemListElement'];
 ok( 2 === count( $bl ) && 'Home' === $bl[0]['name'] && 'https://personalisationhub.com/' === $bl[0]['item'] && 'Run Your Own RMN' === $bl[1]['name'] && 'https://personalisationhub.com/run-your-own-rmn/' === $bl[1]['item'], 'BreadcrumbList: Home › Run Your Own RMN' );
-// FAQPage equals the visible FAQ, word for word.
-$dom = new \DOMDocument(); @$dom->loadHTML( '<?xml encoding="utf-8"?>' . operator_html() ); $px = new \DOMXPath( $dom );
+// [ph_operator_faq]: the FAQPage JSON-LD it prints equals its visible questions, word for word, and is part of the page's WebPage.
+$dom = new \DOMDocument(); @$dom->loadHTML( '<?xml encoding="utf-8"?>' . operator_faq_html() ); $px = new \DOMXPath( $dom );
+$fl = $px->query( '//script[@type="application/ld+json"]' );
+ok( 1 === $fl->length, 'the FAQ block prints one JSON-LD script' );
+$faqld = json_decode( $fl->item( 0 )->textContent, true );
+ok( is_array( $faqld ) && 'https://schema.org' === $faqld['@context'] && 'FAQPage' === $faqld['@type'] && 'https://personalisationhub.com/run-your-own-rmn/#faq' === $faqld['@id'] && $wp['@id'] === $faqld['isPartOf']['@id'] && 'en-GB' === $faqld['inLanguage'], 'FAQ JSON-LD: valid FAQPage, isPartOf the WebPage' );
+$byType['FAQPage'] = $faqld;
 $visible = array();
 foreach ( $px->query( '//section[@id="faq"]//details' ) as $det ) {
 	$visible[] = array( trim( $px->query( './/summary', $det )->item( 0 )->textContent ), trim( $px->query( './/div[contains(@class,"phf-faq-a")]', $det )->item( 0 )->textContent ) );
 }
 $ldq = array_map( function ( $q ) { return array( $q['name'], $q['acceptedAnswer']['text'] ); }, $byType['FAQPage']['mainEntity'] );
 ok( count( $visible ) >= 5 && count( $visible ) <= 6 && $visible === $ldq, 'FAQPage equals the visible FAQ (' . count( $visible ) . ' questions)' );
-ok( 1 === $px->query( '//h1' )->length && 'Run your own retail media network' === trim( $px->query( '//h1' )->item( 0 )->textContent ), 'exactly one H1: "Run your own retail media network"' );
-ok( 'Your own RMN on a world-leading white-label platform' === trim( $px->query( '//*[contains(@class,"phf-hero-sub")]' )->item( 0 )->textContent ), 'hero sub-line' );
 ok( 'Running your own RMN' === trim( $px->query( '//section[@id="faq"]//h2' )->item( 0 )->textContent ), 'FAQ titled "Running your own RMN"' );
-ok( strpos( $html, 'id="faq"' ) < strpos( $html, 'id="tour"' ) && strpos( $html, 'id="independents"' ) < strpos( $html, 'id="faq"' ), 'the FAQ sits before the closing tour band' );
 $faqText = implode( ' ', array_merge( ...$visible ) );
 ok( ! preg_match( '/\d/', str_replace( '1,000', '', $faqText ) ), 'FAQ: no figures beyond the page\'s own "1,000"' );
 foreach ( array( '/0\.5/', '/50\s*%/', '/\bhalf\b/i', '/personaliz|organiz/i', '/fr[a]nch/i', '/\b(UK|Britain|British|America|Australia)\b/' ) as $re ) { ok( ! preg_match( $re, $faqText ), "FAQ: nothing matching $re" ); }
@@ -389,12 +426,12 @@ ok( $llms === operator_llms_filter( $llms, false ), 'hidden: llms.txt unchanged'
 $ll = operator_llms_filter( $llms, true );
 ok( false !== strpos( $ll, "## Run your own RMN\n\n- [Run your own retail media network (RMN)](https://personalisationhub.com/run-your-own-rmn/?format=md): " ) && strpos( $ll, '## Run your own RMN' ) < strpos( $ll, '## Pricing and trial' ), 'live: llms.txt has a "Run your own RMN" section with the one entry, before Pricing and trial' );
 ok( $ll === operator_llms_filter( $ll, true ) && 1 === substr_count( $ll, 'run-your-own-rmn' ), 'live: llms.txt section added once' );
-$GLOBALS['opts']['ph_operator_page'] = 10776;
+$GLOBALS['pages'] = array(); $mkpage( 10900 );
 ok( null === operator_agent_page( false ), 'hidden: the agent endpoint gets nothing' );
 $ap = operator_agent_page( true );
 ok( is_array( $ap ) && 'https://personalisationhub.com/run-your-own-rmn/' === $ap['url'] && 'Run your own retail media network (RMN)' === $ap['title'] && $ap['md'] === operator_twin(), 'live: the agent endpoint gets the page and its twin' );
-unset( $GLOBALS['opts']['ph_operator_page'] );
-ok( null === operator_agent_page( true ), 'live but no page: nothing' );
+$GLOBALS['meta'][10900]['_elementor_edit_mode'] = '';
+ok( null === operator_agent_page( true ), 'live but no Elementor page: nothing' );
 ok( array() === operator_robots_allow( array(), false ) && array( '/run-your-own-rmn/' ) === operator_robots_allow( array(), true ), 'robots.txt allow list: the page only when live' );
 $wp_robots = "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.php\n";
 ok( false === strpos( robots_txt_text( $wp_robots, true, operator_robots_allow( array(), false ) ), 'run-your-own-rmn' ) && false !== strpos( robots_txt_text( $wp_robots, true, operator_robots_allow( array(), true ) ), "Allow: /\nAllow: /run-your-own-rmn/\n" ), 'robots.txt: "Allow: /run-your-own-rmn/" in the AI agents\' group only when live' );
@@ -420,7 +457,7 @@ $main = (string) file_get_contents( $dir . '/main.php' );
 ok( false !== strpos( $main, "require_once __DIR__ . '/operator.php';" ), 'main.php requires operator.php' );
 $src = (string) file_get_contents( $dir . '/operator.php' );
 ok( false !== strpos( $src, "add_filter( 'pre_get_document_title'" ) && false !== strpos( $src, "add_filter( 'seopress_titles_title'" ), 'hooks: document title and SEOPress title' );
-ok( 'operator' === OPERATOR_SOURCE && 'ph_operator' === OPERATOR_SHORTCODE && 'ph_operator_page' === OPERATOR_PAGE_OPTION && 'ph_operator_page_lock' === OPERATOR_LOCK_OPTION && 'ph_operator_state' === OPERATOR_STATE_OPTION, 'console key "operator", shortcode [ph_operator], options ph_operator_page / _lock / _state' );
+ok( 'operator' === OPERATOR_SOURCE && 'ph_operator_page' === OPERATOR_PAGE_OPTION && 'ph_operator_state' === OPERATOR_STATE_OPTION && ! defined( __NAMESPACE__ . '\\OPERATOR_LOCK_OPTION' ) && ! defined( __NAMESPACE__ . '\\OPERATOR_MOVE_LOCK' ) && ! defined( __NAMESPACE__ . '\\OPERATOR_PAGE_ID' ), 'console key "operator", options ph_operator_page (the resolved id\'s cache) and ph_operator_state; no page id, page lock or move lock' );
 ok( false !== strpos( $src, "apply_filters( 'ph_operator_live', OPERATOR_LIVE )" ) && false !== strpos( $src, "'ph-operator-10063'" ) && false !== strpos( $src, "'window.PH_OPERATOR = '" ) && false !== strpos( $src, "'endpoint' => '/wp-json/ph-site/v1/operator-lead'" ), 'filter ph_operator_live, handles ph-operator-10063, window.PH_OPERATOR, endpoint operator-lead' );
 foreach ( array( 'operator.php', 'operator-content.php', 'operator.css', 'operator.js', 'main.php', 'leads.php', 'redirects.php', 'enhance.js' ) as $f ) {
 	ok( ! preg_match( '/fr[a]nch/i', (string) file_get_contents( $dir . '/' . $f ) ), "$f never names the retired offer (code or comments)" );
@@ -429,7 +466,7 @@ foreach ( array( 'operator.php', 'operator-content.php', 'operator.css', 'operat
 ok( ! glob( $dir . '/fr[a]nch*' ), 'no snippet file is named after the retired offer' );
 ok( false !== strpos( $src, "register_rest_route( 'ph-site/v1', '/operator-lead'" ), 'REST route ph-site/v1/operator-lead' );
 ok( false !== strpos( $src, "add_filter( 'wp_robots'" ) && false !== strpos( $src, "header( 'X-Robots-Tag: noindex' )" ) && false !== strpos( $src, "'seopress_sitemaps_single_query'" ) && false !== strpos( $src, "'wp_sitemaps_posts_query_args'" ), 'hooks: wp_robots, X-Robots-Tag, both sitemaps' );
-ok( false !== strpos( $src, "if ( ! operator_is_page() ) {\n\t\t\treturn;\n\t\t}\n\t\t\$ver = PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063;" ), 'operator.css and operator.js load only on the page, with the assets version' );
+ok( false !== strpos( $src, "if ( \$done || ! operator_is_page() ) {\n\t\treturn;\n\t}\n\t\$done = true;\n\t\$ver  = PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063;" ) && false !== strpos( $src, "add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\\\operator_enqueue' );" ), 'operator.css and operator.js load only on the page (in the head and from the blocks), with the assets version' );
 
 if ( $fails ) {
 	fwrite( STDERR, "operator.test.php: $fails of $count checks failed\n" );
