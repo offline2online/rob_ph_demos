@@ -1789,11 +1789,6 @@ usage. An engineer can instead register their own Routine, so board clicks
    whether one is set. The fire URL must be on `api.anthropic.com`. Pass
    both as `""` to clear it and go back to the shared secrets.
 
-A member who can write and connects over MCP with no binding is walked
-through these steps by their own agent, one at a time, at the start of the
-conversation (the server instructions ask for it; see `MCP.md` →
-"Your agent offers this by itself").
-
 `functions/index.js`'s `resolveRoutineCredentials` — shared by all three
 fire functions — checks the clicking member's binding
 (`projects/{id}.notifyRequestedByEmail` /

@@ -2103,41 +2103,6 @@ const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
 // instructions say it in these words (functions/kanban.js has KANBAN_SCOPE).
 const BACKLOG_SCOPE = "The backlog is for agent work: agent-built product, docs, prototype and tooling changes. A task a human staff member does belongs on the Staff Kanban (kanban_create_task, which can assign it).";
 
-// Whether a member has a personal Notify Claude Routine binding — presence
-// only, never the stored fireUrl/token. Read by whoami and by initialize
-// (routineSetupInstructionsFor below). The legacy location
-// (consoleUsers.routineFire*) is still honoured until functions/index.js's
-// lazy migration has moved it.
-async function memberHasRoutineBinding(email) {
-  const [bindingSnap, selfSnap] = await Promise.all([
-    db().collection("routineBindings").doc(email).get(),
-    db().collection("consoleUsers").doc(email).get(),
-  ]);
-  const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
-  const self = selfSnap.exists ? selfSnap.data() || {} : {};
-  return !!((binding.fireUrl && binding.token) || (self.routineFireUrl && self.routineFireToken));
-}
-
-const ROUTINES_URL = "https://claude.ai/code/routines";
-
-// Guided Routine setup on connect (BXkUvoayo98j744RUCy8). Appended to the
-// server instructions only for a member who can write (set_my_routine_binding
-// is board.write) and has no binding yet, so a bound member or a viewer sees
-// nothing. Instructions are read at initialize, i.e. once per connection, so
-// a member who finishes setup stops getting it on their next connect.
-const ROUTINE_SETUP_INSTRUCTIONS = "Before other work: no personal Routine yet (hasRoutineBinding false); offer setup per get_routine_setup_instructions' agentGuidance. Never repeat the token.";
-
-async function routineSetupInstructionsFor(session) {
-  if (!session || !session.email || !(session.scopes || []).includes("board.write")) return "";
-  try {
-    return (await memberHasRoutineBinding(session.email)) ? "" : ROUTINE_SETUP_INSTRUCTIONS;
-  } catch (err) {
-    // A failed read must never fail initialize; the member just isn't nudged.
-    logger.warn("could not read routine binding at initialize", { error: String(err && err.message ? err.message : err) });
-    return "";
-  }
-}
-
 const TOOLS = [
   {
     name: "whoami",
@@ -2150,7 +2115,13 @@ const TOOLS = [
       // set_my_routine_binding's own comment on why). The nudge only shows
       // once: someone who's deliberately chosen to keep using the shared
       // project token doesn't need to be reminded on every whoami call.
-      const hasRoutineBinding = await memberHasRoutineBinding(session.email);
+      const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
+      const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
+      const bindingSnap = await db().collection("routineBindings").doc(session.email).get();
+      const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
+      // Legacy location (consoleUsers.routineFire*) is still honoured until
+      // functions/index.js's lazy migration has moved it.
+      const hasRoutineBinding = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -2191,32 +2162,14 @@ const TOOLS = [
     async run() {
       const bootstrapPrompt = `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
       return textResult({
-        routinesUrl: ROUTINES_URL,
         steps: [
-          `1. Go to ${ROUTINES_URL} (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.`,
+          "1. Go to claude.ai/code/routines (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.",
           "2. Set its prompt to the exact text in `bootstrapPrompt` below — this is the same bootstrap the shared project Routine uses, so your personal one behaves identically once it fires.",
           "3. In that Routine's settings, add an API trigger. This generates a fire URL (ends in /fire) and a bearer token — copy both; the token is shown once.",
           "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values. Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first.",
           "5. To go back to the shared project token, call set_my_routine_binding again with fireUrl and token both set to \"\" (clears the binding).",
         ],
-        // What the agent says to the person, one step per message, waiting
-        // for them between steps (the server instructions ask for this when
-        // a member connects with no binding).
-        walkthrough: [
-          { step: 1, say: `Open ${ROUTINES_URL}, signed in with your own Claude account, and create a new Routine. Tell me when it's created.`, link: ROUTINES_URL },
-          { step: 2, say: "Paste this as the Routine's prompt, exactly as it is, and save it.", copy: "bootstrapPrompt" },
-          { step: 3, say: "In the Routine's settings, add an API trigger. Copy the fire URL (it ends in /fire) and the bearer token. The token is shown only once." },
-          { step: 4, say: "Paste the fire URL and the token here. I'll register them with set_my_routine_binding and check with whoami that it worked." },
-        ],
         bootstrapPrompt,
-        tokenHandling: "Pass the token to set_my_routine_binding once and never repeat it in a message; no tool ever returns it.",
-        agentGuidance: [
-          "Present the walkthrough one step at a time and wait for the person after each step before showing the next.",
-          "Show routinesUrl as a clickable link and bootstrapPrompt as a fenced code block they can copy.",
-          "When they paste the fire URL and token, call set_my_routine_binding once with exactly those values, then whoami to confirm hasRoutineBinding is true.",
-          "Never ask for the token again and never repeat it in a message.",
-          "If they decline, do what they asked instead, and remind them once in this conversation (not again) that their board clicks keep using the shared Routine, not their own Claude account, until it is set up.",
-        ],
         note: "This only changes which credentials fire — the board click itself (Notify Claude / Notify Claude — Deploy / Groom Backlog) still has to happen on the board; nothing here fires a session directly.",
       });
     },
@@ -5248,18 +5201,18 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "PH Agent Console: Personalisation Hub's backlog board and help centre. You act as the signed-in member; writes carry their email. Viewers read, editors write, admins also release.",
-  "Tickets: list_projects, list_backlog_items, get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked, clear_blocked, archive_backlog_items, delete_backlog_items act on tickets. Waiting on people: get_ready_for_testing_board, get_approved_for_deployment_board.",
-  "To take over a project: its start-here document (startHereDocId from list_projects; get_project_document), then the documents it lists, or the project_handover prompt.",
+  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes carry their email. A viewer reads, an editor also writes, an admin has the release tools.",
+  "Tickets: list_projects, list_backlog_items, get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked, clear_blocked, archive_backlog_items, delete_backlog_items act on tickets. To show what waits on people: get_ready_for_testing_board or get_approved_for_deployment_board.",
+  "To take over a project, read its start-here document (startHereDocId from list_projects; get_project_document), then the documents it lists. The project_handover prompt does the same.",
   "Reading docs: list_project_documents, get_project_document, get_project_docs (all).",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document (read it first, send all of it, max 20,000 characters); list_doc_revisions / get_doc_revision recover old versions.",
-  REPO_WINS,
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it (max 20,000 characters). list_doc_revisions / get_doc_revision recover old versions.",
+  REPO_WINS + " Board-only documents are edited on the board.",
   "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact, demote_project.",
-  "Help centre: search_faq, get_faq_article; create_faq_article / update_faq_article only propose drafts for approval (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision).",
+  "Help centre: search_faq, get_faq_article; create_faq_article and update_faq_article only propose drafts for a person to approve (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision).",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Leads: list_leads, get_lead; writes create_lead, create_leads, update_lead, update_lead_stage, add_lead_contact, update_lead_contact, remove_lead_contact, add_lead_note, link_lead_customer_account, unlink_lead_customer_account, link_lead_prospect, unlink_lead_prospect, archive_lead, restore_lead; delete_lead is admin only. Prospects: list_prospects, upsert_prospects.",
   "Skills: list_skills, get_skill; upload_skill, update_skill, delete_skill, mark_skill_reviewed, report_skill_miss.",
-  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills that build and deploy runs load); finalise_project / unfreeze_project.",
+  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings sets the skills that build and deploy runs load; finalise_project / unfreeze_project freeze a project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {
@@ -5283,7 +5236,6 @@ async function dispatchRpc(msg, session, ctx) {
       const asked = String(params.protocolVersion || "");
       const version = SUPPORTED_PROTOCOL_VERSIONS.includes(asked) ? asked : SUPPORTED_PROTOCOL_VERSIONS[0];
       ctx.protocolVersion = version;
-      const routineSetup = await routineSetupInstructionsFor(session);
       return rpcResult(msg.id, {
         protocolVersion: version,
         // resources: the two MCP App views (ui://backlog-tracker/…) — a host
@@ -5298,7 +5250,7 @@ async function dispatchRpc(msg, session, ctx) {
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
         },
-        instructions: routineSetup ? `${routineSetup} ${SERVER_INSTRUCTIONS}` : SERVER_INSTRUCTIONS,
+        instructions: SERVER_INSTRUCTIONS,
       });
     }
     case "ping":
@@ -5632,7 +5584,7 @@ exports.resolveConsoleUser = resolveConsoleUser;
 exports.__test = {
   routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
-  TOOLS, PROMPTS, SERVER_INSTRUCTIONS, ROUTINE_SETUP_INSTRUCTIONS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, pagesRepoPath, setMainShaFetcher: (f) => { mainShaFetcher = f || defaultMainSha; }, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
