@@ -744,7 +744,9 @@ function cardHTML(item) {
   const routineForCard = projects.find((p) => p.id === pid);
   const cardRoutine = routineForCard && routineForCard.notifyRoutine;
   const cardRoutineFiredMs = cardRoutine ? tsMillis(cardRoutine.firedAt) : 0;
-  const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS;
+  // A card whose own session is still sending heartbeats stays locked past
+  // the stall window: it is building, not crashed.
+  const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS && !buildBeating(item);
   const isSentToClaude = isBacklog && !isInDevelopment
     && !projectInDeployPhase(routineForCard)
     && cardRoutine?.status === "in-progress" && !cardRoutineStale
@@ -898,7 +900,7 @@ function cardHTML(item) {
   const inDevelopmentHint = isInDevelopment
     ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
     : (isSentToClaude
-        ? `<span class="in-development-hint" title="This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)">Sent to Claude — locked</span>`
+        ? sentToClaudeHintHTML(item)
         : "");
   // Failed testing sends a card back to Backlog AND asks the automation to
   // revert its commits off the project's integration branch (see
@@ -1558,6 +1560,72 @@ function anyMillis(v) {
   const ms = Date.parse(v);
   return Number.isFinite(ms) ? ms : 0;
 }
+// Heartbeats (14 Nov 2026). A build session PATCHes buildSession.heartbeatAt,
+// .phase and .attemptId when it starts, at each phase change and at least
+// every 10 minutes; the card's buildAttemptId names the attempt being waited
+// for, so a superseded session's beats don't count. The automation restarts a
+// session on the same windows (functions/notify-routine.js): no first
+// heartbeat in 10 minutes, or none for 20. A fire from before heartbeats has
+// no attempt id and is judged by the old 75-minute rule alone.
+const BUILD_HEARTBEAT_WARN_MS = 10 * 60 * 1000;
+const BUILD_HEARTBEAT_SILENT_MS = 20 * 60 * 1000;
+const BUILD_FIRST_HEARTBEAT_MS = 10 * 60 * 1000;
+const BUILD_CEILING_MS = 3 * 60 * 60 * 1000;
+// → null, or { ageMs, phase, warn } for the current attempt's last heartbeat.
+function buildHeartbeat(item, now = Date.now()) {
+  const bs = item && item.buildSession;
+  const attempt = item && (item.buildAttemptId || (item.lastFire && item.lastFire.buildAttemptId));
+  if (!bs || !attempt || bs.attemptId !== attempt) return null;
+  const at = Math.min(anyMillis(bs.heartbeatAt), now);
+  if (!at) return null;
+  const phase = typeof bs.phase === "string" && bs.phase.trim() ? bs.phase.trim().slice(0, 40) : "";
+  return { ageMs: now - at, phase, warn: now - at >= BUILD_HEARTBEAT_WARN_MS };
+}
+// "Testing · heard from 3 min ago"
+function buildHeartbeatLabel(hb) {
+  const mins = Math.floor(hb.ageMs / 60000);
+  const phase = hb.phase ? `${hb.phase.charAt(0).toUpperCase()}${hb.phase.slice(1)}` : "Building";
+  return `${phase} · heard from ${mins < 1 ? "just now" : `${mins} min ago`}`;
+}
+// Still beating: building, however long it has run (up to the ceiling).
+function buildBeating(item, now = Date.now()) {
+  const hb = buildHeartbeat(item, now);
+  const fired = item && item.lastFire ? anyMillis(item.lastFire.at) : 0;
+  return !!hb && hb.ageMs < BUILD_HEARTBEAT_SILENT_MS && (!fired || now - fired < BUILD_CEILING_MS);
+}
+// A session that was told to beat and has gone quiet: what the header's
+// "Build didn't report back" chip counts, before the automation restarts it.
+function buildHeartbeatSilent(item, now = Date.now()) {
+  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return false;
+  const fire = item.lastFire;
+  if (!fire || fire.status !== "started" || !fire.buildAttemptId) return false;
+  const fired = anyMillis(fire.at);
+  if (!fired) return false;
+  const bs = item.buildSession;
+  if (bs && (bs.status === "done" || bs.status === "error") && (anyMillis(bs.reportedAt) || anyMillis(bs.finishedAt)) >= fired) return false;
+  const hb = buildHeartbeat(item, now);
+  return hb ? hb.ageMs >= BUILD_HEARTBEAT_SILENT_MS : now - fired >= BUILD_FIRST_HEARTBEAT_MS;
+}
+// An in-progress record older than the stall window is stale — unless one of
+// its sent tickets is still beating, which keeps it open.
+function notifyRoutineStale(routine) {
+  if (!routine || routine.status !== "in-progress") return false;
+  const fired = tsMillis(routine.firedAt);
+  if (!fired || Date.now() - fired <= NOTIFY_ROUTINE_STALE_MS) return false;
+  return !(routine.sentItemIds || []).some((id) => buildBeating(allItems.find((i) => i.id === id)));
+}
+// The "Sent to Claude — locked" line. Once the session has sent a heartbeat it
+// also says which phase it is in and how long ago it was last heard from, in
+// the warning colour after 10 minutes without one.
+function sentToClaudeHintHTML(item) {
+  const hb = buildHeartbeat(item);
+  const base = "This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)";
+  if (!hb) return `<span class="in-development-hint" title="${base}">Sent to Claude — locked</span>`;
+  const title = hb.warn
+    ? `${base}. Its build session has not been heard from for ${Math.floor(hb.ageMs / 60000)} minutes; after 20 it is started again automatically.`
+    : `${base}. Its build session reports in at least every 10 minutes.`;
+  return `<span class="in-development-hint" title="${escapeHTML(title)}">Sent to Claude — locked<span class="build-heartbeat${hb.warn ? " build-heartbeat-warn" : ""}">${escapeHTML(buildHeartbeatLabel(hb))}</span></span>`;
+}
 // Has this one card's session finished (or the card moved on) since the click?
 function perItemBuildFinished(item, routine) {
   if (!item || item.status !== "backlog" || item.patchReady) return true;
@@ -1579,8 +1647,15 @@ function stalledSentIds(routine) {
       return it && it.status === "backlog" && !it.patchReady && !(it.buildSession && perItemBuildFinished(it, { firedAt: routine.firedAt }));
     });
   }
-  if (routine.status === "in-progress" && routine.firedAt && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) {
-    return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
+  if (routine.status === "in-progress") {
+    // Heartbeat-silent sessions count as soon as they go quiet; past the
+    // stall window every unreported ticket does, except one still beating.
+    const pastStall = !!routine.firedAt && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS;
+    return (routine.sentItemIds || []).filter((id) => {
+      const it = allItems.find((i) => i.id === id);
+      if (perItemBuildFinished(it, routine)) return false;
+      return buildHeartbeatSilent(it) || (pastStall && !buildBeating(it));
+    });
   }
   return [];
 }
@@ -1609,7 +1684,7 @@ function sentTicketStateLines(routine) {
 function ticketsStillBuilding(project) {
   const routine = project && project.notifyRoutine;
   if (!routine || routine.status !== "in-progress") return [];
-  if (tsMillis(routine.firedAt) && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) return [];
+  if (notifyRoutineStale(routine)) return [];
   return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
 }
 
@@ -1797,7 +1872,7 @@ function notifyStalledChipHTML(project) {
   if (projectInDeployPhase(project)) return "";
   const ids = stalledSentIds(project.notifyRoutine);
   if (!ids.length) return "";
-  return `<a href="#item-${escapeHTML(ids[0])}" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable notify-claude-stalled" title="${ids.length} ticket(s) sent to Claude never reported back — open the card's notes">
+  return `<a href="#item-${escapeHTML(ids[0])}" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable notify-claude-stalled" title="${ids.length} ticket(s) sent to Claude went quiet or never reported back — a silent build is started again automatically; open the card's notes">
     <span class="material-symbols-outlined notify-claude-icon">warning</span>
     <span class="notify-claude-label">Build didn&rsquo;t report back</span>
     <span class="notify-claude-count-pill">${ids.length}</span>
@@ -1812,7 +1887,7 @@ function notifyClaudeButtonCore(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
-  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
+  const isStale = notifyRoutineStale(routine);
   // A build in flight is a Backlog-phase state. Once the project is
   // deploying, this button is gone whatever an old notifyRoutine record says
   // — the Deploy to Main button carries the state from here.

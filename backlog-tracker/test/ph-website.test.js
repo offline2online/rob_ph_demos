@@ -63,7 +63,12 @@ process.stderr.write(cc.stderr || "");
 const tt = spawnSync("php", [path.join(__dirname, "..", "..", "ph-website", "tests", "tour.test.php")], { encoding: "utf8" });
 process.stdout.write(tt.stdout || "");
 process.stderr.write(tt.stderr || "");
-const tj2 = spawnSync("node", [path.join(__dirname, "..", "..", "ph-website", "tests", "tour.test.mjs")], { encoding: "utf8" });
+// The tour's browser suite takes 10+ minutes. A build session that did not
+// touch ph-website/ leaves it to the train (BUILD_SESSION_FAST=1, set by
+// `npm run test:fast`); the train and CI always run it.
+const FAST = process.env.BUILD_SESSION_FAST === "1";
+if (FAST) console.log("tour.test.mjs: NOT RUN here (train-only for a build session: BUILD_SESSION_FAST=1); the train runs it");
+const tj2 = FAST ? { status: 0, stdout: "", stderr: "" } : spawnSync("node", [path.join(__dirname, "..", "..", "ph-website", "tests", "tour.test.mjs")], { encoding: "utf8" });
 process.stdout.write(tj2.stdout || "");
 process.stderr.write(tj2.stderr || "");
 const fp = spawnSync("php", [path.join(__dirname, "..", "..", "ph-website", "tests", "operator.test.php")], { encoding: "utf8" });

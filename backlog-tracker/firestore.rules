@@ -369,7 +369,13 @@ service cloud.firestore {
         // Per-ticket model requirement (13 Nov 2026): which model actually
         // built and reviewed the ticket, written by the build and review
         // sessions (automation user) — never a browser's to claim.
-        "builtByModel", "reviewedByModel"];
+        "builtByModel", "reviewedByModel",
+        // Heartbeats and build attempts (14 Nov 2026): a build session's own
+        // report (status, heartbeatAt, phase, attemptId), the id of the
+        // attempt the card is waiting on, and the id a patch was handed back
+        // under. The automation trusts them to decide whether to start a
+        // build again or land a patch, so a browser never writes them.
+        "buildSession", "buildAttemptId", "patchAttemptId"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());

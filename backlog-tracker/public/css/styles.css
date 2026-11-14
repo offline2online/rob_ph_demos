@@ -431,6 +431,10 @@ body {
   background: var(--surface); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
   padding: 8px 10px; font-size: 11.5px; font-style: italic; font-weight: 600;
 }
+/* The build session's last heartbeat, on its own line under "Sent to Claude —
+   locked": phase and age, in the warning colour after 10 minutes of silence. */
+.build-heartbeat { display: block; margin-top: 3px; font-style: normal; font-weight: 500; }
+.build-heartbeat-warn { color: var(--warning); font-weight: 700; }
 /* .attachment-btn (an .icon-btn) replaced the old, non-interactive,
    zero-hidden .attachment-count-badge span — see cardHTML in app.js — so
    it needs no styling of its own beyond .icon-btn's existing rule. */

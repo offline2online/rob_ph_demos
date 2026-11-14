@@ -61,6 +61,8 @@ const { modelGuardRefusal } = require("../functions/model-requirement");
 const kanbanHeal = require("./kanban-e2e-heal");
 const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
+// Heartbeats and build attempts (14 Nov 2026) — the rules are in that module.
+const { silentBuildSession, silentBuildNote, staleAttemptPatch, LEGACY_SILENT_MS } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -994,24 +996,23 @@ function rebuildRequestOutcome(item, now = Date.now()) {
   return !blocked && (Number(item.rebuildStartRetries) || 0) < REBUILD_START_RETRIES ? "retry" : "note";
 }
 
-// ── Build sessions that never report back ─────────────────────────────────
+// ── Build sessions that go quiet ───────────────────────────────────────────
 // A session that started (lastFire.sessionId) but never wrote buildSession,
 // patchReady or a blocker leaves the card in Backlog and holds the project's
-// hand-off. After BUILD_SESSION_SILENT_MS it is started once more; if that one
-// goes quiet too the card is marked errored (which releases the hand-off) with
-// a note, so a person is told instead of finding it later. Pure.
-const BUILD_SESSION_SILENT_MS = 90 * 60 * 1000;
+// hand-off. Silence is measured from the session's heartbeat (14 Nov 2026,
+// silentBuildSession in functions/notify-routine.js): no first heartbeat in
+// 10 minutes, or none for 20, and it is started once more; if that one goes
+// quiet too the card is marked errored (which releases the hand-off) with a
+// note, so a person is told instead of finding it later. A session that is
+// still beating is never restarted; after 3 hours it is flagged for a person.
+// A fire from before heartbeats (no buildAttemptId) keeps the 90-minute rule.
+const BUILD_SESSION_SILENT_MS = LEGACY_SILENT_MS;
 const BUILD_SESSION_RETRIES = 1;
+// "retry" | "escalate" | "ceiling" | null — the action alone, for callers and
+// tests that don't need the reason.
 function silentBuildSessionAction(item, now = Date.now()) {
-  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return null;
-  const fire = item.lastFire;
-  if (!fire || !fire.sessionId) return null;
-  const fired = timeMs(fire.at);
-  if (Number.isNaN(fired) || now - fired < BUILD_SESSION_SILENT_MS) return null;
-  const bs = item.buildSession;
-  const reported = bs ? Math.max(timeMs(bs.reportedAt) || 0, timeMs(bs.finishedAt) || 0) : 0;
-  if (reported >= fired) return null; // it did report (done, or error)
-  return (Number(item.buildSessionRetries) || 0) < BUILD_SESSION_RETRIES ? "retry" : "escalate";
+  const next = silentBuildSession(item, now, BUILD_SESSION_RETRIES);
+  return next ? next.action : null;
 }
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
@@ -1164,24 +1165,31 @@ async function sweepSilentBuildSessions(now = Date.now()) {
     ] } },
   });
   for (const item of started) {
-    const next = silentBuildSessionAction(item, now);
+    const next = silentBuildSession(item, now, BUILD_SESSION_RETRIES);
     if (!next) continue;
     try {
       const project = await getProject(item.projectId).catch(() => null);
-      if (next === "retry") {
+      const text = silentBuildNote(item, next);
+      if (next.action === "retry") {
         if (!project || project.trainLocked) continue;
-        const notes = await appendNote(item, `The build session started at ${new Date(timeMs(item.lastFire.at)).toISOString()} never reported back. Starting it again.`);
+        const notes = await appendNote(item, text);
         await patchItem(item.id, { buildSessionRetries: (Number(item.buildSessionRetries) || 0) + 1, notes, updatedAt: new Date().toISOString() });
         queueBuildRequest(project, item.id);
-        console.log(`[silent-build] ${item.id}: session never reported — rebuild requested`);
+        console.log(`[silent-build] ${item.id}: ${next.kind} — rebuild requested`);
+      } else if (next.action === "ceiling") {
+        // Still beating after 3 hours: a person decides. Nothing is started
+        // again, and the session's own record is left as it is so a patch it
+        // still hands back can land.
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, { blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString() });
+        console.log(`[silent-build] ${item.id}: still reporting after the ceiling — flagged for a person, not restarted`);
       } else {
-        const text = `The build session never reported back, and neither did its second attempt (last started ${new Date(timeMs(item.lastFire.at)).toISOString()}${item.lastFire.sessionUrl ? `, ${item.lastFire.sessionUrl}` : ""}). Marked as errored so the project is not left waiting on it.`;
         const notes = await appendNote(item, text);
         await patchItem(item.id, {
           buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() },
           buildSessionRetries: 0, blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString(),
         });
-        console.log(`[silent-build] ${item.id}: session never reported after a retry — marked errored`);
+        console.log(`[silent-build] ${item.id}: ${next.kind} after a retry — marked errored`);
       }
     } catch (err) {
       console.error(`[silent-build] ${item.id}: ${err.message}`);
@@ -1411,6 +1419,7 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    patchAttemptId: null,
     ...(testVersion ? { testVersion } : {}),
   };
   const own = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
@@ -4799,6 +4808,22 @@ async function processApplyPatch(item) {
     return;
   }
 
+  // No duplicate builds (14 Nov 2026): each fire carries a buildAttemptId, the
+  // card stores the current one, and a session writes its own as
+  // patchAttemptId with its patch. A patch from an attempt that has since been
+  // superseded (the session was presumed dead and started again, or a second
+  // click) is not landed and not rebuilt: the current attempt's session is the
+  // one being waited for. Its findings stay on the card as the note it wrote.
+  if (staleAttemptPatch(item)) {
+    console.log(`[apply-patch] ${item.id}: refusing — patch from a superseded build attempt (${item.patchAttemptId}, current ${item.buildAttemptId})`);
+    const notes = await appendNote(item,
+      `A build session that had been superseded handed back a patch (attempt ${String(item.patchAttemptId).slice(0, 8)}; the current attempt is ${String(item.buildAttemptId).slice(0, 8)}). ` +
+      `It was not landed, so the ticket is not built twice; the current build session carries on. Anything useful that session found is in its own note above.`);
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, patchAttemptId: null, updatedAt: new Date().toISOString(), notes });
+    await dropPatchFiles(item.id);
+    return;
+  }
+
   // ph-ticket-intake, enforced before the train: a board ticket may enter
   // Ready for Dev with only its Outcome written, but its build session must
   // fill in Test steps, Dependencies and Spec reference before it hands the
@@ -5188,6 +5213,7 @@ async function processApplyPatch(item) {
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    patchAttemptId: null, // landed: a later hand-made patch must not look stale
     updatedAt: new Date().toISOString(),
     notes,
     deployBranch,
@@ -7788,7 +7814,7 @@ module.exports = {
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/rebuild-requests.test.js — a requested rebuild either starts or the card says it didn't
   rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS, REBUILD_START_RETRIES,
-  silentBuildSessionAction, BUILD_SESSION_SILENT_MS,
+  silentBuildSessionAction, BUILD_SESSION_SILENT_MS, BUILD_SESSION_RETRIES, sweepSilentBuildSessions, processApplyPatch,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket

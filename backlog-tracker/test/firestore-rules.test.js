@@ -604,6 +604,18 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { reviewedByModel: "claude-opus-5-5" }, { merge: true }));
   await check("The Routine (automation user) can record builtByModel", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }, { merge: true }));
+  // Heartbeats and build attempts (14 Nov 2026): the automation decides from
+  // these whether to start a build again or land a patch.
+  await check("A human editor CANNOT write a build heartbeat (buildSession.heartbeatAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing" } }, { merge: true }));
+  await check("A human editor CANNOT change the current build attempt (buildAttemptId)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { buildAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("A human editor CANNOT claim a patch's attempt (patchAttemptId)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("The Routine (automation user) can send a heartbeat and its attempt id", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing", attemptId: "0123456789abcdef" }, patchAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("A human editor can still edit a card that carries a heartbeat", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited while building" }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));

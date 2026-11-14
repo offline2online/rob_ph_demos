@@ -173,6 +173,9 @@ deleted by hand).
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
+  buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
+  patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
+  buildSession?: { status?: "done" | "error", finishedAt?, reportedAt?: timestamp, errorMessage?, heartbeatAt?: timestamp, phase?: "reading" | "building" | "testing" | "packaging", attemptId?: string }, // the session's own report. heartbeatAt/phase/attemptId (14 Nov 2026) are its heartbeat: written when it starts, at each phase change and at least every 10 minutes; a heartbeat counts only when attemptId equals the card's buildAttemptId. Automation/Routine identity only (a pipeline field in firestore.rules)
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
   previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
@@ -748,10 +751,11 @@ of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
 sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
 no session started since and no patch handed over is first asked for again
 (up to `REBUILD_START_RETRIES` = 2, counted in `rebuildStartRetries`; 25 Oct
-2026). A started session that never reports back (no `buildSession`, patch or
-blocker 90 minutes after `lastFire.at`) is restarted once
+2026). A started session that goes quiet is restarted once
 (`buildSessionRetries`), then marked `buildSession.status: "error"` with a
-note, which releases the project's hand-off (`sweepSilentBuildSessions`). A
+note, which releases the project's hand-off (`sweepSilentBuildSessions`);
+"quiet" is judged from the session's heartbeat, not its start time — see
+"Heartbeats and build attempts" below. A
 dispatched baseline check on main that is still running after
 `BASE_CHECK_GIVE_UP_MS` is treated as never run and the culprit is sent back.
 Only then does a card get one note — "The
@@ -759,6 +763,76 @@ automatic rebuild requested at <time> never started (<error>). Click Ready
 for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
 posted once. Tests: `test/rebuild-requests.test.js` (which cards are
 noted, the wording), `test/notify-fanout.test.js` (retry policy, `lastFire`).
+
+#### Heartbeats and build attempts (stuck detection, 14 Nov 2026)
+
+A build session that died (container restart, timeout) used to be noticed
+after 75 minutes and restarted after 90, and the restart often overlapped a
+session that was only slow: "hasn't reported back" notes were on 39 tickets
+and "A second build session" notes on 14. The rules, all in
+`functions/notify-routine.js` (pure) and applied by `sweepSilentBuildSessions`:
+
+- **Heartbeat.** Every build session PATCHes `buildSession.heartbeatAt`,
+  `buildSession.phase` (`reading`, `building`, `testing`, `packaging`) and
+  `buildSession.attemptId` on its ticket when it starts, at each phase change
+  and at least every 10 minutes while a long command runs. The fire text
+  carries the rule (`heartbeatHint` in `functions/index.js`) and so does
+  `ROUTINE_INSTRUCTIONS.md` → "Heartbeat and build attempt". Only the
+  automation/Routine identity may write these fields (`firestore.rules`,
+  `itemPipelineFields`).
+- **Silence is measured from the heartbeat.** No first heartbeat within 10
+  minutes of `lastFire.at` (`FIRST_HEARTBEAT_MS`): started again, with one
+  note. A heartbeat and then none for 20 minutes (`HEARTBEAT_SILENT_MS`):
+  one note, "Build session went quiet 20 minutes ago during <phase>; starting
+  it again", then started again. A session that is beating is never
+  restarted, however long it runs, up to 3 hours from its fire
+  (`BUILD_CEILING_MS`); at the ceiling the card is flagged waiting on a
+  person (`blocked.reason: "waiting-on-input"`) and nothing is restarted.
+  The retry cap is unchanged: one restart (`BUILD_SESSION_RETRIES`), then the
+  card is marked errored and flagged.
+- **A fire from before heartbeats** (no `lastFire.buildAttemptId`) was never
+  told to beat and keeps the old rule: restarted after 90 minutes of no report.
+- **No duplicate builds.** Each fire that starts a session gets a
+  `buildAttemptId`; the card stores the current one. A heartbeat from an
+  earlier attempt's session does not count, so a superseded session cannot
+  hide the new one's silence. A session reads its card before packaging and
+  stops with a note if `buildAttemptId` is no longer its own or the card has
+  gained a `deployCommit` since it started; it sends `patchAttemptId` with
+  its patch, and `processApplyPatch` refuses a patch whose `patchAttemptId`
+  differs from the card's `buildAttemptId` (`staleAttemptPatch`): nothing
+  lands, the patch files are dropped, one note is written and no rebuild is
+  started, because the current attempt's session is the one being waited for.
+  A patch with no `patchAttemptId` (hand-made, or from an older session) is
+  not stale. `inFlightItemIds` also treats a beating card as in flight
+  however old its fire is, so a further Ready for Dev click never starts a
+  second session for it.
+- **The project record** (`notifyRoutine`) stays open past the 75-minute
+  stall window while a sent card is still beating (`notifyRoutineOutcome`),
+  up to the same 3-hour ceiling.
+- **The card.** While building, the "Sent to Claude — locked" line adds the
+  phase and the age of the last heartbeat ("Testing · heard from 3 min ago");
+  after 10 minutes without one that line turns to the warning colour
+  (`--warning`). A card whose session is beating stays locked past 75
+  minutes. The project header's "Build didn't report back N" chip counts
+  heartbeat-silent sessions (no first heartbeat in 10 minutes, or none for
+  20) as well as the tickets of a stalled record.
+- **Build sessions run the affected tests; the train runs everything.** A
+  session runs the suites for the paths it changed plus the fast offline
+  checks (`npm run test:fast`, and `npm run test:fast-ui` for a
+  `backlog-tracker/public/` change), not every suite in the repo. The long
+  suites are train-only unless the ticket touches them: the ph-website tour
+  (`ph-website/tests/tour.test.mjs`, 10+ minutes) and the Staff Kanban
+  viewport matrix (`test/ui/staff-kanban.test.mjs`; a session runs its quick
+  profiles). `BUILD_SESSION_FAST=1`, set only by those two commands, is what
+  skips them; CI and the train never set it. The build note lists what was
+  and was not run.
+
+Tests: `test/build-heartbeat.test.js` (the windows, the notes, the ceiling,
+the stale-attempt refusal through the real `processApplyPatch`),
+`test/notify-fanout.test.js` (the fire carries the attempt id and the card
+stores it), `test/ui/console-click.test.mjs` ("Build heartbeat" scenarios),
+`test/firestore-rules.test.js` (a browser cannot write the heartbeat or
+either attempt id).
 
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (on the project

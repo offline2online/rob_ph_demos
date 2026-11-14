@@ -381,6 +381,8 @@ on the card. So, in a default build fire:
   reaches Ready for Testing (or beyond), the automation clears the flag and starts a
   build of it by itself (`releaseDependents`). Only use this for a real
   code dependency; a ticket that merely touches the same area builds now.
+- **Send heartbeats while you work, and check you still own the ticket
+  before packaging** — see "Heartbeat and build attempt" below.
 - **Report on the card, not the project.** When you finish, PATCH
   `backlogItems/<id>` with `buildSession: {status: "done" | "error",
   finishedAt, errorMessage?}`, taking `finishedAt` (and any timestamp you
@@ -388,6 +390,87 @@ on the card. So, in a default build fire:
   board stamps its own trusted `buildSession.reportedAt` as a backstop. Do not write `projects/<id>.notifyRoutine` —
   the board waits for every session in the click, and the first one to
   finish would otherwise unlock cards still being built.
+
+## Heartbeat and build attempt (14 Nov 2026)
+
+A build session that died used to be noticed after 75 minutes and restarted
+after 90, and the restart often overlapped a session that was only slow, so
+the ticket was built twice. Every default build fire now carries a
+`HEARTBEAT — build attempt <id>` line. If yours has one:
+
+- **Send a heartbeat as your first action, at each phase change, and at
+  least every 10 minutes.** One PATCH of exactly three field paths on your
+  ticket, with the time from `date -u +%Y-%m-%dT%H:%M:%SZ`:
+  ```bash
+  curl -sS -X PATCH -H "$AUTH" "$BOARD/backlogItems/<ITEM_ID>?updateMask.fieldPaths=buildSession.heartbeatAt&updateMask.fieldPaths=buildSession.phase&updateMask.fieldPaths=buildSession.attemptId" \
+    -H "Content-Type: application/json" \
+    -d '{"fields":{"buildSession":{"mapValue":{"fields":{"heartbeatAt":{"timestampValue":"<now>"},"phase":{"stringValue":"reading"},"attemptId":{"stringValue":"<build attempt id>"}}}}}}'
+  ```
+  `phase` is one of `reading` (setup, the ticket, the code), `building`
+  (writing the change), `testing` (running the suites) and `packaging`
+  (docs-impact, notes, the final PATCH). The card shows it: "Testing · heard
+  from 3 min ago".
+- **Never let a long command silence you.** Start anything that can take
+  more than a few minutes (a test suite, `npm ci`) in the background, and
+  send a heartbeat while you wait for it, at least every 10 minutes.
+- **What silence costs.** No first heartbeat within 10 minutes of the fire,
+  or none for 20 minutes after one, and the automation treats this session
+  as dead, notes the card and starts the ticket again
+  (`sweepSilentBuildSessions`). A session that keeps beating is never
+  restarted, however long it runs, up to a 3-hour ceiling, when the card is
+  flagged for a person instead.
+- **Before packaging, check you still own the ticket.** Read the card when
+  you start (note whether it has a `deployCommit`), and read it again
+  immediately before the `patchFiles` PATCH. If its `buildAttemptId` is no
+  longer the id in your fire text, or it has gained a `deployCommit` (or a
+  different one) since you started, another session has this ticket: do
+  **not** set `patchReady`. Append what you found as a note (a fix the other
+  session may have missed is still worth recording) and stop. Do not write
+  `buildSession` either, not even the usual `status: "done"`: the card's
+  record now belongs to the other session, and a report from you would read
+  as that session having finished without a patch.
+- **Send your id with the patch.** Add `patchAttemptId` (stringValue, the id
+  from your fire text) to the `patchFiles` / `patchReady` PATCH and its
+  `updateMask`. `processApplyPatch` refuses a patch whose `patchAttemptId`
+  is not the card's current `buildAttemptId`, with a note, and lands nothing.
+
+A fire with no `HEARTBEAT` line (an older one) needs none of this.
+
+## Sessions run the affected tests; the train runs everything (14 Nov 2026)
+
+Slow sessions were frequently just running every suite in the repo
+("ph-website/tests/tour.test.mjs takes 10+ minutes here, which may be why
+the previous session timed out"). The train runs every suite when your
+ticket lands and sends the ticket back on a failure, so a build session
+runs what its change can affect:
+
+- **Always, for a `backlog-tracker/` patch: the fast offline checks**,
+  `cd backlog-tracker/test && npm ci && npm run test:fast` (about two
+  minutes, no browser): the MCP server and client, the auth gate, the
+  Routine triggers and every train and automation test, with the
+  ph-website tour left out.
+- **Plus the suites for the paths you changed:**
+  - `backlog-tracker/public/` → `npm run test:fast-ui` (`test:app-boots`
+    with the Staff Kanban suite on its quick profiles). A UI change adds or
+    updates a scenario in `test/ui/console-click.test.mjs`.
+  - `backlog-tracker/firestore.rules` → `npm run test:rules` (needs Java;
+    if the emulator cannot start here, say so in the note and leave it to
+    the train).
+  - `backlog-tracker/functions/mcp-app-views.js` or the FAQ editor →
+    `npm run test:mcp-app`.
+  - a test file you added or changed → that file, by name.
+- **Train-only unless your patch touches them** (don't run them otherwise):
+  - the ph-website tour, `ph-website/tests/tour.test.mjs` (10+ minutes) —
+    run `node ph-website.test.js` in full when the patch touches
+    `ph-website/`;
+  - the Staff Kanban viewport matrix, `test/ui/staff-kanban.test.mjs`
+    across tablets, phones and three engines — run it in full when the
+    patch touches `public/js/kanban/`, `public/css/kanban.css` or
+    `kanban-staff-board/`.
+- `dsp-integration/` and `Retail-media-insights/` keep their own commands
+  below; they are already the affected suites for those folders.
+- **Say what ran.** The `[build]` note lists every command you ran with its
+  result, and every suite you left to the train.
 
 ## Per-ticket model requirement (13 Nov 2026)
 
@@ -621,6 +704,8 @@ ticket once automatically.
      and is cleared on landing, so a re-patch needs its own.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
+   - `patchAttemptId`: the build attempt id from your fire text's
+     `HEARTBEAT` line, when it has one (see "Heartbeat and build attempt").
    - `builtByModel`: the exact model id that did the build (see
      "Per-ticket model requirement" above — an Advanced ticket's patch is
      refused unless this is an Opus).
@@ -642,15 +727,20 @@ ticket once automatically.
      your checkout, run `node backlog-tracker/scripts/docs-impact.js` (add
      `--base <patchBaseSha>` if you committed). Exit 1 lists the unmet rules:
      update the named document in the same patch, or set `patchDocsImpact`.
-   - **Before setting `patchReady`, run the console's offline tests** if
-     the patch touches `backlog-tracker/` (no credentials or network
-     needed): `cd backlog-tracker/test && npm ci && npm run test:offline`.
-     That is every step of the train's console tests except the Firestore
-     emulator (which needs Java); `ci-coverage.test.js` keeps it equal to
-     CI. Run that one command, not a subset you pick: on 26 Oct 2026 a
-     build ran `test:mcp` and `test:train-lock`, handed back a new MCP tool
-     without adding it to `mcp-client.test.mjs`'s pinned tool list, and the
-     ticket went red, was sent back and rebuilt. A red console check stops
+   - **Before setting `patchReady`, run the console's tests for what you
+     changed** if the patch touches `backlog-tracker/` (no credentials or
+     network needed): `cd backlog-tracker/test && npm ci && npm run
+     test:fast`, plus the suites for the paths in your patch — the list is
+     in "Sessions run the affected tests; the train runs everything" above
+     (`npm run test:fast-ui` for anything under `public/`). `test:fast` is
+     one fixed command, not a subset you pick: on 26 Oct 2026 a build ran
+     `test:mcp` and `test:train-lock`, handed back a new MCP tool without
+     adding it to `mcp-client.test.mjs`'s pinned tool list, and the ticket
+     went red, was sent back and rebuilt (`test:fast` includes that client
+     test). The whole of the train's console run is `npm run test:offline`
+     (every step except the Firestore emulator; `ci-coverage.test.js` keeps
+     it equal to CI) — the train runs it, you don't have to. Start a long
+     suite in the background and keep sending heartbeats while it runs. A red console check stops
      Deploy to Main for every ticket on the train (PR #301, 3 Oct 2026). The
      automation also starts that check on the train when your ticket lands
      and sends the ticket back on a failure, but catching it here costs

@@ -816,6 +816,72 @@ const scenarios = [
     },
   },
   {
+    // 14 Nov 2026: a build session sends a heartbeat; the locked card says
+    // which phase it is in and how long ago it was last heard from.
+    name: "Build heartbeat: a building card shows the phase and the age of the last heartbeat",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 30 * 60_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 30 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 3 * 60_000 - 5_000).toISOString(), phase: "testing", attemptId: "aaaaaaaaaaaaaaaa" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".in-development-hint", "Sent to Claude", "the card is locked as building");
+      await c.waitText(".in-development-hint .build-heartbeat", "Testing · heard from 3 min ago", "phase and age of the last heartbeat");
+      assert.strictEqual(await c.page.locator(".build-heartbeat-warn").count(), 0, "a 3-minute-old heartbeat is not a warning");
+      assert.strictEqual(await c.page.locator(".notify-claude-stalled").count(), 0, "a beating session is not counted as silent");
+      const fits = await c.page.locator(".in-development-hint").first().evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+      assert.ok(fits, "the heartbeat line fits inside the card's hint");
+    },
+  },
+  {
+    name: "Build heartbeat: a 12-minute-old heartbeat turns to the warning style",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 30 * 60_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 30 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 12 * 60_000 - 5_000).toISOString(), phase: "building", attemptId: "aaaaaaaaaaaaaaaa" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".in-development-hint .build-heartbeat-warn", "Building · heard from 12 min ago", "the warning line");
+      const colours = await c.page.evaluate(() => {
+        const probe = document.createElement("span"); probe.style.color = "var(--warning)"; document.body.appendChild(probe);
+        const want = getComputedStyle(probe).color; probe.remove();
+        return { want, got: getComputedStyle(document.querySelector(".build-heartbeat-warn")).color };
+      });
+      assert.strictEqual(colours.got, colours.want, "the warning token's colour");
+      assert.strictEqual(await c.page.locator(".notify-claude-stalled").count(), 0, "not yet silent: that is 20 minutes");
+    },
+  },
+  {
+    name: "Build heartbeat: the header chip counts a session that has gone quiet, and a beating one keeps the card locked past 75 minutes",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Slow but alive", createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 80 * 60_000), sentItemIds: ["b1", "b2"], itemCount: 2, sessionUrl: "https://claude.ai/code/cse_x" };
+      // b1 went quiet 25 minutes ago; b2 is still beating after 80 minutes.
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 80 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 25 * 60_000).toISOString(), phase: "testing", attemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b2.buildAttemptId = "bbbbbbbbbbbbbbbb";
+      s.docs.backlogItems.b2.lastFire = { status: "started", sessionId: "cse_y", at: t(Date.now() - 80 * 60_000), buildAttemptId: "bbbbbbbbbbbbbbbb" };
+      s.docs.backlogItems.b2.buildSession = { heartbeatAt: new Date(Date.now() - 2 * 60_000 - 5_000).toISOString(), phase: "testing", attemptId: "bbbbbbbbbbbbbbbb" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".notify-claude-stalled", "report back", "the chip");
+      assert.strictEqual((await c.text(".notify-claude-stalled .notify-claude-count-pill")).trim(), "1", "only the silent session is counted");
+      await c.waitText('.card[data-id="b2"] .build-heartbeat', "heard from 2 min ago", "the beating card is still locked and reporting");
+    },
+  },
+  {
     // 20 Oct 2026: this button sent no ids, so the server built the whole
     // column again and every ticket still building got a second session.
     name: "Ready for Dev — N new: while a build is running, the click sends only the new tickets",

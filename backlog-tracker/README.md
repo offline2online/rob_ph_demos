@@ -280,6 +280,17 @@ safe and moving:
   blocked cards writes `notifyRoutine` status "error" with the reason.
 - **`buildSession`** — each session reports on its own card; the button
   shows "Deving… N/M" and each card unlocks when its own session reports.
+- **Heartbeats and build attempts** (14 Nov 2026) — a session also sends
+  `buildSession.heartbeatAt` / `.phase` / `.attemptId` when it starts, at
+  each phase change and at least every 10 minutes; the locked card shows
+  "Testing · heard from 3 min ago" (warning colour after 10 minutes). No
+  first heartbeat in 10 minutes, or none for 20, and the session is started
+  again once; a beating session is never restarted, and after 3 hours it is
+  flagged for a person. Each fire carries a `buildAttemptId` the card
+  stores, and a patch handed back under an older one is refused, so a ticket
+  is not built twice. A session runs `npm run test:fast` (plus
+  `npm run test:fast-ui` for a `public/` change) and leaves the long suites
+  to the train. See `REQUIREMENTS.md` → "Heartbeats and build attempts".
 - **Per-ticket model** (13 Nov 2026) — `backlogItems.model` is `standard`
   (default) or `advanced` (Claude Opus only), set from New item / Edit item
   → Model or MCP `create_backlog_item` / `update_backlog_item`. Each fire

@@ -25,6 +25,14 @@ import { runMatrix } from "../../../kanban-staff-board/test/lib/matrix-run.mjs";
 import { fileURLToPath } from "node:url";
 import { recordFlaky } from "./flaky.mjs";
 
+// A build session that did not touch the Staff Kanban runs the quick profiles
+// (desktop 1440 + phone 390, Chromium) and leaves the full tablet matrix to
+// the train: `npm run test:fast-ui` sets BUILD_SESSION_FAST=1. CI never does.
+if (process.env.BUILD_SESSION_FAST === "1" && !process.env.KB_PROFILES) {
+  process.env.KB_PROFILES = "quick";
+  console.log("staff-kanban: quick profiles only (BUILD_SESSION_FAST=1); the full viewport matrix is train-only for a build session");
+}
+
 // The orchestrator: one worker process per profile, several at a time (KB_JOBS), then one report.
 // A worker (KB_WORKER=1) or KB_SERIAL=1 runs the cases in this process.
 if (!process.env.KB_WORKER && !process.env.KB_SERIAL) {
