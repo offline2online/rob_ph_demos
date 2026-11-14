@@ -658,5 +658,63 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
     assert.equal(c.saved.length, 2); assert.ok(/light-[0-9a-f]{12}\.png\?/.test(c.db.state.leads.l1.enrichment.logos.light));
   });
+  // ── A lead and its TAM record carry the same information (14 Nov 2026) ──
+  await test("converting a TAM record to a lead carries everything across, and the lead is not researched again", async () => {
+    const { linkMerge } = require("../functions/lead-enrich");
+    const research = { at: new Date("2026-11-14T06:00:00Z"), by: "auto", summary: "A convenience retailer.", storeCount: 760, logos: { light: "https://store.example/l.png", dark: "" }, people: [{ name: "Fiona Hayes", title: "CEO" }], news: [{ title: "N", url: "https://n.example/1" }], level: "full",
+      request: { id: "r1", status: "done" }, filled: { industry: "Fuel & Convenience" }, screen: { ok: true } };
+    const tam = { name: "7-Eleven Australia", country: "Australia", website: "https://7eleven.com.au", industry: "Fuel & Convenience", storeCount: 750, priority: "high", insights: "Launching retail media.", decisionMakers: "CCO", notes: "Met at NRF.", ownership: "Seven & i", linkedinUrl: "https://www.linkedin.com/company/7-eleven-australia", markets: ["New Zealand"], vendors: ["RELEX"], campaigns: ["Q4"], awsAccountId: "123456789012",
+      contacts: [{ name: "Anthony Venuto", role: "GM Commercial Services", lastContact: "2026-11-01", email: "av@7eleven.example" }, { name: "Riley Wolff", role: "Product Manager", lastContact: "" }], enrichment: research, leadId: "lead1", status: "converted" };
+    // What the board writes on Convert to lead: six company fields and nothing else.
+    const lead = { company: { name: "7-Eleven Australia", website: "https://7eleven.com.au", industry: "Fuel & Convenience", countries: ["Australia"], storeCount: 750, awsAccountId: "" }, contacts: [], stage: "lead", source: "Prospects (TAM)", prospectId: "p1" };
+    const m = linkMerge(lead, tam);
+    assert.deepEqual(m.leadPatch.contacts.map((c) => [c.name, c.jobTitle, c.email]), [["Anthony Venuto", "GM Commercial Services", "av@7eleven.example"], ["Riley Wolff", "Product Manager", ""]]);
+    assert.ok(m.leadPatch.contacts.every((c) => c.id && c.buyingRole === ""));
+    assert.equal(m.leadPatch.enrichment.summary, "A convenience retailer."); assert.equal(m.leadPatch.enrichment.people.length, 1);
+    assert.equal(m.leadPatch.enrichment.request, undefined, "the run record stays with the record it ran on"); assert.equal(m.leadPatch.enrichment.filled, undefined);
+    assert.deepEqual(m.leadPatch.enrichment.screen, { ok: true }, "the check's pass carries, so it is not paid for again");
+    assert.equal(m.leadPatch.company.awsAccountId, "123456789012");
+    assert.deepEqual(m.leadPatch.tam, { Country: "Australia", Priority: "High", "Other markets": "New Zealand", Size: m.leadPatch.tam.Size, Ownership: "Seven & i", Insights: "Launching retail media.", "Decision makers": "CCO", LinkedIn: "https://www.linkedin.com/company/7-eleven-australia", "AWS region": m.leadPatch.tam["AWS region"], Vendors: "RELEX", Campaigns: "Q4", Notes: "Met at NRF." });
+    assert.equal(m.prospectPatch, null, "the TAM record already has everything");
+    // In the function: the new lead is filled within the same trigger and no research is paid for.
+    const { api, db, asked, screened } = make({ seed: { leads: { lead1: lead }, prospects: { p1: tam }, prospectCompanies: {} } });
+    lead.prospectId = "p1";
+    const out = await api.onEnrichWrite("leads", created("leads", "lead1", db.state));
+    assert.equal(out.carried, true); assert.equal(asked.length, 0); assert.equal(screened.length, 0);
+    const l = db.state.leads.lead1;
+    assert.equal(l.contacts.length, 2); assert.equal(l.enrichment.storeCount, 760); assert.equal(l.tam.Insights, "Launching retail media.");
+    // Running it again changes nothing (the second trigger, from the TAM record's own update).
+    assert.deepEqual(await api.syncLinked("lead1", "p1"), { lead: [], prospect: [] });
+  });
+  await test("a lead filed under or linked to a TAM record fills that record too, and nothing typed is replaced", async () => {
+    const { linkMerge } = require("../functions/lead-enrich");
+    const research = { at: new Date("2026-11-14T02:21:00Z"), summary: "US convenience stores.", storeCount: 12491, logos: { light: "https://store.example/7.png" } };
+    const lead = { company: { name: "7-Eleven", website: "https://www.7-eleven.com", industry: "Fuel & Convenience", countries: ["United States"], storeCount: 12491, awsAccountId: "" }, stage: "post-demo", prospectId: "p9",
+      contacts: [{ id: "c1", name: "Neha Nayyar", jobTitle: "Senior Director, Retail Media", buyingRole: "champion", email: "nn@7-eleven.example", linkedin: "", awsAccountId: "" }], enrichment: research };
+    const tam = { name: "7-Eleven", country: "United States", website: "", industry: "", storeCount: null, contacts: [{ name: "neha nayyar", role: "Retail media", lastContact: "", email: "NN@7-eleven.example" }, { name: "Mario Mijares", role: "VP", lastContact: "" }], notes: "Typed by a person." };
+    const m = linkMerge(lead, tam);
+    assert.deepEqual([m.prospectPatch.website, m.prospectPatch.industry, m.prospectPatch.storeCount], ["https://www.7-eleven.com", "Fuel & Convenience", 12491]);
+    assert.equal(m.prospectPatch.enrichment.summary, "US convenience stores.");
+    assert.equal(m.prospectPatch.contacts, undefined, "the same person (by email, any case) is not added twice");
+    assert.deepEqual(m.leadPatch.contacts.map((c) => c.name), ["Neha Nayyar", "Mario Mijares"]);
+    assert.equal(m.leadPatch.contacts[0].buyingRole, "champion", "the lead's own contact is untouched");
+    assert.equal(m.leadPatch.company, undefined, "nothing on the lead was blank"); assert.equal(m.leadPatch.tam.Notes, "Typed by a person.");
+    // A value a person typed on either side stays; the older research never replaces the newer.
+    const typed = linkMerge({ ...lead, company: { ...lead.company, storeCount: 13000 }, enrichment: { ...research, at: new Date("2026-11-01") } }, { ...tam, storeCount: 12000, website: "https://us.7-eleven.example", enrichment: { at: new Date("2026-11-10"), summary: "Newer." } });
+    assert.equal(typed.prospectPatch && typed.prospectPatch.storeCount, undefined); assert.equal(typed.prospectPatch && typed.prospectPatch.website, undefined);
+    assert.equal(typed.leadPatch.enrichment.summary, "Newer."); assert.equal(typed.prospectPatch && typed.prospectPatch.enrichment, undefined);
+    // Linking later (the TAM record gains leadId) brings the two into step; editing the TAM record refreshes the lead's copy.
+    const { api, db, asked } = make({ seed: { leads: { l9: lead }, prospects: { p9: { ...tam, leadId: "l9" } }, prospectCompanies: {} } });
+    assert.equal(await api.onEnrichWrite("prospects", changed("prospects", "p9", tam, db.state)), null);
+    assert.equal(asked.length, 0, "linking is not a reason to research");
+    assert.equal(db.state.prospects.p9.enrichment.storeCount, 12491); assert.equal(db.state.leads.l9.tam.Notes, "Typed by a person.");
+    const before = JSON.parse(JSON.stringify(db.state.prospects.p9));
+    db.state.prospects.p9.notes = "Now a priority."; db.state.prospects.p9.priority = "high";
+    await api.onEnrichWrite("prospects", changed("prospects", "p9", before, db.state));
+    assert.equal(db.state.leads.l9.tam.Notes, "Now a priority."); assert.equal(db.state.leads.l9.tam.Priority, "High");
+    // Test leads and network operator inquiries are left alone.
+    const t = make({ seed: { leads: { lt: { ...lead, test: true } }, prospects: { p9: { ...tam, leadId: "lt" } }, prospectCompanies: {} } });
+    assert.equal(await t.api.syncLinked("lt", "p9"), null);
+  });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

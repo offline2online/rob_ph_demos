@@ -613,8 +613,11 @@ service cloud.firestore {
       // `operator` holds where they plan to operate and their background.
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator",
+          "leadType", "operator", "tam",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // `tam`: a readable copy of the linked TAM record's own fields, written by
+        // the function that keeps the two in step (lead-enrich.js); an editor's save keeps it.
+        && (d.get("tam", null) == null || d.get("tam", null) is map)
         && d.get("leadType", "company") in ["company", "operator"]
         && d.company is map
         && (isNonEmptyBoundedString(d.company.get("name", null), 120)

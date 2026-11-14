@@ -355,6 +355,8 @@ async function main() {
   await check("An editor can create a lead", "allow", () => setDoc(doc(as(MEMBER), "leads/l1"), LEAD));
   await check("An editor can drag a lead to another stage", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "hot-lead" }));
   await check("A lead cannot take a stage that is not on the board", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "won-ish" }));
+  await check("An editor can save a lead that carries its TAM record's fields", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { tam: { Priority: "High", Notes: "Met at NRF." }, stage: "demo" }));
+  await check("A lead's TAM copy must be a map", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { tam: "high priority" }));
   await check("A lead needs a company name", "deny", () => setDoc(doc(as(MEMBER), "leads/l2"), { ...LEAD, company: { ...LEAD.company, name: "" } }));
   await check("A lead takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/l3"), { ...LEAD, patchFiles: [] }));
   await check("A member may read a lead", "allow", () => getDoc(doc(as(MEMBER), "leads/l1")));
