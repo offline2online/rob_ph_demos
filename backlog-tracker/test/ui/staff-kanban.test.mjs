@@ -550,9 +550,14 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
     assert.ok(ok, "Save visible");
   }
   const before = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
-  await press(p, "#task-side-toggle"); await p.waitForTimeout(250);
-  const afterW = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
-  assert.ok(afterW > before + 150);
+  await press(p, "#task-side-toggle");
+  // The column animates (grid-template-columns .2s in kanban.css). A fixed 250 ms wait lost that race on
+  // loaded CI runners (PR #584, 14 Nov 2026: desktop-1024 failed twice, then passed alone 9/9), so wait
+  // for the width itself; the assertion is unchanged.
+  const descWidth = () => p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
+  await until(async () => (await descWidth()) > before + 150, "the description to widen once the details column collapses", 3000).catch(() => {});
+  const afterW = await descWidth();
+  assert.ok(afterW > before + 150, `the description widens by more than 150px when the details column collapses (${before} -> ${afterW})`);
   await press(p, "#f-cancel");
   await press(p, '.kb-card[data-key="PH-21"]');
   assert.ok(await p.$eval(".kb-task-grid", (e) => e.classList.contains("kb-side-collapsed")));
