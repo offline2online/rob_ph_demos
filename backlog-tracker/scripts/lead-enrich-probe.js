@@ -48,7 +48,7 @@ function sealed(obj) {
   return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
 }
 const key = process.env.ANTHROPIC_API_KEY || "";
-if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
+if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim() && !(process.env.REFRESH_LEAD || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
@@ -178,7 +178,32 @@ async function pipeline(spec) {
   process.exit(0);
 }
 
+// REFRESH_LEAD=<leads doc id>: queues a research run on that lead, exactly as
+// the page's Refresh info button does (enrichment.request, status "queued");
+// the live function then runs it. This WRITES to the board and costs one
+// research run. A run already queued or underway is left alone.
+async function refreshLead(id) {
+  const fnRequire = require("module").createRequire(path.join(fn, "index.js"));
+  const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
+  const { getFirestore } = fnRequire("firebase-admin/firestore");
+  initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
+  const ref = getFirestore().collection("leads").doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) { console.error("no such lead"); process.exit(1); }
+  const d = snap.data() || {};
+  if (d.test === true) { console.error("test leads are not researched"); process.exit(1); }
+  const cur = (d.enrichment || {}).request;
+  const since = cur && (cur.startedAt || cur.at);
+  const ms = since && typeof since.toDate === "function" ? since.toDate().getTime() : (since ? new Date(since).getTime() : 0);
+  if (cur && (cur.status === "queued" || cur.status === "running") && Date.now() - ms < 10 * 60 * 1000) { console.log(`already ${cur.status}: left alone`); process.exit(0); }
+  const request = { id: require("crypto").randomBytes(8).toString("hex"), at: new Date(), by: process.env.REFRESH_BY || "research probe", status: "queued", trigger: "requested" };
+  await ref.update({ "enrichment.request": request });
+  console.log(`queued a research run on the lead (request ${request.id})`);
+  process.exit(0);
+}
+
 (async () => {
+  if ((process.env.REFRESH_LEAD || "").trim()) return refreshLead(process.env.REFRESH_LEAD.trim());
   if ((process.env.PIPELINE || "").trim()) return pipeline(process.env.PIPELINE.trim());
   if ((process.env.LEAD_STATUS || "").trim()) return leadStatus(process.env.LEAD_STATUS.trim());
   const forLogos = (process.env.LOGO_COMPANIES || "").split(",").map((x) => x.trim()).filter(Boolean);
