@@ -164,6 +164,17 @@ body {
 .health-dot-ok { background: var(--success); }
 .health-dot-bad { background: var(--danger); }
 .health-dot-pending { background: var(--warning); }
+/* Flaky tests (settings/flakyTests): a text button in the strip that opens a
+   short list on its own full-width row. In the page flow, never fixed. */
+.health-flaky-btn { background: none; border: 0; padding: 0; margin: 0; font: inherit; cursor: pointer; min-height: 24px; }
+.health-flaky-caret { font-size: 16px; line-height: 1; }
+.health-flaky-list { flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 6px 0 0; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.health-flaky-list[hidden] { display: none; }
+.health-flaky-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; min-width: 0; }
+.health-flaky-case { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.health-flaky-count, .health-flaky-when { white-space: nowrap; }
+.health-flaky-link { color: var(--primary); text-decoration: none; white-space: nowrap; }
+.health-flaky-link:hover { text-decoration: underline; }
 @media (max-width: 640px) {
   .health-strip { font-size: 11px; padding: 6px 10px; }
 }

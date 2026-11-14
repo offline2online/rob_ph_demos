@@ -67,7 +67,7 @@ export async function startHarness() {
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
   // init: { fn, arg } — an extra init script (e.g. a speech-recognition stub).
-  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init, engine: engineName = "chromium" } = {}) {
+  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init, engine: engineName = "chromium", waitForApp = true } = {}) {
     const context = await (engines.get(engineName) || browser).newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];
@@ -188,6 +188,11 @@ export async function startHarness() {
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
     await page.goto(`${origin}/${hash}`, { waitUntil: "domcontentloaded" });
+    // Wait for the console to have started before the test's first selector:
+    // on a loaded runner the sign-in stub and app.js's import took longer than
+    // a case's own 8 s wait, and the case failed on a page that was still
+    // starting (Modals @820px, Promote Leads, mobile-shell; 24 Oct-14 Nov 2026).
+    if (waitForApp) await appRendered(page).catch(() => {});
     return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, origin, close: () => context.close() };
   }
 
@@ -206,4 +211,17 @@ export async function until(fn, what, ms = 8000) {
     if (Date.now() - t0 > ms) throw new Error(`timed out waiting for ${what}`);
     await new Promise((r) => setTimeout(r, 40));
   }
+}
+
+// The console has started: signed in and app.js evaluated (auth-gate.js drops
+// <html data-booting> after the import), or the sign-in wall / a start-up
+// error is showing (a case about those has nothing more to wait for). Up to
+// 30 s, and a page that never gets there is left to the case's own assertion.
+export async function appRendered(page, ms = 30000) {
+  await page.waitForFunction(() => {
+    const root = document.documentElement;
+    if (root.classList.contains("signed-in") && !("booting" in root.dataset)) return true;
+    const gate = document.getElementById("auth-gate");
+    return !!(gate && !gate.hidden && !("booting" in root.dataset));
+  }, null, { timeout: ms });
 }

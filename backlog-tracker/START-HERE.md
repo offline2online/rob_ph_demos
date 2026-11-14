@@ -101,6 +101,9 @@ Functions) unless a file is named.
    train changed. When one is red, `trainTestsRed()` reads it and
    `ejectRedCulprits()` re-runs the failed run once and, only if it fails
    again, sends the ticket that broke it back to Backlog.
+   A UI case that fails is retried once inside the run; a pass on the
+   retry is counted on the board's flake ledger, not failed
+   (`REQUIREMENTS.md` → "Flaky tests: retry once, record, ticket at three").
 7. **Ready for Testing**: `notifyOnItemsReadyForTesting()` presents the
    column for testing, with test links pinned to the landing commit.
 8. **Approve, or Failed testing**: ticking the cards and approving is the

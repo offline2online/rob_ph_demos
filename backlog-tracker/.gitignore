@@ -3,3 +3,6 @@ backups/
 # Click-through test failure screenshots (test/ui/console-click.test.mjs)
 test/ui/out/
 console-dist/
+
+# Flakes recorded by a UI test run (test/ui/flaky.mjs, flaky-report.mjs)
+test/flaky-tests.json*

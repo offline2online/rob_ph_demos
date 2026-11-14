@@ -607,6 +607,64 @@ which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
 
+### Flaky tests: retry once, record, ticket at three
+
+**A red train means a real defect (14 Nov 2026).** Between 24 Oct and 14 Nov
+the console suite failed 44 of 352 runs, and 21 of the 23 failures with a
+readable log were Playwright timing, not defects. Each cost a 33-minute
+re-run of everything. The rules now:
+
+- **Only UI tests retry, once, inside the run.** A Playwright-driven case
+  that fails is run once more in the same run: `test/ui/flaky.mjs`
+  (`retryCase`) for the console click-through scenarios, the Staff Kanban
+  suites' own `withRetry` (console and prototype), and `test/ui/run-ui.mjs`
+  for the small UI files, which re-runs the file. A pass on the retry does
+  not fail the run. A failure on the retry fails it as before. Unit, rules,
+  MCP and docs tests never retry (`test/ui-retry.test.mjs` checks both).
+- **Every flake is written down.** The run uploads a `flaky-tests-<job>`
+  artifact (`flaky-tests.json`: suite, case id, viewport, first failure) and
+  its job summary says "Flaky this run: TC-55 desktop-1280, passed on retry".
+- **The board keeps a ledger.** After each train test run the automation
+  (`sweepFlakyTests`, logic in `scripts/flaky-ledger.js`) reads the artifacts
+  of the finished `firestore-rules-test.yml` and `kanban-staff-board-tests.yml`
+  runs it has not read yet and updates `settings/flakyTests`:
+  `{ cases: [{ id, suite, profile, count, seenAt[], lastSeenAt, lastRunUrl,
+  lastError, ticketId }], processedRuns[], updatedAt }`, the 50 most recent
+  cases, keyed by case id so one case's viewports count together. Members
+  read it; only the automation (service account) writes it.
+- **The health strip shows it.** "Flaky tests: N this week" (flakes in the
+  last 7 days) at the end of the pipeline health strip; with any, it is a
+  button that opens the list of cases (count this week, viewport, last seen,
+  last run, ticket). With none it reads 0 and opens nothing.
+- **Three flakes of one case in 7 days file ONE Backlog bug** in Backlog
+  Tracker & FAQs, titled "Flaky test: <case>", with the four intake sections
+  filled. Never a second while one is open (Backlog, Ready for Testing or
+  Approved for Deployment). It is not started automatically.
+- **A wall-clock limit never decides a train.** KB-SCALE times the 2,000 and
+  5,000-ticket boards against the 39-ticket board on the same runner and
+  limits the ratio; cases wait on the condition they assert (`eventually`,
+  `until`), and the harness waits for the console to have started before a
+  case's first selector (`appRendered`).
+- **Each test file runs in exactly one job of one workflow per train.** The
+  console workflow runs as five parallel jobs, each with a time limit:
+  `rules` (emulator), `offline` (unit, MCP, train, docs), `ui-console`,
+  `ui-touch`, `ui-kanban`. The train still reads the workflow's one
+  conclusion. `firestore-rules-test.yml` owns the console's Staff Kanban
+  suite (`test/ui/staff-kanban.test.mjs`); `kanban-staff-board-tests.yml`
+  owns the prototype suite (`kanban-staff-board/test`) and starts only for a
+  `kanban-staff-board/` change, no longer for every `backlog-tracker/` one.
+  `test/ci-coverage.test.js` fails on a file in two jobs or a job with no
+  timeout.
+- **The run the automation dispatches on the train's head commit is the
+  gate.** The `pull_request` runs GitHub creates on a bot-opened train PR are
+  held as `action_required` and may never execute (PR #585). They are neither
+  a pass nor a failure and nothing waits for them; `approveHeldRuns` stays as
+  best effort (`test/train-housekeeping.test.js`).
+- **`train-base/*` branches are deleted** once their run has a conclusion
+  (after 10 minutes, so the base check is read first) and in any case after
+  24 hours (`sweepBaseRefs`; first-seen times in
+  `systemStatus/pipeline.trainBaseRefsSeen`).
+
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
 on attempt 1), `failed` (the same on attempt 2+) or `none`; "once" is
@@ -806,10 +864,14 @@ Requirements that follow from it:
 ### Staff Kanban E2E on every train (self-healing)
 
 - A train whose diff against main touches `backlog-tracker/` or
-  `kanban-staff-board/` runs the Staff Kanban suites (prototype e2e; console
-  `staff-kanban`, `kanban-mcp`, `kanban-rules`) at each stage: on each landing in
-  Ready for Testing, on each push to the train, and as the gate before Deploy
-  to Main. Any project's train, not only Staff Kanban's.
+  `kanban-staff-board/` runs the console's Staff Kanban suites
+  (`staff-kanban`, `kanban-mcp`, `kanban-rules`, inside the console tests); one
+  that touches `kanban-staff-board/` also runs the prototype e2e suite. Since
+  14 Nov 2026 a `backlog-tracker/`-only change no longer starts the prototype
+  suite: it reads nothing there, and the test plan ran twice per train. They
+  run at each stage: on each landing in Ready for Testing, on each push to the
+  train, and as the gate before Deploy to Main. Any project's train, not only
+  Staff Kanban's.
 - A failing case (after the single automatic re-run) is raised as a bug ticket
   (`e2eAutoFix`: case id, viewport, failure, run, causing ticket; label "E2E
   auto-fix"), approved for development and sent to build automatically, and

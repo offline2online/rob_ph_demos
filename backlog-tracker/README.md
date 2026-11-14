@@ -2830,13 +2830,19 @@ ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),
 The Staff Kanban suites — `kanban-staff-board/test/e2e.test.mjs` (the
 `kanban-staff-board-tests.yml` workflow) and `test/ui/staff-kanban.test.mjs`,
 `test/kanban-mcp.test.js`, `test/kanban-rules.test.js` (inside the console tests,
-`firestore-rules-test.yml`) — run on **every deployment train of any project that
-changes `backlog-tracker/` or `kanban-staff-board/`**: when a build lands in
-Ready for Testing, on each later push to the train (Deploy to Feature), and
-again as the gate before Deploy to Main. Both workflows are in
-`TRAIN_TEST_WORKFLOWS` (`kanban: "console" | "all"`, `extraPrefixes`), so the
-existing dispatch, per-card result and merge gate cover them; no workflow file
-changed.
+`firestore-rules-test.yml`) — run on the deployment train of any project that
+changes the code they test: when a build lands in Ready for Testing, on each
+later push to the train (Deploy to Feature), and again as the gate before
+Deploy to Main. Both workflows are in `TRAIN_TEST_WORKFLOWS`
+(`kanban: "console" | "all"`), so the existing dispatch, per-card result and
+merge gate cover them. **Each suite has one owner (14 Nov 2026):** the console
+tests run for a `backlog-tracker/` or `kanban-staff-board/` change (the console
+suite imports the shared cases in `kanban-staff-board/test/lib`); the prototype
+suite runs only for a `kanban-staff-board/` change. Before that a
+`backlog-tracker/` change started both, and the test plan ran twice per train.
+A UI case that fails is retried once inside the run and a pass on the retry is
+counted on the board, not failed: `REQUIREMENTS.md` → "Flaky tests: retry once,
+record, ticket at three".
 
 When a run is red (after the one automatic re-run), `processKanbanE2eHeal`
 (`scripts/run-backlog-automation.js`, decisions in `scripts/kanban-e2e-heal.js`)

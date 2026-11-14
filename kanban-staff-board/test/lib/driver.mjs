@@ -291,3 +291,14 @@ export async function pickUp(p, key, input, o = {}) {
   P.at = { x: x + 14, y: y + 10 };
   return P;
 }
+
+// Repeats a check until it passes. The board redraws on the next animation frame (or a 100 ms timer) and a busy
+// runner can hold a frame back for longer than any fixed sleep, so a case waits on what it is about to assert.
+// When time runs out the check's own failure is thrown, so the report says what was wrong, not "timed out".
+export async function eventually(check, ms = 8000) {
+  const t0 = Date.now();
+  for (;;) {
+    try { return await check(); }
+    catch (e) { if (Date.now() - t0 > ms) throw e; await new Promise((r) => setTimeout(r, 40)); }
+  }
+}

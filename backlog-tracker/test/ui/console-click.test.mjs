@@ -15,6 +15,7 @@ import path from "node:path";
 import { startHarness, until, outDir, SDK_MODULES } from "./harness.mjs";
 import * as stub from "./firebase-stub.mjs";
 import { publicDir } from "./harness.mjs";
+import { retryCase } from "./flaky.mjs";
 
 // 1440 and 1280 desktop, 1180 tablet landscape, 820 tablet portrait, 390 phone.
 const WIDTHS = [1440, 1280, 1180, 820, 390];
@@ -99,6 +100,52 @@ function makeCtx(o, width) {
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
+  {
+    name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
+    seed: () => {
+      const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      return seed({
+        systemStatus: { pipeline: { dispatchTokenPresent: true, deployedAppVersion: "1.0.1" } },
+        settings: { flakyTests: { cases: [
+          { id: "TC-55", suite: "staff-kanban-console", profile: "desktop-1280", count: 4, seenAt: [ago(9), ago(3), ago(2), ago(1)], lastSeenAt: ago(1), lastRunUrl: "https://github.com/example/repo/actions/runs/101", lastError: "the card left the view", ticketId: "b1" },
+          { id: "mobile-shell.test.mjs", suite: "console-ui", profile: "", count: 1, seenAt: [ago(4)], lastSeenAt: ago(4), lastRunUrl: "", lastError: "FAIL mobile-shell board actions @820px", ticketId: null },
+          { id: "KB-C13", suite: "staff-kanban-console", profile: "phone-390", count: 2, seenAt: [ago(20), ago(12)], lastSeenAt: ago(12), lastRunUrl: "https://github.com/example/repo/actions/runs/77", lastError: "tap timed out", ticketId: null },
+        ], processedRuns: ["101"] } },
+      });
+    },
+    async run(c) {
+      await c.boardReady();
+      // 3 of TC-55's 4 flakes and mobile-shell's one are inside the week; KB-C13's are older and are not listed.
+      await c.waitText("#health-flaky", "Flaky tests: 4 this week", "the strip counts this week's flakes");
+      assert.equal(await c.page.getAttribute("#health-flaky", "aria-expanded"), "false");
+      assert.ok(await c.page.isHidden("#health-flaky-list"), "the list starts closed");
+      await c.click("#health-flaky", "open the flaky tests list");
+      await c.visible("#health-flaky-list", "the list opens");
+      assert.equal(await c.page.getAttribute("#health-flaky", "aria-expanded"), "true");
+      const rows = await c.page.$$eval("#health-flaky-list .health-flaky-row", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
+      assert.equal(rows.length, 2, `two cases flaked this week, got ${JSON.stringify(rows)}`);
+      assert.ok(rows[0].startsWith("TC-55 3 this week desktop-1280"), `newest first with its count: ${rows[0]}`);
+      assert.ok(rows[0].includes("Last run") && rows[0].includes("Ticket"), "the case links to its last run and its ticket");
+      assert.ok(rows[1].startsWith("mobile-shell.test.mjs 1 this week") && !rows[1].includes("Ticket") && !rows[1].includes("Last run"), `a case with no ticket or run shows neither: ${rows[1]}`);
+      assert.equal(await c.page.getAttribute("#health-flaky-list .health-flaky-row a[href^='https://github.com']", "target"), "_blank");
+      assert.equal(await c.page.getAttribute("#health-flaky-list .health-flaky-row a[href^='#item-']", "href"), "#item-b1");
+      // The list sits in the strip, inside the page width, at every viewport.
+      const fit = await c.page.evaluate(() => { const l = document.getElementById("health-flaky-list").getBoundingClientRect(), s = document.getElementById("health-strip").getBoundingClientRect(); return l.left >= s.left - 1 && l.right <= s.right + 1 && s.right <= document.documentElement.clientWidth + 1 && getComputedStyle(document.getElementById("health-flaky-list")).position !== "fixed"; });
+      assert.ok(fit, "the list stays inside the strip and the page");
+      await c.click("#health-flaky", "close the list");
+      await c.hidden("#health-flaky-list", "the list closes");
+    },
+  },
+  {
+    name: "Health strip: no flaky tests this week reads 0 and offers no list",
+    seed: () => seed({ systemStatus: { pipeline: { dispatchTokenPresent: true, deployedAppVersion: "1.0.1" } }, settings: { flakyTests: { cases: [], processedRuns: [] } } }),
+    async run(c) {
+      await c.boardReady();
+      await c.waitText("#health-flaky", "Flaky tests: 0 this week", "the strip says none");
+      assert.equal(await c.page.$("#health-flaky-list"), null, "no list to open");
+      assert.equal(await c.page.$eval("#health-flaky", (e) => e.tagName), "SPAN", "and nothing to press");
+    },
+  },
   {
     name: "⋮ menu: View Artifact shows the latest signed-off version",
     seed: () => {
@@ -2348,27 +2395,34 @@ async function main() {
       for (const s of scenarios) {
         if (process.env.SCENARIO && !s.name.includes(process.env.SCENARIO)) continue; // SCENARIO=<part of a name> runs just those
         const label = `${s.name} @${width}px`;
-        const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
-        const ctx = makeCtx(o, width);
-        let error = null;
-        try {
-          await s.run(ctx);
-          // The run also fails on anything the page reported along the way.
-          if (o.problems.length) throw new Error(`the page reported ${o.problems.length} problem(s):\n        ${o.problems.join("\n        ")}`);
-        } catch (err) { error = err; }
-        if (!error) { console.log(`PASS  ${label}`); await o.close(); continue; }
-        failed += 1;
-        const shot = path.join(outDir, `${s.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${width}.png`);
-        await o.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-        const writes = await ctx.writes().catch(() => []);
-        console.log(`FAIL  ${label}`);
-        console.log(`      step:     ${ctx.step}`);
-        if (ctx.selector) console.log(`      selector: ${ctx.selector}`);
-        console.log(`      error:    ${String(error && error.message).split("\n").join("\n      ")}`);
-        if (o.problems.length && !String(error.message).includes("the page reported")) console.log(`      page:     ${o.problems.join("\n                ")}`);
-        console.log(`      writes:   ${JSON.stringify(writes)}`);
-        console.log(`      screenshot: ${path.relative(process.cwd(), shot)}`);
-        await o.close();
+        // One attempt: a fresh page, the scenario, and what the page reported.
+        const attempt = async () => {
+          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
+          const ctx = makeCtx(o, width);
+          try {
+            await s.run(ctx);
+            // The run also fails on anything the page reported along the way.
+            if (o.problems.length) throw new Error(`the page reported ${o.problems.length} problem(s):\n        ${o.problems.join("\n        ")}`);
+            await o.close();
+          } catch (error) {
+            const shot = path.join(outDir, `${s.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${width}.png`);
+            await o.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+            const writes = await ctx.writes().catch(() => []);
+            error.detail = [
+              `      step:     ${ctx.step}`,
+              ...(ctx.selector ? [`      selector: ${ctx.selector}`] : []),
+              `      error:    ${String(error && error.message).split("\n").join("\n      ")}`,
+              ...(o.problems.length && !String(error.message).includes("the page reported") ? [`      page:     ${o.problems.join("\n                ")}`] : []),
+              `      writes:   ${JSON.stringify(writes)}`,
+              `      screenshot: ${path.relative(process.cwd(), shot)}`,
+            ].join("\n");
+            await o.close();
+            throw error;
+          }
+        };
+        // A failed scenario is run once more on a fresh page; a pass then is recorded as a flake (ui/flaky.mjs).
+        try { await retryCase({ suite: "console-click", id: s.name, profile: `${width}px` }, attempt); console.log(`PASS  ${label}`); }
+        catch (error) { failed += 1; console.log(`FAIL  ${label}`); console.log(error.detail || `      error:    ${error && error.message}`); }
       }
     }
   } finally {

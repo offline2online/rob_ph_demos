@@ -65,11 +65,28 @@ concurrency:
   group: firestore-rules-test-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
   cancel-in-progress: true
 
+# Five jobs side by side (14 Nov 2026), where one `rules` job ran every step
+# in a row for 33 minutes (p90 42) and had no time limit, so a hung run could
+# hold a train for six hours. The workflow still has ONE conclusion, which is
+# all the train reads (trainTestsRed, the card's test chip): any job red is
+# the run red. Every job has a timeout. Each test file is run by exactly one
+# job (backlog-tracker/test/ci-coverage.test.js).
+#
+#   rules        the Firestore rules against the emulator (needs Java)
+#   offline      unit, MCP, train and docs tests: no browser, no retry
+#   ui-console   the console click-through suites and the MCP App view
+#   ui-touch     iPad taps, stale page, whiteboard and the other small UI suites
+#   ui-kanban    the Staff Kanban test plan against the console
+#
+# The three ui-* jobs are Playwright-driven: a failed case is retried once in
+# the same run (test/ui/flaky.mjs, run-ui.mjs); unit, rules, MCP and docs
+# tests never retry.
 jobs:
   rules:
     # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
     # Unpin once the repo's Playwright version supports Ubuntu 26.04.
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: backlog-tracker/test
@@ -92,9 +109,31 @@ jobs:
       - name: Install
         run: npm ci
 
-      # Split out from `npm test` so a failure names which layer broke: the
-      # MCP suite needs neither the emulator nor Java, so if it fails the
-      # emulator setup above is not the suspect.
+      - name: Run rules tests against the emulator
+        run: npm run test:rules
+
+  offline:
+    # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backlog-tracker/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backlog-tracker/test/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Split out by layer so a failure names which one broke. None of these
+      # needs the emulator, Java or a browser.
       - name: Run MCP server tests
         run: npm run test:mcp
 
@@ -103,14 +142,6 @@ jobs:
       # an in-process test would never exercise.
       - name: Run MCP client integration test
         run: npm run test:client
-
-      # The two MCP App views (functions/mcp-app-views.js) in a real
-      # Chromium under a scripted MCP Apps host: the SEP-1865 handshake,
-      # rendering from structuredContent, escaping, links through the
-      # host, sizing, teardown. Uses the runner's Google Chrome through
-      # playwright-core's `chrome` channel — no browser download.
-      - name: Run MCP App view test
-        run: npm run test:mcp-app
 
       # The console's own start-up: imports the real public/js/app.js under
       # a stub DOM and fails if module evaluation stops early, then clicks
@@ -121,9 +152,9 @@ jobs:
       # pipeline had executed app.js. `backlog-tracker/public/**` is in the
       # paths above for this step, so a train PR carrying such a change goes
       # red here and processDeployTrain refuses to merge it. No emulator, no
-      # network.
+      # network. (Its browser half, `npm run test:ui`, is the ui-* jobs.)
       - name: Run console start-up smoke test
-        run: npm run test:app-boots
+        run: npm run test:app-boots:unit
 
       # The sign-in wall's decisions (public/js/auth-gate.js) under jsdom
       # with the Auth SDK stubbed: claim-first start, own-row fallback,
@@ -154,8 +185,137 @@ jobs:
       - name: Run deployment train tests
         run: npm run test:train-lock
 
-      - name: Run rules tests against the emulator
-        run: npm run test:rules
+  ui-console:
+    # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backlog-tracker/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backlog-tracker/test/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # The two MCP App views (functions/mcp-app-views.js) in a real
+      # Chromium under a scripted MCP Apps host: the SEP-1865 handshake,
+      # rendering from structuredContent, escaping, links through the
+      # host, sizing, teardown; then the FAQ editor's content round-trip.
+      # Uses the runner's Google Chrome through playwright-core's `chrome`
+      # channel — no browser download.
+      - name: Run MCP App view test
+        run: npm run test:mcp-app
+
+      # The console click-through at 1440 and 820 px and the layout suites.
+      - name: Run console click-through suites
+        run: npm run test:ui:console
+
+      # A UI case that failed and passed on its one retry did not fail this
+      # job; it is listed here and in the job summary, and the backlog
+      # automation adds it to the board's flake ledger (settings/flakyTests).
+      - name: Report flaky tests
+        if: always()
+        run: npm run test:flaky-report
+
+      - name: Upload flaky-tests.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-ui-console
+          path: backlog-tracker/test/flaky-tests.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ui-touch:
+    # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backlog-tracker/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backlog-tracker/test/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # iPad taps under each simulated WebKit failure, the stale page after a
+      # release, rotation, dictation, avatars, the whiteboard, Media Studio keys.
+      - name: Run touch and small UI suites
+        run: npm run test:ui:touch
+
+      # A UI case that failed and passed on its one retry did not fail this
+      # job; it is listed here and in the job summary, and the backlog
+      # automation adds it to the board's flake ledger (settings/flakyTests).
+      - name: Report flaky tests
+        if: always()
+        run: npm run test:flaky-report
+
+      - name: Upload flaky-tests.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-ui-touch
+          path: backlog-tracker/test/flaky-tests.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  ui-kanban:
+    # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
+    # Unpin once the repo's Playwright version supports Ubuntu 26.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backlog-tracker/test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backlog-tracker/test/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # The Staff Kanban test plan against the real console, every case in
+      # every profile of the viewport matrix, then once against the minified
+      # Hosting build. This workflow is the only one that runs these files.
+      - name: Run Staff Kanban console suite
+        run: npm run test:ui:kanban
+
+      # A UI case that failed and passed on its one retry did not fail this
+      # job; it is listed here and in the job summary, and the backlog
+      # automation adds it to the board's flake ledger (settings/flakyTests).
+      - name: Report flaky tests
+        if: always()
+        run: npm run test:flaky-report
+
+      - name: Upload flaky-tests.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flaky-tests-ui-kanban
+          path: backlog-tracker/test/flaky-tests.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   # The backlog automation acts on this run's result: a train ticket's
   # verdict, a check on main before a ticket is sent back. GitHub runs the
@@ -166,7 +326,7 @@ jobs:
   # start. Pull request runs judge no ticket. Its own job, so the tests never
   # hold a token that can start workflows.
   wake-automation:
-    needs: rules
+    needs: [rules, offline, ui-console, ui-touch, ui-kanban]
     if: always() && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5

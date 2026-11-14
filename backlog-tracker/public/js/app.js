@@ -2548,6 +2548,43 @@ function healthRunSegmentHTML(label, run) {
     : `<span class="health-seg">${inner}</span>`;
 }
 
+// ── Flaky tests on the health strip (settings/flakyTests) ───────────────────
+// A UI test case that failed and then passed on its automatic retry does not
+// fail a train, but the automation counts it here (scripts/flaky-ledger.js).
+// The strip shows how many there were in the last 7 days; the segment opens a
+// short list of the cases, newest first, each with its last run and, once it
+// has flaked three times in a week, the bug ticket raised for it.
+const FLAKY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+let flakyTests = null;
+let flakyListOpen = false;
+const flakySeenMs = (v) => (v && v.toMillis ? v.toMillis() : Date.parse(v) || 0);
+function flakyCasesThisWeek(nowMs = Date.now()) {
+  return ((flakyTests && Array.isArray(flakyTests.cases) && flakyTests.cases) || [])
+    .map((c) => ({ ...c, week: (Array.isArray(c.seenAt) ? c.seenAt : []).filter((t) => { const d = nowMs - flakySeenMs(t); return d >= 0 && d <= FLAKY_WINDOW_MS; }).length }))
+    .filter((c) => c.week > 0)
+    .sort((a, b) => flakySeenMs(b.lastSeenAt) - flakySeenMs(a.lastSeenAt));
+}
+function flakySegmentHTML() {
+  if (!flakyTests) return "";
+  const cases = flakyCasesThisWeek();
+  const total = cases.reduce((n, c) => n + c.week, 0);
+  if (!total) {
+    return `<span class="health-seg" id="health-flaky" title="No UI test needed its automatic retry in the last 7 days"><span class="health-dot health-dot-ok"></span>Flaky tests: 0 this week</span>`;
+  }
+  const rows = cases.map((c) => {
+    const run = c.lastRunUrl ? `<a class="health-flaky-link" href="${escapeHTML(safeHttpUrl(c.lastRunUrl))}" target="_blank" rel="noopener">Last run</a>` : "";
+    const ticket = c.ticketId ? `<a class="health-flaky-link" href="#item-${escapeHTML(c.ticketId)}">Ticket</a>` : "";
+    return `<li class="health-flaky-row" title="${escapeHTML(c.lastError || "")}">
+      <span class="health-flaky-case">${escapeHTML(c.id)}</span>
+      <span class="health-flaky-count">${c.week} this week</span>
+      <span class="health-flaky-when">${escapeHTML(c.profile ? `${c.profile} · ` : "")}${describeAgo(flakySeenMs(c.lastSeenAt))}</span>
+      ${run}${ticket}
+    </li>`;
+  }).join("");
+  return `<button type="button" class="health-seg health-seg-link health-flaky-btn" id="health-flaky" aria-expanded="${flakyListOpen}" aria-controls="health-flaky-list" title="UI test cases that failed and passed on their automatic retry in the last 7 days. A case that does this three times in a week gets a bug ticket."><span class="health-dot health-dot-pending"></span>Flaky tests: ${total} this week<span class="material-symbols-outlined health-flaky-caret" aria-hidden="true">${flakyListOpen ? "expand_less" : "expand_more"}</span></button>
+    <ul class="health-flaky-list" id="health-flaky-list"${flakyListOpen ? "" : " hidden"}>${rows}</ul>`;
+}
+
 function renderHealthStrip() {
   const el = document.getElementById("health-strip");
   if (!el) return;
@@ -2574,7 +2611,17 @@ function renderHealthStrip() {
     healthRunSegmentHTML("deploy", systemStatus.deployBacklogTracker),
     dispatchSeg,
     versionSeg,
+    flakySegmentHTML(),
   ].join("");
+}
+// One listener for the strip (it is redrawn on every snapshot): the Flaky tests segment opens and closes its list.
+{
+  const strip = typeof document !== "undefined" && document.getElementById("health-strip");
+  if (strip) strip.addEventListener("click", (e) => {
+    if (!e.target.closest || !e.target.closest("#health-flaky.health-flaky-btn")) return;
+    flakyListOpen = !flakyListOpen;
+    renderHealthStrip();
+  });
 }
 function projectLastActivityMs(project) {
   const projectItems = allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -3354,6 +3401,13 @@ onSnapshot(systemStatusRef, (snap) => {
   systemStatus = snap.exists() ? snap.data() : null;
   renderHealthStrip();
 }, onListenerError("systemStatus"));
+
+// The flake ledger is small and changes a few times a day. A refused or failed read only leaves the
+// segment off the strip; it is never worth an "updates interrupted" notice.
+onSnapshot(doc(db, "settings", "flakyTests"), (snap) => {
+  flakyTests = snap.exists() ? snap.data() : { cases: [] };
+  renderHealthStrip();
+}, (err) => { console.warn("backlog-tracker: settings/flakyTests listener", err && err.code); });
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   markLive("projects", snap);

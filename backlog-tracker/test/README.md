@@ -84,6 +84,63 @@ condition with a timeout; never add a fixed sleep. **A ticket that changes
 console UI adds or updates a scenario here** — if it adds a Firebase SDK call
 the stub lacks, implement it in `firebase-stub.mjs`.
 
+`ui/staff-kanban.test.mjs` (the last file of `npm run test:ui`) is the Staff
+Kanban test plan against the real console, every case in every profile of the
+viewport matrix, four profiles at a time (`kanban-staff-board/docs/E2E-TEST-PLAN.md`
+has the cases and the `KB_*` switches). Two rules keep it reliable on a shared
+runner, both learned on 12 Nov 2026 when three runs failed on three different
+cases with nothing in the board changed:
+
+- **Wait on the condition, never for a time.** The board redraws on the next
+  animation frame (or a 100 ms timer) and CSS transitions only advance when a
+  frame is drawn; a busy runner can hold a frame back longer than any sleep.
+  Wrap what you are about to assert in `eventually(...)` (it repeats the
+  assertion and, when time runs out, throws the assertion's own message) or
+  `until(...)`. TC-18 measured a column 250 ms into a 200 ms transition that
+  had not finished.
+- **Never compare milliseconds with a fixed limit.** KB-SCALE times the 2,000
+  and 5,000-ticket boards beside the 39-ticket board on the same runner and
+  limits the ratio (`SCALE` in the file), and counts the cards and elements a
+  redraw makes. It prints the milliseconds, so a trend is still visible.
+
+A case that passes only on its retry is printed as `FLAKY`: treat that as a
+defect in the case and fix it the same way.
+
+## Flaky tests
+
+UI (Playwright) cases get **one retry inside the run**; nothing else retries.
+
+- `ui/flaky.mjs` has the wrapper (`retryCase`) and the recorder
+  (`recordFlaky`). `ui/console-click.test.mjs` retries a failed scenario on a
+  fresh page; the Staff Kanban suites retry a failed case in a fresh context;
+  every other UI file is run through `ui/run-ui.mjs`, which runs a failed
+  file once more. That is what the `test:ui:*` and `test:mcp-app` scripts
+  call. `UI_RETRIES=0` (and `KB_RETRIES=0`) turns the retry off.
+- A pass on the retry prints `# FLAKY <case>` and appends one line to
+  `flaky-tests.jsonl` (`FLAKY_TESTS_FILE`). `npm run test:flaky-report`
+  writes `flaky-tests.json` and the job summary line; CI uploads it as the
+  `flaky-tests-<job>` artifact. Both files are git-ignored.
+- The backlog automation adds each run's flakes to the board
+  (`settings/flakyTests`, `scripts/flaky-ledger.js`); the console's health
+  strip shows "Flaky tests: N this week"; three flakes of one case in 7 days
+  file one "Flaky test: <case>" bug.
+- `ui/harness.mjs` waits for the console to have started (`appRendered`)
+  before `open()` returns, so a case's first selector never races the
+  sign-in stub and `app.js`.
+- To check a case you fixed, run it repeatedly with the retry off, e.g.
+  `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
+  or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.
+- Tests: `ui-retry.test.mjs` (the wrapper, the report, and that no non-UI
+  test retries), `flaky-ledger.test.js` (the ledger and the ticket at three),
+  `train-housekeeping.test.js` (`train-base/*` pruning; held pull-request
+  runs are not the gate).
+
+CI runs the console tests as five parallel jobs (`rules`, `offline`,
+`ui-console`, `ui-touch`, `ui-kanban`), each with a timeout; locally
+`npm run test:offline` still runs everything but the emulator in one go.
+`ci-coverage.test.js` fails when a test file is run by two jobs or a job has
+no `timeout-minutes`.
+
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
 imports the real `public/js/app.js` under jsdom with the Firebase SDK
@@ -118,8 +175,11 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | --- | --- | --- |
 | Run MCP server tests | `test:mcp` | mcp-server, intake |
 | Run MCP client integration test | `test:client` | mcp-client |
-| Run MCP App view test | `test:mcp-app` | mcp-app-view, faq-editor-load (`test:editor`) |
-| Run console start-up smoke test | `test:app-boots` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), then the Chromium click-through suite (`test:ui`) |
+| Run MCP App view test (job `ui-console`) | `test:mcp-app` | mcp-app-view, faq-editor-load |
+| Run console start-up smoke test (job `offline`) | `test:app-boots:unit` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), ui-retry. Locally `test:app-boots` runs these and then `test:ui` |
+| Run console click-through suites (job `ui-console`) | `test:ui:console` | mobile-shell, mobile-theme, console-click, ticket-detail-overflow, apple-redesign, leads-apple, support-inbox |
+| Run touch and small UI suites (job `ui-touch`) | `test:ui:touch` | support-touch, nav-rotation, nav-touch, stale-page, page-load-error, new-item-voice, avatars, whiteboard, whiteboard-tablet, media-keys |
+| Run Staff Kanban console suite (job `ui-kanban`) | `test:ui:kanban` | staff-kanban, minified |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |

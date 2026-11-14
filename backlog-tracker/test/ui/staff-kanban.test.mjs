@@ -23,6 +23,7 @@ import { where, press, sleep, moveBy, dragCard, toastText, headers } from "../..
 import { defineNewCases } from "../../../kanban-staff-board/test/lib/cases.mjs";
 import { runMatrix } from "../../../kanban-staff-board/test/lib/matrix-run.mjs";
 import { fileURLToPath } from "node:url";
+import { recordFlaky } from "./flaky.mjs";
 
 // The orchestrator: one worker process per profile, several at a time (KB_JOBS), then one report.
 // A worker (KB_WORKER=1) or KB_SERIAL=1 runs the cases in this process.
@@ -65,9 +66,11 @@ const RETRIES = +(process.env.KB_RETRIES ?? 1);
 const LIVE = [];
 const sweep = () => Promise.all(LIVE.splice(0).map((c) => c().catch(() => {})));
 async function withRetry(id, prof, fn) {
+  let why = "";
   for (let attempt = 0; ; attempt++) {
-    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt}`); FLAKY.push({ id, profile: prof.id }); } return; }
-    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; console.log(`# RETRY ${id} [${prof.id}]: ${String(e && e.message).split("\n")[0]}`); }
+    // The FLAKY line carries the first failure, so the run's summary says what to chase (a passing profile's output is not printed).
+    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt} — ${why}`); FLAKY.push({ id, profile: prof.id, why }); recordFlaky({ suite: "staff-kanban-console", id, profile: prof.id, error: why }); } return; }
+    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; why = String(e && e.message).split("\n").slice(0, 3).join(" ").slice(0, 300); console.log(`# RETRY ${id} [${prof.id}]: ${why}`); }
   }
 }
 function T(id, title, opts, fn) {
@@ -108,6 +111,16 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   return p;
 }
 const TALL = { height: 1600 };
+// Repeats a check until it passes. The board redraws on the next animation frame (or a 100 ms timer) and a busy
+// runner can hold a frame back for longer than any fixed sleep, so a case waits on what it is about to assert.
+// When time runs out the check's own failure is thrown, so the report says what was wrong, not "timed out".
+async function eventually(check, ms = 8000) {
+  const t0 = Date.now();
+  for (;;) {
+    try { return await check(); }
+    catch (e) { if (Date.now() - t0 > ms) throw e; await sleep(40); }
+  }
+}
 // Tickets whose card (kanbanCards) differs from the ticket, or is missing; cards without a ticket.
 const cardDrift = (page) => page.evaluate(async () => {
   const core = await import("/js/kanban/kanban-core.js");
@@ -544,6 +557,8 @@ T("TC-17", "flags: quick flag on a card, Flag toggle in the modal", async (prof)
 T("TC-18", "modal: pinned action bar, collapsible details column remembered", { on: on.wide }, async (prof) => {
   const p = await open(prof, "#staff-kanban", { height: 760 });
   await press(p, '.kb-card[data-key="PH-20"]');
+  // The ticket is read before its modal opens: measuring a closed modal compares empty boxes, which passes.
+  await p.waitForSelector('#task-backdrop:not([hidden]) [data-field="description"]');
   for (const pos of [0, 99999]) {
     await p.$eval(".kb-task-panel", (el, y) => { el.scrollTop = y; }, pos);
     const ok = await p.evaluate(() => { const pn = document.querySelector(".kb-task-panel").getBoundingClientRect(), s = document.getElementById("f-save").getBoundingClientRect(); return s.top >= pn.top && s.bottom <= pn.bottom; });
@@ -551,16 +566,22 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   }
   const before = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
   await press(p, "#task-side-toggle");
-  // The column animates (grid-template-columns .2s in kanban.css). A fixed 250 ms wait lost that race on
-  // loaded CI runners (PR #584, 14 Nov 2026: desktop-1024 failed twice, then passed alone 9/9), so wait
-  // for the width itself; the assertion is unchanged.
+  // The column closes over a 0.2 s transition (grid-template-columns in kanban.css) that only advances when a
+  // frame is drawn. A fixed 250 ms wait lost that race on loaded CI runners (PR #584, 14 Nov 2026: desktop-1024
+  // failed twice, then passed alone 9/9). Wait for the transition itself to end, however long the runner takes
+  // over it, then for the width it ended at; the assertion is unchanged.
+  await until(() => p.$eval(".kb-task-grid", (g) => g.classList.contains("kb-side-collapsed") && !g.getAnimations().length), "the details column to finish closing");
   const descWidth = () => p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
   await until(async () => (await descWidth()) > before + 150, "the description to widen once the details column collapses", 3000).catch(() => {});
   const afterW = await descWidth();
-  assert.ok(afterW > before + 150, `the description widens by more than 150px when the details column collapses (${before} -> ${afterW})`);
+  assert.ok(afterW > before + 150, `the description is ${Math.round(afterW)} px wide with the details column closed, ${Math.round(before)} px with it open`);
+  assert.equal(await p.getAttribute("#task-side-toggle", "aria-expanded"), "false");
   await press(p, "#f-cancel");
   await press(p, '.kb-card[data-key="PH-21"]');
-  assert.ok(await p.$eval(".kb-task-grid", (e) => e.classList.contains("kb-side-collapsed")));
+  // The next ticket's own modal, not the one just closed (its grid is still in the page, still collapsed).
+  await until(async () => /PH-21/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-21 to open");
+  assert.ok(await p.$eval(".kb-task-grid", (e) => e.classList.contains("kb-side-collapsed")), "the next ticket opens with the details column still closed");
+  assert.ok(await p.isHidden("#kb-task-side"), "and the column is not shown");
   await p.done();
 });
 
@@ -814,18 +835,20 @@ T("KB-C13", "project: set in the modal, named on the card, filtered from Filters
   assert.equal(await p.evaluate(() => location.hash), "#staff-kanban?project=pA");
   await press(p, "#kb-filter-toggle");
   assert.equal(await p.inputValue("#kb-project"), "pA");
-  await p.selectOption("#kb-project", "pB"); await p.waitForTimeout(150);
-  assert.deepEqual(await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key)), ["PH-21"]);
-  assert.equal(await p.evaluate(() => location.hash), "#staff-kanban?project=pB");
-  await p.selectOption("#kb-project", ""); await p.waitForTimeout(150);
-  assert.ok((await p.$$eval(".kb-card", (e) => e.length)) > 2);
-  assert.equal(await p.evaluate(() => location.hash), "#staff-kanban");
+  await p.selectOption("#kb-project", "pB");
+  await eventually(async () => assert.deepEqual(await p.$$eval(".kb-card", (e) => e.map((x) => x.dataset.key)), ["PH-21"]));
+  await eventually(async () => assert.equal(await p.evaluate(() => location.hash), "#staff-kanban?project=pB"));
+  await p.selectOption("#kb-project", "");
+  await eventually(async () => assert.ok((await p.$$eval(".kb-card", (e) => e.length)) > 2, "every project's cards are back"));
+  await eventually(async () => assert.equal(await p.evaluate(() => location.hash), "#staff-kanban"));
   await press(p, "#kb-filter-done");
   await press(p, '.kb-card[data-key="PH-22"]');
+  await until(async () => /PH-22/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-22 to open");
   assert.equal(await p.inputValue("#f-project"), "");
   await p.selectOption("#f-project", "pB");
-  await press(p, "#f-save"); await p.waitForTimeout(200);
-  assert.equal((await stored(p, "PH-22")).project, "pB");
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal((await stored(p, "PH-22")).project, "pB"));
+  await eventually(async () => assert.match((await p.textContent('.kb-card[data-key="PH-22"]')) || "", /Menu Board/, "the card names the project"));
   assert.match(await p.textContent('.kb-card[data-key="PH-22"] .kb-project-chip'), /Menu Board/);
   await p.done();
 });
@@ -926,21 +949,26 @@ T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an a
   assert.deepEqual(await p.$$eval("#f-ac [data-ac-text]", (e) => e.map((x) => x.value)), texts, "the modal shows the 5");
   assert.match(await p.textContent("#f-ac-count"), /0 of 5 done/);
   // Tick two: each is saved at once, with its own activity line.
-  await p.check('#f-ac [data-ac="crit0000"] [data-ac-tick]'); await p.waitForTimeout(150);
-  await p.check('#f-ac [data-ac="crit0002"] [data-ac-tick]'); await p.waitForTimeout(150);
-  assert.deepEqual((await stored(p, "PH-20")).acceptanceCriteria.map((l) => l.split("\t")[1]), ["1", "0", "1", "0", "0"]);
-  assert.match(await chip(), /AC 2\/5/, "the card follows");
-  assert.match(await p.textContent("#f-ac-count"), /2 of 5 done/);
-  assert.deepEqual((await activityOf()).sort(), ['ticked criterion "Field A is required"', 'ticked criterion "Shows an error on 500"']);
+  // Each step waits for what it saved (the ticket, then the card, which redraws on the next frame), not for a fixed time.
+  const ticks = async () => (await stored(p, "PH-20")).acceptanceCriteria.map((l) => l.split("\t")[1]);
+  await p.check('#f-ac [data-ac="crit0000"] [data-ac-tick]');
+  await eventually(async () => assert.deepEqual(await ticks(), ["1", "0", "0", "0", "0"]));
+  await p.check('#f-ac [data-ac="crit0002"] [data-ac-tick]');
+  await eventually(async () => assert.deepEqual(await ticks(), ["1", "0", "1", "0", "0"]));
+  await eventually(async () => assert.match(await chip(), /AC 2\/5/, "the card follows"));
+  await eventually(async () => assert.match(await p.textContent("#f-ac-count"), /2 of 5 done/));
+  await eventually(async () => assert.deepEqual((await activityOf()).sort(), ['ticked criterion "Field A is required"', 'ticked criterion "Shows an error on 500"']));
   // Edit one, add one, move one, remove one.
-  await p.fill('#f-ac [data-ac="crit0001"] [data-ac-text]', "Saves on Enter or Save"); await p.press('#f-ac [data-ac="crit0001"] [data-ac-text]', "Tab"); await p.waitForTimeout(150);
-  assert.ok((await activityOf()).includes('edited criterion "Saves on Enter" → "Saves on Enter or Save"'));
-  await p.fill("#f-ac-input", "Works on a phone"); await p.press("#f-ac-input", "Enter"); await p.waitForTimeout(150);
-  assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 6); assert.match(await chip(), /AC 2\/6/);
-  await press(p, '#f-ac [data-ac="crit0004"] [data-ac-up]'); await p.waitForTimeout(150);
-  assert.equal((await stored(p, "PH-20")).acceptanceCriteria[3].split("\t")[2], "Keyboard reachable");
-  await press(p, '#f-ac [data-ac="crit0003"] [data-ac-rm]'); await p.waitForTimeout(150);
-  assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 5); assert.match(await chip(), /AC 2\/5/);
+  await p.fill('#f-ac [data-ac="crit0001"] [data-ac-text]', "Saves on Enter or Save"); await p.press('#f-ac [data-ac="crit0001"] [data-ac-text]', "Tab");
+  await eventually(async () => assert.ok((await activityOf()).includes('edited criterion "Saves on Enter" → "Saves on Enter or Save"'), "the edit has its activity line"));
+  await p.fill("#f-ac-input", "Works on a phone"); await p.press("#f-ac-input", "Enter");
+  await eventually(async () => assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 6));
+  await eventually(async () => assert.match(await chip(), /AC 2\/6/));
+  await press(p, '#f-ac [data-ac="crit0004"] [data-ac-up]');
+  await eventually(async () => assert.equal((await stored(p, "PH-20")).acceptanceCriteria[3].split("\t")[2], "Keyboard reachable"));
+  await press(p, '#f-ac [data-ac="crit0003"] [data-ac-rm]');
+  await eventually(async () => assert.equal((await stored(p, "PH-20")).acceptanceCriteria.length, 5));
+  await eventually(async () => assert.match(await chip(), /AC 2\/5/));
   // Someone else (over MCP) unticks one: the open modal and the card follow without a reload.
   await p.evaluate(() => {
     const b = globalThis.__fbStub, t = b.col("kanbanTasks").get("PH-20");
@@ -951,17 +979,17 @@ T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an a
     b.notify();
   });
   await until(async () => !(await p.isChecked('#f-ac [data-ac="crit0000"] [data-ac-tick]')), "the open modal to show the untick");
-  assert.match(await chip(), /AC 1\/5/);
+  await eventually(async () => assert.match(await chip(), /AC 1\/5/));
   await press(p, "#f-cancel");
   // A new ticket saves with criteria; 51 can't be added.
   await press(p, "#kb-new-btn");
   await p.fill("#f-title", "Ticket with criteria");
   for (const t of ["One", "Two", "Three"]) { await p.fill("#f-ac-input", t); await p.press("#f-ac-input", "Enter"); }
   assert.equal((await p.$$("#f-ac .kb-ac-item")).length, 3);
-  await press(p, "#f-save"); await p.waitForTimeout(250);
-  const made = (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Ticket with criteria"))) [0];
+  await press(p, "#f-save");
+  const made = await until(async () => (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Ticket with criteria")))[0], "the new ticket to be saved");
   assert.deepEqual(made[1].acceptanceCriteria.map((l) => l.split("\t")[2]), ["One", "Two", "Three"]);
-  assert.match(await p.textContent(`.kb-card[data-key="${made[0]}"] .kb-ac-chip`), /AC 0\/3/);
+  await eventually(async () => assert.match(await p.textContent(`.kb-card[data-key="${made[0]}"] .kb-ac-chip`), /AC 0\/3/));
   await p.done();
 });
 
@@ -1077,6 +1105,12 @@ T("KB-LINKS", "one-sided links: the board asks the server to make them two-sided
 // 2,000 and 5,000 open tickets, spread over the open columns. Backlog draws 25
 // cards and every other column 50, "Show 50 more" reveals the rest, and the
 // headers still count them all. A colleague's move patches one card.
+// Limits. `first`, `mine` and `mineMedian` are how many times longer the big board may take than the 39-ticket
+// board measured beside it (measured here: first cards ×1 to ×1.8, My tasks ×3 to ×4.4, the small board's click
+// being one frame). `cards` is the most cards a board may hold: Backlog's 25 and 50 for each other place, plus
+// one "Show 50 more". `perCard` is the most elements a board may hold for each card it has more than the small
+// board, and `spare` the allowance on top: a list that grew with the tickets rather than the cards would pass both.
+const SCALE = { first: 5, mine: 10, mineMedian: 10, cards: 25 + 50 * 6 + 50, perCard: 80, spare: 500 };
 for (const N of [2000, 5000]) {
   T(`KB-SCALE-${N}`, `${N} open tickets: first cards fast, a filter is quick, a remote move patches one card, counts stay exact`, { on: on.desktop }, async (prof) => {
     const seed = kanbanSeed();
@@ -1098,51 +1132,79 @@ for (const N of [2000, 5000]) {
       const mo = new MutationObserver(() => { if (document.querySelector(".kb-card")) { window.__firstCard = performance.now() - window.__t0; mo.disconnect(); } });
       mo.observe(document, { childList: true, subtree: true });
     } };
-    // Timing budgets hold on the best of several tries: a shared CI runner running four profiles at once
-    // adds noise, a slow board is slow every time. The budgets themselves are unchanged.
-    let p, first = Infinity;
+    // Speed is judged against the seed board (39 tickets) opened beside the big one: the same pages, code,
+    // browser and runner, measured in turn, so a busy runner slows both and the comparison holds. A fixed
+    // number of milliseconds failed three runs on 12 Nov 2026 with nothing in the board changed. What a
+    // slow board would do is also counted, which no runner can change: the cards and nodes a redraw makes.
+    const smallSeed = kanbanSeed();
+    const firstOf = async (q) => { await until(() => q.evaluate(() => window.__firstCard > 0), "the first card's time"); return q.evaluate(() => window.__firstCard); };
+    let p, s, first = Infinity, firstSmall = Infinity;
     for (let tryNo = 0; tryNo < 3; tryNo++) {
+      const qs = await open(prof, "#staff-kanban", { seed: smallSeed, init: timing });
+      firstSmall = Math.min(firstSmall, await firstOf(qs));
       const q = await open(prof, "#staff-kanban", { seed, init: timing });
-      await q.waitForTimeout(400);
-      first = Math.min(first, await q.evaluate(() => window.__firstCard));
-      if (first < 1500 || tryNo === 2) { p = q; break; }
-      await q.done();
+      first = Math.min(first, await firstOf(q));
+      if (first <= firstSmall * SCALE.first || tryNo === 2) { p = q; s = qs; break; }
+      await q.done(); await qs.done();
     }
-    assert.ok(first < 1500, `first cards in ${Math.round(first)} ms (best of up to 3)`);
+    assert.ok(first <= firstSmall * SCALE.first, `first cards with ${N} tickets took ${Math.round(first)} ms, over ${SCALE.first}× the ${Math.round(firstSmall)} ms the 39-ticket board took on this runner (best of up to 3 each)`);
     // paged: the columns draw a first page, the headers count everything
     const drawn = (st) => p.$$eval(`.kb-col[data-status="${st}"] .kb-card`, (e) => e.length);
     const seedBacklog = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.status === "backlog").length;
     const seedRft = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.status === "ready-for-testing").length;
     assert.equal(await drawn("backlog"), 25, "Backlog draws its first 25");
     assert.equal(await drawn("ready-for-testing"), 50, "other columns draw 50");
+    const boardSize = (q) => q.$eval("#kb-board", (e) => ({ nodes: e.querySelectorAll("*").length, cards: e.querySelectorAll(".kb-card").length }));
+    const sizeBig = await boardSize(p), sizeSmall = await boardSize(s);
+    const nodeLimit = (bigCards, smallNodes, smallCards) => smallNodes + Math.max(0, bigCards - smallCards) * SCALE.perCard + SCALE.spare;
+    assert.ok(sizeBig.cards <= SCALE.cards, `the board draws ${sizeBig.cards} cards with ${N} tickets (at most ${SCALE.cards}: a page per column)`);
+    assert.ok(sizeBig.nodes <= nodeLimit(sizeBig.cards, sizeSmall.nodes, sizeSmall.cards), `the board holds ${sizeBig.nodes} elements for ${sizeBig.cards} cards with ${N} tickets; the 39-ticket board holds ${sizeSmall.nodes} for ${sizeSmall.cards} (limit ${nodeLimit(sizeBig.cards, sizeSmall.nodes, sizeSmall.cards)})`);
     const hs = await headers(p);
     assert.equal(hs[0].count, seedBacklog, "the Backlog header counts every ticket");
     assert.equal(hs[3].count, seedRft, "the Ready for Testing header counts every ticket");
     const effort = await p.evaluate(async (st) => { const core = await import("/js/kanban/kanban-core.js"); const ts = [...globalThis.__fbStub.col("kanbanCards").values()].filter((t) => t.status === st && t.open); return core.fmtH(ts.reduce((n, t) => n + core.remaining(t), 0)); }, "backlog");
     assert.equal(hs[0].effort, effort, "remaining effort covers the tickets not drawn");
     await press(p, '.kb-col[data-status="backlog"] .kb-more');
-    assert.equal(await drawn("backlog"), 75, "Show 50 more reveals 50");
+    await eventually(async () => assert.equal(await drawn("backlog"), 75, "Show 50 more reveals 50"));
     assert.equal((await headers(p))[0].count, seedBacklog, "the count does not change with paging");
-    // My tasks: toggled 5 times, each "on" click measured to the next painted frame. The fastest must be under
-    // 150 ms; the median under 400 ms so one lucky frame cannot hide a real regression.
-    const runs = [];
+    // My tasks: switched on 5 times on each board in turn, each click measured to the next painted frame, with
+    // the elements the redraw added counted. The big board's fastest and median clicks are held to a multiple of
+    // the small board's (one lucky frame cannot hide a real regression), and its redraw to a page per column.
+    const mineOn = (q) => q.evaluate(async () => {
+      let added = 0;
+      const mo = new MutationObserver((list) => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) added += 1 + n.querySelectorAll("*").length; });
+      mo.observe(document.querySelector("#kb-view"), { childList: true, subtree: true });
+      const t0 = performance.now();
+      document.querySelector("#kb-mine").click();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const ms = performance.now() - t0;
+      mo.disconnect();
+      return { ms, added, cards: document.querySelectorAll("#kb-board .kb-card").length };
+    });
+    const isMine = (q) => q.getAttribute("#kb-mine", "aria-pressed");
+    const big = [], small = [];
     for (let i = 0; i < 5; i++) {
-      runs.push(await p.evaluate(async () => {
-        const t0 = performance.now();
-        document.querySelector("#kb-mine").click();
-        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-        const dt = performance.now() - t0;
-        return dt;
-      }));
-      if (i < 4) { await press(p, "#kb-mine"); await p.waitForTimeout(50); }
+      for (const [q, runs] of [[p, big], [s, small]]) {
+        runs.push(await mineOn(q));
+        assert.equal(await isMine(q), "true", "My tasks is on");
+        if (q === p) assert.equal(await drawn("backlog"), 75, "My tasks still draws Backlog a page at a time");
+        if (i < 4) { await press(q, "#kb-mine"); await until(async () => (await isMine(q)) === "false", "My tasks to switch off"); }
+      }
     }
-    const sorted = [...runs].sort((x, y) => x - y), best = sorted[0], median = sorted[2];
-    assert.ok(best < 150, `My tasks best of 5 took ${Math.round(best)} ms (runs ${runs.map(Math.round).join(", ")})`);
-    assert.ok(median < 400, `My tasks median of 5 took ${Math.round(median)} ms (runs ${runs.map(Math.round).join(", ")})`);
-    console.log(`  KB-SCALE-${N} first cards ${Math.round(first)} ms, My tasks best ${Math.round(best)} ms / median ${Math.round(median)} ms`);
+    const stat = (runs) => { const ms = runs.map((r) => r.ms).sort((x, y) => x - y); return { best: ms[0], median: ms[2], list: runs.map((r) => Math.round(r.ms)).join(", ") }; };
+    const tb = stat(big), ts = stat(small);
+    const { best, median } = tb;
+    const work = big[big.length - 1], workSmall = small[small.length - 1];
+    console.log(`  KB-SCALE-${N} first cards ${Math.round(first)} ms (39 tickets: ${Math.round(firstSmall)} ms, ×${(first / firstSmall).toFixed(2)}), My tasks best ${Math.round(best)} ms / median ${Math.round(median)} ms (39 tickets: ${Math.round(ts.best)} / ${Math.round(ts.median)} ms, ×${(best / ts.best).toFixed(2)} / ×${(median / ts.median).toFixed(2)}), board ${sizeBig.nodes} elements / ${sizeBig.cards} cards (39 tickets: ${sizeSmall.nodes} / ${sizeSmall.cards}), My tasks redraw ${work.added} elements / ${work.cards} cards (39 tickets: ${workSmall.added} / ${workSmall.cards})`);
+    assert.ok(work.cards <= SCALE.cards, `My tasks drew ${work.cards} cards with ${N} tickets (at most ${SCALE.cards}: a page per column)`);
+    assert.ok(work.added <= nodeLimit(work.cards, workSmall.added, workSmall.cards), `My tasks added ${work.added} elements for ${work.cards} cards with ${N} tickets; on the 39-ticket board it added ${workSmall.added} for ${workSmall.cards} (limit ${nodeLimit(work.cards, workSmall.added, workSmall.cards)})`);
+    assert.ok(best <= ts.best * SCALE.mine, `My tasks with ${N} tickets: best of 5 took ${Math.round(best)} ms, over ${SCALE.mine}× the ${Math.round(ts.best)} ms on the 39-ticket board (runs ${tb.list}; 39 tickets ${ts.list})`);
+    assert.ok(median <= ts.median * SCALE.mineMedian, `My tasks with ${N} tickets: median of 5 took ${Math.round(median)} ms, over ${SCALE.mineMedian}× the ${Math.round(ts.median)} ms on the 39-ticket board (runs ${tb.list}; 39 tickets ${ts.list})`);
+    await s.done();
     const mine = Object.values(seed.docs.kanbanTasks).filter((t) => t.open && t.assignee === ROB && t.status === "backlog").length;
     assert.equal((await headers(p))[0].count, mine, "My tasks counts Rob's backlog");
     await press(p, "#kb-mine");
+    await eventually(async () => assert.equal((await headers(p))[0].count, seedBacklog, "My tasks off: every ticket is counted again"));
     // a colleague moves one ticket: one card is patched, the rest of the board is left alone
     await p.evaluate(() => {
       window.__muts = 0;
@@ -1155,10 +1217,12 @@ for (const N of [2000, 5000]) {
       const t = { ...c.get(key), status: "in-progress", open: true }; c.set(key, t);
       b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify();
     });
-    await p.waitForTimeout(400);
+    await eventually(async () => assert.equal((await headers(p))[0].count, seedBacklog - 1, "the Backlog header follows the move"));
+    await eventually(async () => assert.equal((await where(p, "PH-1001")).status, "in-progress", "the moved card is in its new column"));
+    // Two frames more, so a redraw that came after the patch would be counted too.
+    await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
     const muts = await p.evaluate(() => { window.__mo.disconnect(); return window.__muts; });
     assert.ok(muts > 0 && muts < 40, `a remote move changed ${muts} nodes`);
-    assert.equal((await headers(p))[0].count, seedBacklog - 1, "the Backlog header follows the move");
     await p.done();
   });
 }
