@@ -689,6 +689,16 @@ the ticket and in `mcpAuditLog`.
   so it runs in this sandbox. The browser half of the sign-in page (a real
   Google popup) is the part that can only be checked on the deployment.
 
+### Support Inbox (14 Nov 2026)
+
+**Support › Support Inbox** (`#support`) files each thread in the connected
+support mailbox as a ticket, drafts a reply from published Help Centre
+articles, and sends it only if an admin switched that on (off by default);
+a Prospects (TAM) or Leads sender raises a Staff Kanban ticket instead. Read
+`backlog-tracker/README.md` → "Support Inbox" first. Never loosen the gates
+in `decideAction` (`functions/support-core.js`) without Rob's say-so, and
+never print ticket text in a workflow log: it is customers' email.
+
 ### Project header: one primary CTA, everything else in "⋮"
 
 Each project header shows exactly two controls now: the primary

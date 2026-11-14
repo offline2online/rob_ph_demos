@@ -80,6 +80,7 @@ function fullView(id, data) {
     contacts: l.contacts.map((c) => ({ id: c.id, name: c.name, jobTitle: c.jobTitle || null, buyingRole: c.buyingRole || null, email: c.email || null, linkedin: c.linkedin || null, awsAccountId: c.awsAccountId || null })),
     enrichmentSummary: l.enrichment && l.enrichment.summary ? l.enrichment.summary : null,
     research: researchView(l.enrichment),
+    tamRecord: l.tam && Object.keys(l.tam).length ? l.tam : null,
     createdAt: iso(d.createdAt),
     createdBy: d.createdByEmail || null,
     updatedBy: d.updatedByEmail || null,
@@ -179,7 +180,7 @@ function leadsTools(h) {
   const tools = [
     {
       name: "list_leads",
-      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or operator (Network operator inquiries: individuals from the Be Your Own Boss page, with region and background and their own stages ${core.OPERATOR_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
+      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or operator (Network operator inquiries: individuals from the Run Your Own RMN page, with region and background and their own stages ${core.OPERATOR_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
       scope: "board.read",
       inputSchema: {
         type: "object",

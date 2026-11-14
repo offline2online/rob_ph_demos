@@ -7,7 +7,7 @@
 //
 // One document per company (or, for a network operator inquiry, per person) in `leads/{id}`:
 //   leadType       "company" (the default, a retail/company lead) or "operator" (an individual
-//                  asking about becoming a network operator, from the Be Your Own Boss page's
+//                  asking about becoming a network operator, from the Run Your Own RMN page's
 //                  product tour gate; shown as "Network operator inquiry")
 //   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
 //                  (name is required for a company lead; a network operator inquiry usually has none)
@@ -58,7 +58,7 @@ const OPERATOR_STAGES = [
 const OPERATOR_STAGE_KEYS = OPERATOR_STAGES.map((s) => s.key);
 const OPERATOR_DEFAULT_STAGE = "applied";
 const ALL_STAGE_KEYS = [...STAGE_KEYS, ...OPERATOR_STAGE_KEYS];
-// "Your background" on the Be Your Own Boss page's gate form.
+// "Your background" on the Run Your Own RMN page's gate form.
 const BACKGROUNDS = [
   { key: "agency", label: "Agency media or account management" },
   { key: "adtech", label: "Ad-tech sales or partnerships" },
@@ -66,7 +66,7 @@ const BACKGROUNDS = [
   { key: "marketing", label: "Marketing" },
   { key: "other", label: "Something else" },
 ];
-const OPERATOR_SOURCE_LABEL = "Be Your Own Boss page – product tour";
+const OPERATOR_SOURCE_LABEL = "Run Your Own RMN page – product tour";
 
 const BUYING_ROLES = [
   { key: "decision-maker", label: "Decision maker" },
@@ -232,8 +232,8 @@ function leadFromForm(form) {
 // keys (name/company, website, industry, countries, storeCount, contactName,
 // jobTitle, email, linkedin) plus page, industry and test. `test` is true for
 // true/"1"/"true"/"yes"/"on". Returns { errors } or { errors: [], fields, contact, test }.
-// lead_type (or leadType) "operator" / "Network operator inquiry" is the Be Your
-// Own Boss page's gate: see operatorFromWebsite.
+// lead_type (or leadType) "operator" / "Network operator inquiry" is the Run Your Own
+// RMN page's gate: see operatorFromWebsite.
 const truthy = (v) => v === true || ["1", "true", "yes", "on"].includes(String(v == null ? "" : v).trim().toLowerCase());
 function leadFromWebsite(p) {
   const x = p || {};
@@ -258,12 +258,12 @@ function leadFromWebsite(p) {
   };
 }
 
-// The Be Your Own Boss page's product tour gate -> a network operator inquiry: an individual,
+// The Run Your Own RMN page's product tour gate -> a network operator inquiry: an individual,
 // no company. Fields: full_name (or fullName/contactName/name), email,
 // linkedin (optional; an address that isn't one is dropped rather than losing
 // the lead), operating_region (or operatingRegion/region/where_operate/location),
 // background (a BACKGROUNDS key or label), lead_source (stored as sourceLabel,
-// "Be Your Own Boss page – product tour" when not sent), page and test.
+// "Run Your Own RMN page – product tour" when not sent), page and test.
 function operatorFromWebsite(p) {
   const x = p || {};
   const test = truthy(x.test);

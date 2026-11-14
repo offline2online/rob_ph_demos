@@ -1,0 +1,45 @@
+name: Support Inbox sync
+
+# Reads new mail from the support mailbox into the console's Support Inbox
+# (backlog-tracker/functions/support-mail.js → POST /v1/cron on the function's
+# own address: a call through Hosting is cut off after 60 seconds),
+# drafts replies and raises high-value senders on the Staff Kanban. The
+# console also syncs while someone has the Support Inbox open and from its
+# "Sync now" button; this is what keeps tickets arriving when nobody does.
+#
+# GitHub runs a five-minute schedule when it has capacity, so mail can take
+# longer than five minutes to appear. If that matters, move the schedule to a
+# Cloud Scheduler job calling the same address (see backlog-tracker/README.md
+# → "Support Inbox").
+#
+# Nothing about a ticket is printed: logs here are public. The run shows
+# counts only, and fails when the sync itself failed (a revoked Google
+# sign-in, for example), which the console's Settings › Support inbox explains.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: support-mail-sync
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Read new support mail
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: |
+          if [ -z "$BOARD_API_KEY" ]; then echo "::error title=BOARD_API_KEY is not set::the sync cannot sign in"; exit 1; fi
+          status="$(curl -sS -o out.json -w '%{http_code}' --max-time 600 -X POST \
+            -H "X-Board-Key: $BOARD_API_KEY" -H 'Content-Type: application/json' -d '{}' \
+            https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/supportMail/v1/cron)"
+          # Counts only: no subject, sender or message text.
+          jq -c '{ok, listed, newMessages, newTickets, triaged, notConnected: ((.error // "") | test("connected"))}' out.json || true
+          if [ "$status" = "404" ]; then echo "::notice title=Not deployed yet::the console has no supportMail function yet"; exit 0; fi
+          if [ "$status" != "200" ]; then echo "::error title=Support Inbox sync failed (HTTP $status)::see Settings › Support inbox in the console for the reason"; exit 1; fi

@@ -184,6 +184,9 @@ deleted by hand).
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
+  model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
+  builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
+  reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
   lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
@@ -3313,7 +3316,7 @@ searched, and read a page or section at a time — see MCP.md),
 `list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
 `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
-`backlog`), `update_backlog_item` (title, desc, type, category only),
+`backlog`), `update_backlog_item` (title, desc, type, category, model only),
 `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
 single or batch; refused for any ticket past Backlog; logged to mcpAuditLog),
 `add_item_comment`; documentation: `set_project_requirements`,
@@ -3817,6 +3820,46 @@ release-report/count support for `elementor` projects.
 4. The FAQ site's brand palette has never been checked against the real
    WordPress theme (network-blocked from this sandbox) — screenshots or
    the theme's actual token values would let it be tightened.
+
+## Per-ticket model requirement
+
+Ticket t1CU2q6LlxGd5pFB9vwG (13 Nov 2026). Some tickets (permission
+boundaries, credentials, firing authorisation) must be built and reviewed on
+the most capable Claude model. Two tickets said so in a free-text
+"MODEL REQUIREMENT: Opus" line that nothing enforced; the requirement is now a
+field.
+
+- **Field**: `backlogItems.model` — `"standard"` (default; unset means
+  standard) or `"advanced"` (Claude Opus only). Browsers may write it
+  (`firestore.rules` accepts only those two values or null).
+- **Set it**: New item → Model, Edit item → Model, or MCP
+  `create_backlog_item` / `update_backlog_item` (`model`). `list_backlog_items`
+  and `get_backlog_item` return it; `get_backlog_item` also returns
+  `builtByModel` / `reviewedByModel`.
+- **Card**: an Advanced ticket shows an "Advanced · Opus" chip (Material
+  Symbols `psychology`) in every column; its hover, and the Edit item modal,
+  say which model built and reviewed it. Standard tickets show nothing.
+- **Build**: `perItemFireText` adds `modelRequirementBlock(item)`
+  (`functions/model-requirement.js`) to each ticket's fire. A Standard ticket
+  gets one line asking the session to record `builtByModel`; an Advanced one
+  gets the rule — build on Opus, or hand the build to an Opus subagent, or do
+  not build and flag the card `blocked: {reason: "model-unavailable"}`
+  (`ROUTINE_INSTRUCTIONS.md` → "Per-ticket model requirement").
+- **Backstop**: `run-backlog-automation.js` refuses an Advanced ticket's patch
+  whose `builtByModel` is not an Opus (`modelGuardRefusal`): nothing lands,
+  `patchReady` is cleared, the card is flagged `model-unavailable` with a note,
+  and it is not rebuilt automatically.
+- **Flag**: a `model-unavailable` card shows "Not built: needs Opus" with the
+  clear (×) control and no Answer button (there is no question). Notify Claude
+  skips it like any blocked card; clearing the flag puts it back in the queue.
+- **Review**: the Review Batch fire tags each ticket `[Model: Advanced …]` or
+  `[Model: Standard]`. An Advanced ticket is reviewed on Opus only; with none
+  available its flag is `reviewStatus: "blocked"` with `reviewReason`
+  `model-unavailable: needs Claude Opus`, shown as "Review blocked: needs
+  Opus". Every reviewed ticket records `reviewedByModel`.
+- `builtByModel` and `reviewedByModel` are pipeline fields
+  (`itemPipelineFields()` in `firestore.rules`): only the automation user
+  writes them.
 
 ## Blocked tickets: answering from the card
 
@@ -4361,6 +4404,49 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `lead-enrich-probe.yml`: `pipeline` runs the whole new-lead flow on an
     in-memory record with the real key; `lead_status` reports what the last
     run on a lead did.
+  - **Stored logos are static PNGs (14 Nov 2026)**: the first live trial
+    showed an animated logo at the top of the lead. The site's only icon was
+    a 16×16 animated GIF (10 looping frames) served as `image/x-icon`, and
+    the lead header and board tile used that icon. Now: every copy is
+    converted to a PNG with transparency kept (`toStaticPng`, sharp: an SVG
+    is drawn at up to 800 px, a GIF gives its first frame), saved as
+    `brand/<company>/<kind>-<hash>.png`; a file is read for what it is, not
+    what it is labelled; an animated file (`isAnimated`: a multi-frame GIF,
+    an SVG with animation) is never linked as it is, so when it can't be
+    converted there is no logo; a copy made before this change (`.svg`,
+    `.ico`) is redone on the next run. The lead header, the board tile, the
+    TAM record's header and the company profile use the full logo
+    (`logos.light`) when there is one, and the icon only when there is not.
+  - **A lead and its TAM record carry the same information (14 Nov 2026)**:
+    Convert to lead copied six company fields and left the rest on the TAM
+    record (contacts, research, logos, priority, insights, notes), and the new
+    lead was then researched a second time. Now, whenever the two are linked
+    (a TAM record converted to a lead, a lead matched to or filed under a TAM
+    record, either linked later over MCP), the function that watches both
+    collections brings them into step (`linkMerge` / `syncLinked` in
+    `lead-enrich.js`, run from `onEnrichWrite`): company fields fill each
+    other's blanks; contacts missing on one side are added to the other
+    (matched on email, else name); the research goes to the side that has
+    none or an older copy (each record keeps its own run record); and the
+    lead gets `tam`, a readable copy of the TAM-only fields (country,
+    priority, sub-industry, HQ country, other markets, store presence, size,
+    ownership, insights, decision makers, LinkedIn, AWS region, vendors,
+    campaigns, source, notes), shown as "TAM record" in the lead's detail
+    view and returned by `get_lead` as `tamRecord`. Editing the TAM record
+    refreshes that copy. Nothing a person typed is replaced. A new record
+    that already carries research after this step is not researched again.
+    Test leads and network operator inquiries are left alone.
+    `firestore.rules` allows `tam` (a map) on a lead so an editor's save
+    keeps it. `lead-enrich-probe.yml`: `sync_lead` runs the step for a pair
+    linked before it existed.
+  - **What a refresh keeps (14 Nov 2026)**: a second live run on one lead
+    replaced a site count dated June 2026 with one dated February 2026, and
+    listed one person twice under two spellings, which pushed another off the
+    list. Now the site count kept is the one whose source is dated later
+    (`newerCount`: count, breakdown and source together, on the company field
+    too; with no dates to compare the new run's figure stands), and people
+    are matched on first initial and surname (`personKey`, `mergePeople`),
+    keeping a LinkedIn link or note only the earlier entry had.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
@@ -4429,9 +4515,10 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7
-  and 6b5y1gKRyX41YlEbm0V3)**.
-  The Be Your Own Boss page on personalisationhub.com gates its product tour
+- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7,
+  6b5y1gKRyX41YlEbm0V3 and LxEl9BwUwujmmz1YoE6C)**.
+  The Run Your Own RMN (Run Your Own Retail Media Network) page on
+  personalisationhub.com, at `/run-your-own-rmn/`, gates its product tour
   behind a form, and the people who fill it in are individuals asking about the
   network operator offer, not companies. They are their own **lead type** and
   their own pipeline, so they are never mixed with retail/company leads.
@@ -4440,7 +4527,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     chip, the lead detail's Type, MCP `list_leads`/`get_lead`), the board switch
     **Companies / Network operators**, the form **New network operator
     inquiry**, the detail's section **Network operator**, and the default source
-    label **Be Your Own Boss page – product tour**. The internal names follow:
+    label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
     {region, background}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
@@ -4470,7 +4557,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
     `location`), `background` (a key above or the form's label), `lead_source`
-    (stored as `sourceLabel`; "Be Your Own Boss page – product tour" when not sent),
+    (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
     It never reads or writes Prospects (TAM), is never routed to the AWS record,
@@ -4478,7 +4565,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
     region/background are filled. **The website side** posts these fields from
-    the Be Your Own Boss page's gate (PH Website project, `ph-website/`); the console
+    the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
@@ -4859,3 +4946,134 @@ overlay. Presentation only: every field, action and datum is still there.
   (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
   and Prospects (TAM) (industry, country, campaigns).
 - **Times:** days and dates are the viewer's local time, never UTC.
+
+## Support Inbox (14 Nov 2026)
+
+Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
+see every incoming email as a ticket, answer what can be answered from the
+Help Centre automatically, involve a person when it can't, flag high-value
+retailers on the Staff Kanban, and track it all on one stats page.
+
+### Where it is
+
+- **SUP-NAV-1** A "Support Inbox" item sits in the sidebar's Support group,
+  directly above Help Centre, and opens `#support`.
+- **SUP-NAV-2** It is its own section in Roles (`support-inbox`), following
+  the Help Centre grant until a role sets its own. Below Edit, the page has
+  no write controls.
+- **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
+  Every member can read it; only an admin can change it.
+
+### Connecting
+
+- **SUP-CON-1** An admin saves a Google OAuth client and signs in as the
+  mailbox. Access is `gmail.modify` only.
+- **SUP-CON-2** The client secret and refresh token are stored encrypted
+  (AES-256-GCM, `MEDIA_KEYS_ENC_KEY`) in a collection no client can read or
+  write, and are never returned by any endpoint.
+- **SUP-CON-3** Google's redirect is accepted only with the single-use state
+  issued to that admin within the last ten minutes.
+- **SUP-CON-4** A revoked or expired sign-in is shown in Settings and in the
+  page header. It is never silent.
+- **SUP-CON-5** Disconnecting revokes and forgets the token and keeps the
+  tickets.
+
+### Tickets
+
+- **SUP-TKT-1** One ticket per Gmail thread, keyed `SUP-n`. Reading the same
+  mail twice never creates a second ticket or message.
+- **SUP-TKT-2** Mail the mailbox itself started is not a ticket.
+- **SUP-TKT-3** Statuses: Open, Waiting on customer, Resolved, Spam. A new
+  customer email on a Waiting or Resolved ticket reopens it. It never
+  reopens Spam.
+- **SUP-TKT-4** Queues: Needs a person, AI drafts to approve, Automated &
+  unsorted, Waiting on customer, Resolved, Spam, All tickets. An open,
+  waiting, resolved or spam ticket is in exactly one of the first six.
+- **SUP-TKT-5** Marking spam asks first, moves the thread to Gmail's Spam
+  too, and can be undone ("Not spam").
+- **SUP-TKT-6** A person can reply (sent from the mailbox on the same
+  thread), reply and resolve, add an internal note (never emailed), assign
+  the ticket to a member, resolve, reopen, and raise it on the Staff Kanban.
+- **SUP-TKT-7** A reply written in Gmail itself is filed on the ticket and
+  counts as a person answering.
+- **SUP-TKT-8** Every action is recorded on the ticket's timeline with who
+  did it. Clients cannot write tickets directly.
+- **SUP-TKT-9** Customer text is always shown as text, never as markup.
+
+### Answering
+
+- **SUP-AI-1** Each new customer email gets a category, a one-line summary
+  and a drafted reply, written only from published Help Centre articles.
+  The email is treated as untrusted content.
+- **SUP-AI-2** Sending without a person is **off by default**. Switched on,
+  a draft is sent only when the articles fully answer the question, it cites
+  at least one article, and the confidence reaches the level in Settings
+  (50% to 99%, default 80%).
+- **SUP-AI-3** Never sent automatically: machine-sent mail, a high-value
+  sender, a thread already answered automatically once, a ticket a person
+  has replied to or noted, and anything the model marks as spam.
+- **SUP-AI-4** An automatic reply is marked `Auto-Submitted: auto-replied`,
+  resolves the ticket as answered by AI, and is shown as such.
+- **SUP-AI-5** If the model fails or is not configured, the ticket still
+  arrives and goes to Needs a person with the reason.
+- **SUP-AI-6** In the reply box a person can use the suggested reply, ask
+  for another, and search the Help Centre to insert an article's short
+  answer and link. Whether the sent reply was the draft, an edited draft or
+  their own words is recorded.
+
+### High-value senders
+
+- **SUP-HV-1** High value means: the sender's domain matches a Prospects
+  (TAM) or Leads company website, the address is a contact on a lead, or
+  the domain is listed in Settings. Personal mailbox domains never match by
+  domain.
+- **SUP-HV-2** A high-value ticket goes to Needs a person, is listed first
+  there, and raises one flagged, highest-priority Staff Kanban ticket
+  assigned to the person set in Settings (default: whoever connected the
+  mailbox), linking back to the ticket. A later email on the thread does not
+  raise a second.
+- **SUP-HV-3** Resolving the support ticket comments on the Kanban ticket.
+
+### Stats
+
+- **SUP-STAT-1** One Stats tab for the last 7, 30 or 90 days: tickets
+  received, resolved, answered by AI alone (share of resolved), needed a
+  person, median first response, median time to resolution, high-value,
+  reopened, tickets per day by how they ended, and by category.
+- **SUP-STAT-2** Spam and machine-sent mail are counted on their own and
+  excluded from every other figure.
+- **SUP-STAT-3** "Answered by AI alone" means resolved by the automatic
+  reply with no person replying, noting or closing it.
+- **SUP-STAT-4** The chart has a legend and a table of the same figures.
+
+### iPad
+
+- **SUP-IPAD-1** Every control works by touch under each known way iPad
+  WebKit loses a tap (no click, pointercancel, Touch Events only, a late
+  re-aimed click), in landscape and portrait, and acts exactly once.
+- **SUP-IPAD-2** A field being typed in is not rebuilt by incoming data.
+- **SUP-IPAD-3** No tappable control sits in a sideways-scrolling strip.
+- **SUP-IPAD-4** A page cached from before this release starts with this
+  release's scripts, with a working menu.
+
+### Data model
+
+`supportTickets/{threadId}`: `key`, `number`, `subject`, `customerEmail`,
+`customerName`, `status`, `needsHuman`, `triagePending`, `automated`,
+`highValue`, `account {kind, id, name, reason}`, `category`, `summary`,
+`triageReason`, `spamLikely`, `aiDraft {text, confidence, answerable,
+articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
+`reopenCount`, `resolvedBy`, `createdAt`, `lastMessageAt`, `lastInboundAt`,
+`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
+`supportTickets/{id}/messages/{gmailMessageId}`: `direction`
+(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
+mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
+| `manual`). `supportSettings/main`: connection status and settings
+(member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
+server-only.
+
+### Known gaps
+
+Email is shown as text; attachments are named, not stored. The list and
+stats cover the 500 most recently active tickets. There are no MCP tools
+for the inbox yet. The five-minute sync depends on GitHub's schedule.

@@ -181,4 +181,45 @@ t("ticket addresses: the PH key in, the PH key out", () => {
   for (const sub of ["", "report", "settings", "tickets/PH-1", undefined]) assert.equal(k.ticketFromSub(sub), null, String(sub));
   assert.equal(k.ticketFromSub(k.ticketSub("PH-42")).key, "PH-42");
 });
+t("hierarchy: four levels (Epic > Task > Subtask > Sub-subtask), loops refused, parents roll up and advance", () => {
+  const list = [
+    { key: "PH-1", type: "epic", status: "in-progress", epic: "" },
+    { key: "PH-2", type: "task", status: "in-progress", epic: "PH-1" },
+    { key: "PH-3", type: "task", status: "backlog", epic: "PH-2" },
+    { key: "PH-4", type: "task", status: "in-progress", epic: "PH-3" },
+    { key: "PH-5", type: "bug", status: "done", resolution: "withdrawn", epic: "PH-3" },
+    { key: "PH-6", type: "task", status: "backlog", epic: "" },
+    { key: "PH-7", type: "task", status: "backlog", epic: "PH-6" },
+  ];
+  const by = new Map(list.map((x) => [x.key, x]));
+  const get = (key) => by.get(key) || null;
+  const kids = (key) => list.filter((x) => x.epic === key && x.type !== "epic");
+  assert.deepEqual(list.slice(0, 4).map((x) => k.levelOf(x, get)), [1, 2, 3, 4]);
+  assert.deepEqual([1, 2, 3, 4].map((l) => k.levelName(l, "task")), ["Task", "Task", "Subtask", "Sub-subtask"]);
+  assert.equal(k.levelName(1, "epic"), "Epic");
+  assert.deepEqual(k.ancestorsOf(get("PH-4"), get), ["PH-3", "PH-2", "PH-1"]);
+  assert.equal(k.heightOf("PH-1", kids), 4); assert.equal(k.heightOf("PH-4", kids), 1);
+  // A fifth level is refused, at create time and when moving a branch under another.
+  assert.match(k.parentProblem({ key: "", type: "task" }, "PH-4", get, kids), /at most 4 levels: Epic > Task > Subtask > Sub-subtask/);
+  assert.equal(k.parentProblem({ key: "", type: "task" }, "PH-3", get, kids), null);
+  assert.match(k.parentProblem(get("PH-6"), "PH-3", get, kids), /PH-6 has 1 level of tickets under it/);
+  assert.equal(k.parentProblem(get("PH-6"), "PH-2", get, kids), null);
+  assert.match(k.parentProblem(get("PH-2"), "PH-4", get, kids), /is under PH-2/);
+  assert.match(k.parentProblem(get("PH-2"), "PH-2", get, kids), /own parent/);
+  assert.match(k.parentProblem({ key: "", type: "task" }, "PH-99", get, kids), /PH-99 isn't a ticket/);
+  assert.match(k.parentProblem(get("PH-1"), "PH-6", get, kids), /epic is always at the top level/);
+  // Roll-up: withdrawn left out; nothing advances until the leaves are done.
+  assert.deepEqual(k.rollup("PH-3", kids), { done: 0, total: 1, withdrawn: 1 });
+  assert.deepEqual(k.parentsToAdvance(get("PH-4"), get, kids), []);
+  get("PH-4").status = "done"; get("PH-4").resolution = "completed";
+  // Completing the last leaf moves the subtask, then the task and the epic, each in turn.
+  assert.deepEqual(k.parentsToAdvance(get("PH-4"), get, kids), ["PH-3", "PH-2", "PH-1"]);
+  assert.deepEqual(k.rollup("PH-3", kids), { done: 1, total: 1, withdrawn: 1 });
+  // A parent already in testing or beyond is left alone, and stops the walk.
+  get("PH-2").status = "approved";
+  assert.deepEqual(k.parentsToAdvance(get("PH-4"), get, kids), ["PH-3"]);
+  // A parent with an open child doesn't move.
+  assert.deepEqual(k.parentsToAdvance(get("PH-7"), get, kids), []);
+  assert.equal(k.isFinished(get("PH-3"), kids), false, "a parent still in Backlog isn't done");
+});
 console.log(`\n${n} passed`);

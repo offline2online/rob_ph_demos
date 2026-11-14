@@ -186,7 +186,8 @@ address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. S
 matches key, title, description text and labels. **Clear filters** resets all.
 
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
-position (and the phone's current column).
+position (and the phone's current column). A scroll the person makes straight
+after the change is theirs and is never put back.
 
 **KB-FLT-3 Desktop fit.** The filter bar stays on one line from 1024 px wide
 with the sidebar open, with every filter on.
@@ -204,12 +205,13 @@ column and swiping changes it for all lanes.
 **KB-TASK-1 Keys.** Every ticket has a key `PH-<n>`, sequential, never reused.
 
 **KB-TASK-2 Types.** Task, Bug, Epic (no Story). An Epic is an ordinary ticket;
-once saved it can be chosen as the **Parent epic** of any task or bug.
+once saved it can be chosen as the **Parent** of any task or bug. So can a task or
+bug above the lowest level (KB-TASK-14).
 
 **KB-TASK-3 Core fields** (always on the form): title, description, reporter,
 assignee, status, release (fix version), estimate. **Optional fields** (Jira
 equivalents): type, priority, sprint, project, due date, time logged, labels, comments,
-attachments, parent epic, linked tickets, flag. All fields flow into filters
+attachments, parent (an epic, task or subtask; KB-TASK-14), linked tickets, flag. All fields flow into filters
 and the release report. **Release is optional**: it is never a required field (settings
 can't make it so), a ticket created on the form or over MCP (`kanban_create_task`) may have
 none, and one can be added later; unreleased tickets still show on the board and in
@@ -258,6 +260,41 @@ again. The same holds for **Save** on a comment being edited. A new ticket's
 Create button is unaffected. AC: open a ticket, Save is disabled; edit the title,
 it is enabled; restore the title, it is disabled; TC-69.
 
+**KB-TASK-14 Ticket hierarchy: four levels.** Tickets nest up to four levels:
+**Epic > Task > Subtask > Sub-subtask**. Typical use: an epic split into one task
+per discipline (front end, back end, marketing / website / FAQs), each with its own
+owner, each broken down further. Agent Board tickets attach below the lowest Staff
+Kanban level (five levels in all); the cap enforced here is four.
+- The parent is the ticket's `epic` field (the key of the ticket above; stored
+  tickets need no change). An epic is always at the top level. A ticket's level is
+  1 + its parent's; a top-level task, bug or epic is level 1, and a level is named
+  by its depth (2 Task, 3 Subtask, 4 Sub-subtask).
+- Every ticket above the lowest level lists its children like an epic does
+  (KB-TASK-7), with **Add task** on an epic, **Add subtask** on a task, **Add
+  sub-subtask** on a subtask, **Add bug** and **Add an existing ticket**; the block
+  shows "Level n of 4 · <name>". A sub-subtask shows "A sub-subtask is the lowest
+  level, so it can't have child tickets" and has no Add buttons.
+- **A fifth level is refused** everywhere: the Parent menu and the picker only offer
+  tickets it fits under; saving a parent that would make five levels (counting the
+  tickets already under the ticket being moved), or a loop, is refused with the
+  reason on the Parent field. The MCP tools refuse the same (`kanban_create_task`,
+  `kanban_update_task`, `kanban_create_tasks` through refs and existing parents).
+- **Progress rolls up**: each parent's card and modal show its children done of its
+  children (withdrawn left out). A child counts as done when it is completed, or
+  when it is a parent whose own children are all done and it has moved on to Ready
+  for Testing or beyond.
+- **Parent automation**: when a ticket's status changes (drag, the Status menu or
+  `kanban_move_task`), each parent above it still in Backlog, Ready for Dev or In
+  Progress whose children are now all done moves to **Ready for Testing** by itself,
+  and its parent in turn. The move is logged on the parent ("… · all its child
+  tickets are done"); its designated tester, if any, takes it; otherwise the assignee
+  is unchanged. `kanban_move_task` returns the keys it moved (`parentsMovedToTesting`).
+  A parent already in testing or beyond is left alone.
+- `kanban_get_task` returns `level`, `levelName` and the children of any ticket.
+AC: create epic > task > subtask > sub-subtask; a fifth level is blocked; complete
+the leaf and each parent moves to Ready for Testing, with n/m done at every level;
+TC-70, `kanban-mcp.test.js` and `kanban-core.test.mjs`.
+
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
 `PH-36`) or words from the title or description; results rank exact key, key
@@ -269,7 +306,8 @@ Enter. Production: server-side search, so it works with millions of tickets.
 assignee, remove ×) with **Add task**, **Add bug** and **Add an existing
 ticket**. Adding a child saves the epic first (creating a new one), opens the
 child with the epic, release, sprint and labels prefilled, and returns to the
-epic afterwards. Changing an epic's type or deleting it unlinks its children.
+epic afterwards. Deleting an epic unlinks its children. Changing an epic's type
+keeps them (any ticket above the lowest level can have children, KB-TASK-14).
 
 ## 7. Create / edit modal
 

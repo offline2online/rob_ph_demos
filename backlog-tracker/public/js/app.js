@@ -33,6 +33,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
+import { supportRoute, supportHash } from "./support-core.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, FALLBACK_SETTINGS_PAGE, UM_TABS, userManagementRoute, legacyUserManagementHash, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
@@ -142,6 +143,20 @@ const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
   "PH Website", "Backend / Infrastructure", "Uncategorised",
 ];
+
+// Per-ticket model requirement (t1CU2q6LlxGd5pFB9vwG): which Claude model
+// must build and review a ticket. Unset means "standard". The same values as
+// functions/model-requirement.js, which a browser module can't import.
+function ticketModel(item) {
+  return item && item.model === "advanced" ? "advanced" : "standard";
+}
+// "Built on claude-opus-5-5 · reviewed on …" from what the sessions recorded.
+function modelLogLine(item) {
+  const parts = [];
+  if (item && item.builtByModel) parts.push(`Built on ${item.builtByModel}`);
+  if (item && item.reviewedByModel) parts.push(`reviewed on ${item.reviewedByModel}`);
+  return parts.join(" · ");
+}
 
 const GENERAL_PROJECT_ID = "general";
 
@@ -546,6 +561,7 @@ function closeAllSubPages() {
   closeFaqSettingsPage();
   closeRolePage();
   closePromotePage();
+  closeSupportPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -958,9 +974,19 @@ function cardHTML(item) {
   };
   const approvedBy = item.status === "ready-to-publish" ? approvedByLine(item) : null;
   const approvedByHTML = approvedBy ? `<span class="approved-by" title="${escapeHTML(approvedBy.title)}"><span class="material-symbols-outlined">how_to_reg</span>${escapeHTML(approvedBy.text)}</span>` : "";
-  const reviewFlagDef = item.reviewStatus && REVIEW_FLAGS[item.reviewStatus];
+  // A review held because the ticket needs Claude Opus and the review session
+  // had none (reviewReason "model-unavailable: …") is not a red run.
+  const reviewNeedsOpus = item.reviewStatus === "blocked" && /^model-unavailable/.test(item.reviewReason || "");
+  const reviewFlagDef = item.reviewStatus && (reviewNeedsOpus ? ["Review blocked: needs Opus", "block"] : REVIEW_FLAGS[item.reviewStatus]);
   const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
     ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
+    : "";
+  // Per-ticket model requirement: only Advanced is badged (Standard is the
+  // default, and badging every card would be noise). The hover says which
+  // model actually built and reviewed it, once those sessions have recorded it.
+  const modelLog = modelLogLine(item);
+  const modelBadge = ticketModel(item) === "advanced"
+    ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>Advanced · Opus</span>`
     : "";
   // Blocked flag: this ticket can't be built until Rob decides something or
   // supplies input. Notify Claude / the build routine skip it; the one-line
@@ -969,7 +995,7 @@ function cardHTML(item) {
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason === "waiting-on-dependency")
     ? dependencyFlagHTML(item)
     : (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : "Waiting on input"}</span><span class="blocked-flag-actions">${item.blocked.note ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : item.blocked.reason === "model-unavailable" ? "Not built: needs Opus" : "Waiting on input"}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
   const e2eFixBadge = item.e2eAutoFix
     ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
@@ -1088,7 +1114,7 @@ function cardHTML(item) {
       ${popText
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
-      ${noDeployBadge}${carriedBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -3433,6 +3459,7 @@ lazyStarters.concepts = () => { _primeConcepts(); startConceptsListener(); };
 async function addItem(projectId, title, desc, type, category, extra = {}) {
   const ref = await addDoc(itemsRef, {
     projectId, title, desc, type, category,
+    ...(extra.model === "advanced" ? { model: "advanced" } : {}),
     ...(extra.effort ? { effort: extra.effort } : {}),
     ...(extra.priority ? { priority: extra.priority } : {}),
     status: "backlog",
@@ -3727,6 +3754,7 @@ async function updateItemDetails(id, changed) {
   if ("category" in changed) patch.category = changed.category;
   if ("effort" in changed) patch.effort = changed.effort || null;
   if ("priority" in changed) patch.priority = changed.priority || null;
+  if ("model" in changed) patch.model = changed.model === "advanced" ? "advanced" : "standard";
   if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
   if (!Object.keys(patch).length) return;
   patch.updatedAt = serverTimestamp();
@@ -4719,6 +4747,8 @@ const eiDescInput = document.getElementById("ei-desc-input");
 const eiCategorySelect = document.getElementById("ei-category-select");
 const eiEffortSelect = document.getElementById("ei-effort-select");
 const eiPrioritySelect = document.getElementById("ei-priority-select");
+const eiModelSelect = document.getElementById("ei-model-select");
+const eiModelLog = document.getElementById("ei-model-log");
 const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
@@ -4818,6 +4848,7 @@ function openEditItemModal(id) {
   eiLoadedSnapshot = {
     title: item.title || "", desc: item.desc || "", type: item.type === "bug" ? "bug" : "feature",
     category: item.category || CATEGORIES[0], effort: item.effort || "", priority: item.priority || "",
+    model: ticketModel(item),
     noDeploymentRequired: !!item.noDeploymentRequired,
   };
   eiTitleInput.value = item.title || "";
@@ -4828,6 +4859,11 @@ function openEditItemModal(id) {
   eiCategorySelect.value = item.category || CATEGORIES[0];
   eiEffortSelect.value = item.effort || "";
   eiPrioritySelect.value = item.priority || "";
+  eiModelSelect.value = ticketModel(item);
+  // Which model actually built / reviewed it, as those sessions recorded.
+  const eiModelLine = modelLogLine(item);
+  eiModelLog.textContent = eiModelLine ? `${eiModelLine}.` : "";
+  eiModelLog.hidden = !eiModelLine;
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
   eiCommentInput.value = "";
   renderEiNotes();
@@ -4866,6 +4902,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   const current = {
     title, desc, type, category: eiCategorySelect.value,
     effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
+    model: eiModelSelect.value === "advanced" ? "advanced" : "standard",
     noDeploymentRequired: eiNoDeployCheckbox.checked,
   };
   const changed = {};
@@ -5456,6 +5493,7 @@ const niEls = {
   title: document.getElementById("ni-title-input"),
   desc: document.getElementById("ni-desc-input"),
   category: document.getElementById("ni-category-select"),
+  model: document.getElementById("ni-model-select"),
   heading: document.getElementById("ni-title"),
   submit: document.getElementById("ni-submit"),
   record: document.getElementById("ni-mic-btn"),
@@ -5642,6 +5680,7 @@ niEls.category.addEventListener("change", () => clearNiAgentMarks("category"));
 function resetFormFields() {
   niAgentToken++;
   stopNiTimer();
+  if (niEls.model) niEls.model.value = "standard";
   niEls.title.value = "";
   niEls.desc.value = "";
   niEls.desc.style.height = "";
@@ -5764,7 +5803,7 @@ async function submitNewItem() {
   const pendingAttachments = niPendingAttachments.slice();
   let newItemId;
   try {
-    newItemId = await addItem(activeNewItemProjectId, title, desc, type, category);
+    newItemId = await addItem(activeNewItemProjectId, title, desc, type, category, { model: niEls.model && niEls.model.value });
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Description", value: desc, max: 10000 }]));
     return;
@@ -10010,6 +10049,7 @@ function showSettingsPage(key, sub) {
     return;
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
+  if (settingsPage === "support") loadSupportSettings();
   if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) { loadMediaKeys(); loadPartnerCentral(); } }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
@@ -10653,6 +10693,7 @@ const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 const funnelPage = document.getElementById("funnel-page");
+const supportPage = document.getElementById("support-page");
 let promotePageKey = "";
 // Lazily loaded Promote pages (Leads, Prospects, Conversion Funnel). A page
 // whose code failed to load or draw used to stay blank, or the menu item
@@ -10807,6 +10848,77 @@ PROMOTE_PAGES.forEach((p) => {
     catch (err) { showPageLoadError(LAZY_PROMOTE[p.key] ? LAZY_PROMOTE[p.key].page() : null, p.label, err, () => openPromotePage(p.key)); }
   });
 });
+
+// ── Support › Support Inbox (#support, support-page.js) ──────────────────
+// The support mailbox as tickets: inbox queues, one ticket's conversation and
+// reply box, and the Stats tab. Mounted the first time the page opens; a load
+// failure says so on the page with Try again, like the Promote pages.
+let supportUi = null;
+let supportUiLoading = null;
+function ensureSupportUi() {
+  if (supportUi) return Promise.resolve(supportUi);
+  if (!supportUiLoading) {
+    supportUiLoading = import(`./support-page.js${pageRetrySuffix("support")}`).then(({ mountSupportPage }) => {
+      supportUi = mountSupportPage({
+        db, canEdit: () => canEditSection("support-inbox"), apiHeaders: consoleApiHeaders,
+        go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+        alert: (m) => showAlert(m), confirm: (m, opts) => showConfirmDialog(m, opts),
+        openSettings: () => { setRouteHash("#settings/support"); applyRouteFromHash(); },
+        openKanbanTicket: (key) => {
+          openStaffKanbanPage("", new URLSearchParams());
+          loadStaffKanban().then((k) => k.openTask(key)).catch((err) => console.warn("backlog-tracker: couldn't open", key, err));
+        },
+      });
+      return supportUi;
+    });
+  }
+  return supportUiLoading;
+}
+// Every line here tolerates a page that has no Support Inbox yet: a page kept
+// from before this release, running this script, must still start (the iPad's
+// dead menu of 6 Nov 2026 was a script reaching for a button an old page lacked).
+function openSupportPage(route) {
+  if (!supportPage) return;
+  if (!pageAllowed("support-inbox")) return;
+  if (supportPage.hidden) closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  supportPage.hidden = false;
+  clearPageLoadError(supportPage);
+  setRouteHash(supportHash(route));
+  updateTopbarTitle();
+  ensureSupportUi().then((ui) => { if (!supportPage.hidden) ui.show(route); }).catch((err) => {
+    supportUiLoading = null;
+    pageRetries.support = (pageRetries.support || 0) + 1;
+    showPageLoadError(supportPage, "Support Inbox", err, () => openSupportPage(route));
+  });
+}
+function closeSupportPage() {
+  if (!supportPage || supportPage.hidden) return;
+  supportPage.hidden = true;
+  if (supportUi) supportUi.hide();
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+document.getElementById("support-inbox-btn")?.addEventListener("click", () => { closeNavDrawer(); openSupportPage(supportRoute("#support")); });
+// Settings › Support inbox: the mailbox connection and the answering rules.
+let supportSettingsUi = null;
+// Google's sign-in comes back as a fresh page load on "#settings/support?connected=1" (or ?error=…).
+// Read it now: whichever route code runs first tidies the query off the address.
+let supportSettingsReturn = /^#settings\/support\?/.test(window.location.hash) ? window.location.hash.split("?")[1] : "";
+function loadSupportSettings() {
+  const host = document.getElementById("support-settings");
+  if (!host) return;
+  const returned = supportSettingsReturn;
+  supportSettingsReturn = "";
+  // Mounted once: the pane can be asked to load again while the module is still arriving.
+  if (!supportSettingsUi) {
+    supportSettingsUi = import("./support-page.js").then(({ mountSupportSettings }) =>
+      mountSupportSettings({ host, db, apiHeaders: consoleApiHeaders, isAdmin: isConsoleAdmin, alert: (m) => showAlert(m), confirm: (m, opts) => showConfirmDialog(m, opts) }));
+    supportSettingsUi.catch(() => { supportSettingsUi = null; });
+  }
+  supportSettingsUi.then((ui) => ui.load(returned)).catch((err) => { host.innerHTML = `<p class="interface-row-empty">The support inbox settings couldn't open: ${escapeHTML((err && err.message) || String(err))}</p>`; });
+}
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
 // loads when someone signs in; a ticket opened from it goes to the Staff Kanban.
@@ -11979,6 +12091,9 @@ const ROUTE_TITLES = {
   "#settings/user-management/users": "Settings: Users",
   "#settings/user-management/roles": "Settings: Roles",
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
+  "#support": "Support Inbox",
+  "#support/stats": "Support Inbox: Stats",
+  "#settings/support": "Settings: Support inbox",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
   "#promote/conversion-funnel": "Promote: Conversion Funnel",
@@ -12129,10 +12244,13 @@ function applyRouteFromHash() {
     const k = settingsPageFromHash(hash);
     const um = userManagementRoute(hash);
     if (um && !pageAllowed("user-management")) return;
+    // Google's sign-in returns to "#settings/support?connected=1" (or ?error=…); keep the answer before the route is tidied.
+    if (k === "support" && hash.includes("?")) supportSettingsReturn = hash.split("?")[1];
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
   else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -12143,7 +12261,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

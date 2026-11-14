@@ -21,6 +21,7 @@ const { auditLogEntry, buildAuditRequestText, zeroResultQueries } = require("./r
 const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
+const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
 
 initializeApp();
 
@@ -219,7 +220,7 @@ function perItemFireText({ item, siblings, projectId, projectName, prefix = "", 
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${siblingBlock}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
@@ -1061,7 +1062,7 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
 
     if (fireUrl && token) {
       const itemLines = items
-        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — deployCommit ${i.deployCommit}${i.carriedByCommit ? " (rides on a sibling's commit)" : ""}`)
+        .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — deployCommit ${i.deployCommit}${i.carriedByCommit ? " (rides on a sibling's commit)" : ""}${reviewModelTag(i)}`)
         .join("\n");
 
       const projectPromptBlock = (after.routinePromptMd || "").trim()
@@ -1071,7 +1072,7 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
       const selfReportHint = `\n\nWhen you finish this run (whether you reviewed every ticket or stopped early on a blocker), PATCH projects/${event.params.projectId} with reviewRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and reviewRoutine.finishedAt set to now — the board shows a working/spinning state on its Review Batch button until it sees this.`;
 
       const text = `${projectPromptBlock}=== REVIEW REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-        `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${items.length} ticket${items.length === 1 ? "" : "s"} below together as one batch. This gate expects the most capable model (latest Claude Opus): state which model this session runs as in the review log and flag it there if it is a lesser one. Test each ticket against its own Outcome and Test steps, check docs against code, and apply the bounce cap, all as set out in the Review Batch flow. Only a kick-back changes a ticket's status, exactly as that flow describes.\n\n` +
+        `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${items.length} ticket${items.length === 1 ? "" : "s"} below together as one batch. This gate expects the most capable model (latest Claude Opus): state which model this session runs as in the review log and flag it there if it is a lesser one. Each ticket below carries its own Model requirement: a ticket marked Advanced is reviewed on Claude Opus only (delegate its review to an Opus subagent if this session is not Opus; if none is available, write reviewStatus "blocked" with reviewReason "model-unavailable: needs Claude Opus" and leave it unreviewed), and every reviewed ticket gets reviewedByModel set to the exact model id that reviewed it, as ROUTINE_INSTRUCTIONS.md → "Per-ticket model requirement" says. Test each ticket against its own Outcome and Test steps, check docs against code, and apply the bounce cap, all as set out in the Review Batch flow. Only a kick-back changes a ticket's status, exactly as that flow describes.\n\n` +
         `${items.length} built, not-yet-reviewed ticket${items.length === 1 ? "" : "s"} on ${after.deployBranch || "the integration branch"}:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
 
       try {
@@ -2247,6 +2248,58 @@ exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], co
     });
   }
   return mediaKeysApi.handle(req, res);
+});
+
+// ── Support Inbox: the support mailbox as tickets ────────────────────────
+// Settings → Support inbox connects a Google Workspace Gmail account (OAuth,
+// gmail.modify). The OAuth client secret and refresh token are encrypted
+// under MEDIA_KEYS_ENC_KEY in supportSecrets/gmail (closed to every client).
+// New mail is filed as supportTickets, drafted an answer from the published
+// help articles (ANTHROPIC_API_KEY, "unset" until that repo secret exists)
+// and, for a high-value sender, raised on the Staff Kanban. The five-minute
+// sync is .github/workflows/support-mail-sync.yml calling /v1/cron with
+// BOARD_API_KEY. See support-mail.js and support-core.js.
+const SUPPORT_ANTHROPIC_KEY = defineSecret("ANTHROPIC_API_KEY");
+const SUPPORT_ANTHROPIC_WORKSPACE = defineSecret("ANTHROPIC_WORKSPACE_ID");
+const { createSupportMail } = require("./support-mail");
+let supportMailApi = null;
+// Staff Kanban writes go through the board's own tools (kanban.js), so a
+// support escalation gets a PH-n key, a card, activity and notifications
+// exactly like a ticket a person files.
+let supportKanbanTools = null;
+async function supportKanbanCall(name, args, actor) {
+  if (!supportKanbanTools) {
+    supportKanbanTools = require("./kanban").kanbanTools({
+      textResult: (value) => ({ ok: true, value }),
+      toolError: (error) => ({ ok: false, error }),
+      audit: async () => {},
+    });
+  }
+  const tool = supportKanbanTools.find((t) => t.name === name);
+  const user = await mcp.resolveConsoleUser(actor);
+  if (!user) throw new Error(`${actor} isn't a member of the console`);
+  const out = await tool.run(args, { email: String(actor).toLowerCase(), role: user.role, displayName: user.displayName || "" });
+  if (!out || !out.ok) throw new Error((out && out.error) || `${name} failed`);
+  return out.value;
+}
+exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, SUPPORT_ANTHROPIC_KEY, SUPPORT_ANTHROPIC_WORKSPACE], cors: false, timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 }, (req, res) => {
+  if (!supportMailApi) {
+    const { getAuth } = require("firebase-admin/auth");
+    supportMailApi = createSupportMail({
+      db: getFirestore(),
+      verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
+      resolveConsoleUser: (email) => mcp.resolveConsoleUser(email),
+      encKey: () => MEDIA_KEYS_ENC_KEY.value(),
+      boardKey: () => BOARD_API_KEY.value(),
+      anthropicKey: () => { try { return SUPPORT_ANTHROPIC_KEY.value(); } catch { return ""; } },
+      anthropicWorkspace: () => { try { return SUPPORT_ANTHROPIC_WORKSPACE.value(); } catch { return ""; } },
+      freeDomains: require("./prospects-core").FREE_EMAIL_DOMAINS,
+      createKanbanTask: async (task, actor) => (await supportKanbanCall("kanban_create_task", task, actor)).key,
+      commentKanbanTask: (key, text, actor) => supportKanbanCall("kanban_comment", { key, text }, actor),
+      logger,
+    });
+  }
+  return supportMailApi.handle(req, res);
 });
 
 // ── AWS Partner Central (Selling + Benefits APIs), keyless ────────────────

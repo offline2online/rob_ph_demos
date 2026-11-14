@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "support-inbox", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
