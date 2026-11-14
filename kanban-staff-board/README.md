@@ -110,7 +110,12 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   lists the child tickets, with **Add task** / **Add bug** buttons and an "Add an existing ticket…" picker.
   Adding a child saves the epic first, creating it if it's new. The child opens with the epic,
   release, sprint and labels already filled in, and the epic reopens when the child is created
-  or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures.
+  or cancelled. The × on a child row removes it from the epic. Epics are left out of the release report's effort figures. In the console build
+  (13 Nov 2026) tickets nest up to four levels, **Epic > Task > Subtask > Sub-subtask**: any ticket
+  above the lowest level lists its children (Add task / Add subtask / Add sub-subtask), shows "Level n of 4",
+  and shows n/m done on its card; a fifth level is refused; and when all of a parent's children are done
+  it moves to Ready for Testing by itself, and its parent in turn. REQUIREMENTS.md → KB-TASK-14 (the
+  prototype still has epics only).
 - **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
   comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a

@@ -234,6 +234,10 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 .kb-child-link select { min-height: 38px; color: var(--text-muted); }
 .kb-children li:hover { background: var(--surface-2); }
 .kb-children .kb-avatar { margin-left: 4px; }
+/* Ticket hierarchy (KB-TASK-14): the ticket's level, a child's own roll-up, the lowest-level note */
+.field-label .kb-level { float: right; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11.5px; color: var(--text-muted); }
+.kb-child-rollup { flex: none; margin-left: 6px; font-size: 11.5px; font-weight: 600; color: var(--violet); }
+.kb-level-cap { margin: 4px 0 0; }
 .kb-field[hidden] { display: none; }
 
 /* Dragging */

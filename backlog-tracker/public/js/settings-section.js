@@ -9,6 +9,7 @@ export const SETTINGS_PAGES = [
   { key: "skills", label: "Skills & phase bindings", icon: "psychology" },
   { key: "automations", label: "Automations", icon: "bolt" },
   { key: "integrations", label: "Integrations & MCP", icon: "api" },
+  { key: "support", label: "Support inbox", icon: "inbox" },
 ];
 export const DEFAULT_SETTINGS_PAGE = "user-management";
 // Non-admins never see User Management, so they open on the next tab.

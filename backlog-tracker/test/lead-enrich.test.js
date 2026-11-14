@@ -84,7 +84,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     resolveConsoleUser: async (e) => (e === "sam@ph.com" ? { email: e, role } : null),
     anthropicKey: () => key,
     research: async (a) => { asked.push(a); return typeof agent === "function" ? agent(a) : agent; },
-    ...(store ? { bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
+    ...(store ? { toPng: async (bytes, ext) => { if (String(bytes).includes("BROKEN")) throw new Error("not an image"); return Buffer.concat([Buffer.from(`PNG(${ext}):`), bytes.slice(0, 40)]); }, bucket: () => ({ file: (path) => ({ save: async (bytes, opts) => { if (store === "broken") throw new Error("storage down"); saved.push({ path, size: bytes.length, type: opts.contentType, token: opts.metadata.metadata.firebaseStorageDownloadTokens }); } }) }) } : {}),
     screen: async (a) => { screened.push(a); if (verdict instanceof Error) throw verdict; return typeof verdict === "function" ? verdict(a) : verdict; },
     lookup: async (h) => (h === "internal.test" ? [{ address: "10.0.0.5" }] : [{ address: "93.184.216.34" }]),
     fetch: fetchImpl || (async (url) => { calls.push(url); return resp(200, HOME); }),
@@ -572,7 +572,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     a.db.state.leads.l1.company.website = "https://www.greeneking.co.uk";
     await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
     const e = a.db.state.leads.l1.enrichment;
-    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.svg", "image/svg+xml"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]]);
+    assert.deepEqual(a.saved.map((x) => [x.path.replace(/-[0-9a-f]{12}\./, "-HASH."), x.type]), [["brand/greeneking/light-HASH.png", "image/png"], ["brand/greeneking/dark-HASH.png", "image/png"], ["brand/greeneking/icon-HASH.png", "image/png"]], "every copy is a PNG");
     assert.ok(e.logos.light.startsWith(`${STORE}light-`) && e.logos.light.includes("?alt=media&token="), e.logos.light);
     assert.ok(e.logos.dark.startsWith(`${STORE}dark-`)); assert.ok(e.logoUrl.startsWith(`${STORE}icon-`));
     assert.deepEqual(e.logoSources, { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.png", icon: "https://www.greeneking.co.uk/apple-touch-icon.png" });
@@ -623,6 +623,122 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     await e.api.onEnrichWrite("leads", created("leads", "l1", e.db.state));
     assert.equal(e.db.state.leads.l1.company.website, "https://square.example"); assert.equal(e.asked.length, 0);
     assert.equal(e.db.state.leads.l1.enrichment.websiteGuess.confidence, 90);
+  });
+  // ── A stored logo is a static PNG, never an animated file (14 Nov 2026) ──
+  await test("an animated favicon is never kept as it is, and the header prefers the full logo", async () => {
+    const { isAnimated } = require("../functions/lead-enrich");
+    const frame = Buffer.from([0x21, 0xf9, 0x04, 0, 0, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0]);
+    const gif = (n) => Buffer.concat([Buffer.from("GIF89a"), ...Array.from({ length: n }, () => frame)]);
+    assert.equal(isAnimated(gif(10), "ico"), true, "a GIF served as an icon is read for what it is");
+    assert.equal(isAnimated(gif(1), "gif"), false); assert.equal(isAnimated(Buffer.from("\x89PNG...."), "png"), false);
+    assert.equal(isAnimated(Buffer.from("<svg><animate attributeName='x'/></svg>"), "svg"), true);
+    assert.equal(isAnimated(Buffer.from("<svg><style>@keyframes spin{}</style></svg>"), "svg"), true);
+    assert.equal(isAnimated(Buffer.from("<svg><path d='M0 0'/></svg>"), "svg"), false);
+    // The site's only icon is an animated GIF labelled as an icon. Stored: its first frame as a PNG.
+    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><img class="logo" src="/logo.svg"></body></html>`;
+    const files = { "https://seven.example/favicon.ico": ["image/x-icon", gif(10).toString("latin1")], "https://seven.example/logo.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"] };
+    const bin = (type, body) => ({ ...resp(200, body, { "content-type": type }), arrayBuffer: async () => { const b = Buffer.from(body, "latin1"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
+    const fetchImpl = async (url) => (files[url] ? bin(files[url][0], files[url][1]) : resp(200, page, { "content-type": "text/html" }));
+    const a = make({ fetchImpl, store: true });
+    a.db.state.leads.l1.company.website = "https://seven.example";
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const e = a.db.state.leads.l1.enrichment;
+    assert.ok(a.saved.every((x) => x.type === "image/png" && x.path.endsWith(".png")), JSON.stringify(a.saved));
+    assert.ok(/icon-[0-9a-f]{12}\.png\?/.test(e.logoUrl) && /light-[0-9a-f]{12}\.png\?/.test(e.logos.light));
+    // Storage is down: the static SVG keeps its own address, the animated icon is dropped rather than linked.
+    const b = make({ fetchImpl, store: "broken" });
+    b.db.state.leads.l1.company.website = "https://seven.example";
+    await b.api.onEnrichWrite("leads", created("leads", "l1", b.db.state));
+    assert.equal(b.db.state.leads.l1.enrichment.logos.light, "https://seven.example/logo.svg");
+    assert.equal(b.db.state.leads.l1.enrichment.logoUrl, "", "an animated file is never the logo");
+    // A copy made before this change (an .svg or .ico in storage) is redone as a PNG on the next run.
+    const old = JSON.parse(JSON.stringify(a.db.state));
+    old.leads.l1.enrichment.logos.light = e.logos.light.replace(".png?", ".svg?"); old.leads.l1.enrichment.logoUrl = e.logoUrl.replace(".png?", ".ico?");
+    const c = make({ fetchImpl, store: true, seed: old });
+    await c.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(c.saved.length, 2); assert.ok(/light-[0-9a-f]{12}\.png\?/.test(c.db.state.leads.l1.enrichment.logos.light));
+  });
+  // ── A lead and its TAM record carry the same information (14 Nov 2026) ──
+  await test("converting a TAM record to a lead carries everything across, and the lead is not researched again", async () => {
+    const { linkMerge } = require("../functions/lead-enrich");
+    const research = { at: new Date("2026-11-14T06:00:00Z"), by: "auto", summary: "A convenience retailer.", storeCount: 760, logos: { light: "https://store.example/l.png", dark: "" }, people: [{ name: "Fiona Hayes", title: "CEO" }], news: [{ title: "N", url: "https://n.example/1" }], level: "full",
+      request: { id: "r1", status: "done" }, filled: { industry: "Fuel & Convenience" }, screen: { ok: true } };
+    const tam = { name: "7-Eleven Australia", country: "Australia", website: "https://7eleven.com.au", industry: "Fuel & Convenience", storeCount: 750, priority: "high", insights: "Launching retail media.", decisionMakers: "CCO", notes: "Met at NRF.", ownership: "Seven & i", linkedinUrl: "https://www.linkedin.com/company/7-eleven-australia", markets: ["New Zealand"], vendors: ["RELEX"], campaigns: ["Q4"], awsAccountId: "123456789012",
+      contacts: [{ name: "Anthony Venuto", role: "GM Commercial Services", lastContact: "2026-11-01", email: "av@7eleven.example" }, { name: "Riley Wolff", role: "Product Manager", lastContact: "" }], enrichment: research, leadId: "lead1", status: "converted" };
+    // What the board writes on Convert to lead: six company fields and nothing else.
+    const lead = { company: { name: "7-Eleven Australia", website: "https://7eleven.com.au", industry: "Fuel & Convenience", countries: ["Australia"], storeCount: 750, awsAccountId: "" }, contacts: [], stage: "lead", source: "Prospects (TAM)", prospectId: "p1" };
+    const m = linkMerge(lead, tam);
+    assert.deepEqual(m.leadPatch.contacts.map((c) => [c.name, c.jobTitle, c.email]), [["Anthony Venuto", "GM Commercial Services", "av@7eleven.example"], ["Riley Wolff", "Product Manager", ""]]);
+    assert.ok(m.leadPatch.contacts.every((c) => c.id && c.buyingRole === ""));
+    assert.equal(m.leadPatch.enrichment.summary, "A convenience retailer."); assert.equal(m.leadPatch.enrichment.people.length, 1);
+    assert.equal(m.leadPatch.enrichment.request, undefined, "the run record stays with the record it ran on"); assert.equal(m.leadPatch.enrichment.filled, undefined);
+    assert.deepEqual(m.leadPatch.enrichment.screen, { ok: true }, "the check's pass carries, so it is not paid for again");
+    assert.equal(m.leadPatch.company.awsAccountId, "123456789012");
+    assert.deepEqual(m.leadPatch.tam, { Country: "Australia", Priority: "High", "Other markets": "New Zealand", Size: m.leadPatch.tam.Size, Ownership: "Seven & i", Insights: "Launching retail media.", "Decision makers": "CCO", LinkedIn: "https://www.linkedin.com/company/7-eleven-australia", "AWS region": m.leadPatch.tam["AWS region"], Vendors: "RELEX", Campaigns: "Q4", Notes: "Met at NRF." });
+    assert.equal(m.prospectPatch, null, "the TAM record already has everything");
+    // In the function: the new lead is filled within the same trigger and no research is paid for.
+    const { api, db, asked, screened } = make({ seed: { leads: { lead1: lead }, prospects: { p1: tam }, prospectCompanies: {} } });
+    lead.prospectId = "p1";
+    const out = await api.onEnrichWrite("leads", created("leads", "lead1", db.state));
+    assert.equal(out.carried, true); assert.equal(asked.length, 0); assert.equal(screened.length, 0);
+    const l = db.state.leads.lead1;
+    assert.equal(l.contacts.length, 2); assert.equal(l.enrichment.storeCount, 760); assert.equal(l.tam.Insights, "Launching retail media.");
+    // Running it again changes nothing (the second trigger, from the TAM record's own update).
+    assert.deepEqual(await api.syncLinked("lead1", "p1"), { lead: [], prospect: [] });
+  });
+  await test("a lead filed under or linked to a TAM record fills that record too, and nothing typed is replaced", async () => {
+    const { linkMerge } = require("../functions/lead-enrich");
+    const research = { at: new Date("2026-11-14T02:21:00Z"), summary: "US convenience stores.", storeCount: 12491, logos: { light: "https://store.example/7.png" } };
+    const lead = { company: { name: "7-Eleven", website: "https://www.7-eleven.com", industry: "Fuel & Convenience", countries: ["United States"], storeCount: 12491, awsAccountId: "" }, stage: "post-demo", prospectId: "p9",
+      contacts: [{ id: "c1", name: "Neha Nayyar", jobTitle: "Senior Director, Retail Media", buyingRole: "champion", email: "nn@7-eleven.example", linkedin: "", awsAccountId: "" }], enrichment: research };
+    const tam = { name: "7-Eleven", country: "United States", website: "", industry: "", storeCount: null, contacts: [{ name: "neha nayyar", role: "Retail media", lastContact: "", email: "NN@7-eleven.example" }, { name: "Mario Mijares", role: "VP", lastContact: "" }], notes: "Typed by a person." };
+    const m = linkMerge(lead, tam);
+    assert.deepEqual([m.prospectPatch.website, m.prospectPatch.industry, m.prospectPatch.storeCount], ["https://www.7-eleven.com", "Fuel & Convenience", 12491]);
+    assert.equal(m.prospectPatch.enrichment.summary, "US convenience stores.");
+    assert.equal(m.prospectPatch.contacts, undefined, "the same person (by email, any case) is not added twice");
+    assert.deepEqual(m.leadPatch.contacts.map((c) => c.name), ["Neha Nayyar", "Mario Mijares"]);
+    assert.equal(m.leadPatch.contacts[0].buyingRole, "champion", "the lead's own contact is untouched");
+    assert.equal(m.leadPatch.company, undefined, "nothing on the lead was blank"); assert.equal(m.leadPatch.tam.Notes, "Typed by a person.");
+    // A value a person typed on either side stays; the older research never replaces the newer.
+    const typed = linkMerge({ ...lead, company: { ...lead.company, storeCount: 13000 }, enrichment: { ...research, at: new Date("2026-11-01") } }, { ...tam, storeCount: 12000, website: "https://us.7-eleven.example", enrichment: { at: new Date("2026-11-10"), summary: "Newer." } });
+    assert.equal(typed.prospectPatch && typed.prospectPatch.storeCount, undefined); assert.equal(typed.prospectPatch && typed.prospectPatch.website, undefined);
+    assert.equal(typed.leadPatch.enrichment.summary, "Newer."); assert.equal(typed.prospectPatch && typed.prospectPatch.enrichment, undefined);
+    // Linking later (the TAM record gains leadId) brings the two into step; editing the TAM record refreshes the lead's copy.
+    const { api, db, asked } = make({ seed: { leads: { l9: lead }, prospects: { p9: { ...tam, leadId: "l9" } }, prospectCompanies: {} } });
+    assert.equal(await api.onEnrichWrite("prospects", changed("prospects", "p9", tam, db.state)), null);
+    assert.equal(asked.length, 0, "linking is not a reason to research");
+    assert.equal(db.state.prospects.p9.enrichment.storeCount, 12491); assert.equal(db.state.leads.l9.tam.Notes, "Typed by a person.");
+    const before = JSON.parse(JSON.stringify(db.state.prospects.p9));
+    db.state.prospects.p9.notes = "Now a priority."; db.state.prospects.p9.priority = "high";
+    await api.onEnrichWrite("prospects", changed("prospects", "p9", before, db.state));
+    assert.equal(db.state.leads.l9.tam.Notes, "Now a priority."); assert.equal(db.state.leads.l9.tam.Priority, "High");
+    // Test leads and network operator inquiries are left alone.
+    const t = make({ seed: { leads: { lt: { ...lead, test: true } }, prospects: { p9: { ...tam, leadId: "lt" } }, prospectCompanies: {} } });
+    assert.equal(await t.api.syncLinked("lt", "p9"), null);
+  });
+  // ── What a refresh keeps (from the second live run on one lead, 14 Nov 2026) ──
+  await test("a refresh keeps the most recently dated site count and lists each person once", async () => {
+    const { personKey, mergePeople, newerCount } = require("../functions/lead-enrich");
+    assert.equal(personKey({ name: "Stan Reynolds" }), personKey({ name: "Stanley (Stan) Reynolds" }));
+    assert.notEqual(personKey({ name: "Sam Reynolds-Smith" }), personKey({ name: "Stan Reynolds" }));
+    assert.equal(personKey({ name: "" }), "");
+    const merged = mergePeople([{ name: "Stan Reynolds", title: "President", linkedin: "", note: "" }, { name: "New Person", title: "CMO" }], [{ name: "Stanley (Stan) Reynolds", title: "President", linkedin: "https://www.linkedin.com/in/stan", note: "Was interim co-CEO." }, { name: "Mario Mijares", title: "VP" }], 12);
+    assert.deepEqual(merged.map((x) => x.name), ["Stan Reynolds", "New Person", "Mario Mijares"]);
+    assert.deepEqual([merged[0].linkedin, merged[0].note], ["https://www.linkedin.com/in/stan", "Was interim co-CEO."], "what the earlier entry knew is kept");
+    const june = { storeCount: 12491, storeCountBreakdown: "At 30 June 2026.", storeCountSource: { title: "Q2", url: "https://s.example/q2", date: "2026-10-08" } };
+    const feb = { storeCount: 12712, storeCountBreakdown: "At February 2026.", storeCountSource: { title: "Trade press", url: "https://t.example/a", date: "2026-04-23" } };
+    assert.equal(newerCount(feb, june).storeCount, 12491, "an older figure does not replace a newer one");
+    assert.equal(newerCount(june, feb).storeCount, 12491); assert.equal(newerCount({ storeCount: null }, june).storeCount, 12491);
+    assert.equal(newerCount({ storeCount: 500 }, { storeCount: 400 }).storeCount, 500, "with no dates to compare, the new run's figure stands");
+    // In a run: the record keeps June's count, breakdown and source, on the company field too.
+    const a = make({ agent: { ...AGENT, ...june } });
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const b = make({ agent: { ...AGENT, ...feb, people: [{ name: "Stanley (Stan) Reynolds", title: "President" }] }, seed: a.db.state });
+    b.db.state.leads.l1.enrichment.people = [{ name: "Stan Reynolds", title: "President" }];
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e = b.db.state.leads.l1.enrichment;
+    assert.deepEqual([e.storeCount, e.storeCountBreakdown, e.storeCountSource.date], [12491, "At 30 June 2026.", "2026-10-08"]);
+    assert.equal(b.db.state.leads.l1.company.storeCount, 12491); assert.equal(e.people.length, 1);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

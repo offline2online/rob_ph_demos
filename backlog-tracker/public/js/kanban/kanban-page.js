@@ -14,6 +14,7 @@ import {
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
   statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
+  MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -167,12 +168,41 @@ export function mountStaffKanban(ctx) {
     for (const t of state.tasks) for (const l of t.labels || []) set.add(l);
     return [...set].sort();
   }
-  // Epics are ordinary tickets of type "epic"; any task or bug can name one as its parent.
+  // Epics are ordinary tickets of type "epic". Tickets nest up to four levels
+  // (Epic > Task > Subtask > Sub-subtask, KB-TASK-14): a ticket's parent is its
+  // `epic` field, which may name any ticket above the lowest level.
   const byKey = (a, b) => (keyNumber(a.key) || 0) - (keyNumber(b.key) || 0);
   const epics = () => state.tasks.filter((t) => t.type === "epic").sort(byKey);
-  const epic = (key) => { const t = key ? store.state.tasks.get(key) : null; return t && t.type === "epic" ? t : null; };
-  const childrenOf = (key) => knownTasks().filter((t) => t.epic === key && t.type !== "epic");
+  const parentTicket = (t) => (t && t.type !== "epic" && t.epic ? taskByKey(t.epic) : null);
+  // Children of every ticket the page knows, indexed once per change to what it holds.
+  let kidIndex = null, kidRev = -1;
+  const childrenOf = (key) => {
+    if (!kidIndex || kidRev !== store.state.rev) {
+      kidIndex = new Map();
+      for (const t of knownTasks()) if (t.epic && t.type !== "epic") { if (!kidIndex.has(t.epic)) kidIndex.set(t.epic, []); kidIndex.get(t.epic).push(t); }
+      kidRev = store.state.rev;
+    }
+    return kidIndex.get(key) || [];
+  };
   const taskByKey = (k) => store.get(k);
+  const levelOfT = (t) => levelOf(t, taskByKey);
+  // Reads a ticket's parents and everything under it (at most four levels),
+  // so a depth check or a roll-up sees tickets the board isn't holding.
+  async function loadFamily(t) {
+    let p = t && t.type !== "epic" ? t.epic : "";
+    const seen = new Set();
+    while (p && !seen.has(p) && seen.size < MAX_LEVELS) {
+      seen.add(p);
+      const up = taskByKey(p) || (await store.fetchTask(p));
+      p = up && up.type !== "epic" ? up.epic : "";
+    }
+    let layer = t && t.key ? [t.key] : [];
+    for (let i = 0; i < MAX_LEVELS && layer.length; i++) {
+      const next = [];
+      for (const k of layer) for (const c of await store.fetchChildren(k)) next.push(c.key);
+      layer = next;
+    }
+  }
   // Every ticket the page knows of, the board's and those fetched on demand.
   // A board card has no description text; a search hit brings it, so the picker can match and quote it.
   const knownTasks = () => {
@@ -277,8 +307,28 @@ export function mountStaffKanban(ctx) {
       const moved = task.status !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
       toast(`<b>${esc(task.key)}</b> assigned to ${esc(firstName(toAssignee))}${moved}${ch && ch.note ? `, ${esc(ch.note)}` : ""}`);
     }
-    store.updateTask(key, patch, activity).catch(fail);
+    store.updateTask(key, patch, activity).then(() => { if (ch) return advanceParents(key); }).catch(fail);
     renderKanbanBoard();
+  }
+
+  // Parent automation (KB-TASK-14): when a ticket's status changes, each
+  // parent above it that is still before testing and whose children are now
+  // all done moves to Ready for Testing, and its own parent in turn.
+  async function advanceParents(key) {
+    const t = taskByKey(key);
+    if (!t || !t.epic || t.type === "epic" || !canWrite()) return;
+    try { await loadFamily(parentTicket(t) || { key: t.epic }); } catch (e) { /* decide on what the page holds */ }
+    const ups = parentsToAdvance(taskByKey(key), taskByKey, childrenOf);
+    for (const pk of ups) {
+      const p = taskByKey(pk);
+      const ch = p && statusChange(p, "ready-for-testing", { firstName });
+      if (!ch) continue;
+      const inCol = state.tasks.filter((x) => x.status === "ready-for-testing");
+      const rank = inCol.length ? Math.max(...inCol.map((x) => x.rank)) + 10 : 10;
+      await store.updateTask(pk, { ...ch.patch, rank }, [`${ch.activity} · all its child tickets are done`]);
+      toast(`<b>${esc(pk)}</b> moved to Ready for Testing: all its child tickets are done`);
+    }
+    if (ups.length) renderCurrent();
   }
 
   // ── Router ──────────────────────────────────────────────────────────────
@@ -658,7 +708,10 @@ export function mountStaffKanban(ctx) {
     const w = $("#kb-board-wrap");
     if (w) { w.style.scrollBehavior = "auto"; w.scrollLeft = x; w.style.scrollBehavior = ""; }
     scrollTo(0, y);
-    requestAnimationFrame(() => scrollTo(0, y));
+    // The second attempt is for a page still too short to reach y. It must not
+    // undo a scroll made since: only put y back if nothing has moved the page.
+    const set = scrollY;
+    requestAnimationFrame(() => { if (scrollY === set) scrollTo(0, y); });
   }
 
   // Phone: one column at a time. The pinned pager names the column you're on;
@@ -929,10 +982,10 @@ export function mountStaffKanban(ctx) {
     const est = +t.estimate || 0, log = +t.logged || 0;
     const pct = est ? Math.min(100, Math.round((log / est) * 100)) : 0;
     const over = est && log > est;
-    const ep = t.type === "epic" ? null : epic(t.epic);
-    const kids = t.type === "epic" ? childrenOf(t.key) : null;
-    const kidsLive = kids ? kids.filter((k) => res(k) !== "withdrawn") : null;
-    const kidsDone = kids ? kids.filter((k) => res(k) === "completed").length : 0;
+    const ep = parentTicket(t);
+    const kids = t.type === "epic" || childrenOf(t.key).length ? rollup(t.key, childrenOf) : null;
+    const kidsLive = kids ? { length: kids.total } : null;
+    const kidsDone = kids ? kids.done : 0;
     const flagBtn = `<button type="button" class="kb-flag-btn${t.flagged ? " on" : ""}" data-flag="${esc(t.key)}" aria-pressed="${!!t.flagged}" title="${t.flagged ? "Remove flag" : "Flag"}" aria-label="${t.flagged ? "Remove flag" : "Flag"} ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">flag</span></button>`;
     const linkBtn = `<button type="button" class="kb-link-btn" data-copy-link="${esc(t.key)}" title="Copy link" aria-label="Copy a link to ${esc(t.key)}"><span class="material-symbols-outlined" aria-hidden="true">link</span></button>`;
     return `<article class="card kb-card${res(t) === "withdrawn" ? " kb-card-withdrawn" : ""}${t.flagged ? " kb-flagged" : ""}${t.type === "epic" ? " kb-card-epic" : ""}" data-key="${esc(t.key)}" tabindex="0" aria-label="${esc(t.key + " " + t.title + (t.flagged ? ", flagged" : ""))}">
@@ -944,8 +997,8 @@ export function mountStaffKanban(ctx) {
         ${state.settings.fields.flag.show || t.flagged ? flagBtn : ""}
       </div>
       <p class="card-title">${esc(t.title)}</p>
-      ${ep ? `<p class="kb-parent-epic" title="Parent epic: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">bolt</span><span>${esc(ep.title)}</span></p>` : ""}
-      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kidsLive.length} child tickets completed"><span style="width:${kidsLive.length ? (kidsDone / kidsLive.length) * 100 : 0}%"></span></div>` : ""}
+      ${ep ? `<p class="kb-parent-epic" title="Parent ${esc(levelName(levelOfT(ep), ep.type).toLowerCase())}: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">${ep.type === "epic" ? "bolt" : "subdirectory_arrow_right"}</span><span>${esc(ep.title)}</span></p>` : ""}
+      ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kidsLive.length} child tickets done"><span style="width:${kidsLive.length ? (kidsDone / kidsLive.length) * 100 : 0}%"></span></div>` : ""}
       ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(firstName(t.previousAssignee))}</p>` : ""}
       ${est ? `<div class="kb-progress${over ? " over" : ""}" title="${fmtH(log)} logged of ${fmtH(est)}"><span style="width:${pct}%"></span></div>` : ""}
       <div class="kb-card-footer">
@@ -1201,8 +1254,8 @@ export function mountStaffKanban(ctx) {
     }, preset ? preset.fields : {});
     if (t) {
       watchThread(t.key);
-      // An epic's children may sit outside what the board holds.
-      if (t.type === "epic") store.fetchChildren(t.key).then(() => { if (draft && draft.key === t.key) refreshChildren(); }).catch(() => {});
+      // A ticket's children and parents may sit outside what the board holds.
+      loadFamily(t).then(() => { if (draft && draft.key === t.key) refreshChildren(); }).catch(() => {});
       for (const l of t.links || []) if (!taskByKey(l.key)) store.fetchTask(l.key).then(() => { const el = $("#f-links"); if (el && draft && draft.key === t.key) el.innerHTML = linksHTML(); }).catch(() => {});
     } else unwatchThread();
     $("#task-title-h").innerHTML = draftIsNew ? "New task" : `<span class="kb-modal-key">${esc(draft.key)}</span>`;
@@ -1224,7 +1277,8 @@ export function mountStaffKanban(ctx) {
     if (!draftIsNew || !draft) return;
     const b = $("#f-save");
     if (b) b.textContent = CREATE_CTA[draft.type] || CREATE_CTA.task;
-    $("#task-title-h").textContent = NEW_TITLE[draft.type] || NEW_TITLE.task;
+    const level = draft.type === "epic" ? 1 : levelOfT(draft);
+    $("#task-title-h").textContent = level > 2 && draft.type === "task" ? `New ${LEVEL_NAMES[level - 1].toLowerCase()}` : NEW_TITLE[draft.type] || NEW_TITLE.task;
   }
   // The details column (priority, type, people, release, estimate…) can be
   // pushed off to the right so the description gets the full width.
@@ -1358,18 +1412,29 @@ export function mountStaffKanban(ctx) {
       case "labels": return `<div class="kb-field" data-field="labels">${label("labels", "f-label-input")}<div class="kb-labels" id="f-labels">${labelsHTML()}</div>
         <input type="text" id="f-label-input" class="kb-input" list="kb-label-list" placeholder="Add a label and press Enter"><datalist id="kb-label-list">${allLabels().map((l) => `<option value="${esc(l)}">`).join("")}</datalist></div>`;
       case "epic": {
-        const list = epics().filter((e) => e.key !== d.key);
-        return `<div class="kb-field" data-field="epic"${d.type === "epic" ? " hidden" : ""}>${label("epic")}<select id="f-epic" class="kb-input">${opt("", list.length ? "No parent epic" : "No epics yet", d.epic)}${list.map((e) => opt(e.key, `${e.key} · ${e.title}`, d.epic)).join("")}</select></div>`;
+        // Any epic, or any ticket that already has children, that this one fits under (four levels at most).
+        const list = knownTasks().filter((e) => e.key === d.epic || (e.key !== d.key && (e.type === "epic" || childrenOf(e.key).length) && e.status !== "done" && !parentProblem(d, e.key, taskByKey, childrenOf))).sort(byKey);
+        return `<div class="kb-field" data-field="epic"${d.type === "epic" ? " hidden" : ""}>${label("epic")}<select id="f-epic" class="kb-input">${opt("", list.length ? "No parent" : "No epics yet", d.epic)}${list.map((e) => opt(e.key, `${e.key} · ${e.title}${e.type === "epic" ? "" : ` (${levelName(levelOfT(e), e.type).toLowerCase()})`}`, d.epic)).join("")}</select></div>`;
       }
       case "children": {
-        const kids = childrenOf(d.key);
-        const done = kids.filter((k) => res(k) === "completed").length;
-        const live = kids.filter((k) => res(k) !== "withdrawn").length;
-        return `<div class="kb-field" data-field="children"${d.type === "epic" ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${live} done${kids.length > live ? ` · ${kids.length - live} withdrawn` : ""}</span></label>
+        // Every ticket above the lowest level can hold child tickets (KB-TASK-14).
+        const level = levelOfT(d);
+        const shown = d.type === "epic" || (!draftIsNew && d.key);
+        const where = `<span class="kb-level" data-level="${level}">Level ${level} of ${MAX_LEVELS} · ${esc(levelName(level, d.type))}</span>`;
+        if (level >= MAX_LEVELS) {
+          return `<div class="kb-field" data-field="children"${shown ? "" : " hidden"}><label class="field-label">Child tickets ${where}</label>
+            <p class="kb-none kb-level-cap" id="f-level-cap">A ${esc(LEVEL_NAMES[MAX_LEVELS - 1].toLowerCase())} is the lowest level, so it can't have child tickets. Tickets nest at most ${MAX_LEVELS} levels: ${esc(LEVEL_NAMES.join(" > "))}.</p></div>`;
+        }
+        const kids = [...childrenOf(d.key)];
+        const sum = d.key ? rollup(d.key, childrenOf) : { done: 0, total: 0, withdrawn: 0 };
+        const done = sum.done, live = sum.total;
+        const childName = LEVEL_NAMES[level].toLowerCase();
+        const sub = (k) => { const r = childrenOf(k.key).length ? rollup(k.key, childrenOf) : null; return r ? `<span class="kb-none kb-child-rollup" title="${r.done} of ${r.total} of its child tickets done">${r.done}/${r.total}</span>` : ""; };
+        return `<div class="kb-field" data-field="children"${shown ? "" : " hidden"}><label class="field-label">Child tickets <span class="kb-none">${done} of ${live} done${sum.withdrawn ? ` · ${sum.withdrawn} withdrawn` : ""}</span> ${where}</label>
           ${live ? `<div class="kb-logbar kb-epic-progress"><span style="width:${(done / live) * 100}%"></span></div>` : ""}
-          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}${statusPill(k)}${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from epic" aria-label="Remove ${esc(k.key)} from this epic">&times;</button></li>`).join("") || '<li class="kb-none">No tickets in this epic yet</li>'}</ul>
+          <ul class="kb-sublist kb-children">${kids.sort((a, b) => STATUSES.findIndex((x) => x.key === a.status) - STATUSES.findIndex((x) => x.key === b.status)).map((k) => `<li data-open-child="${esc(k.key)}"><span class="kb-type kb-type-${typeOf(k.type).key}"><span class="material-symbols-outlined" aria-hidden="true">${typeOf(k.type).icon}</span></span><span class="kb-link-key">${esc(k.key)}</span><span class="kb-link-title">${esc(k.title)}</span>${sub(k)}${k.flagged ? '<span class="material-symbols-outlined kb-flag-mini" aria-label="Flagged">flag</span>' : ""}${statusPill(k)}${avatar(k.assignee)}<button type="button" class="icon-btn" data-unlink-child="${esc(k.key)}" title="Remove from ${esc(d.type === "epic" ? "epic" : "parent")}" aria-label="Remove ${esc(k.key)} from this ${esc(d.type === "epic" ? "epic" : "ticket")}">&times;</button></li>`).join("") || `<li class="kb-none">No tickets in this ${d.type === "epic" ? "epic" : esc(levelName(level, d.type).toLowerCase())} yet</li>`}</ul>
           <div class="kb-child-actions">
-            <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add task</button>
+            <button type="button" class="btn-ghost kb-icon-label" data-add-child="task"><span class="material-symbols-outlined kb-type-task" aria-hidden="true">check_box</span>Add ${esc(childName)}</button>
             <button type="button" class="btn-ghost kb-icon-label" data-add-child="bug"><span class="material-symbols-outlined kb-type-bug" aria-hidden="true">bug_report</span>Add bug</button>
             <span class="kb-child-link">${pickerHTML("f-child-link", "Add an existing ticket: search by number, title or description")}</span>
           </div></div>`;
@@ -1611,8 +1676,8 @@ export function mountStaffKanban(ctx) {
       $$(".kb-type-toggle .type-opt", form).forEach((x) => { x.classList.toggle("active", x === b); x.setAttribute("aria-checked", String(x === b)); });
       const pe = $('[data-field="epic"]', form);
       if (pe) pe.hidden = draft.type === "epic";
-      const ch = $('[data-field="children"]', form);
-      if (ch) ch.hidden = draft.type !== "epic";
+      if (draft.type === "epic") draft.epic = "";
+      refreshChildren();
     }));
     const st = $("#f-status");
     if (st) st.addEventListener("change", () => {
@@ -2080,7 +2145,7 @@ export function mountStaffKanban(ctx) {
         const t = taskByKey(un.dataset.unlinkChild);
         if (t && canWrite()) {
           const epicKey = draft.key;
-          store.updateTask(t.key, { epic: "" }, [`removed from epic ${epicKey}`]).catch(fail);
+          store.updateTask(t.key, { epic: "" }, [`removed from ${draft.type === "epic" ? "epic" : "parent"} ${epicKey}`]).catch(fail);
           refreshChildren(); toast(`<b>${esc(t.key)}</b> removed from ${esc(epicKey)}`); renderCurrent();
         }
         return;
@@ -2098,14 +2163,22 @@ export function mountStaffKanban(ctx) {
       if (li) openTask(li.dataset.openChild, { returnTo: draft.key });
     });
     bindPicker("f-child-link", {
-      candidates: () => knownTasks().filter((t) => t.type !== "epic" && t.epic !== draft.key),
+      // Tickets that fit under this one: not above it, and four levels at most.
+      candidates: () => {
+        const level = levelOfT(draft), above = new Set(ancestorsOf(draft, taskByKey));
+        return knownTasks().filter((t) => t.type !== "epic" && t.epic !== draft.key && t.key !== draft.key && !above.has(t.key) && level + heightOf(t.key, childrenOf) <= MAX_LEVELS);
+      },
       note: (t) => (t.epic ? `in ${t.epic}` : ""),
       onPick: (picked) => {
       const key = picked.key;
-      withEpicSaved((epicKey) => {
+      withEpicSaved(async (epicKey) => {
         const t = taskByKey(key);
         if (!t) return;
-        store.updateTask(key, { epic: epicKey }, [`added to epic ${epicKey}`]).catch(fail);
+        try { await loadFamily(t); await loadFamily(taskByKey(epicKey)); } catch (e) { /* checked against what the page holds */ }
+        const why = parentProblem(taskByKey(key), epicKey, taskByKey, childrenOf);
+        if (why) { toast(esc(why)); return; }
+        const parent = taskByKey(epicKey);
+        store.updateTask(key, { epic: epicKey }, [`added to ${parent && parent.type === "epic" ? "epic" : "parent"} ${epicKey}`]).catch(fail);
         renderCurrent();
         if (draft && draft.key === epicKey) refreshChildren();
         toast(`<b>${esc(key)}</b> added to ${esc(epicKey)}`);
@@ -2190,8 +2263,19 @@ export function mountStaffKanban(ctx) {
       return;
     }
     if (next.type === "epic") next.epic = "";
-    const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const existing = draftIsNew ? null : store.getFull(next.key);
+    // A new or changed parent must keep the tree within four levels (KB-TASK-14).
+    if (next.epic && next.epic !== ((existing || {}).epic || "")) {
+      try { await loadFamily({ ...next, epic: next.epic }); } catch (e) { /* checked against what the page holds */ }
+      const why = parentProblem(next, next.epic, taskByKey, childrenOf);
+      if (why) {
+        const f = $('[data-field="epic"]', form); if (f) f.classList.add("kb-field-error");
+        if (sideCollapsed) setSideCollapsed(false);
+        err.hidden = false; err.textContent = why;
+        return;
+      }
+    }
+    const [newStatus, newRes] = (val("f-status") || draft.status).split(":");
     const endOf = (status) => { const inCol = state.tasks.filter((t) => t.status === status); return inCol.length ? Math.max(...inCol.map((t) => t.rank)) + 10 : 10; };
     saving = true;
     const saveBtn = $("#f-save"); if (saveBtn) saveBtn.disabled = true;
@@ -2209,16 +2293,11 @@ export function mountStaffKanban(ctx) {
           ch = setStatus({ ...existing, ...patch }, newStatus, { resolution: newRes });
           if (ch) { patch.rank = endOf(newStatus); Object.assign(patch, ch.patch); activity.push(ch.activity); }
         }
-        // An epic that stops being one lets go of its children (KB-TASK-7).
-        const others = [];
-        if (existing.type === "epic" && next.type !== "epic") {
-          const kids = await store.fetchChildren(existing.key).catch(() => childrenOf(existing.key));
-          for (const k of kids) others.push({ key: k.key, patch: { epic: "" }, activity: [`removed from epic ${existing.key} (no longer an epic)`] });
-          if (kids.length) setTimeout(() => toast(`${kids.length} ticket${kids.length > 1 ? "s" : ""} no longer ha${kids.length > 1 ? "ve" : "s"} a parent epic`), 3700);
-        }
+        // An epic that stops being one keeps its children: any ticket above the lowest level can have them (KB-TASK-14).
         if (commentQ && KBEditor.getHtml(commentQ)) addCommentFromEditor();
-        if (Object.keys(patch).length || others.length) await store.updateTask(existing.key, patch, activity, others);
+        if (Object.keys(patch).length) await store.updateTask(existing.key, patch, activity);
         if (!ch) toast(`<b>${esc(existing.key)}</b> saved`);
+        if (ch) advanceParents(existing.key).catch(fail);
       } else {
         const fields = { ...next, status: "backlog", resolution: null, rank: endOf("backlog") };
         delete fields.key; delete fields.comments; delete fields.activity;

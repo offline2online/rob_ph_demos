@@ -1672,6 +1672,9 @@ html:not([data-console-role="admin"]) [data-admin-only] { display: none !importa
 .review-flag-remediating { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .review-flag-kicked-back { color: #ad6800; background: #fff7e6; border-color: #ffd591; }
 .review-flag-blocked { color: #cf1322; background: #fff1f0; border-color: #ffa39e; }
+/* Per-ticket model requirement: an Advanced ticket is built and reviewed on Claude Opus only. Same chip as the review flag. */
+.model-badge { color: #531dab; background: #f9f0ff; border-color: #d3adf7; }
+.blocked-flag-model-unavailable { color: #531dab; background: #f9f0ff; border-color: #d3adf7; }
 
 /* A train card's own test result (trainTest) and who approved it. Reuses the review-flag chip. */
 a.review-flag { text-decoration: none; cursor: pointer; }

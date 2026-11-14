@@ -154,7 +154,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 | --- | --- |
 | `kanban_list_people` (members by first name, releases, sprints, projects, current release) | `kanban_create_task` (always into Backlog, next PH-n key) |
 | `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
-| `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets) and an epic's children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off) |
+| `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets), the ticket's `level` / `levelName` and its children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off; a parent whose children are then all done moves to Ready for Testing by itself, `parentsMovedToTesting`) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
 | `kanban_release_report` (outstanding, remaining effort, per-person capacity) | `kanban_comment` (`mention` notifies people on the board's bell) |
 | `kanban_list_notifications` (your notifications, unread first; only the unread ones, `limit`: "what's new for me on the board?") | `kanban_check_criteria` (tick or untick acceptance criteria by id; see below) |
@@ -347,7 +347,7 @@ as text until Anthropic switches on its MCP Apps host.
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
 | `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
-| `update_backlog_item` (title, description, type, area); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
+| `update_backlog_item` (title, description, type, area, model); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
@@ -837,7 +837,7 @@ industry, market, region, campaign, size, status and store range.
 
 The Promote › Leads pipeline can be managed end to end, with the board's own permissions (an editor or admin writes, a viewer reads) and each write attributed to the member's email:
 
-Each lead has a `leadType`: `company` (a retail/company lead, the default) or `operator` (a network operator inquiry from the Be Your Own Boss page: an individual, not a company). Both read tools return `leadType` and `leadTypeLabel` ("Retail / company" or "Network operator inquiry"), `name` (the company, or for an `operator` lead the person), and for an `operator` lead its `region`, `background` and `backgroundLabel`.
+Each lead has a `leadType`: `company` (a retail/company lead, the default) or `operator` (a network operator inquiry from the Run Your Own RMN page: an individual, not a company). Both read tools return `leadType` and `leadTypeLabel` ("Retail / company" or "Network operator inquiry"), `name` (the company, or for an `operator` lead the person), and for an `operator` lead its `region`, `background` and `backgroundLabel`.
 
 - Read: `list_leads` (filters `leadType` (`company` or `operator`), `stage`, `company`, `assignee` (an email or `unassigned`), `source`, `industry`, free text `q`; `limit`/`offset` paging; archived leads only with `includeArchived`) and `get_lead` (contacts and buying roles, website activity, tech stack, customer account, linked prospect, history).
 - Create: `create_lead`, `create_leads` (up to 50). For a company lead the stage is any of `lead`, `hot-lead`, `demo`, `post-demo`, `closed-won`, `closed-lost` (default `lead`); a company name that already exists (case-insensitive, archived included) is refused and the existing lead returned. For a network operator inquiry pass `leadType: "operator"` with the person as the only contact, plus `region` (where they plan to operate) and `background`; no company is needed, and the stage is any of `applied` (the default), `screening`, `intro-call`, `approved`, `not-a-fit`. The type is set on create and can't be changed later.

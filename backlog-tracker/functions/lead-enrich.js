@@ -61,6 +61,24 @@ const COMPANY_COLLECTION = "prospectCompanies";
 const LOGO_BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
 const MAX_LOGO_BYTES = 1536 * 1024;
 const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif", "image/avif": "avif", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico" };
+// Every stored logo is a static PNG (transparency kept): an SVG is drawn at a
+// useful size, and an animated file (a site's animated favicon, an animated
+// SVG) is never kept as it is. Uses sharp, which the functions already ship.
+const LOGO_PX = 800;
+async function toStaticPng(bytes, ext) {
+  const sharp = require("sharp");
+  const img = ext === "svg" ? sharp(bytes, { density: 600 }) : sharp(bytes, { pages: 1 });
+  return img.resize({ width: LOGO_PX, height: LOGO_PX, fit: "inside", withoutEnlargement: ext !== "svg" }).png().toBuffer();
+}
+// More than one frame in a GIF, or animation in an SVG.
+function isAnimated(bytes, ext) {
+  if (ext === "svg") return /<animate|<set[\s>]|@keyframes|animation\s*:/i.test(bytes.toString("utf8"));
+  if (bytes.slice(0, 3).toString("latin1") !== "GIF") return false;
+  let frames = 0;
+  for (let i = 0; i < bytes.length - 8 && frames < 2; i++) if (bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04) frames++;
+  return frames > 1;
+}
+const isStoredPng = (u) => isStored(u) && /\.png\?/.test(u);
 const isStored = (u) => typeof u === "string" && u.startsWith(`https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/brand%2F`);
 // The screen that runs before any research is paid for: a cheaper model with
 // three searches at most decides whether this is a real company that runs
@@ -210,7 +228,7 @@ function commonsLogos(json, company) {
 const AGENT_SYSTEM = [
   "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
-  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
+  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from, with the date the figure is as at (not the date you read it). Prefer the most recently dated figure the company or its parent has published. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
   "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
@@ -457,6 +475,35 @@ function mergeBy(list, key, n) {
   return out.slice(0, n);
 }
 
+// One person, however the name is written: "Stan Reynolds" and "Stanley (Stan)
+// Reynolds" are the same key (first initial and surname).
+function personKey(x) {
+  const words = String((x && x.name) || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z\u00c0-\u024f' -]+/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  return words.length === 1 ? words[0] : `${words[0][0]}|${words[words.length - 1]}`;
+}
+// The newer run's entry for a person, with a LinkedIn link or note the older one had and it lacks.
+function mergePeople(now, before, n) {
+  const out = [], at = new Map();
+  for (const x of [...(now || []), ...(before || [])]) {
+    const k = personKey(x);
+    if (!k) continue;
+    if (at.has(k)) { const have = out[at.get(k)]; if (!have.linkedin && x.linkedin) have.linkedin = x.linkedin; if (!have.note && x.note) have.note = x.note; continue; }
+    at.set(k, out.length); out.push({ ...x });
+  }
+  return out.slice(0, n);
+}
+// The site count a refresh keeps: the one whose source is dated later. A run
+// that finds an older figure than the record already has does not replace it.
+function newerCount(f, p) {
+  const d = (s) => String((s && s.date) || "");
+  const found = { storeCount: f.storeCount || null, storeCountBreakdown: f.storeCountBreakdown || "", storeCountSource: f.storeCountSource || null };
+  const had = { storeCount: p.storeCount || null, storeCountBreakdown: p.storeCountBreakdown || "", storeCountSource: p.storeCountSource || null };
+  if (!found.storeCount) return had.storeCount ? had : found;
+  if (had.storeCount && d(had.storeCountSource) && d(found.storeCountSource) && d(had.storeCountSource) > d(found.storeCountSource)) return had;
+  return found;
+}
+
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
@@ -478,9 +525,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
-    storeCount: f.storeCount || p.storeCount || null,
-    storeCountBreakdown: f.storeCount ? f.storeCountBreakdown : keep(f.storeCountBreakdown, p.storeCountBreakdown),
-    storeCountSource: f.storeCount ? f.storeCountSource : (f.storeCountSource || p.storeCountSource || null),
+    ...newerCount(f, p),
     hq: keep(hq, p.hq),
     employees: keep(f.employees, p.employees),
     revenue: keep(f.revenue, p.revenue),
@@ -497,7 +542,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     fit: keep(f.fit, p.fit),
     talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
     // A refresh adds to people and news: one run can miss a person the last one found.
-    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    people: mergePeople(f.people, Array.isArray(p.people) ? p.people : [], 12),
     news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
@@ -513,7 +558,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || str(f.industry, 120));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
   if (countries.length > (lead.company.countries || []).length) { company.countries = countries; changed.push("countries"); }
@@ -533,7 +578,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   set("linkedinUrl", f.linkedinCompany);
   if (!stored("website") && f.website && f.website.length <= 300) { fields.website = f.website; changed.push("website"); }
   const markets = uniq([...p.markets, ...f.countries], 60, 60);
@@ -578,9 +623,73 @@ function agentError(err) {
   return /[.!?]$/.test(msg) ? msg : `${msg}.`;
 }
 
+// ── A lead and its TAM record carry the same information ─────────────────
+// When the two are linked (a TAM record converted to a lead, a lead matched to
+// or filed under a TAM record, either linked later), nothing is left behind on
+// one side: company fields fill each other's blanks, contacts are added both
+// ways, the research (logos, sites, people, news...) goes to the side that has
+// none or an older copy, and the lead keeps a readable copy of the TAM-only
+// fields (priority, insights, notes...) in `tam`. Nothing a person typed is
+// replaced. Pure: returns the two patches (null when there is nothing to write).
+const LINK_OWN = ["request", "filled", "filledProfile", "companyFieldsAdded", "screen"]; // each record's own
+const when = (v) => (v && typeof v.toDate === "function" ? v.toDate().getTime() : (v ? new Date(v).getTime() || 0 : 0));
+function tamSnapshot(p) {
+  const rows = [
+    ["Country", p.country], ["Priority", prospectsCore.priorityLabel(p.priority)], ["Sub-industry", p.subIndustry], ["HQ country", p.hqCountry],
+    ["Other markets", p.markets.join(", ")], ["Store presence", p.storePresence], ["Size", p.sizeBand && p.sizeBand !== "unknown" ? prospectsCore.sizeBandLabel(p.sizeBand) : ""],
+    ["Ownership", p.ownership], ["Insights", p.insights], ["Decision makers", p.decisionMakers], ["LinkedIn", p.linkedinUrl],
+    ["AWS region", p.awsRegion], ["Vendors", p.vendors.join(", ")], ["Campaigns", p.campaigns.join(", ")], ["Source", p.source], ["Notes", p.notes],
+  ];
+  const out = {};
+  for (const [k, v] of rows) { const t = String(v == null ? "" : v).trim(); if (t) out[k] = t.slice(0, 2000); }
+  return out;
+}
+function linkMerge(leadData, prospectData) {
+  const ld = leadData || {}, pd = prospectData || {};
+  const lead = leadsCore.normaliseLead("x", ld), p = prospectsCore.normaliseProspect("x", pd);
+  const le = ld.enrichment && typeof ld.enrichment === "object" ? ld.enrichment : null;
+  const pe = pd.enrichment && typeof pd.enrichment === "object" ? pd.enrichment : null;
+  const leadPatch = {}, prospectPatch = {};
+
+  // Company fields: each side's blanks from the other.
+  const company = { ...(ld.company || {}) };
+  let companyChanged = false;
+  const fillLead = (k, v) => { if (blank(company[k]) && !blank(v)) { company[k] = v; companyChanged = true; } };
+  fillLead("website", p.website); fillLead("industry", p.industry); fillLead("storeCount", p.storeCount); fillLead("awsAccountId", p.awsAccountId);
+  if (blank(company.countries)) { const c = uniq([p.country, ...p.markets].filter(Boolean), 60, 60); if (c.length) { company.countries = c; companyChanged = true; } }
+  if (companyChanged) leadPatch.company = company;
+  const lc = lead.company;
+  if (blank(pd.website) && lc.website) prospectPatch.website = lc.website;
+  if (blank(pd.industry) && lc.industry) { const ind = prospectsCore.normaliseIndustry(lc.industry); if (ind && ind !== prospectsCore.UNASSIGNED_INDUSTRY) prospectPatch.industry = ind; }
+  if (pd.storeCount == null && typeof lc.storeCount === "number") prospectPatch.storeCount = lc.storeCount;
+  if (blank(pd.awsAccountId) && lc.awsAccountId) prospectPatch.awsAccountId = lc.awsAccountId;
+
+  // Contacts: anyone on one side and not the other is added (matched on email, else name).
+  const key = (c) => (c.email ? `e:${String(c.email).toLowerCase()}` : `n:${String(c.name || "").trim().toLowerCase()}`);
+  const leadContacts = Array.isArray(ld.contacts) ? ld.contacts.filter((c) => c && c.name) : [];
+  const tamContacts = p.contacts.filter((c) => c && c.name);
+  const onLead = new Set(leadContacts.map(key)), onTam = new Set(tamContacts.map(key));
+  const toLead = tamContacts.filter((c) => !onLead.has(key(c))).map((c) => ({ id: leadsCore.newContactId(), name: str(c.name, 120), jobTitle: str(c.role, 120), buyingRole: "", email: str(c.email, 200).toLowerCase(), linkedin: "", awsAccountId: /^\d{12}$/.test(String(c.awsAccountId || "")) ? String(c.awsAccountId) : "" }));
+  if (toLead.length) leadPatch.contacts = [...leadContacts, ...toLead].slice(0, leadsCore.LIMITS.contacts);
+  const toTam = leadContacts.filter((c) => !onTam.has(key(c))).map((c) => ({ name: str(c.name, 120), role: str(c.jobTitle, 120), lastContact: "", ...(c.email ? { email: str(c.email, 200).toLowerCase() } : {}), ...(c.awsAccountId ? { awsAccountId: String(c.awsAccountId) } : {}) }));
+  if (toTam.length) prospectPatch.contacts = [...(Array.isArray(pd.contacts) ? pd.contacts : []), ...toTam].slice(-prospectsCore.LIMITS.contacts);
+
+  // The research: the newer copy goes to the side with none, or with an older one.
+  const lat = when(le && le.at), pat = when(pe && pe.at);
+  const carry = (from, to) => { const out = { ...from }; for (const k of LINK_OWN) { delete out[k]; if (to && to[k] !== undefined) out[k] = to[k]; } if (!out.screen && from.screen) out.screen = from.screen; return out; };
+  if (pat && pat > lat) leadPatch.enrichment = carry(pe, le);
+  else if (lat && lat > pat) prospectPatch.enrichment = carry(le, pe);
+
+  // The TAM-only fields, readable on the lead.
+  const snap = tamSnapshot(p);
+  if (!same(snap, ld.tam && typeof ld.tam === "object" ? ld.tam : {})) leadPatch.tam = snap;
+
+  return { leadPatch: Object.keys(leadPatch).length ? leadPatch : null, prospectPatch: Object.keys(prospectPatch).length ? prospectPatch : null };
+}
+
 function createLeadEnrich({
   db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
-  research, screen, bucket, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
+  research, screen, bucket, toPng = toStaticPng, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
@@ -674,15 +783,28 @@ function createLeadEnrich({
       const bytes = await r.bytes();
       if (!bytes.length || bytes.length > MAX_LOGO_BYTES) return "";
       if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
-      const hash = crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12);
-      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.${ext}`;
+      // A file that says it is one type and is another (a GIF served as an icon) is read for what it is.
+      const real = bytes.slice(0, 3).toString("latin1") === "GIF" ? "gif" : ext;
+      const png = await toPng(bytes, real);
+      if (!png || !png.length || png.length > MAX_LOGO_BYTES) return "";
+      const hash = crypto.createHash("sha256").update(png).digest("hex").slice(0, 12);
+      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.png`;
       const token = crypto.randomUUID();
-      await bucket().file(path).save(bytes, { contentType: type, resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
+      await bucket().file(path).save(png, { contentType: "image/png", resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
       return `https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
     } catch (err) {
       logger.warn("logo not copied", { kind, error: String(err && err.message ? err.message : err).slice(0, 200) });
       return "";
     }
+  }
+  // Is the image at this address animated? (Unreachable counts as not.)
+  async function animatedAt(url) {
+    try {
+      const r = await safeGet(url);
+      const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "").split(";")[0].trim().toLowerCase();
+      if (!r.ok || typeof r.bytes !== "function") return false;
+      return isAnimated(await r.bytes(), LOGO_TYPES[type] || "");
+    } catch { return false; }
   }
   // The run's logos, copied into storage. A logo whose source is the one already
   // copied is left as it is; one that can't be copied keeps its original address.
@@ -696,9 +818,10 @@ function createLeadEnrich({
       const src = found[kind];
       if (!src) { out[kind] = ""; continue; }
       if (isStored(src)) { out[kind] = src; from[kind] = wasFrom[kind] || ""; continue; }
-      if (wasFrom[kind] === src && isStored(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
-      out[kind] = (await storeLogo(company, kind, src)) || src;
-      from[kind] = src;
+      if (wasFrom[kind] === src && isStoredPng(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
+      // A copy is a static PNG. A file that can't be copied keeps its own address, unless it is animated: then there is none.
+      out[kind] = (await storeLogo(company, kind, src)) || ((await animatedAt(src)) ? "" : src);
+      from[kind] = out[kind] ? src : "";
     }
     result.f.logos = { light: out.light, dark: out.dark };
     result.f.logoSources = from;
@@ -918,7 +1041,8 @@ function createLeadEnrich({
         const cref = db.collection(COMPANY_COLLECTION).doc(ckey);
         const csnap = await cref.get();
         const profile = csnap.exists ? ((csnap.data() || {}).profile || {}) : {};
-        const pr = applyToProfile(profile, result.f, result.logoUrl, r.enrichment.filledProfile, at.toISOString().slice(0, 10));
+        // The profile's logo is the full logo when one was found, else the icon.
+        const pr = applyToProfile(profile, result.f, (result.f.logos && result.f.logos.light) || result.logoUrl, r.enrichment.filledProfile, at.toISOString().slice(0, 10));
         r.enrichment.filledProfile = pr.filled;
         await cref.set({ name: str(pdata.name, 120), profile: pr.set, updatedAt: stamp(), updatedByEmail: meta.by.includes("@") ? meta.by : "enrichment" }, { merge: true });
       }
@@ -955,6 +1079,38 @@ function createLeadEnrich({
     } catch { return false; }
   }
 
+  // Brings a lead and its TAM record into step (linkMerge). Returns what changed.
+  async function syncLinked(leadId, prospectId) {
+    if (!leadId || !prospectId) return null;
+    const lref = db.collection("leads").doc(String(leadId)), pref = db.collection("prospects").doc(String(prospectId));
+    const [ls, ps] = await Promise.all([lref.get(), pref.get()]);
+    if (!ls.exists || !ps.exists) return null;
+    const ld = ls.data() || {}, pd = ps.data() || {};
+    if (ld.test === true || ld.leadType === "operator") return null;
+    const { leadPatch, prospectPatch } = linkMerge(ld, pd);
+    if (leadPatch) await lref.update({ ...leadPatch, updatedAt: stamp() });
+    if (prospectPatch) await pref.update({ ...prospectPatch, updatedAt: stamp() });
+    return { lead: leadPatch ? Object.keys(leadPatch) : [], prospect: prospectPatch ? Object.keys(prospectPatch) : [] };
+  }
+  // Is this write one that links the two, or changes what the TAM record says?
+  async function syncOnWrite(collection, id, before, after) {
+    try {
+      if (collection === "leads") {
+        const pid = str(after.prospectId, 120);
+        if (pid && (!before || str(before.prospectId, 120) !== pid)) return await syncLinked(id, pid);
+      } else {
+        const lid = str(after.leadId, 120);
+        if (!lid) return null;
+        // Newly linked, or the record's own fields changed (so the lead's copy of them follows).
+        const fields = (d) => { const { enrichment, updatedAt, updatedByEmail, ...rest } = d || {}; return rest; };
+        if (!before || str(before.leadId, 120) !== lid || !same(fields(before), fields(after))) return await syncLinked(lid, id);
+      }
+    } catch (err) {
+      logger.warn("lead and TAM record not brought into step", { collection, id, error: String(err && err.message ? err.message : err).slice(0, 300) });
+    }
+    return null;
+  }
+
   // The Firestore trigger: a created record, or a newly queued request.
   async function onEnrichWrite(collection, event) {
     const before = event && event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
@@ -965,11 +1121,20 @@ function createLeadEnrich({
     const rb = requestOf(before), ra = requestOf(after);
     const created = !before;
     const queued = ra && ra.status === "queued" && (!rb || rb.id !== ra.id);
+    // A lead and its TAM record are brought into step whenever they are linked.
+    const synced = await syncOnWrite(collection, String(id), before, after);
     if (!created && !queued) return null;
     if (collection === "leads" && after.test === true) return null;
     // A network operator inquiry is a person, not a company: nothing to research.
     if (collection === "leads" && after.leadType === "operator") return null;
     try {
+      // A new record that already carries research (a TAM record converted to a
+      // lead, a lead filed under a researched TAM record) is not researched again.
+      if (created && !queued && synced) {
+        const fresh = await db.collection(collection).doc(String(id)).get();
+        const e = fresh.exists ? (fresh.data() || {}).enrichment : null;
+        if (e && e.at) return { ok: true, carried: true, collection, id: String(id) };
+      }
       if (created && !queued && collection === "prospects" && (await coveredByNewLead(after))) return null;
       return await enrichRecord(collection, String(id), queued ? ra.by : "auto", created && !queued ? "created" : "requested");
     } catch (err) {
@@ -1009,10 +1174,10 @@ function createLeadEnrich({
     return send(res, 202, { ok: true, queued: true, requestId: request.id, collection, id });
   }
 
-  return { handle, onEnrichWrite, enrichRecord, logosFor, websiteSource };
+  return { handle, onEnrichWrite, enrichRecord, syncLinked, logosFor, websiteSource };
 }
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

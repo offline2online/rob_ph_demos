@@ -24,7 +24,7 @@
 // with a real lead or a TAM record, and is excluded from enrichment
 // (lead-enrich.js) and the MCP tools (leads.js).
 // A submission with lead_type (or leadType) "operator" or "Network operator inquiry"
-// (the Be Your Own Boss page's product tour gate) is an individual, not a company:
+// (the Run Your Own RMN page's product tour gate) is an individual, not a company:
 // it becomes a network operator inquiry (leadType "operator", Applied stage) with the person as its contact,
 // and never touches Prospects (TAM), the AWS record, company matching or
 // enrichment. The same email again (same test flag) is the same person: the

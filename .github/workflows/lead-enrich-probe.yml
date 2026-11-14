@@ -31,6 +31,14 @@ on:
         description: 'Run the whole new-lead flow on an in-memory record (nothing on the board changes): "Company|contact@email|https://website" (email and website optional; public names only)'
         type: string
         default: ''
+      sync_lead:
+        description: 'Bring this lead id and its TAM record into step (contacts, research, TAM fields). WRITES to the board; no research cost'
+        type: string
+        default: ''
+      refresh_lead:
+        description: 'Queue a research run on this lead id, as its Refresh info button does. WRITES to the board and costs one research run'
+        type: string
+        default: ''
       lead_status:
         description: 'Only report what the last run on this lead id did (status, message, the check) and the functions recent log lines'
         type: string
@@ -74,9 +82,11 @@ jobs:
           LOGO_COMPANIES: ${{ inputs.logos }}
           LEAD_STATUS: ${{ inputs.lead_status }}
           PIPELINE: ${{ inputs.pipeline }}
+          REFRESH_LEAD: ${{ inputs.refresh_lead }}
+          SYNC_LEAD: ${{ inputs.sync_lead }}
           PROBE_PUBLIC_KEY_INPUT: ${{ inputs.public_key }}
         run: |
-          if [ -n "$LEAD_ID" ] || [ -n "$LEAD_STATUS" ]; then
+          if [ -n "$LEAD_ID" ] || [ -n "$LEAD_STATUS" ] || [ -n "$REFRESH_LEAD" ] || [ -n "$SYNC_LEAD" ]; then
             echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/probe-sa.json"
             export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/probe-sa.json"
           fi
