@@ -47,6 +47,7 @@ async function reset() {
     for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@personalisationhub.com"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
+    await setDoc(doc(db, "kanbanNotifications/o1"), { to: "rob@offline2online.com", from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "assigned", read: false, at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
     await setDoc(doc(db, "memberDirectory/sam@personalisationhub.com"), { email: SAM, displayName: "Sam Sample" });
     await setDoc(doc(db, "kanbanSettings/main"), { tester: "rob@offline2online.com" });
@@ -284,6 +285,16 @@ async function main() {
   await check("Nobody deletes someone else's read notification", "deny", () => deleteDoc(doc(as(ADMIN), "kanbanNotifications/n3")));
   await check("The prune query (own, read, older than 30 days) is allowed", "allow", () =>
     getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", SAM), where("read", "==", true), where("at", "<", new Date(Date.now() - 30 * 86400000)), limit(200))));
+
+  // The owner's second address is the same person; notifications are addressed to the first.
+  const ALIAS = { uid: "owner-alias", claims: { email: "rob@personalisationhub.com", email_verified: true } };
+  await check("The owner signed in with his second address reads his notifications (the bell's query)", "allow", () =>
+    getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", "rob@offline2online.com"), limit(100))));
+  await check("…and marks one read", "allow", () => updateDoc(doc(as(ALIAS), "kanbanNotifications/o1"), { read: true }));
+  await check("…but reads nobody else's", "deny", () =>
+    getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
+  await check("A member can't read the owner's notifications", "deny", () =>
+    getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", "rob@offline2online.com"), limit(100))));
 
   // ── Member directory (written by functions only) ────────────────────────
   await check("A member reads the member directory", "allow", () => getDocs(collection(as(MEMBER), "memberDirectory")));

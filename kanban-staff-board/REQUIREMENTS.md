@@ -60,7 +60,7 @@ box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: t
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
-**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
+**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, lane drag, `kanban_assign_task`, MCP create); a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason; over MCP, `mention` on `kanban_create_task`, `kanban_update_task` and `kanban_comment`). Over MCP a description tag is added to the end of the description as the chip the editor writes, for each member named whom it doesn't already tag; `mention` alone on `kanban_update_task` tags the description the ticket has; a non-member is refused and nothing is written; `kanban_create_tasks` has no `mention`. **A move between columns notifies nobody** (Rob, 12 Nov 2026: moves are agreed in person): not the tester a ticket is handed to on its way into Ready for Testing, not the developer it returns to, not its people when it is Completed or Withdrawn. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
 
 **Ticket links (console build, 11 Nov 2026).** So staff can pass a ticket to
 each other, for example in Slack:
@@ -153,7 +153,7 @@ not close the card).
 reassigns it to the ticket's designated tester, or, when it has none, to the
 tester the person moving it picks in a prompt (over MCP, `kanban_move_task`'s
 `tester`; with none the assignee is left alone). There is no board-wide default
-tester, and only the chosen tester is notified. It remembers the developer;
+tester, and nobody is notified of the move (see Notifications). It remembers the developer;
 moving it back to In Progress or Ready for Dev returns it to that developer. AC: card shows "From
 <developer>"; a toast states the reassignment; the activity log records it.
 Every edit of a ticket's fields on the board also writes one activity line per
@@ -297,7 +297,9 @@ toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
 alignment, lists, quote, inline code, code block, Note/Important/Warning
 callouts, link, image (with alt text), video, tables with row/column controls,
 clear formatting. Plus: **@mentions** of staff (notified when the ticket or comment is saved, by the notification trigger), **URLs that
-link themselves**, **screenshots** (upload, paste or drop; downscaled to ≤1400 px and held in
+link themselves**, **screenshots** (the toolbar's image button opens the computer's file picker at once and
+what is chosen is inserted where the cursor was, several at a time, each with its file name as alt text, with no
+dialog in between; Shift-click opens the dialog for an image by link; or paste or drop; downscaled to ≤1400 px and held in
 Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact
@@ -558,8 +560,14 @@ the same comparison on the server.
   listener callbacks are coalesced into one render per animation frame, and a
   redraw keeps every card whose markup is unchanged, so a colleague's move
   patches that one card. Search is debounced 150 ms and matches against
-  per-ticket text prepared once. Measured with the console's UI suite (2,000 and
-  5,000 open tickets): first cards under 1.5 s, My tasks under 150 ms.
+  per-ticket text prepared once. Targets with 2,000 and 5,000 open tickets:
+  first cards under 1.5 s, My tasks under 150 ms. The console's UI suite
+  (KB-SCALE) checks this without a stopwatch limit, because a shared CI runner
+  can be several times slower from one run to the next: the big board is timed
+  beside the 39-ticket board on the same runner and may take at most 5× as long
+  to show its first cards and 10× for My tasks, and the cards and elements a
+  redraw makes are counted (a page per column, however many tickets). The run
+  prints the milliseconds for reading against the targets.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
 - **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and

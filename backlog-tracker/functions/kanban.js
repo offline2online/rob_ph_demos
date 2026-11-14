@@ -34,6 +34,9 @@ const db = () => require("firebase-admin/firestore").getFirestore();
 const TASKS = "kanbanTasks";
 const CARDS = "kanbanCards";
 const BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
+// A ticket's attachment names its file by path, and a ticket is written by members. The server removes a file
+// only from that ticket's own folder (or the folder for files uploaded before their ticket had a key).
+const ownsFile = (key, path) => typeof path === "string" && !path.includes("..") && (path.startsWith(`kanban/${key}/`) || path.startsWith("kanban/new/"));
 
 // Current members' pronunciations, keyed by first name without accents.
 // Hidden from the board; only agents read them (kanban_get_staff_names).
@@ -611,6 +614,25 @@ function kanbanTools(h) {
     const map = new Map(ppl.map((p) => [p.email, firstOf(p, s)]));
     return (e) => (e ? map.get(core.canonicalEmail(e)) || String(e).split("@")[0] : "Unassigned");
   }
+  // Tags people in a description (the `mention` argument of the create and update tools): each named member the
+  // text doesn't already tag gets the chip the board's editor writes for an @mention, in a line at the end, so
+  // the tag shows on the ticket and the notification trigger tells them (it reads the ticket's mentions).
+  const MENTION_MAX = 20;
+  async function tagPeople(html, emails, session) {
+    const want = [...new Set((Array.isArray(emails) ? emails : []).map((e) => core.canonicalEmail(String(e || "").trim().toLowerCase())).filter(Boolean))];
+    if (!want.length) return { html, tagged: [], errors: [] };
+    if (want.length > MENTION_MAX) return { html, tagged: [], errors: [`mention is limited to ${MENTION_MAX} people`] };
+    const members = new Set((await people(session)).map((p) => String(p.email || "").toLowerCase()));
+    const unknown = want.filter((e) => !members.has(e));
+    if (unknown.length) return { html, tagged: [], errors: [`mention: not a member: ${unknown.join(", ")} (kanban_list_people lists them)`] };
+    const have = new Set(core.mentionsIn(html).map((e) => core.canonicalEmail(String(e).toLowerCase())));
+    const tagged = want.filter((e) => !have.has(e));
+    if (!tagged.length) return { html, tagged, errors: [] };
+    const first = await firstNamer();
+    const chips = tagged.map((e) => `<span class="kb-mention" data-user="${esc(e)}" data-name="${esc(first(e))}">@${esc(first(e))}</span>`);
+    return { html: `${html}<p>${chips.join(" ")}</p>`, tagged, errors: [] };
+  }
+  const MENTION_ARG = { mention: { type: "array", items: { type: "string" }, maxItems: MENTION_MAX, description: "Emails of members to @tag in the description. Each is added to the end of the description as a mention and notified; someone the description already tags is not tagged or notified again." } };
   async function getTask(key) {
     const snap = await tasks().doc(key).get();
     return snap.exists ? Object.assign({ key }, snap.data()) : null;
@@ -717,7 +739,7 @@ function kanbanTools(h) {
       return attachments.length;
     });
     if (count == null) return fail(`No ticket ${item.key}.`);
-    for (const old of replaced) { try { if (old.path) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
+    for (const old of replaced) { try { if (ownsFile(key, old.path)) await bucket.file(old.path).delete(); } catch (err) { /* best effort: the file is no longer linked */ } }
     return { ok: true, key, url: chk.url, name, imageUrl: imgUrl, path, size: bytes.length, downscaled: resized, caption: caption || null, selectors: selectors.length ? selectors : undefined, inline: true, replacedEarlierCapture: replaced.length > 0, warnings: shot.warnings || [], attachments: count };
   }
 
@@ -1134,14 +1156,18 @@ function kanbanTools(h) {
       name: "kanban_create_task",
       description: "Staff Kanban: create a ticket. It always starts in Backlog and gets the next PH-n key. Say it the way you'd tell a colleague — title and description — and set any fields you know.",
       scope: "board.write",
-      inputSchema: { type: "object", properties: Object.assign({}, WRITABLE), required: ["title"], additionalProperties: false },
+      inputSchema: { type: "object", properties: Object.assign({}, WRITABLE, MENTION_ARG), required: ["title"], additionalProperties: false },
       async run(args, session) {
         args = resolveMe(args, session);
         const { value: v, errors } = core.cleanTaskFields(args);
         if (v.type === "epic") v.epic = "";
         errors.push(...await checkRefs(v, null, session));
         errors.push(...await checkLinks(v.links, null));
+        const tag = await tagPeople(asHtml(v.description || ""), args.mention, session);
+        errors.push(...tag.errors);
+        if (tag.html.length > 200000) errors.push("description is limited to 200000 characters");
         if (errors.length) return toolError(errors.join("; "));
+        v.description = tag.html;
         const s = await settings();
         const counterRef = db().collection("kanbanCounters").doc("main");
         const rank = await nextRank("backlog");
@@ -1169,8 +1195,8 @@ function kanbanTools(h) {
         activity(b, key, session.email, ["created this ticket over MCP"]);
         for (const l of v.links || []) activity(b, l.key, session.email, [`linked: ${core.inverseOf(key, l).type} ${key}`]);
         await b.commit();
-        await audit(session, "kanban_create_task", { key });
-        return textResult({ created: true, key, status: "backlog" });
+        await audit(session, "kanban_create_task", { key, tagged: tag.tagged.length });
+        return textResult(Object.assign({ created: true, key, status: "backlog" }, tag.tagged.length ? { tagged: tag.tagged } : {}));
       },
     },
     {
@@ -1432,7 +1458,7 @@ function kanbanTools(h) {
       name: "kanban_update_task",
       description: "Staff Kanban: change a ticket's fields (title, description, type, priority, people, release, sprint, project, estimate, time logged, due date, labels, parent epic, links, flag). To move it between columns use kanban_move_task.",
       scope: "board.write",
-      inputSchema: { type: "object", properties: Object.assign({ key: KEY }, WRITABLE), required: ["key"], additionalProperties: false },
+      inputSchema: { type: "object", properties: Object.assign({ key: KEY }, WRITABLE, MENTION_ARG), required: ["key"], additionalProperties: false },
       async run(args, session) {
         const key = normKey(args.key);
         const cur = key && await getTask(key);
@@ -1441,6 +1467,12 @@ function kanbanTools(h) {
         if (!Object.keys(input).length) return toolError("Nothing to change.");
         const { value: v, errors } = core.cleanTaskFields(input, { partial: true, existingCriteria: cur.acceptanceCriteria });
         if ("description" in v) v.description = asHtml(v.description);
+        // Tags go on the description being sent, or on the one the ticket has.
+        const tag = await tagPeople("description" in v ? v.description : String(cur.description || ""), input.mention, session);
+        errors.push(...tag.errors);
+        if (tag.tagged.length) v.description = tag.html;
+        if ("description" in v && v.description.length > 200000) errors.push("description is limited to 200000 characters");
+        if (!Object.keys(v).length && !errors.length) return toolError(Array.isArray(input.mention) && input.mention.length ? "Everyone named in mention is already tagged in the description." : "Nothing to change.");
         const type = v.type || cur.type;
         if (type === "epic") v.epic = "";
         errors.push(...await checkRefs(v, key, session));
@@ -1454,6 +1486,7 @@ function kanbanTools(h) {
           lines.push(...core.diffCriteria(cur.acceptanceCriteria, v.acceptanceCriteria));
           v.acceptanceCriteria = core.encodeCriteria(v.acceptanceCriteria);
         }
+        if (tag.tagged.length) lines.push(`tagged ${tag.tagged.map(first).join(", ")} in the description`);
         if (!lines.length) lines.push(`updated ${Object.keys(v).join(", ")} over MCP`);
         const next = Object.assign({}, cur, v);
         const patch = Object.assign({}, v, stamp(session.email));
@@ -1469,8 +1502,8 @@ function kanbanTools(h) {
           kids.docs.forEach((d) => { b.update(d.ref, Object.assign({ epic: "" }, stamp(session.email))); putCard(b, d.id, Object.assign({}, d.data(), { epic: "" }), session.email); activity(b, d.id, session.email, [`removed from epic ${key} (no longer an epic)`]); });
         }
         await b.commit();
-        await audit(session, "kanban_update_task", { key, fields: Object.keys(v) });
-        return textResult({ updated: true, key, changed: Object.keys(v) });
+        await audit(session, "kanban_update_task", { key, fields: Object.keys(v), tagged: tag.tagged.length });
+        return textResult(Object.assign({ updated: true, key, changed: Object.keys(v) }, tag.tagged.length ? { tagged: tag.tagged } : {}));
       },
     },
     {
@@ -1761,7 +1794,7 @@ function kanbanTools(h) {
         });
         if (left == null) return toolError(`${key} no longer has that attachment.`);
         let fileDeleted = false;
-        if (target.path) {
+        if (ownsFile(key, target.path)) {
           try { const bucket = h.bucket ? h.bucket() : require("firebase-admin/storage").getStorage().bucket(BUCKET); await bucket.file(target.path).delete(); fileDeleted = true; }
           catch (err) { logger.warn("kanban attachment file not deleted", { key, path: target.path, error: String(err && err.message ? err.message : err) }); }
         }
@@ -1900,7 +1933,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_list_notifications",
-      description: "Staff Kanban: your notifications — assigned to you, handed to you for testing, comments on tickets you own or watch, @mentions, your tickets closed — unread first, newest first. Answers \"what's new for me on the board?\".",
+      description: "Staff Kanban: your notifications — assigned to you, comments on tickets you own or watch, @mentions (a move between columns notifies nobody) — unread first, newest first. Answers \"what's new for me on the board?\".",
       scope: "board.read",
       inputSchema: {
         type: "object",

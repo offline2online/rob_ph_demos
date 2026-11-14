@@ -1072,6 +1072,22 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const gone = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: uploaded.path });
     assert.ok(gone.isError);
   });
+  await test("kanban_remove_attachment: an attachment naming a file outside the ticket's folder is unlinked, and that file is left alone", async () => {
+    // A ticket's attachments are written by members; one can name any path. The server must not delete it.
+    const outside = "avatars/someone-else.jpg", otherTicket = "kanban/PH-2/secret.png";
+    env.authState.uploads[outside] = { size: 1 }; env.authState.uploads[otherTicket] = { size: 1 };
+    const t0 = task("PH-1");
+    env.store.col("kanbanTasks").set("PH-1", { ...t0, attachments: [...(t0.attachments || []), { name: "a.jpg", url: "https://example.test/a", path: outside }, { name: "b.png", url: "https://example.test/b", path: otherTicket }, { name: "c.png", url: "https://example.test/c", path: "kanban/PH-1/../PH-2/secret.png" }] });
+    for (const p of [outside, otherTicket, "kanban/PH-1/../PH-2/secret.png"]) {
+      const r = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: p });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.fileDeleted, false, `${p} is not deleted`);
+      assert.ok(!task("PH-1").attachments.some((x) => x.path === p), "the attachment is off the ticket");
+    }
+    assert.ok(env.authState.uploads[outside], "a file outside kanban/ stays");
+    assert.ok(env.authState.uploads[otherTicket], "another ticket's file stays");
+    delete env.authState.uploads[outside]; delete env.authState.uploads[otherTicket];
+  });
   await test("kanban_remove_attachment: by name; an ambiguous name asks for the path; unknown, no argument, unknown ticket and viewer are refused", async () => {
     const a = await attach(sam, { name: "dup.png", data: realPng(300).toString("base64") });
     const b = await attach(sam, { name: "dup.png", data: realPng(310).toString("base64") });
@@ -1246,6 +1262,50 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   const notesFor = (to) => [...env.store.col("kanbanNotifications").values()].filter((n) => n.to === to);
   const base = { title: "Sweep is broken", status: "in-progress", assignee: HUY, reporter: ROB, updatedBy: ROB, mentions: [], watchers: [] };
 
+  await test("mention: kanban_create_task and kanban_update_task tag people in the description, and the trigger tells exactly those newly tagged", async () => {
+    const made = await tool(sam, "kanban_create_task", { title: "Tagged on create", description: "Please look at the offer banner.", mention: [HUY, KIT, HUY] });
+    assert.ok(!made.isError, made.text);
+    assert.deepStrictEqual(made.json.tagged, [HUY, KIT], "each person once");
+    const key = made.json.key, t1 = task(key);
+    assert.deepStrictEqual([...t1.mentions].sort(), [HUY, KIT].sort(), "stored where the trigger reads them");
+    assert.ok(t1.description.startsWith("<p>Please look at the offer banner.</p>"), "the text is kept");
+    for (const e of [HUY, KIT]) assert.ok(t1.description.includes(`<span class="kb-mention" data-user="${e}"`), `${e} has a chip`);
+    assert.ok(!t1.descriptionText.includes("data-user"), "the plain text carries names, not markup");
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("m1", key, null, t1));
+    assert.deepStrictEqual([HUY, KIT].map((e) => notesFor(e).map((n) => [n.kind, n.via])), [[["mention", "description"]], [["mention", "description"]]]);
+    assert.strictEqual(notesFor(SAM).length, 0, "the person who tagged is told nothing");
+    // Tag one more on the ticket as it stands: only they are new.
+    const more = await tool(sam, "kanban_update_task", { key, mention: [HUY, ROB] });
+    assert.ok(!more.isError, more.text);
+    assert.deepStrictEqual(more.json.tagged, [ROB]);
+    const t2 = task(key);
+    assert.deepStrictEqual([...t2.mentions].sort(), [HUY, KIT, ROB].sort());
+    assert.strictEqual((t2.description.match(new RegExp(`data-user="${HUY}"`, "g")) || []).length, 1, "nobody is tagged twice");
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("m2", key, t1, t2));
+    assert.deepStrictEqual(notesFor(ROB).map((n) => n.kind), ["mention"]);
+    assert.strictEqual(notesFor(HUY).length + notesFor(KIT).length, 0, "those already tagged are not told again");
+    const g = await tool1(sam, "kanban_get_task", { key });
+    assert.ok(g.json.activity.some((a) => a.who === SAM && /^tagged .+ in the description$/.test(a.text)), "the log says who was tagged");
+    // A new description sent with a mention carries the tag too.
+    const both = await tool(sam, "kanban_update_task", { key, description: "Rewritten.", mention: [KIT] });
+    assert.ok(!both.isError, both.text);
+    assert.ok(task(key).description.startsWith("<p>Rewritten.</p>") && task(key).description.includes(`data-user="${KIT}"`));
+    // Refusals: everyone already tagged; someone who isn't a member; too many; a viewer.
+    const again = await tool(sam, "kanban_update_task", { key, mention: [KIT] });
+    assert.ok(again.isError && /already tagged/.test(again.text), again.text);
+    const stranger = await tool(sam, "kanban_update_task", { key, mention: ["nobody@example.com"] });
+    assert.ok(stranger.isError && /not a member: nobody@example.com/.test(stranger.text), stranger.text);
+    const strangerNew = await tool(sam, "kanban_create_task", { title: "No", mention: ["nobody@example.com"] });
+    assert.ok(strangerNew.isError && /not a member/.test(strangerNew.text), strangerNew.text);
+    assert.ok(![...env.store.col("kanbanTasks").values()].some((x) => x.title === "No"), "nothing is created when a tag is refused");
+    const many = await tool(sam, "kanban_update_task", { key, mention: Array.from({ length: 21 }, (_, i) => `p${i}@example.com`) });
+    assert.ok(many.isError, many.text);
+    // A name that could carry markup is written as text.
+    assert.ok(!/<(script|img)/i.test(task(key).description));
+  });
+
   await test("fan-out: assigned goes to the assignee, never to the person who acted", async () => {
     env.store.col("kanbanNotifications").clear();
     await notify.taskWritten(ev("e1", "PH-50", null, { ...base, createdBy: ROB }));
@@ -1262,12 +1322,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(SAM).length, 1);
   });
 
-  await test("fan-out: Ready for Testing hands it to the tester, and sending it back returns it", async () => {
+  await test("fan-out: a move between columns tells nobody: not the tester it is handed to, not the developer it returns to", async () => {
     env.store.col("kanbanNotifications").clear();
     await notify.taskWritten(ev("e4", "PH-50", { ...base, assignee: HUY }, { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing", updatedBy: HUY }));
-    assert.strictEqual(notesFor(ROB)[0].kind, "testing");
     await notify.taskWritten(ev("e5", "PH-50", { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing" }, { ...base, assignee: HUY, previousAssignee: HUY, status: "in-progress", updatedBy: ROB }));
-    assert.strictEqual(notesFor(HUY)[0].kind, "returned");
+    await notify.taskWritten(ev("e5b", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0, "no notification for any of the three moves");
+    // Someone tagged in the same save is still told, and so is a person made the assignee by hand while it moves.
+    await notify.taskWritten(ev("e5c", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", mentions: [SAM], updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(SAM).map((n) => n.kind), ["mention"]);
+    await notify.taskWritten(ev("e5d", "PH-50", { ...base, assignee: HUY, status: "backlog" }, { ...base, assignee: KIT, status: "in-progress", updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["assigned"]);
   });
 
   await test("fan-out: a description @mention notifies once, and wins over assigned", async () => {
@@ -1279,11 +1344,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(HUY).length, 1, "an old mention is not repeated by an unrelated edit");
   });
 
-  await test("fan-out: closing someone else's ticket tells its assignee and reporter, not the closer", async () => {
+  await test("fan-out: closing a ticket is a move too and tells nobody", async () => {
     env.store.col("kanbanNotifications").clear();
-    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", updatedBy: SAM }));
-    assert.deepStrictEqual([HUY, ROB].map((e) => notesFor(e).map((n) => n.kind)), [["closed"], ["closed"]]);
-    assert.strictEqual(notesFor(SAM).length, 0);
+    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", resolution: "completed", updatedBy: SAM }));
+    await notify.taskWritten(ev("e8b", "PH-50", { ...base }, { ...base, status: "done", resolution: "withdrawn", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0);
   });
 
   await test("fan-out: a comment tells the assignee, reporter and watchers, not its author", async () => {
@@ -1295,6 +1360,16 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["commented"], "a watcher");
     assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "comment"]]);
     assert.strictEqual(notesFor(HUY).length, 0, "the commenter is told nothing");
+  });
+
+  await test("fan-out: two people whose addresses differ only by punctuation are each told", async () => {
+    env.store.col("kanbanNotifications").clear();
+    env.store.col("kanbanTasks").set("PH-51", { ...base, watchers: [] });
+    const c = { author: HUY, mentions: ["linh.tran@personalisationhub.com", "linh_tran@personalisationhub.com", "linh-tran@personalisationhub.com"] };
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who} has their own notification`);
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who}: a redelivery adds nothing`);
   });
 
   await test("fan-out: editing a comment tells only the people it newly mentions", async () => {

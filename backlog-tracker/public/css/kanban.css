@@ -585,6 +585,8 @@ body.kb-drag-active .kb-col[data-status="done"] .kb-res-split { visibility: hidd
 .kb-ed-panel-title { font-weight: 700; margin-bottom: 8px; }
 .kb-ed-panel .field-label { margin-top: 10px; }
 .kb-ed-upload { cursor: pointer; min-height: 40px; }
+/* The image button while the chosen files upload. */
+.ql-toolbar .ql-image.kb-ed-busy { opacity: .45; pointer-events: none; }
 .kb-ed-or { display: block; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
 .kb-ed-panel-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
 .kb-ed-panel-actions button { min-height: 38px; }
