@@ -1,7 +1,7 @@
 // Promote › Leads and Prospects (TAM): how a record's company enrichment reads
 // on the page. The enrichment map is written by functions/lead-enrich.js (an
 // agent's web research plus the company's own home page):
-//   { at, by, summary, logoUrl, storeCount, storeCountBreakdown,
+//   { at, by, summary, logoUrl, logos{light, dark}, storeCount, storeCountBreakdown,
 //     storeCountSource{title, url, date}, hq, employees, revenue, techStack[], vendors[],
 //     linkedinCompany, retailMedia, personalisation, inStoreDigital, loyalty,
 //     primaryCloud, estate, strategy, fit, talkingPoints[],
@@ -72,6 +72,25 @@ const sitesOf = (e) => {
   return { count: Math.round(n).toLocaleString("en-GB"), breakdown: e.storeCountBreakdown || "", src };
 };
 const sitesHTML = (s) => `<span class="enrich-sites-count">${esc(s.count)}</span>${s.breakdown ? `<p class="enrich-insight">${esc(s.breakdown)}</p>` : ""}${s.src ? `<span class="enrich-meta">${link(s.src.url, s.src.title || "Source")}${s.src.date ? ` · ${esc(fmtDay(s.src.date))}` : ""}</span>` : ""}`;
+// The full logos for the branded walkthrough demo: one on a light tile, one on a dark tile.
+const logoTiles = (e) => {
+  const l = e && e.logos && typeof e.logos === "object" ? e.logos : {};
+  const light = safeUrl(l.light), dark = safeUrl(l.dark);
+  if (!light && !dark) return "";
+  const tile = (u, cls, label) => (u ? `<a class="enrich-logo-tile ${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer" title="${esc(label)}"><img src="${esc(u)}" alt="${esc(label)}" loading="lazy" referrerpolicy="no-referrer"></a>` : `<span class="enrich-logo-tile ${cls} enrich-logo-tile-none">${esc(label)}: not found</span>`);
+  // No separate dark-background file (companies rarely publish one): the light logo shown in white.
+  const derived = !dark && light ? `<span class="enrich-logo-tile enrich-logo-tile-dark enrich-logo-tile-derived" title="No dark-background file was found. This is the light logo shown in white, as the walkthrough demo can do."><img src="${esc(light)}" alt="Logo shown in white for dark backgrounds" loading="lazy" referrerpolicy="no-referrer"></span>` : "";
+  return `<div class="enrich-logo-tiles">${tile(light, "enrich-logo-tile-light", "Logo for light backgrounds")}${derived || tile(dark, "enrich-logo-tile-dark", "Logo for dark backgrounds")}</div>${derived ? '<span class="enrich-meta">Dark background: no separate file found, so the light logo is shown in white.</span>' : ""}`;
+};
+// A website the run worked out for itself: the address, how sure it is, and where it came from.
+const websiteGuessOf = (e) => {
+  const g = e && e.websiteGuess;
+  const u = g && safeUrl(g.url);
+  if (!u) return "";
+  let host = u; try { host = new URL(u).hostname.replace(/^www\./, ""); } catch { /* as it is */ }
+  const sure = Number(g.confidence) > 0 ? `${Math.round(Number(g.confidence))}% sure` : "not confirmed";
+  return `${link(u, host)}<span class="enrich-meta">Found automatically, ${esc(sure)}${g.from ? ` (from ${esc(g.from)})` : ""}. Check it and correct the Website field if it is wrong.</span>`;
+};
 const pointsOf = (e) => (Array.isArray(e && e.talkingPoints) ? e.talkingPoints.filter(Boolean) : []);
 const personMeta = (p) => [p.title, p.note].filter(Boolean).join(" · ");
 const insightsOf = (e) => (e ? INSIGHTS.map(([label, get]) => [label, get(e)]).filter(([, v]) => v) : []);
@@ -122,9 +141,12 @@ export function researchGroupsHTML(e) {
   const sites = sitesOf(e);
   const research = [
     sites ? stackRow(`<span class="ap-row-label">Sites</span>${sitesHTML(sites)}`, "", "enrich-sites") : "",
+    websiteGuessOf(e) ? stackRow(`<span class="ap-row-label">Website</span>${websiteGuessOf(e)}`) : "",
+    e.level === "light" ? lineRow("Basic profile only: the full research has not been run for this company.", "enrich-light") : "",
     e.summary ? stackRow(`<p class="enrich-summary">${esc(e.summary)}</p>`) : "",
     ...facts.map(([k, v]) => row(k, esc(v))),
     li ? row("LinkedIn", link(li, "Company page")) : "",
+    logoTiles(e) ? stackRow(`<span class="ap-row-label">Logos for the walkthrough demo</span>${logoTiles(e)}`) : "",
     stack.length ? stackRow(`<span class="ap-row-label">Tech stack and vendors</span><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>`) : "",
     ...failed.map((s) => `<div class="ap-row ap-row-line lead-source-error">${esc(s.message)}</div>`),
     at ? `<div class="ap-row enrich-updated"><span class="ap-row-label">Updated</span><span class="ap-row-value">${esc(at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }))}${tip(sources.map((s) => s.message).filter(Boolean).join(" · "), "Sources checked")}</span></div>` : "",
@@ -161,9 +183,12 @@ export function enrichmentHTML(e) {
   const sites = sitesOf(e);
   return `<div class="enrich-view">
     ${sites ? `<div class="enrich-sites"><p class="enrich-label">Sites</p>${sitesHTML(sites)}</div>` : ""}
+    ${websiteGuessOf(e) ? `<p class="enrich-label">Website</p><p class="enrich-line">${websiteGuessOf(e)}</p>` : ""}
+    ${e.level === "light" ? '<p class="field-hint enrich-light">Basic profile only: the full research has not been run for this company.</p>' : ""}
     ${e.summary ? `<p class="enrich-summary">${esc(e.summary)}</p>` : ""}
     ${facts.length ? `<dl class="enrich-facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
     ${li ? `<p class="enrich-line">${link(li, "Company LinkedIn page")}</p>` : ""}
+    ${logoTiles(e) ? `<p class="enrich-label">Logos for the walkthrough demo</p>${logoTiles(e)}` : ""}
     ${stack.length ? `<p class="enrich-label">Tech stack and vendors</p><ul class="lead-stack">${stack.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
     ${pointsOf(e).length ? `<p class="enrich-label">Talking points</p><ul class="enrich-news">${pointsOf(e).map((t) => `<li>${esc(t)}</li>`).join("")}</ul>` : ""}
     ${insightsOf(e).map(([k, v]) => `<p class="enrich-label">${esc(k)}</p><p class="enrich-insight">${esc(v)}</p>`).join("")}

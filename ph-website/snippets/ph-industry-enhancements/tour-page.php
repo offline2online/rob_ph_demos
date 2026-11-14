@@ -748,6 +748,19 @@ html.fs .cap span{display:block;margin-top:4px;font-size:12px;line-height:1.5}
 .cv-tile.shop .cv-ad b,.cv-tile.cool .cv-ad b,.cv-tile.shop .cv-ad small,.cv-tile.cool .cv-ad small{max-width:100%}
 .cv-tile.pos .cv-ad.per b,.cv-tile.pos .cv-ad.cre b{font-size:1.35em}
 .cv-title+.cv-track{top:150px}
+/* Run Your Own RMN: six club screens in one row */
+.cv.golf .cv-row{gap:26px}
+.cv-track.nofx,.cv-track.nofx *{transition:none!important}
+.cv.golf .cv-tile.pro,.cv.golf .cv-tile.lck{width:126px;height:224px;--fs:9.5px}
+.cv.golf .cv-tile.rng,.cv.golf .cv-tile.tee,.cv.golf .cv-tile.hw,.cv.golf .cv-tile.bar{width:178px;height:118px;--fs:9.5px}
+.cv.golf .cv-tile.pro .cv-ad,.cv.golf .cv-tile.lck .cv-ad{justify-content:flex-start;padding-top:14px}
+.cv.golf .cv-tile.pro .cv-ad b,.cv.golf .cv-tile.lck .cv-ad b,.cv.golf .cv-tile.pro .cv-ad small,.cv.golf .cv-tile.lck .cv-ad small{max-width:100%}
+.cv.golf .cv-tile.pro .cup,.cv.golf .cv-tile.lck .cup{width:62%;right:8px}
+.cv.golf .cv-ad{padding:9px 10px}.cv.golf .cv-ad .ic{font-size:2.2em}
+.cv.golf .cv-ad.per,.cv.golf .cv-ad.done{background:linear-gradient(150deg,#0f3b27,#1F5E3B)}
+.cv.golf .cv-ad.cre{background:linear-gradient(150deg,#0c1d33,#14304F)}
+.cv.golf .cv-ad.per .tg,.cv.golf .cv-ad.done .tg{background:#E8B33A;color:#0c1d33}
+.cv.golf .cv-lab{font-size:13px}.cv.golf .cv-lab .ms{font-size:18px}
 
 
 /* retail media: real prototype screenshots fill the stage; hotspots are invisible targets for the cursor and tips */
@@ -832,11 +845,31 @@ html.ph-rm #capS{min-height:3em;min-height:2lh}
 (() => {
 /* ================= data ================= */
 const IS_CONV = /^\/industries\/convenience\/tour(\/|$)/.test(location.pathname);
-const IS_RM = /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) || window.PH_TOUR_IND === "retail-media" || /[?&]ind=retail-media(&|$)/.test(location.search);
+/* Run Your Own RMN (/run-your-own-rmn/tour/, ?ind=rmn for previews): the retail media walkthrough set in a golf club (Fernhollow Golf Club
+   sells its screens to Corvane Golf). It is retail media mode (IS_RM) with its own data, screenshots, voiceover and flows; everything golf is guarded by IS_GOLF. */
+const IS_GOLF = /^\/run-your-own-rmn\/tour(\/|$)/.test(location.pathname) || window.PH_TOUR_IND === "rmn" || /[?&]ind=rmn(&|$)/.test(location.search);
+const IS_RM = IS_GOLF || /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) || window.PH_TOUR_IND === "retail-media" || /[?&]ind=retail-media(&|$)/.test(location.search);
+/* Golf assets are kept in the repo as base64 text (ph-website/tour-assets/rmn-golf/<dir>/<file>.b64). On the live path tour.php decodes them
+   and serves them same-origin (sha-pinned); anywhere else (a train preview) GA fetches the .b64 files from the commit the page came from and
+   turns them into blob URLs. A visitor never makes a third-party request for them. */
+const GOLF_B64 = IS_GOLF && !window.PH_TOUR_ASSETS && !/^\/run-your-own-rmn\/tour(\/|$)/.test(location.pathname) ? (() => {
+  const m = /githack\.com$/.test(location.hostname) && location.pathname.match(/^\/offline2online\/rob_ph_demos\/([\w.-]+)\//);
+  return (m ? "https://rawcdn.githack.com/offline2online/rob_ph_demos/" + m[1] : "https://raw.githubusercontent.com/offline2online/rob_ph_demos/main") + "/ph-website/tour-assets/rmn-golf/"; })() : null;
+const GA = GOLF_B64 ? (() => {
+  const urls = {}, busy = {}, BLANK = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  const load = k => busy[k] || (busy[k] = fetch(GOLF_B64 + k + ".b64").then(r => r.ok ? r.text() : Promise.reject(new Error(String(r.status)))).then(t => {
+    const b = atob(t.replace(/\s+/g, "")), u8 = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i);
+    urls[k] = URL.createObjectURL(new Blob([u8], { type: /\.mp3$/.test(k) ? "audio/mpeg" : "image/jpeg" }));
+    document.querySelectorAll(`[data-ga="${k}"]`).forEach(e => { if (e.tagName === "IMG") e.src = urls[k]; else e.style.backgroundImage = `url('${urls[k]}')`; });
+    return urls[k]; }).catch(() => { delete busy[k]; return ""; }));
+  return { load, url: k => urls[k] || (load(k), ""), img: k => urls[k] || (load(k), BLANK) };
+})() : null;
 /* Screenshots and voiceover: on the live site tour.php serves them same-origin (sha-pinned); anywhere else (the train preview) they load from the pinned assets tag on GitHub. */
-const RM_ASSETS = window.PH_TOUR_ASSETS || (/^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) ? "/industries/retail-media/tour/assets/v1/" : "https://raw.githubusercontent.com/offline2online/rob_ph_demos/tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/");
+const RM_ASSETS = window.PH_TOUR_ASSETS || (IS_GOLF ? "/run-your-own-rmn/tour/assets/v1/" : /^\/industries\/retail-media\/tour(\/|$)/.test(location.pathname) ? "/industries/retail-media/tour/assets/v1/" : "https://raw.githubusercontent.com/offline2online/rob_ph_demos/tour-assets-retail-media-v1/ph-website/tour-assets/retail-media/");
 const RM_IMG = window.PH_TOUR_IMG || RM_ASSETS + "img/";
-const FLOWS = IS_RM ? [
+const FLOWS = IS_GOLF ? [
+  ["Venue setup", true, "Playlists · direct deal"], ["Advertiser creates by talking", true, "Voice brief · targeting"], ["Member journey & outcome", true, "Pro shop to clubhouse · bookings"]
+] : IS_RM ? [
   ["Retailer setup", true, "Playlists · direct deal"], ["Advertiser creates by talking", true, "Voice brief · targeting"], ["Shopper journey & outcome", true, "Forecourt to POS · bookings"]
 ] : [
   ["Automated campaign creative", true], ["Seamless localisation & scheduling", true, "Stores · digital twin"], ["Seamless personalisation", true, "Check-in · first-party data"]
@@ -918,17 +951,40 @@ const IND = {
       legal: "*Loyalty Gold members only, weekday mornings. One pastry per coffee. While stocks last. Participating stores only.", audience: ["Loyalty Gold"] }
   }
 };
+/* Run Your Own RMN: a fictional golf club sells its screens to a fictional golf manufacturer. Only configurable values differ from the
+   convenience walkthrough: display type names, the advertiser, the deal, segments and purchase history categories. The club's name is
+   fixed (it is the venue, not the visitor's company), so B() and C() ignore the visitor's brand in golf mode. */
+if (IS_GOLF) IND["retail-media"] = {
+  brand: "Fernhollow Golf Club", color: "#1F5E3B", accent: "#C9A227", stores: 1, rows: [], thumbs: ["golf", "tee", "golf", "tee"],
+  deal: "PH-Y86K9QMUH4",
+  adv: {
+    brand: "Corvane Golf", color: "#14304F", accent: "#E8B33A",
+    rows: [
+      ["SCHEDULED", "Corvane Apparel | Winter layers", "Members", ["tv"]],
+      ["TARGETED", "Corvane Tour | Range days", "Visiting golfers", ["tv"]]
+    ],
+    get brief() { return `Season-ahead campaign for Corvane Golf on our direct deal with ${B()}: the new Corvane driver and Corvane Tour balls on the pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens, from 1 to 31 December, aimed at members and visiting golfers.`; },
+    name: "Corvane Season Ahead | New driver and Tour balls",
+    details: "Season-ahead campaign for Corvane Golf on the club's pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens. Creative leads with the new Corvane driver and Corvane Tour balls.",
+    products: ["Corvane driver", "Corvane Tour balls"], audience: ["Members", "Visiting golfers"], objective: "Drive Sales",
+    headline: "Your best season starts here", sub: "The new Corvane driver and Tour balls*", legal: "*Available in the pro shop. While stocks last.",
+    big: "GO LONG", bigSub: "NEW CORVANE DRIVER*", change: "Make the background greener for the driving range"
+  },
+  p3: { name: "Low-handicap Members | Free Tour ball sleeve", details: "A free sleeve of Corvane Tour balls with any driver fitting, for low-handicap members who buy golf balls, shown only to them, in real time.",
+    headline: "Built for your game", sub: "A free sleeve of Tour balls with a driver fitting*", big: "FREE SLEEVE", bigSub: "MEMBERS' TOUR BALL OFFER*",
+    legal: "*Low-handicap members only, with a Corvane driver fitting in the pro shop. While stocks last.", audience: ["Low-handicap members"] }
+};
 /* One tour source for every industry page: the page path picks the industry (/industries/pharmacy/tour/ is pharmacy, anything else telco). */
 const IND_FROM_PATH = IS_RM ? "retail-media" : IS_CONV ? "convenience" : /^\/industries\/pharmacy\/tour(\/|$)/.test(location.pathname) ? "pharmacy" : "telco";
 const S = { flow: 0, ind: IND_FROM_PATH, brand: null, color: null, custom: false, step: -1, paused: false, scale: 1, bright: false };
-try { document.title = "Interactive product tour · " + (IS_RM ? "Retail Media" : S.ind === "pharmacy" ? "Pharmacy" : S.ind === "convenience" ? "Fuel & Convenience" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
+try { document.title = "Interactive product tour · " + (IS_GOLF ? "Run Your Own RMN" : IS_RM ? "Retail Media" : S.ind === "pharmacy" ? "Pharmacy" : S.ind === "convenience" ? "Fuel & Convenience" : "Telco Retail") + " | Personalisation Hub"; } catch (e) {}
 const INDLABEL = IS_RM ? "retail media" : S.ind === "pharmacy" ? "pharmacy" : S.ind === "convenience" ? "fuel and convenience" : "telco";
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const RMI = () => IND["retail-media"];
 const D = () => IS_RM ? (S.flow === 0 ? RMI() : (S.flow === 2 || S.p3) ? { ...RMI(), ...RMI().adv, ...RMI().p3 } : { ...RMI(), ...RMI().adv }) : S.flow === 2 ? { ...IND[S.ind], ...IND[S.ind].p3 } : IND[S.ind];
 /* In retail media B and C are always the retailer (HQ Admin, loyalty app); ADV is the advertiser whose creative is drawn. */
-const B = () => S.brand || (IS_RM ? RMI().brand : D().brand);
-const C = () => S.color || (IS_RM ? RMI().color : D().color);
+const B = () => IS_GOLF ? RMI().brand : S.brand || (IS_RM ? RMI().brand : D().brand);
+const C = () => IS_GOLF ? RMI().color : S.color || (IS_RM ? RMI().color : D().color);
 const ADV = () => RMI().adv;
 const AB = () => IS_RM ? ADV().brand : B();
 
@@ -940,11 +996,37 @@ const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&
 const initials = n => (n.trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("") || "Y").toUpperCase();
 let gid = 0;
 
-function logoSVG(size, onDark) {
+/* The visitor's real logo (ph-site/v1/tour-brand, see fetchBrand): S.logo = {for, light, dark, icon, darkFromLight} while S.brand is still that
+   company, else the initials. Light surfaces use light, dark ones dark (or light shown in white when darkFromLight); then icon; then initials.
+   Every initials mark carries data-bm="height,max width,dark" so a logo that arrives after the screen is drawn replaces it in place. */
+function logoPick(dark) {
+  const g = S.logo; if (IS_GOLF || !g || !S.custom || g.for !== S.brand) return null;
+  if (dark && g.dark) return { src: g.dark, inv: false };
+  if (dark && g.darkFromLight && g.light) return { src: g.light, inv: true };
+  if (!dark && g.light) return { src: g.light, inv: false };
+  return g.icon ? { src: g.icon, inv: false } : null;
+}
+function brandImg(h, w, dark, fb) {
+  const p = logoPick(dark); if (!p) return fb;
+  return `<img class="blogo" src="${esc(p.src)}" alt="" data-bm="${h},${w},${dark ? 1 : 0}" data-inv="${p.inv ? 1 : 0}" data-fb="${esc(fb)}" referrerpolicy="no-referrer" style="height:${h}px;width:auto;max-width:${w}px;object-fit:contain;flex:0 0 auto${p.inv ? ";filter:brightness(0) invert(1)" : ""}">`;
+}
+function brandRefresh() {
+  document.querySelectorAll("[data-bm]").forEach(el => { if (el.tagName === "IMG") return; const [h, w, d] = el.getAttribute("data-bm").split(",").map(Number), fb = el.outerHTML, html = brandImg(h, w, !!d, fb); if (html !== fb) el.outerHTML = html; });
+}
+/* A logo that fails to load: back to the initials, here and on every later screen. */
+document.addEventListener("error", e => { const t = e.target; if (!t || t.tagName !== "IMG" || !t.classList.contains("blogo")) return; S.logo = null; document.querySelectorAll("img.blogo").forEach(i => { i.outerHTML = i.getAttribute("data-fb"); }); }, true);
+function logoSVG(size, onDark, maxW = size * 2) {
   const c = C(), ini = esc(initials(B()));
-  return `<svg width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${IS_RM ? RMI().accent : D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`;
+  return brandImg(size, maxW, onDark, `<svg data-bm="${size},${maxW},${onDark ? 1 : 0}" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="10" fill="${c}"/><circle cx="31" cy="9" r="5" fill="${IS_RM ? RMI().accent : D().accent}"/><text x="20" y="26.5" text-anchor="middle" font-family="Roboto,Arial" font-weight="900" font-size="${ini.length>1?15:18}" fill="#fff">${ini}</text></svg>`);
 }
 function illo(x, y, s, a, dark) {
+  if (IS_GOLF) return `<g transform="translate(${x} ${y + 6 * s}) scale(${s})">
+    <circle cx="150" cy="80" r="76" fill="${a}" opacity=".22"/><ellipse cx="128" cy="232" rx="96" ry="9" fill="#000" opacity=".18"/>
+    <path d="M178 -6 L120 150" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/><path d="M182 -10 L170 22" stroke="${a}" stroke-width="12" stroke-linecap="round"/>
+    <path d="M118 140 C140 128 196 138 204 168 C210 192 176 204 132 196 C98 190 92 154 118 140 Z" fill="#ffffff"/>
+    <path d="M128 152 C150 146 186 152 192 170" stroke="${dark}" stroke-width="4" fill="none" opacity=".25"/><rect x="104" y="168" width="22" height="9" rx="3" fill="${a}"/>
+    <circle cx="62" cy="186" r="24" fill="#ffffff"/><g fill="${dark}" opacity=".18"><circle cx="54" cy="178" r="3"/><circle cx="66" cy="176" r="3"/><circle cx="58" cy="190" r="3"/><circle cx="70" cy="188" r="3"/><circle cx="74" cy="198" r="2.5"/></g>
+    <path d="M56 210 h12 l-3 22 h-6 z" fill="${a}"/><path d="M200 60l10 18M210 52l-4 22M224 68l-18 6" stroke="#ffffff" stroke-width="5" stroke-linecap="round" opacity=".7"/></g>`;
   if (S.ind === "retail-media") return `<g transform="translate(${x} ${y + 6 * s}) scale(${s})">
     <circle cx="150" cy="80" r="76" fill="${a}" opacity=".22"/><ellipse cx="120" cy="230" rx="88" ry="9" fill="#000" opacity=".18"/>
     <path d="M96 14h40v26c0 10 22 22 22 46v128c0 10-8 16-16 16h-52c-8 0-16-6-16-16V86c0-24 22-36 22-46z" fill="#ffffff"/>
@@ -1013,7 +1095,7 @@ function art(kind, variant, bright = S.bright, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" role="img" aria-label="${esc(d.headline)}">${defs}<rect width="${W}" height="${H}" fill="url(#g${gid})"/>${body}</svg>`;
 }
 function thumbSVG(kind) {
-  const c = IS_RM ? ADV().color : C(), a = IS_RM ? ADV().accent : D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt",coffee:"local_cafe",car:"local_gas_station"}[kind];
+  const c = IS_RM ? ADV().color : C(), a = IS_RM ? ADV().accent : D().accent, ic = {home:"router",data:"signal_cellular_alt",family:"group",watch:"watch",leaf:"eco",skin:"face",queue:"hourglass_top",plane:"flight",snow:"ac_unit",bolt:"bolt",coffee:"local_cafe",car:"local_gas_station",golf:"sports_golf",tee:"golf_course"}[kind];
   return `<div style="width:100%;height:100%;background:linear-gradient(135deg,${mix(c,"#fff",.15)},${mix(c,"#000",.3)});display:flex;align-items:center;justify-content:space-between;padding:0 8px;color:#fff"><span style="font:900 9px Roboto;letter-spacing:.3px;line-height:1.1">${esc(initials(AB()))}</span><span class="ms" style="font-size:22px;color:${a}">${ic}</span></div>`;
 }
 
@@ -1023,7 +1105,7 @@ const NAV1 = [["campaign","Campaigns"],["desktop_windows","Displays & Devices"],
 const NAV2 = [["settings","Company Settings"],["assignment","Platform Admin"]];
 function shell(inner, crumbs, navOn = "Campaigns") {
   const nav = (arr, on) => arr.map(([i,l]) => `<div class="${l===on?"on":""}"><span class="ms">${i}</span>${l}</div>`).join("");
-  return `<div class="app"><aside class="side"><div class="logo">${logoSVG(44)}<span class="wm">${esc(B())}</span></div>
+  return `<div class="app"><aside class="side"><div class="logo">${logoSVG(44, true)}<span class="wm">${esc(B())}</span></div>
     <div class="nav">${nav(IS_RM && S.flow === 1 ? NAV1.filter(n => n[1] === "Campaigns" || n[1] === "Insights / Analytics") : NAV1,navOn)}</div><div class="nav bottom">${nav(IS_RM && S.flow === 1 ? [] : NAV2,navOn)}</div></aside>
     <div class="mainc"><div class="hdr"><span class="ms" style="color:#666">menu</span><span class="ph"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></span>
       ${IS_RM && S.flow === 1 ? `<span class="env"><span class="ms" style="font-size:15px">badge</span>Advertiser · ${esc(ADV().brand)}</span>` : `<span class="env"><span class="ms" style="font-size:15px">rocket_launch</span>Production<span class="ms" style="font-size:14px">edit</span></span>`}${logoSVG(34)}</div>
@@ -1084,7 +1166,7 @@ const crumbD = () => `Home &gt; Campaigns &gt; <b>${esc(D().name)}</b>`;
 function briefScreen(filled, on, cta = "story") {
   const d = D(), F = (k, html, cls="") => `<div class="f ${filled>k?"":"pend"}" id="f${k}">${html}</div>`;
   const v = (k, html) => filled > k ? html : "";
-  const tps = (IS_CONV || IS_RM) ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
+  const tps = IS_GOLF ? [["storefront","Pro shop screens",true],["sports_golf","Driving range screens",true],["golf_course","First tee screens",true],["restaurant","Halfway house screens",true],["checkroom","Locker room screens",true],["local_bar","Clubhouse bar screens",true]] : (IS_CONV || IS_RM) ? [["directions_car","Forecourt screens",true],["storefront","Shop front screens",true],["kitchen","Cooler door screens",true],["point_of_sale","POS screens",true]] : [["language","Website",true],["storefront","Store Sites",true],["tv","Digital Signage",true],["qr_code_2","QR-Control",false],["tablet","Staff Tablet",false],["smart_toy","AI Agents",false]];
   return shell(detailTop("Campaign Brief", on, cta) + `<div class="form" id="form">
     ${IS_RM ? `<div class="f" id="f5"><label><i>*</i>Deal ID</label><div class="in dsel"><span>${esc(RMI().deal)}</span><span class="ms">expand_more</span></div></div>` : ""}${F(0,`<label><i>*</i>Campaign Name</label><div class="in ${filled===1?"fill":""}">${v(0,esc(d.name))}&nbsp;</div>`)}
     ${F(1,`<label>Campaign Details</label><div class="in ${filled===2?"fill":""}" style="min-height:80px">${v(1,esc(d.details))}</div>`)}
@@ -1115,7 +1197,8 @@ function creativeScreen(n, on, cta = null, tab2) {
   if (tab2 === "local") return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span>Campaign Assets</span><span>Call to Action</span><span class="on" id="lptab">Localised Preview</span></div>${localPreviewHTML()}`, crumbD());
   return shell(detailTop("Creative", on, cta) + `<div class="ctabs"><span class="on">Campaign Assets</span><span>Call to Action</span>${tab2 ? `<span id="lptab">Localised Preview</span>` : ""}</div>
     <div class="muted" style="margin-top:12px">Campaign assets for each enabled touch-point</div>
-    <div class="assets">${(IS_CONV || IS_RM) ? `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Forecourt screens (landscape)","land","16/9")}${P(2,"Cooler door screens (wide)","web","800/250")}</div>
+    <div class="assets">${IS_GOLF ? `<div style="display:flex;flex-direction:column;gap:16px">${P(1,"Driving range screens","land","16/9")}${P(2,"First tee screens","land","16/9")}${P(5,"Clubhouse bar screens","land","16/9")}</div>
+    <div style="display:flex;flex-direction:column;gap:16px">${P(0,"Pro shop screens (portrait)","port","9/16")}${P(3,"Halfway house screens","land","16/9")}</div>${P(4,"Locker room screens (portrait)","port","9/16")}` : (IS_CONV || IS_RM) ? `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Forecourt screens (landscape)","land","16/9")}${P(2,"Cooler door screens (wide)","web","800/250")}</div>
     <div style="display:flex;flex-direction:column;gap:16px">${P(1,"Shop front screens (portrait)","port","9/16")}${P(3,"POS screens","pos","4/3")}</div>` : `<div style="display:flex;flex-direction:column;gap:16px">${P(0,"Digital signage (landscape)","land","16/9")}${P(2,"Website","web","800/250")}</div>
     ${P(1,"Signage (portrait)","port","9/16")}${P(3,"Store sites","store","9/16")}`}</div>`, crumbD());
 }
@@ -1234,9 +1317,9 @@ const STEPS = [
      paint(briefScreen(0,false)); await wait(500,id);
      for (let k=0;k<5;k++){ fillBrief(k); await wait(420,id); }
      const tmp=document.createElement("div"); tmp.innerHTML=briefScreen(6,false); q("#tps").innerHTML = tmp.querySelector("#tps").innerHTML; await wait(300,id);
-     if (IS_RM) { tip(q("#f5"),"Deal ID, pre-selected","Frostline's deal with the retailer is pre-selected, and the drop-down lists only Frostline's own deals. Every campaign created on it is automatically associated with the slots assigned to that deal: slot 1 on Forecourt, Shop Front, Cooler Doors and POS.",3); await wait(5200,id); hideTip(); } tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
-     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",IS_RM ? "Only the deal's screen types, from the slots assigned to the deal: forecourt, shop front, cooler door and POS screens." : IS_CONV ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
- { t:"Generate storyboard and copy", s: IS_RM ? "Happy with the brief? The AI agent writes the headline, sub-headline and legal copy from the brief and the agreed brand guidelines: Frostline's, the retailer's, or an agreed variation of the two." : "Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
+     if (IS_GOLF) { tip(q("#f5"),"Deal ID, pre-selected","Corvane's deal with the club is pre-selected, and the drop-down lists only Corvane's own deals. Every campaign created on it is automatically associated with the slots assigned to that deal: slot 1 on Pro Shop, Driving Range, First Tee, Halfway House, Locker Room and Clubhouse Bar.",3); await wait(5200,id); hideTip(); } else if (IS_RM) { tip(q("#f5"),"Deal ID, pre-selected","Frostline's deal with the retailer is pre-selected, and the drop-down lists only Frostline's own deals. Every campaign created on it is automatically associated with the slots assigned to that deal: slot 1 on Forecourt, Shop Front, Cooler Doors and POS.",3); await wait(5200,id); hideTip(); } tip(q("#f1"),"Campaign brief","Written from what was said and from how past campaigns performed: name, details, products, audience and objective.",3); await wait(3000,id); hideTip();
+     const t=q("#tps"); await reveal(t,id); tip(t,"Touchpoints",IS_GOLF ? "Only the deal's screen types, from the slots assigned to the deal: pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens." : IS_RM ? "Only the deal's screen types, from the slots assigned to the deal: forecourt, shop front, cooler door and POS screens." : IS_CONV ? "Forecourt, shop front, cooler door and POS screens switched on from the brief." : "Digital signage, website and store sites switched on from the brief.",3); await wait(2800,id); hideTip(); } },
+ { t:"Generate storyboard and copy", s: IS_GOLF ? "Happy with the brief? The AI agent writes the headline, sub-headline and legal copy from the brief and the agreed brand guidelines: Corvane's, the club's, or an agreed variation of the two." : IS_RM ? "Happy with the brief? The AI agent writes the headline, sub-headline and legal copy from the brief and the agreed brand guidelines: Frostline's, the retailer's, or an agreed variation of the two." : "Happy with the brief? Generate Storyboard & Copy writes the headline, sub-headline and legal copy from the brief and your brand guidelines.",
    enter(){ paint(briefScreen(6,false)); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,4); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
      const tb=q('[data-tab="Storyboard & Copy"]'); paint(storyScreen({copy:0,f1:"none",f2:"none"})); await wait(400,id);
@@ -1245,7 +1328,7 @@ const STEPS = [
  { t:"Generate creative preview", s:"Copy agreed? Generate Creative Preview creates the first and last frames of the scene. Not quite right? Ask for a change in plain English.",
    enter(){ S.bright=false; paint(storyScreen({copy:3,f1:"none",f2:"none",cta:"preview"})); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,"Copy agreed? Generate Creative Preview creates the first and last frames of the scene.",5); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,700);
-     await reveal(q(".scene"),id); setFrame("fr1","gen"); setFrame("fr2","gen"); tip(q("#fr1"),"Generating the preview",IS_RM ? "The AI agent builds the frames from the agreed brand guidelines, whether the advertiser's, the retailer's or an agreed variation of the two, optimised on what has performed best in past campaigns." : "First and last frames are built from the storyboard, optimised on what has performed best in past campaigns.",5); await wait(1800,id);
+     await reveal(q(".scene"),id); setFrame("fr1","gen"); setFrame("fr2","gen"); tip(q("#fr1"),"Generating the preview",IS_RM ? "The AI agent builds the frames from the agreed brand guidelines, whether the advertiser's, the " + (IS_GOLF ? "club's" : "retailer's") + " or an agreed variation of the two, optimised on what has performed best in past campaigns." : "First and last frames are built from the storyboard, optimised on what has performed best in past campaigns.",5); await wait(1800,id);
      setFrame("fr1","first"); await wait(900,id); setFrame("fr2","last"); await wait(1400,id);
      const rb=q("#reqbtn"); await moveTo(rb,id); tip(rb,"Refine in plain English","Not quite right? Ask for a change and the frame is regenerated.",5); await wait(2400,id); hideTip(); await click(rb,id);
      q("#fa1").insertAdjacentHTML("afterend", popHTML()); await typeInto(q("#popin"), D().change, id, reduce?999:48);
@@ -1254,8 +1337,8 @@ const STEPS = [
  { t:"Generate creative assets", s:"Storyboard refined? Generate Creative Assets builds the final scene for every touchpoint.",
    enter(){ S.bright=true; paint(storyScreen({copy:3,f1:"first",f2:"last",b1:true,cta:"assets"})); setTop(maxTop(),0); },
    async play(id){ const c=q("#cta"); await moveTo(c,id); tip(c,this.t,this.s,6); await wait(2800,id); hideTip(); await click(c,id); await busy(c,"Generating…",id,1300);
-     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of [[0,"land"],[1,"port"],[2,"web"],[3,(IS_CONV || IS_RM) ? "pos" : "store"]]) { setAsset(k,kind); await wait(560,id); }
-     tip(q("#ap0"),"Assets for every touchpoint",IS_RM ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. Results from the approved, running campaign feed the agent's future campaigns in a closed loop." : IS_CONV ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. The generate button is gone once the assets exist." : "Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
+     paint(creativeScreen(0,false)); await wait(600,id); for (const [k,kind] of IS_GOLF ? [[0,"port"],[1,"land"],[2,"land"],[3,"land"],[4,"port"],[5,"land"]] : [[0,"land"],[1,"port"],[2,"web"],[3,(IS_CONV || IS_RM) ? "pos" : "store"]]) { setAsset(k,kind); await wait(IS_GOLF ? 420 : 560,id); }
+     tip(q("#ap0"),"Assets for every touchpoint",IS_GOLF ? "Creative for each screen type: pro shop, driving range, first tee, halfway house, locker room and clubhouse bar. Results from the approved, running campaign feed the agent's future campaigns in a closed loop." : IS_RM ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. Results from the approved, running campaign feed the agent's future campaigns in a closed loop." : IS_CONV ? "Creative for each screen type: forecourt, shop front, cooler doors and POS. The generate button is gone once the assets exist." : "Landscape and portrait screens, the website and store sites. The generate button is gone once the assets exist.",6); await wait(3200,id); hideTip(); } },
  { t:"Activate the campaign", s:"Switch on the toggle at the top right and the campaign starts playing in every store.",
    enter(){ S.bright=true; paint(creativeScreen(4,false)); },
    async play(id){ const sw=q("#sw"); await moveTo(sw,id); tip(sw,this.t,this.s,7); await wait(2600,id); hideTip(); await click(sw,id);
@@ -1368,7 +1451,7 @@ function storeDetailScreen(o) {
   const F = (lab, val, req=false, cls="") => `<div class="f"><label>${req?"<i>*</i>":""}${lab}</label><div class="in ${cls}">${val}</div></div>`;
   const dd = (id, ph, vals) => `<div class="in tags sdd" id="${id}">${vals.length?tags(vals):P(ph)}<span class="ms chev">expand_more</span></div>`;
   return shell(`<div class="row"><div class="title">${esc(B())} ${esc(f.name)}</div><span class="row" style="gap:6px"><span class="ms" style="font-size:18px">open_in_new</span>Visit Retail Manager's Website</span></div>
-    <div class="stabs" id="stabs">${tabs}</div><div class="slogo"><div>${logoSVG(70)}</div></div><div class="form" id="sfmain" style="margin-top:6px">
+    <div class="stabs" id="stabs">${tabs}</div><div class="slogo"><div>${logoSVG(70, false, 92)}</div></div><div class="form" id="sfmain" style="margin-top:6px">
     ${F("Store Name", `${esc(B())} ${esc(f.name)}`, true)}${F("Brand Name", esc(B()))}${F("Business Categories", `<span class="tag">${l.category} ×</span>`, true, "tags")}
     ${F("Store Code", esc(storeCode(f.code)))}${F("Maximum People in Store", P("Maximum People in Store"))}${F("Localised Copy", P("Localised Copy"))}
     ${F("Address", esc(f.addr))}${F("Phone Number", esc(f.phone))}${F("Website", esc(brandWeb(f.web)))}
@@ -1584,6 +1667,15 @@ PERS["retail-media"] = { ...PERS.convenience, person: "Emma", reason: "Fuel and 
   ins: [["local_gas_station","Fuelling at pump 4"],["workspace_premium","Loyalty Gold"],["local_drink","Usually buys: cold drinks"],["sell","Offer shown: a free Frostline upsize"]],
   attrs: [["Location","Pump 4, Highway 9 Services","Pump check-in",0],["Check-in method","Loyalty app","Pump check-in",0],["Audience / Segments","Loyalty Gold","Retailer's loyalty program",1],["Purchase History","Cold drinks","Retailer's POS",1]],
   r2: ["Visitor / Customer Data","Purchase History","includes selected",["Cold drinks"]], r2mode: "tags", match: "Loyalty Gold and a cold drinks purchase history" };
+/* Run Your Own RMN: a low-handicap member checks in for her tee time at the pro shop (club app, membership card or QR code). */
+if (IS_GOLF) PERS["retail-media"] = { ...PERS.convenience, person: "Hannah", store: "Fernhollow", time: "8:10", display: "Pro shop display", reason: "Tee time and a driver fitting", ci: "Tee time check-in",
+  reasons: ["Low-handicap members", "Full members", "Junior members", "Visiting golfers"], findAt: "in the pro shop", email: "hannah@example.com", look: ["#e8b896","#3b2a20","f"],
+  where: "Pro shop · Fernhollow Golf Club", tap: "Tap to check in for your 8:30 tee time.", ckLab: "CHECKED IN FOR YOUR 8:30 TEE TIME", tier: "Member", chip: "Handicap 6.4", atCi: "at the pro shop",
+  methods: [["near_me","Club app at the pro shop",true],["credit_card","Membership card",false],["qr_code_scanner","Scans the QR code on a screen",false]],
+  ins: [["sports_golf","Tee time 8:30, first tee"],["workspace_premium","Low-handicap member"],["golf_course","Usually buys: golf balls"],["sell","Offer shown: a free sleeve of Tour balls"]],
+  attrs: [["Location","Pro shop, Fernhollow Golf Club","Tee time check-in",0],["Check-in method","Club app","Tee time check-in",0],["Audience / Segments","Low-handicap members","Club's membership system",1],["Purchase History","Golf balls","Pro shop POS",1]],
+  r1: ["Visitor / Customer Data","Audience / Segments","includes selected",["Low-handicap members"]],
+  r2: ["Visitor / Customer Data","Purchase History","includes selected",["Golf balls"]], r2mode: "tags", match: "Low-handicap members and a golf balls purchase history" };
 LOC["retail-media"] = LOC.convenience;
 const P3 = () => PERS[S.ind];
 const baseRules = ors => { const l = L(); return [l.rule1, l.rule3, Object.assign([...l.rule2], { pct: true, sub: l.subMode, ors: ors || [] })]; };
@@ -1632,13 +1724,13 @@ function avatarSVG() {
 function screenHTML(st) {
   const p = P3(), c = C(), ini = esc(initials(B()));
   if (st === "notif") return `<div class="ph-lock"><div class="ph-time">${p.time.replace(/\d$/, d => String(Math.max(0, +d - 1)))}</div><div class="ph-date">${IS_RM ? "Tuesday 8 December" : "Friday 6 November"}</div>
-      <div class="ph-note" id="pnote"><div class="pn-top"><span class="ph-logo sm" style="background:${c}">${ini}</span>${esc(B())}<small>now</small></div>
-      ${p.conv ? `<b>Welcome to ${IS_RM ? esc(p.store) : "pump 4"}, ${p.person}</b><span>Tap to check in and earn rewards.</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
+      <div class="ph-note" id="pnote"><div class="pn-top">${brandImg(20, 48, false, `<span class="ph-logo sm" data-bm="20,48,0" style="background:${c}">${ini}</span>`)}${esc(B())}<small>now</small></div>
+      ${p.conv ? `<b>Welcome to ${IS_RM ? esc(p.store) : "pump 4"}, ${p.person}</b><span>${p.tap || "Tap to check in and earn rewards."}</span>` : `<b>Welcome to ${esc(p.store)}, ${p.person}</b><span>Tap to join the queue.</span>`}</div></div>`;
   if (st === "pump") { const camp = promoHTML("camp");
-    return `<div class="ss" style="--bc:${c};--bg2:${mix(c,"#ffffff",.86)}"><div class="ss-top home"><span class="ss-brand">${logoSVG(28)}<span>${esc(B())}</span></span></div><div class="ss-store">Pump 4 · ${esc(p.store)}</div><div class="ss-body">
-      <div class="ss-lab" id="pcheck">CHECKED IN WITH YOUR LOYALTY APP</div>
+    return `<div class="ss" style="--bc:${c};--bg2:${mix(c,"#ffffff",.86)}"><div class="ss-top home"><span class="ss-brand">${logoSVG(28)}<span>${esc(B())}</span></span></div><div class="ss-store">${p.where ? esc(p.where) : `Pump 4 · ${esc(p.store)}`}</div><div class="ss-body">
+      <div class="ss-lab" id="pcheck">${p.ckLab || "CHECKED IN WITH YOUR LOYALTY APP"}</div>
       <div class="ss-car">${camp}</div><div class="ss-dots"><i class="on"></i><i></i><i></i><i></i></div>
-      <div class="ss-li"><span class="ms" style="color:${c}">workspace_premium</span><b>Gold member</b><span class="ss-chip">1,240 points</span></div>
+      <div class="ss-li"><span class="ms" style="color:${c}">workspace_premium</span><b>${p.tier || "Gold member"}</b><span class="ss-chip">${p.chip || "1,240 points"}</span></div>
       <div class="ss-foot">© 2026 ${esc(B())}</div></div></div>`; }
   const right = p.conn && st !== "served" ? `<span class="ss-pill"><span class="ms">tv</span><i class="ok"></i><span class="x" style="background:${c}">✕</span></span>` : `<span class="ss-qr" style="background:${c}"><span class="ms">qr_code_2</span></span>`;
   const sub = `<div class="ss-top"><span class="ss-back" style="color:${c}"><span class="ms">chevron_left</span>Back</span><b class="t">Join the Queue</b>${right}</div>`;
@@ -1702,7 +1794,7 @@ function sceneHTML(st, panel) {
        <p class="tp-note" style="margin-top:0">The store site shows ${p.person}'s ticket number and who is serving her. Staff find her by the colour of her top, which she added when she joined the queue.</p>`
     : `<div class="tp-eyebrow">Check-in</div><h3>${p.person} arrives at ${esc(p.store)}</h3>
        <div class="tp-methods" id="pmeth">${p.methods.map(m => `<div class="tp-m ${m[2]?"on":""}"><span class="ms">${m[0]}</span>${esc(m[1])}</div>`).join("")}</div>
-       <p class="tp-note">Every check-in identifies the customer ${p.conv ? "at the pump" : "in store"}, so screens can respond to them.</p>`;
+       <p class="tp-note">Every check-in identifies the ${p.atCi ? "member" : "customer"} ${p.atCi || (p.conv ? "at the pump" : "in store")}, so screens can respond to them.</p>`;
   return `<div class="scene3"><div class="sc-left">${phoneHTML(st)}</div><div class="sc-right" id="sright">${right}</div></div>`;
 }
 function playbackScreen(withNew) {
@@ -1797,7 +1889,7 @@ const CV = (() => {
     { k: "cool", icon: "kitchen", name: "Coolers", sub: "Cold drinks" },
     { k: "pos", icon: "point_of_sale", name: "POS", sub: "Checkout" }
   ];
-  const CENTERS = [258, 559, 790, 1047]; // x centre of each screen in the scene 4 row
+  const CENTERS = [258, 559, 790, 1047]; // x centre of each screen in the scene 4 row (golf: measured after each render, see fit())
   const GEN = {
     fore: [["local_car_wash", "Car wash $8", "Drive in, drive out clean", "#27508f"], ["lunch_dining", "Fresh sandwiches", "Made this morning", "#7a3b8f"]],
     shop: [["propane_tank", "Gas bottle swap", "Swap and go in two minutes", "#1f6b5d"], ["smartphone", "Phone top-ups", "Any network, any amount", "#8a3a3a"]],
@@ -1833,26 +1925,60 @@ const CV = (() => {
       cool: { icon: "workspace_premium", tag: "Gold member offer", head: "Free upsize on every Frostline", sub: "1.25L for the price of 600ml" },
       pos: { icon: "workspace_premium", tag: "Upsize applied", head: "Frostline Cola 1.25L", sub: "Emma, your Gold upsize saved you $2.00" } });
   }
+  if (IS_GOLF) {
+    LOCS.splice(0, 4, { k: "pro", icon: "storefront", name: "Pro Shop", sub: "Check-in" }, { k: "rng", icon: "sports_golf", name: "Driving Range", sub: "Warm-up" },
+      { k: "tee", icon: "golf_course", name: "First Tee", sub: "Starter's hut" }, { k: "hw", icon: "restaurant", name: "Halfway House", sub: "After nine holes" },
+      { k: "lck", icon: "checkroom", name: "Locker Room", sub: "Changing" }, { k: "bar", icon: "local_bar", name: "Clubhouse Bar", sub: "After the round" });
+    Object.assign(GEN, { pro: [["school", "Lessons with the pro", "Book in the pro shop", "#27508f"], ["sell", "Member offers", "This week in the shop", "#7a3b8f"]],
+      rng: [["sports_golf", "Range tokens", "50 balls for members", "#1f6b5d"], ["groups", "Group coaching", "Saturday mornings", "#8a3a3a"]],
+      tee: [["flag", "Course update", "Greens fast and true", "#2c4f9e"], ["emoji_events", "Club competition", "Medal on Saturday", "#5b3a8c"]],
+      hw: [["lunch_dining", "Bacon roll and coffee", "At the turn", "#6a3d8f"], ["local_cafe", "Snack deals", "Grab and go", "#9a4a14"]],
+      lck: [["campaign", "Club news", "AGM on the 12th", "#27508f"], ["event", "Events", "Christmas dinner", "#7a3b8f"]],
+      bar: [["local_bar", "Bar menu", "Food served all day", "#1f6b5d"], ["celebration", "Functions", "Book the clubhouse", "#8a3a3a"]] });
+    Object.assign(OFFER, { pro: { icon: "sports_golf", tag: "Corvane", head: "The new Corvane driver", sub: "Try it in the pro shop" },
+      rng: { icon: "sports_golf", tag: "Corvane", head: "Your best season starts here", sub: "Hit the new driver on the range" },
+      tee: { icon: "sports_golf", tag: "Corvane", head: "Longer off the tee", sub: "The new Corvane driver" },
+      hw: { icon: "sports_golf", tag: "Corvane", head: "Corvane Tour balls", sub: "In the pro shop now" },
+      lck: { icon: "sports_golf", tag: "Corvane", head: "Book a driver fitting", sub: "With the club pro" },
+      bar: { icon: "sports_golf", tag: "Corvane", head: "Your best season starts here", sub: "Corvane driver and Tour balls" } });
+    Object.assign(PERS, { pro: { icon: "workspace_premium", tag: "Member · 8:30 tee time", head: "Good morning, Hannah", sub: "A free sleeve of Tour balls with a driver fitting" },
+      rng: { icon: "workspace_premium", tag: "Just for you", head: "Hannah, try the new driver", sub: "Demo clubs at bay 1" },
+      tee: { icon: "workspace_premium", tag: "Member offer", head: "Longer off the tee, Hannah", sub: "Free Tour ball sleeve with a fitting" },
+      hw: { icon: "workspace_premium", tag: "Member offer", head: "A free sleeve of Tour balls", sub: "With any driver fitting, today" },
+      lck: { icon: "workspace_premium", tag: "Member offer", head: "Book your driver fitting", sub: "Ask in the pro shop after your round" },
+      bar: { icon: "workspace_premium", tag: "Member offer", head: "Hannah, your fitting is at 1:30", sub: "Free Tour ball sleeve waiting" } });
+    PERS.done = { icon: "check_circle", tag: "Fitting booked", head: "Free sleeve applied", sub: "Hannah, enjoy your Corvane Tour balls" };
+    CENTERS.splice(0, 4, 150, 330, 510, 690, 870, 1050);
+  }
   const bottle = `<svg class="cup" viewBox="0 0 120 90" aria-hidden="true"><ellipse cx="60" cy="84" rx="40" ry="5" fill="rgba(0,0,0,.25)"/><path d="M70 4h14v10c0 4 8 8 8 16v48c0 4-3 6-6 6H68c-3 0-6-2-6-6V30c0-8 8-12 8-16z" fill="#fff"/><rect x="62" y="40" width="30" height="22" fill="#E0393E"/><path d="M28 34l6 10M34 30l-2 14M42 38l-10 4" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/></svg>`;
+  const ball = `<svg class="cup" viewBox="0 0 120 90" aria-hidden="true"><ellipse cx="66" cy="84" rx="40" ry="5" fill="rgba(0,0,0,.25)"/><circle cx="70" cy="44" r="22" fill="#fff"/><g fill="#14304F" opacity=".2"><circle cx="63" cy="37" r="2.6"/><circle cx="74" cy="35" r="2.6"/><circle cx="67" cy="47" r="2.6"/><circle cx="78" cy="46" r="2.6"/></g><path d="M64 66h12l-3 18h-6z" fill="#E8B33A"/><path d="M26 30l6 10M32 26l-2 14M40 34l-10 4" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".8"/></svg>`;
   const ad = (k, mode, i = 0) => {
     const sl = IS_RM ? `<span class="sl">${mode === "gen" ? `Slot ${(i % 2) + 2} · ${esc(B())}` : "Slot 1 · Brand partner"}</span>` : "";
     if (mode === "gen") { const g = GEN[k][i % 2]; return `<div class="cv-ad" style="background:${g[3]}"><span class="ms ic">${g[0]}</span><b>${g[1]}</b><small>${g[2]}</small>${sl}</div>`; }
-    const o = (mode === "cre" ? OFFER : PERS)[k];
-    return `<div class="cv-ad ${mode}"><span class="tg"><span class="ms">${o.icon}</span>${esc(o.tag)}</span><b>${esc(o.head)}</b><small>${esc(o.sub)}</small>${IS_RM ? bottle : cup}${sl}</div>`;
+    const o = mode === "done" ? PERS.done : (mode === "cre" ? OFFER : PERS)[k];
+    return `<div class="cv-ad ${mode}"><span class="tg"><span class="ms">${o.icon}</span>${esc(o.tag)}</span><b>${esc(o.head)}</b><small>${esc(o.sub)}</small>${IS_GOLF ? ball : IS_RM ? bottle : cup}${sl}</div>`;
   };
   const tile = (l, mode, i) => `<div class="cv-tile ${l.k}"><div class="cv-scr" id="cvs-${l.k}">${ad(l.k, mode, i)}</div></div>`;
   const label = l => `<div class="cv-lab"><span class="ms">${l.icon}</span><span>${l.name}<small>${l.sub}</small></span></div>`;
   const row = (mode, i) => `<div class="cv-row" id="cvrow">${LOCS.map(l => `<div class="cv-loc" id="cvl-${l.k}">${tile(l, mode, i)}${label(l)}</div>`).join("")}</div>`;
   const head = sc => `<div class="cv-top"><div class="cv-logo"><i style="background:${C()}">${esc(initials(B()))}</i>${esc(B())}</div><div class="cv-sc">${sc}</div></div>`;
-  const root = inner => `<div class="cv${IS_RM ? " rm" : ""}" style="--cva:${D().accent}">${inner}</div>`;
+  const root = inner => `<div class="cv${IS_RM ? " rm" : ""}${IS_GOLF ? " golf" : ""}" style="--cva:${D().accent}">${inner}</div>`;
   const title = (h, s) => `<div class="cv-title"><b>${esc(h)}</b>${s ? `<span>${esc(s)}</span>` : ""}</div>`;
   const setTile = (k, mode, i) => { const e = q("#cvs-" + k); if (e) e.innerHTML = ad(k, mode, i); };
   const rotate = (i) => LOCS.forEach(l => IS_RM && i % 3 === 0 ? setTile(l.k, "cre") : setTile(l.k, "gen", IS_RM ? (i % 3) - 1 : i));
 
   /* scene 4: one member, four screens */
-  const stops = () => `<div class="cv-track" id="cvtrack"><div class="cv-line" style="left:${CENTERS[0]}px;width:${CENTERS[3] - CENTERS[0]}px"></div><div class="cv-lf" id="cvlf" style="left:${CENTERS[0]}px"></div>
-    ${CENTERS.map((x, i) => `<div class="cv-stop" id="cvst${i}" style="left:${x}px">${i + 1}</div>`).join("")}<div class="cv-me" id="cvme" style="left:${CENTERS[0]}px"><i>${esc(P3().person[0])}</i></div></div>`;
-  const scene4 = (mode) => root(head("The shopper journey") + title(IS_RM ? "Emma's Frostline offer follows her through the shop" : "Sam's offer follows her through the shop") + stops() + row(mode || "cre", 0));
+  const stops = () => `<div class="cv-track" id="cvtrack"><div class="cv-line" style="left:${CENTERS[0]}px;width:${CENTERS[LOCS.length - 1] - CENTERS[0]}px"></div><div class="cv-lf" id="cvlf" style="left:${CENTERS[0]}px"></div>
+    ${CENTERS.slice(0, LOCS.length).map((x, i) => `<div class="cv-stop" id="cvst${i}" style="left:${x}px">${i + 1}</div>`).join("")}<div class="cv-me" id="cvme" style="left:${CENTERS[0]}px"><i>${esc(P3().person[0])}</i></div></div>`;
+  const scene4 = (mode) => root(head(IS_GOLF ? "The member journey" : "The shopper journey") + title(IS_GOLF ? "Hannah's Corvane offer follows her round the club" : IS_RM ? "Emma's Frostline offer follows her through the shop" : "Sam's offer follows her through the shop") + stops() + row(mode || "cre", 0));
+  /* golf: six screens of different shapes, so the stops are placed on the measured centre of each screen (layout px, unaffected by the stage scale) */
+  const fit = () => { if (!IS_GOLF) return; const tr = q("#cvtrack"), rw = q("#cvrow"); if (!tr || !rw) return; tr.classList.add("nofx");
+    LOCS.forEach((l, i) => { const e = q("#cvl-" + l.k); if (e) CENTERS[i] = Math.round(rw.offsetLeft + e.offsetLeft + e.offsetWidth / 2 - tr.offsetLeft); });
+    const last = CENTERS[LOCS.length - 1], ln = tr.querySelector(".cv-line"); if (ln) { ln.style.left = CENTERS[0] + "px"; ln.style.width = (last - CENTERS[0]) + "px"; }
+    CENTERS.forEach((x, i) => { const st = q("#cvst" + i); if (st) st.style.left = x + "px"; });
+    const me = q("#cvme"), lf = q("#cvlf"); if (me) me.style.left = CENTERS[0] + "px"; if (lf) lf.style.left = CENTERS[0] + "px";
+    void tr.offsetWidth; tr.classList.remove("nofx"); };   /* placed at once, not slid in from the default spacing */
+  const paint4 = mode => { screen.innerHTML = scene4(mode); fit(); };
   async function visit(i, id, fast) {
     const k = LOCS[i].k;
     if (i > 0) { setTile(LOCS[i - 1].k, "cre"); q("#cvl-" + LOCS[i - 1].k).classList.remove("on"); }
@@ -1895,12 +2021,32 @@ const CV = (() => {
       tip(q("#cvl-cool"), "At the cooler doors", "Right where the drinks are: a free upsize on every Frostline.", 3); await wait(3600, id); hideTip();
       await visit(3, id);
       tip(q("#cvl-pos"), "At the POS", "The upsize is applied at the till. Everyone who isn't a Gold cold drinks buyer sees Frostline's default version.", 3); await wait(4200, id); hideTip(); } };
-  const TEASE = [{ cap: IS_RM ? "One brand partner slot in every rotation, personalised for a loyalty member" : "The offer follows a loyalty member from the pump to the till", async run(id) {
-    S.flow = 0; screen.innerHTML = scene4(); await wait(600, id);
-    for (let i = 0; i < 4; i++) { await visit(i, id, true); await wait(900, id); }
+  const GSTEP = {
+    t: "Corvane's offer follows Hannah", s: "Every screen rotates three campaigns: two for the club and the brand partner slot. Once Hannah checks in at the pro shop, the brand partner slot plays Corvane's members version for her on every screen she passes.",
+    enter() { paint4("gen"); hideTip(); },
+    async play(id) { await wait(900, id);
+      for (let i = 1; i <= 3; i++) { rotate(i); await wait(1400, id); }
+      tip(q("#cvrow"), "Three campaigns in every rotation", "Slots 2 and 3 play the club's own campaigns. Slot 1, the brand partner slot, plays Corvane's campaign.", 3); await wait(4000, id); hideTip();
+      LOCS.forEach(l => setTile(l.k, "cre")); await wait(700, id);
+      q("#cvtrack").insertAdjacentHTML("beforeend", `<div class="cv-rec" id="cvrec" style="left:${CENTERS[0]}px"><span class="ms">workspace_premium</span>Hannah · member checked in at the pro shop</div>`);
+      await visit(0, id, true);
+      tip(q("#cvl-pro"), "Recognised at the pro shop", "Hannah checks in for her tee time with the club's app. When the brand partner slot comes round, the pro shop screen plays Corvane's members version for her.", 3); await wait(4200, id); hideTip();
+      q("#cvrec").remove();
+      for (const [i, k, t, x] of [[1, "rng", "On the driving range", "Warming up on the range, the same campaign shows her the new Corvane driver, with demo clubs at bay 1."],
+        [2, "tee", "At the first tee", "At the first tee, the members version follows her to the start of her round."],
+        [3, "hw", "At the halfway house", "At the turn, a reminder: a free sleeve of Corvane Tour balls with any driver fitting."],
+        [4, "lck", "In the locker room", "In the locker room, the brand partner slot invites her to book a driver fitting with the club pro."],
+        [5, "bar", "At the clubhouse bar", "After the round, the clubhouse bar screen confirms her fitting time and the free sleeve waiting for her."]]) {
+        await visit(i, id); tip(q("#cvl-" + k), t, x, 3); await wait(3600, id); hideTip(); }
+      setTile("bar", "cre"); q("#cvl-bar").classList.remove("on"); q("#cvme").style.left = CENTERS[0] + "px"; await wait(1200, id);
+      q("#cvl-pro").classList.add("on"); setTile("pro", "done");
+      tip(q("#cvl-pro"), "Back at the pro shop", "The pro shop offer closes the loop: the fitting is booked and her free sleeve is applied at the till. Everyone who isn't a low-handicap golf ball buyer sees Corvane's default version.", 3); await wait(4200, id); hideTip(); } };
+  const TEASE = [{ cap: IS_GOLF ? "One brand partner slot in every rotation, personalised for a member" : IS_RM ? "One brand partner slot in every rotation, personalised for a loyalty member" : "The offer follows a loyalty member from the pump to the till", async run(id) {
+    S.flow = 0; screen.innerHTML = scene4(); fit(); await wait(600, id);
+    for (let i = 0; i < LOCS.length; i++) { await visit(i, id, true); await wait(IS_GOLF ? 600 : 900, id); }
     await wait(900, id); } }];
 
-  return { STEP, TEASE, RMSTEP };
+  return { STEP, TEASE, RMSTEP, GSTEP };
 })();
 
 /* Flow 3 for fuel & convenience: loyalty check-in at the pump instead of a queue. Same screens as the other industries, with the four-location shopper scene in the middle. */
@@ -1958,8 +2104,11 @@ const STEPS3C = [
    playing, the tour holds (S.voHold stops wait() counting) until the line ends, so words and screens stay in step.
    Off by default: it only turns on from the speaker button, and the choice is remembered. The current line is also the
    caption under the tour, timed the same way, so the tour reads the same with audio off. */
+/* The Run Your Own RMN (golf) voiceover: tools/rmn-golf-tour/voiceover-script.json, built with the same voice; sync_tour_vo.py there writes this line. */
+const CLIPS_GOLF = {"f1-01": [{"file": "f1-01-1-0ca14d91e8.mp3", "text": "Fernhollow Golf Club has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar.", "duration": 8.77, "cue": null}], "f1-02": [{"file": "f1-02-1-019cfa9967.mp3", "text": "Each one has its own playlist.", "duration": 1.71, "cue": null}, {"file": "f1-02-2-6a04d41418.mp3", "text": "First, the pro shop playlist is set to rotate three campaigns, one after another.", "duration": 4.97, "cue": "Three campaigns in rotation"}, {"file": "f1-02-3-7b0d89f97e.mp3", "text": "New slots belong to Headquarters, for the club's own promotions.", "duration": 3.67, "cue": "Three slots, all Headquarters"}, {"file": "f1-02-4-3074c07335.mp3", "text": "Slot one is the one the club will sell to brands.", "duration": 2.71, "cue": "Slot 1 goes to advertisers"}, {"file": "f1-02-5-9f9d0e125b.mp3", "text": "Its owner changes from Headquarters to Advertiser.", "duration": 3.01, "cue": "From Headquarters to Advertiser"}, {"file": "f1-02-6-347b7770f4.mp3", "text": "One slot in three now earns media revenue, and two keep promoting the club's own offers.", "duration": 5.33, "cue": "One advertiser slot in three"}], "f1-03": [{"file": "f1-03-1-1e0d92d0f9.mp3", "text": "The driving range, first tee, halfway house, locker room and clubhouse bar get the same setup, in a few clicks.", "duration": 6.76, "cue": null}, {"file": "f1-03-2-51556feb16.mp3", "text": "The club decides exactly how much screen time it sells.", "duration": 3.22, "cue": null}, {"file": "f1-03-3-ab521c1d61.mp3", "text": "Six brand partner slots, one on every screen type, are now ready to sell.", "duration": 4.44, "cue": "Six advertiser slots, ready to sell"}], "f1-04": [{"file": "f1-04-1-a88a9779d9.mp3", "text": "Corvane Golf is already set up as a direct advertiser, next to the advertisers synced from DSPs.", "duration": 6.59, "cue": null}], "f1-05": [{"file": "f1-05-1-815ef1fcf7.mp3", "text": "Slots are always sold through deals. A brand is never assigned to a slot directly.", "duration": 4.93, "cue": null}, {"file": "f1-05-2-2ff4f4c6b3.mp3", "text": "This direct deal gives Corvane all of December at a fixed CPM, and it's never sent to a DSP.", "duration": 6.04, "cue": "Create a direct deal"}], "f1-06": [{"file": "f1-06-1-65160b6df7.mp3", "text": "The six new brand partner slots start unassigned, so nothing plays in them yet.", "duration": 4.48, "cue": null}, {"file": "f1-06-2-a2b377b099.mp3", "text": "Corvane's deal is saved as a draft, ready to place on the slots.", "duration": 3.86, "cue": "The new deal, not on a slot yet"}, {"file": "f1-06-3-920ae8dfd8.mp3", "text": "Each slot's list offers DSPs for open auction, and deals.", "duration": 3.99, "cue": "Choose the deal"}, {"file": "f1-06-4-daa95efabb.mp3", "text": "The club picks the Corvane deal for all six.", "duration": 2.35, "cue": null}, {"file": "f1-06-5-9d85756903.mp3", "text": "Direct deals and programmatic demand are managed side by side, in one place.", "duration": 5.08, "cue": null}, {"file": "f1-06-6-727fafb5dd.mp3", "text": "All six slots now carry the deal, and the deal shows six slots. Then, save the changes.", "duration": 5.59, "cue": "All six brand partner slots"}], "f1-07": [{"file": "f1-07-1-1007aa5f04.mp3", "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM.", "duration": 5.08, "cue": null}, {"file": "f1-07-2-810f46105a.mp3", "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.", "duration": 5.55, "cue": "Finalise and go live"}, {"file": "f1-07-3-1b34406dde.mp3", "text": "Every December window on all six screen types is now Corvane's.", "duration": 3.88, "cue": "Live · direct, not sent to a DSP"}], "f1-08": [{"file": "f1-08-1-cfc10cbd0a.mp3", "text": "Finally, the club gives Corvane its own login, so the brand can manage its own campaigns.", "duration": 5.4, "cue": null}, {"file": "f1-08-2-f1dd3ed422.mp3", "text": "Jamie gets the Advertiser role, so Jamie only ever sees Corvane's campaigns.", "duration": 4.91, "cue": "An Advertiser login for Corvane"}, {"file": "f1-08-3-9bc2f258d9.mp3", "text": "The invitation goes out, and the club's first brand partner deal is done.", "duration": 3.99, "cue": "Send the invitation"}], "f2-01": [{"file": "f2-01-1-c32289aecd.mp3", "text": "Jamie from Corvane signs in with the login the club provided. Corvane can run its own campaigns, or leave them to the club.", "duration": 7.83, "cue": null}, {"file": "f2-01-2-c5591910fd.mp3", "text": "Everything Jamie sees is scoped to Corvane's own campaigns.", "duration": 3.56, "cue": "Only Corvane's campaigns"}], "f2-02": [{"file": "f2-02-1-657e007c88.mp3", "text": "To start a new campaign, Jamie selects Launch a New Campaign, at the top of the list.", "duration": 4.86, "cue": null}], "f2-03": [{"file": "f2-03-1-26a12d399b.mp3", "text": "There's no form to fill in. Jamie just talks, and the AI campaign agent listens.", "duration": 5.18, "cue": null}, {"file": "f2-03-2-d18f886bef.mp3", "text": "As Jamie speaks, it captures the campaign name, products, objective, screens and audience.", "duration": 5.46, "cue": null}, {"file": "f2-03-3-31c7a5a55a.mp3", "text": "A whole campaign brief, in the time it takes to describe it.", "duration": 3.24, "cue": null}], "f2-04": [{"file": "f2-04-1-6c5f3cf27b.mp3", "text": "The agent writes the brief from what Jamie said, and from how past campaigns performed.", "duration": 4.8, "cue": null}, {"file": "f2-04-2-635ecc078c.mp3", "text": "It's ready in seconds, with nothing typed by hand.", "duration": 2.86, "cue": null}, {"file": "f2-04-3-23d07dc5f3.mp3", "text": "Corvane's deal ID is pre-selected, so the campaign can only use the slots on that deal.", "duration": 5.5, "cue": "Deal ID, pre-selected"}, {"file": "f2-04-4-7ded1c15ea.mp3", "text": "Name, details, products, audience and objective are all filled in.", "duration": 4.22, "cue": "Campaign brief"}, {"file": "f2-04-5-3082a3daf1.mp3", "text": "Only the deal's six screen types are switched on.", "duration": 2.75, "cue": "Touchpoints"}], "f2-05": [{"file": "f2-05-1-1cea3b8bb4.mp3", "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Corvane's, the club's, or an agreed mix of both.", "duration": 7.96, "cue": null}, {"file": "f2-05-2-67ab4ee24b.mp3", "text": "Every word can be edited before any creative is made.", "duration": 3.01, "cue": "Storyboard and copy"}], "f2-06": [{"file": "f2-06-1-247e067fe8.mp3", "text": "With the copy agreed, the agent generates a creative preview of the first and last frames.", "duration": 5.29, "cue": null}, {"file": "f2-06-2-a80f61db0a.mp3", "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns.", "duration": 5.59, "cue": "Generating the preview"}, {"file": "f2-06-3-c935bc221a.mp3", "text": "Not quite right? Jamie asks for a change in plain English, like a greener background for the driving range.", "duration": 6.23, "cue": "Refine in plain English"}, {"file": "f2-06-4-a4c96f7f72.mp3", "text": "And the frame is regenerated with the change.", "duration": 2.5, "cue": "Updated"}], "f2-07": [{"file": "f2-07-1-8f51435a80.mp3", "text": "Generate Creative Assets builds the final creative for every screen type, from the pro shop to the clubhouse bar.", "duration": 6.93, "cue": null}, {"file": "f2-07-2-ff4de61fc3.mp3", "text": "Once the approved campaign runs, its results feed Corvane's future campaigns, closing the loop.", "duration": 5.74, "cue": "Assets for every touchpoint"}], "f2-08": [{"file": "f2-08-1-f21a7b6059.mp3", "text": "Corvane also wants a second campaign, just for low-handicap members.", "duration": 4.22, "cue": null}, {"file": "f2-08-2-27180fa2ec.mp3", "text": "Targeting is set on the campaign's Targeting tab, exactly as the club would.", "duration": 4.46, "cue": "Open the Targeting tab"}, {"file": "f2-08-3-69ba1260a8.mp3", "text": "Jamie adds a rule: Audience Segments includes Low-handicap members.", "duration": 4.22, "cue": "Target low-handicap members"}, {"file": "f2-08-4-290178c496.mp3", "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong.", "duration": 4.61, "cue": null}, {"file": "f2-08-5-97015211cb.mp3", "text": "Only the data sources, attributes and values the club has approved for brands appear here.", "duration": 5.16, "cue": null}, {"file": "f2-08-6-064787121c.mp3", "text": "The club controls 100% of the targeting it shares.", "duration": 3.37, "cue": "Controlled by the club"}, {"file": "f2-08-7-125138750f.mp3", "text": "The data stays in the club's own cloud. Corvane only ever picks a segment.", "duration": 4.35, "cue": "The club's member segments"}], "f2-09": [{"file": "f2-09-1-eec78fda24.mp3", "text": "A second rule adds purchase history from the pro shop's point-of-sale data.", "duration": 4.48, "cue": null}, {"file": "f2-09-2-911c941a99.mp3", "text": "Purchase History includes golf balls, again picked from a list.", "duration": 3.56, "cue": null}, {"file": "f2-09-3-0b5161a037.mp3", "text": "Targeting on real membership and sales data is what makes venue media so valuable, to brands and to the club.", "duration": 6.81, "cue": null}, {"file": "f2-09-4-c1c7d2f99f.mp3", "text": "Low-handicap members who buy golf balls match both rules, and Jamie saves the targeting with Save Changes.", "duration": 6.89, "cue": "Both rules in place"}, {"file": "f2-09-5-b0bcf5eafb.mp3", "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the club.", "duration": 5.76, "cue": "Send for approval"}, {"file": "f2-09-6-6b79b73760.mp3", "text": "It's now awaiting approval, with no activation toggle until the club approves it.", "duration": 4.86, "cue": "Awaiting approval"}], "f2-10": [{"file": "f2-10-1-2d827b6951.mp3", "text": "Every brand campaign needs the club's approval before it can play. Corvane's is waiting in Campaign Approval.", "duration": 6.4, "cue": null}, {"file": "f2-10-2-9c3ee06e5f.mp3", "text": "One click on Approve Selected, and Corvane's members campaign is approved, with its own creative ID.", "duration": 6.31, "cue": "Approve Selected"}, {"file": "f2-10-3-2dbaa4ce3a.mp3", "text": "Once it's approved, the activation toggle appears in place of Send for approval.", "duration": 4.65, "cue": "Ready to activate"}], "f3-01": [{"file": "f3-01-1-be9fd8aa3e.mp3", "text": "Hannah, a low-handicap member, arrives at Fernhollow for her morning tee time.", "duration": 4.5, "cue": null}, {"file": "f3-01-2-89f707e0f9.mp3", "text": "The club's app welcomes her by name and invites her to check in.", "duration": 3.41, "cue": "Welcome to Fernhollow"}, {"file": "f3-01-3-d4c36ad55f.mp3", "text": "One tap, and she's checked in for her round.", "duration": 2.35, "cue": "Checked in"}, {"file": "f3-01-4-29c7f09a80.mp3", "text": "Corvane's members offer is first in her app.", "duration": 2.47, "cue": "Corvane's offer, in the club's app"}], "f3-02": [{"file": "f3-02-1-6e79fb386e.mp3", "text": "Her check-in links to what the club already knows: her membership and what she buys in the pro shop.", "duration": 5.42, "cue": null}, {"file": "f3-02-2-a74e98a958.mp3", "text": "She matches both of Corvane's rules, in real time.", "duration": 3.07, "cue": "A match on both rules"}], "f3-03": [{"file": "f3-03-1-1a62b7cd0e.mp3", "text": "Every screen rotates three campaigns: two for the club, and the brand partner slot.", "duration": 4.82, "cue": null}, {"file": "f3-03-2-c8e634bfda.mp3", "text": "Most golfers see Corvane's standard creative in that slot.", "duration": 3.41, "cue": "Three campaigns in every rotation"}, {"file": "f3-03-3-26cc7e0c86.mp3", "text": "But not Hannah.", "duration": 0.96, "cue": null}, {"file": "f3-03-4-88fe559cf1.mp3", "text": "Checked in at the pro shop, she sees Corvane's members version, personalised for her.", "duration": 4.76, "cue": "Recognised at the pro shop"}, {"file": "f3-03-5-3ccd70bab6.mp3", "text": "On the driving range, it shows the new driver as she warms up.", "duration": 3.56, "cue": "On the driving range"}, {"file": "f3-03-6-afe88797ff.mp3", "text": "At the first tee, the same campaign follows her to the start of her round.", "duration": 3.8, "cue": "At the first tee"}, {"file": "f3-03-7-a006a59c81.mp3", "text": "At the halfway house, it reminds her of the free sleeve of Tour balls.", "duration": 3.88, "cue": "At the halfway house"}, {"file": "f3-03-8-1ba22cb949.mp3", "text": "In the locker room, it invites her to book a driver fitting.", "duration": 3.2, "cue": "In the locker room"}, {"file": "f3-03-9-28f1d27795.mp3", "text": "And at the clubhouse bar, it's waiting for her after the round.", "duration": 3.18, "cue": "At the clubhouse bar"}, {"file": "f3-03-10-211cac9584.mp3", "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one joined-up offer.", "duration": 6.95, "cue": "Back at the pro shop"}], "f3-04": [{"file": "f3-04-1-ceb6f6569d.mp3", "text": "Behind the scenes, Corvane holds slot one on all six screen types, every day of December.", "duration": 5.55, "cue": null}, {"file": "f3-04-2-172960959d.mp3", "text": "Each booking carries the default creative and the personalised members version, both approved.", "duration": 5.44, "cue": "Default plus personalised"}], "f3-05": [{"file": "f3-05-1-27bc91091d.mp3", "text": "Booking revenue shows what the slots earn: every window sold, at Corvane's fixed CPM.", "duration": 5.46, "cue": null}, {"file": "f3-05-2-74cb94aa5e.mp3", "text": "That's over 36 thousand dollars in two weeks, from one slot in three.", "duration": 4.29, "cue": "USD 36,231 in two weeks"}]};
 const VO = IS_RM ? (() => {
   const CLIPS = {"f1-01": [{"file": "f1-01-1-4e6a1cf7d9.mp3", "text": "The retailer has four screen types: forecourt, shop front, cooler doors and point of sale.", "duration": 5.53, "cue": null}], "f1-02": [{"file": "f1-02-1-019cfa9967.mp3", "text": "Each one has its own playlist.", "duration": 1.71, "cue": null}, {"file": "f1-02-2-e1a1e04b87.mp3", "text": "First, the forecourt playlist is set to rotate three campaigns, one after another.", "duration": 4.8, "cue": "Three campaigns in rotation"}, {"file": "f1-02-3-88a9ceab86.mp3", "text": "New slots belong to Headquarters, for the retailer's own promotions.", "duration": 4.01, "cue": "Three slots, all Headquarters"}, {"file": "f1-02-4-41211815ee.mp3", "text": "Slot one is the one the retailer will sell to brands.", "duration": 3.03, "cue": "Slot 1 goes to advertisers"}, {"file": "f1-02-5-9f9d0e125b.mp3", "text": "Its owner changes from Headquarters to Advertiser.", "duration": 3.01, "cue": "From Headquarters to Advertiser"}, {"file": "f1-02-6-94ca378e3f.mp3", "text": "One slot in three now earns media revenue, and two keep promoting the retailer's own offers.", "duration": 5.65, "cue": "One advertiser slot in three"}], "f1-03": [{"file": "f1-03-1-d4761b039d.mp3", "text": "Shop front, cooler doors and point of sale get the same setup, in a few clicks.", "duration": 4.63, "cue": null}, {"file": "f1-03-2-e70fb76ac7.mp3", "text": "The retailer decides exactly how much screen time it sells.", "duration": 3.26, "cue": null}, {"file": "f1-03-3-b1b956b775.mp3", "text": "Four brand partner slots, one on every screen type, are now ready to sell.", "duration": 4.48, "cue": "Four advertiser slots, ready to sell"}], "f1-04": [{"file": "f1-04-1-5d3ff27ede.mp3", "text": "Frostline Cold Drinks is already set up as a direct advertiser, next to the advertisers synced from DSPs.", "duration": 7.02, "cue": null}], "f1-05": [{"file": "f1-05-1-815ef1fcf7.mp3", "text": "Slots are always sold through deals. A brand is never assigned to a slot directly.", "duration": 4.93, "cue": null}, {"file": "f1-05-2-a895affdb3.mp3", "text": "This direct deal gives Frostline all of December at a fixed CPM, and it's never sent to a DSP.", "duration": 6.04, "cue": "Create a direct deal"}], "f1-06": [{"file": "f1-06-1-bb4dc242cd.mp3", "text": "The four new brand partner slots start unassigned, so nothing plays in them yet.", "duration": 4.46, "cue": null}, {"file": "f1-06-2-b979dd0bac.mp3", "text": "Frostline's deal is saved as a draft, ready to place on the slots.", "duration": 3.97, "cue": "The new deal, not on a slot yet"}, {"file": "f1-06-3-920ae8dfd8.mp3", "text": "Each slot's list offers DSPs for open auction, and deals.", "duration": 3.99, "cue": "Choose the deal"}, {"file": "f1-06-4-70953acd20.mp3", "text": "The retailer picks the Frostline deal for all four.", "duration": 2.75, "cue": null}, {"file": "f1-06-5-9d85756903.mp3", "text": "Direct deals and programmatic demand are managed side by side, in one place.", "duration": 5.08, "cue": null}, {"file": "f1-06-6-0a6c6b9bc2.mp3", "text": "All four slots now carry the deal, and the deal shows four slots. Then, save the changes.", "duration": 5.61, "cue": "All four brand partner slots"}], "f1-07": [{"file": "f1-07-1-1007aa5f04.mp3", "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM.", "duration": 5.08, "cue": null}, {"file": "f1-07-2-810f46105a.mp3", "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.", "duration": 5.55, "cue": "Finalise and go live"}, {"file": "f1-07-3-5dc08dbfb1.mp3", "text": "Every December window on all four screen types is now Frostline's.", "duration": 4.03, "cue": "Live · direct, not sent to a DSP"}], "f1-08": [{"file": "f1-08-1-59e0868c89.mp3", "text": "Finally, the retailer gives Frostline its own login, so the brand can manage its own campaigns.", "duration": 5.67, "cue": null}, {"file": "f1-08-2-37fde762a7.mp3", "text": "Alex gets the Advertiser role, so Alex only ever sees Frostline's campaigns.", "duration": 4.84, "cue": "An Advertiser login for Frostline"}, {"file": "f1-08-3-6623a4af25.mp3", "text": "The invitation goes out, and the retailer's first brand partner deal is done.", "duration": 4.33, "cue": "Send the invitation"}], "f2-01": [{"file": "f2-01-1-15e22e5b99.mp3", "text": "Alex from Frostline signs in with the login the retailer provided. Frostline can run its own campaigns, or leave them to the retailer.", "duration": 8.64, "cue": null}, {"file": "f2-01-2-b34e26f837.mp3", "text": "Everything Alex sees is scoped to Frostline's own campaigns.", "duration": 3.67, "cue": "Only Frostline's campaigns"}], "f2-02": [{"file": "f2-02-1-311f6763bd.mp3", "text": "To start a new campaign, Alex selects Launch a New Campaign, at the top of the list.", "duration": 4.76, "cue": null}], "f2-03": [{"file": "f2-03-1-9af0217766.mp3", "text": "There's no form to fill in. Alex just talks, and the AI campaign agent listens.", "duration": 5.12, "cue": null}, {"file": "f2-03-2-045001ee62.mp3", "text": "As Alex speaks, it captures the campaign name, products, objective, screens and audience.", "duration": 5.4, "cue": null}, {"file": "f2-03-3-31c7a5a55a.mp3", "text": "A whole campaign brief, in the time it takes to describe it.", "duration": 3.24, "cue": null}], "f2-04": [{"file": "f2-04-1-f01e28545d.mp3", "text": "The agent writes the brief from what Alex said, and from how past campaigns performed.", "duration": 4.74, "cue": null}, {"file": "f2-04-2-635ecc078c.mp3", "text": "It's ready in seconds, with nothing typed by hand.", "duration": 2.86, "cue": null}, {"file": "f2-04-3-0335984f58.mp3", "text": "Frostline's deal ID is pre-selected, so the campaign can only use the slots on that deal.", "duration": 5.65, "cue": "Deal ID, pre-selected"}, {"file": "f2-04-4-7ded1c15ea.mp3", "text": "Name, details, products, audience and objective are all filled in.", "duration": 4.22, "cue": "Campaign brief"}, {"file": "f2-04-5-15b9d9f7aa.mp3", "text": "Only the deal's four screen types are switched on.", "duration": 2.47, "cue": "Touchpoints"}], "f2-05": [{"file": "f2-05-1-72ad9f5f21.mp3", "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Frostline's, the retailer's, or an agreed mix of both.", "duration": 8.36, "cue": null}, {"file": "f2-05-2-67ab4ee24b.mp3", "text": "Every word can be edited before any creative is made.", "duration": 3.01, "cue": "Storyboard and copy"}], "f2-06": [{"file": "f2-06-1-247e067fe8.mp3", "text": "With the copy agreed, the agent generates a creative preview of the first and last frames.", "duration": 5.29, "cue": null}, {"file": "f2-06-2-a80f61db0a.mp3", "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns.", "duration": 5.59, "cue": "Generating the preview"}, {"file": "f2-06-3-66c9dde6be.mp3", "text": "Not quite right? Alex asks for a change in plain English, like a brighter background for daytime forecourts.", "duration": 6.36, "cue": "Refine in plain English"}, {"file": "f2-06-4-a4c96f7f72.mp3", "text": "And the frame is regenerated with the change.", "duration": 2.5, "cue": "Updated"}], "f2-07": [{"file": "f2-07-1-b40b0f835d.mp3", "text": "Generate Creative Assets builds the final creative for every screen type: forecourt, shop front, cooler doors and point of sale.", "duration": 8.11, "cue": null}, {"file": "f2-07-2-0cb584fce6.mp3", "text": "Once the approved campaign runs, its results feed Frostline's future campaigns, closing the loop.", "duration": 5.82, "cue": "Assets for every touchpoint"}], "f2-08": [{"file": "f2-08-1-c4db39ce74.mp3", "text": "Frostline also wants a second campaign, just for Gold members.", "duration": 3.82, "cue": null}, {"file": "f2-08-2-dff38479d0.mp3", "text": "Targeting is set on the campaign's Targeting tab, exactly as the retailer would.", "duration": 4.8, "cue": "Open the Targeting tab"}, {"file": "f2-08-3-1cdbf597cd.mp3", "text": "Alex adds a rule: Audience Segments includes Loyalty Gold.", "duration": 3.73, "cue": "Target Loyalty Gold members"}, {"file": "f2-08-4-290178c496.mp3", "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong.", "duration": 4.61, "cue": null}, {"file": "f2-08-5-860c310ff2.mp3", "text": "Only the data sources, attributes and values the retailer has approved for brands appear here.", "duration": 5.55, "cue": null}, {"file": "f2-08-6-5524f565de.mp3", "text": "The retailer controls 100% of the targeting it shares.", "duration": 3.71, "cue": "Controlled by the retailer"}, {"file": "f2-08-7-f3e248ff41.mp3", "text": "The data stays in the retailer's own cloud. Frostline only ever picks a segment.", "duration": 4.78, "cue": "The retailer's loyalty tiers"}], "f2-09": [{"file": "f2-09-1-971fb8ad70.mp3", "text": "A second rule adds purchase history from the retailer's point-of-sale data.", "duration": 4.44, "cue": null}, {"file": "f2-09-2-466469aa88.mp3", "text": "Purchase History includes cold drinks, again picked from a list.", "duration": 3.54, "cue": null}, {"file": "f2-09-3-236dd2d126.mp3", "text": "Targeting on real loyalty and sales data is what makes in-store media so valuable, to brands and to the retailer.", "duration": 7.42, "cue": null}, {"file": "f2-09-4-a1ce565bd2.mp3", "text": "Gold members who buy cold drinks match both rules, and Alex saves the targeting with Save Changes.", "duration": 6.08, "cue": "Both rules in place"}, {"file": "f2-09-5-21b66dfcda.mp3", "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the retailer.", "duration": 5.97, "cue": "Send for approval"}, {"file": "f2-09-6-25ad0a8b40.mp3", "text": "It's now awaiting approval, with no activation toggle until the retailer approves it.", "duration": 5.16, "cue": "Awaiting approval"}], "f2-10": [{"file": "f2-10-1-f1dabdfa14.mp3", "text": "Every brand campaign needs the retailer's approval before it can play. Frostline's is waiting in Campaign Approval.", "duration": 7.0, "cue": null}, {"file": "f2-10-2-81cd7ddf45.mp3", "text": "One click on Approve Selected, and Frostline's Gold campaign is approved, with its own creative ID.", "duration": 6.31, "cue": "Approve Selected"}, {"file": "f2-10-3-2dbaa4ce3a.mp3", "text": "Once it's approved, the activation toggle appears in place of Send for approval.", "duration": 4.65, "cue": "Ready to activate"}], "f3-01": [{"file": "f3-01-1-efdcdb2629.mp3", "text": "Emma, a Gold loyalty member, pulls in to Highway 9 Services.", "duration": 3.88, "cue": null}, {"file": "f3-01-2-ca603efc83.mp3", "text": "The retailer's loyalty app welcomes her by name and invites her to check in.", "duration": 4.46, "cue": "Welcome to Highway 9 Services"}, {"file": "f3-01-3-e90e3201e3.mp3", "text": "One tap, and she's checked in.", "duration": 1.64, "cue": "Checked in"}, {"file": "f3-01-4-069ece1be1.mp3", "text": "Frostline's Gold offer is first in her app.", "duration": 2.67, "cue": "Frostline's offer, in the retailer's app"}], "f3-02": [{"file": "f3-02-1-4830a706b9.mp3", "text": "Her check-in links to what the retailer already knows: her loyalty tier and what she buys.", "duration": 5.03, "cue": null}, {"file": "f3-02-2-ad4c89c794.mp3", "text": "She matches both of Frostline's rules, in real time.", "duration": 3.18, "cue": "A match on both rules"}], "f3-03": [{"file": "f3-03-1-97fe869e29.mp3", "text": "Every screen rotates three campaigns: two for the retailer, and the brand partner slot.", "duration": 5.18, "cue": null}, {"file": "f3-03-2-c148af44ba.mp3", "text": "Most shoppers see Frostline's standard creative in that slot.", "duration": 3.14, "cue": "Three campaigns in every rotation"}, {"file": "f3-03-3-ece7bb359f.mp3", "text": "But not Emma.", "duration": 0.94, "cue": null}, {"file": "f3-03-4-70568d93b3.mp3", "text": "Recognised at the pump, she sees Frostline's Gold version, personalised for her.", "duration": 4.71, "cue": "Recognised at the pump"}, {"file": "f3-03-5-1592073a36.mp3", "text": "At the shop front, the same campaign points her to the cooler doors, right next to her.", "duration": 4.67, "cue": "At the shop front"}, {"file": "f3-03-6-21b34710c5.mp3", "text": "At the cooler doors, right where the drinks are: a free upsize on every Frostline.", "duration": 4.61, "cue": "At the cooler doors"}, {"file": "f3-03-7-3874b1ce8d.mp3", "text": "And at the till, her upsize is applied. One shopper, four screens, one joined-up offer.", "duration": 5.27, "cue": "At the POS"}], "f3-04": [{"file": "f3-04-1-80ffd5f1b7.mp3", "text": "Behind the scenes, Frostline holds slot one on all four screen types, every day of December.", "duration": 5.74, "cue": null}, {"file": "f3-04-2-7d6c8730ed.mp3", "text": "Each booking carries the default creative and the personalised Gold version, both approved.", "duration": 5.33, "cue": "Default plus personalised"}], "f3-05": [{"file": "f3-05-1-b9f1e531a3.mp3", "text": "Booking revenue shows what the slots earn: every window sold, at Frostline's fixed CPM.", "duration": 5.61, "cue": null}, {"file": "f3-05-2-59b67e01b8.mp3", "text": "That's over 67 thousand dollars in two weeks, from one slot in three.", "duration": 4.42, "cue": "USD 67,494 in two weeks"}]}, BASE = window.PH_TOUR_VO || RM_ASSETS + "vo/", KEY = "ph_tour_voiceover", GAP = 160;
+  const CL = IS_GOLF ? CLIPS_GOLF : CLIPS;
   const grp = document.getElementById("vogrp"), btn = document.getElementById("vo");
   let on = false; try { on = localStorage.getItem(KEY) === "on"; } catch (e) {}
   const a = new Audio(); a.preload = "auto";
@@ -1967,7 +2116,7 @@ const VO = IS_RM ? (() => {
   const keyOf = (f = S.flow, i = S.step) => i < 0 ? null : `f${f + 1}-${String(i + 1).padStart(2, "0")}`;
   const log = (ev, x) => { if (window.PH_TOUR_VO_DEBUG) (window.__voLog = window.__voLog || []).push({ ev, t: Math.round(performance.now()), ...x }); };
   const warmed = new Set();
-  const warm = () => { if (!on) return; for (let i = 0; i < 30; i++) (CLIPS[keyOf(S.flow, i)] || []).forEach(c => { if (!warmed.has(c.file)) { warmed.add(c.file); fetch(BASE + c.file).catch(() => warmed.delete(c.file)); } }); };
+  const warm = () => { if (!on) return; for (let i = 0; i < 30; i++) (CL[keyOf(S.flow, i)] || []).forEach(c => { if (!warmed.has(c.file)) { warmed.add(c.file); (GA ? GA.load("vo/" + c.file) : fetch(BASE + c.file)).catch(() => warmed.delete(c.file)); } }); };
   const caption = t => { const el = document.getElementById("capS"); if (el && t) el.textContent = t; };
   const setHold = () => { S.voHold = !!(st && on && st.q.length); };
   function paint() {
@@ -1990,7 +2139,7 @@ const VO = IS_RM ? (() => {
   }
   function stop() { hideHint(); tok++; a.pause(); if (st) log("stop", { k: st.k }); st = null; S.voHold = false; }
   function step() {
-    stop(); const k = keyOf(), lines = CLIPS[k];
+    stop(); const k = keyOf(), lines = CL[k];
     if (!lines) return;
     st = { k, lines, i: -1, busy: false, gap: false, q: [], t: tok };
     warm();
@@ -2001,7 +2150,7 @@ const VO = IS_RM ? (() => {
     st.i = j; st.busy = true; st.gap = false; stall = 0; setHold();
     caption(L.text); log("start", { k: st.k, j });
     if (on) {
-      a.src = BASE + L.file;
+      a.src = GA ? GA.url("vo/" + L.file) : BASE + L.file;
       if (!S.paused && !document.hidden) a.play().catch(err => { log("blocked", { k: st && st.k, j, err: err.name }); if (st && st.t === t && st.i === j) timer(t, j, L.duration); });
     } else timer(t, j, L.duration);
   }
@@ -2056,7 +2205,7 @@ const VO = IS_RM ? (() => {
   S.voCue = cue;
   paint();
   return { step, stop, sync, done, warm, hint, get on() { return on; },
-    text: (f, i) => { const k = keyOf(f, i); return st && st.k === k && st.i >= 0 ? st.lines[st.i].text : ((CLIPS[k] || [])[0] || {}).text; } };
+    text: (f, i) => { const k = keyOf(f, i); return st && st.k === k && st.i >= 0 ? st.lines[st.i].text : ((CL[k] || [])[0] || {}).text; } };
 })() : null;
 
 /* ================= retail media: a convenience retailer sells its screens to a brand =================
@@ -2065,8 +2214,11 @@ const VO = IS_RM ? (() => {
 const RM = IS_RM ? (() => {
   /* Captions change line by line with the voiceover: two lines are always reserved and, below 1080px, the caption sits on its own row under the controls, so the controls never move. */
   document.documentElement.classList.add("ph-rm");
-  const SC = 0.8, HOT = {"P1-display-types":[256,344,249,46],"P1-display-types#list":[524,212,260,342],"P2-playlists":[537,255,24,24],"P3-three-slots":[552,701,1002,32],"P4-owner":[1185,577,353,32],"P5-forecourt":[537,680,24,24],"P5-forecourt#slots":[616,513,926,108],"P6-shopfront":[537,680,24,24],"P6-shopfront#slots":[616,513,926,108],"P7-coolers":[537,680,24,24],"P7-coolers#slots":[616,513,926,108],"P8-pos":[1464,704,118,32],"P8-pos#slots":[616,513,926,108],"P9-saved":[256,390,249,46],"P9-saved#badges":[1189,250,211,202],"01-advertiser":[559,826,101,18],"01-advertiser#row":[525,814,1095,42],"03-users":[1277,184,204,32],"04-add-user":[1056,602,88,32],"05-deals":[1375,171,208,32],"06-new-deal":[924,918,113,32],"06-new-deal#terms":[662,461,532,405],"07-assign-slot":[873,659,362,49],"07b-assigned-all":[1464,908,118,32],"07b-assigned-all#cells":[855,415,400,207],"08-deal-finalise":[1045,874,149,32],"08-deal-finalise#plays":[662,766,532,96],"09-deal-live":[540,305,100,18],"09-deal-live#row":[525,296,1058,52],"14-approval-table":[290,421,16,16],"14-approval-table#row":[275,402,414,56],"15-approve":[1018,233,125,24],"16-booking-schedule":[874,579,126,13],"16b-booking-flight":[450,584,190,18],"16b-booking-flight#rows":[275,376,1307,368],"07a-blank":[870,421,370,24],"07a-blank#cells":[855,415,400,207],"07a-blank#deal":[525,186,1058,52],"07-assign-slot#menu":[869,449,370,264],"07c1":[870,473,370,24],"07d2":[873,711,362,49],"07c2":[870,525,370,24],"07d3":[873,763,362,49],"07c3":[870,577,370,24],"07d4":[873,815,362,49],"22-booking-revenue":[1436,680,146,40],"22-booking-revenue#table":[274,648,1309,284],"22-booking-revenue#rev":[275,680,1307,252],"16-booking-schedule#pop":[802,89,250,544],"22-booking-revenue#total":[275,890,1307,40],"04-add-user#form":[712,338,432,215],"P2b-expanded":[548,534,1010,32],"P4a-slots":[1181,513,361,24],"P4a-slots#table":[616,513,926,108],"16-booking-schedule#top":[802,89,250,140]};
-  const img = n => RM_IMG + n + ".jpg";
+  /* golf: the Run Your Own RMN screenshots (tour-assets/rmn-golf, captured by tools/rmn-golf-tour/cap_golf.js) and their boxes */
+  const HOT_GOLF = {"01-advertiser":[559,826,86,18],"01-advertiser#row":[525,814,1075,42],"03-users":[1277,184,204,32],"04-add-user":[1056,602,88,32],"04-add-user#form":[712,338,432,215],"05-deals":[1375,171,208,32],"06-new-deal":[924,918,113,32],"06-new-deal#terms":[662,461,532,405],"07-assign-slot":[873,659,362,49],"07-assign-slot#menu":[869,449,370,264],"07a-blank":[870,421,370,24],"07a-blank#cells":[855,415,400,311],"07a-blank#deal":[525,186,1075,52],"07b-assigned-all":[1464,908,118,32],"07b-assigned-all#cells":[855,415,400,311],"07c1":[870,473,370,24],"07c2":[870,525,370,24],"07c3":[870,577,370,24],"07c4":[870,629,370,24],"07c5":[870,681,370,24],"07d2":[873,711,362,49],"07d3":[873,763,362,49],"07d4":[873,815,362,49],"07d5":[873,867,362,49],"07d6":[873,624,362,49],"08-deal-finalise":[1045,874,149,32],"08-deal-finalise#plays":[662,766,532,96],"09-deal-live":[540,305,98,18],"09-deal-live#row":[525,296,1075,52],"14-approval-table":[290,421,16,16],"14-approval-table#row":[275,402,414,56],"15-approve":[1018,233,125,24],"16-booking-schedule":[874,855,104,13],"16-booking-schedule#pop":[802,241,250,601],"16-booking-schedule#top":[802,241,250,140],"16b-booking-flight":[450,584,190,18],"16b-booking-flight#rows":[275,376,1325,552],"22-booking-revenue":[1436,596,146,40],"22-booking-revenue#rev":[275,596,1307,336],"22-booking-revenue#table":[274,564,1309,368],"22-booking-revenue#total":[275,890,1307,42],"P1-display-types":[256,344,249,46],"P1-display-types#list":[559,223,182,447],"P10-bar":[1464,704,118,32],"P10-bar#slots":[616,513,926,108],"P11-saved":[256,390,249,46],"P11-saved#badges":[1189,250,211,322],"P2-playlists":[537,255,24,24],"P2b-expanded":[548,534,1010,32],"P3-three-slots":[552,701,1002,32],"P4-owner":[1185,577,353,32],"P4a-slots":[1181,513,361,24],"P4a-slots#table":[616,513,926,108],"P5-proshop":[537,680,24,24],"P5-proshop#slots":[616,513,926,108],"P6-range":[537,680,24,24],"P6-range#slots":[616,513,926,108],"P7-tee":[537,680,24,24],"P7-tee#slots":[616,513,926,108],"P8-halfway":[537,680,24,24],"P8-halfway#slots":[616,513,926,108],"P9-locker":[537,680,24,24],"P9-locker#slots":[616,513,926,108]};
+  const SC = 0.8, HOT = IS_GOLF ? HOT_GOLF : {"P1-display-types":[256,344,249,46],"P1-display-types#list":[524,212,260,342],"P2-playlists":[537,255,24,24],"P3-three-slots":[552,701,1002,32],"P4-owner":[1185,577,353,32],"P5-forecourt":[537,680,24,24],"P5-forecourt#slots":[616,513,926,108],"P6-shopfront":[537,680,24,24],"P6-shopfront#slots":[616,513,926,108],"P7-coolers":[537,680,24,24],"P7-coolers#slots":[616,513,926,108],"P8-pos":[1464,704,118,32],"P8-pos#slots":[616,513,926,108],"P9-saved":[256,390,249,46],"P9-saved#badges":[1189,250,211,202],"01-advertiser":[559,826,101,18],"01-advertiser#row":[525,814,1095,42],"03-users":[1277,184,204,32],"04-add-user":[1056,602,88,32],"05-deals":[1375,171,208,32],"06-new-deal":[924,918,113,32],"06-new-deal#terms":[662,461,532,405],"07-assign-slot":[873,659,362,49],"07b-assigned-all":[1464,908,118,32],"07b-assigned-all#cells":[855,415,400,207],"08-deal-finalise":[1045,874,149,32],"08-deal-finalise#plays":[662,766,532,96],"09-deal-live":[540,305,100,18],"09-deal-live#row":[525,296,1058,52],"14-approval-table":[290,421,16,16],"14-approval-table#row":[275,402,414,56],"15-approve":[1018,233,125,24],"16-booking-schedule":[874,579,126,13],"16b-booking-flight":[450,584,190,18],"16b-booking-flight#rows":[275,376,1307,368],"07a-blank":[870,421,370,24],"07a-blank#cells":[855,415,400,207],"07a-blank#deal":[525,186,1058,52],"07-assign-slot#menu":[869,449,370,264],"07c1":[870,473,370,24],"07d2":[873,711,362,49],"07c2":[870,525,370,24],"07d3":[873,763,362,49],"07c3":[870,577,370,24],"07d4":[873,815,362,49],"22-booking-revenue":[1436,680,146,40],"22-booking-revenue#table":[274,648,1309,284],"22-booking-revenue#rev":[275,680,1307,252],"16-booking-schedule#pop":[802,89,250,544],"22-booking-revenue#total":[275,890,1307,40],"04-add-user#form":[712,338,432,215],"P2b-expanded":[548,534,1010,32],"P4a-slots":[1181,513,361,24],"P4a-slots#table":[616,513,926,108],"16-booking-schedule#top":[802,89,250,140]};
+  const img = n => GA ? GA.img("img/" + n + ".jpg") : RM_IMG + n + ".jpg";
+  const LOGIN = IS_GOLF ? "jamie@corvane-golf.example" : "alex@frostline-drinks.example";
   /* Every screenshot (and the login background) is fetched and decoded up front and kept, so a swap never waits on the network or a decode. */
   const SHOTS = {};
   const pre = n => { if (!SHOTS[n]) { const i = new Image(); i.src = img(n); SHOTS[n] = i; if (i.decode) i.decode().catch(() => {}); } return SHOTS[n]; };
@@ -2076,7 +2228,7 @@ const RM = IS_RM ? (() => {
   const brandOv = () => {
     const b = B(), c = C(); if (b === RMI().brand && c === RMI().color) return "";
     const w = b.trim().split(/\s+/), ini = esc(initials(b)), l2 = w.slice(1).join(" ");
-    return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb"><span class="rm-ovm" style="background:${c}">${ini}</span><span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova"><span class="rm-ovm sm" style="background:${c}">${ini}</span></div></div>`;
+    return `<div class="rm-ov" aria-hidden="true"><div class="rm-ovb">${brandImg(40, 80, true, `<span class="rm-ovm" data-bm="40,80,1" style="background:${c}">${ini}</span>`)}<span class="rm-ovn"><b>${esc(w[0])}</b>${l2 ? `<small>${esc(l2)}</small>` : ""}</span></div><div class="rm-ova">${brandImg(34, 40, true, `<span class="rm-ovm sm" data-bm="34,40,1" style="background:${c}">${ini}</span>`)}</div></div>`;
   };
   /* A new screenshot never fades in over white: the screen on show stays on top until the new one is decoded,
      then fades out over it (a short crossfade). Only the first screen of a flow fades in. */
@@ -2087,7 +2239,7 @@ const RM = IS_RM ? (() => {
     dropHold(false); pre(n);
     const prev = !!screen.firstElementChild;
     if (prev) { hold = document.createElement("div"); hold.className = "rm-hold"; hold.setAttribute("aria-hidden", "true"); while (screen.firstChild) hold.appendChild(screen.firstChild); hold.querySelectorAll(".rm-hs").forEach(e => e.remove()); screen.after(hold); }
-    screen.innerHTML = `<div class="rm-shot${prev ? " swap" : ""}"><img src="${img(n)}" alt="" draggable="false">${brandOv()}</div>`; hideTip();
+    screen.innerHTML = `<div class="rm-shot${prev ? " swap" : ""}"><img src="${img(n)}"${GA ? ` data-ga="img/${n}.jpg"` : ""} alt="" draggable="false">${brandOv()}</div>`; hideTip();
     if (prev) {
       const h = hold, im = screen.querySelector(".rm-shot img"); holdFor = im.parentNode;
       const out = () => { if (hold === h) dropHold(true); };
@@ -2099,10 +2251,10 @@ const RM = IS_RM ? (() => {
     screen.insertAdjacentHTML("beforeend", `<div class="rm-hs" id="${id}" style="left:${x * SC}px;top:${y * SC}px;width:${w * SC}px;height:${h * SC}px"></div>`); return q("#" + id); };
   const RET = () => esc(B());
   const toast = (msg) => { screen.insertAdjacentHTML("beforeend", `<div class="toast rm-toast"><span class="ms">check_circle</span>${msg}</div>`); };
-  const login = (typed) => `<div class="rm-login"><div class="rl-bg" style="background-image:url('${RM_IMG}login-bg.jpg')"></div>
+  const login = (typed) => `<div class="rm-login"><div class="rl-bg"${GA ? ` data-ga="img/login-bg.jpg"` : ""} style="background-image:url('${GA ? GA.img("img/login-bg.jpg") : RM_IMG + "login-bg.jpg"}')"></div>
     <div class="rl-brand"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
     <div class="rl-card"><div class="rl-logo">${logoSVG(38)}<span>${RET()}</span></div><h3>Login to your platform</h3>
-      <div class="rl-lab"><span><i>*</i>Email</span><span class="ms">info</span></div><div class="in" id="lem">${typed ? "alex@frostline-drinks.example" : "&nbsp;"}</div>
+      <div class="rl-lab"><span><i>*</i>Email</span><span class="ms">info</span></div><div class="in" id="lem">${typed ? LOGIN : "&nbsp;"}</div>
       <div class="rl-lab"><span><i>*</i>Password</span><span class="ms">info</span></div><div class="in" id="lpw">${typed ? "••••••••••" : "&nbsp;"}</div>
       <div class="rl-row"><span><span class="rl-cb"></span>Remember me</span><b>Forgot password?</b></div>
       <span class="rl-btn" id="lsign">Login</span>
@@ -2110,7 +2262,7 @@ const RM = IS_RM ? (() => {
   /* only what the retailer has approved for advertisers appears in the targeting drop-downs */
   const RM_SRC = ["Store / Location Data", "Visitor / Customer Data"];
   const RM_ATTR = ["Audience / Segments", "Purchase History", "Visitor Type (Individual)"];
-  const RM_PH = ["Cold drinks", "Hot drinks", "Snacks", "Meal deals", "Fuel"];
+  const RM_PH = IS_GOLF ? ["Golf balls", "Clubs", "Apparel", "Green fees", "Food & drink"] : ["Cold drinks", "Hot drinks", "Snacks", "Meal deals", "Fuel"];
   const W = st => ({ ...st, enter() { S.p3 = false; S.rmSent = false; S.rmApproved = false; st.enter.call(this); } });
 
   const F1 = [
@@ -2235,7 +2387,144 @@ const RM = IS_RM ? (() => {
        tip(hs("22-booking-revenue#total", 4), "USD 67,494 in two weeks", "Estimated revenue from the four brand partner slots. Direct deals are reported like DSP revenue; invoicing happens outside the platform.", 5); await wait(4200, id); hideTip(); if (VO) await VO.done(id); showEnd(); } }
   ];
 
-  const FLOWDEF = [
+
+  /* ---------- Run Your Own RMN: Fernhollow Golf Club sells its six screen types to Corvane Golf ---------- */
+  const G1 = [
+   { t: "The club's six screen types", s: "Platform Admin → Display Types: Pro Shop, Driving Range, First Tee, Halfway House, Locker Room and Clubhouse Bar. Each screen type has its own playlist.",
+     enter() { show("P1-display-types"); },
+     async play(id) { await wait(600, id); tip(hs("P1-display-types#list", 8), this.t, this.s, 1); await wait(3800, id); hideTip(); await click(hs("P1-display-types"), id); show("P2-playlists"); } },
+   { t: "Three slots, slot 1 for advertisers", s: "Open the Pro Shop playlist, set Maximum Campaigns Played In Rotation to 3, then change slot 1's owner from Headquarters to Advertiser.",
+     enter() { show("P2-playlists"); },
+     async play(id) { await wait(400, id); await click(hs("P2-playlists", 6), id);
+       show("P2b-expanded"); await wait(400, id); const mx = hs("P2b-expanded"); tip(mx, "Three campaigns in rotation", "Open Maximum Campaigns Played In Rotation and choose 3.", 2); await wait(2400, id); hideTip(); await click(mx, id);
+       show("P3-three-slots"); await wait(400, id); await click(hs("P3-three-slots"), id);
+       show("P4a-slots"); await wait(400, id); tip(hs("P4a-slots#table", 8), "Three slots, all Headquarters", "The playlist now has three slots. Every new slot starts owned by Headquarters, for the club's own campaigns.", 2); await wait(3400, id); hideTip();
+       const ow = hs("P4a-slots"); tip(ow, "Slot 1 goes to advertisers", "Open slot 1's Owner drop-down. Only slot 1 changes.", 2); await wait(2600, id); hideTip(); await click(ow, id);
+       show("P4-owner"); await wait(400, id); const a = hs("P4-owner"); tip(a, "From Headquarters to Advertiser", "Choose Advertiser for slot 1.", 2); await wait(2200, id); hideTip(); await click(a, id);
+       show("P5-proshop"); await wait(500, id); tip(hs("P5-proshop#slots", 8), "One advertiser slot in three", "Slot 1, Brand partner, is sold to advertisers. Slots 2 and 3 stay with Headquarters for the club's own campaigns.", 2); await wait(3600, id); hideTip(); } },
+   { t: "The same on every screen type", s: "Driving Range, First Tee, Halfway House, Locker Room and Clubhouse Bar get the same three slots, slot 1 Advertiser. Then Save changes.",
+     enter() { show("P5-proshop"); },
+     async play(id) { await wait(300, id); await click(hs("P5-proshop", 6), id); show("P6-range"); await wait(400, id);
+       tip(hs("P6-range#slots", 8), this.t, this.s, 3); await wait(2800, id); hideTip();
+       for (const [c, n] of [["P6-range", "P7-tee"], ["P7-tee", "P8-halfway"], ["P8-halfway", "P9-locker"], ["P9-locker", "P10-bar"]]) { await click(hs(c, 6), id); show(n); await wait(450, id); }
+       await click(hs("P10-bar"), id);
+       show("P11-saved"); await wait(500, id); tip(hs("P11-saved#badges", 8), "Six advertiser slots, ready to sell", "Every playlist reads 3 slots · 2 Headquarters · 1 Advertiser: one advertiser slot per screen type.", 3); await wait(3800, id); hideTip(); } },
+   { t: "The advertiser is already set up", s: "Advertisers / Inventory lists Corvane Golf as a direct advertiser, next to the advertisers synced from DSPs.",
+     enter() { show("P11-saved"); },
+     async play(id) { await wait(400, id); await click(hs("P11-saved"), id); show("01-advertiser"); await wait(500, id); tip(hs("01-advertiser#row", 4), this.t, this.s, 5); await wait(3800, id); hideTip(); } },
+   { t: "Create a direct deal", s: "Deal type Direct advertiser, one buyer (Corvane Golf), flight 1 to 31 December, Fixed CPM USD 150. A direct deal is never sent to a DSP.",
+     enter() { show("05-deals"); },
+     async play(id) { await wait(500, id); const o = hs("05-deals"); tip(o, "Slots are sold through deals", "An advertiser never gets a slot by name. Open New deal and buyers list.", 6); await wait(3000, id); hideTip(); await click(o, id);
+       show("06-new-deal"); await wait(500, id); tip(hs("06-new-deal#terms", 8), this.t, this.s, 6); await wait(4200, id); hideTip(); await click(hs("06-new-deal"), id); show("07a-blank"); toast("Deal saved as draft"); } },
+   { t: "Put the deal on all six slots", s: "The six new brand partner slots start unassigned, not offered to any buyer. Open Assigned to on each one and choose Corvane direct.",
+     enter() { show("07a-blank"); },
+     async play(id) { await wait(500, id); tip(hs("07a-blank#cells", 6), this.t, this.s, 6); await wait(4000, id); hideTip();
+       tip(hs("07a-blank#deal", 4), "The new deal, not on a slot yet", "Corvane direct is saved as a draft. Its Slots column reads Not assigned.", 6); await wait(3200, id); hideTip();
+       await click(hs("07a-blank"), id); show("07-assign-slot"); await wait(400, id);
+       tip(hs("07-assign-slot#menu", 4), "Choose the deal", "Assigned to lists DSPs for open auction, then deals and buyers lists. Choose Corvane direct.", 6); await wait(3200, id); hideTip();
+       await click(hs("07-assign-slot"), id); show("07c1"); await wait(300, id);
+       for (const [c, d, nx] of [["07c1", "07d2", "07c2"], ["07c2", "07d3", "07c3"], ["07c3", "07d4", "07c4"], ["07c4", "07d5", "07c5"], ["07c5", "07d6", "07b-assigned-all"]]) {
+         await click(hs(c), id); show(d); await wait(220, id); await click(hs(d), id); show(nx); await wait(220, id); }
+       tip(hs("07b-assigned-all#cells", 6), "All six brand partner slots", "Each slot is assigned to Corvane direct, and the deal now shows 6 slots. Save changes.", 6); await wait(3600, id); hideTip(); await click(hs("07b-assigned-all"), id); toast("Changes saved"); await wait(1200, id); } },
+   { t: "Finalise and go live", s: "This is a direct buy, not a programmatic guaranteed deal: Corvane pays USD 150 CPM for the six slots across December. Finalise deal terms and the deal is live inside Personalisation Hub.",
+     enter() { show("08-deal-finalise"); },
+     async play(id) { await wait(500, id); tip(hs("08-deal-finalise#plays", 8), "Plays, for reference", "The forecast plays for the six slots across December, shown for reference. Committed plays matter for programmatic guaranteed deals; this direct buy is priced at a fixed CPM.", 7); await wait(4600, id); hideTip();
+       tip(hs("08-deal-finalise"), this.t, this.s, 7); await wait(3200, id); hideTip(); await click(hs("08-deal-finalise"), id);
+       show("09-deal-live"); await wait(500, id); tip(hs("09-deal-live#row", 4), "Live · direct, not sent to a DSP", "Every window from 1 to 31 December is reserved for Corvane on all six screen types.", 7); await wait(3800, id); hideTip(); } },
+   { t: "Give Corvane its own login", s: "Company Settings → Add Users / Advertisers: the club adds Corvane's user with the Advertiser role. Corvane gets its own login credentials and can manage its own campaigns, or leave them to the club.",
+     enter() { show("03-users"); },
+     async play(id) { await wait(500, id); const a = hs("03-users"); tip(a, this.t, this.s, 8); await wait(4400, id); hideTip(); await click(a, id);
+       show("04-add-user"); await wait(500, id); tip(hs("04-add-user#form", 8), "An Advertiser login for Corvane", "Jamie Hart, role Advertiser, linked to Corvane Golf (Direct). Jamie sees and manages only Corvane's campaigns.", 8); await wait(4400, id); hideTip();
+       const b = hs("04-add-user"); tip(b, "Send the invitation", "Jamie gets an invitation email to set up Corvane's own login credentials.", 8); await wait(2800, id); hideTip(); await click(b, id);
+       toast("Invitation sent to " + LOGIN); await wait(2000, id); if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const G2 = [
+   { t: "Corvane signs in with its own login", s: "Jamie signs in with the login credentials the club gave Corvane. Corvane can manage its own campaigns here, or leave them to the club. Everything Jamie sees is scoped to Corvane Golf.",
+     enter() { S.p3 = false; S.rmSent = false; S.rmApproved = false; screen.innerHTML = login(false); hideTip(); },
+     async play(id) { await wait(500, id); const e = q("#lem"); await click(e, id); tip(e, this.t, this.s, 1); await typeInto(e, LOGIN, id, reduce ? 999 : 40); await wait(4200, id); hideTip();
+       const p = q("#lpw"); await click(p, id); await typeInto(p, "••••••••••", id, reduce ? 999 : 30); await click(q("#lsign"), id);
+       paint(listScreen(false)); await wait(600, id); tip(q(".grid"), "Only Corvane's campaigns", "Campaigns shows Corvane's own campaigns and nothing of the club's or any other brand's.", 1); await wait(3400, id); hideTip(); } },
+   ...STEPS.slice(0, 6).map(W),
+   { t: "Target low-handicap members", s: "Jamie opens the low-handicap members campaign's Targeting tab and adds rules exactly the way the club does: Audience / Segments includes Low-handicap members.",
+     enter() { S.p3 = true; S.rmSent = false; S.rmApproved = false; paint(briefScreen(6, false)); },
+     async play(id) { const p = P3(), r = p.r1; await wait(500, id);
+       tip(q("#ctitle"), "The low-handicap members version", `${D().name} is a second campaign on the same deal, only for low-handicap members.`, 8); await wait(3600, id); hideTip();
+       const tt = q('[data-tab="Targeting"]'); tip(tt, "Open the Targeting tab", "Targeting rules are set per campaign, on its Targeting tab.", 8); await wait(2400, id); hideTip(); await click(tt, id);
+       paint(targetScreen([])); await wait(600, id);
+       const tb = q("#addand"); await moveTo(tb, id); tip(tb, this.t, this.s, 8); await wait(3200, id); hideTip(); await click(tb, id);
+       q("#rules").innerHTML = rulesHTML([[,,,[]]]); await focusRow(q("#rg0"), id);
+       await pick(q("#s0a"), RM_SRC, r[0], id); setSel("#s0a", r[0]);
+       await pick(q("#s0b"), RM_ATTR, r[1], id); setSel("#s0b", r[1]);
+       await pick(q("#s0c"), OPS.seg, r[2], id); setSel("#s0c", r[2]);
+       await pick(q("#s0d"), p.reasons, r[3][0], id); addTag("#s0d", r[3][0]);
+       tip(q("#rg0"), "Controlled by the club", `Every targeting criterion shared with advertisers is 100% controlled by ${RET()}. Corvane only sees the data sources, attributes and values the club has approved, always as drop-down menus.`, 8); await wait(4800, id); hideTip();
+       tip(q("#rg0"), "The club's member segments", `The values come from ${RET()}'s membership system. The data stays in the club's cloud; the advertiser only picks the segment.`, 8); await wait(3600, id); hideTip(); } },
+   { t: "Add purchase history", s: "A second rule from the pro shop's POS data: Purchase History includes Golf balls. Then Send for approval submits the campaign to the club.",
+     enter() { S.p3 = true; S.rmSent = false; S.rmApproved = false; paintRules(targetScreen([P3().r1])); },
+     async play(id) { const p = P3(), r = p.r2;
+       const tb = q("#addand"); await moveTo(tb, id); tip(tb, this.t, this.s, 9); await wait(3200, id); hideTip(); await click(tb, id);
+       q("#rules").innerHTML = rulesHTML([p.r1, [,,,[]]]); await focusRow(q("#rg1"), id);
+       await pick(q("#s1a"), RM_SRC, r[0], id); setSel("#s1a", r[0]);
+       await pick(q("#s1b"), RM_ATTR, r[1], id); setSel("#s1b", r[1]);
+       await pick(q("#s1c"), OPS.seg, r[2], id); setSel("#s1c", r[2]);
+       await pick(q("#s1d"), RM_PH, r[3][0], id); addTag("#s1d", r[3][0]); await wait(300, id);
+       tip(q("#rules"), "Both rules in place", `A visitor matches when both are true: ${p.match}. Save Changes stores the targeting.`, 9); await wait(3600, id); hideTip();
+       const sv = q("#save"); await click(sv, id); sv.className = "btn dis"; sv.nextElementSibling.className = "btn dis"; toast("Targeting saved"); await wait(900, id);
+       const sf = q("#sfa"); await reveal(sf, id); tip(sf, "Send for approval", "Saving doesn't submit the campaign. Until the club approves it, Send for approval takes the place of the activation toggle.", 9); await wait(3800, id); hideTip(); await click(sf, id);
+       S.rmSent = true; sf.parentElement.innerHTML = rmStatusHTML(); await wait(400, id);
+       tip(q("#stt").parentElement, "Awaiting approval", "The campaign is with the club. There's no activation toggle until it's approved.", 9); await wait(3600, id); hideTip(); } },
+   { t: "The club approves", s: "In the club's Campaign Approval, the low-handicap members campaign is awaiting approval. Activation stays off until it's approved.",
+     enter() { S.p3 = true; S.rmSent = true; S.rmApproved = false; show("14-approval-table"); },
+     async play(id) { await wait(500, id); tip(hs("14-approval-table#row", 4), this.t, this.s, 10); await wait(3800, id); hideTip(); await click(hs("14-approval-table", 4), id);
+       show("15-approve"); await wait(500, id); const o = hs("15-approve"); tip(o, "Approve Selected", "Approving gives the campaign a creative ID.", 10); await wait(3200, id); hideTip(); await click(o, id);
+       toast("Campaign approved"); await wait(1500, id);
+       S.rmApproved = true; paint(targetScreen([P3().r1, P3().r2])); await wait(500, id);
+       const sw = q("#sw"); await reveal(sw, id); tip(sw, "Ready to activate", "Now that it's approved, the activation toggle replaces Send for approval.", 10); await wait(4000, id); hideTip();
+       if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const G3 = [
+   { t: "Hannah checks in at the pro shop", s: "Members check in for their tee time at the pro shop with the club's app, their membership card or a QR code. Each check-in identifies them, so the screens can respond.",
+     enter() { screen.innerHTML = sceneHTML(P3().first); hideTip(); },
+     async play(id) { const p = P3(); await wait(700, id);
+       const n = q("#pnote"); n.classList.add("in"); await wait(900, id);
+       tip(q("#pmeth"), this.t, this.s, 1); await wait(3400, id); hideTip();
+       tip(n, `Welcome to ${p.store}`, `${p.person}'s phone is detected as she arrives for her 8:30 tee time, and ${RET()}'s app welcomes her and invites her to check in.`, 1); await wait(3200, id); hideTip();
+       await click(n, id); setPhone("pump"); await wait(900, id);
+       tip(q("#pcheck"), "Checked in", `${p.person} is checked in at the pro shop at ${p.time} AM as a low-handicap member.`, 1); await wait(2800, id); hideTip();
+       tip(q("#pcard"), "Corvane's offer, in the club's app", `The moment she checks in, ${D().name} is first in her app.`, 1); await wait(3200, id); hideTip(); } },
+   { t: "Her profile meets Corvane's rules", s: "The check-in links to what the club's membership system and pro shop POS already hold, checked against every campaign's targeting rules the moment she arrives.",
+     enter() { screen.innerHTML = sceneHTML("pump", "attrs"); hideTip(); },
+     async play(id) { const p = P3(); await wait(1700, id); tip(q("#ptbl"), this.t, "Each row is a Visitor / Customer Data attribute, checked against the campaign's visitor rules.", 2); await wait(4200, id); hideTip();
+       tip(q("#ptbl"), "A match on both rules", `She matches both rules of Corvane's low-handicap members campaign: ${p.match}.`, 2); await wait(3600, id); hideTip(); } },
+   CV.GSTEP,
+   { t: "Booked on all six screen types", s: "The club's booking schedule: for all of December, Corvane Golf (Direct) holds slot 1 on Pro Shop, Driving Range, First Tee, Halfway House, Locker Room and Clubhouse Bar. No bid request goes to any DSP for these windows.",
+     enter() { show("16b-booking-flight"); },
+     async play(id) { await wait(600, id); tip(hs("16b-booking-flight#rows", 4), this.t, this.s, 4); await wait(4200, id); hideTip();
+       await moveTo(hs("16-booking-schedule"), id); show("16-booking-schedule"); await wait(400, id);
+       tip(hs("16-booking-schedule#top", 4), "Default plus personalised", "Each booking holds the default and the personalised members version, both approved, with the booking value at the deal's CPM.", 4); await wait(4000, id); hideTip(); } },
+   { t: "What the brand partner slots earn", s: "Booking revenue for 1 to 14 December: all 84 windows booked by Corvane at USD 150 CPM across the six screen types, 100% sold.",
+     enter() { show("22-booking-revenue"); },
+     async play(id) { await wait(600, id); tip(hs("22-booking-revenue#table", 6), this.t, this.s, 5); await wait(4600, id); hideTip();
+       tip(hs("22-booking-revenue#total", 4), "USD 36,231 in two weeks", "Estimated revenue from the six brand partner slots. Direct deals are reported like DSP revenue; invoicing happens outside the platform.", 5); await wait(4200, id); hideTip(); if (VO) await VO.done(id); showEnd(); } }
+  ];
+
+  const FLOWDEF_G = [
+    { h1: "Sell the club's screens to a brand", sub: "A golf club opens one slot in every playlist to advertisers, then sells all six screen types to a golf manufacturer through a direct deal.",
+      steps: G1, intro: () => show("P1-display-types"),
+      start: () => [`See ${RET()} sell its screens to a brand`, "Open slot 1 of every playlist to advertisers, sell December to a golf manufacturer through a direct deal on the pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens, and give the brand its own login."],
+      end: () => ["Flow 1 complete", `${RET()} has sold its brand partner slots`, "One slot in every three-campaign rotation is open to advertisers. Corvane holds all six for December through a direct deal, never sent to a DSP, and has its own login to manage its campaigns.", [["6", "screen types"], ["1 in 3", "slots for advertisers"], ["1", "direct deal"]], 1] },
+    { h1: "The advertiser creates a campaign by talking", sub: "The golf manufacturer signs in with its own login, briefs the AI campaign agent by voice on its own deal, targets members with criteria the club controls, and the club approves.",
+      steps: G2, intro: () => { S.p3 = false; screen.innerHTML = login(false); },
+      start: () => ["See a brand create its campaign just by talking", "Corvane signs in with its own login, talks the AI campaign agent through the new driver and Tour balls, targets low-handicap members, then the club approves it."],
+      end: () => ["Flow 2 complete", "A whole campaign from a spoken brief", "Corvane briefed the AI campaign agent by voice on its own deal, targeted low-handicap members who buy golf balls with the club's first-party data, and the club approved it.", [["1", "spoken brief"], ["2", "targeting rules"], ["6", "screen types"]], 2] },
+    { h1: "One member, six screens, every slot sold", sub: "Follow Hannah from the pro shop to the clubhouse bar while the brand partner slot personalises for her, then see the bookings behind it.",
+      steps: G3, intro: () => { screen.innerHTML = sceneHTML(P3().first); },
+      start: () => ["Follow one member round the club", "Hannah checks in for her tee time at the pro shop, Corvane's members version plays for her on every screen she passes, and the booking schedule shows what each slot earns."],
+      end: () => ["Flow 3 complete", `${RET()} earns from every brand partner slot`, "Hannah's members version plays in the brand partner slot of every screen she passes, and the pro shop offer closes the loop. Every window in Corvane's flight is booked at the deal's CPM, with no DSP involved.", [["6", "screens, one member"], ["31", "days booked in December"], ["USD 36,231", "booked in two weeks"]], 0] }
+  ];
+  const FLOWDEF = IS_GOLF ? FLOWDEF_G : [
     { h1: "Sell your screens to brands", sub: "A convenience retailer opens one slot in every playlist to advertisers, then sells all four screen types to a cold drinks brand through a direct deal.",
       steps: F1, intro: () => show("P1-display-types"),
       start: () => [`See ${RET()} sell its screens to a brand`, "Open slot 1 of every playlist to advertisers, sell December to a cold drinks brand through a direct deal on the forecourt, shop front, cooler door and POS screens, and give the brand its own login."],
@@ -2330,7 +2619,7 @@ if (FOCUS) flows.hidden = true;
 /* ================= website gate: teaser, lead capture, unlock ================= */
 const AWS_URL = "https://aws.amazon.com/marketplace/pp/prodview-3uiwcnbrpvj76?trk=59c672e4-15c4-4782-aee9-4352db108809&sc_channel=el&source=personalisationhub";
 const wrap = document.getElementById("wrap"), gate = document.getElementById("gate"), LEAD_KEY = "ph_lead";
-const GFLOWS = IS_RM ? [["storefront","Retailer setup","Open slots to brands and sell them through a deal"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Shopper journey & outcome","One shopper, four screens"]] : [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
+const GFLOWS = IS_GOLF ? [["storefront","Venue setup","A golf club opens its screens to a brand through a deal"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Member journey & outcome","One member, six screens"]] : IS_RM ? [["storefront","Retailer setup","Open slots to brands and sell them through a deal"],["record_voice_over","Advertiser creates by talking","A whole campaign from a spoken brief"],["person_pin_circle","Shopper journey & outcome","One shopper, four screens"]] : [["auto_awesome","Campaign creation","Talk a campaign into existence, in your brand"],["storefront","Localisation & scheduling","Every store gets its own version"],["person_pin_circle","Personalisation","The right offer the moment they check in"]];
 const TEASE_STD = [
   { cap: "A spoken brief becomes creative for every screen", async run(id) { S.flow = 0; S.bright = false; paint(listScreen(false)); q("#layer").innerHTML = modalHTML(null, [], false);
       q("#ta").classList.add("focus"); q("#vrow").style.visibility = "visible"; q("#mic").classList.add("rec"); dictate(q("#tabody"), D().brief, id).catch(() => {});
@@ -2349,7 +2638,7 @@ if (/[?&]embed=1/.test(location.search)) document.documentElement.classList.add(
 if (IN_FRAME) { try { const w = document.getElementById("wrap"); new ResizeObserver(() => { if (FSON) return; try { window.parent.postMessage({ type: "ph-tour-height", h: Math.ceil(w.getBoundingClientRect().bottom + window.scrollY + 8) }, location.origin); } catch (e) {} }).observe(w); } catch (e) {} }
 let LOCKED = false, TSEL = FOCUS ? FOCUSMAP[location.hash] : 0, GMODE = "pick";
 S.welcome = "";
-function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: S.ind, flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
+function tourEvent(action, extra) { try { DL().push(Object.assign({ event: "ph_tour", action, industry: IS_GOLF ? "rmn" : S.ind, flow: (FLOWS[S.flow] || [])[0], step: S.step + 1 }, extra || {})); } catch (e) {} }
 /* ---- full screen. Native Fullscreen API on this document; where it is missing (iPhone Safari) a full-viewport fallback: the page pins this iframe on {type:"ph-tour-fullscreen", on}. ---- */
 const fsBtn = document.getElementById("fs"), fsClose = document.getElementById("fsclose"), ROOT = document.documentElement;
 /* iPhone, iPad and iPadOS (reports as Macintosh with touch): native full screen shows the system's own X top left, so use the in-page fallback and our top-right close. */
@@ -2395,8 +2684,8 @@ document.addEventListener("keydown", e => {
 function readLead() { try { const l = JSON.parse(localStorage.getItem(LEAD_KEY) || "null"); return l && l.email ? l : null; } catch (e) { return null; } }
 function saveLead(l) { try { localStorage.setItem(LEAD_KEY, JSON.stringify(l)); } catch (e) {} }
 function sendLead(l) {
-  const body = { name: l.name, company: l.company, email: l.email, consent: true, industry: S.ind, source: "Interactive product tour", flow: GFLOWS[l.flow][1], page: location.pathname, test: /[?&]ph_test=1/.test(location.search) };
-  try { DL().push({ event: "ph_lead_captured", source: body.source, industry: S.ind }); } catch (e) {}
+  const body = { name: l.name, company: l.company, email: l.email, consent: true, industry: IS_GOLF ? "rmn" : S.ind, source: "Interactive product tour", flow: GFLOWS[l.flow][1], page: location.pathname, test: /[?&]ph_test=1/.test(location.search) };
+  try { DL().push({ event: "ph_lead_captured", source: body.source, industry: body.industry }); } catch (e) {}
   const cfg = PCFG();
   if (!cfg.endpoint) return Promise.resolve({ ok: true, prototype: true });
   return fetch(cfg.endpoint, { method: "POST", credentials: "same-origin", headers: Object.assign({ "Content-Type": "application/json" }, cfg.nonce ? { "X-WP-Nonce": cfg.nonce } : {}), body: JSON.stringify(body) }).then(r => ({ ok: r.ok })).catch(() => ({ ok: false }));
@@ -2405,7 +2694,7 @@ const FREE_MAIL = /@(gmail|googlemail|outlook|hotmail|live|msn|yahoo|ymail|iclou
 function gateHTML() {
   const head = `<div class="g-eb"><span class="ms">play_circle</span>Interactive product tour</div>`;
   if (GMODE === "pick") return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
-      <h3>${IS_RM ? "Watch a convenience retailer sell its screens to a brand" : `Watch a ${INDLABEL} campaign go from a spoken brief to the right customer`}</h3><p>${`Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.`}</p>
+      <h3>${IS_GOLF ? "Watch a golf club sell its screens to a golf brand" : IS_RM ? "Watch a convenience retailer sell its screens to a brand" : `Watch a ${INDLABEL} campaign go from a spoken brief to the right customer`}</h3><p>${IS_GOLF ? "Three short guided demos on real Personalisation Hub screens. Pick one to start." : `Three short guided demos on real Personalisation Hub screens, run in your brand. Pick one to start.`}</p>
       <div class="g-flows">${GFLOWS.map((f, i) => `<button type="button" class="g-flow" data-f="${i}"><span class="ms">${f[0]}</span><span><b>${f[1]}</b><small>${f[2]}</small></span><span class="g-go">Watch<span class="ms">chevron_right</span></span><i></i></button>`).join("")}</div></div>`;
   const f = GFLOWS[TSEL];
   return `<div class="g-cap" id="gcap"><span class="ms">visibility</span><span id="gcapt"></span></div><div class="g-panel">${head}
@@ -2432,15 +2721,31 @@ function renderGate() {
   form.onsubmit = e => { e.preventDefault(); if (!check(true)) return; const lead = { name: form.name.value.trim(), company: form.company.value.trim(), email: form.email.value.trim(), source: "Interactive product tour", flow: TSEL, ts: Date.now() };
     saveLead(lead); sendLead(lead); unlock(lead, true); };
 }
+/* After unlock: ask the site (ph-site/v1/tour-brand, which asks the console server to server) for the company's logos. Never awaited: the tour
+   starts at once with the initials, and a logo that arrives (3.5 s at most) replaces them. Not in test mode (ph_test=1). */
+let BRAND_RUN = 0;
+function fetchBrand(lead) {
+  const id = ++BRAND_RUN, cfg = PCFG(), want = S.brand; S.logo = null;
+  if (!cfg.brandEndpoint || !want || !lead || !lead.company || !lead.email || /[?&]ph_test=1/.test(location.search)) return;
+  const ctl = window.AbortController ? new AbortController() : null, tm = setTimeout(() => { if (ctl) ctl.abort(); }, 3500);
+  const u = v => (typeof v === "string" && /^https:\/\//i.test(v)) ? v : "";
+  try {
+    fetch(cfg.brandEndpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company: lead.company, email: lead.email }), signal: ctl ? ctl.signal : undefined })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (id !== BRAND_RUN || S.brand !== want || !j || j.found !== true || !j.logos) return; S.logo = { for: want, light: u(j.logos.light), dark: u(j.logos.dark), icon: u(j.logos.icon), darkFromLight: j.darkFromLight === true }; brandRefresh(); })
+      .catch(() => {}).then(() => clearTimeout(tm));
+  } catch (e) { clearTimeout(tm); }
+}
 function lock() {
-  fsExit(); LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
-  document.getElementById("h1").textContent = IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
-  document.getElementById("sub").textContent = IS_RM ? "Short guided demos: a retailer selling its screens, a brand creating a campaign by talking, and one shopper followed from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
+  fsExit(); BRAND_RUN++; S.logo = null; LOCKED = true; GMODE = "pick"; wrap.classList.add("locked"); gate.hidden = false; S.custom = false; S.brand = null; S.welcome = ""; co.value = IND[S.ind].brand;
+  document.getElementById("h1").textContent = IS_GOLF ? "See a golf club run its screens as a retail media network, end to end" : IS_RM ? "See a convenience retailer run its own retail media network, end to end" : `See Personalisation Hub run a ${INDLABEL} campaign, end to end`;
+  document.getElementById("sub").textContent = IS_GOLF ? "Short guided demos: a golf club selling its screens to a golf brand, the brand creating a campaign by talking, and one member followed from the pro shop to the clubhouse bar." : IS_RM ? "Short guided demos: a retailer selling its screens, a brand creating a campaign by talking, and one shopper followed from forecourt to checkout." : "Short guided demos built on real Personalisation Hub screens: campaign creation, localisation and personalisation, branded as your company.";
   renderGate(); teaseLoop();
 }
 function unlock(lead, autostart) {
   LOCKED = false; RUN++; gate.hidden = true; gate.innerHTML = ""; wrap.classList.remove("locked"); stage.classList.remove("teasing");
   if (lead && lead.company) { S.custom = true; S.brand = lead.company.trim().slice(0, 32); co.value = S.brand; }
+  fetchBrand(lead);
   S.welcome = lead && lead.name ? lead.name.trim().split(/\s+/)[0] : "";
   flows.hidden = FOCUS; setFlow(TSEL); tourEvent("unlock", { via: autostart ? "tour form" : "existing details" });
   if (autostart) startFlow();
@@ -2450,7 +2755,8 @@ window.addEventListener("ph:lead", onLead); try { if (IN_FRAME) window.parent.ad
 const simc = document.getElementById("simcalc"), simr = document.getElementById("simreset");
 if (simc) simc.onclick = () => { const l = { name: "Sam Taylor", company: "Kestrel Mobile", email: "sam.taylor@kestrelmobile.com", source: "Telco business model download", ts: Date.now() }; saveLead(l); window.dispatchEvent(new CustomEvent("ph:lead", { detail: l })); };
 if (simr) simr.onclick = () => { try { localStorage.removeItem(LEAD_KEY); } catch (e) {} lock(); };
-if (IS_RM) { const fine = document.querySelector(".fine"); if (fine) fine.textContent = "Example companies, stores and figures are illustrative. Retailer screens are Personalisation Hub HQ Admin screens; campaign screens recreate HQ Admin."; }
+if (IS_GOLF) { const fine = document.querySelector(".fine"); if (fine) fine.textContent = "Example club, brands and figures are illustrative. Club screens are Personalisation Hub HQ Admin screens; campaign screens recreate HQ Admin."; }
+else if (IS_RM) { const fine = document.querySelector(".fine"); if (fine) fine.textContent = "Example companies, stores and figures are illustrative. Retailer screens are Personalisation Hub HQ Admin screens; campaign screens recreate HQ Admin."; }
 S.flow = 0; const stored = readLead(); if (window.PH_TOUR_REVIEW) unlock({ name: "", company: "" }, false); else if (stored) unlock(stored, false); else lock();
 })();
 </script>

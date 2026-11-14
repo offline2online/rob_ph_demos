@@ -3003,6 +3003,18 @@ MCP `create_faq_article` / `update_faq_article` accept them (update still only
 parks a pending revision) and `get_faq_article` reports `missingSeoFields`.
 The release Help Centre audit flags articles missing them.
 
+**A description is never cut mid-word** (13 Nov 2026). When an article has no
+`metaDescription` and its summary is longer than 155 characters, the export
+and the live feed add a derived `seoDescription`: the summary cut at the last
+word boundary that fits, ending "…" (`descriptionFromSummary` in
+`functions/faq-feed.js`). The Support Centre reads `seoDescription` before
+`metaDescription`, so it never falls back to its own 155-character cut. It is
+derived on every export, never stored in Firestore and never read back by
+`faq-sync.js`; an editor's `metaDescription` suppresses it.
+`test/faq-copy.test.js` checks every published article's description, and
+that the offer's retired name (use "brand"), client names and US spellings stay out of
+published copy.
+
 **Why.** A ticket merging to `main` changes what the product does; the
 public help centre describes what the product does. The old
 `faqAutoFlagOnLive` toggle only ever said "something in this project
@@ -3087,7 +3099,12 @@ flow's own proposals always set it (it's what promotion keys go-live on),
 while an MCP-originated proposal (`update_faq_article`, below) omits it
 entirely, since no backlog ticket triggered it. `faq-sync.js` merges and
 never touches these fields; `faq-export.js` exports only the live fields,
-so a proposal never leaks onto the public site.
+so a proposal never leaks onto the public site. Parking or rejecting a proposal bumps
+`updatedAt` but is not a live edit: `faq-sync.js` treats an article as
+edited in the console only when its live fields no longer hash to the
+`contentHash` its last sync stored (`scripts/faq-sync-lib.js` →
+`editedSinceSync`), so a repo fix still reaches an article with a pending
+revision (13 Nov 2026).
 
 **Also written by a person's own agent, via MCP.** Two write tools on
 `functions/mcp-server.js` (see "Functional requirements — team access & the
@@ -4240,7 +4257,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     "test", an obvious pitch, a disposable email domain), with no model call.
     Then one small call (`claudeScreen`, `claude-sonnet-5-5` at low effort,
     three searches at most) decides two things: is this a real trading
-    organisation, and does it operate, franchise or supply media to physical
+    organisation, and does it operate, license or supply media to physical
     customer-facing sites. Only "yes" to both goes on to research; "can't
     confirm" counts as no. A record that fails gets
     `enrichment.request.status: "skipped"` and `enrichment.screen {at, ok,
@@ -4254,6 +4271,73 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     applies to automatic runs and to the button alike, on leads and TAM
     records. `lead-enrich-probe.yml`'s `screen` input tries it on named
     companies.
+  - **Logos for the walkthrough demo (12 Nov 2026)**: besides the square
+    icon (`enrichment.logoUrl`), each run looks for the company's full logo
+    as image files: `enrichment.logos {light, dark}`, the version for light
+    backgrounds and the white or reversed version for dark ones. Sources, in
+    order: the links the agent saw in a fetched page (`logoLight`,
+    `logoDark`: the company's own header, footer, brand or press page, or
+    Wikimedia Commons; in the first real run the agent gave none, since
+    it reads page text, not image tags), then the home page's own `<img>`
+    tags that say "logo" and the logo its structured data declares
+    (`pageLogos`; a file name saying white, light, reverse, negative or
+    inverse is the dark-background one), then Wikimedia Commons' file search
+    (`commonsLogos`: a file counts only when its title has every word of the
+    company's name and "logo"; SVG first). `lead-enrich-probe.yml`'s `logos`
+    input tries this on named companies with no model call. An address is kept only when it
+    answers as an image (public addresses only); a later run that finds none
+    keeps the earlier ones. They are saved on the lead and on its TAM
+    record, shown on both ("Logos for the walkthrough demo", one on a light
+    tile and one on a dark tile) and returned by `get_lead`. **Copied into
+    the console's storage** (`keepLogos` / `storeLogo`): each logo and the
+    icon is downloaded (public addresses only, image types only, 1.5 MB at
+    most) and saved to Firebase Storage at `brand/<company>/<light|dark|
+    icon>-<hash of the bytes>.<ext>` with a download token, and that address
+    is what the record and the brand lookup carry, so a demo keeps working
+    when the company moves its file. `enrichment.logoSources {light, dark,
+    icon}` records where each came from. The same image is copied once: a
+    refresh that finds the same source keeps the stored address. An SVG that
+    carries script or event handlers is not copied, and when a copy fails
+    (storage down, too big) the original address is kept instead.
+    **`POST /leadIngest/v1/brand`** (the website's `X-Lead-Key`, body
+    `{company, email?, country?}`) is how a walkthrough demo gets them: it
+    matches the company as an inbound lead is matched (name, or the work
+    email's domain, in the TAM; else a lead by name) and answers `{found,
+    name, industry, logos: {light, dark, icon}, darkFromLight}`, or
+    `{found: false}`. A separate dark-background file is rare (none was
+    found for eight large retailers tested on 12 Nov 2026; a light one for
+    five): when `dark` is empty and `light` is set, `darkFromLight` is true
+    and the demo shows the light logo in white (CSS `filter: brightness(0)
+    invert(1)`) or on a white tile, as the console's own dark tile does.
+    A logo a person set on the company profile is used as `light`. Nothing
+    else about the record is returned, test and archived leads are never
+    matched, and the call is server-to-server so the list of companies never
+    reaches a browser. The tour on personalisationhub.com does not call it
+    yet (a PH Website ticket).
+  - **A missing website is worked out (13 Nov 2026)**: with no website on
+    the record, the run finds one in this order: the contacts' business email
+    domain when its home page answers (free; 90), the check's own answer
+    (`website`, `websiteConfidence`), then the research's. The record's
+    Website is filled only when it was blank, on the lead and its TAM record,
+    and `enrichment.websiteGuess {url, confidence (0-100), from, at}` says
+    how sure the run is and where the address came from; the page shows
+    "Found automatically, N% sure (from …)". A website a person typed is
+    never replaced.
+  - **The free basics when research is held back (13 Nov 2026)**: a real
+    company the check holds back (no physical sites found) used to be left
+    with an empty record and only the reason (a tour lead tested on 12 Nov).
+    It now gets, at no research cost: its website, icon and logos (copied to
+    storage), LinkedIn page, sector, and a one-line description (the check's
+    `summary`, else the home page's). `enrichment.level` is `light` until a
+    full run makes it `full`; the request is still `skipped`, the message
+    reads "Full research was held back: … Press Research anyway to run the
+    full research", and the page says "Basic profile only". Spam and
+    companies the check cannot find still get nothing. `get_lead` now
+    returns `research` (with `lastRun`, `check`, `level`, `websiteGuess`)
+    for a lead no run has filled, so the reason a run stopped can be read.
+    `lead-enrich-probe.yml`: `pipeline` runs the whole new-lead flow on an
+    in-memory record with the real key; `lead_status` reports what the last
+    run on a lead did.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
@@ -4322,6 +4406,82 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
+- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7
+  and 6b5y1gKRyX41YlEbm0V3)**.
+  The Be Your Own Boss page on personalisationhub.com gates its product tour
+  behind a form, and the people who fill it in are individuals asking about the
+  network operator offer, not companies. They are their own **lead type** and
+  their own pipeline, so they are never mixed with retail/company leads.
+  - **Name and key (6b5y1gKRyX41YlEbm0V3)**: everything a person sees calls
+    this type **Network operator inquiry** (the label, `leadTypeLabel`, the board
+    chip, the lead detail's Type, MCP `list_leads`/`get_lead`), the board switch
+    **Companies / Network operators**, the form **New network operator
+    inquiry**, the detail's section **Network operator**, and the default source
+    label **Be Your Own Boss page – product tour**. The internal names follow:
+    the `leadType` key is `"operator"`, the Firestore field is `operator
+    {region, background}`, the constants are `OPERATOR_*`, the website intake
+    function is `operatorFromWebsite`, and the DOM ids and CSS classes use
+    `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
+    (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
+    this type existed when the key changed (confirm at deploy that `leads` holds
+    no document with another key for this type).
+  - **Data** (`leads-core.js`): every lead has `leadType`, `"company"` (the
+    default; a lead saved before this has none and reads as company) or
+    `"operator"`. A network operator inquiry needs no company name, website or industry
+    (`company.name` is ""); the person is its single contact (`name`, `email`,
+    `linkedin`), and `operator {region, background}` holds where they plan to
+    operate (≤200 chars) and their background, one of `agency` (Agency media or
+    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
+    `marketing`, `other` (Something else). Its stages are `OPERATOR_STAGES`:
+    **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
+    **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
+    allows a blank company name only on an `operator` lead, keeps each type to its
+    own stages, and limits `operator` to `region` and `background`.
+  - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
+    `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
+    operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
+    network operator inquiry. The website sends `leadType: "operator"`. No other
+    key is accepted for this type: any other value, including the offer's retired
+    key, is a company lead (and `company`, which the website may fill with the
+    person's name, is ignored for an operator lead). Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
+    `linkedin` (optional; a value that isn't an address is dropped, not
+    refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
+    `location`), `background` (a key above or the form's label), `lead_source`
+    (stored as `sourceLabel`; "Be Your Own Boss page – product tour" when not sent),
+    `page` and `test`. `source` is `website`; each submission adds to
+    `websiteActivity`. A name or an email is required and a bad email is a 400.
+    It never reads or writes Prospects (TAM), is never routed to the AWS record,
+    is never matched to a company lead, and is never enriched (the trigger skips
+    it; the Enrich route refuses it). The same email again (same test flag) is
+    the same person: their lead's inbound count and activity grow and blank
+    region/background are filled. **The website side** posts these fields from
+    the Be Your Own Boss page's gate (PH Website project, `ph-website/`); the console
+    accepts them as named above.
+  - **Board**: a **Companies / Network operators** switch above the board
+    (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
+    one pipeline at a time with its own lanes. A network operator card shows the
+    person, a "Network operator inquiry" chip, region · background and the source;
+    its summary shows the person, Network operator (region, background), Lead
+    (type, stage, assignee, source, source page, dates), website activity and
+    history, with no company, AWS team or research, and no Enrich button. New lead
+    on that view opens the form as **New network operator inquiry**: the
+    person's full name, email and LinkedIn, where they plan to operate,
+    background and the pipeline; no company fields, research or customer account.
+  - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
+    `leadType`, `leadTypeLabel`, `name` (the company, or the person),
+    `region`, `background` and `backgroundLabel` alongside `source` /
+    `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
+    `leadType: "operator"` with the person as the only contact plus `region`
+    and `background` (no company needed); `update_lead` edits region and
+    background but refuses a type change; `update_lead_stage` accepts only the
+    lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
+    the person's name; `link_lead_customer_account` and `link_lead_prospect`
+    refuse a network operator inquiry.
+  - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
+    address, repeat person, company leads unchanged, the MCP views and filter),
+    `test/lead-enrich.test.js` (never researched), the network operator cases in
+    `test/firestore-rules.test.js`, and the "network operator inquiries" scenario in
+    `test/ui/console-click.test.mjs`.
 - Tests: `test/leads.test.mjs`, `test/lead-enrich.test.js` (the agent stubbed), the "company research" scenario in `test/ui/console-click.test.mjs`, `test/lead-ingest.test.js`, the Leads tools in
   `test/mcp-server.test.js` and `test/mcp-client.test.mjs`, a scenario in
   `test/ui/console-click.test.mjs`.

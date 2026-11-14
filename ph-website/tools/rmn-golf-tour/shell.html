@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>HQ Admin capture shell</title>
+<!-- Capture-only stand-in for the HQ Admin chrome around the DSP Integration prototype (sidebar, top bar, breadcrumb),
+     matched to the retail media v1 screenshots. Query: nav=platform|company, crumb=A|B|C, src=<prototype route>. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; font-family: Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  .ms { font-family: "Material Symbols Outlined"; font-weight: 300; font-style: normal; font-size: 20px; line-height: 1; letter-spacing: normal; text-transform: none; display: inline-block; white-space: nowrap; font-feature-settings: "liga"; font-variation-settings: "FILL" 0, "wght" 300, "GRAD" 0, "opsz" 20; }
+  .side { position: absolute; left: 0; top: 0; width: 256px; height: 100%; background: #333; color: #e6e6e6; }
+  .club { position: absolute; left: 24px; top: 28px; display: flex; align-items: center; gap: 10px; }
+  .badge { width: 36px; height: 36px; border-radius: 7px; background: #1F5E3B; border: 2px solid #E3B341; color: #fff; font: 700 15px/36px Roboto, sans-serif; text-align: center; letter-spacing: .3px; }
+  .club b { display: block; font: 600 15px/16px Roboto, sans-serif; color: #fff; }
+  .club small { display: block; font: 400 10.5px/13px Roboto, sans-serif; letter-spacing: 1.6px; color: #d0d0d0; margin-top: 1px; }
+  .nav { position: absolute; left: 8px; right: 8px; }
+  .nav a { display: flex; align-items: center; height: 40px; margin-bottom: 4px; padding-left: 24px; gap: 13px; border-radius: 6px; font-size: 14px; letter-spacing: .25px; text-transform: uppercase; color: #e6e6e6; }
+  .nav a .ms { font-size: 21px; width: 21px; color: #d6d6d6; }
+  .nav a.on { background: #169BC2; color: #fff; }
+  .nav a.on .ms { color: #fff; }
+  .top { position: absolute; left: 256px; right: 0; top: 0; height: 64px; background: #000; color: #fff; display: flex; align-items: center; }
+  .burger { margin-left: 20px; font-size: 24px; }
+  .ph { display: flex; align-items: center; gap: 10px; margin-left: 14px; font-size: 20px; letter-spacing: .1px; }
+  .ph b { font-weight: 700; }
+  .prod { margin-left: auto; height: 26px; padding: 0 12px; border: 1px solid #8a8a8a; border-radius: 14px; display: flex; align-items: center; gap: 7px; font-size: 13px; }
+  .prod .ms { font-size: 16px; }
+  .av { margin: 0 20px 0 16px; width: 30px; height: 30px; border-radius: 6px; background: #1F5E3B; border: 2px solid #E3B341; font: 700 11px/30px Roboto, sans-serif; text-align: center; }
+  .crumb { position: absolute; left: 276px; top: 77px; font-size: 14px; color: #8c8c8c; display: flex; gap: 9px; }
+  .crumb span:last-child { color: #333; }
+  .crumb i { font-style: normal; color: #8c8c8c; }
+  iframe { position: absolute; left: 256px; top: 100px; width: 1344px; height: 850px; border: 0; }
+</style>
+</head>
+<body>
+<div class="side">
+  <div class="club"><div class="badge">FG</div><div><b>Fernhollow</b><small>GOLF CLUB</small></div></div>
+  <div class="nav" style="top:96px">
+    <a><span class="ms">campaign</span>Campaigns</a>
+    <a><span class="ms">desktop_windows</span>Displays &amp; Devices</a>
+    <a><span class="ms">store</span>Stores / Branches</a>
+    <a><span class="ms">monitoring</span>Insights / Analytics</a>
+  </div>
+  <div class="nav" style="top:850px">
+    <a id="n-company"><span class="ms">settings</span>Company Settings</a>
+    <a id="n-platform"><span class="ms">admin_panel_settings</span>Platform Admin</a>
+  </div>
+</div>
+<div class="top">
+  <span class="ms burger">menu</span>
+  <div class="ph"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
+  <div class="prod"><span class="ms">rocket_launch</span>Production<span class="ms">edit</span></div>
+  <div class="av">FG</div>
+</div>
+<div class="crumb" id="crumb"></div>
+<iframe name="app" id="app" title="app"></iframe>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.getElementById(q.get("nav") === "company" ? "n-company" : "n-platform").classList.add("on");
+  const parts = ["Home"].concat((q.get("crumb") || "").split("|").filter(Boolean));
+  document.getElementById("crumb").innerHTML = parts.map(p => `<span>${p.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("<i>&gt;</i>");
+  document.getElementById("app").src = q.get("src") || "/";
+</script>
+</body>
+</html>

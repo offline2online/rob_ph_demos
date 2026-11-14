@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -48,7 +48,7 @@ function sealed(obj) {
   return [wrapped, iv, ci.getAuthTag(), body].map((b) => b.toString("base64")).join(".");
 }
 const key = process.env.ANTHROPIC_API_KEY || "";
-if (!key || key === "unset") { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
+if ((!key || key === "unset") && !(process.env.LOGO_COMPANIES || "").trim() && !(process.env.LEAD_STATUS || "").trim()) { console.error("ANTHROPIC_API_KEY is not set: the agent cannot run."); process.exit(1); }
 
 const t0 = Date.now();
 const secs = (ms) => `${(ms / 1000).toFixed(1)}s`;
@@ -106,7 +106,83 @@ async function screenOnly(names) {
   process.exit(bad ? 1 : 0);
 }
 
+// LOGO_COMPANIES="Name|https://site, Name2|https://site2": only look for each
+// company's logos the way a run does (home page, then Wikimedia Commons). Free:
+// no model call. Prints which were found and the host they came from.
+async function logosOnly(list) {
+  const { createLeadEnrich } = require(path.join(fn, "lead-enrich.js"));
+  const api = createLeadEnrich({ db: null, verifyIdToken: async () => ({}), resolveConsoleUser: async () => null });
+  const host = (u) => { try { return new URL(u).hostname; } catch { return "none"; } };
+  for (const item of list) {
+    const [name, site = ""] = item.split("|").map((x) => x.trim());
+    const web = await api.websiteSource(site);
+    const logos = await api.logosFor(name, (web.page || {}).logos, {});
+    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, its own logo images light ${web.page.logos.light ? "yes" : "no"} / dark ${web.page.logos.dark ? "yes" : "no"}` : ""}`);
+  }
+  process.exit(0);
+}
+
+// LEAD_STATUS=<leads doc id>: what the last run on that lead (and its TAM record)
+// did, read from the board: the request's status and message and the check's
+// verdict. The company's name and website are masked in the log.
+async function leadStatus(id) {
+  const fnRequire = require("module").createRequire(path.join(fn, "index.js"));
+  const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
+  const { getFirestore } = fnRequire("firebase-admin/firestore");
+  initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
+  const db = getFirestore();
+  const t = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : v || null);
+  const show = (label, d) => {
+    const c = d.company || {};
+    for (const v of [c.name, d.name, c.website, d.website]) if (v) console.log(`::add-mask::${v}`);
+    const e = d.enrichment || {};
+    const r = e.request || null, s = e.screen || null;
+    console.log(`${label}: created ${t(d.createdAt)} by ${d.createdByEmail || "?"}, updated ${t(d.updatedAt)}, website ${c.website || d.website ? "set" : "blank"}, test ${d.test === true}, enriched at ${t(e.at)}`);
+    console.log(`  request: ${r ? JSON.stringify({ status: r.status, trigger: r.trigger, force: r.force === true, by: r.by ? "set" : "", at: t(r.at), startedAt: t(r.startedAt), finishedAt: t(r.finishedAt), message: r.message }) : "none"}`);
+    console.log(`  check:   ${s ? JSON.stringify({ ok: s.ok, real: s.real, physicalRetail: s.physicalRetail, by: s.by, siteCount: s.siteCount, at: t(s.at), reason: s.reason }) : "none"}`);
+    console.log(`  sources: ${JSON.stringify((e.sources || []).map((x) => ({ source: x.source, status: x.status, message: x.message })))}`);
+    return d;
+  };
+  const lead = await db.collection("leads").doc(id).get();
+  if (!lead.exists) { console.error("no such lead"); process.exit(1); }
+  const d = show("lead", lead.data() || {});
+  if (d.prospectId) { const p = await db.collection("prospects").doc(String(d.prospectId)).get(); if (p.exists) show("TAM record", p.data() || {}); else console.log("TAM record: missing"); }
+  process.exit(0);
+}
+
+// PIPELINE="Company|contact@email|https://website": runs the whole flow a new
+// lead goes through (website finder, the check, then the basics or the full
+// research) with the real key, on a record held in memory: nothing on the
+// board is read or written. Prints what the record would end up with. A
+// company the check passes costs one full research run.
+async function pipeline(spec) {
+  const [name, email = "", site = ""] = spec.split("|").map((x) => x.trim());
+  const { createLeadEnrich } = require(path.join(fn, "lead-enrich.js"));
+  const state = { leads: { l1: { company: { name, website: site, industry: "", countries: [], storeCount: null }, contacts: email ? [{ name: "Contact", email }] : [], stage: "lead" } }, prospects: {}, prospectCompanies: {} };
+  const setPath = (o, p, v) => { const ks = p.split("."); let x = o; for (const k of ks.slice(0, -1)) { if (!x[k] || typeof x[k] !== "object") x[k] = {}; x = x[k]; } x[ks[ks.length - 1]] = v; };
+  const db = { collection: (c) => ({ doc: (id) => ({
+    get: async () => ({ exists: Boolean(state[c] && state[c][id]), id, data: () => state[c][id] }),
+    update: async (patch) => { for (const [k, v] of Object.entries(patch)) { if (k.includes(".")) setPath(state[c][id], k, v); else state[c][id][k] = v; } },
+    set: async (d) => { state[c] = state[c] || {}; state[c][id] = { ...(state[c][id] || {}), ...d }; },
+  }) }) };
+  const api = createLeadEnrich({ db, verifyIdToken: async () => ({}), resolveConsoleUser: async () => null, anthropicKey: () => key, anthropicWorkspace: () => process.env.ANTHROPIC_WORKSPACE_ID || "", Anthropic: Probe });
+  const out = await api.enrichRecord("leads", "l1", "probe", "created");
+  const l = state.leads.l1, e = l.enrichment || {};
+  const host = (u) => { try { return new URL(u).hostname; } catch { return u ? "set" : "none"; } };
+  console.log(`\npipeline "${name}" (${email ? "contact email given" : "no email"}, ${site ? "website given" : "no website"}) in ${secs(Date.now() - t0)}:`);
+  console.log(`  run:      ${e.request ? e.request.status : "?"} — ${e.request ? e.request.message : ""}`);
+  console.log(`  check:    ${e.screen ? `real=${e.screen.real} physicalRetail=${e.screen.physicalRetail} by=${e.screen.by}` : "not run"}`);
+  console.log(`  website:  ${l.company.website || "still blank"}${e.websiteGuess ? ` (found automatically, ${e.websiteGuess.confidence}% sure, from ${e.websiteGuess.from})` : ""}`);
+  console.log(`  profile:  level=${e.level || "none"}, industry=${l.company.industry || "—"}, sites=${e.storeCount || "—"}, summary ${e.summary ? `${e.summary.length} chars` : "none"}, icon ${host(e.logoUrl)}, logo light ${host(e.logos && e.logos.light)} / dark ${host(e.logos && e.logos.dark)}, LinkedIn ${e.linkedinCompany ? "yes" : "no"}`);
+  console.log(`  result:   ok=${out.ok} skipped=${out.skipped === true}`);
+  process.exit(0);
+}
+
 (async () => {
+  if ((process.env.PIPELINE || "").trim()) return pipeline(process.env.PIPELINE.trim());
+  if ((process.env.LEAD_STATUS || "").trim()) return leadStatus(process.env.LEAD_STATUS.trim());
+  const forLogos = (process.env.LOGO_COMPANIES || "").split(",").map((x) => x.trim()).filter(Boolean);
+  if (forLogos.length) return logosOnly(forLogos);
   const toScreen = (process.env.SCREEN_COMPANIES || "").split("|").map((x) => x.trim()).filter(Boolean);
   if (toScreen.length) return screenOnly(toScreen);
   if (leadId) {
@@ -140,6 +216,14 @@ async function screenOnly(names) {
   for (const [k, v] of Object.entries(f)) console.log(`  ${k.padEnd(16)} ${size(v)}`);
   const filled = Object.values(f).filter((v) => (Array.isArray(v) ? v.length : v != null && v !== "")).length;
   console.log(`\n${filled} of ${Object.keys(f).length} fields filled.`);
+  // The logos for the walkthrough demo: does each link the agent gave answer as an image,
+  // and does the home page itself show a logo image? (Kinds only, never the address.)
+  const kind = async (u) => { if (!u) return "none given"; try { const r = await fetch(u, { redirect: "follow", headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } }); return `HTTP ${r.status}, ${r.headers.get("content-type") || "no type"}`; } catch (err) { return `not reachable (${String(err && err.message || err).slice(0, 60)})`; } };
+  console.log(`\nlogoLight: ${await kind(f.logoLight)}\nlogoDark:  ${await kind(f.logoDark)}`);
+  try {
+    const site = website || f.website;
+    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = readPage(html, site).logos; console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
+  } catch (err) { console.log(`home page not read: ${String(err && err.message || err).slice(0, 80)}`); }
   if (publicKey) {
     const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });
     console.log("\n-----BEGIN SEALED FINDINGS-----");

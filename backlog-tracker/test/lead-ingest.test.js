@@ -23,6 +23,7 @@ function fakeDb() {
   const ref = (name, id) => ({
     id,
     set: async (d) => { col(name).set(id, { ...d }); },
+    get: async () => ({ id, exists: col(name).has(id), data: () => col(name).get(id), ref: ref(name, id) }),
     update: async (p) => { if (!col(name).has(id)) throw new Error(`no ${name}/${id}`); Object.assign(col(name).get(id), p); },
   });
   const snap = (name, id) => ({ id, data: () => col(name).get(id), ref: ref(name, id) });
@@ -52,10 +53,29 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     await api.handle(req(FORM, "unset"), r); assert.equal(r.code, 401);
     assert.equal(db.docs.size, 0);
   });
-  await test("only POST /v1/submit is served", async () => {
+  await test("only POST /v1/submit and /v1/brand are served", async () => {
     const { api } = mkApi(); const r = res();
     await api.handle(req(FORM, "k", "GET"), r); assert.equal(r.code, 405);
     await api.handle(req(FORM, "k", "POST", "/leadIngest/v1/other"), r); assert.equal(r.code, 404);
+  });
+  await test("the brand lookup returns a listed company's logos and nothing else, with the same key", async () => {
+    const { db, api } = mkApi();
+    const BRAND = "/leadIngest/v1/brand";
+    db.prospects.set("greene-king-united-kingdom", { name: "Greene King", country: "United Kingdom", website: "https://www.greeneking.co.uk", industry: "Pubs & Hospitality", leadId: "lead1", notes: "private",
+      enrichment: { logoUrl: "https://www.greeneking.co.uk/icon.png", logos: { light: "https://brand.example/gk.svg", dark: "" }, summary: "private research" } });
+    db.docs.set("lead1", { company: { name: "Greene King" }, contacts: [{ name: "Private Person", email: "p@greeneking.co.uk" }], enrichment: { logos: { light: "", dark: "https://brand.example/gk-white.svg" } } });
+    db.docs.set("lead2", { company: { name: "Corner Shop Co", industry: "Fuel & Convenience" }, enrichment: { logoUrl: "https://cornershop.example/icon.png", logos: { light: "https://cornershop.example/logo.png", dark: "javascript:x" } } });
+    db.docs.set("lead3", { test: true, company: { name: "Test Co" }, enrichment: { logos: { light: "https://t.example/l.png" } } });
+    let r = res(); await api.handle(req({ company: "Greene King" }, "nope", "POST", BRAND), r); assert.equal(r.code, 401);
+    r = res(); await api.handle(req({}, "k", "POST", BRAND), r); assert.equal(r.code, 400);
+    r = res(); await api.handle(req({ company: "greene king" }, "k", "POST", BRAND), r);
+    assert.deepEqual(r.body, { found: true, name: "Greene King", industry: "Pubs & Hospitality", logos: { light: "https://brand.example/gk.svg", dark: "https://brand.example/gk-white.svg", icon: "https://www.greeneking.co.uk/icon.png" }, darkFromLight: false });
+    r = res(); await api.handle(req({ company: "Someone Else", email: "jo@greeneking.co.uk" }, "k", "POST", BRAND), r);
+    assert.equal(r.body.name, "Greene King", "matched by the work email's domain");
+    r = res(); await api.handle(req({ company: "Corner Shop Co" }, "k", "POST", BRAND), r);
+    assert.deepEqual(r.body, { found: true, name: "Corner Shop Co", industry: "Fuel & Convenience", logos: { light: "https://cornershop.example/logo.png", dark: "", icon: "https://cornershop.example/icon.png" }, darkFromLight: true });
+    for (const company of ["Unknown Ltd", "Test Co"]) { r = res(); await api.handle(req({ company }, "k", "POST", BRAND), r); assert.deepEqual(r.body, { found: false }, company); }
+    assert.equal(db.docs.size, 3, "a lookup stores nothing"); assert.ok(!JSON.stringify(r.body).includes("private"));
   });
   await test("a real submission becomes a Lead-lane website lead with page and industry", async () => {
     const { db, api } = mkApi(); const r = res();
@@ -196,6 +216,119 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.equal(r.body.leadId, "old1"); assert.equal(db.docs.size, 1);
     assert.equal(db.docs.get("old1").prospectId, "acme-uk"); assert.equal(db.docs.get("old1").inboundCount, 2);
     assert.equal(db.prospects.get("acme-uk").leadId, "old1");
+  });
+  // ── Network operator inquiries (key "operator") from the Be Your Own Boss page's product tour gate (13 Nov 2026) ──
+  const GATE = { lead_type: "operator", lead_source: "Be Your Own Boss page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", linkedin: "linkedin.com/in/alexrivers", operating_region: "Leeds and West Yorkshire", page: "/be-your-own-boss/" };
+  await test("each background on the gate form makes an individual Network operator inquiry lead, with no company, TAM record or AWS routing", async () => {
+    for (const b of core.BACKGROUNDS) {
+      const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+      const r = res(); await api.handle(req({ ...GATE, background: b.label }), r);
+      assert.equal(r.code, 201, b.label); assert.equal(r.body.leadType, "operator"); assert.equal(r.body.prospectId, undefined, "no TAM match");
+      const d = db.docs.get(r.body.leadId);
+      assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied", "the operator pipeline's first stage");
+      assert.equal(d.company.name, "", "no company needed");
+      assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key });
+      assert.equal(d.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/be-your-own-boss/");
+      assert.deepEqual(d.contacts.map((c) => [c.name, c.email, c.linkedin]), [["Alex Rivers", "alex@gmail.example", "https://linkedin.com/in/alexrivers"]]);
+      assert.equal(d.prospectId, undefined); assert.equal(db.prospects.size, 1, "no TAM record created");
+      const n = core.normaliseLead("x", d);
+      assert.equal(core.leadName(n), "Alex Rivers"); assert.equal(core.companyLine(n), `Leeds and West Yorkshire · ${b.label}`);
+    }
+  });
+  await test("a blank LinkedIn (or one that isn't an address) still makes the lead; a missing lead_source gets the gate's label", async () => {
+    const { db, api } = mkApi();
+    const a = res(); await api.handle(req({ ...GATE, linkedin: "", lead_source: "", background: "agency" }), a);
+    assert.equal(a.code, 201); const d = db.docs.get(a.body.leadId);
+    assert.equal(d.contacts[0].linkedin, ""); assert.equal(d.sourceLabel, core.OPERATOR_SOURCE_LABEL); assert.equal(d.operator.background, "agency");
+    assert.equal(core.OPERATOR_SOURCE_LABEL, "Be Your Own Boss page – product tour");
+    const b = res(); await api.handle(req({ ...GATE, email: "b@x.example", linkedin: "not a link" }), b);
+    assert.equal(b.code, 201); assert.equal(db.docs.get(b.body.leadId).contacts[0].linkedin, "");
+  });
+  await test("a network operator applicant from an AWS address, or with a company field, is still a network operator inquiry", async () => {
+    const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+    const r = res(); await api.handle(req({ ...GATE, email: "pat@amazon.com", company: "Acme Telco" }), r);
+    assert.equal(r.code, 201); assert.equal(db.docs.get(r.body.leadId).leadType, "operator");
+    assert.equal(db.prospects.size, 1); assert.equal(db.prospects.get("aws"), undefined); assert.equal(db.prospects.get("acme-uk").leadId, undefined);
+  });
+  await test("the same person again (same email) adds activity to their lead; a company lead is never merged with it", async () => {
+    const { db, api } = mkApi();
+    await api.handle(req({ ...GATE, operating_region: "" }), res());
+    const r = res(); await api.handle(req({ ...GATE, email: "ALEX@gmail.example", background: "Marketing" }), r);
+    assert.equal(r.code, 200); assert.equal(r.body.created, false); assert.equal(db.docs.size, 1);
+    const d = db.docs.get(r.body.leadId);
+    assert.equal(d.inboundCount, 2); assert.equal(d.websiteActivity.length, 2);
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "marketing" }, "blanks are filled");
+    await api.handle(req({ ...FORM, email: "alex@gmail.example" }), res());
+    assert.equal(db.docs.size, 2, "a company lead from the same email is a separate lead");
+    await api.handle(req({ ...GATE, test: "1" }), res());
+    assert.equal(db.docs.size, 3, "a test submission never merges with a real one");
+  });
+  await test("a gate submission with no name or email, or a bad email, is a 400", async () => {
+    const { db, api } = mkApi(); const r = res();
+    await api.handle(req({ lead_type: "Network operator inquiry" }), r); assert.equal(r.code, 400);
+    await api.handle(req({ ...GATE, email: "nope" }), r); assert.equal(r.code, 400);
+    assert.equal(db.docs.size, 0);
+  });
+  await test("company leads still create exactly as before, now typed as company", async () => {
+    const { db, api } = mkApi(); const r = res(); await api.handle(req(FORM), r);
+    const d = db.docs.get(r.body.leadId);
+    assert.equal(d.leadType, "company"); assert.equal(d.stage, "lead"); assert.equal(d.company.name, "Acme Telco"); assert.equal(d.operator, undefined);
+  });
+  // The offer's retired key, spelt so the word itself never appears in backlog-tracker/.
+  const RETIRED_KEY = ["fr", "anchise"].join("");
+  await test("leadType operator, network operator or \"Network operator inquiry\" (either key) all land as a network operator inquiry in Applied", async () => {
+    for (const body of [{ leadType: "operator" }, { lead_type: "Network operator inquiry" }, { lead_type: "operator" }, { leadType: "Network operator" }, { lead_type: "NETWORK OPERATOR INQUIRY" }]) {
+      const { db, api } = mkApi(); const g = { ...GATE }; delete g.lead_type;
+      const r = res(); await api.handle(req({ ...g, ...body }), r);
+      assert.equal(r.code, 201, JSON.stringify(body)); assert.equal(r.body.leadType, "operator", JSON.stringify(body));
+      const d = db.docs.get(r.body.leadId);
+      assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied"); assert.equal(d.company.name, "");
+      assert.deepEqual(Object.keys(d).filter((k) => k !== "operator" && /operator/i.test(k)), [], "the details are stored under operator only");
+    }
+    for (const v of ["", "Retail", "company", "Demo request", "cooperative", RETIRED_KEY]) assert.equal(core.leadTypeOf(v), "company", v);
+    assert.equal(core.leadTypeLabel("operator"), "Network operator inquiry");
+    assert.deepEqual(core.LEAD_TYPE_KEYS, ["company", "operator"], "the only keys");
+  });
+  await test("a POST carrying the retired key is a company lead (the old key is not accepted)", async () => {
+    for (const k of ["leadType", "lead_type"]) {
+      const { db, api } = mkApi(); db.prospects.set("acme-uk", { ...UK });
+      const r = res(); await api.handle(req({ ...FORM, [k]: RETIRED_KEY }), r);
+      assert.equal(r.code, 201, k); assert.notEqual(r.body.leadType, "operator", k);
+      const d = db.docs.get(r.body.leadId);
+      assert.equal(d.leadType, "company", k); assert.equal(d.stage, "lead"); assert.equal(d.company.name, "Acme Telco");
+      assert.equal(d.operator, undefined); assert.equal(d[RETIRED_KEY], undefined);
+    }
+    const g = { ...GATE }; delete g.lead_type;
+    const { db, api } = mkApi(); const r = res(); await api.handle(req({ ...g, leadType: RETIRED_KEY }), r);
+    assert.equal(r.code, 400, "the gate's fields alone (no company) are not a company lead");
+    assert.equal(db.docs.size, 0);
+  });
+  await test("no MCP lead tool text uses the offer's retired name, and leadType is company or operator", async () => {
+    const tools = leadsTools({ textResult: (x) => x, toolError: (m) => ({ error: m }), audit: async () => {} });
+    const text = JSON.stringify(tools.map((t) => ({ d: t.description, s: t.inputSchema })));
+    assert.ok(!new RegExp(RETIRED_KEY.slice(0, 5), "i").test(text), "the retired word appears");
+    assert.ok(/Network operator inquir/.test(text), "the new label is used");
+    for (const name of ["list_leads", "create_lead", "create_leads"]) {
+      const schema = JSON.stringify(tools.find((x) => x.name === name).inputSchema);
+      assert.ok(schema.includes('"leadType":{"type":"string","enum":["company","operator"]'), name + " takes leadType company or operator");
+    }
+  });
+  await test("list_leads and get_lead return the lead type and source, and list_leads filters by type", async () => {
+    const db = fakeDb(); const api = createLeadIngest({ db, key: () => "k" });
+    await api.handle(req(FORM), res()); await api.handle(req({ ...GATE, background: "retail media" }), res());
+    stubDb = db;
+    const tools = leadsTools({ textResult: (x) => x, toolError: (m) => ({ error: m }), audit: async () => {} });
+    const list = tools.find((t) => t.name === "list_leads"), get = tools.find((t) => t.name === "get_lead");
+    const all = await list.run({});
+    assert.deepEqual(all.leads.map((l) => [l.name, l.leadType]).sort(), [["Acme Telco", "company"], ["Alex Rivers", "operator"]]);
+    const fr = await list.run({ leadType: "operator" });
+    assert.equal(fr.total, 1); const v = fr.leads[0];
+    assert.equal(v.leadTypeLabel, "Network operator inquiry"); assert.equal(v.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(v.source, "website");
+    assert.equal(v.region, "Leeds and West Yorkshire"); assert.equal(v.background, "retail-media"); assert.equal(v.backgroundLabel, "Retail media");
+    assert.equal((await list.run({ leadType: "company" })).leads[0].company, "Acme Telco");
+    const one = await get.run({ leadId: v.id });
+    assert.equal(one.leadType, "operator"); assert.equal(one.leadTypeLabel, "Network operator inquiry"); assert.equal(one.sourceLabel, "Be Your Own Boss page – product tour"); assert.equal(one.sourcePage, "/be-your-own-boss/");
+    assert.equal((await get.run({ company: "alex rivers" })).id, v.id, "found by the person's name");
   });
   assert.ok(core.leadFromWebsite({ company: "X", test: "on" }).test);
   console.log(`${n} passed`);

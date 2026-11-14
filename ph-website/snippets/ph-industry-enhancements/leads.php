@@ -62,6 +62,12 @@ function lead_add_activity( $id, $label, $detail = '' ) {
 	update_post_meta( (int) $id, 'ph_lead_activity', array_slice( $rows, -50 ) );
 }
 
+/** Creates a private ph_lead post titled $title. Returns its id, or 0 when WordPress refuses. (The Run Your Own RMN gate's leads.) */
+function lead_insert( $title ) {
+	$id = wp_insert_post( array( 'post_type' => 'ph_lead', 'post_status' => 'private', 'post_title' => (string) $title ) );
+	return ( $id && ! is_wp_error( $id ) ) ? (int) $id : 0;
+}
+
 /** The console body for a captured lead. Pure, so it is unit-tested. */
 function lead_ingest_body( array $lead ) {
 	$s    = function ( $k ) use ( $lead ) {
@@ -86,6 +92,20 @@ function lead_ingest_body( array $lead ) {
 	}
 	if ( '' !== $s( 'source_detail' ) ) {
 		$body['sourceDetail'] = $s( 'source_detail' );
+	}
+	// Run Your Own RMN page leads (13 Nov 2026, leadType "operator"): an individual, not a company. Other pages' bodies are unchanged.
+	if ( '' !== $s( 'lead_type' ) ) {
+		$body['leadType'] = $s( 'lead_type' );
+	}
+	if ( '' !== $s( 'region' ) ) {
+		$body['region'] = $s( 'region' );
+	}
+	if ( '' !== $s( 'background' ) ) {
+		$body['background'] = $s( 'background' );
+	}
+	// The Run Your Own RMN gate's "I am" (14 Nov 2026): the chosen label.
+	if ( '' !== $s( 'audience' ) ) {
+		$body['audience'] = $s( 'audience' );
 	}
 	if ( ! empty( $lead['test'] ) ) {
 		$body['test'] = true;

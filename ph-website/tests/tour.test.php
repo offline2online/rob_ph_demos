@@ -17,7 +17,7 @@ $fails = 0;
 function ok( $c, $m ) { global $fails; if ( ! $c ) { $fails++; fwrite( STDERR, "FAIL: $m\n" ); } }
 $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements';
 
-foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/', '/industries/retail-media/tour/?embed=1', '/industries/retail-media/tour' ) as $u ) {
+foreach ( array( '/industries/telco/tour/?embed=1', '/industries/telco/tour?embed=1', '/industries/telco/tour/', '/industries/pharmacy/tour/?embed=1', '/industries/pharmacy/tour?embed=1', '/industries/pharmacy/tour/', '/industries/retail-media/tour/?embed=1', '/industries/retail-media/tour', '/run-your-own-rmn/tour/?embed=1', '/run-your-own-rmn/tour', '/run-your-own-rmn/tour/' ) as $u ) {
 	$out = shell_exec( 'php ' . escapeshellarg( __DIR__ . '/tour-serve.php' ) . ' ' . escapeshellarg( $u ) . ' GET' );
 	$cut  = strrpos( (string) $out, "\n@@" );
 	$j    = false === $cut ? null : json_decode( substr( $out, $cut + 3 ), true );
@@ -219,6 +219,18 @@ ok( 200 === $r->status && 'Interactive product tour – Retail Media' === ( $m['
 ok( 'Shopper journey & outcome' === ( $m['ph_lead_tour_flow'] ?? '' ), 'retail media lead: the demo name is stored as the flow' );
 ok( 'retail-media' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'retail media lead: ph_lead_captured carries industry retail-media' );
 $GLOBALS['posts'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['mails'] = array();
+/* Run Your Own RMN (golf): its own key, label, page and flow names */
+$GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['tr'] = array();
+$gg = array_merge( $good, array( 'industry' => 'rmn', 'company' => 'Fairway Media', 'flow' => 'Member journey & outcome', 'page' => '/run-your-own-rmn/tour/' ) );
+$r = $call( $gg, '11.1.2.9' );
+$m = $GLOBALS['meta'][1] ?? array();
+ok( 200 === $r->status && 'Interactive product tour – Run Your Own RMN' === ( $m['ph_lead_source_label'] ?? '' ) && '/run-your-own-rmn/' === ( $m['ph_lead_page'] ?? '' ), 'Run Your Own RMN lead: source label and page' );
+ok( 'Member journey & outcome' === ( $m['ph_lead_tour_flow'] ?? '' ), 'Run Your Own RMN lead: the demo name is stored as the flow' );
+ok( 'rmn' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'Run Your Own RMN lead: ph_lead_captured carries industry rmn' );
+foreach ( array( 'Venue setup', 'Advertiser creates by talking', 'Member journey & outcome' ) as $fl ) {
+	ok( in_array( $fl, \AngieSnippets\PhIndustryEnhancements_10063\TOUR_FLOWS, true ), "TOUR_FLOWS accepts the golf demo $fl" );
+}
+$GLOBALS['posts'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['mails'] = array();
 /* fuel & convenience: its own industry, page, label and flow name */
 $GLOBALS['dedupe'] = false; $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array();
 $gc = array_merge( $good, array( 'industry' => 'convenience', 'company' => 'Roadside Fuel Group', 'page' => '/industries/convenience/tour/', 'flow' => 'Fuel & convenience walkthrough' ) );
@@ -235,6 +247,66 @@ $labels = array_column( $GLOBALS['meta'][1]['ph_lead_activity'] ?? array(), 'lab
 ok( 1 === count( $GLOBALS['posts'] ) && array( 'Interactive product tour – Telco', 'Interactive product tour – Pharmacy' ) === $labels, 'a telco lead is not asked again on pharmacy: one lead, activity for both tours' );
 ok( 'ph_lead_captured' === end( $GLOBALS['fired'] )[0] && 'pharmacy' === end( $GLOBALS['fired'] )[1]['industry'], 'the pharmacy capture still reaches the console with industry pharmacy' );
 $GLOBALS['dedupe'] = false;
+
+/* POST ph-site/v1/tour-brand: the visitor's logos from the console, only for a lead this site captured, key never in the answer. */
+$GLOBALS['brand_http'] = array(); $GLOBALS['brand_res'] = null;
+function wp_remote_post( $u, $a = array() ) { $GLOBALS['brand_http'][] = array( $u, $a ); return $GLOBALS['brand_res']; }
+function wp_remote_retrieve_response_code( $r ) { return $r['code'] ?? 0; }
+function wp_remote_retrieve_body( $r ) { return $r['body'] ?? ''; }
+$broute = $GLOBALS['routes']['ph-site/v1/tour-brand'] ?? null;
+ok( $broute && 'POST' === $broute['methods'], 'POST ph-site/v1/tour-brand is registered' );
+$bcall = function ( array $b, $ip = null ) use ( $broute, &$n_ip ) { $_SERVER['REMOTE_ADDR'] = $ip ?? '20.0.0.' . ( ++$n_ip ); return $broute['callback']( new WP_REST_Request( $b ) ); };
+$ns = '\\AngieSnippets\\PhIndustryEnhancements_10063\\';
+$GLOBALS['tr'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['posts'] = array(); $GLOBALS['opts']['ph_lead_ingest_key'] = 'secret-lead-key';
+$console = array( 'found' => true, 'name' => 'Acme Test Mobile', 'industry' => 'Telco', 'logos' => array( 'light' => 'https://firebasestorage.googleapis.com/v0/b/x/o/brand%2Facme%2Flight.svg?alt=media', 'dark' => 'https://upload.wikimedia.org/acme-white.svg', 'icon' => 'https://acme.example/icon.png' ), 'darkFromLight' => false );
+$GLOBALS['brand_res'] = array( 'code' => 200, 'body' => json_encode( $console ) );
+$ab = array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example' );
+$r = $bcall( $ab );
+ok( 200 === $r->status && false === $r->data['found'] && ! $GLOBALS['brand_http'], 'a company nobody submitted: found false, the console is not asked' );
+call_user_func( $ns . 'tour_brand_grant', array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example', 'test' => true ) );
+$r = $bcall( $ab );
+ok( false === $r->data['found'] && ! $GLOBALS['brand_http'], 'a test lead grants nothing' );
+call_user_func( $ns . 'tour_brand_grant', array( 'company' => 'Acme Test Mobile', 'email' => 'sam@acmetest.example', 'test' => false ) );
+$r = $bcall( array( 'company' => 'acme test mobile ', 'email' => 'SAM@acmetest.example' ) );
+ok( 200 === $r->status && true === $r->data['found'], 'after the visitor submitted it (ph_lead_captured): found, case and spaces ignored' );
+ok( array( 'found', 'logos', 'darkFromLight' ) === array_keys( $r->data ) && $console['logos'] === $r->data['logos'] && false === $r->data['darkFromLight'], 'answers only the logos: ' . json_encode( $r->data ) );
+ok( false === strpos( json_encode( $r->data ), 'secret-lead-key' ), 'the lead key is not in the answer' );
+list( $u, $a ) = $GLOBALS['brand_http'][0];
+ok( 'https://backlog-tracker-e4ed2.web.app/leadIngest/v1/brand' === $u && 'secret-lead-key' === $a['headers']['X-Lead-Key'] && 3 === $a['timeout'], 'server to server: the brand route, X-Lead-Key, 3 s timeout' );
+ok( array( 'company' => 'acme test mobile', 'email' => 'SAM@acmetest.example' ) === json_decode( $a['body'], true ), 'body is {company, email}' );
+$r = $bcall( array( 'company' => 'Other Corp', 'email' => 'sam@acmetest.example' ) );
+ok( false === $r->data['found'] && 1 === count( $GLOBALS['brand_http'] ), 'another company with the same email is not looked up' );
+/* a lead captured before the grant existed: its stored company and email allow it */
+$GLOBALS['dedupe'] = true; $GLOBALS['meta'][77] = array( 'ph_lead_email' => 'kim@orbit.example', 'ph_lead_company' => 'Orbit Telecom' );
+$r = $bcall( array( 'company' => 'Orbit Telecom', 'email' => 'kim@orbit.example' ) );
+ok( true === $r->data['found'], 'an existing ph_lead with that email and company is allowed' );
+$GLOBALS['dedupe'] = false;
+$cases = array(
+	'dark empty, darkFromLight' => array( array( 'code' => 200, 'body' => json_encode( array( 'found' => true, 'logos' => array( 'light' => 'https://a.example/l.svg', 'dark' => '', 'icon' => '' ), 'darkFromLight' => true ) ) ), function ( $d ) { return true === $d['found'] && '' === $d['logos']['dark'] && true === $d['darkFromLight']; } ),
+	'found false' => array( array( 'code' => 200, 'body' => '{"found":false}' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'500' => array( array( 'code' => 500, 'body' => '{"error":"x"}' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'timeout' => array( array( 'code' => 0, 'body' => '' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'not json' => array( array( 'code' => 200, 'body' => '<html>' ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+	'only unsafe addresses' => array( array( 'code' => 200, 'body' => json_encode( array( 'found' => true, 'logos' => array( 'light' => 'javascript:alert(1)', 'dark' => 'http://a.example/d.png', 'icon' => 'https://a.example/"><script>' ) ) ) ), function ( $d ) { return array( 'found' => false ) === $d; } ),
+);
+foreach ( $cases as $label => $c ) {
+	$GLOBALS['brand_res'] = $c[0];
+	$r = $bcall( $ab );
+	ok( 200 === $r->status && $c[1]( $r->data ), "console $label: " . json_encode( $r->data ) );
+}
+$GLOBALS['brand_res'] = array( 'code' => 200, 'body' => json_encode( $console ) );
+unset( $GLOBALS['opts']['ph_lead_ingest_key'] ); $n = count( $GLOBALS['brand_http'] );
+$r = $bcall( $ab );
+ok( false === $r->data['found'] && $n === count( $GLOBALS['brand_http'] ), 'no lead key on the site: found false, no call' );
+$GLOBALS['opts']['ph_lead_ingest_key'] = 'secret-lead-key';
+$r = $bcall( array( 'company' => '', 'email' => 'sam@acmetest.example' ) ); ok( 400 === $r->status, 'company required' );
+$r = $bcall( array( 'company' => 'Acme Test Mobile', 'email' => 'nope' ) ); ok( 400 === $r->status, 'valid email required' );
+for ( $i = 0; $i < 12; $i++ ) { $r = $bcall( $ab, '21.1.1.1' ); }
+ok( 429 === $r->status, 'tour-brand throttled after 10 per hour per address' );
+$r = $bcall( $ab, '21.1.1.2' ); ok( 200 === $r->status, 'another address is not throttled' );
+$src_t = (string) file_get_contents( $dir . '/tour/tour.html' ) . (string) file_get_contents( $dir . '/enhance.js' );
+ok( false === stripos( $src_t, 'X-Lead-Key' ) && false === strpos( $src_t, 'leadIngest' ), 'the browser code never names the console route or the key header' );
+$GLOBALS['tr'] = array();
 
 /* retail media assets: the same-origin route (allow-list, sha check, file cache, ranges, 404, 503). A child process per request, because the handler exits. */
 $asset = function ( $uri, $mode, $range = '', $method = 'GET' ) {
@@ -293,6 +365,67 @@ $r3 = $asset( $A, 'cached', 'bytes=1000-1100' );
 ok( array( 'Pragma', 'Expires' ) === $r['removed'] && array( 'Pragma', 'Expires' ) === $r2['removed'] && 200 === $r['status'] && 206 === $r2['status'], 'asset: a 200 and a 206 remove Pragma and Expires so the immutable Cache-Control holds for logged-in users' );
 ok( array() === $r3['removed'] && array() === $asset( $A, 'both404' )['removed'] && array() === $asset( '/industries/retail-media/tour/assets/v1/img/nope.jpg', 'cached' )['removed'], 'asset: 416, 503 and 404 responses are left as they were' );
 ok( 'audio/mpeg' === \AngieSnippets\PhIndustryEnhancements_10063\tour_asset_mime( 'vo/a.mp3' ) && 'image/jpeg' === \AngieSnippets\PhIndustryEnhancements_10063\tour_asset_mime( 'img/a.jpg' ), 'asset: mime types' );
+/* Run Your Own RMN (golf) assets: base64 text in the repo, decoded and sha-checked before they are cached; same cache, headers and ranges as retail media */
+$gasset = function ( $uri, $mode, $range = '', $method = 'GET' ) {
+	$env = 'ASSET_SET=golf ASSET_MODE=' . $mode . ( '' !== $range ? ' HTTP_RANGE=' . escapeshellarg( $range ) : '' );
+	return json_decode( (string) shell_exec( $env . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' ' . $method . ' 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$G = '/run-your-own-rmn/tour/assets/v1/img/01-advertiser.jpg';
+$r = $gasset( $G, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'], 'golf asset: a cache miss fetches the base64 once, decodes it, checks the sha, stores the decoded file and serves it' );
+ok( 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/img/01-advertiser.jpg.b64' === $r['url'], 'golf asset: fetched as <file>.b64 from the repo' );
+ok( 'image/jpeg' === $hdr( $r, 'Content-Type' ) && 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ) && 'noindex' === $hdr( $r, 'X-Robots-Tag' ) && '1000' === $hdr( $r, 'Content-Length' ), 'golf asset: jpeg, immutable cache, noindex, the decoded length' );
+$r = $gasset( $G, 'cached' );
+ok( 200 === $r['status'] && $r['body_ok'] && 0 === $r['http'], 'golf asset: an intact cached file is served with no fetch' );
+$r = $gasset( $G, 'cached', 'bytes=0-9' );
+ok( 206 === $r['status'] && 'bytes 0-9/1000' === $hdr( $r, 'Content-Range' ) && 10 === $r['len'], 'golf asset: a single range answers 206' );
+$r = $gasset( $G, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && 2 === $r['http'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/img/01-advertiser.jpg.b64' ), 'golf asset: the jsDelivr mirror is used when the repo fetch fails' );
+$r = $gasset( $G, 'bad' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'] && 60 === $r['backoff_ttl'], 'golf asset: decoded bytes that fail the sha are never stored or served (503, back-off)' );
+$r = $gasset( $G, 'badb64' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf asset: text that is not base64 is refused' );
+$r = $gasset( $G, 'stale' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'], 'golf asset: a stale cache file is refetched and replaced' );
+$r = $gasset( $G, 'backoff' );
+ok( 503 === $r['status'] && 0 === $r['http'] && 'backoff' === $hdr( $r, 'X-PH-Tour-Reason' ), 'golf asset: its own back-off, no fetch' );
+foreach ( array( 'img/nope.jpg', 'vo/f1-01-1-4e6a1cf7d9.mp3', 'img/P5-forecourt.jpg', '../tour.php', 'img/01-advertiser.jpg.b64' ) as $bad ) {
+	$r = $gasset( '/run-your-own-rmn/tour/assets/v1/' . $bad, 'cached' );
+	ok( 404 === $r['status'] && 0 === $r['http'], "golf asset: $bad is not in the golf allow-list and answers 404" );
+}
+$r = $asset( '/industries/retail-media/tour/assets/v1/img/P5-proshop.jpg', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'a golf file is not served on the retail media route' );
+/* the golf allow-list is exactly the shipped SHA256SUMS of the decoded files, and covers every screenshot and voiceover line the golf tour asks for */
+$gmap  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN;
+$gdir  = dirname( __DIR__ ) . '/tour-assets/rmn-golf';
+$gsums = array();
+foreach ( file( $gdir . '/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $gsums[ $n ] = $h; }
+ok( count( $gsums ) === count( $gmap ) && ! array_diff_key( $gsums, $gmap ) && ! array_diff_key( $gmap, $gsums ), 'golf allow-list has exactly the files in SHA256SUMS (' . count( $gmap ) . ')' );
+$gbad = array();
+foreach ( $gmap as $n => $v ) {
+	$raw = base64_decode( (string) file_get_contents( $gdir . '/' . $n . '.b64' ), false );
+	if ( hash( 'sha256', $raw ) !== $v[0] || strlen( $raw ) !== $v[1] || ( $gsums[ $n ] ?? '' ) !== $v[0] ) { $gbad[] = $n; }
+}
+ok( ! $gbad, 'every golf .b64 in the repo decodes to its allow-listed sha256 and size: ' . implode( ' ', $gbad ) );
+preg_match( '/const CLIPS_GOLF = (\{.*?\});\n/s', $src, $gm );
+$gclips = array();
+foreach ( json_decode( $gm[1] ?? '{}', true ) as $lines ) { foreach ( $lines as $l ) { $gclips[] = 'vo/' . $l['file']; } }
+ok( count( $gclips ) >= 70 && ! array_diff( $gclips, array_keys( $gmap ) ) && count( preg_grep( '#^vo/#', array_keys( $gmap ) ) ) === count( $gclips ), 'every golf voiceover line is allow-listed, and nothing else (' . count( $gclips ) . ')' );
+preg_match( '/const HOT_GOLF = (\{.*?\});/', $src, $hm );
+$ghot = json_decode( $hm[1] ?? '{}', true );
+$gimg = array_unique( array_merge( array_map( function ( $k ) { return explode( '#', $k )[0]; }, array_keys( $ghot ) ), array( 'login-bg' ) ) );
+ok( count( $gimg ) === count( preg_grep( '#^img/#', array_keys( $gmap ) ) ) && ! array_filter( $gimg, function ( $f ) use ( $gmap ) { return ! isset( $gmap[ 'img/' . $f . '.jpg' ] ); } ), 'every golf screenshot named in HOT_GOLF (' . count( $gimg ) . ') is allow-listed, and nothing else' );
+ok( ! array_filter( $ghot, function ( $b ) { return ! is_array( $b ) || 4 !== count( $b ) || $b[0] < 0 || $b[1] < 0 || $b[2] < 1 || $b[3] < 1 || $b[0] + $b[2] > 1600 || $b[1] + $b[3] > 950; } ), 'every golf click and highlight box lies inside its 1600x950 screenshot' );
+/* the retail media tour is unchanged: its allow-list, voiceover lines, hot boxes and flow 1 are byte for byte what tag tour-assets-retail-media-v1 shipped with */
+preg_match( '/const TOUR_ASSETS = array\(\n.*?\n\);/s', $php_src = (string) file_get_contents( $dir . '/tour.php' ), $rm_block );
+ok( 'e0e8a1550e59e189f4e0d187fc2b1d68004d38625893bc47dea4d01a6aa9b5a0' === hash( 'sha256', $rm_block[0] ?? '' ), 'retail media allow-list (TOUR_ASSETS) unchanged' );
+preg_match( '/const CLIPS = (\{.*?\}), BASE = /s', $src, $rc );
+ok( '40b4512c585f13739e3930724d829f49a1a0c212c5e627f494ff32d9ba4cf9a6' === hash( 'sha256', $rc[1] ?? '' ), 'retail media voiceover lines (CLIPS) unchanged' );
+preg_match( '/HOT = IS_GOLF \? HOT_GOLF : (\{"P1-display-types".*?\});/', $src, $rh );
+ok( '346282fa8b5b63136466d1d7a927066b49b848166d57cb8a3c4bb186444ddbb4' === hash( 'sha256', $rh[1] ?? '' ), 'retail media hot boxes (HOT) unchanged' );
+$f1 = (string) substr( $src, (int) strpos( $src, '  const F1 = [' ), (int) strpos( $src, '  const F2 = [' ) - (int) strpos( $src, '  const F1 = [' ) );
+ok( '57fc0acc9d917afd48715278bb8c8341770aa2b1511b1e5d7890c3aa6c95c5df' === hash( 'sha256', $f1 ), 'retail media flow 1 (F1) unchanged' );
+
 /* the allow-list is exactly the shipped SHA256SUMS (kept in tools/retail-media-tour? no: on the tag), and covers the files tour.html asks for */
 $map = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS;
 ok( 111 === count( $map ) && 33 === count( preg_grep( '#^img/#', array_keys( $map ) ) ) && 77 === count( preg_grep( '#^vo/.*\.mp3$#', array_keys( $map ) ) ) && isset( $map['vo/manifest.json'] ), 'asset: 33 images, 77 voiceover clips and the manifest are allow-listed' );
@@ -302,7 +435,7 @@ $manifest_files = array();
 preg_match( '/const CLIPS = (\{.*?\}), BASE = /s', $src, $cm );
 if ( ! empty( $cm[1] ) ) { foreach ( json_decode( $cm[1], true ) as $lines ) { foreach ( $lines as $l ) { $manifest_files[] = 'vo/' . $l['file']; } } }
 ok( 77 === count( $manifest_files ) && ! array_diff( $manifest_files, array_keys( $map ) ), 'asset: every voiceover clip tour.html plays is allow-listed (' . count( $manifest_files ) . ')' );
-preg_match_all( '/"([\w-]+)(?:#[\w-]+)?":\[\d+,\d+,\d+,\d+\]/', $src, $im ); // the screenshots named in HOT (the click and highlight boxes), plus the login backdrop
+preg_match_all( '/"([\w-]+)(?:#[\w-]+)?":\[\d+,\d+,\d+,\d+\]/', $rh[1] ?? '', $im ); // the screenshots named in the retail media HOT (the click and highlight boxes), plus the login backdrop
 $img_used = array_unique( array_merge( $im[1], array( 'login-bg' ) ) );
 ok( count( $img_used ) === 33 && ! array_filter( $img_used, function ( $f ) use ( $map ) { return ! isset( $map[ 'img/' . $f . '.jpg' ] ); } ), 'asset: every screenshot tour.html names (' . count( $img_used ) . ') is allow-listed: ' . implode( ' ', array_filter( $img_used, function ( $f ) use ( $map ) { return ! isset( $map[ 'img/' . $f . '.jpg' ] ); } ) ) );
 

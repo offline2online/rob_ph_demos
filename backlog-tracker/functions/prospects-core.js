@@ -606,7 +606,8 @@ function planInbound({ prospects, leads, company, contact } = {}) {
   }
   const name = prospect ? prospect.name : createProspect.name;
   const where = prospect ? prospect.country : createProspect.country;
-  const live = (leads || []).filter((l) => l && !l.test);
+  // Network operator inquiries (leadType "operator") are people, not companies: never a company's lead.
+  const live = (leads || []).filter((l) => l && !l.test && l.leadType !== "operator");
   const lead = (prospect && prospect.leadId && live.find((l) => l.id === prospect.leadId))
     || live.find((l) => l.prospectId === prospectId)
     || live.find((l) => !l.prospectId && companyKey(l.company.name) === companyKey(name)

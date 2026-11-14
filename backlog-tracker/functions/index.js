@@ -2295,6 +2295,8 @@ function leadEnrichInstance() {
       resolveConsoleUser: (email) => mcp.resolveConsoleUser(email),
       anthropicKey: () => { try { return LEAD_ENRICH_ANTHROPIC_KEY.value(); } catch { return ""; } },
       anthropicWorkspace: () => { try { return LEAD_ENRICH_ANTHROPIC_WORKSPACE.value(); } catch { return ""; } },
+      // Company logos are copied here (brand/<company>/...) for the walkthrough demos.
+      bucket: () => require("firebase-admin/storage").getStorage().bucket("backlog-tracker-e4ed2.firebasestorage.app"),
       serverTimestamp: () => FieldValue.serverTimestamp(),
       logger,
     });

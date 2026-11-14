@@ -5,10 +5,16 @@
 // generated CommonJS copy, the MCP tools (functions/leads.js). Pure functions
 // only: no DOM, no Firestore, so test/leads.test.mjs drives them directly.
 //
-// One document per company in `leads/{id}`:
+// One document per company (or, for a network operator inquiry, per person) in `leads/{id}`:
+//   leadType       "company" (the default, a retail/company lead) or "operator" (an individual
+//                  asking about becoming a network operator, from the Be Your Own Boss page's
+//                  product tour gate; shown as "Network operator inquiry")
 //   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
+//                  (name is required for a company lead; a network operator inquiry usually has none)
+//   operator       { region, background } on a network operator inquiry: where they plan to operate and
+//                  their background (a BACKGROUNDS key); the person is the lead's single contact
 //   contacts[]     { id, name, jobTitle, buyingRole, email, linkedin, awsAccountId (12 digits or ""), enrichment? }
-//   stage          one of STAGES
+//   stage          one of STAGES (a company lead) or OPERATOR_STAGES (a network operator inquiry)
 //   source         where it came from ("Website form", "Manual", ...)
 //   assignee       a member's email, or ""
 //   customerAccount { id, name } once the lead has converted, else null
@@ -34,6 +40,34 @@ const STAGES = [
 const STAGE_KEYS = STAGES.map((s) => s.key);
 const DEFAULT_STAGE = "lead";
 
+// Network operator inquiries (key "operator") are individuals, not companies: their own type and
+// their own pipeline, so they are never mixed with retail/company leads.
+const LEAD_TYPES = [
+  { key: "company", label: "Retail / company" },
+  { key: "operator", label: "Network operator inquiry" },
+];
+const LEAD_TYPE_KEYS = LEAD_TYPES.map((t) => t.key);
+const DEFAULT_LEAD_TYPE = "company";
+const OPERATOR_STAGES = [
+  { key: "applied", label: "Applied" },
+  { key: "screening", label: "Screening" },
+  { key: "intro-call", label: "Intro call" },
+  { key: "approved", label: "Approved" },
+  { key: "not-a-fit", label: "Not a fit" },
+];
+const OPERATOR_STAGE_KEYS = OPERATOR_STAGES.map((s) => s.key);
+const OPERATOR_DEFAULT_STAGE = "applied";
+const ALL_STAGE_KEYS = [...STAGE_KEYS, ...OPERATOR_STAGE_KEYS];
+// "Your background" on the Be Your Own Boss page's gate form.
+const BACKGROUNDS = [
+  { key: "agency", label: "Agency media or account management" },
+  { key: "adtech", label: "Ad-tech sales or partnerships" },
+  { key: "retail-media", label: "Retail media" },
+  { key: "marketing", label: "Marketing" },
+  { key: "other", label: "Something else" },
+];
+const OPERATOR_SOURCE_LABEL = "Be Your Own Boss page – product tour";
+
 const BUYING_ROLES = [
   { key: "decision-maker", label: "Decision maker" },
   { key: "champion", label: "Champion" },
@@ -45,12 +79,38 @@ const BUYING_ROLE_KEYS = BUYING_ROLES.map((r) => r.key);
 
 const HISTORY_LIMIT = 100;
 const NOTE_MAX = 2000;
-const LIMITS = { name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
+const LIMITS = { region: 200, name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
 
-const stageLabel = (key) => (STAGES.find((s) => s.key === key) || { label: String(key || "") }).label;
+const stageLabel = (key) => ([...STAGES, ...OPERATOR_STAGES].find((s) => s.key === key) || { label: String(key || "") }).label;
 const roleLabel = (key) => (BUYING_ROLES.find((r) => r.key === key) || { label: "" }).label;
-const isStage = (key) => STAGE_KEYS.includes(key);
-const isClosed = (stage) => stage === "closed-won" || stage === "closed-lost";
+// Any stage of either pipeline; isStageFor checks the lead's own pipeline.
+const isStage = (key) => ALL_STAGE_KEYS.includes(key);
+const isClosed = (stage) => stage === "closed-won" || stage === "closed-lost" || stage === "approved" || stage === "not-a-fit";
+
+// "operator" (the network operator type) for anything naming an operator as a word
+// ("operator", "network operator", "Network operator inquiry"), else "company".
+// The website sends "operator". No other key is accepted for this type.
+const leadTypeOf = (v) => (/\boperator\b/i.test(String(v == null ? "" : v)) ? "operator" : DEFAULT_LEAD_TYPE);
+const leadTypeLabel = (key) => (LEAD_TYPES.find((t) => t.key === key) || LEAD_TYPES[0]).label;
+const stagesFor = (type) => (type === "operator" ? OPERATOR_STAGES : STAGES);
+const defaultStageFor = (type) => (type === "operator" ? OPERATOR_DEFAULT_STAGE : DEFAULT_STAGE);
+const isStageFor = (type, key) => stagesFor(type).some((s) => s.key === key);
+// A background as the form sends it (its key or its label, any case) -> its key;
+// "" when blank; "other" for anything else.
+function backgroundKey(v) {
+  const s = String(v == null ? "" : v).trim().toLowerCase();
+  if (!s) return "";
+  const hit = BACKGROUNDS.find((b) => b.key === s || b.label.toLowerCase() === s);
+  return hit ? hit.key : "other";
+}
+const backgroundLabel = (key) => (BACKGROUNDS.find((b) => b.key === key) || { label: "" }).label;
+// What a card and the drawer call a lead: the company, or for a network operator inquiry the person.
+function leadName(l) {
+  const c = (l && l.company) || {};
+  if (c.name) return c.name;
+  const p = l && Array.isArray(l.contacts) ? l.contacts[0] : null;
+  return (p && (p.name || p.email)) || "Unnamed lead";
+}
 
 const str = (v, max) => String(v == null ? "" : v).trim().slice(0, max);
 
@@ -100,29 +160,36 @@ function blankContact() {
   return { id: newContactId(), name: "", jobTitle: "", buyingRole: "", email: "", linkedin: "", awsAccountId: "" };
 }
 
-function blankLead(email = "") {
+function blankLead(email = "", type = DEFAULT_LEAD_TYPE) {
+  const leadType = type === "operator" ? "operator" : DEFAULT_LEAD_TYPE;
   return {
+    leadType,
     company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
     contacts: [blankContact()],
-    stage: DEFAULT_STAGE, source: "Manual", assignee: email || "", customerAccount: null,
+    ...(leadType === "operator" ? { operator: { region: "", background: "" } } : {}),
+    stage: defaultStageFor(leadType), source: "Manual", assignee: email || "", customerAccount: null,
   };
 }
 
 // The text fields of the form -> the document's fields, or { errors }.
 // `form` is what the page gathers: countries as a string, storeCount as typed.
+// leadType "operator" (an individual): no company name is needed, the person
+// is the first contact and must have a name, and region/background are kept.
 function leadFromForm(form) {
   const errors = [];
   const f = form || {};
+  const leadType = f.leadType === "operator" ? "operator" : DEFAULT_LEAD_TYPE;
+  const operator = leadType === "operator";
   const name = str(f.name, LIMITS.name);
-  if (!name) errors.push("Company name is required.");
+  if (!name && !operator) errors.push("Company name is required.");
   const website = normaliseUrl(f.website);
   if (website === null) errors.push("Website isn't a valid address.");
   const storeCount = parseStoreCount(f.storeCount);
   if (Number.isNaN(storeCount)) errors.push("Store count must be a number.");
   const companyAws = normaliseAwsAccountId(f.awsAccountId);
   if (companyAws === null) errors.push("Company AWS account ID must be exactly 12 digits.");
-  const stage = f.stage == null || f.stage === "" ? DEFAULT_STAGE : f.stage;
-  if (!isStage(stage)) errors.push("Pick a stage from the list.");
+  const stage = f.stage == null || f.stage === "" ? defaultStageFor(leadType) : f.stage;
+  if (!isStageFor(leadType, stage)) errors.push("Pick a stage from the list.");
   const contacts = [];
   const rows = Array.isArray(f.contacts) ? f.contacts : [];
   if (rows.length > LIMITS.contacts) errors.push(`A lead holds up to ${LIMITS.contacts} contacts.`);
@@ -144,12 +211,15 @@ function leadFromForm(form) {
     if (row.enrichment && typeof row.enrichment === "object") contact.enrichment = row.enrichment;
     contacts.push(contact);
   });
+  if (operator && !contacts.length && !errors.length) errors.push("Give the person's name.");
   if (errors.length) return { errors };
   return {
     errors: [],
     fields: {
+      leadType,
       company: { name, website: website || "", industry: str(f.industry, LIMITS.industry), countries: parseCountries(f.countries), storeCount, awsAccountId: companyAws || "" },
       contacts,
+      ...(operator ? { operator: { region: str(f.region, LIMITS.region), background: backgroundKey(f.background) } } : {}),
       stage,
       source: str(f.source, LIMITS.source) || "Manual",
       assignee: str(f.assignee, LIMITS.email).toLowerCase(),
@@ -162,9 +232,12 @@ function leadFromForm(form) {
 // keys (name/company, website, industry, countries, storeCount, contactName,
 // jobTitle, email, linkedin) plus page, industry and test. `test` is true for
 // true/"1"/"true"/"yes"/"on". Returns { errors } or { errors: [], fields, contact, test }.
+// lead_type (or leadType) "operator" / "Network operator inquiry" is the Be Your
+// Own Boss page's gate: see operatorFromWebsite.
 const truthy = (v) => v === true || ["1", "true", "yes", "on"].includes(String(v == null ? "" : v).trim().toLowerCase());
 function leadFromWebsite(p) {
   const x = p || {};
+  if (leadTypeOf(x.lead_type || x.leadType) === "operator") return operatorFromWebsite(x);
   const test = truthy(x.test);
   const contactName = str(x.contactName || x.contact_name || x.fullName || x.full_name, LIMITS.name);
   const r = leadFromForm({
@@ -185,12 +258,48 @@ function leadFromWebsite(p) {
   };
 }
 
+// The Be Your Own Boss page's product tour gate -> a network operator inquiry: an individual,
+// no company. Fields: full_name (or fullName/contactName/name), email,
+// linkedin (optional; an address that isn't one is dropped rather than losing
+// the lead), operating_region (or operatingRegion/region/where_operate/location),
+// background (a BACKGROUNDS key or label), lead_source (stored as sourceLabel,
+// "Be Your Own Boss page – product tour" when not sent), page and test.
+function operatorFromWebsite(p) {
+  const x = p || {};
+  const test = truthy(x.test);
+  const email = str(x.email, LIMITS.email);
+  const name = str(x.full_name || x.fullName || x.contactName || x.contact_name || x.name, LIMITS.name) || email.split("@")[0];
+  const errors = [];
+  if (!name) errors.push("Give the person's name or email.");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.push("That email address isn't valid.");
+  if (errors.length) return { errors };
+  const contact = { id: newContactId(), name, jobTitle: "", buyingRole: "", email, linkedin: normaliseUrl(x.linkedin || x.linkedIn || x.linkedin_url) || "", awsAccountId: "" };
+  const region = str(x.operating_region || x.operatingRegion || x.region || x.where_operate || x.whereOperate || x.location, LIMITS.region);
+  return {
+    errors: [], test, contact,
+    fields: {
+      leadType: "operator",
+      company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
+      contacts: [contact],
+      operator: { region, background: backgroundKey(x.background) },
+      stage: OPERATOR_DEFAULT_STAGE, source: "website", assignee: "",
+      sourcePage: str(x.page || x.pageUrl || x.page_url, 300), sourceIndustry: "", test,
+      sourceLabel: str(x.lead_source || x.leadSource || x.sourceLabel || x.source_label, LIMITS.sourceLabel) || OPERATOR_SOURCE_LABEL,
+      sourceDetail: str(x.sourceDetail || x.source_detail, LIMITS.sourceDetail),
+    },
+  };
+}
+
 // A stored document, tolerant of anything an older writer left out.
 function normaliseLead(id, d) {
   const x = d || {};
   const c = x.company || {};
+  const leadType = x.leadType === "operator" ? "operator" : DEFAULT_LEAD_TYPE;
+  const fr = x.operator && typeof x.operator === "object" ? x.operator : {};
   return {
     id,
+    leadType,
+    operator: leadType === "operator" ? { region: String(fr.region || ""), background: String(fr.background || "") } : null,
     company: {
       name: String(c.name || ""), website: String(c.website || ""), industry: String(c.industry || ""),
       countries: Array.isArray(c.countries) ? c.countries.map(String) : [],
@@ -203,7 +312,7 @@ function normaliseLead(id, d) {
       awsAccountId: String((k && k.awsAccountId) || ""),
       enrichment: k && k.enrichment && typeof k.enrichment === "object" ? k.enrichment : null,
     })),
-    stage: isStage(x.stage) ? x.stage : DEFAULT_STAGE,
+    stage: isStageFor(leadType, x.stage) ? x.stage : defaultStageFor(leadType),
     source: String(x.source || ""),
     assignee: String(x.assignee || ""),
     test: x.test === true,
@@ -235,10 +344,12 @@ function ms(v) {
 }
 
 // { lead: [..], "hot-lead": [..], ... }: newest change first inside a lane.
-function groupByStage(leads) {
-  const lanes = Object.fromEntries(STAGE_KEYS.map((k) => [k, []]));
-  for (const l of leads || []) (lanes[l.stage] || lanes[DEFAULT_STAGE]).push(l);
-  for (const k of STAGE_KEYS) lanes[k].sort((a, b) => (b.updatedAtMs - a.updatedAtMs) || a.company.name.localeCompare(b.company.name));
+// type "operator" gives the operator pipeline's lanes; pass only that type's leads.
+function groupByStage(leads, type = DEFAULT_LEAD_TYPE) {
+  const keys = stagesFor(type).map((s) => s.key);
+  const lanes = Object.fromEntries(keys.map((k) => [k, []]));
+  for (const l of leads || []) (lanes[l.stage] || lanes[defaultStageFor(type)]).push(l);
+  for (const k of keys) lanes[k].sort((a, b) => (b.updatedAtMs - a.updatedAtMs) || leadName(a).localeCompare(leadName(b)));
   return lanes;
 }
 
@@ -302,12 +413,17 @@ function mergeInbound(cur, fields, newContacts) {
 // "3 inbound" on a card and the summary; "" when nobody has come in.
 const inboundLabel = (l) => (l && l.inboundCount ? `${l.inboundCount} inbound` : "");
 
-// A short line for a card: "250 stores · UK, France".
+// A short line for a card: "250 stores · UK, France"; for a network operator inquiry
+// "Where they plan to operate · Background".
 function companyLine(l) {
+  if (l && l.leadType === "operator") {
+    const f = l.operator || {};
+    return [f.region, backgroundLabel(f.background)].filter(Boolean).join(" · ");
+  }
   const parts = [];
   if (l.company.storeCount != null) parts.push(`${l.company.storeCount.toLocaleString("en-GB")} ${l.company.storeCount === 1 ? "store" : "stores"}`);
   if (l.company.countries.length) parts.push(l.company.countries.slice(0, 3).join(", ") + (l.company.countries.length > 3 ? ` +${l.company.countries.length - 3}` : ""));
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, truthy, leadFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, OPERATOR_SOURCE_LABEL, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };

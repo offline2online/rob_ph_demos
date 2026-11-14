@@ -11,9 +11,12 @@
 // Safety rules — it is meant to be safe to run on every push:
 //   • A document is only written when the file differs from what Firestore
 //     holds (compared by contentHash + the metadata fields).
-//   • A document that was edited in the console AFTER the last sync
-//     (updatedAt > syncedAt) is never overwritten unless --force is given;
-//     it is reported as a conflict instead. Resolve by exporting
+//   • A document that was edited in the console AFTER the last sync is
+//     never overwritten unless --force is given; it is reported as a
+//     conflict instead. "Edited" means its live fields no longer hash to the
+//     contentHash the last sync stored (faq-sync-lib.js → editedSinceSync),
+//     so parking or rejecting a pendingRevision / retire proposal — which
+//     bumps updatedAt but changes nothing live — is not a conflict. Resolve by exporting
 //     (faq-export.js) and re-committing, or by re-authoring the file.
 //   • Nothing is ever deleted. Ids listed in faq/data/retired.json are set to
 //     status "draft" (hidden from the public site) if they are still
@@ -28,7 +31,7 @@
 //     views…) are left untouched on existing docs.
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
+const { articleSyncHash, categorySyncHash, editedSinceSync, seoFieldsOf } = require("./faq-sync-lib");
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore, Timestamp } = require("firebase-admin/firestore");
 
@@ -40,9 +43,6 @@ const PROGRAM_NAME = "Personalisation Hub";
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 
-const hash = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 16);
-const catHash = (c) => hash(JSON.stringify([c.name, c.icon, c.description || "", c.order, c.parentId || null]));
-const toMillis = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : v ? new Date(v).getTime() : 0);
 
 async function findOrCreateProgram(name) {
   const existing = await db.collection("programs").where("name", "==", name).limit(1).get();
@@ -77,7 +77,7 @@ async function main() {
       stats.deleted++; continue;
     }
     const fields = { name: c.name, icon: c.icon || "help", description: c.description || "", order: c.order, parentId: c.parentId || null };
-    const h = catHash(c);
+    const h = categorySyncHash(c);
     if (snap.exists) {
       const d = snap.data();
       if (d.contentHash === h) { stats.unchanged++; continue; }
@@ -85,10 +85,9 @@ async function main() {
       // (no syncedAt — e.g. it only ever went through faq-export.js after a
       // console edit) used to skip this guard entirely, so a stale repo
       // snapshot could silently overwrite a newer console edit with no
-      // conflict logged. Fall back to createdAt as the baseline: if the doc
-      // has been touched at all since it was created, treat that the same
-      // as an edit-after-sync rather than assuming the repo is still current.
-      if (!FORCE && toMillis(d.updatedAt) > toMillis(d.syncedAt || d.createdAt) + 1000) {
+      // conflict logged. editedSinceSync falls back to createdAt as the
+      // baseline for such a doc.
+      if (!FORCE && editedSinceSync(d, categorySyncHash(d))) {
         console.warn(`CONFLICT category ${c.id} (${c.name}): edited in console after last sync — skipped (use --force)`);
         stats.conflicts++; continue;
       }
@@ -110,12 +109,8 @@ async function main() {
     const body = a.bodyMd || "";
     // SEO & agent fields: only present on the file when set, and only
     // hashed then, so articles without them keep their existing hash.
-    const seo = {};
-    for (const k of ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"]) {
-      const v = a[k];
-      if (v && !(Array.isArray(v) && !v.length)) seo[k] = v;
-    }
-    const h = hash(body + "|" + JSON.stringify([a.categoryId, a.order, a.title, a.slug, a.summary, a.keywords, a.docType, a.status]) + (Object.keys(seo).length ? "|" + JSON.stringify(seo) : ""));
+    const seo = seoFieldsOf(a);
+    const h = articleSyncHash(a);
     const ref = db.collection("faqArticles").doc(a.id);
     const snap = await ref.get();
     if (!snap.exists && deletedArticles.has(a.id)) {
@@ -140,8 +135,10 @@ async function main() {
       // XFeVboxWduEPT2zGcj8y: same baseline fix as the category branch above
       // — a doc with no syncedAt yet must not be treated as "safe to
       // overwrite", or a console edit made before its first sync gets
-      // silently reverted by a stale repo snapshot.
-      if (!FORCE && toMillis(d.updatedAt) > toMillis(d.syncedAt || d.createdAt) + 1000) {
+      // silently reverted by a stale repo snapshot. A doc whose live fields
+      // still match the last sync (only a pendingRevision or retire proposal
+      // was written since) is not a conflict.
+      if (!FORCE && editedSinceSync(d, articleSyncHash(d))) {
         console.warn(`CONFLICT article ${a.id} (${a.title}): edited in console after last sync — skipped (use --force)`);
         stats.conflicts++; continue;
       }

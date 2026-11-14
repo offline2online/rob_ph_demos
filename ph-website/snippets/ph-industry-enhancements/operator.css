@@ -1,0 +1,166 @@
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the three blocks
+   (calculator, tour, FAQ) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
+   fluid from 1440 down to 360. Loaded on that page only. Every block rule is under body .phf so the theme and the Elementor kit (link
+   colours, button and input styles, heading sizes) cannot restyle it. The rest of the page is Elementor widgets styled from the site
+   kit (ph-website/elementor/run-your-own-rmn.md). */
+/* The Elementor sections' anchors (their containers' CSS IDs) land below the sticky header, like the blocks' own sections. */
+body :is(#top,#why,#who,#how,#venues,#standards,#independents){scroll-margin-top:96px}
+body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
+body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
+body .phf p,body .phf h2,body .phf ol,body .phf ul,body .phf li{margin:0;padding:0;font-family:inherit;letter-spacing:inherit}
+body .phf a{color:#0E6F8C}
+body .phf a:hover{color:#0A5469}
+body .phf a:focus-visible,body .phf button:focus-visible,body .phf input:focus-visible,body .phf select:focus-visible{outline:3px solid #179BC2;outline-offset:2px;box-shadow:none}
+html:has(body .phf){scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html:has(body .phf){scroll-behavior:auto}}
+body .phf .phf-sec{scroll-margin-top:96px;border-top:1px solid #E6E7E5}
+body .phf .phf-white{background:#FFFFFF}
+body .phf .phf-tint{background:#F9FAFD}
+body .phf .phf-wrap{max-width:1280px;margin:0 auto;padding:112px 32px}
+body .phf .phf-wrap-calc{max-width:970px}
+body .phf .phf-wrap-tour{max-width:1160px}
+body .phf h2{font-size:clamp(28px,3.4vw,40px);font-weight:600;text-transform:capitalize;line-height:1.1;color:inherit}
+
+/* Block headings */
+body .phf .phf-h2s{margin:0 0 16px}
+
+/* Calculator */
+body .phf .phf-eb{margin:0 0 12px;font-size:13px;font-weight:600;color:#C43D82;letter-spacing:1.82px;text-transform:uppercase}
+body .phf h2.phf-h2b{margin:0 0 40px;font-size:clamp(32px,4vw,46px);font-weight:700;color:#1C2540;letter-spacing:-1.38px;line-height:1.06;text-transform:none}
+body .phf .phf-calc{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:16px;align-items:start}
+body .phf .phf-cin-card{background:#F5F7FB;border-radius:22px;padding:30px;border:.5px solid #DCE1EB;color:#1C2540;min-width:0}
+body .phf .phf-cin-h{margin:0 0 14px;font-size:19px;font-weight:700;letter-spacing:-.19px}
+/* The "I am" toggle under "Your network": a white pill holding two buttons, each at least 44px tall (a touch target on its own). */
+body .phf .phf-aud{display:flex;gap:6px;background:#FFFFFF;border:.5px solid #DCE1EB;border-radius:999px;padding:4px;margin:0 0 18px}
+body .phf button.phf-aud-b{flex:1;min-width:0;min-height:44px;border:0;border-radius:999px;background:transparent;color:#1C2540;font-family:inherit;font-size:15px;font-weight:600;line-height:1.3;letter-spacing:inherit;text-transform:none;padding:0 8px;margin:0;cursor:pointer;box-shadow:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-aud-b:hover,body .phf button.phf-aud-b:focus{background:transparent;color:#1C2540}
+body .phf button.phf-aud-b[aria-pressed=true],body .phf button.phf-aud-b[aria-pressed=true]:hover,body .phf button.phf-aud-b[aria-pressed=true]:focus{background:#1C2540;color:#FFFFFF}
+body .phf .phf-cgrp{margin:0 0 4px;font-size:12px;font-weight:600;color:#5A6479;letter-spacing:1.2px;text-transform:uppercase}
+body .phf .phf-cgrp-a{margin:22px 0 4px}
+body .phf .phf-crow{display:flex;justify-content:space-between;align-items:center;gap:16px;border-top:.5px solid #DCE1EB;padding:11px 0}
+body .phf .phf-crow-r{padding:9px 0}
+body .phf .phf-clab{display:flex;align-items:center;gap:6px;min-width:0}
+body .phf .phf-crow-r .phf-clab{flex:1}
+body .phf .phf-clab label{font-size:15px;font-weight:500;color:#1C2540;line-height:1.3;margin:0}
+body .phf .phf-cin{display:flex;align-items:center;gap:6px;background:#FFFFFF;border-radius:10px;border:.5px solid #DCE1EB;padding:7px 12px;width:113px;flex:none}
+body .phf .phf-cpre{font-size:15px;color:#5A6479}
+body .phf .phf-cin input{width:100%;min-width:0;border:0;background:transparent;text-align:right;font-family:inherit;font-size:15px;font-weight:600;color:#1C2540;padding:0;margin:0;height:auto;min-height:0;box-shadow:none;border-radius:0;line-height:1.5;-moz-appearance:textfield}
+body .phf .phf-cin input::-webkit-outer-spin-button,body .phf .phf-cin input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+body .phf .phf-cin:focus-within{outline:3px solid #179BC2;outline-offset:2px}
+body .phf .phf-cin input:focus-visible{outline:0}
+body .phf input[type=range]{width:130px;flex:none;height:28px;margin:0;padding:0;accent-color:#EF60A7;background:transparent;border:0}
+body .phf .phf-cval{width:48px;flex:none;text-align:right;font-size:15px;font-weight:700;color:#1C2540}
+body .phf .phf-cout{background:#0F1424;border-radius:22px;padding:30px;min-width:0}
+body .phf .phf-cout-l{margin:0 0 6px;font-size:13px;font-weight:600;color:#A3ACC0;letter-spacing:.78px;text-transform:uppercase}
+body .phf .phf-cout-v{margin:0 0 18px;font-size:60px;font-weight:700;color:#EF60A7;letter-spacing:-1.8px;line-height:1.05}
+body .phf .phf-orow{display:flex;justify-content:space-between;gap:16px;border-top:.5px solid #2A3350;padding:10px 0}
+body .phf .phf-orow span:first-child{font-size:14px;color:#A3ACC0}
+body .phf .phf-orow span:last-child{font-size:15px;font-weight:600;color:#E9EDF6;text-align:right}
+body .phf .phf-how{display:flex;align-items:center;gap:8px;border-top:.5px solid #2A3350;padding-top:12px}
+body .phf button.phf-how-b{display:flex;align-items:center;gap:8px;background:transparent;border:0;color:#A3ACC0;font-family:inherit;font-size:14px;font-weight:400;padding:0;margin:0;cursor:help;text-transform:none;letter-spacing:inherit;box-shadow:none;min-height:0;line-height:1.5}
+body .phf button.phf-how-b:hover,body .phf button.phf-how-b:focus{background:transparent;color:#A3ACC0}
+body .phf .phf-how-i{width:16px;height:16px;border-radius:999px;border:1px solid #A3ACC0;font-size:10px;line-height:15px;text-align:center}
+body .phf .phf-cctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+body .phf a.phf-pill{background:#EF60A7;color:#0F1424;border:1px solid #EF60A7;border-radius:999px;padding:15px 22px;font-size:16px;font-weight:600;text-decoration:none;line-height:1.5}
+body .phf a.phf-pill:hover{background:#F27DB7;color:#0F1424}
+body .phf a.phf-pill-o{background:transparent;color:#FFFFFF;border-color:#3A4360}
+body .phf a.phf-pill-o:hover{background:#1C2540;color:#FFFFFF}
+
+/* Info tooltips: hover, keyboard focus and tap (.open, operator.js) */
+body .phf .phf-tip{position:relative;display:inline-flex;align-items:center}
+body .phf button.phf-tip-b{flex:none;width:16px;height:16px;min-height:0;border-radius:999px;border:1px solid #5A6479;background:transparent;color:#5A6479;font-family:inherit;font-size:10px;font-weight:400;line-height:1;padding:0;margin:0;cursor:help;text-transform:none;letter-spacing:0;box-shadow:none;position:relative}
+body .phf button.phf-tip-b::after{content:"";position:absolute;inset:-14px}
+body .phf button.phf-tip-b:hover,body .phf button.phf-tip-b:focus{background:transparent;color:#5A6479;border-color:#5A6479}
+body .phf .phf-tipbox{display:none;position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:250px;max-width:calc(100vw - 32px);background:#1C2540;color:#FFFFFF;font-size:13px;line-height:1.45;font-weight:400;letter-spacing:0;text-transform:none;padding:10px 12px;border-radius:8px;z-index:30;text-align:left;box-shadow:0 6px 20px rgba(15,20,36,.25)}
+body .phf .phf-tip:hover .phf-tipbox,body .phf .phf-tip:focus-within .phf-tipbox,body .phf .phf-tip.open .phf-tipbox{display:block}
+body .phf .phf-tip.phf-tip-l .phf-tipbox{left:0;transform:none}
+body .phf .phf-tip.phf-tip-r .phf-tipbox{left:auto;right:0;transform:none}
+/* Touch (tablets, phones): each "i" stays a 16px circle, but its hit area is at least 44x44 (a pseudo-element: 46x46 round the
+   circle, and 46px tall round "How it's calculated", raised above the row's label and input so nothing covers it). The buttons' own
+   boxes and .phf-tip are unchanged, so every tooltip opens where it did. */
+@media (pointer:coarse){
+body .phf button.phf-tip-b{z-index:2;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-tip-b::after{inset:-15px;border-radius:0}
+body .phf button.phf-how-b{position:relative;z-index:2;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf button.phf-how-b::after{content:"";position:absolute;left:-15px;right:0;top:50%;height:46px;margin-top:-23px}
+}
+
+/* Running your own RMN: the FAQ accordion (native <details>; keyboard and tap need no script). Rows are at least 56px tall, so every
+   question is a tap target well over 44x44. */
+body .phf .phf-wrap-faq{max-width:970px}
+body .phf .phf-faq{margin-top:32px;border-top:1px solid #DCE1EB}
+body .phf .phf-faq-i{border-bottom:1px solid #DCE1EB}
+body .phf .phf-faq-q{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:56px;padding:16px 4px;cursor:pointer;list-style:none;font-size:20px;font-weight:600;line-height:1.35;color:#1C2540;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf .phf-faq-q::-webkit-details-marker{display:none}
+body .phf .phf-faq-q::marker{content:""}
+body .phf .phf-faq-q:hover{color:#0E6F8C}
+body .phf .phf-faq-q:focus-visible{outline:3px solid #179BC2;outline-offset:2px}
+body .phf .phf-faq-x{flex:none;position:relative;width:20px;height:20px}
+body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{content:"";position:absolute;left:2px;right:2px;top:9px;height:2px;border-radius:2px;background:#179BC2;transition:transform .2s}
+body .phf .phf-faq-x::after{transform:rotate(90deg)}
+body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
+body .phf .phf-faq-a{padding:0 44px 22px 4px}
+body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
+@media (prefers-reduced-motion:reduce){body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{transition:none}}
+
+/* Product tour band and the gate */
+body .phf h2.phf-h2-tour{margin:0 0 16px;max-width:18em}
+body .phf .phf-tour-p{margin:0 0 40px;font-size:18px;color:#5A6479;max-width:36em}
+body .phf .phf-in{margin:-16px 0 24px}
+body .phf .phf-in[hidden]{display:none}
+body .phf .phf-in-h{margin:0 0 6px;font-size:22px;font-weight:700;color:#1C2540;outline:0}
+body .phf .phf-in-p{font-size:15px;color:#5A6479}
+body .phf .phf-tbox{position:relative;min-height:620px;border-radius:16px;overflow:hidden;border:1px solid #DCE1EB}
+body .phf .phf-ph{position:absolute;inset:0;display:flex;filter:blur(5px)}
+body .phf .phf-ph i{display:block}
+body .phf .phf-ph-side{width:170px;flex:none;background:#1C2540;padding:20px 16px;display:flex;flex-direction:column;gap:14px}
+body .phf .phf-ph-side i{height:10px;border-radius:4px;background:#2A3350}
+body .phf .phf-ph-side i.phf-ph-logo{height:26px;width:120px;border-radius:6px}
+body .phf .phf-ph-main{flex:1;min-width:0;background:#F3F5F9;display:flex;flex-direction:column}
+body .phf .phf-ph-top{height:44px;background:#0F1424;display:flex;align-items:center;gap:10px;padding:0 16px}
+body .phf .phf-ph-top i{width:14px;height:14px;border-radius:3px}
+body .phf .phf-ph-grid{padding:24px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+body .phf .phf-ph-grid>div{background:#0F1424;border-radius:8px;height:130px;display:flex;align-items:flex-end;padding:12px}
+body .phf .phf-ph-grid>div i{height:40px;border-radius:6px}
+body .phf .phf-ph-grid>div.phf-ph-wide{grid-column:1/-1;background:#FFFFFF;height:180px;border:1px solid #DCE1EB}
+body .phf .phf-gate{position:relative;min-height:620px;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(15,20,36,.35)}
+body .phf .phf-gate-card{background:#FFFFFF;border-radius:12px;padding:28px;width:100%;max-width:560px;box-shadow:0 12px 40px rgba(15,20,36,.3)}
+body .phf .phf-gate-h{margin:0 0 6px;font-size:22px;font-weight:700;color:#1C2540}
+body .phf .phf-gate-p{margin:0 0 18px;font-size:15px;color:#5A6479}
+body .phf .phf-form{display:flex;flex-direction:column;gap:12px;margin:0}
+body .phf .phf-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px}
+body .phf .phf-f{display:flex;flex-direction:column;gap:4px;min-width:0}
+body .phf .phf-f label{font-size:14px;font-weight:500;color:#1C2540;margin:0;line-height:1.4}
+body .phf .phf-f input,body .phf .phf-f select{width:100%;font-family:inherit;font-size:16px;font-weight:400;padding:11px 13px;border-radius:8px;border:1px solid #DCE1EB;background:#FFFFFF;color:#1C2540;height:auto;min-height:48px;margin:0;box-shadow:none;letter-spacing:normal;line-height:1.4}
+body .phf .phf-f select:invalid{color:#5A6479}
+body .phf .phf-f [aria-invalid=true]{border-color:#B3261E}
+body .phf .phf-hp{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important}
+body .phf .phf-cons{display:flex;align-items:flex-start;gap:10px;font-size:15px;color:#3A3D44;line-height:1.45;margin:0;cursor:pointer}
+body .phf .phf-cons input{flex:none;width:18px;height:18px;margin:2px 0 0;accent-color:#179BC2}
+body .phf .phf-cons a{color:#0E6F8C;text-decoration:underline;text-transform:none}
+body .phf button.phf-unlock{font-family:inherit;font-size:16px;font-weight:500;background:#179BC2;color:#FFFFFF;border:0;padding:14px 20px;border-radius:4px;cursor:pointer;min-height:48px;margin-top:4px;text-transform:none;letter-spacing:inherit;line-height:1.3;box-shadow:none}
+body .phf button.phf-unlock:hover,body .phf button.phf-unlock:focus{background:#0E7FA0;color:#FFFFFF}
+body .phf button.phf-unlock:disabled,body .phf button.phf-unlock:disabled:hover{background:#DCE1EB;color:#5A6479;cursor:not-allowed}
+body .phf .phf-msg{font-size:15px;color:#1C2540;min-height:0}
+body .phf .phf-msg:empty{display:none}
+body .phf .phf-msg.err{color:#B3261E}
+body .phf .phf-mount{display:none}
+body .phf .phf-tbox.phf-open{min-height:0;border:0;border-radius:0;overflow:visible}
+body .phf .phf-tbox.phf-open .phf-ph,body .phf .phf-tbox.phf-open .phf-gate{display:none}
+body .phf .phf-tbox.phf-open .phf-mount{display:block}
+body .phf .phf-mount iframe{display:block;width:100%;border:0;min-height:560px}
+
+/* Phones: the 16px gutter, a stacked slider row, a gate that grows with its form */
+@media (max-width:600px){
+body .phf .phf-wrap{padding:72px 16px}
+body .phf .phf-cin-card,body .phf .phf-cout{padding:22px}
+body .phf .phf-gate{padding:16px}
+body .phf .phf-gate-card{padding:20px}
+body .phf .phf-cout-v{font-size:52px}
+body .phf .phf-crow-r{flex-wrap:wrap;row-gap:4px}
+body .phf .phf-crow-r .phf-clab{flex:1 1 100%}
+body .phf .phf-crow-r input[type=range]{flex:1 1 auto;width:auto}
+body .phf .phf-ph-side{width:96px}
+body .phf .phf-faq-q{font-size:18px}
+body .phf .phf-faq-a{padding:0 4px 20px}
+}

@@ -19,9 +19,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const VER          = '1.4.2';
+const VER          = '1.4.3';
 const SYNC_VER     = '2';
-const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api';
+const HELP_API     = 'https://backlog-tracker-e4ed2.web.app/help-api'; // server side only (the sync feed); never printed
+const PUBLIC_HELP  = 'https://personalisationhub.com/help-api'; // what agents are told: proxied by PH Agent Endpoint (proxy.php)
+const PUBLIC_MCP   = 'https://personalisationhub.com/mcp';
 const LIVE         = true;
 const PAGE_ID      = 2780;
 const BASE         = 'support-centre';
@@ -1875,8 +1877,8 @@ add_filter( 'ph_llms_txt', function ( $txt ) {
 		return $txt;
 	}
 	$md = "## Support Centre\n\n- [" . SITE_NAME . '](' . md_url( base_url() ) . "): set-up guides, how-tos and reference for the Personalisation Hub platform.\n";
-	$md .= "- [Help search API](" . HELP_API . "/search?q=add%20a%20store): search the Support Centre by keyword or plain question; returns JSON with each article's URL. Read an article as markdown by adding ?format=md to its URL.\n";
-	$md .= "- [Help MCP server](" . HELP_API . "/mcp): read-only MCP endpoint (streamable HTTP) with the tools search_help and get_help_article.\n";
+	$md .= "- [Help search API](" . PUBLIC_HELP . "/search?q=add%20a%20store): search the Support Centre by keyword or plain question; returns JSON with each article's URL. Read an article as markdown by adding ?format=md to its URL.\n";
+	$md .= "- [Help MCP server](" . PUBLIC_MCP . "): read-only MCP endpoint (streamable HTTP) with the tools search_help and get_help_article.\n";
 	$md .= "- On Support Centre pages, browsers with WebMCP also expose search_help and get_help_article to in-browser agents.\n";
 	foreach ( top_cats() as $c ) {
 		$list = arts_under( $c['id'] );
