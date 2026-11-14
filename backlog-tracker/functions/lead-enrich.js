@@ -902,11 +902,14 @@ function createLeadEnrich({
         const names = uniq([clean, short], 2, 120);
         const queries = names.flatMap((nm) => [[`intitle:"${nm}" intitle:logo filetype:drawing|bitmap`, nm], [`${nm} logo`, nm]]);
         for (const [query, nm] of queries) {
-          const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
-          if (!r.ok) continue;
-          const found = commonsLogos(JSON.parse(await r.text()), nm);
-          commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
-          if (commons.light) break;
+          // One search failing (a timeout, a rate limit) does not stop the others.
+          try {
+            const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
+            if (!r.ok) continue;
+            const found = commonsLogos(JSON.parse(await r.text()), nm);
+            commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
+            if (commons.light) break;
+          } catch { /* next search */ }
         }
       } catch { /* none */ }
     }
