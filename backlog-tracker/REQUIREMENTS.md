@@ -449,10 +449,23 @@ busy. Now:
   Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
   setBy: "self-heal" }` with the reason, so the board shows it under
   "waiting on your answer" with an Answer button that rebuilds it.
+- **Nothing waits on a person's answer (14 Nov 2026, Rob: "the tickets are
+  still asking me random questions which block the backlog flow")**. Build
+  sessions are told to decide and not ask: where a ticket leaves a choice
+  open they take the best option, build it and state the assumption on the
+  card ("Assumed:"), and they flag a card only for something only a person
+  can supply (`ROUTINE_INSTRUCTIONS.md`, the build prompt in
+  `functions/index.js`). A flagged question is answered on the automation's
+  next run, not after 10 minutes. A build that never ran (usage limit,
+  restart, refused fire: `blocked.kind` `never-ran`) asked nothing, so it is
+  not "answered": it is tried again by itself after 30 minutes, then 1, 2, 4
+  and every 6 hours, up to 12 times (`neverRanRetries`), and its flag says
+  "Nothing to answer". A flag a person set (`setBy` an address) is never
+  answered for them. Tests: `test/self-heal.test.js`.
 - **A question never strands a ticket (30 Oct 2026)**: a card flagged
-  `waiting-on-input` for 10 minutes without a reply takes the senior agent's
+  `waiting-on-input` takes the senior agent's
   answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
-  the build's question (accepted automatically from the senior agent…)" using
+  the build's question (taken automatically…)" using
   `blocked.recommendation` (recorded by the build after consulting a
   higher-ranking agent) or, without one, the default "take the best option,
   state the assumption, do not ask again"; it clears the flag and requests a

@@ -764,23 +764,32 @@ path:
     "Confirm tested — mark Merged to Main" finishes it.
 
   Say in your note which commit or ticket built it.
-- **Needs a person's decision**: set
-  `blocked: {reason: "waiting-on-input", note: "<the question, with the options>"}`,
-  so the card shows as waiting on someone
-  rather than as an ordinary Backlog card. The note is ONE plain-English
-  question that states the options (A or B) and what happens with each, with no
-  ticket ids. End a waiting-on-input note with
-  "Answer on the card (Answer button)" — never "reply and click Ready for
-  Dev": the Answer button on the card saves the answer as a comment, clears
-  the flag and starts that ticket's rebuild itself, whereas Ready for Dev
-  skips blocked cards.
-  **Before blocking on a question, put it to a higher-ranking agent**
-  (e.g. an `Agent` subagent briefed as the senior reviewer) and record its
-  recommended answer as `blocked.recommendation` in the same PATCH. If nobody
-  answers within 10 minutes the automation accepts that recommendation as the
-  answer, clears the flag and rebuilds (`sweepAutoAnswers`; twice per ticket,
-  never for a `dependsOnItemIds` wait). So a question is only for what the
-  recommendation cannot settle.
+- **A choice between ways to build it: decide, do not ask** (Rob, 14 Nov
+  2026: "the tickets are still asking me random questions which block the
+  backlog flow"). A question on a card stops that ticket until a person
+  reads it, and nobody is watching. So when the ticket leaves a choice open
+  (A or B, a wording, a default, a scope edge):
+  1. Put it to a higher-ranking agent (e.g. an `Agent` subagent briefed as
+     the senior reviewer) if the choice is not obvious.
+  2. Take the option that fits the ticket's Outcome, the spec and the code as
+     it stands; when two fit equally, the smaller and more reversible one.
+  3. **Build it**, and say on the card in one line what you assumed and what
+     the other option was, under "Assumed:", so the tester can fail it if
+     the assumption was wrong. That is the review step, not a question up
+     front.
+  Never set `blocked` for this, never end a note with a question, and never
+  use an interactive question tool: a session that waits for a reply never
+  reports back.
+- **Something only a person can supply** (a file or asset you cannot make, a
+  credential, access that is not there, a guard in your environment that
+  refuses the hand-off): set
+  `blocked: {reason: "waiting-on-input", note: "<what is needed, from whom>"}`.
+  Say what is needed as a statement, not a question with options. This is the
+  only case for the flag. The automation takes any flagged question as
+  answered on its next run (`sweepAutoAnswers`: your `blocked.recommendation`
+  if you recorded one, else "take the best option"; twice per ticket, never
+  for a `dependsOnItemIds` wait or a flag a person set), so a flag that is
+  really a choice only costs a rebuild.
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 

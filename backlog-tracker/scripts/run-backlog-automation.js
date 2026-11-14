@@ -847,9 +847,13 @@ function escalationBlock(why, used, nowIso = new Date().toISOString()) {
   const reason = String(why || "The automatic rebuilds did not get this ticket through.").trim();
   return {
     reason: "waiting-on-input",
+    // Not a question (14 Nov 2026): the automation takes the best option and
+    // builds it again by itself (autoAnswerPlan). The Answer button is there
+    // for a person who wants to steer it, not because one is being asked.
     note: `${reason.length > 1200 ? `${reason.slice(0, 1200)}…` : reason}\n\n` +
-      `Rebuilt automatically ${used} time${used === 1 ? "" : "s"} and still not through. What should change? Answer on the card (Answer button) and it is rebuilt with your answer.`,
+      `Rebuilt automatically ${used} time${used === 1 ? "" : "s"} and still not through. Nothing to answer: it is built again by itself, taking the best option. No other ticket waits on this one. To steer it, use the Answer button.`,
     setBy: "self-heal",
+    kind: "rebuilds-used",
     setAt: nowIso,
   };
 }
@@ -890,22 +894,53 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
 // unblocked and rebuilt. Twice per ticket at most; a dependency wait
 // (dependsOnItemIds) is never answered this way, it clears itself when the
 // ticket it waits for lands. Pure, for test/self-heal.test.js.
-const AUTO_ANSWER_AFTER_MS = 10 * 60 * 1000;
+//
+// 14 Nov 2026 (Rob: "the tickets are still asking me random questions which
+// block the backlog flow"). Three things were wrong:
+// - A question waited 10 minutes for a person before the answer was taken.
+//   It is taken on the next run: nothing waits on a person.
+// - A build that never RAN (the session hit the account's usage limit, a
+//   container restarted, a fire was refused) was flagged the same way and
+//   then "answered" as if it had asked something, twice, and left for a
+//   person. It asked nothing. It is tried again by itself, with a longer gap
+//   each time (NEVER_RAN_BACKOFF_MS, doubling to NEVER_RAN_MAX_GAP_MS, which
+//   outlasts a 5-hour usage limit), up to MAX_NEVER_RAN_RETRIES.
+// - A flag a PERSON set (set_blocked over MCP, setBy an email address) was
+//   answered for them. It is left alone.
+const AUTO_ANSWER_AFTER_MS = 0;
 const MAX_AUTO_ANSWERS = 2;
+const NEVER_RAN_BACKOFF_MS = 30 * 60 * 1000;
+const NEVER_RAN_MAX_GAP_MS = 6 * 60 * 60 * 1000;
+const MAX_NEVER_RAN_RETRIES = 12;
 const DEFAULT_SENIOR_ANSWER = "Take the best option, state the assumption you made on the card, and do not ask again.";
 function autoAnswerPlan(item, now = Date.now()) {
   const b = item && item.blocked;
   if (!b || b.reason !== "waiting-on-input" || (item.status && item.status !== "backlog") || item.patchReady) return null;
   if (Array.isArray(item.dependsOnItemIds) && item.dependsOnItemIds.length) return null;
-  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
+  if (typeof b.setBy === "string" && b.setBy.includes("@")) return null; // a person's own flag
   const setAt = timeMs(b.setAt);
-  if (Number.isNaN(setAt) || now - setAt < AUTO_ANSWER_AFTER_MS) return null;
+  if (Number.isNaN(setAt)) return null;
+  if (b.kind === "never-ran") {
+    const tries = Number(item.neverRanRetries) || 0;
+    if (tries >= MAX_NEVER_RAN_RETRIES) return null;
+    const gap = Math.min(NEVER_RAN_MAX_GAP_MS, NEVER_RAN_BACKOFF_MS * 2 ** tries);
+    if (now - setAt < gap) return null;
+    return {
+      answer: "",
+      fromRecommendation: false,
+      retry: true,
+      text: `Tried again automatically (try ${tries + 1} of ${MAX_NEVER_RAN_RETRIES}): the build had not run, so there was nothing to answer.`,
+      fields: { neverRanRetries: tries + 1 },
+    };
+  }
+  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
+  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   const recommendation = typeof b.recommendation === "string" ? b.recommendation.trim() : "";
   const answer = recommendation || DEFAULT_SENIOR_ANSWER;
   return {
     answer,
     fromRecommendation: !!recommendation,
-    text: `Answer to the build's question (accepted automatically from the senior agent after ${Math.round(AUTO_ANSWER_AFTER_MS / 60000)} minutes without a reply${recommendation ? "" : ", no recommendation recorded, so the default decision"}): ${answer}`,
+    text: `Answer to the build's question (taken automatically${recommendation ? " from the senior agent's recommendation" : ": no recommendation was recorded, so the default decision"}, without waiting for a person): ${answer}`,
     fields: { autoAnswers: (Number(item.autoAnswers) || 0) + 1 },
   };
 }
@@ -1014,7 +1049,7 @@ function silentBuildSessionAction(item, now = Date.now()) {
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
   return `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started` +
-    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.`;
+    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. It is tried again by itself; nothing to answer.`;
 }
 // The flag a ticket gets when the automation has run out of ways to start
 // its build (a fire that never started, sessions that never reported): on the
@@ -1022,7 +1057,9 @@ function rebuildNeverStartedNote(item) {
 // button that builds it again, instead of a note asking for a click nobody
 // sees. Pure.
 function buildNeverRanBlock(text, nowIso = new Date().toISOString()) {
-  return { reason: "waiting-on-input", note: `${text}\n\nAnswer on the card (Answer button) — anything the build should know, or just "try again" — and it is built again.`, setBy: "self-heal", setAt: nowIso };
+  // Not a question (14 Nov 2026): the build did not run, so it is tried again
+  // by itself with a longer gap each time (autoAnswerPlan, kind "never-ran").
+  return { reason: "waiting-on-input", note: `${text}\n\nNothing to answer: the build did not run, and it is tried again by itself with a longer gap each time (a usage limit or a restart usually clears). No other ticket waits on this one. To start it now, use the Answer button.`, setBy: "self-heal", kind: "never-ran", setAt: nowIso };
 }
 // A fire the function could not make (429 or 5xx) is marked "retrying" with
 // the time to try again; the sweep re-requests it once that time has passed.
@@ -1143,7 +1180,7 @@ async function sweepUnbuiltReports(now = Date.now()) {
         console.log(`[unbuilt] ${item.id}: reply found, train locked — build deferred until it merges`);
       } else {
         const blocked = { ...next.blocked, setAt: new Date().toISOString() };
-        const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. Flagged as waiting on your input: answer with the Answer button on the card and it rebuilds.`);
+        const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. It is built again by itself, taking the best option; nothing to answer.`);
         await patchItem(item.id, { blocked, notes, updatedAt: new Date().toISOString() });
         console.log(`[unbuilt] ${item.id}: build stopped without a patch — flagged waiting-on-input`);
       }
