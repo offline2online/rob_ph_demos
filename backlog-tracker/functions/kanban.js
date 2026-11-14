@@ -881,7 +881,7 @@ function kanbanTools(h) {
     sprint: { type: "string" }, project: { type: "string", description: "A console project (id or name) the ticket belongs to; empty clears it. kanban_list_people lists them." },
     estimate: { type: ["string", "number"], description: "Hours, or a duration like 1d 4h (1d = 8h)." },
     logged: { type: ["string", "number"], description: "Time logged: hours or a duration." }, due: { type: "string", description: "YYYY-MM-DD" },
-    labels: { type: "array", items: { type: "string" } }, epic: { type: "string", description: "Parent epic key, or empty." },
+    labels: { type: "array", items: { type: "string" } }, epic: { type: "string", description: "Parent ticket key (an epic, or a task or subtask: tickets nest at most four levels, Epic > Task > Subtask > Sub-subtask), or empty." },
     links: { type: "array", items: { type: "object", properties: { type: { type: "string", enum: core.LINK_TYPES }, key: { type: "string" } }, required: ["type", "key"] } },
     flagged: { type: "boolean" },
     acceptanceCriteria: {
@@ -890,12 +890,76 @@ function kanbanTools(h) {
       items: { anyOf: [{ type: "string", maxLength: core.AC_MAX_TEXT }, { type: "object", properties: { text: { type: "string", maxLength: core.AC_MAX_TEXT }, done: { type: "boolean" } }, required: ["text"] }] },
     },
   };
-  async function checkEpic(epicKey, selfKey) {
+  // ── Ticket hierarchy (KB-TASK-14) ──────────────────────────────────────
+  // A ticket's parents and the tickets under it, read on demand: up() walks
+  // the parents of a key, down() reads every level under it (four at most).
+  function family() {
+    const known = new Map(), kids = new Map();
+    const get = (k) => known.get(k) || null;
+    const childrenOf = (k) => kids.get(k) || [];
+    const load = async (k) => { if (!known.has(k)) known.set(k, await getTask(k)); return known.get(k); };
+    async function loadKids(k) {
+      if (kids.has(k)) return kids.get(k);
+      const snap = await tasks().where("epic", "==", k).limit(EPIC_CHILDREN).get();
+      const list = snap.docs.map((d) => Object.assign({ key: d.id }, d.data())).filter((t) => t.type !== "epic");
+      kids.set(k, list);
+      for (const t of list) if (!known.has(t.key)) known.set(t.key, t);
+      return list;
+    }
+    async function up(k) {
+      const seen = new Set();
+      for (let p = k; p && !seen.has(p) && seen.size < 10;) { seen.add(p); const t = await load(p); p = t && t.type !== "epic" ? t.epic : ""; }
+    }
+    async function down(k) {
+      let layer = [k];
+      for (let i = 0; i < core.MAX_LEVELS && layer.length; i++) {
+        const next = [];
+        for (const x of layer) for (const c of await loadKids(x)) next.push(c.key);
+        layer = next;
+      }
+    }
+    return { known, get, childrenOf, up, down };
+  }
+  // Why parentKey can't be the parent of `self` ({key, type}; key "" for a new ticket), else null.
+  async function checkEpic(epicKey, self) {
     if (!epicKey) return null;
-    const e = await getTask(epicKey);
-    if (!e || e.type !== "epic") return `${epicKey} is not an epic.`;
-    if (epicKey === selfKey) return "A ticket can't be its own epic.";
-    return null;
+    const f = family();
+    await f.up(epicKey);
+    const me = Object.assign({ key: "", type: "task" }, self || {});
+    if (me.key) { await f.up(me.key); await f.down(me.key); }
+    return core.parentProblem(me, epicKey, f.get, f.childrenOf);
+  }
+  // A ticket's level (1 = top) from its stored parents; `t`, when given, is
+  // the ticket already read (only its parents are read then).
+  async function levelOfKey(key, t) {
+    const f = family();
+    if (t) { f.known.set(key, t); if (t.epic && t.type !== "epic") await f.up(t.epic); } else await f.up(key);
+    return f.get(key) ? core.levelOf(f.get(key), f.get) : 1;
+  }
+  // Parent automation: after ticket t (as now stored) changed status, each
+  // parent still before testing whose children are all done moves to Ready
+  // for Testing, and its parent in turn. Returns the keys moved.
+  async function advanceParents(t, session, first) {
+    if (!t || !t.epic || t.type === "epic") return [];
+    const f = family();
+    f.known.set(t.key, t);
+    await f.up(t.epic);
+    for (const k of core.ancestorsOf(t, f.get)) await f.down(k);
+    const out = [];
+    for (const pk of core.parentsToAdvance(t, f.get, f.childrenOf)) {
+      const p = f.get(pk);
+      const ch = p && core.statusChange(p, "ready-for-testing", { firstName: first });
+      if (!ch) continue;
+      const patch = Object.assign({}, ch.patch, { rank: await nextRank("ready-for-testing") }, stamp(session.email), { closedAt: FieldValue.delete() });
+      const b = db().batch();
+      b.update(tasks().doc(pk), patch);
+      const moved = Object.assign({}, p, patch); delete moved.closedAt;
+      putCard(b, pk, moved, session.email);
+      activity(b, pk, session.email, [`${ch.activity} · all its child tickets are done`]);
+      await b.commit();
+      out.push(pk);
+    }
+    return out;
   }
 
   // Everything a write names that must exist, checked together so an agent
@@ -919,7 +983,7 @@ function kanbanTools(h) {
       const hit = await findProject(v.project);
       if (hit) v.project = hit.id; else errs.push(`project ${v.project} isn't a project (an id or name; kanban_list_people lists them)`);
     }
-    const e = await checkEpic(v.epic, selfKey);
+    const e = await checkEpic(v.epic, { key: selfKey || "", type: v.type === "epic" ? "epic" : "task" });
     if (e) errs.push(e);
     return errs;
   }
@@ -1068,7 +1132,8 @@ function kanbanTools(h) {
         const total = async (sub) => (await tasks().doc(key).collection(sub).count().get()).data().count;
         const [cs, act, nCs, nAct, first] = await Promise.all([newest("comments"), newest("activity"), total("comments"), total("activity"), firstNamer()]);
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
-        const kidDocs = t.type === "epic" ? (await (await board()).where("epic", "==", key).limit(EPIC_CHILDREN + 1).get()).docs : null;
+        const kidDocs = (await (await board()).where("epic", "==", key).limit(EPIC_CHILDREN + 1).get()).docs.filter((d) => d.data().type !== "epic");
+        const level = await levelOfKey(key, t);
         const kids = kidDocs ? kidDocs.slice(0, EPIC_CHILDREN).map((d) => ({ key: d.id, title: d.data().title, status: core.statusLabel(d.data().status, d.data().resolution) })) : undefined;
         const project = t.project ? await findProject(t.project) : null;
         let linked = null;
@@ -1081,7 +1146,7 @@ function kanbanTools(h) {
           description: t.descriptionText || core.htmlToText(t.description || ""), descriptionHtml: t.description || "", reporter: t.reporter || null, previousAssignee: t.previousAssignee || null,
           acceptanceCriteria: core.decodeCriteria(t.acceptanceCriteria),
           links: (t.links || []).map((l) => ({ type: l.type, key: l.key })), attachments: (t.attachments || []).map((a) => ({ name: a.name, path: a.path || null, url: a.url || null, contentType: a.contentType || null, size: a.size || null, caption: a.caption || null })),
-          children: kids, childrenOmitted: kidDocs && kidDocs.length > EPIC_CHILDREN ? "more than " + EPIC_CHILDREN : undefined, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
+          level, levelName: core.levelName(level, t.type), children: kids, childrenOmitted: kidDocs && kidDocs.length > EPIC_CHILDREN ? "more than " + EPIC_CHILDREN : undefined, created: iso(t.createdAt), createdBy: t.createdBy || null, updated: iso(t.updatedAt),
           commentsOmitted: Math.max(0, nCs - cs.docs.length), activityOmitted: Math.max(0, nAct - act.docs.length),
           comments: cs.docs.map((d) => Object.assign({ id: d.id }, d.data())).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((c) => ({ id: c.id, author: c.author, at: iso(c.at), edited: c.editedAt ? iso(c.editedAt) : null, text: c.text })),
           activity: act.docs.map((d) => d.data()).sort((a, b) => String(iso(a.at)).localeCompare(String(iso(b.at)))).map((a) => ({ who: a.who, at: iso(a.at), text: a.text })),
@@ -1331,8 +1396,8 @@ function kanbanTools(h) {
           delete v.epic;
           errors.push(...await checkRefs(v, null, session));
           if (epicExisting) {
-            if (!epicMemo.has(epicExisting)) epicMemo.set(epicExisting, await checkEpic(epicExisting, null));
-            if (epicMemo.get(epicExisting)) errors.push(epicMemo.get(epicExisting)); else v.epic = epicExisting;
+            if (!epicMemo.has(epicExisting)) epicMemo.set(epicExisting, { problem: await checkEpic(epicExisting, null), level: await levelOfKey(epicExisting) });
+            if (epicMemo.get(epicExisting).problem) errors.push(epicMemo.get(epicExisting).problem); else v.epic = epicExisting;
           }
           for (const l of v.links || []) {
             if (!linkMemo.has(l.key)) linkMemo.set(l.key, (await tasks().doc(l.key).get()).exists);
@@ -1342,10 +1407,27 @@ function kanbanTools(h) {
             const at = refRow.get(viaRef);
             if (at === undefined) errors.push(`epic ${epicIn} isn't a ref in this batch or a ticket key`);
             else if (at === i) errors.push("A ticket can't be its own epic.");
-            else if (rows[at] && rows[at].type !== "epic") errors.push(`epic ${epicIn} (row ${at + 1}) isn't of type epic`);
+            else if (rows[i].type === "epic") errors.push(`epic ${epicIn}: an epic is always at the top level, so it has no parent`);
           }
           errors.forEach((m) => fail(i, fieldOf(m) || (/^link /.test(m) ? "links" : /epic/i.test(m) ? "epic" : undefined), m));
-          clean[i] = { v, epicRef: viaRef };
+          clean[i] = { v, epicRef: viaRef, parentLevel: v.epic && epicMemo.has(v.epic) ? epicMemo.get(v.epic).level : 0 };
+        }
+        // Four levels at most (KB-TASK-14): each row's level, through refs to other rows and existing parents.
+        const rowLevel = new Array(rows.length);
+        const levelOfRow = (i, seen = new Set()) => {
+          if (rowLevel[i] !== undefined) return rowLevel[i];
+          if (seen.has(i)) return Infinity;
+          seen.add(i);
+          const c = clean[i];
+          let L = 1;
+          if (c && c.epicRef !== null) { const at = refRow.get(c.epicRef); L = at === undefined || at === i ? 1 : levelOfRow(at, seen) + 1; }
+          else if (c && c.parentLevel) L = c.parentLevel + 1;
+          return (rowLevel[i] = L);
+        };
+        for (let i = 0; i < rows.length; i++) {
+          if (!clean[i] || bad.has(i)) continue;
+          const L = levelOfRow(i);
+          if (L > core.MAX_LEVELS) fail(i, "epic", L === Infinity ? `epic ${rows[i].epic}: these rows are each other's parents` : `epic ${rows[i].epic}: this ticket would be at level ${L}. Tickets nest at most ${core.MAX_LEVELS} levels: ${core.LEVEL_NAMES.join(" > ")}`);
         }
         // A child whose epic row failed can't be created either (partial mode): repeat until nothing more falls.
         for (let again = true; again;) {
@@ -1430,7 +1512,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_update_task",
-      description: "Staff Kanban: change a ticket's fields (title, description, type, priority, people, release, sprint, project, estimate, time logged, due date, labels, parent epic, links, flag). To move it between columns use kanban_move_task.",
+      description: "Staff Kanban: change a ticket's fields (title, description, type, priority, people, release, sprint, project, estimate, time logged, due date, labels, parent (epic, task or subtask; four levels at most), links, flag). To move it between columns use kanban_move_task.",
       scope: "board.write",
       inputSchema: { type: "object", properties: Object.assign({ key: KEY }, WRITABLE), required: ["key"], additionalProperties: false },
       async run(args, session) {
@@ -1463,11 +1545,7 @@ function kanbanTools(h) {
         putCard(b, key, Object.assign({}, next, patch), session.email);
         activity(b, key, session.email, lines);
         if ("links" in v) linkOps(b, key, cur.links || [], v.links, session.email);
-        // An epic that stops being one lets go of its children (KB-TASK-7).
-        if (cur.type === "epic" && type !== "epic") {
-          const kids = await tasks().where("epic", "==", key).get();
-          kids.docs.forEach((d) => { b.update(d.ref, Object.assign({ epic: "" }, stamp(session.email))); putCard(b, d.id, Object.assign({}, d.data(), { epic: "" }), session.email); activity(b, d.id, session.email, [`removed from epic ${key} (no longer an epic)`]); });
-        }
+        // An epic that stops being one keeps its children: any ticket above the lowest level can have them (KB-TASK-14).
         await b.commit();
         await audit(session, "kanban_update_task", { key, fields: Object.keys(v) });
         return textResult({ updated: true, key, changed: Object.keys(v) });
@@ -1512,7 +1590,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_move_task",
-      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn.",
+      description: "Staff Kanban: move a ticket to another column. Moving to Ready for Testing assigns it to the ticket's designated tester, else to the `tester` you pass (an email); with neither the assignee is left alone and the result says so. There is no default tester. Moving it back to In Progress or Ready for Dev returns it to the developer. To close one, use status done with resolution completed or withdrawn. When every child of the ticket's parent is then done, the parent moves to Ready for Testing by itself, and its parent in turn (parentsMovedToTesting lists them).",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -1535,8 +1613,12 @@ function kanbanTools(h) {
         putCard(b, key, moved, session.email, args.status === "done" ? patch.closedAt : undefined);
         activity(b, key, session.email, [ch.activity]);
         await b.commit();
-        await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution });
-        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null });
+        // Parent automation (KB-TASK-14): parents whose children are now all done move to Ready for Testing.
+        let advanced = [];
+        try { advanced = await advanceParents(Object.assign({}, cur, ch.patch), session, first); }
+        catch (err) { logger.warn("kanban_move_task: parent automation", err); }
+        await audit(session, "kanban_move_task", { key, status: args.status, resolution: ch.resolution, parentsMoved: advanced.length ? advanced : undefined });
+        return textResult({ moved: true, key, status: args.status, resolution: ch.resolution, note: ch.note || (args.status === "ready-for-testing" ? "No tester set, so the assignee is unchanged. Pass `tester` or assign one." : null), assignee: patch.assignee || cur.assignee || null, parentsMovedToTesting: advanced.length ? advanced : undefined });
       },
     },
     {
