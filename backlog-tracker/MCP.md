@@ -237,8 +237,9 @@ release actions stay on the board apart from `send_to_build`,
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
-is named, and the instructions stay within 3,600 characters (what Claude Code
-delivers whole).
+is named, and the instructions stay within 3,700 characters (what Claude Code
+delivers whole), including the Routine-setup sentence an unbound member gets
+in front of them.
 
 **Test and link state (server 1.5.0).** All read-only; every URL goes through
 `safeHref` (https only, else `null`).
@@ -370,6 +371,23 @@ hand-generated once — this is the closest one-click setup the API allows.
 are never returned by this or any other tool — `whoami`'s
 `hasRoutineBinding` only ever says whether one is set, never its value.
 Pass both as `""` to clear your binding and go back to the shared token.
+
+**Your agent offers this by itself when you connect without one**
+(BXkUvoayo98j744RUCy8, 13 Nov 2026). When a member who can write connects
+and has no binding, `initialize` puts a one-sentence Routine-setup block at
+the front of the server instructions (`ROUTINE_SETUP_INSTRUCTIONS` in
+`functions/mcp-server.js`; it stays one sentence because the whole text must
+still fit the 3,700 characters a host delivers whole). It asks the agent to
+offer setup before other work and follow `get_routine_setup_instructions`'s
+`agentGuidance`: present the `walkthrough` one step at a time, waiting for you
+between steps (the `routinesUrl` link, the bootstrap prompt as a copyable
+code block, the API trigger, then pasting the fire URL and token back). The
+agent then calls `set_my_routine_binding` once and `whoami` to confirm. It
+must never ask for the token again or repeat it. If you decline, it reminds
+you once in that conversation and carries on.
+A bound member, or a viewer (who can't call `set_my_routine_binding`), gets
+the normal instructions with no setup block. Instructions are read once per
+connection, so after you set it up, your next connection shows no prompt.
 `functions/index.js`'s `resolveRoutineCredentials` checks the clicking
 member's binding first on every Notify Claude / Notify Claude — Deploy /
 Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/

@@ -3451,6 +3451,30 @@ Routine directly" (see that rule, and its one exception
 `approve_deploy_to_main`, further below) — it changes which credentials a
 LATER board click will use, it never fires a Routine itself.
 
+**Guided Routine setup on connect (BXkUvoayo98j744RUCy8, 13 Nov 2026).**
+When a member with `board.write` connects and has no binding (the same
+check as `whoami.hasRoutineBinding`, including the legacy `consoleUsers`
+fields), `initialize` puts `ROUTINE_SETUP_INSTRUCTIONS` (one sentence, so the
+whole text still fits the 3,700 characters a host delivers whole) in front of
+the server instructions. It tells the agent to offer setup at the start of
+the conversation, before other work, and to follow
+`get_routine_setup_instructions`'s `agentGuidance`: present the steps one at a
+time, waiting for the person after each: (1) open `https://claude.ai/code/routines`
+signed in with their own Claude account and create a Routine; (2) paste the
+bootstrap prompt, shown as a copyable code block; (3) add an API trigger and
+copy the fire URL (ends in `/fire`) and the token (shown once); (4) paste
+both back, then the agent calls `set_my_routine_binding` once and `whoami` to
+confirm `hasRoutineBinding` is true. The agent never asks for the token again
+or repeats it. If the person declines, the agent reminds them once in that
+conversation that their board clicks keep using the shared Routine until it
+is set up. `get_routine_setup_instructions` also returns `routinesUrl`, a
+`walkthrough` array (`{step, say, link?, copy?}`) and the `agentGuidance`
+rules above. The standing instructions were tightened by about 140
+characters to make room; no tool was dropped from them. A bound member
+or a viewer gets the standard instructions unchanged. A failed binding read
+at `initialize` is logged and the block is left out; connecting never fails
+because of it.
+
 **Phase-bound skills (`settings/phaseSkillBindings`, l5mjAANU0dfveGhxmDjm)**
 let a shared skill be applied automatically as part of an existing pipeline
 phase, without adding board columns/stages of its own: a single doc,
