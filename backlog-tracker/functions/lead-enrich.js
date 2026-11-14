@@ -596,6 +596,70 @@ function agentError(err) {
   return /[.!?]$/.test(msg) ? msg : `${msg}.`;
 }
 
+// ── A lead and its TAM record carry the same information ─────────────────
+// When the two are linked (a TAM record converted to a lead, a lead matched to
+// or filed under a TAM record, either linked later), nothing is left behind on
+// one side: company fields fill each other's blanks, contacts are added both
+// ways, the research (logos, sites, people, news...) goes to the side that has
+// none or an older copy, and the lead keeps a readable copy of the TAM-only
+// fields (priority, insights, notes...) in `tam`. Nothing a person typed is
+// replaced. Pure: returns the two patches (null when there is nothing to write).
+const LINK_OWN = ["request", "filled", "filledProfile", "companyFieldsAdded", "screen"]; // each record's own
+const when = (v) => (v && typeof v.toDate === "function" ? v.toDate().getTime() : (v ? new Date(v).getTime() || 0 : 0));
+function tamSnapshot(p) {
+  const rows = [
+    ["Country", p.country], ["Priority", prospectsCore.priorityLabel(p.priority)], ["Sub-industry", p.subIndustry], ["HQ country", p.hqCountry],
+    ["Other markets", p.markets.join(", ")], ["Store presence", p.storePresence], ["Size", p.sizeBand && p.sizeBand !== "unknown" ? prospectsCore.sizeBandLabel(p.sizeBand) : ""],
+    ["Ownership", p.ownership], ["Insights", p.insights], ["Decision makers", p.decisionMakers], ["LinkedIn", p.linkedinUrl],
+    ["AWS region", p.awsRegion], ["Vendors", p.vendors.join(", ")], ["Campaigns", p.campaigns.join(", ")], ["Source", p.source], ["Notes", p.notes],
+  ];
+  const out = {};
+  for (const [k, v] of rows) { const t = String(v == null ? "" : v).trim(); if (t) out[k] = t.slice(0, 2000); }
+  return out;
+}
+function linkMerge(leadData, prospectData) {
+  const ld = leadData || {}, pd = prospectData || {};
+  const lead = leadsCore.normaliseLead("x", ld), p = prospectsCore.normaliseProspect("x", pd);
+  const le = ld.enrichment && typeof ld.enrichment === "object" ? ld.enrichment : null;
+  const pe = pd.enrichment && typeof pd.enrichment === "object" ? pd.enrichment : null;
+  const leadPatch = {}, prospectPatch = {};
+
+  // Company fields: each side's blanks from the other.
+  const company = { ...(ld.company || {}) };
+  let companyChanged = false;
+  const fillLead = (k, v) => { if (blank(company[k]) && !blank(v)) { company[k] = v; companyChanged = true; } };
+  fillLead("website", p.website); fillLead("industry", p.industry); fillLead("storeCount", p.storeCount); fillLead("awsAccountId", p.awsAccountId);
+  if (blank(company.countries)) { const c = uniq([p.country, ...p.markets].filter(Boolean), 60, 60); if (c.length) { company.countries = c; companyChanged = true; } }
+  if (companyChanged) leadPatch.company = company;
+  const lc = lead.company;
+  if (blank(pd.website) && lc.website) prospectPatch.website = lc.website;
+  if (blank(pd.industry) && lc.industry) { const ind = prospectsCore.normaliseIndustry(lc.industry); if (ind && ind !== prospectsCore.UNASSIGNED_INDUSTRY) prospectPatch.industry = ind; }
+  if (pd.storeCount == null && typeof lc.storeCount === "number") prospectPatch.storeCount = lc.storeCount;
+  if (blank(pd.awsAccountId) && lc.awsAccountId) prospectPatch.awsAccountId = lc.awsAccountId;
+
+  // Contacts: anyone on one side and not the other is added (matched on email, else name).
+  const key = (c) => (c.email ? `e:${String(c.email).toLowerCase()}` : `n:${String(c.name || "").trim().toLowerCase()}`);
+  const leadContacts = Array.isArray(ld.contacts) ? ld.contacts.filter((c) => c && c.name) : [];
+  const tamContacts = p.contacts.filter((c) => c && c.name);
+  const onLead = new Set(leadContacts.map(key)), onTam = new Set(tamContacts.map(key));
+  const toLead = tamContacts.filter((c) => !onLead.has(key(c))).map((c) => ({ id: leadsCore.newContactId(), name: str(c.name, 120), jobTitle: str(c.role, 120), buyingRole: "", email: str(c.email, 200).toLowerCase(), linkedin: "", awsAccountId: /^\d{12}$/.test(String(c.awsAccountId || "")) ? String(c.awsAccountId) : "" }));
+  if (toLead.length) leadPatch.contacts = [...leadContacts, ...toLead].slice(0, leadsCore.LIMITS.contacts);
+  const toTam = leadContacts.filter((c) => !onTam.has(key(c))).map((c) => ({ name: str(c.name, 120), role: str(c.jobTitle, 120), lastContact: "", ...(c.email ? { email: str(c.email, 200).toLowerCase() } : {}), ...(c.awsAccountId ? { awsAccountId: String(c.awsAccountId) } : {}) }));
+  if (toTam.length) prospectPatch.contacts = [...(Array.isArray(pd.contacts) ? pd.contacts : []), ...toTam].slice(-prospectsCore.LIMITS.contacts);
+
+  // The research: the newer copy goes to the side with none, or with an older one.
+  const lat = when(le && le.at), pat = when(pe && pe.at);
+  const carry = (from, to) => { const out = { ...from }; for (const k of LINK_OWN) { delete out[k]; if (to && to[k] !== undefined) out[k] = to[k]; } if (!out.screen && from.screen) out.screen = from.screen; return out; };
+  if (pat && pat > lat) leadPatch.enrichment = carry(pe, le);
+  else if (lat && lat > pat) prospectPatch.enrichment = carry(le, pe);
+
+  // The TAM-only fields, readable on the lead.
+  const snap = tamSnapshot(p);
+  if (!same(snap, ld.tam && typeof ld.tam === "object" ? ld.tam : {})) leadPatch.tam = snap;
+
+  return { leadPatch: Object.keys(leadPatch).length ? leadPatch : null, prospectPatch: Object.keys(prospectPatch).length ? prospectPatch : null };
+}
+
 function createLeadEnrich({
   db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
   research, screen, bucket, toPng = toStaticPng, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
@@ -988,6 +1052,38 @@ function createLeadEnrich({
     } catch { return false; }
   }
 
+  // Brings a lead and its TAM record into step (linkMerge). Returns what changed.
+  async function syncLinked(leadId, prospectId) {
+    if (!leadId || !prospectId) return null;
+    const lref = db.collection("leads").doc(String(leadId)), pref = db.collection("prospects").doc(String(prospectId));
+    const [ls, ps] = await Promise.all([lref.get(), pref.get()]);
+    if (!ls.exists || !ps.exists) return null;
+    const ld = ls.data() || {}, pd = ps.data() || {};
+    if (ld.test === true || ld.leadType === "operator") return null;
+    const { leadPatch, prospectPatch } = linkMerge(ld, pd);
+    if (leadPatch) await lref.update({ ...leadPatch, updatedAt: stamp() });
+    if (prospectPatch) await pref.update({ ...prospectPatch, updatedAt: stamp() });
+    return { lead: leadPatch ? Object.keys(leadPatch) : [], prospect: prospectPatch ? Object.keys(prospectPatch) : [] };
+  }
+  // Is this write one that links the two, or changes what the TAM record says?
+  async function syncOnWrite(collection, id, before, after) {
+    try {
+      if (collection === "leads") {
+        const pid = str(after.prospectId, 120);
+        if (pid && (!before || str(before.prospectId, 120) !== pid)) return await syncLinked(id, pid);
+      } else {
+        const lid = str(after.leadId, 120);
+        if (!lid) return null;
+        // Newly linked, or the record's own fields changed (so the lead's copy of them follows).
+        const fields = (d) => { const { enrichment, updatedAt, updatedByEmail, ...rest } = d || {}; return rest; };
+        if (!before || str(before.leadId, 120) !== lid || !same(fields(before), fields(after))) return await syncLinked(lid, id);
+      }
+    } catch (err) {
+      logger.warn("lead and TAM record not brought into step", { collection, id, error: String(err && err.message ? err.message : err).slice(0, 300) });
+    }
+    return null;
+  }
+
   // The Firestore trigger: a created record, or a newly queued request.
   async function onEnrichWrite(collection, event) {
     const before = event && event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
@@ -998,11 +1094,20 @@ function createLeadEnrich({
     const rb = requestOf(before), ra = requestOf(after);
     const created = !before;
     const queued = ra && ra.status === "queued" && (!rb || rb.id !== ra.id);
+    // A lead and its TAM record are brought into step whenever they are linked.
+    const synced = await syncOnWrite(collection, String(id), before, after);
     if (!created && !queued) return null;
     if (collection === "leads" && after.test === true) return null;
     // A network operator inquiry is a person, not a company: nothing to research.
     if (collection === "leads" && after.leadType === "operator") return null;
     try {
+      // A new record that already carries research (a TAM record converted to a
+      // lead, a lead filed under a researched TAM record) is not researched again.
+      if (created && !queued && synced) {
+        const fresh = await db.collection(collection).doc(String(id)).get();
+        const e = fresh.exists ? (fresh.data() || {}).enrichment : null;
+        if (e && e.at) return { ok: true, carried: true, collection, id: String(id) };
+      }
       if (created && !queued && collection === "prospects" && (await coveredByNewLead(after))) return null;
       return await enrichRecord(collection, String(id), queued ? ra.by : "auto", created && !queued ? "created" : "requested");
     } catch (err) {
@@ -1042,10 +1147,10 @@ function createLeadEnrich({
     return send(res, 202, { ok: true, queued: true, requestId: request.id, collection, id });
   }
 
-  return { handle, onEnrichWrite, enrichRecord, logosFor, websiteSource };
+  return { handle, onEnrichWrite, enrichRecord, syncLinked, logosFor, websiteSource };
 }
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

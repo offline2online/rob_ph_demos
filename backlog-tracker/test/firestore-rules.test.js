@@ -80,6 +80,12 @@ async function reset() {
     await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
     await setDoc(doc(db, "mediaProviderKeys/gemini"), { box: { v: 1, ct: "x" }, hint: "…abcd" });
     await setDoc(doc(db, "mediaKeyAudit/a1"), { action: "set", provider: "gemini" });
+    // Support Inbox (functions/support-mail.js): a ticket with one message, the settings and the secrets.
+    await setDoc(doc(db, "supportTickets/t1"), { key: "SUP-1", subject: "Help", customerEmail: "ann@shop.example", status: "open" });
+    await setDoc(doc(db, "supportTickets/t1/messages/m1"), { direction: "in", from: "ann@shop.example", text: "Hello" });
+    await setDoc(doc(db, "supportSettings/main"), { connectedEmail: "support@ph.example", autoReply: false });
+    await setDoc(doc(db, "supportSecrets/gmail"), { refresh: { v: 1, ct: "x" }, client: { v: 1, ct: "y" } });
+    await setDoc(doc(db, "supportCounters/main"), { nextNumber: 2 });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -355,6 +361,8 @@ async function main() {
   await check("An editor can create a lead", "allow", () => setDoc(doc(as(MEMBER), "leads/l1"), LEAD));
   await check("An editor can drag a lead to another stage", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "hot-lead" }));
   await check("A lead cannot take a stage that is not on the board", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { stage: "won-ish" }));
+  await check("An editor can save a lead that carries its TAM record's fields", "allow", () => updateDoc(doc(as(MEMBER), "leads/l1"), { tam: { Priority: "High", Notes: "Met at NRF." }, stage: "demo" }));
+  await check("A lead's TAM copy must be a map", "deny", () => updateDoc(doc(as(MEMBER), "leads/l1"), { tam: "high priority" }));
   await check("A lead needs a company name", "deny", () => setDoc(doc(as(MEMBER), "leads/l2"), { ...LEAD, company: { ...LEAD.company, name: "" } }));
   await check("A lead takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/l3"), { ...LEAD, patchFiles: [] }));
   await check("A member may read a lead", "allow", () => getDoc(doc(as(MEMBER), "leads/l1")));
@@ -509,6 +517,19 @@ async function main() {
     getDoc(doc(as(BOT), "mediaProviderKeys/gemini")));
   await check("Nobody can read the Media Studio key audit log from a client", "deny", () =>
     getDocs(collection(as(TEAM_ADMIN), "mediaKeyAudit")));
+  // Support Inbox: customers' email. Members read; every write is the supportMail function's.
+  await check("A member may read a support ticket", "allow", () => getDoc(doc(as(MEMBER), "supportTickets/t1")));
+  await check("A viewer may read a support ticket's messages", "allow", () => getDocs(collection(as(VIEWER), "supportTickets/t1/messages")));
+  await check("A stranger cannot read a support ticket", "deny", () => getDoc(doc(as(STRANGER), "supportTickets/t1")));
+  await check("A stranger cannot read a support ticket's messages", "deny", () => getDocs(collection(as(STRANGER), "supportTickets/t1/messages")));
+  await check("Anonymous cannot list support tickets", "deny", () => getDocs(collection(as(null), "supportTickets")));
+  await check("An editor cannot change a support ticket from a client", "deny", () => updateDoc(doc(as(MEMBER), "supportTickets/t1"), { status: "resolved" }));
+  await check("A team admin cannot write a support message from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportTickets/t1/messages/m2"), { direction: "out", text: "x" }));
+  await check("A member may read the support inbox settings", "allow", () => getDoc(doc(as(MEMBER), "supportSettings/main")));
+  await check("A team admin cannot write the support inbox settings from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSettings/main"), { autoReply: true }, { merge: true }));
+  await check("Not even an owner can read the support mailbox's encrypted sign-in", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/gmail")));
+  await check("Nobody can write the support mailbox's sign-in from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/gmail"), { refresh: null }));
+  await check("Nobody can read the support ticket counter from a client", "deny", () => getDoc(doc(as(TEAM_ADMIN), "supportCounters/main")));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 
