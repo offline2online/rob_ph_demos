@@ -1,0 +1,109 @@
+name: Console on WebKit (iPad)
+
+# Runs the console's menu and the Support Inbox in a real WebKit engine with
+# an iPad profile (backlog-tracker/test/ui/webkit-ipad.test.mjs). Every other
+# browser test runs in Chromium, and the console's iPad failures have been
+# WebKit's, so a Chromium pass has never been evidence for the iPad (root
+# CLAUDE.md → "iPad taps"). Playwright's WebKit is the same engine family as
+# iPad Safari, not iPad Safari itself: it catches engine differences, not
+# everything a device can do.
+#
+# Both the sources and the minified copy that Hosting serves are tested.
+# Started by hand, or by a push to a working branch that changes the console's
+# pages or this test. It is not a train or pull-request check.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'backlog-tracker/public/**'
+      - 'backlog-tracker/test/ui/webkit-ipad.test.mjs'
+      - 'backlog-tracker/test/ui/harness.mjs'
+      - '.github/workflows/console-webkit.yml'
+
+concurrency:
+  group: console-webkit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        working-directory: backlog-tracker/test
+        run: npm ci --no-audit --no-fund
+      - name: Install WebKit
+        working-directory: backlog-tracker/test
+        run: npx playwright-core install --with-deps webkit
+      - name: The console as an iPad, from the sources
+        working-directory: backlog-tracker/test
+        env:
+          REQUIRE_WEBKIT: '1'
+        run: node ui/webkit-ipad.test.mjs
+      - name: The console as an iPad, from the minified copy Hosting serves
+        if: always()
+        working-directory: backlog-tracker
+        env:
+          REQUIRE_WEBKIT: '1'
+        run: |
+          node scripts/build-console.js --out "$RUNNER_TEMP/console-dist" --require-minify
+          cd test && HARNESS_PUBLIC_DIR="$RUNNER_TEMP/console-dist" node ui/webkit-ipad.test.mjs
+
+  # What the live console is serving right now: its build, its cache headers,
+  # and the same iPad run against those exact files. Only the public static
+  # files are fetched (no sign-in, no data).
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch the live console's files
+        env:
+          BASE: https://backlog-tracker-e4ed2.web.app
+        run: |
+          set -e
+          mkdir -p live && cd live
+          echo "== build-info"; curl -sS "$BASE/build-info.json"; echo
+          echo "== this checkout: $(git -C .. rev-parse HEAD), $(grep -o 'APP_VERSION = "[^"]*"' ../backlog-tracker/public/js/version.js)"
+          # Every file the checked-in console has, fetched from the live site at the same path.
+          (cd ../backlog-tracker/public && find . -type f | sed 's#^\./##' | sort) > files.txt
+          missing=0
+          while read -r f; do
+            mkdir -p "$(dirname "$f")"
+            code="$(curl -sS -o "$f" -w '%{http_code}' "$BASE/$f")"
+            if [ "$code" != "200" ]; then echo "MISSING on the live site: $f (HTTP $code)"; rm -f "$f"; missing=$((missing+1)); fi
+          done < files.txt
+          echo "== $(wc -l < files.txt) files, $missing missing"
+          echo "== headers"
+          for f in "" js/app.js js/auth-gate.js js/support-page.js js/support-core.js css/support.css; do
+            echo "-- /$f"; curl -sSI "$BASE/$f" | grep -i -E '^(HTTP|cache-control|etag|last-modified|age|content-length)' || true
+          done
+          echo "== the Support Inbox in the live files"
+          echo "index.html has the menu button: $(grep -c 'id="support-inbox-btn"' index.html)"
+          echo "index.html has the page section: $(grep -c 'id="support-page"' index.html)"
+          echo "app.js wires the menu button: $(grep -c 'support-inbox-btn' js/app.js)"
+          echo "app.js imports support-core: $(grep -c 'support-core.js' js/app.js)"
+          echo "app.js loads support-page: $(grep -c 'support-page.js' js/app.js)"
+          ls -la js/support-core.js js/support-page.js css/support.css
+      - name: Install test dependencies and WebKit
+        working-directory: backlog-tracker/test
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright-core install --with-deps webkit
+      - name: The live files as an iPad, in WebKit
+        working-directory: backlog-tracker/test
+        env:
+          REQUIRE_WEBKIT: '1'
+        run: HARNESS_PUBLIC_DIR="$GITHUB_WORKSPACE/live" node ui/webkit-ipad.test.mjs
