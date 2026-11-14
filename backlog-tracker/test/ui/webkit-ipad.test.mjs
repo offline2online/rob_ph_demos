@@ -89,7 +89,9 @@ try {
       if (!slideOver) return;
       await page.evaluate(() => document.getElementById("nav-open-btn").click());
       await until(() => page.evaluate(() => getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible"), "the slide-over menu");
-      await page.waitForTimeout(300);
+      // The menu slides in: wait until it has stopped moving and its first item is really under a finger.
+      await until(() => page.evaluate(() => { const b = document.getElementById("nav-ph-console-btn"); const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.left >= 0 && !!top && (top === b || b.contains(top)); }), "the slide-over menu to finish opening", 4000);
+      await page.waitForTimeout(150);
     };
     let at = "start";
     try {
@@ -105,7 +107,11 @@ try {
         await openMenu();
         const p = await tap(`#${id}`);
         try {
-          await until(async () => (await hash()).split("?")[0] === wantHash, `the route ${wantHash || "(board)"}`, 5000);
+          // Settings opens on its first tab, so its route is "#settings/…".
+          await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash || "(board)"}`, 5000);
+          // And the page it came from is gone: "nothing happened" and "both pages showing" both fail here.
+          const others = await page.evaluate((q) => ["#staff-kanban-page", "#concept-incubator-page", "#leads-page", "#support-page", "#faq-articles-page", "#faq-settings-page"].filter((x) => x !== q && !document.querySelector(x).hidden), section);
+          assert.deepStrictEqual(others, [], "another page is still on screen");
           await until(() => page.evaluate((q) => { const el = document.querySelector(q); return !!el && !el.hidden && el.getClientRects().length > 0; }, section), `${section} on screen`, 8000);
         } catch (e) {
           throw new Error(`${e.message}; the tap landed on "${p.under}", the route is "${await hash()}", errors: ${JSON.stringify(problems())}`);
