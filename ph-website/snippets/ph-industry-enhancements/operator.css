@@ -1,64 +1,27 @@
-/* PH Be Your Own Boss page (/be-your-own-boss/, 13 Nov 2026): the approved design, fluid from 1440 down to 360. Loaded on that page only. Every rule is under
-   body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. */
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the three Shortcode
+   widget blocks (calculator, tour, FAQ), in the approved design, fluid from 1440 down to 360. Loaded on that page only. Every block rule is
+   under body .phf so the theme and the Elementor kit (link colours, button and input styles, heading sizes) cannot restyle it. The rest of
+   the page is Elementor widgets styled from the site kit (ph-website/elementor/run-your-own-rmn.md). */
+/* The Elementor sections' anchors (their containers' CSS IDs) land below the sticky header, like the blocks' own sections. */
+body :is(#top,#why,#who,#how,#venues,#standards,#independents){scroll-margin-top:96px}
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
 body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
-body .phf p,body .phf h1,body .phf h2,body .phf ol,body .phf ul,body .phf li{margin:0;padding:0;font-family:inherit;letter-spacing:inherit}
+body .phf p,body .phf h2,body .phf ol,body .phf ul,body .phf li{margin:0;padding:0;font-family:inherit;letter-spacing:inherit}
 body .phf a{color:#0E6F8C}
 body .phf a:hover{color:#0A5469}
 body .phf a:focus-visible,body .phf button:focus-visible,body .phf input:focus-visible,body .phf select:focus-visible{outline:3px solid #179BC2;outline-offset:2px;box-shadow:none}
 html:has(body .phf){scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html:has(body .phf){scroll-behavior:auto}}
 body .phf .phf-sec{scroll-margin-top:96px;border-top:1px solid #E6E7E5}
-body .phf .phf-hero{background:#F9FAFD;border-top:0}
 body .phf .phf-white{background:#FFFFFF}
 body .phf .phf-tint{background:#F9FAFD}
-body .phf .phf-dark{background:#181A1F;color:#FFFFFF;border-top:0}
 body .phf .phf-wrap{max-width:1280px;margin:0 auto;padding:112px 32px}
 body .phf .phf-wrap-calc{max-width:970px}
 body .phf .phf-wrap-tour{max-width:1160px}
 body .phf h2{font-size:clamp(28px,3.4vw,40px);font-weight:600;text-transform:capitalize;line-height:1.1;color:inherit}
 
-/* Hero */
-body .phf .phf-hero-in{padding:88px 32px 96px;display:flex;flex-wrap:wrap;gap:56px;align-items:center}
-body .phf .phf-hero-copy{flex:1 1 520px;min-width:0}
-body .phf h1{margin:0 0 12px;font-size:clamp(40px,6vw,72px);line-height:1.08;font-weight:700;text-transform:capitalize;max-width:13ch;color:#181A1F}
-body .phf .phf-hero-sub{margin:0 0 24px;font-size:clamp(24px,2.6vw,32px);line-height:1.2;font-weight:600;color:#179BC2}
-body .phf .phf-hero-p{margin:0 0 36px;font-size:20px;max-width:34em;color:#3A3D44}
-body .phf .phf-ctas{display:flex;flex-wrap:wrap;gap:14px}
-body .phf a.phf-btn{display:inline-block;background:#179BC2;color:#FFFFFF;text-decoration:none;padding:16px 28px;border-radius:4px;font-weight:500;font-size:18px;line-height:1.5;border:0}
-body .phf a.phf-btn:hover{background:#0E7FA0;color:#FFFFFF}
-body .phf a.phf-btn-o{border:1.5px solid #181A1F;background:#FFFFFF;color:#181A1F;padding:15px 28px}
-body .phf a.phf-btn-o:hover{background:#F3F5F9;color:#181A1F}
-body .phf .phf-why{flex:1 1 380px;min-width:0;background:#FFFFFF;border:1px solid #E6E7E5;border-radius:20px;padding:32px}
-body .phf .phf-why-h{margin:0 0 24px;font-size:22px;font-weight:600}
-body .phf .phf-why-l{display:flex;flex-direction:column;gap:20px}
-body .phf .phf-why-i{display:flex;gap:16px;align-items:flex-start}
-body .phf .phf-bar{flex:none;width:10px;height:44px;border-radius:4px}
-body .phf .phf-why-t{font-weight:600}
-body .phf .phf-why-p{font-size:16px;color:#555962}
-
-/* Split sections, cards and grids */
-body .phf .phf-split{display:flex;flex-wrap:wrap;gap:48px;align-items:flex-start}
-body .phf .phf-split-m{margin-bottom:48px}
-body .phf .phf-split h2{flex:1 1 320px}
-body .phf .phf-split-c{flex:2 1 520px;min-width:0}
-body .phf .phf-lead{font-size:20px;color:#3A3D44;max-width:38em}
-body .phf .phf-lead+.phf-lead{margin-top:20px}
+/* Block headings */
 body .phf .phf-h2s{margin:0 0 16px}
-body .phf .phf-h2-40{margin:0 0 40px}
-body .phf .phf-intro{margin:0 0 40px;max-width:40em;color:#3A3D44}
-body .phf .phf-intro-d{margin:0 0 36px;color:#D5D7DB}
-body .phf .phf-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(260px,100%),1fr));gap:24px;list-style:none}
-body .phf .phf-grid-300{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
-body .phf .phf-ct{margin:0 0 8px;font-size:22px;font-weight:600;line-height:1.3}
-body .phf .phf-who{border-top:4px solid;padding-top:20px}
-body .phf .phf-who p:last-child,body .phf .phf-card p:last-child,body .phf .phf-steps li p:last-child{color:#3A3D44}
-body .phf .phf-card{background:#FFFFFF;border-radius:8px;padding:28px;border-top:4px solid}
-body .phf .phf-card-b{border:1px solid #E6E7E5;border-top:4px solid}
-body .phf .phf-steps li{background:#F9FAFD;border-radius:16px;padding:28px;list-style:none}
-body .phf .phf-n{margin:0 0 12px;font-size:40px;font-weight:700;color:#0E7FA0;line-height:1.5}
-body .phf .phf-chips{display:flex;flex-wrap:wrap;gap:12px;list-style:none}
-body .phf .phf-chips li{border:1px solid #4A4D55;border-radius:999px;padding:10px 20px;font-size:17px;list-style:none}
 
 /* Calculator */
 body .phf .phf-eb{margin:0 0 12px;font-size:13px;font-weight:600;color:#C43D82;letter-spacing:1.82px;text-transform:uppercase}
@@ -116,6 +79,24 @@ body .phf button.phf-how-b{position:relative;z-index:2;touch-action:manipulation
 body .phf button.phf-how-b::after{content:"";position:absolute;left:-15px;right:0;top:50%;height:46px;margin-top:-23px}
 }
 
+/* Running your own RMN: the FAQ accordion (native <details>; keyboard and tap need no script). Rows are at least 56px tall, so every
+   question is a tap target well over 44x44. */
+body .phf .phf-wrap-faq{max-width:970px}
+body .phf .phf-faq{margin-top:32px;border-top:1px solid #DCE1EB}
+body .phf .phf-faq-i{border-bottom:1px solid #DCE1EB}
+body .phf .phf-faq-q{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:56px;padding:16px 4px;cursor:pointer;list-style:none;font-size:20px;font-weight:600;line-height:1.35;color:#1C2540;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+body .phf .phf-faq-q::-webkit-details-marker{display:none}
+body .phf .phf-faq-q::marker{content:""}
+body .phf .phf-faq-q:hover{color:#0E6F8C}
+body .phf .phf-faq-q:focus-visible{outline:3px solid #179BC2;outline-offset:2px}
+body .phf .phf-faq-x{flex:none;position:relative;width:20px;height:20px}
+body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{content:"";position:absolute;left:2px;right:2px;top:9px;height:2px;border-radius:2px;background:#179BC2;transition:transform .2s}
+body .phf .phf-faq-x::after{transform:rotate(90deg)}
+body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
+body .phf .phf-faq-a{padding:0 44px 22px 4px}
+body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
+@media (prefers-reduced-motion:reduce){body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{transition:none}}
+
 /* Product tour band and the gate */
 body .phf h2.phf-h2-tour{margin:0 0 16px;max-width:18em}
 body .phf .phf-tour-p{margin:0 0 40px;font-size:18px;color:#5A6479;max-width:36em}
@@ -166,8 +147,7 @@ body .phf .phf-mount iframe{display:block;width:100%;border:0;min-height:560px}
 /* Phones: the 16px gutter, a stacked slider row, a gate that grows with its form */
 @media (max-width:600px){
 body .phf .phf-wrap{padding:72px 16px}
-body .phf .phf-hero-in{padding:56px 16px 64px;gap:40px}
-body .phf .phf-why,body .phf .phf-cin-card,body .phf .phf-cout{padding:22px}
+body .phf .phf-cin-card,body .phf .phf-cout{padding:22px}
 body .phf .phf-gate{padding:16px}
 body .phf .phf-gate-card{padding:20px}
 body .phf .phf-cout-v{font-size:52px}
@@ -175,4 +155,6 @@ body .phf .phf-crow-r{flex-wrap:wrap;row-gap:4px}
 body .phf .phf-crow-r .phf-clab{flex:1 1 100%}
 body .phf .phf-crow-r input[type=range]{flex:1 1 auto;width:auto}
 body .phf .phf-ph-side{width:96px}
+body .phf .phf-faq-q{font-size:18px}
+body .phf .phf-faq-a{padding:0 4px 20px}
 }

@@ -8,11 +8,11 @@ $ae_dir  = dirname( __DIR__ ) . '/snippets/ph-agent-endpoint';
 
 /* the Industries snippet's data() and the tour constants (tour.php itself needs WordPress, so its constants are lifted from the source) */
 $tour_src = (string) file_get_contents( $ind_dir . '/tour.php' );
-ok( 1 === preg_match( '/^const TOUR_DEMOS_STD = .*?^\);$/ms', $tour_src, $t1 ) && 1 === preg_match( '/^const TOUR_DEMOS_RM = .*?^\);$/ms', $tour_src, $t2 ) && 1 === preg_match( '/^const TOUR_INDUSTRIES = .*?^\);$/ms', $tour_src, $t3 ), 'found TOUR_INDUSTRIES in tour.php' );
+ok( 1 === preg_match( '/^const TOUR_DEMOS_STD = .*?^\);$/ms', $tour_src, $t1 ) && 1 === preg_match( '/^const TOUR_DEMOS_RM = .*?^\);$/ms', $tour_src, $t2 ) && 1 === preg_match( '/^const TOUR_DEMOS_RMN = .*?^\);$/ms', $tour_src, $t4 ) && 1 === preg_match( '/^const TOUR_INDUSTRIES = .*?^\);$/ms', $tour_src, $t3 ), 'found TOUR_INDUSTRIES in tour.php' );
 if ( ! function_exists( 'AngieSnippets\PhIndustryEnhancements_10063\data' ) ) {
 	eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; function data( $f ) { return require ' . var_export( $ind_dir . '/', true ) . ' . $f; }' );
 }
-eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; ' . $t1[0] . ' ' . $t2[0] . ' ' . $t3[0] );
+eval( 'namespace AngieSnippets\PhIndustryEnhancements_10063; ' . $t1[0] . ' ' . $t2[0] . ' ' . $t4[0] . ' ' . $t3[0] );
 require_once $ind_dir . '/ai-surface.php';
 use function AngieSnippets\PhIndustryEnhancements_10063\{robots_txt_text,ai_calc_section,ai_tour_section,ai_enrich_twin,ai_tours_llms_filter,ai_tours_llms_md,industry_twin,calculators,calc_llms_filter,data as ind_data};
 use function AngieSnippets\PhAgentEndpoint___ID__\{llms_full_text,agents_llms_md,server_card,tool_annotations,feature_slug_aliases,faq_for as ai_faq_for};
@@ -65,7 +65,11 @@ foreach ( array_diff( array_keys( $md ), array( 'telco', 'pharmacy' ) ) as $k ) 
 }
 
 /* ---- product tours: every TOUR_INDUSTRIES key, nowhere else ---- */
-ok( isset( $TOURS['telco'], $TOURS['pharmacy'], $TOURS['retail-media'], $TOURS['convenience'] ), 'TOUR_INDUSTRIES holds telco, pharmacy, retail-media and convenience' );
+ok( isset( $TOURS['telco'], $TOURS['pharmacy'], $TOURS['retail-media'], $TOURS['convenience'], $TOURS['rmn'] ), 'TOUR_INDUSTRIES holds telco, pharmacy, retail-media, convenience and rmn' );
+/* the Run Your Own RMN tour is the hidden page's: out of llms.txt and the twins until that page is live */
+ok( '/run-your-own-rmn/tour' === $TOURS['rmn']['path'] && '/run-your-own-rmn/' === $TOURS['rmn']['page'] && 'Interactive product tour – Run Your Own RMN' === $TOURS['rmn']['label'] && true === $TOURS['rmn']['operator'], 'rmn: path /run-your-own-rmn/tour, page /run-your-own-rmn/, label "Interactive product tour – Run Your Own RMN", marked operator' );
+ok( ! isset( \AngieSnippets\PhIndustryEnhancements_10063\ai_tours()['rmn'] ) && 4 === count( \AngieSnippets\PhIndustryEnhancements_10063\ai_tours() ), 'ai_tours() leaves the rmn tour out while the Run Your Own RMN page is hidden' );
+ok( false === strpos( ai_tours_llms_md(), 'run-your-own-rmn' ) && false === strpos( ai_tours_llms_md(), 'Run Your Own RMN' ) && '' === ai_tour_section( 'rmn' ), 'hidden: no Run Your Own RMN tour in llms.txt or a twin section' );
 foreach ( $md as $k => $text ) {
 	$twin = industry_twin( $k );
 	$tn   = substr_count( $twin, '## Interactive product tour' );
@@ -102,6 +106,10 @@ foreach ( $plines as $l ) {
 }
 ok( false !== strpos( $llms, '[White Label Retail Media Platform](https://personalisationhub.com/white-label-retail-media-platform/?format=md)' ) && false === strpos( $llms, 'com/retail-media-platform/' ), 'llms.txt names the features page by its new slug and title' );
 foreach ( $TOURS as $k => $t ) {
+	if ( ! empty( $t['operator'] ) ) {
+		ok( false === strpos( $llms, $t['page'] ), "llms.txt does not list the hidden $k tour" );
+		continue;
+	}
 	preg_match( '/## Interactive product tours\n\n(.*?)\n\n## /s', $llms, $tm );
 	ok( isset( $tm[1] ) && false !== strpos( $tm[1], '[' . $t['name'] . '](https://personalisationhub.com' . $t['page'] . '?format=md)' ), "llms.txt lists the $k tour" );
 	foreach ( $t['demos'] as $demo ) {
@@ -118,7 +126,7 @@ ok( 10 === count( $defs ), 'ten tools' );
 foreach ( $defs as $d ) {
 	ok( 1 === preg_match( '/^  - `' . preg_quote( $d['name'], '/' ) . '`: \S/m', $agents ), 'For AI agents lists ' . $d['name'] . ' on one line' );
 }
-foreach ( array( '`run_business_model_calculator`', 'GET https://personalisationhub.com/wp-json/ph-agent/v1/tools', '?format=md', '/llms-full.txt', '/.well-known/mcp.json', 'help-api/mcp', 'navigator.modelContext' ) as $needle ) {
+foreach ( array( '`run_business_model_calculator`', 'GET https://personalisationhub.com/wp-json/ph-agent/v1/tools', '?format=md', '/llms-full.txt', '/.well-known/mcp.json', '(https://personalisationhub.com/mcp)', '(https://personalisationhub.com/help-api/)', 'navigator.modelContext' ) as $needle ) {
 	ok( false !== strpos( $llms, $needle ), "For AI agents names $needle" );
 }
 ok( false === strpos( $llms, 'search the Support Centre from any MCP client' ), 'the old one-line description of the MCP server is gone' );
@@ -147,7 +155,9 @@ ok( "# A\n\n---\n\nURL: u\n\n# B\n" === llms_full_text( "# A\n", array( array( '
 /* ---- /.well-known/mcp.json ---- */
 $card = json_decode( json_encode( server_card(), JSON_UNESCAPED_SLASHES ), true );
 ok( is_array( $card ) && 'Personalisation Hub' === $card['name'] && strlen( $card['description'] ) > 80, 'server card is JSON with a name and description' );
-ok( 'https://backlog-tracker-e4ed2.web.app/help-api/mcp' === $card['endpoint'] && 'streamable-http' === $card['transport']['type'] && false === $card['authentication']['required'], 'server card: remote endpoint, streamable HTTP, no auth' );
+ok( ! preg_match( '#backlog-tracker|\.web\.app|firebaseapp\.com|cloudfunctions\.net#i', $llms . json_encode( server_card(), JSON_UNESCAPED_SLASHES ) ), 'llms.txt and the server card never name the console host' );
+ok( 'https://personalisationhub.com/help-api/' === $card['links']['helpApi'], 'server card: help API on personalisationhub.com' );
+ok( 'https://personalisationhub.com/mcp' === $card['endpoint'] && 'https://personalisationhub.com/mcp' === $card['transport']['url'] && 'https://personalisationhub.com/mcp' === $card['remotes'][0]['url'] && 'streamable-http' === $card['transport']['type'] && false === $card['authentication']['required'], 'server card: remote endpoint, streamable HTTP, no auth' );
 ok( json_decode( json_encode( $defs ), true ) === $card['tools'], 'server card tools equal the tool contract' );
 ok( 'https://personalisationhub.com/llms.txt' === $card['links']['llms'] && 0 === strpos( $card['links']['documentation'], 'https://personalisationhub.com/' ), 'server card links to llms.txt and the docs' );
 
