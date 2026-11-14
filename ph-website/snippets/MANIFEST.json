@@ -281,5 +281,25 @@
       "liveValue": "<snippet id assigned at deploy>",
       "note": "main.php carries __ID__ twice (namespace AngieSnippets\\PhConsent___ID__ and the script handle ph-consent-__ID__); replace it with the new snippet id when creating the snippet, then record the id here and the live bytes/sha256."
     }
+  },
+  {
+    "id": 10733,
+    "title": "PH GA4",
+    "version": "1.0.0",
+    "folder": "ph-ga4",
+    "files": [
+      {
+        "name": "ga4.js",
+        "bytes": 3936,
+        "sha256": "f827a45d2ecf9a21ee133e1672e8a9a7dec6c52f2cfb3bbedfb8e23d37a2c816"
+      },
+      {
+        "name": "main.php",
+        "bytes": 7670,
+        "sha256": "8031878bc8a61ec0d56d635efa797c55506075d391c715066631fd659a7cf79d",
+        "liveBytes": 7668,
+        "liveSha256": "66b39514b4362311d82a05a874905167d5fd1bf9d0bf48517221322a37fce7cc"
+      }
+    ]
   }
 ]

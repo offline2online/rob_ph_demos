@@ -2307,7 +2307,7 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
 // See partner-central.js and deploy/aws/README.md.
 const { createPartnerCentralApi } = require("./partner-central");
 let partnerCentralApi = null;
-exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => {
+function getPartnerCentralApi() {
   if (!partnerCentralApi) {
     const { getAuth } = require("firebase-admin/auth");
     const { GoogleAuth } = require("google-auth-library");
@@ -2322,7 +2322,22 @@ exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstanc
       logger,
     });
   }
-  return partnerCentralApi.handle(req, res);
+  return partnerCentralApi;
+}
+exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstances: 3 }, (req, res) => getPartnerCentralApi().handle(req, res));
+
+// ACE opportunity stages → GA4 Measurement Protocol, keyed on the GA4
+// client_id the website captured with each lead (ace-ga4.js). Run hourly by
+// .github/workflows/ace-ga4.yml (POST with X-Board-Key), not by Cloud
+// Scheduler: this project has no scheduler jobs (the deploy account can't
+// create them, see kanban-mcp.test.js "no scheduled function").
+// Sends for real only while Partner Central's catalogue is "AWS".
+const GA4_MP_API_SECRET = defineSecret("GA4_MP_API_SECRET");
+const { createAceGa4Job } = require("./ace-ga4");
+let aceGa4Job = null;
+exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_API_KEY], timeoutSeconds: 300, maxInstances: 1, concurrency: 1 }, (req, res) => {
+  if (!aceGa4Job) aceGa4Job = createAceGa4Job({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), apiSecret: () => GA4_MP_API_SECRET.value(), boardKey: () => BOARD_API_KEY.value(), logger });
+  return aceGa4Job.handle(req, res);
 });
 
 // Promote › Leads and Prospects (TAM): company enrichment (lead-enrich.js). An

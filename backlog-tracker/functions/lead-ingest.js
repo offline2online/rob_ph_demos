@@ -51,7 +51,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
 
   // The lead as the website first creates it.
   const newLead = (r, entry, extra) => ({
-    ...r.fields, websiteActivity: [entry], customerAccount: null, ...(extra || {}),
+    ...r.fields, websiteActivity: [entry], customerAccount: null, gaClientIds: core.mergeGaClientIds([], r.ga), ...(extra || {}),
     createdAt: FieldValue.serverTimestamp(), stageChangedAt: FieldValue.serverTimestamp(), createdByEmail: BY, ...stamps(),
   });
   // The same company and country again: keep what is there, fill blanks, add the contact, count it.
@@ -63,6 +63,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
       ...(cur.sourceDetail ? {} : { sourceDetail: r.fields.sourceDetail }),
       websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
+      ...(r.ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, r.ga) } : {}),
       ...(extra || {}), ...stamps(),
     });
   }
@@ -133,6 +134,7 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage }),
       ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
       websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),
+      ...(r.ga ? { gaClientIds: core.mergeGaClientIds(cur.gaClientIds, r.ga) } : {}),
       ...stamps(),
     });
     return [200, { ok: true, leadId: existing.id, created: false, leadType: "operator", test: r.test }];
@@ -187,6 +189,8 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
     if (r.errors.length) return send(res, 400, { error: r.errors.join(" ") });
 
     const entry = { at: now().toISOString(), label: r.fields.sourceLabel, detail: r.fields.sourceDetail, page: r.fields.sourcePage };
+    // The visitor's GA4 client_id (website PH GA4 snippet), for ace-ga4.js. Test leads never reach GA4.
+    r.ga = r.test ? null : core.gaEntryFromWebsite(req.body, entry.at);
     try {
       const [status, body] = r.fields.leadType === "operator" ? await operator(r, entry) : r.test ? await byName(r, entry) : await intoTam(r, entry);
       return send(res, status, body);
