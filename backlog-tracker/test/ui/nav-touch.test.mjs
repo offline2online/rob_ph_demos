@@ -44,6 +44,7 @@ const PLAN = [
   ["#settings", "sidebar"],
   ["#settings", "tabs"],
   ["#settings/user-management/users", "tabs"],
+  ["#support", "tabs"],
 ];
 
 function initMode(mode) {

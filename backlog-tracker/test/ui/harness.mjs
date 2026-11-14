@@ -74,6 +74,7 @@ export async function startHarness() {
     const mediaKeyWrites = [];
     const aceWrites = [];
     const enrichCalls = [];
+    const supportCalls = [];
     const aceStore = (seed.aceOpportunities || []).map((o) => ({ ...o }));
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
@@ -132,6 +133,14 @@ export async function startHarness() {
           enrichCalls.push(JSON.parse(route.request().postData() || "{}"));
           return route.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ok: true, queued: true }) });
         }
+        // Support Inbox (functions/support-mail.js). seed.supportStatus is the status answer (not connected by
+        // default); every other call is answered OK (seed.supportAnswer overrides) and returned as supportCalls.
+        if (url.pathname.startsWith("/supportMail/")) {
+          const req = route.request();
+          if (url.pathname === "/supportMail/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.supportStatus || { encryptionReady: true, aiReady: true, clientSet: false, clientId: "", connected: false, connectedEmail: "", connectionError: "", lastSyncAt: null, lastSyncOk: true, lastSyncError: "", redirectUri: `${origin}/supportMail/v1/oauth/callback`, settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "Personalisation Hub Support", fromName: "Personalisation Hub Support", vipDomains: [], importDays: 7 } }) });
+          supportCalls.push({ method: req.method(), path: url.pathname.replace("/supportMail/v1/", ""), body: JSON.parse(req.postData() || "{}") });
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.supportAnswer || { ok: true, newMessages: 0, newTickets: 0 }) });
+        }
         if (url.pathname.startsWith("/mediaKeys/")) {
           const req = route.request();
           if (url.pathname === "/mediaKeys/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.mediaKeys || { encryptionReady: true, providers: [] }) });
@@ -179,7 +188,7 @@ export async function startHarness() {
     });
     page.on("dialog", (d) => { addProblem(`native ${d.type()} dialog: ${d.message()}`); d.dismiss().catch(() => {}); });
     await page.goto(`${origin}/${hash}`, { waitUntil: "domcontentloaded" });
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, origin, close: () => context.close() };
   }
 
   return {

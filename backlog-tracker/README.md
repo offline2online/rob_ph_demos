@@ -2925,3 +2925,131 @@ management" scenario in `test/ui/console-click.test.mjs`.
 - `functions/faq-feed.js` — the published-content record builders shared with `scripts/faq-export.js`, the live feed `GET /help-api/data/{index,releases}.json` / `articles/<id>.json` (served by `help-search.js`), and the debounced Support Centre refresh ping (`pingSupportCentreOnArticleChange` / `…OnCategoryChange` in `index.js`). See REQUIREMENTS.md → "Live data feed and refresh ping".
 
 - **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection (Google Ads + GA4; the ingest is not built yet, so they show 0 until it is); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). See REQUIREMENTS.md → Promote section: Conversion Funnel.
+
+## Support Inbox (14 Nov 2026)
+
+**Support › Support Inbox** (`#support`, the menu item above Help Centre)
+turns the support mailbox into tickets, answers what the Help Centre can
+answer, and hands the rest to a person. It replaces reading the mailbox in
+Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
+
+| File | What it does |
+|---|---|
+| `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
+| `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, spam, notes, assignment, Staff Kanban escalation |
+| `public/js/support-core.js` | The page's rules, pure: queues, routes, the stats |
+| `public/js/support-page.js`, `public/css/support.css` | The page (Inbox, one ticket, Stats) and Settings › Support inbox |
+| `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
+
+**How a ticket flows.** Every Gmail thread in the mailbox is one
+`supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
+notes and timeline in the `messages` subcollection. For each new customer
+email the function picks the most relevant *published* Help Centre articles
+and asks Claude for a triage: category, one-line summary, whether the
+articles fully answer it, a confidence, and a reply. Then one rule
+(`decideAction`) decides:
+
+- **Sent by itself** and the ticket resolved by AI: only when sending is
+  switched on in Settings, the articles answer the question, the reply cites
+  an article, and the confidence reaches the level set. **Off by default.**
+- **AI drafts to approve**: an answer that wasn't sent by itself. A person
+  uses it, edits it or writes their own.
+- **Needs a person**: the Help Centre doesn't answer it, or the sender is
+  high value. The draft, if any, is a holding reply to edit.
+- **Never answered automatically**: machine-sent mail (newsletters, receipts,
+  bounces, out-of-office: `Auto-Submitted`, `List-Unsubscribe`, `Precedence`,
+  a no-reply sender), a high-value sender, a thread that already had one
+  automatic answer, and a ticket a person is already on. Automatic replies
+  carry `Auto-Submitted: auto-replied`. These are what stop two
+  auto-responders writing to each other.
+
+**High-value senders.** A sender whose company is in Prospects (TAM) or
+Leads (by website domain, or an exact contact address), or whose domain is
+listed in Settings, is high value. The ticket goes to Needs a person and a
+flagged, highest-priority **Staff Kanban** ticket is raised through the
+board's own `kanban_create_task`, assigned to the person chosen in Settings
+(by default whoever connected the mailbox), with a link back to the ticket.
+Resolving the support ticket comments on the Kanban ticket. Any ticket can
+also be raised by hand ("Raise on Staff Kanban").
+
+**Stats** (`#support/stats`): tickets received, resolved, answered by AI
+alone, needed a person, median first response, median time to resolution,
+high-value, reopened, tickets per day by how they ended, and what customers
+asked about. Spam and machine-sent mail are counted separately and left out
+of every rate.
+
+### Connecting the mailbox (once, by an admin)
+
+1. In Google Cloud Console, in a project owned by the Workspace that owns
+   the mailbox: enable the **Gmail API**; on the OAuth consent screen choose
+   **Internal**; create **Credentials → OAuth client ID → Web application**
+   with the authorised redirect address shown in Settings
+   (`https://backlog-tracker-e4ed2.web.app/supportMail/v1/oauth/callback`).
+2. Console → **Settings → Support inbox**: paste the client ID and secret,
+   **Save client**, then **Connect Gmail** and sign in **as the support
+   mailbox**. The first sync reads the last 7 days.
+3. Choose who high-value tickets are raised for, and whether confident
+   answers are sent without a person.
+
+The scope asked for is `gmail.modify` (read, label, send; it cannot
+permanently delete). The client secret and Google's refresh token are
+encrypted with AES-256-GCM under `MEDIA_KEYS_ENC_KEY`, the same key and code
+as the Media Studio keys, in `supportSecrets/gmail`, which `firestore.rules`
+closes to every client. Neither is ever sent back to a browser. If Google
+revokes the sign-in, Settings and the page header say so; connect again.
+
+A consent screen left as **External / Testing** makes Google expire the
+sign-in after seven days. Use Internal, or publish the app.
+
+### iPad
+
+The page follows the console's iPad rules (root `CLAUDE.md` → "iPad taps" and
+"iPad menu dead after a release"), and `test/ui/support-touch.test.mjs`
+holds it to them:
+
+- Every control is a `<button>`, a tab, a `<summary>` or a labelled
+  checkbox acting on `click`, so the console-wide tap handler
+  (`touch-click.js`) covers all of them. Nothing listens for `mousedown` and
+  nothing is opted out with `data-native-tap`.
+- The test does one person's whole journey with a finger (menu item, every
+  queue, a ticket, the suggested reply, a Help Centre article, a note, Send,
+  Raise on Staff Kanban, Mark as spam and its confirmation, Stats, Sync now,
+  the Settings switch and Save) under each of the five ways iPad WebKit has
+  lost taps, at landscape, the 1024 edge and portrait. Each tap must act
+  exactly once: a doubled Send is two emails to a customer.
+- A field being typed in is never rebuilt: a redraw caused by new data waits
+  until the person leaves the field (rebuilding it closes the iPad keyboard
+  and drops the caret). Search redraws only the list.
+- In portrait the queues wrap. They are not a sideways-scrolling strip,
+  where WebKit turns a finger's slight roll into a pan and drops the tap.
+- `app.js` tolerates a page with no Support Inbox in it, so a page kept from
+  before this release still starts with this release's scripts.
+- **A ticket that adds a control here** uses one of the covered kinds and
+  adds a step to that test. Chromium with touch emulation is not iPad Safari:
+  the test reproduces the known failures, it does not replace a check on the
+  device after a release.
+
+### Things to know
+
+- **Deploy**: part of the console's normal deploy. The function binds
+  `MEDIA_KEYS_ENC_KEY`, `BOARD_API_KEY`, `ANTHROPIC_API_KEY` and
+  `ANTHROPIC_WORKSPACE_ID`, all of which already exist. Without the Anthropic
+  key tickets still arrive, with no suggested reply.
+- **Sync cadence**: the workflow's five-minute schedule is run by GitHub when
+  it has capacity. The page also syncs when opened and every three minutes
+  while open. For a firmer cadence, point a Cloud Scheduler job at
+  `POST /supportMail/v1/cron` with the `X-Board-Key` header. An `onSchedule`
+  function was not used because this codebase has none and a first one needs
+  the Cloud Scheduler API and a deploy permission nobody has confirmed.
+- **Privacy**: customer email is personal data. Members read tickets;
+  nobody else can (`firestore.rules`). Writes go only through the function.
+  The workflow prints counts, never ticket text.
+- **Attachments** are listed by name; open them in Gmail.
+- **Not built**: MCP tools for the inbox, HTML email rendering (text only),
+  merging or splitting threads, SLA alerts, customer satisfaction surveys.
+- **Tests**: `node test/support-core.test.js`, `node test/support-mail.test.js`
+  (connection, sync, every gate before an automatic send, replies, spam,
+  escalation; Firestore, Google and the model stubbed),
+  `node test/support-page-core.test.mjs`, `node test/ui/support-inbox.test.mjs`
+  (the page in Chromium at 390, 820 and 1280 px, light and dark) and
+  `node test/ui/support-touch.test.mjs` (the iPad, above).

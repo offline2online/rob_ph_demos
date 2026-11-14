@@ -54,6 +54,13 @@
           }
         },
         {
+          "source": "/supportMail/**",
+          "function": {
+            "functionId": "supportMail",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/leadEnrich/**",
           "function": {
             "functionId": "leadEnrich",

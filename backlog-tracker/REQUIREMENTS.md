@@ -4915,3 +4915,134 @@ overlay. Presentation only: every field, action and datum is still there.
   (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
   and Prospects (TAM) (industry, country, campaigns).
 - **Times:** days and dates are the viewer's local time, never UTC.
+
+## Support Inbox (14 Nov 2026)
+
+Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
+see every incoming email as a ticket, answer what can be answered from the
+Help Centre automatically, involve a person when it can't, flag high-value
+retailers on the Staff Kanban, and track it all on one stats page.
+
+### Where it is
+
+- **SUP-NAV-1** A "Support Inbox" item sits in the sidebar's Support group,
+  directly above Help Centre, and opens `#support`.
+- **SUP-NAV-2** It is its own section in Roles (`support-inbox`), following
+  the Help Centre grant until a role sets its own. Below Edit, the page has
+  no write controls.
+- **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
+  Every member can read it; only an admin can change it.
+
+### Connecting
+
+- **SUP-CON-1** An admin saves a Google OAuth client and signs in as the
+  mailbox. Access is `gmail.modify` only.
+- **SUP-CON-2** The client secret and refresh token are stored encrypted
+  (AES-256-GCM, `MEDIA_KEYS_ENC_KEY`) in a collection no client can read or
+  write, and are never returned by any endpoint.
+- **SUP-CON-3** Google's redirect is accepted only with the single-use state
+  issued to that admin within the last ten minutes.
+- **SUP-CON-4** A revoked or expired sign-in is shown in Settings and in the
+  page header. It is never silent.
+- **SUP-CON-5** Disconnecting revokes and forgets the token and keeps the
+  tickets.
+
+### Tickets
+
+- **SUP-TKT-1** One ticket per Gmail thread, keyed `SUP-n`. Reading the same
+  mail twice never creates a second ticket or message.
+- **SUP-TKT-2** Mail the mailbox itself started is not a ticket.
+- **SUP-TKT-3** Statuses: Open, Waiting on customer, Resolved, Spam. A new
+  customer email on a Waiting or Resolved ticket reopens it. It never
+  reopens Spam.
+- **SUP-TKT-4** Queues: Needs a person, AI drafts to approve, Automated &
+  unsorted, Waiting on customer, Resolved, Spam, All tickets. An open,
+  waiting, resolved or spam ticket is in exactly one of the first six.
+- **SUP-TKT-5** Marking spam asks first, moves the thread to Gmail's Spam
+  too, and can be undone ("Not spam").
+- **SUP-TKT-6** A person can reply (sent from the mailbox on the same
+  thread), reply and resolve, add an internal note (never emailed), assign
+  the ticket to a member, resolve, reopen, and raise it on the Staff Kanban.
+- **SUP-TKT-7** A reply written in Gmail itself is filed on the ticket and
+  counts as a person answering.
+- **SUP-TKT-8** Every action is recorded on the ticket's timeline with who
+  did it. Clients cannot write tickets directly.
+- **SUP-TKT-9** Customer text is always shown as text, never as markup.
+
+### Answering
+
+- **SUP-AI-1** Each new customer email gets a category, a one-line summary
+  and a drafted reply, written only from published Help Centre articles.
+  The email is treated as untrusted content.
+- **SUP-AI-2** Sending without a person is **off by default**. Switched on,
+  a draft is sent only when the articles fully answer the question, it cites
+  at least one article, and the confidence reaches the level in Settings
+  (50% to 99%, default 80%).
+- **SUP-AI-3** Never sent automatically: machine-sent mail, a high-value
+  sender, a thread already answered automatically once, a ticket a person
+  has replied to or noted, and anything the model marks as spam.
+- **SUP-AI-4** An automatic reply is marked `Auto-Submitted: auto-replied`,
+  resolves the ticket as answered by AI, and is shown as such.
+- **SUP-AI-5** If the model fails or is not configured, the ticket still
+  arrives and goes to Needs a person with the reason.
+- **SUP-AI-6** In the reply box a person can use the suggested reply, ask
+  for another, and search the Help Centre to insert an article's short
+  answer and link. Whether the sent reply was the draft, an edited draft or
+  their own words is recorded.
+
+### High-value senders
+
+- **SUP-HV-1** High value means: the sender's domain matches a Prospects
+  (TAM) or Leads company website, the address is a contact on a lead, or
+  the domain is listed in Settings. Personal mailbox domains never match by
+  domain.
+- **SUP-HV-2** A high-value ticket goes to Needs a person, is listed first
+  there, and raises one flagged, highest-priority Staff Kanban ticket
+  assigned to the person set in Settings (default: whoever connected the
+  mailbox), linking back to the ticket. A later email on the thread does not
+  raise a second.
+- **SUP-HV-3** Resolving the support ticket comments on the Kanban ticket.
+
+### Stats
+
+- **SUP-STAT-1** One Stats tab for the last 7, 30 or 90 days: tickets
+  received, resolved, answered by AI alone (share of resolved), needed a
+  person, median first response, median time to resolution, high-value,
+  reopened, tickets per day by how they ended, and by category.
+- **SUP-STAT-2** Spam and machine-sent mail are counted on their own and
+  excluded from every other figure.
+- **SUP-STAT-3** "Answered by AI alone" means resolved by the automatic
+  reply with no person replying, noting or closing it.
+- **SUP-STAT-4** The chart has a legend and a table of the same figures.
+
+### iPad
+
+- **SUP-IPAD-1** Every control works by touch under each known way iPad
+  WebKit loses a tap (no click, pointercancel, Touch Events only, a late
+  re-aimed click), in landscape and portrait, and acts exactly once.
+- **SUP-IPAD-2** A field being typed in is not rebuilt by incoming data.
+- **SUP-IPAD-3** No tappable control sits in a sideways-scrolling strip.
+- **SUP-IPAD-4** A page cached from before this release starts with this
+  release's scripts, with a working menu.
+
+### Data model
+
+`supportTickets/{threadId}`: `key`, `number`, `subject`, `customerEmail`,
+`customerName`, `status`, `needsHuman`, `triagePending`, `automated`,
+`highValue`, `account {kind, id, name, reason}`, `category`, `summary`,
+`triageReason`, `spamLikely`, `aiDraft {text, confidence, answerable,
+articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
+`reopenCount`, `resolvedBy`, `createdAt`, `lastMessageAt`, `lastInboundAt`,
+`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
+`supportTickets/{id}/messages/{gmailMessageId}`: `direction`
+(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
+mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
+| `manual`). `supportSettings/main`: connection status and settings
+(member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
+server-only.
+
+### Known gaps
+
+Email is shown as text; attachments are named, not stored. The list and
+stats cover the 500 most recently active tickets. There are no MCP tools
+for the inbox yet. The five-minute sync depends on GitHub's schedule.
