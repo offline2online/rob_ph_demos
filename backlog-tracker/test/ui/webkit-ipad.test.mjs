@@ -71,15 +71,25 @@ try {
     const slideOver = viewport.width < 1024;
     const hash = () => page.evaluate(() => location.hash);
     const problems = () => o.problems.filter((p) => !/unrouted host/.test(p));
-    const tap = async (sel) => {
-      const p = await page.evaluate((q) => {
+    // What a finger would meet: where things are, how the page is scrolled and zoomed.
+    const geometry = (sel) => page.evaluate((q) => {
+      const rect = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; };
+      const d = document.getElementById("nav-drawer"), v = window.visualViewport;
+      return { target: rect(document.querySelector(q)), drawer: rect(d), drawerClass: d.className, drawerTransform: getComputedStyle(d).transform, drawerPosition: getComputedStyle(d).position,
+        inner: [innerWidth, innerHeight], scroll: [Math.round(scrollX), Math.round(scrollY)], doc: [document.documentElement.scrollWidth, document.documentElement.scrollHeight],
+        visual: v ? { left: Math.round(v.offsetLeft), top: Math.round(v.offsetTop), width: Math.round(v.width), height: Math.round(v.height), scale: v.scale } : null,
+        backdropOpen: document.getElementById("nav-drawer-backdrop").classList.contains("open") };
+    }, sel);
+    // `scroll: false` for sidebar items: a person never scrolls the menu to reach them, and the test must not either.
+    const tap = async (sel, { scroll = true } = {}) => {
+      const p = await page.evaluate(([q, scroll]) => {
         const b = document.querySelector(q);
         if (!b || !b.getClientRects().length || b.closest("[hidden]")) return null;
-        b.scrollIntoView({ block: "center" });
+        if (scroll) b.scrollIntoView({ block: "center" });
         const r = b.getBoundingClientRect();
         const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
         return { x: r.left + r.width / 2, y: r.top + r.height / 2, under: top ? (top.id || String(top.className).slice(0, 40) || top.tagName) : "nothing" };
-      }, sel);
+      }, [sel, scroll]);
       assert.ok(p, `${sel} is not on screen`);
       await page.waitForTimeout(220);
       await page.touchscreen.tap(p.x, p.y);
@@ -99,13 +109,15 @@ try {
       await until(() => page.locator(".project-options-btn").count(), "the board", 20000);
       assert.deepStrictEqual(problems(), [], "errors while the console started");
 
-      for (const [id, wantHash, section] of MENU) {
-        at = `menu → ${id}`;
+      // Three times round the menu: a tap that is lost one time in five must not slip through.
+      for (let round = 1; round <= 3; round++) for (const [id, wantHash, section] of MENU) {
+        at = `menu → ${id} (round ${round})`;
         // Start each item from a different page, so "nothing happened" can't pass by accident.
         await page.evaluate((s) => { location.hash = s; }, id === "staff-kanban-btn" ? "#concept-incubator" : "#staff-kanban");
         await page.waitForTimeout(500);
         await openMenu();
-        const p = await tap(`#${id}`);
+        const before = await geometry(`#${id}`);
+        const p = await tap(`#${id}`, { scroll: false });
         try {
           // Settings opens on its first tab, so its route is "#settings/…".
           await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash || "(board)"}`, 5000);
@@ -114,7 +126,7 @@ try {
           assert.deepStrictEqual(others, [], "another page is still on screen");
           await until(() => page.evaluate((q) => { const el = document.querySelector(q); return !!el && !el.hidden && el.getClientRects().length > 0; }, section), `${section} on screen`, 8000);
         } catch (e) {
-          throw new Error(`${e.message}; the tap landed on "${p.under}", the route is "${await hash()}", errors: ${JSON.stringify(problems())}`);
+          throw new Error(`${e.message}; the tap at ${Math.round(p.x)},${Math.round(p.y)} landed on "${p.under}", the route is "${await hash()}", errors: ${JSON.stringify(problems())}; before the tap: ${JSON.stringify(before)}; now: ${JSON.stringify(await geometry(`#${id}`))}`);
         }
         assert.deepStrictEqual(problems(), [], `errors after opening ${id}`);
       }
@@ -123,7 +135,7 @@ try {
       await page.evaluate(() => { location.hash = "#staff-kanban"; });
       await page.waitForTimeout(400);
       await openMenu();
-      await tap("#support-inbox-btn");
+      await tap("#support-inbox-btn", { scroll: false });
       await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 10000);
       at = "Support Inbox: a queue";
       await tap('[data-support-queue="ai-drafts"]');
@@ -155,7 +167,7 @@ try {
       console.log(`PASS ${name} (${viewport.width}x${viewport.height})`);
     } catch (e) {
       failures++;
-      console.log(`FAIL ${name} (${viewport.width}x${viewport.height}) at "${at}": ${String(e.message).split("\n")[0]}`);
+      console.log(`FAIL ${name} (${viewport.width}x${viewport.height}) at "${at}": ${String(e.message).split("\n")[0].slice(0, 2500)}`);
       if (problems().length) console.log(`     errors: ${JSON.stringify(problems()).slice(0, 1500)}`);
     }
     await o.close();
