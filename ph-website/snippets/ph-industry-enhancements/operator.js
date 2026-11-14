@@ -1,20 +1,29 @@
 /* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): drives the three
-   Shortcode widget blocks on the Elementor page (each a .phf element: [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq]),
-   wherever Elementor puts them. The calculator, info tooltips, anchors, the header's "Arrange A Demo" (goes to #tour here), the product
-   tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts to ph-site/v1/operator-lead; on success the Run Your
-   Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked from the stored ph_lead with no second form. The FAQ
-   is native <details> and needs no script. Each part runs only when its block is on the page. */
+   blocks on the Elementor page (each a .phf element, put into its mount container by operator.php or rendered by a shortcode), wherever
+   Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the header's
+   "Arrange A Demo" (goes to #tour here), the product tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
+   to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked
+   from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. Each part runs only when its block is
+   on the page. */
 (function () {
   "use strict";
-  var SHARE = 0.5; // the calculator's share of ad revenue: code only, never shown.
-  var BACKGROUNDS = ["Agency media or account management", "Ad-tech sales or partnerships", "Retail media", "Marketing", "Something else"];
+  // The calculator's shares of ad revenue, "Operator or team" and "Retailer": code only, never shown anywhere.
+  var SHARE = 0.5, RETAILER_SHARE = 0.7;
+  var BACKGROUNDS = ["Agency media or account management", "Ad-tech sales or partnerships", "Retail media", "Creative agency", "Retail business owner or manager", "Marketing", "Something else"];
+  var AUDIENCES = ["An individual operator", "Part of an operator team", "A small to medium retailer"]; // the gate's "I am"
+  // The output labels by the toggle's mode. A retailer's extra sales in their own stores are added to their income.
+  var LABELS = {
+    operator: { yours: "Your potential income a year", venues: "Venues in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales for your venues a year" },
+    retailer: { yours: "Your potential income a year", venues: "Stores in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales in your stores a year" }
+  };
 
-  function calc(s) {
+  function calc(s, mode) {
     var visitorsMonth = s.ven * s.vis * 365 / 12;
     var viewers = visitorsMonth * s.view / 100;
     var viewsMonth = viewers * s.dis;
     var adRevenue = viewsMonth * 12 / 1000 * s.cpm;
-    return { venues: s.ven, displays: s.ven * s.dis, visitorsMonth: visitorsMonth, viewsMonth: viewsMonth, income: adRevenue * SHARE, extraSales: viewers * 12 * s.atv * s.up / 100 };
+    var extraSales = viewers * 12 * s.atv * s.up / 100;
+    return { venues: s.ven, displays: s.ven * s.dis, visitorsMonth: visitorsMonth, viewsMonth: viewsMonth, income: mode === "retailer" ? adRevenue * RETAILER_SHARE + extraSales : adRevenue * SHARE, extraSales: extraSales };
   }
   function money(n) {
     if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
@@ -25,7 +34,7 @@
   function view(c) {
     return { yours: money(c.income), venues: count(c.venues), displays: count(c.displays), visitors: count(Math.round(c.visitorsMonth)), views: count(Math.round(c.viewsMonth)), extraSales: money(c.extraSales) };
   }
-  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS }; return; }
+  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS, AUDIENCES: AUDIENCES, LABELS: LABELS }; return; }
 
   if (!document.querySelector(".phf")) return;
   var $ = function (id) { return document.getElementById(id); };
@@ -34,14 +43,24 @@
 
   /* ---------- Calculator ---------- */
   var IDS = { ven: "c-ven", dis: "c-dis", vis: "c-vis", cpm: "c-cpm", atv: "c-atv", view: "c-view", up: "c-up" };
+  var mode = "operator"; // the "I am" toggle: "operator" (Operator or team) or "retailer"
   function num(el) { var v = Number(el.value); return isNaN(v) || v < 0 ? 0 : v; }
   function update() {
     var s = {};
     Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); s[k] = el ? num(el) : 0; });
     ["view", "up"].forEach(function (k) { var o = $(IDS[k] + "-v"); if (o) o.textContent = s[k] + "%"; });
-    var v = view(calc(s));
+    var v = view(calc(s, mode));
     Object.keys(v).forEach(function (k) { var o = out(k); if (o) o.textContent = v[k]; });
   }
+  // The toggle: buttons, so a click, a tap, Enter and Space all switch the mode. aria-pressed, the two renamed rows and the figures follow.
+  var audBtns = [].slice.call(document.querySelectorAll(".phf .phf-aud-b"));
+  function setMode(m) {
+    mode = m === "retailer" ? "retailer" : "operator";
+    audBtns.forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-aud") === mode ? "true" : "false"); });
+    ["venues", "extraSales"].forEach(function (k) { var l = document.querySelector('.phf [data-lab="' + k + '"]'); if (l) l.textContent = LABELS[mode][k]; });
+    update();
+  }
+  audBtns.forEach(function (b) { b.addEventListener("click", function () { setMode(b.getAttribute("data-aud")); }); });
   Object.keys(IDS).forEach(function (k) {
     var el = $(IDS[k]); if (!el) return;
     el.addEventListener("input", update);
@@ -86,13 +105,13 @@
   /* ---------- Tour band ---------- */
   var form = $("phf-form"), box = $("phf-tbox"), btn = $("phf-unlock"), msg = $("phf-msg"), mount = $("phf-mount");
   var busy = false, mounted = false;
-  function fields() { return form ? [form.elements.name, form.elements.email, form.elements.linkedin, form.elements.region, form.elements.background] : []; }
+  function fields() { return form ? [form.elements.name, form.elements.email, form.elements.linkedin, form.elements.region, form.elements.audience, form.elements.background] : []; }
   function okEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
   function okLinkedin(v) { return v === "" || (v.length <= 300 && !/\s/.test(v) && /^(https?:\/\/)?([a-z0-9-]+\.)*linkedin\.com(\/|$|\?|#)/i.test(v)); }
   function valid() {
     if (!form) return false;
     var f = form.elements, n = f.name.value.trim(), e = f.email.value.trim(), r = f.region.value.trim();
-    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.consent.checked);
+    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && AUDIENCES.indexOf(f.audience.value) > -1 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.consent.checked);
   }
   function sync() { if (btn) btn.disabled = busy || !valid(); }
   function focusFirstEmpty() {
@@ -152,7 +171,7 @@
     form.addEventListener("submit", function (e) {
       e.preventDefault(); if (busy || !valid()) { sync(); return; }
       var f = form.elements;
-      var body = { name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), background: f.background.value, consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
+      var body = { name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), audience: f.audience.value, background: f.background.value, consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
       busy = true; sync(); btn.textContent = "Unlocking…"; msg.className = "phf-msg"; msg.textContent = "";
       fields().forEach(function (x) { if (x) x.removeAttribute("aria-invalid"); });
       var done = function () { busy = false; btn.textContent = "Unlock the tour"; sync(); };
@@ -202,20 +221,22 @@
   if (location.hash === "#tour") setTimeout(focusFirstEmpty, 0);
 
   /* ---------- WebMCP: estimate_rmn_earnings (navigator.modelContext.registerTool) ----------
-     Drives this page's own calculator inputs and returns exactly the figures the page then shows (never the share constant). It
-     submits the tour gate only with the person's own details and their agreement to be contacted, the same rules as the industry
-     pages' run_business_model_calculator: it can never do more than the person could on the page. Registered on the page whenever
-     the browser offers WebMCP; llms.txt and the twin only point agents at it once the page is live. */
-  var LABELS = { yours: "Your potential income a year", venues: "Venues in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales for your venues a year" };
+     Drives this page's own calculator (its "I am" toggle and inputs) and returns exactly the figures the page then shows, with that
+     mode's labels (never a share constant). It submits the tour gate only with the person's own details and their agreement to be
+     contacted, the same rules as the industry pages' run_business_model_calculator: it can never do more than the person could on
+     the page. Registered on the page whenever the browser offers WebMCP; llms.txt and the twin only point agents at it once the page
+     is live. */
   var RANGES = { ven: [0, 100000], dis: [0, 1000], vis: [0, 1000000], cpm: [0, 1000], atv: [0, 100000], view: [5, 100], up: [0, 50] };
   var INPUT_LABELS = { ven: "Venues", dis: "Displays per venue", vis: "Visitors per venue per day", cpm: "Average CPM (USD)", atv: "Average transaction value (USD)", view: "Visitors who view the ads (%)", up: "Uplift from personalised offers (%)" };
-  function figures() { var o = {}; Object.keys(LABELS).forEach(function (k) { var e = out(k); o[k] = e ? e.textContent.trim() : ""; }); return o; }
+  function figures() { var o = {}; Object.keys(LABELS.operator).forEach(function (k) { var e = out(k); o[k] = e ? e.textContent.trim() : ""; }); return o; }
   function inputs() { var o = {}; Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); if (el) o[k] = Number(el.value); }); return o; }
   function fire(el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); }
   function toolText(t, extra) { var r = { content: [{ type: "text", text: t }] }; if (extra) r.structuredContent = extra; return r; }
   function toolFail(t) { return { isError: true, content: [{ type: "text", text: t }] }; }
   function estimate(args) {
     args = args || {};
+    var want = args.audience === "retailer" ? "retailer" : "operator"; // optional; "operator" unless the agent says retailer
+    if (audBtns.length) setMode(want);
     try { (window.dataLayer = window.dataLayer || []).push({ event: "ph_agent_tool", tool: "estimate_rmn_earnings", source: "webmcp", page_path: location.pathname, referrer: (document.referrer.split("/")[2] || "none").toLowerCase(), at: new Date().toISOString() }); } catch (e) {}
     Object.keys(IDS).forEach(function (k) {
       if (args[k] === undefined || args[k] === null) return;
@@ -224,24 +245,25 @@
       el.value = String(v); fire(el, "input");
     });
     update();
-    var fig = figures(), data = { inputs: inputs(), figures: fig };
-    var base = "Calculator filled in on the page. " + Object.keys(LABELS).map(function (k) { return LABELS[k] + ": " + fig[k]; }).join("; ") + ".";
-    var wants = ["name", "email", "linkedin", "region", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
-    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, their background and whether they agree to be contacted, then call again with name, email, region, background and consent. Or they can use the form in the tour section.", data));
+    var fig = figures(), data = { audience: mode, inputs: inputs(), figures: fig };
+    var base = "Calculator filled in on the page (" + (mode === "retailer" ? "Retailer" : "Operator or team") + "). " + Object.keys(LABELS[mode]).map(function (k) { return LABELS[mode][k] + ": " + fig[k]; }).join("; ") + ".";
+    var wants = ["name", "email", "linkedin", "region", "i_am", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
+    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, which describes them (an individual operator, part of an operator team or a small to medium retailer), their background and whether they agree to be contacted, then call again with name, email, region, i_am, background and consent. Or they can use the form in the tour section.", data));
     if (args.consent !== true) return Promise.resolve(toolText(base + " Requesting information needs the person's agreement to be contacted (consent=true). Ask them first; nothing was submitted.", data));
     if (!form || mounted) return Promise.resolve(toolText(base + (mounted ? " The product tour is already unlocked on the page." : ""), data));
     var f = form.elements;
     ["name", "email", "linkedin", "region"].forEach(function (k) { if (typeof args[k] === "string") { f[k].value = args[k]; fire(f[k], "input"); } });
+    if (typeof args.i_am === "string") { f.audience.value = args.i_am; fire(f.audience, "change"); }
     if (typeof args.background === "string") { f.background.value = args.background; fire(f.background, "change"); }
     f.consent.checked = true; fire(f.consent, "change");
-    if (!valid() || btn.disabled) return Promise.resolve(toolText(base + " The details were not accepted (check the full name, a valid email, where they plan to operate, a background from the list and an optional LinkedIn address), so nothing was submitted.", data));
+    if (!valid() || btn.disabled) return Promise.resolve(toolText(base + " The details were not accepted (check the full name, a valid email, where they plan to operate, which describes them and a background, both from the lists, and an optional LinkedIn address), so nothing was submitted.", data));
     btn.click();
     return new Promise(function (resolve) {
       var n = 0, t = setInterval(function () {
         var err = /\berr\b/.test(msg.className) && msg.textContent;
         if (mounted || err || ++n > 100) {
           clearInterval(t);
-          if (mounted) { data.tourUnlocked = true; resolve(toolText(base + " The request was sent and the product tour is unlocked on the page. Our team will follow up with more on becoming a network operator.", data)); }
+          if (mounted) { data.tourUnlocked = true; resolve(toolText(base + " The request was sent and the product tour is unlocked on the page. Our team will follow up with more on the opportunity.", data)); }
           else resolve(toolFail(err || "The request did not go through. The person can use the form in the tour section."));
         }
       }, 100);
@@ -250,18 +272,19 @@
   var mc = navigator.modelContext;
   if (mc && mc.registerTool && !window.__phRmnMcp && $(IDS.ven)) { // only where the calculator block is on the page
     window.__phRmnMcp = 1;
-    var props = {};
+    var props = { audience: { type: "string", enum: ["operator", "retailer"], description: "Who the estimate is for: \"operator\" (an individual operator or an operator team; the default) or \"retailer\" (a small to medium retailer running the network in their own stores). Sets the page's toggle; the figures returned are that mode's." } };
     Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); props[k] = { type: "number", minimum: RANGES[k][0], maximum: RANGES[k][1], description: INPUT_LABELS[k] + " (default " + (el ? el.defaultValue : "") + ")" }; });
     props.name = { type: "string", maxLength: 120, description: "The person's full name, only if they gave it to you to request information" };
     props.email = { type: "string", maxLength: 120, description: "The person's email, only if they gave it to you" };
     props.linkedin = { type: "string", maxLength: 300, description: "Optional: their LinkedIn profile address" };
     props.region = { type: "string", maxLength: 120, description: "Where they plan to operate, only if they told you" };
+    props.i_am = { type: "string", enum: AUDIENCES, description: "Which describes them, only if they told you" };
     props.background = { type: "string", enum: BACKGROUNDS, description: "Their background, only if they told you" };
     props.consent = { type: "boolean", description: "true only if the person has said they agree to be contacted (see the privacy policy). Never assume it." };
     try {
       mc.registerTool({
         name: "estimate_rmn_earnings",
-        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, and extra sales for the venues. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, their background and consent=true, only when they have given them to you and agreed to be contacted.",
+        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, and extra sales for the venues. For a retailer the page counts stores, and the extra sales in those stores are added to the income. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, which describes them (i_am), their background and consent=true, only when they have given them to you and agreed to be contacted.",
         inputSchema: { type: "object", properties: props, additionalProperties: false },
         annotations: { readOnlyHint: false },
         execute: estimate
