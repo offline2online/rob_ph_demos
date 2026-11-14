@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error a plain .mjs helper with no type declarations
-import { load } from '../../../scripts/lib/results.mjs'
+import { load, merge } from '../../../scripts/lib/results.mjs'
 
 const ROOT = join(__dirname, '../../..')
 const dir = mkdtempSync(join(tmpdir(), 'ph-results-'))
@@ -51,5 +51,47 @@ describe('the scripts on E2E_RESULTS_FILE', () => {
   it('exit 2 with usage when there is no file at all', () => {
     const r = spawnSync(process.execPath, [join(ROOT, 'scripts/file-e2e-bugs.mjs'), '--dry-run'], { cwd: ROOT, env: { ...env, E2E_RESULTS_FILE: '' }, encoding: 'utf8' })
     expect(r.status).toBe(2)
+  })
+})
+
+/* A red `npm test` in the nightly (ticket QCK6k1IsDKh5HoP8RhK0): the whole suite's own JSON report. */
+describe('results.load on a whole-suite report (results/suites-<workspace>.json)', () => {
+  const t = (title: string, status: string, ancestorTitles: string[] = ['A suite'], failureMessages: string[] = []) => ({ title, status, ancestorTitles, failureMessages })
+  const vitest = (files: Record<string, unknown[]>) => ({ startTime: Date.parse('2026-11-13T15:06:51.000Z'), testResults: Object.entries(files).map(([name, assertionResults]) => ({ name, assertionResults })) })
+  const dated = t('reads every unbooked window of the flight', 'failed', ['Direct advertiser deals'], ["AssertionError: expected 'unavailable' to be 'booked'"])
+  const suites = vitest({
+    '/runner/work/dsp-integration/apps/api/test/direct-deals.test.ts': [dated, t('saves as a draft', 'passed', ['Direct advertiser deals'])],
+    '/runner/work/dsp-integration/apps/api/test/e2e/run5-reserved.test.ts': [t('E4 — an asset over the limit is refused', 'passed', ['Run 5'])],
+  })
+  type Case = { run: string; caseId: string; status: string; repro: string; actual: string }
+
+  it('makes each test outside test/e2e a "Suites" case with an ID that is the same every night', () => {
+    const a = load(write('suites-api.json', suites)).cases as Case[]
+    const again = load(write('suites-api.json', suites)).cases as Case[]
+    expect(a.map((c) => `${c.run}|${c.status}`)).toEqual(['Suites|fail', 'Suites|pass', 'Run 5|pass'])
+    expect(a[0].caseId).toMatch(/^api\/direct-deals\.test\.ts#[0-9a-f]{6}$/)
+    expect(a[0].caseId).toBe(again[0].caseId)
+    expect(a[0].caseId).not.toBe(a[1].caseId)
+    expect(a[0].repro).toBe('cd dsp-integration/apps/api && npx vitest run test/direct-deals.test.ts -t "reads every unbooked window of the flight"')
+    expect(a[0].actual).toContain("expected 'unavailable' to be 'booked'")
+    expect(a[2].caseId).toBe('E4')
+  })
+  it('names the workspace, so the same file name in two workspaces is two cases', () => {
+    const admin = load(write('suites-admin.json', vitest({ '/runner/work/dsp-integration/apps/admin/test/direct-deals.test.ts': [dated] }))).cases as Case[]
+    expect(admin[0].caseId).toMatch(/^admin\/direct-deals\.test\.ts#/)
+    expect(admin[0].repro).toContain('cd dsp-integration/apps/admin && npx vitest run test/direct-deals.test.ts')
+  })
+  it('counts a test/e2e case once when Runs 1–5 reported it too, and keeps it when they did not run', () => {
+    const quick = write('e2e-quick.json', vitest({ '/runner/work/dsp-integration/apps/api/test/e2e/run5-reserved.test.ts': [t('E4 — an asset over the limit is refused', 'passed', ['Run 5'])] }))
+    const s = write('suites-api.json', suites)
+    expect(merge([quick, s]).cases.filter((c: Case) => c.caseId === 'E4')).toHaveLength(1)
+    expect(merge([quick, s]).counts).toMatchObject({ pass: 2, fail: 1 })
+    expect(merge([s]).cases.filter((c: Case) => c.caseId === 'E4')).toHaveLength(1)
+  })
+  it('file-e2e-bugs plans one ticket for the failing suite case from that file alone', () => {
+    const r = spawnSync(process.execPath, [join(ROOT, 'scripts/file-e2e-bugs.mjs'), write('suites-api.json', suites), '--dry-run'], { cwd: ROOT, env: { ...process.env, BOARD_API_KEY: '', E2E_RESULTS_FILE: '' }, encoding: 'utf8' })
+    expect(r.status, r.stderr).toBe(0)
+    expect(r.stdout).toMatch(/created {2}\(dry run\) {2}E2E suites: api\/direct-deals\.test\.ts#[0-9a-f]{6} — reads every unbooked window of the flight/)
+    expect(r.stdout).toMatch(/1 created, 0 commented/)
   })
 })

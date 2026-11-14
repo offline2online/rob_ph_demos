@@ -31,7 +31,7 @@ const dir = mkdtempSync(join(tmpdir(), 'ph-multi-'))
 const env = {
   ...process.env, PH_DB_FILE: join(dir, 'poc.sqlite'), PH_ASSETS_DIR: join(dir, 'assets'), PH_SCHEDULER: 'off', API_HOST: '127.0.0.1',
   DSP_INTEGRATION_ENABLED: 'true', DSP_MOCKS_URL: 'http://127.0.0.1:9', PH_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
-  PARTNER_RATE_PER_SECOND: '100000', PARTNER_RATE_BURST: '100000', NODE_OPTIONS: '--no-warnings',
+  PARTNER_RATE_PER_SECOND: '100000', PARTNER_RATE_BURST: '100000', NODE_OPTIONS: `--no-warnings ${process.env.NODE_OPTIONS ?? ''}`.trim(),
 }
 const children: ChildProcess[] = []
 const output = new Map<ChildProcess, string[]>()

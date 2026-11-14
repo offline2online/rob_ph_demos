@@ -4,6 +4,11 @@ import { defineConfig } from 'vitest/config'
 
 /* One .env at the POC root serves the API and this app. Only the flag is
    exposed to the browser (envPrefix); secrets never are. */
+/* Under CI the whole suite also writes results/suites-admin.json, which the nightly's report and ticket steps
+   read (scripts/lib/results.mjs): a red `npm test` used to leave nothing for them (ticket QCK6k1IsDKh5HoP8RhK0).
+   A --reporter on the command line (e2e:quick) replaces this. */
+const suiteReport = '../../results/suites-admin.json'
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   envDir: '../../',
@@ -13,6 +18,7 @@ export default defineConfig({
     proxy: { '/api': 'http://127.0.0.1:4000', '/assets': 'http://127.0.0.1:4000' },
   },
   test: {
+    reporters: process.env.CI ? ['default', ['json', { outputFile: suiteReport }]] : ['default'],
     environment: 'jsdom',
     include: ['test/**/*.test.{ts,tsx}'],
     setupFiles: ['test/setup.ts'],

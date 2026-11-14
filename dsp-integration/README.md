@@ -387,6 +387,18 @@ npm test
   Bench breaches become ONE ticket per shape ("Perf: T — 3 breaches; worst:
   …", or "Perf: A bench crashed — …"; an open "Perf: <shape> …" ticket is
   commented instead), and `file-e2e-bugs` ends by printing `TICKETS_FILED=<n>`.
+  **A red `npm test` files tickets too (14 Nov 2026).** Under `CI` every
+  workspace's vitest also writes `results/suites-<workspace>.json`, and the
+  same two scripts read it: each failing test outside `test/e2e` is a case
+  of the run "Suites" with a stable ID (`api/direct-deals.test.ts#3fa2c1`),
+  so it gets ONE ticket, "E2E suites: <id> — <test title>", a "Still
+  failing" note on it on later nights, and a "passing since" note once it
+  is green. More than 10 failing suite cases in one night file one roll-up
+  ticket instead. Before this the nightly's "Full suites" step left no
+  results file and its failure skipped every step that does, so main was
+  red from 10 to 13 Nov 2026 with no ticket. A failing typecheck, or the
+  `node --test` script checks at the end of `npm test`, still file nothing:
+  the run goes red and `main-red-alert` is the signal for those.
   The journey also writes `results/cases/journey.json` for e2e-run; the
   `cases/` subfolder keeps the nightly's `results/*.json` glob from reading it
   twice. `e2e:report` keeps ONE project document, "E2E results — latest",
@@ -398,6 +410,20 @@ npm test
   project with `e2eEnabled` or an `e2eStatus`, writes the header chip's
   `e2eStatus` (mode `nightly`) unless `e2e-run.mjs` started it. CI: `.github/workflows/e2e-quick.yml` on every train push and
   PR, `e2e-nightly.yml` on `main`.
+- **Tests do not depend on the day they run** (14 Nov 2026): every context
+  built by `testContext()` (`apps/api/test/helpers.ts`) starts at the suite
+  epoch `NOW` (Sunday 20 Sep 2026, 10:00 UTC) and ticks on from there, so
+  fixed dates in a test mean the same thing every day. Pass `clock` for
+  another moment and read `ctx.clock()` for "now"; never `new Date()` or
+  `Date.now()` beside literal dates. `apps/api/test/date-independence.test.ts`
+  fails a test file that builds a context on the real clock, or mixes the
+  real clock with dates near or after the epoch without being on its
+  reviewed list. `npm run test:dates` runs `npm test` as if today were a
+  month and three months from now (`npm run test:dates -- 2026-12-15
+  2027-02-15` for chosen days; `-- <date> -- -w @ph-dsp/api` for one
+  workspace) by preloading `scripts/fake-system-date.mjs`, which shifts
+  `new Date()` and `Date.now()` in every Node process including the ones
+  the tests start. Run it after adding a test with dates in it.
 - **Visual layout check** (8 Oct 2026): `npm run test:layout` — every DSP
   integration admin page at tablet and desktop, alignment rules plus
   screenshots (see `apps/admin/layout/` in the Layout table). It is a step of

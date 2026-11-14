@@ -11,8 +11,18 @@
    - e2e-run.mjs's record ({steps: [{id, label, status, cases}]}): a case's
      run is its own or else the step label, its id is caseId or else id, and
      a skipped step is one "skipped" case, "not configured".
-   Several files can be merged into one run. */
+   - vitest's JSON reporter over a whole workspace suite (`npm test` under
+     CI writes results/suites-<workspace>.json; ticket QCK6k1IsDKh5HoP8RhK0):
+     a test under test/e2e reads exactly as above; any other test is a case
+     of the run "Suites", its ID "<workspace>/<file>#<6 hex of its full
+     name>", so the same test keeps one ID night after night. Before this,
+     a red "Full suites" step left no results file and skipped the steps
+     that do, so the nightly was red for four nights with no ticket.
+   Several files can be merged into one run; a case a suites file shares
+   with another file (test/e2e, when Runs 1–5 also ran) is counted once. */
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { basename } from 'node:path'
 
 const CASE = /^([A-Z]{1,2}\d{1,2}[a-z]?)\b/
 const RUN_OF = (ancestors, file) => {
@@ -23,6 +33,7 @@ const RUN_OF = (ancestors, file) => {
   return 'Run ?'
 }
 
+export const SUITES = 'Suites'
 const JOURNEY_REPRO = 'npm run e2e:journey'
 const toCase = (c, dflt = {}) => ({
   run: c.run ?? dflt.run ?? 'Run 6',
@@ -46,6 +57,31 @@ export function load(file) {
   if (Array.isArray(j.cases)) {
     return { run: j.run ?? 'Run 6', command: j.command ?? JOURNEY_REPRO, commit: j.commit ?? null, startedAt: j.startedAt, stopped: j.stopped ?? null, cases: j.cases.map((c) => toCase(c)) }
   }
+  const suite = basename(file).match(/^suites-(.+)\.json$/)?.[1]
+  if (Array.isArray(j.testResults) && suite) {
+    const cases = []
+    for (const f of j.testResults) {
+      const path = f.name.split('\\').join('/')
+      const rel = path.split(/\/(?:apps|packages)\/[^/]+\//)[1] ?? path.split('/').slice(-1)[0]
+      const dir = path.match(/(?:apps|packages)\/[^/]+(?=\/)/)?.[0] ?? `apps/${suite}`
+      const e2e = /(^|\/)test\/e2e\//.test(rel)
+      for (const t of f.assertionResults) {
+        const known = /known gap/i.test(t.title)
+        const status = known ? 'known-gap' : t.status === 'passed' ? 'pass' : t.status === 'failed' ? 'fail' : 'skipped'
+        const actual = t.failureMessages?.join('\n').slice(0, 1500) || (status === 'pass' ? 'pass' : status)
+        const name = rel.split('/').slice(-1)[0]
+        if (e2e) {
+          const id = t.title.match(CASE)?.[1] ?? t.title.slice(0, 24)
+          cases.push({ run: RUN_OF(t.ancestorTitles ?? [], name), caseId: id, title: t.title, status, expected: 'as specified', actual, repro: `cd dsp-integration/apps/api && npx vitest run test/e2e/${name} -t "${id}"`, suite: true })
+        } else {
+          const full = [...(t.ancestorTitles ?? []), t.title].join(' > ')
+          const id = `${suite}/${name}#${createHash('sha1').update(`${rel} ${full}`).digest('hex').slice(0, 6)}`
+          cases.push({ run: SUITES, caseId: id, title: t.title, status, expected: 'the test passes', actual, repro: `cd dsp-integration/${dir} && npx vitest run ${rel} -t "${t.title.slice(0, 80).replace(/"/g, '\\"')}"`, suite: true })
+        }
+      }
+    }
+    return { run: `Suites (${suite})`, command: 'cd dsp-integration && npm test', commit: null, startedAt: new Date(j.startTime).toISOString(), stopped: null, cases }
+  }
   if (Array.isArray(j.testResults)) {
     const cases = []
     for (const f of j.testResults) {
@@ -63,6 +99,10 @@ export function load(file) {
 
 export function merge(files) {
   const parts = files.map(load)
+  /* A suites file repeats what another file already reports (test/e2e, when Runs 1–5 ran too): keep the other. */
+  const key = (c) => `${c.run}|${c.caseId}|${c.title}`
+  const elsewhere = new Set(parts.flatMap((p) => p.cases).filter((c) => !c.suite).map(key))
+  for (const p of parts) p.cases = p.cases.filter((c) => !c.suite || !elsewhere.has(key(c)))
   const cases = parts.flatMap((p) => p.cases)
   const counts = { pass: 0, fail: 0, 'known-gap': 0, skipped: 0 }
   for (const c of cases) counts[c.status] = (counts[c.status] ?? 0) + 1
