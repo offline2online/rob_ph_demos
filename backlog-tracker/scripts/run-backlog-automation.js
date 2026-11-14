@@ -57,6 +57,7 @@ const { trainLockShouldClear, trainHandoverReason } = require("../functions/trai
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
+const { modelGuardRefusal } = require("../functions/model-requirement");
 const kanbanHeal = require("./kanban-e2e-heal");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
@@ -4642,6 +4643,25 @@ async function processApplyPatch(item) {
     const notes = await appendNote(item, `${why} ${plan.sentence}`);
     await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes, ...plan.fields });
     if (plan.action === "rebuild") queueBuildRequest(project, item.id);
+    return;
+  }
+
+  // Per-ticket model requirement (t1CU2q6LlxGd5pFB9vwG): a ticket marked
+  // Advanced is built on Claude Opus or not at all. The build session records
+  // the model that did the work as builtByModel; a patch from anything else is
+  // not landed, and the card is flagged rather than rebuilt (a rebuild would
+  // most likely start on the same model again). Clearing the flag on the
+  // board puts it back in the build queue (ROUTINE_INSTRUCTIONS.md →
+  // "Per-ticket model requirement").
+  const modelRefusal = modelGuardRefusal(item);
+  if (modelRefusal) {
+    console.log(`[apply-patch] ${item.id}: refusing — Advanced ticket handed back by ${item.builtByModel || "an unrecorded model"}, not Claude Opus`);
+    const notes = await appendNote(item, modelRefusal.why);
+    const at = new Date().toISOString();
+    await patchItem(item.id, {
+      patchReady: false, patchAttempts: 0, updatedAt: at, notes,
+      blocked: { ...modelRefusal.blocked, setBy: "board-automation", setAt: at },
+    });
     return;
   }
 

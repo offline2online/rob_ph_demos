@@ -389,6 +389,55 @@ on the card. So, in a default build fire:
   the board waits for every session in the click, and the first one to
   finish would otherwise unlock cards still being built.
 
+## Per-ticket model requirement (13 Nov 2026)
+
+Every ticket carries a **Model** (`backlogItems.model`): `"standard"` (the
+default, and what an unset field means) or `"advanced"` — built and reviewed
+on the most capable Claude model, **Claude Opus**, and never on a lesser
+one. It is set on the card (New item / Edit item → Model) or over MCP
+(`create_backlog_item` / `update_backlog_item`, `model`). The Routine's own
+model is set at claude.ai/code/routines and the fire endpoint takes only
+`text`, so the requirement reaches you in the fire text:
+
+- **A Standard ticket** carries one line, "Model requirement: Standard". Build
+  as normal.
+- **An Advanced ticket** carries a block between
+  `=== MODEL REQUIREMENT: ADVANCED (Claude Opus) ===` and
+  `=== END MODEL REQUIREMENT ===`. Before any other work:
+  1. If this session runs as a Claude Opus model, build it here.
+  2. Otherwise hand the **whole build** to a subagent on Opus: the `Agent`
+     tool with `model: "opus"`, passing it the complete fire text and this
+     file's URL, and asking it to say first which exact model id it runs as.
+     If it reports an Opus, it does the build (investigation, tests,
+     packaging) exactly as this file says, and this session only checks its
+     result.
+  3. If no Opus is available — no `Agent` tool, the subagent reports a
+     non-Opus model, or it fails to start — **do not build it on a weaker
+     model.** PATCH the card with
+     `blocked: {reason: "model-unavailable", note: "Not built: this ticket needs Claude Opus and none was available to this build session. Clear the flag to try again.", setBy: "claude", setAt: <now>}`,
+     append a note naming the model that was available, and report
+     `buildSession.status: "error"`. Notify Claude skips a blocked ticket;
+     the card shows "Not built: needs Opus", and clearing the flag (×) puts it
+     back in the queue.
+- **Every build records its model**: in the same PATCH as `patchFiles` /
+  `patchReady`, set `builtByModel` to the exact model id that did the build
+  (e.g. `claude-opus-5-5`), and say it in the `[build]` note. For an Advanced
+  ticket, `run-backlog-automation.js` refuses a patch whose `builtByModel` is
+  not an Opus (`modelGuardRefusal` in `functions/model-requirement.js`): the
+  patch is not landed and the card is flagged `model-unavailable`, not
+  rebuilt.
+- **Review Batch** (below) lists each ticket's model. An Advanced ticket is
+  reviewed on Opus only, by delegating its review the same way if this
+  session isn't one; with no Opus, write `reviewStatus: "blocked"` and
+  `reviewReason: "model-unavailable: needs Claude Opus"` for it (the card
+  shows "Review blocked: needs Opus") and leave its status alone. Every
+  reviewed ticket gets `reviewedByModel` (the exact model id) in the same
+  PATCH as its review flag.
+
+`builtByModel` and `reviewedByModel` are pipeline fields: only the automation
+user writes them, and the card's Advanced badge and the Edit item modal show
+them ("Built on … · reviewed on …").
+
 ## PH Website builds: the personalisationhub.com WordPress MCP is the only site connection
 
 For a ticket on the PH Website project (`ph-website/`), the target site is
@@ -572,6 +621,9 @@ ticket once automatically.
      and is cleared on landing, so a re-patch needs its own.
    - `patchCommitMessage`, `patchPrTitle`, `patchPrBody`: plain text for
      the eventual commit and PR.
+   - `builtByModel`: the exact model id that did the build (see
+     "Per-ticket model requirement" above — an Advanced ticket's patch is
+     refused unless this is an Opus).
    - **Docs ship with the code, and the card says so** (docs-as-code, 20 Oct
      2026, `oYZUIc3Duva5jdBaT34P`). In the same patch as a behaviour change,
      update every document that describes the changed behaviour: the
@@ -1350,7 +1402,11 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
    endpoint takes only `text`), so it is set there. Start the review log with
    `Model: <the model this session is running as>`; if it is not an Opus,
    add `WARNING: reviewed on a lesser model` to that line and to every
-   `reviewReason`.
+   `reviewReason`. A ticket the fire marks `[Model: Advanced — review on
+   Claude Opus only]` is never reviewed on a lesser model: delegate its
+   review to an Opus subagent, or block it as "Per-ticket model requirement"
+   above says. Write `reviewedByModel` (the exact model id that reviewed it)
+   on every ticket you flag.
 4. **Split findings** per the skill: safe, behaviour-preserving structural
    fixes (domain naming, single responsibility, why-not-what comments) versus
    anything needing a behaviour change or judgement call, or a seam that

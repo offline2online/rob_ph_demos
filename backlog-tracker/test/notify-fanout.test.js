@@ -377,6 +377,70 @@ async function click(db, mod, extra = {}) {
     }
   });
 
+  // Per-ticket model requirement (t1CU2q6LlxGd5pFB9vwG): the requirement rides
+  // in each ticket's own fire, and the automation refuses an Advanced patch
+  // that wasn't built on Opus.
+  await test("an Advanced ticket's fire carries the Opus rule; a Standard one only asks for builtByModel", async () => {
+    const sd = seed();
+    sd.backlogItems.a.model = "advanced";
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try { await click(db, mod); } finally { global.fetch = realFetch; }
+    const a = stub.calls.find((t) => t.includes("(ticket a)"));
+    const b = stub.calls.find((t) => t.includes("(ticket b)"));
+    assert.ok(a.includes("=== MODEL REQUIREMENT: ADVANCED (Claude Opus) ==="), "Advanced block present");
+    assert.ok(a.includes('model "opus"') && a.includes('reason: "model-unavailable"') && a.includes("builtByModel"), "delegate, flag, record");
+    assert.ok(a.includes("Per-ticket model requirement"), "points at the instructions section");
+    assert.ok(!b.includes("MODEL REQUIREMENT: ADVANCED"), "no Advanced block on a Standard ticket");
+    assert.ok(b.includes("Model requirement: Standard") && b.includes("builtByModel"));
+  });
+
+  await test("the review fire tags each ticket's model and asks for reviewedByModel", async () => {
+    const sd = seed();
+    Object.assign(sd.backlogItems.a, { status: "ready-for-testing", deployCommit: "aaa1111", model: "advanced" });
+    Object.assign(sd.backlogItems.b, { status: "ready-for-testing", deployCommit: "bbb2222" });
+    const db = makeFakeDb(sd);
+    const mod = loadIndex(db, secrets);
+    const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
+    try {
+      const before = { name: "Display Types" };
+      const after = { name: "Display Types", reviewRequestedAt: ts(Date.now()) };
+      await mod.notifyOnProjectReviewBatch({ params: { projectId: PID }, data: { before: { data: () => before }, after: { data: () => after } } });
+    } finally { global.fetch = realFetch; }
+    assert.strictEqual(stub.calls.length, 1);
+    const text = stub.calls[0];
+    assert.match(text, /\[id: a\].*\[Model: Advanced — review on Claude Opus only\]/);
+    assert.match(text, /\[id: b\].*\[Model: Standard\]/);
+    assert.ok(text.includes("reviewedByModel") && text.includes("model-unavailable: needs Claude Opus"));
+  });
+
+  await test("modelGuardRefusal: an Advanced patch lands only when builtByModel is an Opus", async () => {
+    const m = require("../functions/model-requirement.js");
+    assert.strictEqual(m.modelGuardRefusal({ title: "plain" }), null, "Standard (unset) is never refused");
+    assert.strictEqual(m.modelGuardRefusal({ model: "standard", builtByModel: "claude-sonnet-5-5" }), null);
+    assert.strictEqual(m.modelGuardRefusal({ model: "advanced", builtByModel: "claude-opus-5-5" }), null);
+    assert.strictEqual(m.modelGuardRefusal({ model: "advanced", builtByModel: "Claude Opus 5.5" }), null);
+    for (const builtByModel of ["claude-sonnet-5-5", "claude-haiku-5-5", "", undefined]) {
+      const r = m.modelGuardRefusal({ model: "advanced", builtByModel });
+      assert.ok(r, `refused: ${builtByModel}`);
+      assert.strictEqual(r.blocked.reason, "model-unavailable");
+      assert.match(r.why, /Not built: this ticket is marked Advanced/);
+    }
+    assert.strictEqual(m.normaliseModelRequirement("advanced"), "advanced");
+    for (const v of [undefined, null, "", "opus", "standard"]) assert.strictEqual(m.normaliseModelRequirement(v), "standard");
+  });
+
+  await test("run-backlog-automation.js applies the model guard before anything lands", async () => {
+    const src = require("fs").readFileSync(require("path").join(__dirname, "../scripts/run-backlog-automation.js"), "utf8");
+    const body = src.slice(src.indexOf("async function processApplyPatch("));
+    const guard = body.indexOf("modelGuardRefusal(item)");
+    assert.ok(guard > 0, "processApplyPatch calls modelGuardRefusal");
+    assert.ok(guard < body.indexOf("syncTrainWithMain") || body.indexOf("syncTrainWithMain") < 0, "before the train is touched");
+    assert.ok(guard < body.indexOf("workflowPathsIn(item.patchFiles)"), "before any git work");
+    assert.match(body.slice(guard, guard + 800), /patchReady: false[\s\S]*blocked:/, "clears patchReady and flags the card");
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();

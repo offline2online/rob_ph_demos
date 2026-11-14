@@ -708,7 +708,10 @@ export function mountStaffKanban(ctx) {
     const w = $("#kb-board-wrap");
     if (w) { w.style.scrollBehavior = "auto"; w.scrollLeft = x; w.style.scrollBehavior = ""; }
     scrollTo(0, y);
-    requestAnimationFrame(() => scrollTo(0, y));
+    // The second attempt is for a page still too short to reach y. It must not
+    // undo a scroll made since: only put y back if nothing has moved the page.
+    const set = scrollY;
+    requestAnimationFrame(() => { if (scrollY === set) scrollTo(0, y); });
   }
 
   // Phone: one column at a time. The pinned pager names the column you're on;

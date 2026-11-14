@@ -186,7 +186,8 @@ address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. S
 matches key, title, description text and labels. **Clear filters** resets all.
 
 **KB-FLT-2 Keep position.** Changing any filter keeps the page's scroll
-position (and the phone's current column).
+position (and the phone's current column). A scroll the person makes straight
+after the change is theirs and is never put back.
 
 **KB-FLT-3 Desktop fit.** The filter bar stays on one line from 1024 px wide
 with the sidebar open, with every filter on.

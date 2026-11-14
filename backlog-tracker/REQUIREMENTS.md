@@ -184,6 +184,9 @@ deleted by hand).
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
+  model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
+  builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
+  reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
   lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
@@ -3290,7 +3293,7 @@ searched, and read a page or section at a time — see MCP.md),
 `list_skill_misses`, `get_routine_setup_instructions`, `list_concepts`,
 `get_concept`.
 Write (editor/admin only) — tickets: `create_backlog_item` (always into
-`backlog`), `update_backlog_item` (title, desc, type, category only),
+`backlog`), `update_backlog_item` (title, desc, type, category, model only),
 `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only, by id,
 single or batch; refused for any ticket past Backlog; logged to mcpAuditLog),
 `add_item_comment`; documentation: `set_project_requirements`,
@@ -3794,6 +3797,46 @@ release-report/count support for `elementor` projects.
 4. The FAQ site's brand palette has never been checked against the real
    WordPress theme (network-blocked from this sandbox) — screenshots or
    the theme's actual token values would let it be tightened.
+
+## Per-ticket model requirement
+
+Ticket t1CU2q6LlxGd5pFB9vwG (13 Nov 2026). Some tickets (permission
+boundaries, credentials, firing authorisation) must be built and reviewed on
+the most capable Claude model. Two tickets said so in a free-text
+"MODEL REQUIREMENT: Opus" line that nothing enforced; the requirement is now a
+field.
+
+- **Field**: `backlogItems.model` — `"standard"` (default; unset means
+  standard) or `"advanced"` (Claude Opus only). Browsers may write it
+  (`firestore.rules` accepts only those two values or null).
+- **Set it**: New item → Model, Edit item → Model, or MCP
+  `create_backlog_item` / `update_backlog_item` (`model`). `list_backlog_items`
+  and `get_backlog_item` return it; `get_backlog_item` also returns
+  `builtByModel` / `reviewedByModel`.
+- **Card**: an Advanced ticket shows an "Advanced · Opus" chip (Material
+  Symbols `psychology`) in every column; its hover, and the Edit item modal,
+  say which model built and reviewed it. Standard tickets show nothing.
+- **Build**: `perItemFireText` adds `modelRequirementBlock(item)`
+  (`functions/model-requirement.js`) to each ticket's fire. A Standard ticket
+  gets one line asking the session to record `builtByModel`; an Advanced one
+  gets the rule — build on Opus, or hand the build to an Opus subagent, or do
+  not build and flag the card `blocked: {reason: "model-unavailable"}`
+  (`ROUTINE_INSTRUCTIONS.md` → "Per-ticket model requirement").
+- **Backstop**: `run-backlog-automation.js` refuses an Advanced ticket's patch
+  whose `builtByModel` is not an Opus (`modelGuardRefusal`): nothing lands,
+  `patchReady` is cleared, the card is flagged `model-unavailable` with a note,
+  and it is not rebuilt automatically.
+- **Flag**: a `model-unavailable` card shows "Not built: needs Opus" with the
+  clear (×) control and no Answer button (there is no question). Notify Claude
+  skips it like any blocked card; clearing the flag puts it back in the queue.
+- **Review**: the Review Batch fire tags each ticket `[Model: Advanced …]` or
+  `[Model: Standard]`. An Advanced ticket is reviewed on Opus only; with none
+  available its flag is `reviewStatus: "blocked"` with `reviewReason`
+  `model-unavailable: needs Claude Opus`, shown as "Review blocked: needs
+  Opus". Every reviewed ticket records `reviewedByModel`.
+- `builtByModel` and `reviewedByModel` are pipeline fields
+  (`itemPipelineFields()` in `firestore.rules`): only the automation user
+  writes them.
 
 ## Blocked tickets: answering from the card
 
@@ -4419,9 +4462,10 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   test lead by hand from its summary). Leads
   send no notifications and feed no report today, so a test lead has nothing
   else to be excluded from.
-- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7
-  and 6b5y1gKRyX41YlEbm0V3)**.
-  The Be Your Own Boss page on personalisationhub.com gates its product tour
+- **Leads: Network operator inquiries (13 Nov 2026, tickets oed8cP8XYutjPTbQKui7,
+  6b5y1gKRyX41YlEbm0V3 and LxEl9BwUwujmmz1YoE6C)**.
+  The Run Your Own RMN (Run Your Own Retail Media Network) page on
+  personalisationhub.com, at `/run-your-own-rmn/`, gates its product tour
   behind a form, and the people who fill it in are individuals asking about the
   network operator offer, not companies. They are their own **lead type** and
   their own pipeline, so they are never mixed with retail/company leads.
@@ -4430,7 +4474,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     chip, the lead detail's Type, MCP `list_leads`/`get_lead`), the board switch
     **Companies / Network operators**, the form **New network operator
     inquiry**, the detail's section **Network operator**, and the default source
-    label **Be Your Own Boss page – product tour**. The internal names follow:
+    label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
     {region, background}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
@@ -4460,7 +4504,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
     `location`), `background` (a key above or the form's label), `lead_source`
-    (stored as `sourceLabel`; "Be Your Own Boss page – product tour" when not sent),
+    (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
     It never reads or writes Prospects (TAM), is never routed to the AWS record,
@@ -4468,7 +4512,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
     region/background are filled. **The website side** posts these fields from
-    the Be Your Own Boss page's gate (PH Website project, `ph-website/`); the console
+    the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
