@@ -228,7 +228,7 @@ function commonsLogos(json, company) {
 const AGENT_SYSTEM = [
   "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
-  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
+  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from, with the date the figure is as at (not the date you read it). Prefer the most recently dated figure the company or its parent has published. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
   "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
@@ -475,6 +475,35 @@ function mergeBy(list, key, n) {
   return out.slice(0, n);
 }
 
+// One person, however the name is written: "Stan Reynolds" and "Stanley (Stan)
+// Reynolds" are the same key (first initial and surname).
+function personKey(x) {
+  const words = String((x && x.name) || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z\u00c0-\u024f' -]+/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  return words.length === 1 ? words[0] : `${words[0][0]}|${words[words.length - 1]}`;
+}
+// The newer run's entry for a person, with a LinkedIn link or note the older one had and it lacks.
+function mergePeople(now, before, n) {
+  const out = [], at = new Map();
+  for (const x of [...(now || []), ...(before || [])]) {
+    const k = personKey(x);
+    if (!k) continue;
+    if (at.has(k)) { const have = out[at.get(k)]; if (!have.linkedin && x.linkedin) have.linkedin = x.linkedin; if (!have.note && x.note) have.note = x.note; continue; }
+    at.set(k, out.length); out.push({ ...x });
+  }
+  return out.slice(0, n);
+}
+// The site count a refresh keeps: the one whose source is dated later. A run
+// that finds an older figure than the record already has does not replace it.
+function newerCount(f, p) {
+  const d = (s) => String((s && s.date) || "");
+  const found = { storeCount: f.storeCount || null, storeCountBreakdown: f.storeCountBreakdown || "", storeCountSource: f.storeCountSource || null };
+  const had = { storeCount: p.storeCount || null, storeCountBreakdown: p.storeCountBreakdown || "", storeCountSource: p.storeCountSource || null };
+  if (!found.storeCount) return had.storeCount ? had : found;
+  if (had.storeCount && d(had.storeCountSource) && d(found.storeCountSource) && d(had.storeCountSource) > d(found.storeCountSource)) return had;
+  return found;
+}
+
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
@@ -496,9 +525,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
-    storeCount: f.storeCount || p.storeCount || null,
-    storeCountBreakdown: f.storeCount ? f.storeCountBreakdown : keep(f.storeCountBreakdown, p.storeCountBreakdown),
-    storeCountSource: f.storeCount ? f.storeCountSource : (f.storeCountSource || p.storeCountSource || null),
+    ...newerCount(f, p),
     hq: keep(hq, p.hq),
     employees: keep(f.employees, p.employees),
     revenue: keep(f.revenue, p.revenue),
@@ -515,7 +542,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     fit: keep(f.fit, p.fit),
     talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
     // A refresh adds to people and news: one run can miss a person the last one found.
-    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    people: mergePeople(f.people, Array.isArray(p.people) ? p.people : [], 12),
     news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
@@ -531,7 +558,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || str(f.industry, 120));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
   if (countries.length > (lead.company.countries || []).length) { company.countries = countries; changed.push("countries"); }
@@ -551,7 +578,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   set("linkedinUrl", f.linkedinCompany);
   if (!stored("website") && f.website && f.website.length <= 300) { fields.website = f.website; changed.push("website"); }
   const markets = uniq([...p.markets, ...f.countries], 60, 60);
@@ -1152,5 +1179,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };
