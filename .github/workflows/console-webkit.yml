@@ -1,0 +1,59 @@
+name: Console on WebKit (iPad)
+
+# Runs the console's menu and the Support Inbox in a real WebKit engine with
+# an iPad profile (backlog-tracker/test/ui/webkit-ipad.test.mjs). Every other
+# browser test runs in Chromium, and the console's iPad failures have been
+# WebKit's, so a Chromium pass has never been evidence for the iPad (root
+# CLAUDE.md → "iPad taps"). Playwright's WebKit is the same engine family as
+# iPad Safari, not iPad Safari itself: it catches engine differences, not
+# everything a device can do.
+#
+# Both the sources and the minified copy that Hosting serves are tested.
+# Started by hand, or by a push to a working branch that changes the console's
+# pages or this test. It is not a train or pull-request check.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'backlog-tracker/public/**'
+      - 'backlog-tracker/test/ui/webkit-ipad.test.mjs'
+      - 'backlog-tracker/test/ui/harness.mjs'
+      - '.github/workflows/console-webkit.yml'
+
+concurrency:
+  group: console-webkit-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  webkit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        working-directory: backlog-tracker/test
+        run: npm ci --no-audit --no-fund
+      - name: Install WebKit
+        working-directory: backlog-tracker/test
+        run: npx playwright-core install --with-deps webkit
+      - name: The console as an iPad, from the sources
+        working-directory: backlog-tracker/test
+        env:
+          REQUIRE_WEBKIT: '1'
+        run: node ui/webkit-ipad.test.mjs
+      - name: The console as an iPad, from the minified copy Hosting serves
+        if: always()
+        working-directory: backlog-tracker
+        env:
+          REQUIRE_WEBKIT: '1'
+        run: |
+          node scripts/build-console.js --out "$RUNNER_TEMP/console-dist" --require-minify
+          cd test && HARNESS_PUBLIC_DIR="$RUNNER_TEMP/console-dist" node ui/webkit-ipad.test.mjs
