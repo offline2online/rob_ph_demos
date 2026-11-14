@@ -365,7 +365,11 @@ service cloud.firestore {
         "patchPartCount",
         // Each train card's own test result (19 Oct 2026): only
         // run-backlog-automation.js records it, from the card's own runs.
-        "trainTest"];
+        "trainTest",
+        // Per-ticket model requirement (13 Nov 2026): which model actually
+        // built and reviewed the ticket, written by the build and review
+        // sessions (automation user) — never a browser's to claim.
+        "builtByModel", "reviewedByModel"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -405,7 +409,9 @@ service cloud.firestore {
         incoming().status in ["backlog", "ready-for-testing", "ready-to-publish", "published-live", "archived"] &&
         // previewUrl is rendered as a link on every member's board: http(s) only.
         (!("previewUrl" in incoming()) || incoming().previewUrl == null
-          || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*")));
+          || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*"))) &&
+        // Per-ticket model requirement: unset means "standard".
+        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]);
     }
 
     match /backlogItems/{itemId} {

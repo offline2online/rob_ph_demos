@@ -61,6 +61,24 @@ const COMPANY_COLLECTION = "prospectCompanies";
 const LOGO_BUCKET = "backlog-tracker-e4ed2.firebasestorage.app";
 const MAX_LOGO_BYTES = 1536 * 1024;
 const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg", "image/gif": "gif", "image/avif": "avif", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico" };
+// Every stored logo is a static PNG (transparency kept): an SVG is drawn at a
+// useful size, and an animated file (a site's animated favicon, an animated
+// SVG) is never kept as it is. Uses sharp, which the functions already ship.
+const LOGO_PX = 800;
+async function toStaticPng(bytes, ext) {
+  const sharp = require("sharp");
+  const img = ext === "svg" ? sharp(bytes, { density: 600 }) : sharp(bytes, { pages: 1 });
+  return img.resize({ width: LOGO_PX, height: LOGO_PX, fit: "inside", withoutEnlargement: ext !== "svg" }).png().toBuffer();
+}
+// More than one frame in a GIF, or animation in an SVG.
+function isAnimated(bytes, ext) {
+  if (ext === "svg") return /<animate|<set[\s>]|@keyframes|animation\s*:/i.test(bytes.toString("utf8"));
+  if (bytes.slice(0, 3).toString("latin1") !== "GIF") return false;
+  let frames = 0;
+  for (let i = 0; i < bytes.length - 8 && frames < 2; i++) if (bytes[i] === 0x21 && bytes[i + 1] === 0xf9 && bytes[i + 2] === 0x04) frames++;
+  return frames > 1;
+}
+const isStoredPng = (u) => isStored(u) && /\.png\?/.test(u);
 const isStored = (u) => typeof u === "string" && u.startsWith(`https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/brand%2F`);
 // The screen that runs before any research is paid for: a cheaper model with
 // three searches at most decides whether this is a real company that runs
@@ -580,7 +598,7 @@ function agentError(err) {
 
 function createLeadEnrich({
   db, verifyIdToken, resolveConsoleUser, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic,
-  research, screen, bucket, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
+  research, screen, bucket, toPng = toStaticPng, fetch: fetchImpl = globalThis.fetch, lookup = (h) => dns.lookup(h, { all: true }),
   logger = console, now = () => new Date(), serverTimestamp,
 }) {
   const send = (res, status, body) => res.status(status).set("Cache-Control", "no-store").json(body);
@@ -674,15 +692,28 @@ function createLeadEnrich({
       const bytes = await r.bytes();
       if (!bytes.length || bytes.length > MAX_LOGO_BYTES) return "";
       if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
-      const hash = crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 12);
-      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.${ext}`;
+      // A file that says it is one type and is another (a GIF served as an icon) is read for what it is.
+      const real = bytes.slice(0, 3).toString("latin1") === "GIF" ? "gif" : ext;
+      const png = await toPng(bytes, real);
+      if (!png || !png.length || png.length > MAX_LOGO_BYTES) return "";
+      const hash = crypto.createHash("sha256").update(png).digest("hex").slice(0, 12);
+      const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.png`;
       const token = crypto.randomUUID();
-      await bucket().file(path).save(bytes, { contentType: type, resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
+      await bucket().file(path).save(png, { contentType: "image/png", resumable: false, metadata: { cacheControl: "public, max-age=86400", metadata: { firebaseStorageDownloadTokens: token, source: url.slice(0, 500) } } });
       return `https://firebasestorage.googleapis.com/v0/b/${LOGO_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
     } catch (err) {
       logger.warn("logo not copied", { kind, error: String(err && err.message ? err.message : err).slice(0, 200) });
       return "";
     }
+  }
+  // Is the image at this address animated? (Unreachable counts as not.)
+  async function animatedAt(url) {
+    try {
+      const r = await safeGet(url);
+      const type = String((r.headers && r.headers.get && r.headers.get("content-type")) || "").split(";")[0].trim().toLowerCase();
+      if (!r.ok || typeof r.bytes !== "function") return false;
+      return isAnimated(await r.bytes(), LOGO_TYPES[type] || "");
+    } catch { return false; }
   }
   // The run's logos, copied into storage. A logo whose source is the one already
   // copied is left as it is; one that can't be copied keeps its original address.
@@ -696,9 +727,10 @@ function createLeadEnrich({
       const src = found[kind];
       if (!src) { out[kind] = ""; continue; }
       if (isStored(src)) { out[kind] = src; from[kind] = wasFrom[kind] || ""; continue; }
-      if (wasFrom[kind] === src && isStored(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
-      out[kind] = (await storeLogo(company, kind, src)) || src;
-      from[kind] = src;
+      if (wasFrom[kind] === src && isStoredPng(was[kind])) { out[kind] = was[kind]; from[kind] = src; continue; }
+      // A copy is a static PNG. A file that can't be copied keeps its own address, unless it is animated: then there is none.
+      out[kind] = (await storeLogo(company, kind, src)) || ((await animatedAt(src)) ? "" : src);
+      from[kind] = out[kind] ? src : "";
     }
     result.f.logos = { light: out.light, dark: out.dark };
     result.f.logoSources = from;
@@ -918,7 +950,8 @@ function createLeadEnrich({
         const cref = db.collection(COMPANY_COLLECTION).doc(ckey);
         const csnap = await cref.get();
         const profile = csnap.exists ? ((csnap.data() || {}).profile || {}) : {};
-        const pr = applyToProfile(profile, result.f, result.logoUrl, r.enrichment.filledProfile, at.toISOString().slice(0, 10));
+        // The profile's logo is the full logo when one was found, else the icon.
+        const pr = applyToProfile(profile, result.f, (result.f.logos && result.f.logos.light) || result.logoUrl, r.enrichment.filledProfile, at.toISOString().slice(0, 10));
         r.enrichment.filledProfile = pr.filled;
         await cref.set({ name: str(pdata.name, 120), profile: pr.set, updatedAt: stamp(), updatedByEmail: meta.by.includes("@") ? meta.by : "enrichment" }, { merge: true });
       }
@@ -1014,5 +1047,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

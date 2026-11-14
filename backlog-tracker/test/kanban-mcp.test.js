@@ -144,8 +144,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("bad input is refused, with what's wrong", async () => {
     const r = await tool(sam, "kanban_create_task", { title: "x", estimate: "soon", assignee: "not-an-email" });
     assert.ok(r.isError); assert.match(r.text, /estimate/); assert.match(r.text, /assignee must be an email/);
-    const e = await tool(sam, "kanban_create_task", { title: "x", epic: "PH-1" });
-    assert.ok(e.isError); assert.match(e.text, /PH-1 is not an epic/);
+    const e = await tool(sam, "kanban_create_task", { title: "x", epic: "PH-999" });
+    assert.ok(e.isError); assert.match(e.text, /PH-999 isn't a ticket/);
   });
 
   await test("kanban_move_task: Ready for Testing with no tester leaves the assignee (never defaults to Rob)", async () => {
@@ -316,13 +316,15 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(!m.isError, m.text); assert.strictEqual(task(c.json.key).assignee, SAM);
   });
 
-  await test("an epic: children listed, and losing its type unlinks them", async () => {
+  await test("an epic: children listed, and losing its type keeps them (any ticket can be a parent, KB-TASK-14)", async () => {
     const e = await tool(sam, "kanban_create_task", { title: "Menu Boards — scheduled local offers", type: "epic" });
     await tool(sam, "kanban_update_task", { key: "PH-1", epic: e.json.key });
     const got = await tool(sam, "kanban_get_task", { key: e.json.key });
     assert.deepStrictEqual(got.json.children.map((c) => c.key), ["PH-1"]);
+    assert.strictEqual(got.json.level, 1); assert.strictEqual(got.json.levelName, "Epic");
     await tool(sam, "kanban_update_task", { key: e.json.key, type: "task" });
-    assert.strictEqual(task("PH-1").epic, "");
+    assert.strictEqual(task("PH-1").epic, e.json.key);
+    await tool(sam, "kanban_update_task", { key: "PH-1", epic: "" });
   });
 
   await test("kanban_comment: saved, counted, and only real members are notified", async () => {
@@ -618,7 +620,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("every problem in one error: bad due, bad estimate, unknown epic, non-member, unknown release", async () => {
     const r = await tool(sam, "kanban_create_task", { title: "All wrong", due: "tomorrow", estimate: "lots", epic: "PH-999999", assignee: "nobody@example.com", release: "nope" });
     assert.ok(r.isError);
-    for (const re of [/due must be YYYY-MM-DD/, /estimate must be/, /PH-999999 is not an epic/, /isn't a member/, /isn't a release/]) assert.match(r.text, re);
+    for (const re of [/due must be YYYY-MM-DD/, /estimate must be/, /PH-999999 isn't a ticket/, /isn't a member/, /isn't a release/]) assert.match(r.text, re);
   });
   await test("project: a ticket names a console project by id or name; unknown is refused with the other errors; '' clears it", async () => {
     env.store.col("projects").set("pStaff", { name: "Staff Kanban" });
@@ -816,6 +818,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
   await test("while the cards are behind the tickets, tools read the tickets (none disappears) and the write fills its card", async () => {
     env.store.col("kanbanCards").clear();
+    kanban.clearCaches("board"); // kanban_get_task (any ticket now lists its children) read the board a moment ago
     assert.strictEqual(await kanban.boardCollection(), "kanbanTasks");
     const l = await tool1(sam, "kanban_list_tasks", {});
     assert.ok(l.json.tasks.length > 3, "every open ticket is listed");
@@ -1546,15 +1549,54 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       { ref: "bad", type: "epic", title: "Bad epic", due: "x" }, { title: "Orphan", epic: "bad" } ], partial: true });
     assert.ok(!r.isError, r.text);
     const rowsBad = [...new Set(r.json.skipped.map((p) => p.row))];
-    assert.deepStrictEqual(rowsBad, [2, 3, 4, 5, 7, 8, 9]);
-    assert.deepStrictEqual(r.json.tickets.map((t) => t.row), [1, 6]);
-    assert.strictEqual(task(r.json.tickets[1].key).epic, epic);
+    assert.deepStrictEqual(rowsBad, [3, 4, 5, 8, 9]);
+    assert.deepStrictEqual(r.json.tickets.map((t) => t.row), [1, 2, 6, 7]);
+    assert.strictEqual(task(r.json.tickets[1].key).epic, r.json.tickets[0].key, "a task row can be a parent (KB-TASK-14)");
+    assert.strictEqual(task(r.json.tickets[2].key).epic, epic);
+    assert.strictEqual(task(r.json.tickets[3].key).epic, task1);
+    // Four levels at most, through refs and existing parents alike.
+    const deep = await tool(sam, "kanban_create_tasks", { tasks: [
+      { ref: "e", type: "epic", title: "E" }, { ref: "t", title: "T", epic: "e" }, { ref: "s", title: "S", epic: "t" }, { ref: "ss", title: "SS", epic: "s" }, { title: "Fifth", epic: "ss" },
+      { title: "Under an existing sub-subtask", epic: r.json.tickets[1].key }, { ref: "x", type: "epic", title: "Epic under a row", epic: "t" } ], dryRun: true });
+    assert.deepStrictEqual(deep.json.problems.map((p) => [p.row, p.field]), [[5, "epic"], [7, "epic"]], JSON.stringify(deep.json.problems));
+    assert.match(deep.json.problems[0].message, /level 5.*at most 4 levels/); assert.match(deep.json.problems[1].message, /epic is always at the top level/);
     const many = await tool(sam, "kanban_create_tasks", { tasks: rowsOf(101) });
     assert.ok(many.isError); assert.match(many.text, /At most 100/);
     const none = await tool(sam, "kanban_create_tasks", { tasks: [] });
     assert.ok(none.isError);
     const unknown = await tool(sam, "kanban_create_tasks", { tasks: [{ title: "x", colour: "red" }], dryRun: true });
     assert.strictEqual(unknown.json.problems[0].field, "colour");
+  });
+  await test("hierarchy (KB-TASK-14): epic > task > subtask > sub-subtask; a fifth level is refused; completing the leaves moves each parent to Ready for Testing", async () => {
+    const mk = async (title, extra) => { const r = await tool(sam, "kanban_create_task", Object.assign({ title }, extra)); assert.ok(!r.isError, r.text); return r.json.key; };
+    const E = await mk("Hierarchy epic", { type: "epic" });
+    const T = await mk("Front end", { epic: E }), T2 = await mk("Back end", { epic: E });
+    const S = await mk("Login page", { epic: T });
+    const SS1 = await mk("Form layout", { epic: S }), SS2 = await mk("Validation", { epic: S });
+    const fifth = await tool(sam, "kanban_create_task", { title: "Too deep", epic: SS1 });
+    assert.ok(fifth.isError); assert.match(fifth.text, /level 4\).*at most 4 levels: Epic > Task > Subtask > Sub-subtask/);
+    // Moving a branch under another that would make five levels is refused too; a loop as well.
+    const branch = await mk("Branch"); await mk("Branch child", { epic: branch });
+    const deeper = await tool(sam, "kanban_update_task", { key: branch, epic: S });
+    assert.ok(deeper.isError); assert.match(deeper.text, /has 1 level of tickets under it/);
+    const loop = await tool(sam, "kanban_update_task", { key: T, epic: SS1 });
+    assert.ok(loop.isError); assert.match(loop.text, /is under/);
+    const got = await tool(sam, "kanban_get_task", { key: SS1 });
+    assert.deepStrictEqual([got.json.level, got.json.levelName], [4, "Sub-subtask"]);
+    const gs = await tool(sam, "kanban_get_task", { key: S });
+    assert.deepStrictEqual(gs.json.children.map((c) => c.key).sort(), [SS1, SS2].sort());
+    // Completing the leaves: the subtask moves when both are done; then the task; the epic waits for its other task.
+    const one = await tool(sam, "kanban_move_task", { key: SS1, status: "done", resolution: "completed" });
+    assert.strictEqual(one.json.parentsMovedToTesting, undefined); assert.strictEqual(task(S).status, "backlog");
+    const two = await tool(sam, "kanban_move_task", { key: SS2, status: "done", resolution: "completed" });
+    assert.deepStrictEqual(two.json.parentsMovedToTesting, [S, T]);
+    assert.strictEqual(task(S).status, "ready-for-testing"); assert.strictEqual(task(T).status, "ready-for-testing"); assert.strictEqual(task(E).status, "backlog");
+    assert.strictEqual(env.store.col("kanbanCards").get(T).status, "ready-for-testing", "the card moves with the ticket");
+    assert.ok(activity(S).some((l) => /Ready for Testing · all its child tickets are done/.test(l)), JSON.stringify(activity(S)));
+    const three = await tool(sam, "kanban_move_task", { key: T2, status: "done", resolution: "withdrawn" });
+    assert.deepStrictEqual(three.json.parentsMovedToTesting, [E], "withdrawn children are left out; the other task is finished");
+    assert.strictEqual(task(E).status, "ready-for-testing");
+    assert.deepStrictEqual(cardDrift(), []);
   });
   await test("kanban_create_tasks: a viewer can't write; 500 tickets an hour per member, refused whole when over", async () => {
     const v = await tool(kit, "kanban_create_tasks", { tasks: [{ title: "x" }] });

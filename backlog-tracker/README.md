@@ -280,6 +280,17 @@ safe and moving:
   blocked cards writes `notifyRoutine` status "error" with the reason.
 - **`buildSession`** — each session reports on its own card; the button
   shows "Deving… N/M" and each card unlocks when its own session reports.
+- **Per-ticket model** (13 Nov 2026) — `backlogItems.model` is `standard`
+  (default) or `advanced` (Claude Opus only), set from New item / Edit item
+  → Model or MCP `create_backlog_item` / `update_backlog_item`. Each fire
+  carries `modelRequirementBlock(item)` (`functions/model-requirement.js`):
+  an Advanced ticket is built on Opus, handed to an Opus subagent, or not
+  built and flagged `blocked.reason: "model-unavailable"` ("Not built: needs
+  Opus", cleared with ×). Sessions record `builtByModel` / `reviewedByModel`
+  (pipeline fields), shown on the card's "Advanced · Opus" chip and in Edit
+  item; `run-backlog-automation.js` refuses an Advanced patch whose
+  `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
+  requirement".
 
 Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 `ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.
@@ -2609,7 +2620,7 @@ every destination already existed.
   `LEAD_INGEST_KEY`); a `test` flag stores a test lead (badged, deletable by hand from
   its summary; the Leads/Test buttons were removed 6 Nov 2026). See REQUIREMENTS.md → Promote section: Leads.
   **Network operator inquiries (13 Nov 2026)**: a submission with `lead_type` (or
-  `leadType`) "operator" or "Network operator inquiry" (the Be Your Own Boss page's
+  `leadType`) "operator" or "Network operator inquiry" (the Run Your Own RMN page's
   product tour gate) is an individual, not a company: shown as "Network operator
   inquiry", stored as `leadType: "operator"`, the person as the one contact,
   `operator {region, background}`, its own stages (Applied, Screening, Intro call,

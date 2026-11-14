@@ -550,9 +550,14 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
     assert.ok(ok, "Save visible");
   }
   const before = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
-  await press(p, "#task-side-toggle"); await p.waitForTimeout(250);
-  const afterW = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
-  assert.ok(afterW > before + 150);
+  await press(p, "#task-side-toggle");
+  // The column animates (grid-template-columns .2s in kanban.css). A fixed 250 ms wait lost that race on
+  // loaded CI runners (PR #584, 14 Nov 2026: desktop-1024 failed twice, then passed alone 9/9), so wait
+  // for the width itself; the assertion is unchanged.
+  const descWidth = () => p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
+  await until(async () => (await descWidth()) > before + 150, "the description to widen once the details column collapses", 3000).catch(() => {});
+  const afterW = await descWidth();
+  assert.ok(afterW > before + 150, `the description widens by more than 150px when the details column collapses (${before} -> ${afterW})`);
   await press(p, "#f-cancel");
   await press(p, '.kb-card[data-key="PH-21"]');
   assert.ok(await p.$eval(".kb-task-grid", (e) => e.classList.contains("kb-side-collapsed")));
@@ -838,6 +843,71 @@ T("KB-C14", "an API contract ticket shows Interface: <name> in its modal, linkin
   await until(() => p.$("#f-interface a"), "the interface link");
   assert.match(await p.textContent("#f-interface"), /^Interface: Staff Kanban to Console API$/);
   assert.equal(await p.getAttribute("#f-interface a", "href"), "#docs/pA?interface=ifc1");
+  await p.done();
+});
+
+T("TC-70", "hierarchy: epic > task > subtask > sub-subtask, no fifth level, and completing the leaf moves each parent to Ready for Testing with progress at every level", async (prof) => {
+  const p = await open(prof);
+  const title = () => p.textContent("#task-title-h");
+  const level = () => p.textContent('[data-field="children"] .kb-level');
+  const closeAll = async () => { for (let i = 0; i < 5 && (await p.$eval("#task-backdrop", (e) => !e.hidden)); i++) { await press(p, "#f-cancel"); await p.waitForTimeout(150); } };
+  // Epic, then a task inside it (from the epic's own Add task).
+  await press(p, "#kb-new-btn");
+  await press(p, '#task-form .type-opt[data-type="epic"]');
+  await p.fill("#f-title", "Store rollout");
+  await press(p, '[data-add-child="task"]');
+  await until(async () => (await title()) === "New task", "the task form");
+  assert.equal(await p.inputValue("#f-epic"), "PH-40");
+  await p.fill("#f-title", "Front end");
+  await press(p, "#f-save");
+  await until(async () => (await title()) === "PH-40", "back on the epic");
+  assert.match(await level(), /Level 1 of 4 · Epic/);
+  // The task holds a subtask, the subtask a sub-subtask.
+  await until(() => p.$$eval('[data-open-child="PH-41"]', (e) => e.length), "the task listed");
+  await press(p, '[data-open-child="PH-41"]');
+  await until(async () => (await title()) === "PH-41", "the task");
+  await until(async () => /Level 2 of 4 · Task/.test(await level()), "the task's level");
+  assert.match(await p.textContent('[data-add-child="task"]'), /Add subtask/);
+  await press(p, '[data-add-child="task"]');
+  await until(async () => (await title()) === "New subtask", "the subtask form");
+  assert.equal(await p.inputValue("#f-epic"), "PH-41");
+  await p.fill("#f-title", "Login page");
+  await press(p, "#f-save");
+  await until(async () => (await title()) === "PH-41", "back on the task");
+  await until(() => p.$$eval('[data-open-child="PH-42"]', (e) => e.length), "the subtask listed");
+  await press(p, '[data-open-child="PH-42"]');
+  await until(async () => /Level 3 of 4 · Subtask/.test(await level()), "the subtask's level");
+  await press(p, '[data-add-child="task"]');
+  await until(async () => (await title()) === "New sub-subtask", "the sub-subtask form");
+  await p.fill("#f-title", "Form layout");
+  await press(p, "#f-save");
+  await until(async () => (await title()) === "PH-42", "back on the subtask");
+  assert.equal((await stored(p, "PH-43")).epic, "PH-42");
+  // A fifth level is blocked: the sub-subtask can't hold children, and isn't offered as a parent.
+  await until(() => p.$$eval('[data-open-child="PH-43"]', (e) => e.length), "the sub-subtask listed");
+  await press(p, '[data-open-child="PH-43"]');
+  await until(async () => /Level 4 of 4 · Sub-subtask/.test(await level()), "the sub-subtask's level");
+  assert.match(await p.textContent("#f-level-cap"), /lowest level, so it can't have child tickets/);
+  assert.equal(await p.$$eval("[data-add-child]", (e) => e.length), 0, "no Add buttons at the lowest level");
+  await closeAll();
+  await press(p, "#kb-new-btn");
+  const offered = await p.$$eval("#f-epic option", (o) => o.map((x) => x.value));
+  assert.ok(offered.includes("PH-42") && !offered.includes("PH-43"), `a new ticket can go under the subtask, not the sub-subtask: ${offered}`);
+  await closeAll();
+  // Progress at every level before the leaf is done.
+  assert.match(await p.textContent('.kb-card[data-key="PH-42"] .kb-epic-count'), /0\/1 done/);
+  assert.match(await p.textContent('.kb-card[data-key="PH-40"] .kb-epic-count'), /0\/1 done/);
+  assert.match(await p.textContent('.kb-card[data-key="PH-43"] .kb-parent-epic'), /Login page/);
+  // Complete the leaf: the subtask, the task and the epic each move to Ready for Testing.
+  await press(p, '.kb-card[data-key="PH-43"]');
+  await p.selectOption("#f-status", "done:completed"); await press(p, "#f-save");
+  await until(async () => (await stored(p, "PH-40")).status === "ready-for-testing", "the epic moved", 8000);
+  for (const k of ["PH-42", "PH-41", "PH-40"]) assert.equal((await stored(p, k)).status, "ready-for-testing", `${k} moved to Ready for Testing`);
+  await until(async () => /1\/1 done/.test(await p.textContent('.kb-card[data-key="PH-40"] .kb-epic-count')), "the epic's progress");
+  assert.match(await p.textContent('.kb-card[data-key="PH-41"] .kb-epic-count'), /1\/1 done/);
+  assert.match(await p.textContent('.kb-card[data-key="PH-42"] .kb-epic-count'), /1\/1 done/);
+  const acts = await writes(p, /^kanbanTasks\/PH-41\/activity\//);
+  assert.ok(acts.some((w) => /all its child tickets are done/.test(w.data.text)), "the move is logged on the parent");
   await p.done();
 });
 

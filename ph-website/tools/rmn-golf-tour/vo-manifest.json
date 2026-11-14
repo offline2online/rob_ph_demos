@@ -1,0 +1,608 @@
+{
+ "f1-01": [
+  {
+   "file": "f1-01-1-0ca14d91e8.mp3",
+   "hash": "0ca14d91e8",
+   "text": "Fernhollow Golf Club has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar.",
+   "duration": 8.77,
+   "cue": null
+  }
+ ],
+ "f1-02": [
+  {
+   "file": "f1-02-1-019cfa9967.mp3",
+   "hash": "019cfa9967",
+   "text": "Each one has its own playlist.",
+   "duration": 1.71,
+   "cue": null
+  },
+  {
+   "file": "f1-02-2-6a04d41418.mp3",
+   "hash": "6a04d41418",
+   "text": "First, the pro shop playlist is set to rotate three campaigns, one after another.",
+   "duration": 4.97,
+   "cue": "Three campaigns in rotation"
+  },
+  {
+   "file": "f1-02-3-7b0d89f97e.mp3",
+   "hash": "7b0d89f97e",
+   "text": "New slots belong to Headquarters, for the club's own promotions.",
+   "duration": 3.67,
+   "cue": "Three slots, all Headquarters"
+  },
+  {
+   "file": "f1-02-4-3074c07335.mp3",
+   "hash": "3074c07335",
+   "text": "Slot one is the one the club will sell to brands.",
+   "duration": 2.71,
+   "cue": "Slot 1 goes to advertisers"
+  },
+  {
+   "file": "f1-02-5-9f9d0e125b.mp3",
+   "hash": "9f9d0e125b",
+   "text": "Its owner changes from Headquarters to Advertiser.",
+   "duration": 3.01,
+   "cue": "From Headquarters to Advertiser"
+  },
+  {
+   "file": "f1-02-6-347b7770f4.mp3",
+   "hash": "347b7770f4",
+   "text": "One slot in three now earns media revenue, and two keep promoting the club's own offers.",
+   "duration": 5.33,
+   "cue": "One advertiser slot in three"
+  }
+ ],
+ "f1-03": [
+  {
+   "file": "f1-03-1-1e0d92d0f9.mp3",
+   "hash": "1e0d92d0f9",
+   "text": "The driving range, first tee, halfway house, locker room and clubhouse bar get the same setup, in a few clicks.",
+   "duration": 6.76,
+   "cue": null
+  },
+  {
+   "file": "f1-03-2-51556feb16.mp3",
+   "hash": "51556feb16",
+   "text": "The club decides exactly how much screen time it sells.",
+   "duration": 3.22,
+   "cue": null
+  },
+  {
+   "file": "f1-03-3-ab521c1d61.mp3",
+   "hash": "ab521c1d61",
+   "text": "Six brand partner slots, one on every screen type, are now ready to sell.",
+   "duration": 4.44,
+   "cue": "Six advertiser slots, ready to sell"
+  }
+ ],
+ "f1-04": [
+  {
+   "file": "f1-04-1-a88a9779d9.mp3",
+   "hash": "a88a9779d9",
+   "text": "Corvane Golf is already set up as a direct advertiser, next to the advertisers synced from DSPs.",
+   "duration": 6.59,
+   "cue": null
+  }
+ ],
+ "f1-05": [
+  {
+   "file": "f1-05-1-815ef1fcf7.mp3",
+   "hash": "815ef1fcf7",
+   "text": "Slots are always sold through deals. A brand is never assigned to a slot directly.",
+   "duration": 4.93,
+   "cue": null
+  },
+  {
+   "file": "f1-05-2-2ff4f4c6b3.mp3",
+   "hash": "2ff4f4c6b3",
+   "text": "This direct deal gives Corvane all of December at a fixed CPM, and it's never sent to a DSP.",
+   "duration": 6.04,
+   "cue": "Create a direct deal"
+  }
+ ],
+ "f1-06": [
+  {
+   "file": "f1-06-1-65160b6df7.mp3",
+   "hash": "65160b6df7",
+   "text": "The six new brand partner slots start unassigned, so nothing plays in them yet.",
+   "duration": 4.48,
+   "cue": null
+  },
+  {
+   "file": "f1-06-2-a2b377b099.mp3",
+   "hash": "a2b377b099",
+   "text": "Corvane's deal is saved as a draft, ready to place on the slots.",
+   "duration": 3.86,
+   "cue": "The new deal, not on a slot yet"
+  },
+  {
+   "file": "f1-06-3-920ae8dfd8.mp3",
+   "hash": "920ae8dfd8",
+   "text": "Each slot's list offers DSPs for open auction, and deals.",
+   "duration": 3.99,
+   "cue": "Choose the deal"
+  },
+  {
+   "file": "f1-06-4-daa95efabb.mp3",
+   "hash": "daa95efabb",
+   "text": "The club picks the Corvane deal for all six.",
+   "duration": 2.35,
+   "cue": null
+  },
+  {
+   "file": "f1-06-5-9d85756903.mp3",
+   "hash": "9d85756903",
+   "text": "Direct deals and programmatic demand are managed side by side, in one place.",
+   "duration": 5.08,
+   "cue": null
+  },
+  {
+   "file": "f1-06-6-727fafb5dd.mp3",
+   "hash": "727fafb5dd",
+   "text": "All six slots now carry the deal, and the deal shows six slots. Then, save the changes.",
+   "duration": 5.59,
+   "cue": "All six brand partner slots"
+  }
+ ],
+ "f1-07": [
+  {
+   "file": "f1-07-1-1007aa5f04.mp3",
+   "hash": "1007aa5f04",
+   "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM.",
+   "duration": 5.08,
+   "cue": null
+  },
+  {
+   "file": "f1-07-2-810f46105a.mp3",
+   "hash": "810f46105a",
+   "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.",
+   "duration": 5.55,
+   "cue": "Finalise and go live"
+  },
+  {
+   "file": "f1-07-3-1b34406dde.mp3",
+   "hash": "1b34406dde",
+   "text": "Every December window on all six screen types is now Corvane's.",
+   "duration": 3.88,
+   "cue": "Live · direct, not sent to a DSP"
+  }
+ ],
+ "f1-08": [
+  {
+   "file": "f1-08-1-cfc10cbd0a.mp3",
+   "hash": "cfc10cbd0a",
+   "text": "Finally, the club gives Corvane its own login, so the brand can manage its own campaigns.",
+   "duration": 5.4,
+   "cue": null
+  },
+  {
+   "file": "f1-08-2-f1dd3ed422.mp3",
+   "hash": "f1dd3ed422",
+   "text": "Jamie gets the Advertiser role, so Jamie only ever sees Corvane's campaigns.",
+   "duration": 4.91,
+   "cue": "An Advertiser login for Corvane"
+  },
+  {
+   "file": "f1-08-3-9bc2f258d9.mp3",
+   "hash": "9bc2f258d9",
+   "text": "The invitation goes out, and the club's first brand partner deal is done.",
+   "duration": 3.99,
+   "cue": "Send the invitation"
+  }
+ ],
+ "f2-01": [
+  {
+   "file": "f2-01-1-c32289aecd.mp3",
+   "hash": "c32289aecd",
+   "text": "Jamie from Corvane signs in with the login the club provided. Corvane can run its own campaigns, or leave them to the club.",
+   "duration": 7.83,
+   "cue": null
+  },
+  {
+   "file": "f2-01-2-c5591910fd.mp3",
+   "hash": "c5591910fd",
+   "text": "Everything Jamie sees is scoped to Corvane's own campaigns.",
+   "duration": 3.56,
+   "cue": "Only Corvane's campaigns"
+  }
+ ],
+ "f2-02": [
+  {
+   "file": "f2-02-1-657e007c88.mp3",
+   "hash": "657e007c88",
+   "text": "To start a new campaign, Jamie selects Launch a New Campaign, at the top of the list.",
+   "duration": 4.86,
+   "cue": null
+  }
+ ],
+ "f2-03": [
+  {
+   "file": "f2-03-1-26a12d399b.mp3",
+   "hash": "26a12d399b",
+   "text": "There's no form to fill in. Jamie just talks, and the AI campaign agent listens.",
+   "duration": 5.18,
+   "cue": null
+  },
+  {
+   "file": "f2-03-2-d18f886bef.mp3",
+   "hash": "d18f886bef",
+   "text": "As Jamie speaks, it captures the campaign name, products, objective, screens and audience.",
+   "duration": 5.46,
+   "cue": null
+  },
+  {
+   "file": "f2-03-3-31c7a5a55a.mp3",
+   "hash": "31c7a5a55a",
+   "text": "A whole campaign brief, in the time it takes to describe it.",
+   "duration": 3.24,
+   "cue": null
+  }
+ ],
+ "f2-04": [
+  {
+   "file": "f2-04-1-6c5f3cf27b.mp3",
+   "hash": "6c5f3cf27b",
+   "text": "The agent writes the brief from what Jamie said, and from how past campaigns performed.",
+   "duration": 4.8,
+   "cue": null
+  },
+  {
+   "file": "f2-04-2-635ecc078c.mp3",
+   "hash": "635ecc078c",
+   "text": "It's ready in seconds, with nothing typed by hand.",
+   "duration": 2.86,
+   "cue": null
+  },
+  {
+   "file": "f2-04-3-23d07dc5f3.mp3",
+   "hash": "23d07dc5f3",
+   "text": "Corvane's deal ID is pre-selected, so the campaign can only use the slots on that deal.",
+   "duration": 5.5,
+   "cue": "Deal ID, pre-selected"
+  },
+  {
+   "file": "f2-04-4-7ded1c15ea.mp3",
+   "hash": "7ded1c15ea",
+   "text": "Name, details, products, audience and objective are all filled in.",
+   "duration": 4.22,
+   "cue": "Campaign brief"
+  },
+  {
+   "file": "f2-04-5-3082a3daf1.mp3",
+   "hash": "3082a3daf1",
+   "text": "Only the deal's six screen types are switched on.",
+   "duration": 2.75,
+   "cue": "Touchpoints"
+  }
+ ],
+ "f2-05": [
+  {
+   "file": "f2-05-1-1cea3b8bb4.mp3",
+   "hash": "1cea3b8bb4",
+   "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Corvane's, the club's, or an agreed mix of both.",
+   "duration": 7.96,
+   "cue": null
+  },
+  {
+   "file": "f2-05-2-67ab4ee24b.mp3",
+   "hash": "67ab4ee24b",
+   "text": "Every word can be edited before any creative is made.",
+   "duration": 3.01,
+   "cue": "Storyboard and copy"
+  }
+ ],
+ "f2-06": [
+  {
+   "file": "f2-06-1-247e067fe8.mp3",
+   "hash": "247e067fe8",
+   "text": "With the copy agreed, the agent generates a creative preview of the first and last frames.",
+   "duration": 5.29,
+   "cue": null
+  },
+  {
+   "file": "f2-06-2-a80f61db0a.mp3",
+   "hash": "a80f61db0a",
+   "text": "The frames follow the agreed brand guidelines, and draw on what worked best in past campaigns.",
+   "duration": 5.59,
+   "cue": "Generating the preview"
+  },
+  {
+   "file": "f2-06-3-c935bc221a.mp3",
+   "hash": "c935bc221a",
+   "text": "Not quite right? Jamie asks for a change in plain English, like a greener background for the driving range.",
+   "duration": 6.23,
+   "cue": "Refine in plain English"
+  },
+  {
+   "file": "f2-06-4-a4c96f7f72.mp3",
+   "hash": "a4c96f7f72",
+   "text": "And the frame is regenerated with the change.",
+   "duration": 2.5,
+   "cue": "Updated"
+  }
+ ],
+ "f2-07": [
+  {
+   "file": "f2-07-1-8f51435a80.mp3",
+   "hash": "8f51435a80",
+   "text": "Generate Creative Assets builds the final creative for every screen type, from the pro shop to the clubhouse bar.",
+   "duration": 6.93,
+   "cue": null
+  },
+  {
+   "file": "f2-07-2-ff4de61fc3.mp3",
+   "hash": "ff4de61fc3",
+   "text": "Once the approved campaign runs, its results feed Corvane's future campaigns, closing the loop.",
+   "duration": 5.74,
+   "cue": "Assets for every touchpoint"
+  }
+ ],
+ "f2-08": [
+  {
+   "file": "f2-08-1-f21a7b6059.mp3",
+   "hash": "f21a7b6059",
+   "text": "Corvane also wants a second campaign, just for low-handicap members.",
+   "duration": 4.22,
+   "cue": null
+  },
+  {
+   "file": "f2-08-2-27180fa2ec.mp3",
+   "hash": "27180fa2ec",
+   "text": "Targeting is set on the campaign's Targeting tab, exactly as the club would.",
+   "duration": 4.46,
+   "cue": "Open the Targeting tab"
+  },
+  {
+   "file": "f2-08-3-69ba1260a8.mp3",
+   "hash": "69ba1260a8",
+   "text": "Jamie adds a rule: Audience Segments includes Low-handicap members.",
+   "duration": 4.22,
+   "cue": "Target low-handicap members"
+  },
+  {
+   "file": "f2-08-4-290178c496.mp3",
+   "hash": "290178c496",
+   "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong.",
+   "duration": 4.61,
+   "cue": null
+  },
+  {
+   "file": "f2-08-5-97015211cb.mp3",
+   "hash": "97015211cb",
+   "text": "Only the data sources, attributes and values the club has approved for brands appear here.",
+   "duration": 5.16,
+   "cue": null
+  },
+  {
+   "file": "f2-08-6-064787121c.mp3",
+   "hash": "064787121c",
+   "text": "The club controls 100% of the targeting it shares.",
+   "duration": 3.37,
+   "cue": "Controlled by the club"
+  },
+  {
+   "file": "f2-08-7-125138750f.mp3",
+   "hash": "125138750f",
+   "text": "The data stays in the club's own cloud. Corvane only ever picks a segment.",
+   "duration": 4.35,
+   "cue": "The club's member segments"
+  }
+ ],
+ "f2-09": [
+  {
+   "file": "f2-09-1-eec78fda24.mp3",
+   "hash": "eec78fda24",
+   "text": "A second rule adds purchase history from the pro shop's point-of-sale data.",
+   "duration": 4.48,
+   "cue": null
+  },
+  {
+   "file": "f2-09-2-911c941a99.mp3",
+   "hash": "911c941a99",
+   "text": "Purchase History includes golf balls, again picked from a list.",
+   "duration": 3.56,
+   "cue": null
+  },
+  {
+   "file": "f2-09-3-0b5161a037.mp3",
+   "hash": "0b5161a037",
+   "text": "Targeting on real membership and sales data is what makes venue media so valuable, to brands and to the club.",
+   "duration": 6.81,
+   "cue": null
+  },
+  {
+   "file": "f2-09-4-c1c7d2f99f.mp3",
+   "hash": "c1c7d2f99f",
+   "text": "Low-handicap members who buy golf balls match both rules, and Jamie saves the targeting with Save Changes.",
+   "duration": 6.89,
+   "cue": "Both rules in place"
+  },
+  {
+   "file": "f2-09-5-b0bcf5eafb.mp3",
+   "hash": "b0bcf5eafb",
+   "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the club.",
+   "duration": 5.76,
+   "cue": "Send for approval"
+  },
+  {
+   "file": "f2-09-6-6b79b73760.mp3",
+   "hash": "6b79b73760",
+   "text": "It's now awaiting approval, with no activation toggle until the club approves it.",
+   "duration": 4.86,
+   "cue": "Awaiting approval"
+  }
+ ],
+ "f2-10": [
+  {
+   "file": "f2-10-1-2d827b6951.mp3",
+   "hash": "2d827b6951",
+   "text": "Every brand campaign needs the club's approval before it can play. Corvane's is waiting in Campaign Approval.",
+   "duration": 6.4,
+   "cue": null
+  },
+  {
+   "file": "f2-10-2-9c3ee06e5f.mp3",
+   "hash": "9c3ee06e5f",
+   "text": "One click on Approve Selected, and Corvane's members campaign is approved, with its own creative ID.",
+   "duration": 6.31,
+   "cue": "Approve Selected"
+  },
+  {
+   "file": "f2-10-3-2dbaa4ce3a.mp3",
+   "hash": "2dbaa4ce3a",
+   "text": "Once it's approved, the activation toggle appears in place of Send for approval.",
+   "duration": 4.65,
+   "cue": "Ready to activate"
+  }
+ ],
+ "f3-01": [
+  {
+   "file": "f3-01-1-be9fd8aa3e.mp3",
+   "hash": "be9fd8aa3e",
+   "text": "Hannah, a low-handicap member, arrives at Fernhollow for her morning tee time.",
+   "duration": 4.5,
+   "cue": null
+  },
+  {
+   "file": "f3-01-2-89f707e0f9.mp3",
+   "hash": "89f707e0f9",
+   "text": "The club's app welcomes her by name and invites her to check in.",
+   "duration": 3.41,
+   "cue": "Welcome to Fernhollow"
+  },
+  {
+   "file": "f3-01-3-d4c36ad55f.mp3",
+   "hash": "d4c36ad55f",
+   "text": "One tap, and she's checked in for her round.",
+   "duration": 2.35,
+   "cue": "Checked in"
+  },
+  {
+   "file": "f3-01-4-29c7f09a80.mp3",
+   "hash": "29c7f09a80",
+   "text": "Corvane's members offer is first in her app.",
+   "duration": 2.47,
+   "cue": "Corvane's offer, in the club's app"
+  }
+ ],
+ "f3-02": [
+  {
+   "file": "f3-02-1-6e79fb386e.mp3",
+   "hash": "6e79fb386e",
+   "text": "Her check-in links to what the club already knows: her membership and what she buys in the pro shop.",
+   "duration": 5.42,
+   "cue": null
+  },
+  {
+   "file": "f3-02-2-a74e98a958.mp3",
+   "hash": "a74e98a958",
+   "text": "She matches both of Corvane's rules, in real time.",
+   "duration": 3.07,
+   "cue": "A match on both rules"
+  }
+ ],
+ "f3-03": [
+  {
+   "file": "f3-03-1-1a62b7cd0e.mp3",
+   "hash": "1a62b7cd0e",
+   "text": "Every screen rotates three campaigns: two for the club, and the brand partner slot.",
+   "duration": 4.82,
+   "cue": null
+  },
+  {
+   "file": "f3-03-2-c8e634bfda.mp3",
+   "hash": "c8e634bfda",
+   "text": "Most golfers see Corvane's standard creative in that slot.",
+   "duration": 3.41,
+   "cue": "Three campaigns in every rotation"
+  },
+  {
+   "file": "f3-03-3-26cc7e0c86.mp3",
+   "hash": "26cc7e0c86",
+   "text": "But not Hannah.",
+   "duration": 0.96,
+   "cue": null
+  },
+  {
+   "file": "f3-03-4-88fe559cf1.mp3",
+   "hash": "88fe559cf1",
+   "text": "Checked in at the pro shop, she sees Corvane's members version, personalised for her.",
+   "duration": 4.76,
+   "cue": "Recognised at the pro shop"
+  },
+  {
+   "file": "f3-03-5-3ccd70bab6.mp3",
+   "hash": "3ccd70bab6",
+   "text": "On the driving range, it shows the new driver as she warms up.",
+   "duration": 3.56,
+   "cue": "On the driving range"
+  },
+  {
+   "file": "f3-03-6-afe88797ff.mp3",
+   "hash": "afe88797ff",
+   "text": "At the first tee, the same campaign follows her to the start of her round.",
+   "duration": 3.8,
+   "cue": "At the first tee"
+  },
+  {
+   "file": "f3-03-7-a006a59c81.mp3",
+   "hash": "a006a59c81",
+   "text": "At the halfway house, it reminds her of the free sleeve of Tour balls.",
+   "duration": 3.88,
+   "cue": "At the halfway house"
+  },
+  {
+   "file": "f3-03-8-1ba22cb949.mp3",
+   "hash": "1ba22cb949",
+   "text": "In the locker room, it invites her to book a driver fitting.",
+   "duration": 3.2,
+   "cue": "In the locker room"
+  },
+  {
+   "file": "f3-03-9-28f1d27795.mp3",
+   "hash": "28f1d27795",
+   "text": "And at the clubhouse bar, it's waiting for her after the round.",
+   "duration": 3.18,
+   "cue": "At the clubhouse bar"
+  },
+  {
+   "file": "f3-03-10-211cac9584.mp3",
+   "hash": "211cac9584",
+   "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one joined-up offer.",
+   "duration": 6.95,
+   "cue": "Back at the pro shop"
+  }
+ ],
+ "f3-04": [
+  {
+   "file": "f3-04-1-ceb6f6569d.mp3",
+   "hash": "ceb6f6569d",
+   "text": "Behind the scenes, Corvane holds slot one on all six screen types, every day of December.",
+   "duration": 5.55,
+   "cue": null
+  },
+  {
+   "file": "f3-04-2-172960959d.mp3",
+   "hash": "172960959d",
+   "text": "Each booking carries the default creative and the personalised members version, both approved.",
+   "duration": 5.44,
+   "cue": "Default plus personalised"
+  }
+ ],
+ "f3-05": [
+  {
+   "file": "f3-05-1-27bc91091d.mp3",
+   "hash": "27bc91091d",
+   "text": "Booking revenue shows what the slots earn: every window sold, at Corvane's fixed CPM.",
+   "duration": 5.46,
+   "cue": null
+  },
+  {
+   "file": "f3-05-2-74cb94aa5e.mp3",
+   "hash": "74cb94aa5e",
+   "text": "That's over 36 thousand dollars in two weeks, from one slot in three.",
+   "duration": 4.29,
+   "cue": "USD 36,231 in two weeks"
+  }
+ ]
+}

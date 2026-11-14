@@ -146,7 +146,7 @@ const quiet = { info() {}, warn() {}, error() {} };
     r = res(); await api.handle(req({ ...FORM, email: "cy@acme.example", contactName: "Cy" }), r);
     assert.equal(leads()[0].gaClientIds.length, 2, "a submission without a client_id leaves the list alone");
     r = res(); await api.handle(req({ ...FORM, company: "Testco", website: "testco.example", email: "t@testco.example", test: true, gaClientId: "3.1731000000" }), r);
-    const GATE = { lead_type: "operator", lead_source: "Be Your Own Boss page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", operating_region: "Leeds", background: core.BACKGROUNDS[0].label, page: "/be-your-own-boss/" };
+    const GATE = { lead_type: "operator", lead_source: "Run Your Own RMN page – product tour", full_name: "Alex Rivers", email: "alex@gmail.example", operating_region: "Leeds", background: core.BACKGROUNDS[0].label, page: "/run-your-own-rmn/" };
     r = res(); await api.handle(req({ ...GATE, gaClientId: "7.1731000000" }), r);
     r = res(); await api.handle(req({ ...GATE, gaClientId: "8.1731000000" }), r);
     const f = [...col("leads").values()].filter((l) => l.leadType === "operator");
