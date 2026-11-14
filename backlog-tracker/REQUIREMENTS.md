@@ -4338,6 +4338,19 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `lead-enrich-probe.yml`: `pipeline` runs the whole new-lead flow on an
     in-memory record with the real key; `lead_status` reports what the last
     run on a lead did.
+  - **Stored logos are static PNGs (14 Nov 2026)**: the first live trial
+    showed an animated logo at the top of the lead. The site's only icon was
+    a 16×16 animated GIF (10 looping frames) served as `image/x-icon`, and
+    the lead header and board tile used that icon. Now: every copy is
+    converted to a PNG with transparency kept (`toStaticPng`, sharp: an SVG
+    is drawn at up to 800 px, a GIF gives its first frame), saved as
+    `brand/<company>/<kind>-<hash>.png`; a file is read for what it is, not
+    what it is labelled; an animated file (`isAnimated`: a multi-frame GIF,
+    an SVG with animation) is never linked as it is, so when it can't be
+    converted there is no logo; a copy made before this change (`.svg`,
+    `.ico`) is redone on the next run. The lead header, the board tile, the
+    TAM record's header and the company profile use the full logo
+    (`logos.light`) when there is one, and the icon only when there is not.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

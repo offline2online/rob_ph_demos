@@ -250,7 +250,7 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     if (r && !d) { root.hidden = false; root.innerHTML = `<button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button><h2 class="pd-name" tabindex="-1">${esc(r.name)}</h2><p class="${loadError ? "pd-form-error" : "pd-none"}" role="status">${esc(loadError || "Loading the company…")}</p>`; return; }
     if (!r || !d) { root.hidden = false; root.innerHTML = `<button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button><p class="pd-none">This company is no longer in the list.</p>`; return; }
     const p = d.profile;
-    const logo = p.logoUrl || safeHttpUrl(r.enrichment && r.enrichment.logoUrl);
+    const logo = p.logoUrl || safeHttpUrl(r.enrichment && r.enrichment.logos && r.enrichment.logos.light) || safeHttpUrl(r.enrichment && r.enrichment.logoUrl);
     let body;
     if (editing && canEdit()) {
       body = editing.kind === "profile" ? profileForm(r, d) : editing.kind === "person" ? personForm(d, editing.id) : editing.kind === "aws" ? awsForm(d, editing.id) : docForm(d, editing.id, editing.base);
