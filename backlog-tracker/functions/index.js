@@ -2249,6 +2249,58 @@ exports.mediaKeys = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY], co
   return mediaKeysApi.handle(req, res);
 });
 
+// ── Support Inbox: the support mailbox as tickets ────────────────────────
+// Settings → Support inbox connects a Google Workspace Gmail account (OAuth,
+// gmail.modify). The OAuth client secret and refresh token are encrypted
+// under MEDIA_KEYS_ENC_KEY in supportSecrets/gmail (closed to every client).
+// New mail is filed as supportTickets, drafted an answer from the published
+// help articles (ANTHROPIC_API_KEY, "unset" until that repo secret exists)
+// and, for a high-value sender, raised on the Staff Kanban. The five-minute
+// sync is .github/workflows/support-mail-sync.yml calling /v1/cron with
+// BOARD_API_KEY. See support-mail.js and support-core.js.
+const SUPPORT_ANTHROPIC_KEY = defineSecret("ANTHROPIC_API_KEY");
+const SUPPORT_ANTHROPIC_WORKSPACE = defineSecret("ANTHROPIC_WORKSPACE_ID");
+const { createSupportMail } = require("./support-mail");
+let supportMailApi = null;
+// Staff Kanban writes go through the board's own tools (kanban.js), so a
+// support escalation gets a PH-n key, a card, activity and notifications
+// exactly like a ticket a person files.
+let supportKanbanTools = null;
+async function supportKanbanCall(name, args, actor) {
+  if (!supportKanbanTools) {
+    supportKanbanTools = require("./kanban").kanbanTools({
+      textResult: (value) => ({ ok: true, value }),
+      toolError: (error) => ({ ok: false, error }),
+      audit: async () => {},
+    });
+  }
+  const tool = supportKanbanTools.find((t) => t.name === name);
+  const user = await mcp.resolveConsoleUser(actor);
+  if (!user) throw new Error(`${actor} isn't a member of the console`);
+  const out = await tool.run(args, { email: String(actor).toLowerCase(), role: user.role, displayName: user.displayName || "" });
+  if (!out || !out.ok) throw new Error((out && out.error) || `${name} failed`);
+  return out.value;
+}
+exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, SUPPORT_ANTHROPIC_KEY, SUPPORT_ANTHROPIC_WORKSPACE], cors: false, timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 }, (req, res) => {
+  if (!supportMailApi) {
+    const { getAuth } = require("firebase-admin/auth");
+    supportMailApi = createSupportMail({
+      db: getFirestore(),
+      verifyIdToken: (t) => getAuth().verifyIdToken(t, true),
+      resolveConsoleUser: (email) => mcp.resolveConsoleUser(email),
+      encKey: () => MEDIA_KEYS_ENC_KEY.value(),
+      boardKey: () => BOARD_API_KEY.value(),
+      anthropicKey: () => { try { return SUPPORT_ANTHROPIC_KEY.value(); } catch { return ""; } },
+      anthropicWorkspace: () => { try { return SUPPORT_ANTHROPIC_WORKSPACE.value(); } catch { return ""; } },
+      freeDomains: require("./prospects-core").FREE_EMAIL_DOMAINS,
+      createKanbanTask: async (task, actor) => (await supportKanbanCall("kanban_create_task", task, actor)).key,
+      commentKanbanTask: (key, text, actor) => supportKanbanCall("kanban_comment", { key, text }, actor),
+      logger,
+    });
+  }
+  return supportMailApi.handle(req, res);
+});
+
 // ── AWS Partner Central (Selling + Benefits APIs), keyless ────────────────
 // Assumes an IAM role by Google OIDC federation (no AWS key stored anywhere).
 // See partner-central.js and deploy/aws/README.md.

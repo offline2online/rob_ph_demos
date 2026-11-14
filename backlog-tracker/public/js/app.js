@@ -33,6 +33,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
+import { supportRoute, supportHash } from "./support-core.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
 import { SETTINGS_PAGES, FALLBACK_SETTINGS_PAGE, UM_TABS, userManagementRoute, legacyUserManagementHash, settingsPageFromHash, settingsHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "./settings-section.js";
@@ -546,6 +547,7 @@ function closeAllSubPages() {
   closeFaqSettingsPage();
   closeRolePage();
   closePromotePage();
+  closeSupportPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -10010,6 +10012,7 @@ function showSettingsPage(key, sub) {
     return;
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
+  if (settingsPage === "support") loadSupportSettings();
   if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) { loadMediaKeys(); loadPartnerCentral(); } }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
@@ -10653,6 +10656,7 @@ const promotePage = document.getElementById("promote-page");
 const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 const funnelPage = document.getElementById("funnel-page");
+const supportPage = document.getElementById("support-page");
 let promotePageKey = "";
 // Lazily loaded Promote pages (Leads, Prospects, Conversion Funnel). A page
 // whose code failed to load or draw used to stay blank, or the menu item
@@ -10807,6 +10811,72 @@ PROMOTE_PAGES.forEach((p) => {
     catch (err) { showPageLoadError(LAZY_PROMOTE[p.key] ? LAZY_PROMOTE[p.key].page() : null, p.label, err, () => openPromotePage(p.key)); }
   });
 });
+
+// ── Support › Support Inbox (#support, support-page.js) ──────────────────
+// The support mailbox as tickets: inbox queues, one ticket's conversation and
+// reply box, and the Stats tab. Mounted the first time the page opens; a load
+// failure says so on the page with Try again, like the Promote pages.
+let supportUi = null;
+let supportUiLoading = null;
+function ensureSupportUi() {
+  if (supportUi) return Promise.resolve(supportUi);
+  if (!supportUiLoading) {
+    supportUiLoading = import(`./support-page.js${pageRetrySuffix("support")}`).then(({ mountSupportPage }) => {
+      supportUi = mountSupportPage({
+        db, canEdit: () => canEditSection("support-inbox"), apiHeaders: consoleApiHeaders,
+        go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+        alert: (m) => showAlert(m), confirm: (m, opts) => showConfirmDialog(m, opts),
+        openSettings: () => { setRouteHash("#settings/support"); applyRouteFromHash(); },
+        openKanbanTicket: (key) => {
+          openStaffKanbanPage("", new URLSearchParams());
+          loadStaffKanban().then((k) => k.openTask(key)).catch((err) => console.warn("backlog-tracker: couldn't open", key, err));
+        },
+      });
+      return supportUi;
+    });
+  }
+  return supportUiLoading;
+}
+function openSupportPage(route) {
+  if (!pageAllowed("support-inbox")) return;
+  if (supportPage.hidden) closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  supportPage.hidden = false;
+  clearPageLoadError(supportPage);
+  setRouteHash(supportHash(route));
+  updateTopbarTitle();
+  ensureSupportUi().then((ui) => { if (!supportPage.hidden) ui.show(route); }).catch((err) => {
+    supportUiLoading = null;
+    pageRetries.support = (pageRetries.support || 0) + 1;
+    showPageLoadError(supportPage, "Support Inbox", err, () => openSupportPage(route));
+  });
+}
+function closeSupportPage() {
+  if (supportPage.hidden) return;
+  supportPage.hidden = true;
+  if (supportUi) supportUi.hide();
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+document.getElementById("support-inbox-btn").addEventListener("click", () => { closeNavDrawer(); openSupportPage(supportRoute("#support")); });
+// Settings › Support inbox: the mailbox connection and the answering rules.
+let supportSettingsUi = null;
+// Google's sign-in comes back as a fresh page load on "#settings/support?connected=1" (or ?error=…).
+// Read it now: whichever route code runs first tidies the query off the address.
+let supportSettingsReturn = /^#settings\/support\?/.test(window.location.hash) ? window.location.hash.split("?")[1] : "";
+function loadSupportSettings() {
+  const host = document.getElementById("support-settings");
+  const returned = supportSettingsReturn;
+  supportSettingsReturn = "";
+  // Mounted once: the pane can be asked to load again while the module is still arriving.
+  if (!supportSettingsUi) {
+    supportSettingsUi = import("./support-page.js").then(({ mountSupportSettings }) =>
+      mountSupportSettings({ host, db, apiHeaders: consoleApiHeaders, isAdmin: isConsoleAdmin, alert: (m) => showAlert(m), confirm: (m, opts) => showConfirmDialog(m, opts) }));
+    supportSettingsUi.catch(() => { supportSettingsUi = null; });
+  }
+  supportSettingsUi.then((ui) => ui.load(returned)).catch((err) => { host.innerHTML = `<p class="interface-row-empty">The support inbox settings couldn't open: ${escapeHTML((err && err.message) || String(err))}</p>`; });
+}
 
 // The notification bell (KB-NAV-2): in the topbar on every page. The module
 // loads when someone signs in; a ticket opened from it goes to the Staff Kanban.
@@ -11979,6 +12049,9 @@ const ROUTE_TITLES = {
   "#settings/user-management/users": "Settings: Users",
   "#settings/user-management/roles": "Settings: Roles",
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
+  "#support": "Support Inbox",
+  "#support/stats": "Support Inbox: Stats",
+  "#settings/support": "Settings: Support inbox",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",
   "#promote/conversion-funnel": "Promote: Conversion Funnel",
@@ -12129,10 +12202,13 @@ function applyRouteFromHash() {
     const k = settingsPageFromHash(hash);
     const um = userManagementRoute(hash);
     if (um && !pageAllowed("user-management")) return;
+    // Google's sign-in returns to "#settings/support?connected=1" (or ?error=…); keep the answer before the route is tidied.
+    if (k === "support" && hash.includes("?")) supportSettingsReturn = hash.split("?")[1];
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
   else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -12143,7 +12219,7 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || !supportPage.hidden || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never

@@ -2,7 +2,7 @@
 import assert from "node:assert";
 import { SETTINGS_PAGES, settingsPageFromHash, settingsHash, userManagementRoute, legacyUserManagementHash, projectRows, releaseRows, skillRows, bindingRows, automationRows } from "../public/js/settings-section.js";
 
-assert.deepStrictEqual(SETTINGS_PAGES.map((p) => p.key), ["user-management", "projects", "releases", "skills", "automations", "integrations"]);
+assert.deepStrictEqual(SETTINGS_PAGES.map((p) => p.key), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support"]);
 assert.strictEqual(settingsPageFromHash("#settings"), "user-management");
 assert.strictEqual(settingsPageFromHash("#settings/automations"), "automations");
 assert.strictEqual(settingsPageFromHash("#settings/nope"), "user-management");

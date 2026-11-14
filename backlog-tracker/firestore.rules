@@ -875,6 +875,35 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Support Inbox (functions/support-mail.js) ──────────────────────────
+    // supportTickets/{gmailThreadId} is one customer email thread, with its
+    // messages, notes and timeline in the messages subcollection. Customer
+    // mail is personal data: members read it, nobody else. Every write goes
+    // through the supportMail function (it sends the email, keeps Gmail in
+    // step and stamps who did what), so clients never write here.
+    // supportSettings/main is the connection status and the automation
+    // settings (no secret in it). supportSecrets holds the encrypted Google
+    // OAuth client secret and refresh token; supportCounters the SUP-n
+    // counter. Both are server-only in both directions.
+    match /supportTickets/{ticketId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+      match /messages/{messageId} {
+        allow read: if isBoardReader();
+        allow write: if false;
+      }
+    }
+    match /supportSettings/{doc} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    match /supportSecrets/{doc} {
+      allow read, write: if false;
+    }
+    match /supportCounters/{doc} {
+      allow read, write: if false;
+    }
+
     // ── AWS Partner Central (functions/partner-central.js) ─────────────────
     // Call audit, connection state and catalogue setting are server-only: the
     // console reads them through the partnerCentral function (admins only).

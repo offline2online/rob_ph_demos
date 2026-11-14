@@ -19,10 +19,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_business,add_photo_alternate,ads_click,anchor,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,download,draft,drag_handle,draw,edit,email,error,event,event_available,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,grocery,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,language,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,pending_actions,people,person,photo,priority,progress_activity,psychology,public,publish,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,task_alt,title,toolbar,tooltip,touch_app,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_business,add_photo_alternate,ads_click,anchor,apartment,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,download,draft,drag_handle,draw,edit,email,error,event,event_available,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,grocery,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,inbox,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,language,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,mark_email_unread,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,pending_actions,people,person,photo,priority,progress_activity,psychology,public,publish,queue,radio,refresh,remove,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,send,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,support,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,task_alt,title,toolbar,tooltip,touch_app,travel_explore,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
+  <link rel="stylesheet" href="css/support.css">
   <!-- Quill (the rich-text editor) is not loaded here any more: js/quill-loader.js
        fetches it the first time the FAQ editor or a Staff Kanban ticket opens.
        DOMPurify below is small and sanitizes FAQ article bodies. -->
@@ -179,6 +180,7 @@
       </div>
       <div class="nav-group" data-nav-group="publish" role="group" aria-labelledby="nav-publish-label">
         <div class="nav-drawer-section" id="nav-publish-label">Support</div>
+        <button type="button" class="nav-drawer-item" id="support-inbox-btn"><span class="material-symbols-outlined" aria-hidden="true">inbox</span>Support Inbox</button>
         <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
       </div>
       <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
@@ -1221,6 +1223,21 @@
       <ol class="funnel-stages" id="funnel-stages" aria-label="Funnel stages" hidden></ol>
     </section>
 
+    <!-- Support › Support Inbox (#support): the support mailbox as tickets (js/support-page.js,
+         rules in js/support-core.js, server in functions/support-mail.js). Help lives in the info tooltips. -->
+    <section class="faq-admin-page support-page" id="support-page" hidden>
+      <div class="page-header">
+        <h2>Support Inbox<button type="button" class="info-tip" data-tip="Every email sent to the support mailbox is a ticket here. Each one is drafted an answer from the published Help Centre articles. A confident answer can be sent by itself (Settings › Support inbox); anything else waits for a person, and a high-value sender is raised on the Staff Kanban. Replies go out from the support mailbox on the same email thread." aria-label="About the Support Inbox">i</button></h2>
+        <button type="button" class="btn-ghost page-header-action" id="support-sync-btn" data-editor-only>Sync now</button>
+      </div>
+      <div class="um-count" id="support-count" role="status" aria-live="polite"></div>
+      <nav class="support-tabs" role="tablist" aria-label="Support Inbox views">
+        <button type="button" class="support-tab" role="tab" data-support-tab="inbox">Inbox</button>
+        <button type="button" class="support-tab" role="tab" data-support-tab="stats">Stats</button>
+      </nav>
+      <div id="support-view"></div>
+    </section>
+
     <!-- Promote › Prospects (TAM) (#promote/prospects): every possible target company, globally, in one AG Grid
          (rendered by js/prospects-page.js). Help lives in the info tooltips, not under the grid. -->
     <section class="faq-admin-page" id="prospects-page" hidden>
@@ -1401,6 +1418,7 @@
           <button type="button" class="settings-tab" role="tab" data-settings-page="skills">Skills &amp; phase bindings</button>
           <button type="button" class="settings-tab" role="tab" data-settings-page="automations">Automations</button>
           <button type="button" class="settings-tab" role="tab" data-settings-page="integrations">Integrations &amp; MCP</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="support">Support inbox</button>
         </nav>
         <div class="settings-content">
 
@@ -1502,6 +1520,13 @@
               </div>
               <div id="settings-automations-grid"></div>
             </div>
+          </div>
+
+          <!-- Support inbox (functions/support-mail.js): connect the support
+               mailbox and choose how much is answered without a person.
+               Rendered by js/support-page.js → mountSupportSettings. -->
+          <div class="settings-pane" data-settings-pane="support" hidden>
+            <div id="support-settings"><p class="interface-row-empty">Loading…</p></div>
           </div>
 
           <div class="settings-pane" data-settings-pane="integrations" hidden>

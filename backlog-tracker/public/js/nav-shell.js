@@ -26,6 +26,7 @@ function activeNavId(hash) {
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";
   if (h === "#settings" || h.startsWith("#settings/")) return "faq-settings-btn";
+  if (h === "#support" || h.startsWith("#support/")) return "support-inbox-btn";
   if (promoteNavId(h)) return promoteNavId(h);
   if (h === "#staff-kanban" || h.startsWith("#staff-kanban/")) return "staff-kanban-btn";
   return "nav-ph-console-btn";
@@ -142,7 +143,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     profileMenu.querySelectorAll(".profile-menu-item").forEach((b) => {
       if (b.id === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" ? "publish" : id === "faq-settings-btn" ? "settings" : "build";
+    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" || id === "support-inbox-btn" ? "publish" : id === "faq-settings-btn" ? "settings" : "build";
     setTab(drawer.classList.contains("open") ? drawer.dataset.show : section);
   }
   window.addEventListener("hashchange", syncActive);
