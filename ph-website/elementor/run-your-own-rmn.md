@@ -112,7 +112,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - Eight cards in a grid of columns at least 300px wide (3 per row on desktop). Each card: White, 1px Rule border with a 4px top border in the colour given, radius 8px, padding 28px; Card title, then Body-colour text:
   1. PH Blue. "Standardised measurement": "Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel."
   2. PH Pink. "One buy across many venues": "Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands."
-  3. PH Orange. "Seamless integrations": "Connects to the programmatic platforms buyers already use, and to venues' existing systems through open APIs."
+  3. PH Orange. "Seamless integrations": "Connects to venues' existing systems through open APIs, and runs on any signage player, including Amazon Signage."
   4. PH Green. "Consistent formats and definitions": "The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework."
   5. PH Blue. "Closed-loop, incremental results": "Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen."
   6. PH Pink. "Your brand, your data, your network": "Runs under your brand in your own AWS environment. You use your own shopper and venue data, it stays private, and the network and its relationships are yours."
