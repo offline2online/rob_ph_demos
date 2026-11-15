@@ -165,7 +165,7 @@ deleted by hand).
   updatedAt: timestamp,
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
-  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array
+  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp, key?: string, firstAt?: string }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array; only a keyed backlog-automation note is ever replaced (one note per event, "Comments and notes")
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
@@ -2331,6 +2331,45 @@ REST API is reachable with a plain `curl`, no service account needed.
   `documents:commit` with an `appendMissingElements` transform and
   `currentDocument.exists: true`. Tests: `notes-append.test.js`,
   `notes-append-emulator.test.js`.
+  **One automation note per event, updated in place** (15 Nov 2026, Flow
+  6/9, `jKM13xJ7PxW9THm3YQ9g`): a card's state used to be read from notes
+  that repeated and contradicted each other (one test failure wrote three or
+  four notes; a bystander on a red train got the same note four or five
+  times). An automation note may carry `key` and `firstAt`
+  (`notes[]: {author: "backlog-automation", text, at, key?, firstAt?}`), and
+  `appendNote(item, text, {key})` with a key already on the card replaces
+  that note's text and `at`, keeping `firstAt`: `patchItem` sends one
+  `:commit` that first removes the stored entry (`removeAllFromArray`) and
+  then appends the new one. Only `backlog-automation` notes are matched;
+  people's and Claude's notes never carry a key and are never touched. Keys:
+  - `train-test:<deployCommit>:<workflow>` — one train-test failure on its
+    own ticket: "failed, re-running (<test>)" → "failed twice … checking it
+    is this ticket's" → "Sent back automatically …" or "Passed on re-run …
+    (flaky: <test>)" or "Not sent back: main is broken". Every failure note
+    names the failing case and assertion (`failureSummaryOf`, the run's
+    `--log-failed`; a flaky pass reads attempt 1's log). The owner is never
+    asked to use Failed testing: the automation sends it back itself.
+  - `train-red:<branch>:<spell start>` — a card on a red train that did not
+    cause it gets one note for the whole red spell
+    (`projects/{id}.trainRedSpell: {since, cause}`, set by
+    `reportTrainTestResults` when `trainTestsRed` first fills, cleared when it
+    empties), updated as the spell goes on and closed with "Train was red
+    for 2 h 10 min because of <ticket>; green again". A failure on a commit
+    that is no ticket's own says it cannot be pinned on one ticket and who
+    is asked to look (whoever approves the project's Deploy to Main).
+  - `build-silent:<buildAttemptId>` — the 75-minute "hasn't reported back"
+    and the "never reported back. Starting it again" of one build attempt.
+  - `revert:<oldest deployCommit>` — one revert request: taken off, blocked
+    (a changed blocker updates the note), no longer needed. A re-patch that
+    lands identical to the train while that revert is pending clears
+    `revertRequested` in the same write and says so on the request's note,
+    so the card never reads "Moved back to Ready for Testing" followed by
+    "Could not take this ticket off the train".
+  The Edit item modal lists people's and Claude's notes open, newest first,
+  and the automation's under a collapsed **Pipeline history (N)** button
+  (newest first, one entry per key). MCP `get_backlog_item` returns notes as
+  stored, plus `key` and `firstAt` where set. Tests: `note-keys.test.js`,
+  the console-click "Pipeline history" scenario.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
   button; once set (via `showPromptDialog()` — see "In-app dialogs replace
   window.confirm/prompt/alert" below — prefilled with an editable template

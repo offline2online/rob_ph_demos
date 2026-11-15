@@ -1318,6 +1318,18 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .ei-notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; overflow-x: hidden; }
 .ei-note-row { min-width: 0; }
 .ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+/* Pipeline history (Flow 6/9): the automation's notes, collapsed by default.
+   ph-designer components.md §14 collapsible section: bordered card, grey
+   header strip, chevron, ALL CAPS 12px title. The header is a <button>
+   (iPad taps: touch-click.js covers it). */
+.ei-pipeline { border: 1px solid var(--border); border-radius: 8px; flex-shrink: 0; }
+.ei-pipeline-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 8px 12px; background: var(--surface); border: 0; border-radius: 8px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.ei-pipeline.is-open .ei-pipeline-toggle { border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--border); }
+.ei-pipeline-toggle:focus-visible { outline: 2px solid #169bc2; outline-offset: -2px; }
+.ei-pipeline-toggle .material-symbols-outlined { font-size: 20px; }
+.ei-pipeline-title { text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; color: var(--text-muted); }
+.ei-pipeline-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.ei-pipeline-body[hidden] { display: none; }
 .ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
 .ei-note-meta > * { min-width: 0; overflow-wrap: anywhere; }
 .ei-note-meta > span { flex-shrink: 0; overflow-wrap: normal; }

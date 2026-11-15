@@ -411,11 +411,24 @@ What the train changes:
   from a clean train) with the failing run on its notes. A red ticket
   is not sent back when a later ticket on the train, which carries it, has
   passed (23 Oct 2026: the next ticket had fixed the test it broke). An approved
-  culprit is held by the deploy gate until Deploy to Main has actually been
-  clicked and parked red on it (`trainStatus: "conflict"` with
-  `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest
-  of the approved train ships with no second click (18 Oct 2026, PR #412).
-  It is only ejected with a green commit before it.
+  culprit is sent back the same way (15 Nov 2026, Flow 6/9: on 14 Nov an
+  approved ticket's own commit d49d456 failed twice and the train sat held
+  behind a note asking for Failed testing); main is still proven green first
+  (`provenGreenMain`, or the base check below), so a check that is red on
+  main never sends the train's first ticket back. Before that (18 Oct 2026,
+  PR #412) it was only ejected once Deploy to Main had been parked red on it.
+  **One note per event** (15 Nov 2026, Flow 6/9): an automation note can carry
+  a `key` (`train-test:<sha>:<workflow>`, `train-red:<branch>:<spell start>`,
+  `build-silent:<attempt>`, `revert:<sha>`), and `appendNote` with a key the
+  card already holds replaces that note (text and time, `firstAt` kept) in
+  the same `:commit` (`removeAllFromArray` then `appendMissingElements`). A
+  train-test failure is one note that moves from "failed, re-running" to
+  "sent back" or "passed on re-run (flaky: <test>)", naming the failing test;
+  a card on a red train it did not cause gets one note per red spell
+  (`projects/{id}.trainRedSpell`), closed with "Train was red for 2 h 10 min
+  because of <ticket>; green again". People's and Claude's notes never carry
+  a key. The Edit item modal shows the automation's notes collapsed under
+  **Pipeline history (N)**. Tests: `test/note-keys.test.js`.
   **Nothing is sent back for a failure main already has** (20 Oct 2026,
   NBQ1scD9GFEr6YbQxSYX): before a send-back the same workflow runs on the
   main commit the failing run contained (`baseCheckAction`, via a throwaway

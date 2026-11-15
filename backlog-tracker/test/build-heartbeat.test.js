@@ -42,7 +42,7 @@ global.fetch = async (url, o = {}) => {
       if (w.update) for (const k of w.updateMask.fieldPaths) d[k] = w.update.fields[k];
       for (const ft of (w.updateTransforms || w.transform.fieldTransforms || [])) {
         const have = (d[ft.fieldPath] && d[ft.fieldPath].arrayValue.values) || [];
-        d[ft.fieldPath] = { arrayValue: { values: [...have, ...ft.appendMissingElements.values] } };
+        d[ft.fieldPath] = { arrayValue: { values: (ft.removeAllFromArray ? have.filter((h) => !ft.removeAllFromArray.values.some((v) => JSON.stringify(v) === JSON.stringify(h))) : [...have, ...ft.appendMissingElements.values]) } };
       }
     }
     return reply(200, { writeResults: [{}] });

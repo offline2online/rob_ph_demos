@@ -164,6 +164,34 @@ async function runQuery(structuredQuery) {
 // this run read it — is never touched. `at` is unique per entry, so nothing
 // real is deduplicated and a retry cannot duplicate.
 const unwrittenNotes = new WeakSet();
+// One note per event (Flow 6/9, jKM13xJ7PxW9THm3YQ9g): an automation note can
+// carry a `key` (train-test:<sha>:<workflow>, train-red:<branch>:<spell>,
+// build-silent:<attempt>, revert:<sha>). appendNote with a key the card
+// already holds replaces that note instead of adding another: the new entry
+// keeps the old one's `firstAt` and remembers which stored entries it
+// replaces, and patchItem removes those (removeAllFromArray) and appends the
+// new one in the same :commit. Only the automation's own notes are ever
+// matched; a person's or Claude's note never carries a key and is never
+// touched. Removing an entry that is no longer stored is a no-op, so a stale
+// read at worst leaves two notes with one key (the board shows the newest).
+const replacedNotes = new WeakMap();
+const AUTOMATION_AUTHOR = "backlog-automation";
+const isAutomationNote = (n) => !!n && typeof n === "object" && n.author === AUTOMATION_AUTHOR;
+// The index of the newest automation note on `notes` carrying `key`, or -1. Pure.
+function keyedNoteIndex(notes, key) {
+  if (!key || !Array.isArray(notes)) return -1;
+  for (let i = notes.length - 1; i >= 0; i--) if (isAutomationNote(notes[i]) && notes[i].key === key) return i;
+  return -1;
+}
+const keyedNote = (item, key) => { const i = keyedNoteIndex(item && item.notes, key); return i >= 0 ? item.notes[i] : null; };
+// Note keys, in one place so every writer of an event agrees on its key.
+const noteKeys = {
+  // One run's story (its attempts): failed, re-running → sent back / flaky.
+  trainTest: (sha, workflow, runId = null) => `train-test:${sha}:${String(workflow || "").replace(/\.ya?ml$/, "")}${runId != null && runId !== "" ? `:${runId}` : ""}`,
+  trainRed: (branch, spell) => `train-red:${branch}:${spell}`,
+  buildSilent: (attempt) => `build-silent:${attempt}`,
+  revert: (sha) => `revert:${sha}`,
+};
 
 // The one Write for `documents:commit`. With other fields: an update whose
 // mask omits `notes` plus a notes transform. Notes only: a bare transform
@@ -183,6 +211,24 @@ function notesCommitWrite(docName, newNotes, otherFields = {}) {
   };
 }
 
+// The Writes for one notes commit: the removal of every stored note a keyed
+// note replaces (first, so a replaced entry and its successor are never both
+// stored), then notesCommitWrite. Writes in one commit apply in order and
+// atomically.
+function notesCommitWrites(docName, newNotes, otherFields = {}) {
+  const removed = [];
+  for (const n of newNotes || []) for (const r of replacedNotes.get(n) || []) if (!removed.includes(r)) removed.push(r);
+  const writes = [];
+  if (removed.length) {
+    writes.push({
+      transform: { document: docName, fieldTransforms: [{ fieldPath: "notes", removeAllFromArray: { values: removed.map(tv) } }] },
+      currentDocument: { exists: true },
+    });
+  }
+  writes.push(notesCommitWrite(docName, newNotes, otherFields));
+  return writes;
+}
+
 async function patchItem(itemId, fields) {
   if ("notes" in fields) {
     const { notes, ...others } = fields;
@@ -192,7 +238,7 @@ async function patchItem(itemId, fields) {
     const res = await fetch(`${FIRESTORE_BASE}:commit`, {
       method: "POST",
       headers: await firestoreHeaders(),
-      body: JSON.stringify({ writes: [notesCommitWrite(docName, fresh, others)] }),
+      body: JSON.stringify({ writes: notesCommitWrites(docName, fresh, others) }),
     });
     if (!res.ok) throw new Error(`PATCH ${itemId} failed: ${res.status} ${await res.text()}`);
     return;
@@ -397,9 +443,28 @@ async function sweepShippedPatchFiles() {
   }
 }
 
-async function appendNote(item, text) {
+// opts.key: one note per event (see replacedNotes above). With a key the card
+// already holds, that note is replaced (text and time; firstAt kept) rather
+// than a second one added.
+async function appendNote(item, text, opts = {}) {
   if (!Array.isArray(item.notes)) item.notes = [];
-  const entry = { author: "backlog-automation", text, at: new Date().toISOString() };
+  const at = new Date().toISOString();
+  const entry = { author: AUTOMATION_AUTHOR, text, at };
+  const key = opts && typeof opts.key === "string" && opts.key ? opts.key : null;
+  if (key) {
+    entry.key = key;
+    const i = keyedNoteIndex(item.notes, key);
+    if (i >= 0) {
+      const prev = item.notes[i];
+      entry.firstAt = prev.firstAt || prev.at || at;
+      // prev may itself be a replacement made earlier in this run: what it
+      // replaced must go too.
+      replacedNotes.set(entry, [prev, ...(replacedNotes.get(prev) || [])]);
+      item.notes.splice(i, 1);
+    } else {
+      entry.firstAt = at;
+    }
+  }
   unwrittenNotes.add(entry);
   item.notes.push(entry);
   return item.notes;
@@ -1245,6 +1310,15 @@ async function sweepUnbuiltReports(now = Date.now()) {
   }
 }
 
+// One note per silent build attempt (Flow 6/9): the 75-minute "hasn't
+// reported back" (closeNotifyRoutines) and the sweep's "never reported back.
+// Starting it again" are one event, so they share this key. Pure.
+function silentBuildNoteKey(card) {
+  const fire = (card && card.lastFire) || {};
+  const attempt = (card && card.buildAttemptId) || (fire.at ? String(fire.at && fire.at.seconds != null ? fire.at.seconds : fire.at) : "") || "unknown";
+  return noteKeys.buildSilent(attempt);
+}
+
 async function sweepSilentBuildSessions(now = Date.now()) {
   const started = await runQuery({
     from: [{ collectionId: "backlogItems" }],
@@ -1261,7 +1335,7 @@ async function sweepSilentBuildSessions(now = Date.now()) {
       const text = silentBuildNote(item, next);
       if (next.action === "retry") {
         if (!project || project.trainLocked) continue;
-        const notes = await appendNote(item, text);
+        const notes = await appendNote(item, text, { key: silentBuildNoteKey(item) });
         await patchItem(item.id, { buildSessionRetries: (Number(item.buildSessionRetries) || 0) + 1, notes, updatedAt: new Date().toISOString() });
         queueBuildRequest(project, item.id);
         console.log(`[silent-build] ${item.id}: ${next.kind} — rebuild requested`);
@@ -1269,11 +1343,11 @@ async function sweepSilentBuildSessions(now = Date.now()) {
         // Still beating after 3 hours: a person decides. Nothing is started
         // again, and the session's own record is left as it is so a patch it
         // still hands back can land.
-        const notes = await appendNote(item, text);
+        const notes = await appendNote(item, text, { key: silentBuildNoteKey(item) });
         await patchItem(item.id, { blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString() });
         console.log(`[silent-build] ${item.id}: still reporting after the ceiling — flagged for a person, not restarted`);
       } else {
-        const notes = await appendNote(item, text);
+        const notes = await appendNote(item, text, { key: silentBuildNoteKey(item) });
         await patchItem(item.id, {
           buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() },
           buildSessionRetries: 0, blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString(),
@@ -3167,7 +3241,13 @@ function scanRedTrain(order, cards, runs, opts = {}) {
     if (later.some((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed" && String(lr.conclusion).toLowerCase() === "success"; })) return none; // fixed further up the train
     if (unjudged.length) return { culprit: null, unjudged };
     if (card.status === "ready-for-testing") return { culprit: card, unjudged: [] };
-    return { culprit: opts.deployParkedRed && greenBefore ? card : null, unjudged: [] };
+    // Approved: sent back when the deploy is parked red on it with a green
+    // ticket before it, or with opts.ejectApproved once every ticket after it
+    // has a finished run (none passed, checked above): a later ticket still
+    // testing may yet show the train fixed further up, and an approved ticket
+    // is not taken off on a guess. The caller proves main green before acting.
+    const laterSettled = later.every((c) => { const lr = (runs || {})[c.deployCommit]; return lr && String(lr.status).toLowerCase() === "completed"; });
+    return { culprit: (opts.deployParkedRed && greenBefore) || (opts.ejectApproved && laterSettled) ? card : null, unjudged: [] };
   }
   return none;
 }
@@ -3254,8 +3334,12 @@ const alreadyRerun = (card, workflow, sha, runId) => {
   return keys.includes(rerunRunKey(workflow, sha, "rerun", runId)) || keys.includes(rerunKey(workflow, sha, "rerun"));
 };
 
-const rerunNote = (label, sha, url) =>
-  `The ${label} failed on this ticket's own commit ${sha.slice(0, 7)} (${url || "no link"}). ` +
+// The failing case, for a note: " (<test> — <assertion>)" or "". Flow 6/9:
+// a note names what failed, not only a run URL.
+const failedCase = (summary) => (summary ? ` (${summary})` : "");
+
+const rerunNote = (label, sha, url, summary = "") =>
+  `The ${label} failed on this ticket's own commit ${sha.slice(0, 7)}${failedCase(summary)} (${url || "no link"}). ` +
   `Re-running it once to rule out a flaky test before anything is sent back. Nothing to do yet.`;
 
 // The card that owns a run's head commit: its deployCommit, its newest
@@ -3284,8 +3368,8 @@ function flakyPassKey(card, workflow, r) {
   return rerunKey(workflow, r.headSha, "flaky");
 }
 
-const flakyNote = (label, sha, url) =>
-  `Passed on re-run: ${label} failed on this ticket's commit ${sha.slice(0, 7)}, then passed when re-run (${url || "no link"}; attempt 1's log has the failure). ` +
+const flakyNote = (label, sha, url, summary = "") =>
+  `Passed on re-run: ${label} failed on this ticket's commit ${sha.slice(0, 7)}, then passed when re-run (${summary ? `flaky: ${summary}; ` : ""}${url || "no link"}; attempt 1's log has the failure). ` +
   `Treated as a flaky test, so nothing was sent back. If this ticket touches the failing area it may have made the test flaky; check attempt 1 before approving.`;
 
 const toldAbout = (card, workflow, sha) => (card.testsFailedShas || []).includes(`${workflow}@${sha}`)
@@ -3297,26 +3381,48 @@ const toldAbout = (card, workflow, sha) => (card.testsFailedShas || []).includes
 //   ownerId: the `Backlog item:` trailer of the commit, for when no card on
 //            the train holds it (null for a merge of main or a revert)
 //   afterRerun: the run was re-run and failed again
-// Returns [{ id, text }]. An owner that has left the train gets no notes: its
-// own card already says why.
-function trainFailureNotes({ workflow, label, sha, url, cards, ownerId = null, afterRerun = false }) {
+//   summary: the failing case, from the run's log (failureSummaryOf)
+//   branch, spell: name the red spell (trainRedSpell.since); with them each
+//            bystander's note is keyed, so it gets one note per spell
+// Returns [{ id, text, key }]. An owner that has left the train gets no notes:
+// its own card already says why. The owner is never asked to act: the
+// automation pins the failure (ejectRedCulprits) and sends the ticket back
+// itself, and its note says so (Flow 6/9: on 14 Nov 2026 the owner was told
+// "If this ticket's change caused it, use Failed testing" while the train sat
+// held).
+function trainFailureNotes({ workflow, label, sha, url, cards, ownerId = null, afterRerun = false, summary = "", branch = null, spell = null, runId = null }) {
   const owns = (c) => c.deployCommit === sha || (c.deployCommits || []).includes(sha);
   const owner = (cards || []).find(owns) || (ownerId ? (cards || []).find((c) => c.id === ownerId) : null);
   if (!owner && ownerId) return [];
   const s7 = sha.slice(0, 7);
   const again = afterRerun ? " (it failed again when re-run)" : "";
+  const what = failedCase(summary);
   const targets = (cards || []).filter((c) => !toldAbout(c, workflow, sha));
+  const spellKey = branch && spell ? noteKeys.trainRed(branch, spell) : null;
   return targets.map((c) => {
     let text;
+    let key = spellKey;
     if (owner && c.id === owner.id) {
-      text = `The ${label} FAILED on this ticket's own commit ${s7}${again}: ${url}. Deploy to Main is withheld until it is green. If this ticket's change caused it, use Failed testing.`;
+      key = noteKeys.trainTest(c.deployCommit || sha, workflow, runId);
+      text = `The ${label} FAILED on this ticket's own commit ${s7}${again}${what}: ${url}. Deploy to Main is withheld until it is green. ` +
+        `The automation checks that the failure is this ticket's (the tickets before it, and main without it) and then sends it back by itself, with the failing test as the rebuild's brief. Nothing to do.`;
     } else if (owner) {
-      text = `The train is red: ${label} failed at ${s7}, ${owner.title || "a ticket"} (${owner.id})'s commit, not this ticket's change. Deploy to Main is withheld until it is green. Nothing to do on this ticket.`;
+      text = `The train is red: ${label} failed at ${s7}, ${owner.title || "a ticket"} (${owner.id})'s commit, not this ticket's change${what}. Deploy to Main is withheld until it is green. Nothing to do on this ticket; this note is updated when the train is green again.`;
     } else {
-      text = `The train is red: ${label} failed at ${s7}, which is not any ticket's own commit (a merge of main or a revert). Deploy to Main is withheld until it is green. Nothing to do on this ticket.`;
+      text = `The train is red: ${label} failed at ${s7}, which is not any ticket's own commit (a merge of main or a revert), so it cannot be pinned on one ticket${what}. Deploy to Main is withheld until it is green. ` +
+        `Asked to look: whoever approves this project's Deploy to Main (fix the branch, or send back the ticket that caused it). Nothing to do on this ticket otherwise; this note is updated when the train is green again.`;
     }
-    return { id: c.id, text };
+    return { id: c.id, text, key };
   });
+}
+
+// The bystander note that closes a red spell: one line, updated in place on
+// the note the spell opened. Pure.
+function redSpellEndNote(sinceIso, nowMs, cause) {
+  const ms = Math.max(0, nowMs - Date.parse(sinceIso || ""));
+  const mins = Number.isFinite(ms) ? Math.round(ms / 60000) : 0;
+  const dur = mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${Math.max(1, mins)} min`;
+  return `Train was red for ${dur}${cause ? ` because of ${cause}` : ""}; green again. Nothing to do on this ticket.`;
 }
 
 // ── A ticket is never sent back for a failure main already has ────────────
@@ -3458,17 +3564,20 @@ function failureSummaryFromLog(log) {
 }
 
 const runFailureLogs = new Map();
-function failureSummaryOf(runId, gh = (args) => run("gh", args, { maxBuffer: 64 * 1024 * 1024 })) {
+// attempt: read that attempt's log (a run that passed on re-run has no failed
+// log on its latest attempt; its flaky note names attempt 1's failure).
+function failureSummaryOf(runId, gh = (args) => run("gh", args, { maxBuffer: 64 * 1024 * 1024 }), attempt = null) {
   if (!runId) return "";
   const id = String(runId);
-  if (!runFailureLogs.has(id)) {
+  const cacheKey = attempt ? `${id}#${attempt}` : id;
+  if (!runFailureLogs.has(cacheKey)) {
     let summary = "";
-    try { summary = failureSummaryFromLog(gh(["run", "view", id, "--repo", REPO, "--log-failed"])); } catch (err) {
+    try { summary = failureSummaryFromLog(gh(["run", "view", id, "--repo", REPO, ...(attempt ? ["--attempt", String(attempt)] : []), "--log-failed"])); } catch (err) {
       console.log(`[train-eject] couldn't read the failed log of run ${id} (${scrubSecrets(err.message)})`);
     }
-    runFailureLogs.set(id, summary);
+    runFailureLogs.set(cacheKey, summary);
   }
-  return runFailureLogs.get(id);
+  return runFailureLogs.get(cacheKey);
 }
 
 // The main commit a train commit contains (its merge base with main). "" on
@@ -3690,7 +3799,7 @@ async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
   }
   if (step.act === "dispatch") {
     if (!dispatchOnSha(t.workflow, baseSha, gh)) return { eject: true, why: "base-never-ran" };
-    const notes = await appendNote(culprit, baseCheckingNote(t.label, evidenceSha.slice(0, 7), baseSha.slice(0, 7)));
+    const notes = await appendNote(culprit, baseCheckingNote(t.label, evidenceSha.slice(0, 7), baseSha.slice(0, 7)), { key: noteKeys.trainTest(culprit.deployCommit, t.workflow, r && r.id) });
     culprit.trainTestReruns = withKey(keys, `${baseKeyPrefix(t.workflow, baseSha)}${Date.now()}`);
     await save({ notes, trainTestReruns: culprit.trainTestReruns });
     console.log(`[train-base] ${branch}: ${t.workflow} red at ${evidenceSha.slice(0, 7)} (${culprit.id}) — checking main at ${baseSha.slice(0, 7)} before sending it back`);
@@ -3700,7 +3809,7 @@ async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
   const heldKey = `${t.workflow}@${baseSha}:base-red`;
   if (!keys.includes(heldKey)) {
     const summary = failureSummaryOf(baseRun.id, ghLog);
-    const notes = await appendNote(culprit, heldForMainNote(t.label, baseSha.slice(0, 7), baseRun.url, summary));
+    const notes = await appendNote(culprit, heldForMainNote(t.label, baseSha.slice(0, 7), baseRun.url, summary), { key: noteKeys.trainTest(culprit.deployCommit, t.workflow, r && r.id) });
     culprit.trainTestReruns = withKey(culprit.trainTestReruns, heldKey);
     // Not sent back, and not the ticket's fault: recorded, uncounted.
     const held = testRounds.recordSendBack(culprit, { at: new Date(), by: "tests", category: "main is broken", line: `main is broken: ${summary || `${t.label} fail on main too`}`, counted: false });
@@ -3726,7 +3835,7 @@ async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
     } catch (err) {
       text = `Main is green again (${head.slice(0, 7)}), but taking it onto ${branch} failed (${scrubSecrets(err.message)}). Merge main into the branch by hand.`;
     }
-    const notes = await appendNote(culprit, text);
+    const notes = await appendNote(culprit, text, { key: noteKeys.trainTest(culprit.deployCommit, t.workflow, r && r.id) });
     await save({ notes, trainTestReruns: culprit.trainTestReruns });
   }
   return { eject: false };
@@ -3764,10 +3873,11 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         for (const c of trainCards) {
           const key = flakyPassKey(c, t.workflow, runs[c.deployCommit]);
           if (!key) continue;
-          const notes = await appendNote(c, flakyNote(t.label, c.deployCommit, runs[c.deployCommit].url));
+          const flakySummary = failureSummaryOf(runs[c.deployCommit].id, ghLog, 1);
+          const notes = await appendNote(c, flakyNote(t.label, c.deployCommit, runs[c.deployCommit].url, flakySummary), { key: noteKeys.trainTest(c.deployCommit, t.workflow, runs[c.deployCommit].id) });
           // Recorded as a send-back that does not count (no round, no cap):
           // a flaky red is not the ticket's fault.
-          const flaky = testRounds.recordSendBack(c, { at: new Date(), by: "tests", category: "flaky", line: `${t.label} failed, then passed when re-run`, counted: false });
+          const flaky = testRounds.recordSendBack(c, { at: new Date(), by: "tests", category: "flaky", line: `${t.label} failed, then passed when re-run${flakySummary ? ` (flaky: ${flakySummary})` : ""}`, counted: false });
           c.notes = notes;
           c.trainTestReruns = withKey(c.trainTestReruns, key);
           await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, ...(flaky || {}), updatedAt: new Date().toISOString() });
@@ -3792,7 +3902,11 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
           if (!onlyStaleEvidence(commits, c.deployCommit)) continue;
           (rejudgeShaOf(c, commits) === "none" ? skip : unjudged).add(c.deployCommit);
         }
-        const scan = scanRedTrain(order, trainCards, runs, { deployParkedRed, skip, unjudged });
+        // ejectApproved (Flow 6/9): an approved ticket whose own commit failed
+        // twice is sent back too, not left holding the release behind a note
+        // asking for Failed testing (14 Nov 2026, d49d456). Main is still
+        // checked below (provenGreenMain / mainIsAlsoRed) before it goes.
+        const scan = scanRedTrain(order, trainCards, runs, { deployParkedRed, skip, unjudged, ejectApproved: true });
         if (scan.unjudged.length) {
           await rejudgeCards(branch, t, scan.unjudged, commits, runsFor, gh);
           continue;
@@ -3807,7 +3921,7 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         if (action === "rerun") {
           if (alreadyRerun(culprit, t.workflow, reSha, r.id)) break; // already re-run; GitHub still shows attempt 1 — wait
           if (rerunTrainRun(r.id, gh)) {
-            const notes = await appendNote(culprit, rerunNote(t.label, culprit.deployCommit, r.url));
+            const notes = await appendNote(culprit, rerunNote(t.label, culprit.deployCommit, r.url, failureSummaryOf(r.id, ghLog)), { key: noteKeys.trainTest(culprit.deployCommit, t.workflow, r && r.id) });
             culprit.notes = notes;
             culprit.trainTestReruns = withKey(culprit.trainTestReruns, reKey);
             await patchItem(culprit.id, { notes, trainTestReruns: culprit.trainTestReruns, updatedAt: new Date().toISOString() });
@@ -3852,9 +3966,10 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
             : { action: "rebuild", fields: {}, sentence: "" };
         const notes = await appendNote(culprit,
           `Sent back automatically (Failed testing [tests]): ${summary ? `Why: ${summary}\n` : ""}${text}. ` +
-          (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
+          (wasApproved ? `It had been approved, but its own commit fails this check, so it is taken off rather than holding the release. ` : "") +
           `Its commits are being reverted off the train so the tickets around it can still ship. ` +
-          (plan.action === "rebuild" ? `A rebuild starts once the revert has landed, with this failure on its notes — the build must make that check pass before handing the patch back.` : plan.sentence));
+          (plan.action === "rebuild" ? `A rebuild starts once the revert has landed, with this failure on its notes — the build must make that check pass before handing the patch back.` : plan.sentence),
+          { key: noteKeys.trainTest(culprit.deployCommit, t.workflow, r && r.id) });
         await patchItem(culprit.id, {
           status: "backlog",
           revertRequested: true,
@@ -4155,6 +4270,15 @@ async function reportTrainTestResults() {
     }
     let red = project ? (project.trainTestsRed || {}) : null;
     let redChanged = false;
+    // The red spell (Flow 6/9): from the first red result to the train being
+    // green again. A bystander card gets one note per spell, keyed on its
+    // start, updated as the spell goes on and closed with its duration.
+    let spell = project && project.trainRedSpell && project.trainRedSpell.since ? { ...project.trainRedSpell } : null;
+    let spellChanged = false;
+    if (red && !spell && Object.keys(red).length) {
+      spell = { since: Object.values(red).map((v) => (v && v.at) || "").filter(Boolean).sort()[0] || new Date().toISOString(), cause: null };
+      spellChanged = true;
+    }
     // The card a run's head commit belongs to, judged as recordCardTrainTests
     // does. Reads the train's commits once per branch; if it can't, only a
     // card's own commit matches.
@@ -4190,7 +4314,8 @@ async function reportTrainTestResults() {
             } else {
               const key = rerunRunKey(t.workflow, testRun.headSha, "rerun", testRun.id);
               owner.trainTestReruns = withKey(owner.trainTestReruns, key);
-              owner.notes = await appendNote(owner, rerunNote(t.label, testRun.headSha, testRun.url));
+              owner.notes = await appendNote(owner, rerunNote(t.label, testRun.headSha, testRun.url, failureSummaryOf(testRun.id)),
+                { key: noteKeys.trainTest(owner.deployCommit || testRun.headSha, t.workflow, testRun.id) });
               await patchItem(owner.id, { notes: owner.notes, trainTestReruns: owner.trainTestReruns, updatedAt: new Date().toISOString() });
             }
             continue;
@@ -4199,6 +4324,7 @@ async function reportTrainTestResults() {
         if (red) {
           const next = nextTrainTestsRed(red, t.workflow, testRun, tested, new Date().toISOString());
           if (next !== undefined) { red = next; redChanged = true; }
+          if (Object.keys(red).length && !spell) { spell = { since: new Date().toISOString(), cause: null }; spellChanged = true; }
         }
         const targets = trainTestFailureTargets(testRun, tested, trainCards, t.workflow);
         let notes_ = [];
@@ -4210,11 +4336,17 @@ async function reportTrainTestResults() {
             try { ownerId = backlogItemIdFromMessage(run("gh", ["api", `repos/${REPO}/commits/${tested}`, "-q", ".commit.message"])); }
             catch (err) { console.log(`[train-tests] ${branch}: couldn't read the owner of ${tested.slice(0, 7)} (${scrubSecrets(err.message)})`); }
           }
-          notes_ = trainFailureNotes({ workflow: t.workflow, label: t.label, sha: tested, url: testRun.url, cards: trainCards, ownerId, afterRerun });
+          const owner = trainCards.find(owns) || null;
+          if (spell && !spell.cause) {
+            spell.cause = owner ? (owner.title || owner.id) : `a commit that is no ticket's own (${tested.slice(0, 7)})`;
+            spellChanged = true;
+          }
+          notes_ = trainFailureNotes({ workflow: t.workflow, label: t.label, sha: tested, url: testRun.url, cards: trainCards, ownerId, afterRerun,
+            summary: failureSummaryOf(testRun.id), branch, spell: spell && spell.since, runId: testRun.id });
         }
         for (const n of notes_) {
           const card = trainCards.find((c) => c.id === n.id);
-          const notes = await appendNote(card, n.text);
+          const notes = await appendNote(card, n.text, { key: n.key });
           card.notes = notes;
           const testsFailedShas = (card.testsFailedShas || []).concat([`${t.workflow}@${tested}`]).slice(-20);
           card.testsFailedShas = testsFailedShas;
@@ -4226,9 +4358,28 @@ async function reportTrainTestResults() {
         console.log(`[train-tests] ${branch}: couldn't read the ${t.workflow} result (${scrubSecrets(err.message)})`);
       }
     }
-    if (project && redChanged) {
-      await patchProject(project.id, { trainTestsRed: Object.keys(red).length ? red : null, updatedAt: new Date().toISOString() });
-      console.log(`[train-tests] ${branch}: trainTestsRed is now ${Object.keys(red).join(", ") || "clear"}`);
+    // Green again: each bystander's spell note is closed in place.
+    if (project && red && !Object.keys(red).length && spell) {
+      const key = noteKeys.trainRed(branch, spell.since);
+      for (const card of trainCards) {
+        if (!keyedNote(card, key)) continue;
+        try {
+          card.notes = await appendNote(card, redSpellEndNote(spell.since, Date.now(), spell.cause), { key });
+          await patchItem(card.id, { notes: card.notes, updatedAt: new Date().toISOString() });
+        } catch (err) {
+          console.log(`[train-tests] ${branch}: couldn't close the red-spell note on ${card.id} (${scrubSecrets(err.message)})`);
+        }
+      }
+      spell = null;
+      spellChanged = true;
+    }
+    if (project && (redChanged || spellChanged)) {
+      await patchProject(project.id, {
+        ...(redChanged ? { trainTestsRed: Object.keys(red).length ? red : null } : {}),
+        ...(spellChanged ? { trainRedSpell: spell } : {}),
+        updatedAt: new Date().toISOString(),
+      });
+      if (redChanged) console.log(`[train-tests] ${branch}: trainTestsRed is now ${Object.keys(red).join(", ") || "clear"}`);
     }
   }
 }
@@ -5350,8 +5501,22 @@ async function processApplyPatch(item) {
         text = `No commit made: patchFiles produced no diff against ${deployBranch}, and that branch does not change these files either — this content is already on main. ` +
           `Moved to Ready for Testing directly and flagged as needing no deployment of its own, since there is genuinely nothing left to ship.`;
       }
-      const notes = await appendNote(item, text);
-      await patchItem(item.id, { ...outcome.fields, ...(outcome.fields.status === "ready-for-testing" ? testRounds.arrivalFields(item) : {}), updatedAt: new Date().toISOString(), notes });
+      // No contradictions (Flow 6/9, nscnHeKRqi8TG5AA0gah on 30 Oct 2026): a
+      // card moved back onto its train commits while a revert of those same
+      // commits is still pending used to read "Moved back to Ready for
+      // Testing", then "Could not take this ticket off the train" 18 minutes
+      // later. The rebuild has answered the revert request (staleRevertRequest
+      // would clear it on a later sweep anyway), so it is cleared in the same
+      // write and the request's own note says so.
+      const answersRevert = outcome.kind === "already-on-train" && item.revertRequested === true && ON_TRAIN_STATUSES.has(outcome.fields.status || "");
+      const revertKey = answersRevert ? revertNoteKey(item) : null;
+      if (answersRevert) text += " The revert still pending for those commits is no longer needed and was cleared: nothing was reverted.";
+      const notes = await appendNote(item, text, revertKey ? { key: revertKey } : {});
+      await patchItem(item.id, {
+        ...outcome.fields, ...(outcome.fields.status === "ready-for-testing" ? testRounds.arrivalFields(item) : {}),
+        ...(answersRevert ? { revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false } : {}),
+        updatedAt: new Date().toISOString(), notes,
+      });
       if (outcome.fields.status === "ready-for-testing") noteReadyForTesting(project, item.id);
       console.log(`[apply-patch] ${item.id}: no diff against ${deployBranch} — ${outcome.kind}` +
         (outcome.kind === "carried" ? ` (rides on ${outcome.sha.slice(0, 7)}${outcome.carriedByItem ? `, ${outcome.carriedByItem}` : ""})` : ""));
@@ -5560,13 +5725,23 @@ function sameProjectIds(ids, itemsById, projectId) {
   });
 }
 
+// The key of one revert request's note: the commits it takes off (the oldest
+// one names the request). Every outcome of that request — taken off, blocked,
+// retried, no longer needed — updates the same note (Flow 6/9). Pure.
+function revertNoteKey(item) {
+  const commits = Array.isArray(item && item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
+  const sha = commits[0] || (item && item.deployCommit) || null;
+  return sha ? noteKeys.revert(sha) : null;
+}
+
 async function processRevertFromTrain(item) {
   console.log(`[train-revert] ${item.id}: ${item.title || item.desc}`);
+  const revertKey = revertNoteKey(item);
   if (staleRevertRequest(item)) {
     const column = item.status === "ready-to-publish" ? "Approved for Deployment" : "Ready for Testing";
     const notes = await appendNote(item,
       `Revert request cleared: this card is back in ${column} on its train commits, so the Failed testing that asked for the revert ` +
-      `was answered by the rebuild. Nothing was reverted, and the card can be approved.`);
+      `was answered by the rebuild. Nothing was reverted, and the card can be approved.`, { key: revertKey });
     await patchItem(item.id, { revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false, updatedAt: new Date().toISOString(), notes });
     console.log(`[train-revert] ${item.id}: revert request is stale (card is ${item.status}) — cleared`);
     return;
@@ -5692,7 +5867,8 @@ async function processRevertFromTrain(item) {
       };
       // Re-diagnosing an unchanged permanent blocker on every 2-minute tick
       // is noise, not progress (same rule ROUTINE_INSTRUCTIONS.md applies to
-      // a `dirty` PR) — note it when it first appears or when it changes.
+      // a `dirty` PR) — note it when it first appears or when it changes,
+      // and a change updates the request's one note rather than adding one.
       if (!sameBlock) {
         fields.notes = await appendNote(
           item,
@@ -5701,7 +5877,8 @@ async function processRevertFromTrain(item) {
             ? `later ticket(s) on the same branch build on top of it — ${blockedBy.join(", ")}. `
             : `later work on the same branch touches the same lines. `) +
           `The card has still been sent back, but its code is still on the branch, so Deploy to Main stays hidden until this is cleared. ` +
-          `Resolve it by sending the later ticket(s) back too (Failed testing on each), or by fixing \`${deployBranch}\` by hand. Nothing was force-pushed.\n\nDetails:\n${scrubSecrets(err.message)}`
+          `Resolve it by sending the later ticket(s) back too (Failed testing on each), or by fixing \`${deployBranch}\` by hand. Nothing was force-pushed.\n\nDetails:\n${scrubSecrets(err.message)}`,
+          { key: revertKey }
         );
       }
       await patchItem(item.id, fields);
@@ -5710,7 +5887,7 @@ async function processRevertFromTrain(item) {
   }
 
   if (!reverted.length) {
-    const notes = await appendNote(item, `Nothing to revert off \`${deployBranch}\`: none of this card's recorded commits are still on that branch. revertRequested has been cleared.`);
+    const notes = await appendNote(item, `Nothing to revert off \`${deployBranch}\`: none of this card's recorded commits are still on that branch. revertRequested has been cleared.`, { key: revertKey });
     await patchItem(item.id, {
       revertRequested: false,
       revertBlockedBy: [],
@@ -5743,7 +5920,8 @@ async function processRevertFromTrain(item) {
     (item.rebuildAfterRevert
       ? `it is rebuilt automatically, on top of the branch as it stands, with the failure above as its brief.`
       : `it's a plain Backlog ticket again, and a fresh Ready for Dev sweep will rebuild it on top of whatever the branch looks like then.`) +
-    (testsStarted.length ? ` The train tests were started again on the new head (${testsStarted.map((t) => t.workflow).join(", ")}).` : "")
+    (testsStarted.length ? ` The train tests were started again on the new head (${testsStarted.map((t) => t.workflow).join(", ")}).` : ""),
+    { key: revertKey }
   );
   await patchItem(item.id, {
     revertRequested: false,
@@ -7704,7 +7882,7 @@ async function closeNotifyRoutines(now = Date.now()) {
         for (const id of noteCardIds) {
           const card = cards.find((c) => c.id === id);
           if (!card) continue;
-          const notes = await appendNote(card, stalledNoteText(card, routine));
+          const notes = await appendNote(card, stalledNoteText(card, routine), { key: silentBuildNoteKey(card) });
           await patchItem(id, { notes });
         }
       }
@@ -7998,7 +8176,7 @@ module.exports = {
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested
   scanRedTrain, rejudgeReverts, rejudgeKey, rejudgeShaOf, rejudgeRef, rejudgeCards, buildRejudgeCommit, pruneRejudgeRefs, evidenceRunsFor, laterPassFor,
   // test/notes-append.test.js — notes are only ever appended, atomically
-  notesCommitWrite, appendNote, patchItem,
+  rerunNote, notesCommitWrite, notesCommitWrites, appendNote, patchItem, keyedNoteIndex, keyedNote, noteKeys, silentBuildNoteKey, revertNoteKey, redSpellEndNote,
   // test/train-lock-branch-archive.test.js — the sweep adopts hand-pushed trailer commits
   trainSweepPlan, trainCommitsAheadOfMain, reconcileLockedTrains,
   conflictedPaths, tryAutoResolveFaqIndexConflict, archiveAndResetOrphanedBranch, dateStamp, nearestPageFor, isBundlerTemplate,

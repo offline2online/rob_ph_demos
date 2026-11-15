@@ -1928,6 +1928,9 @@ function itemDetail(id, d, projects) {
       author: n && n.author ? n.author : "viewer",
       text: n && n.text ? n.text : "",
       at: tsToISO(n && n.at) || (n && typeof n.at === "string" ? n.at : null),
+      // An automation note that is one event updated in place (Flow 6/9)
+      // carries its key and when the event started; other notes are as before.
+      ...(n && typeof n.key === "string" && n.key ? { key: n.key, firstAt: tsToISO(n.firstAt) || (typeof n.firstAt === "string" ? n.firstAt : null) } : {}),
     })),
   });
 }
