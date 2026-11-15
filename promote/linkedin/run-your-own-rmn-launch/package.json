@@ -1,11 +1,11 @@
 {
   "name": "run-your-own-rmn-launch",
   "private": true,
-  "description": "LinkedIn launch animation for Run Your Own RMN (4:5, 1080x1350).",
+  "description": "LinkedIn launch animation for Run Your Own RMN: five one-sentence slides (4:5, 1080x1350).",
   "scripts": {
     "build": "node build.mjs",
     "check": "node check.cjs dist/run-your-own-rmn-launch.html check",
-    "render": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch.mp4 dist/run-your-own-rmn-launch-cover.png 12.75"
+    "render": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch.mp4 dist/run-your-own-rmn-launch-cover.png 6.8"
   },
   "devDependencies": {
     "@fontsource/kantumruy-pro": "5.3.0",

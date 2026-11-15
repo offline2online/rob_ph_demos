@@ -9,20 +9,21 @@ const path = require('path');
   const scenes = await page.evaluate(() => window.SCENES);
   const problems = [];
   for (const s of scenes) {
-    const t = s.id === 's9' ? s.start + 2.6 : s.end - 0.45;
+    const last = s === scenes[scenes.length - 1];
+    const t = last ? s.start + 2.6 : s.end - 0.35;
     await page.evaluate((t) => window.renderAt(t), t);
     await page.screenshot({ path: `${outDir}/${s.id}.png` });
     const m = await page.evaluate((id) => {
       const sc = document.getElementById(id);
       const lines = (el) => el ? Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) : 0;
-      const h = sc.querySelector('.headline'), l = sc.querySelector('.lede'), e = sc.querySelector('.eyebrow');
+      const h = sc.querySelector('.headline, .line'), l = sc.querySelector('.lede'), e = sc.querySelector('.eyebrow');
       let maxBottom = 0, maxRight = 0, minLeft = 1e9;
       sc.querySelectorAll('*').forEach((el) => {
         const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
         maxBottom = Math.max(maxBottom, r.bottom); maxRight = Math.max(maxRight, r.right); minLeft = Math.min(minLeft, r.left);
       });
       // overlap test between leaf visual boxes (chips, pills, nodes, hub, tiles, rows)
-      const boxes = [...sc.querySelectorAll('.chip,.pill,.node,.hub,.tile,.job,.out,.device,.step,.cta,.lobe,.headline,.lede,.eyebrow')].map((el) => [el.className, el.getBoundingClientRect()]);
+      const boxes = [...sc.querySelectorAll('.chip,.pill,.node,.hub,.tile,.job,.out,.device,.step,.cta,.lobe,.headline,.lede,.eyebrow,.line,.go,.rule')].map((el) => [el.className, el.getBoundingClientRect()]);
       const ov = [];
       for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
         const [a, A] = boxes[i], [b, B] = boxes[j];
