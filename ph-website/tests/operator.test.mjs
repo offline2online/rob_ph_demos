@@ -3,7 +3,7 @@
 // buttons and inputs, and the three empty mount containers ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, filled server-side by
 // operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
 // served at /run-your-own-rmn/tour/ (the golf network walkthrough, v2: the Fairlinks Golf Network's 100 clubs). The H1, the blocks inside their mount containers,
-// copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its eleven questions, the last ending with a
+// copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its thirteen questions, the last ending with a
 // "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
@@ -164,7 +164,7 @@ try {
   ok(seo.ld.length === 2 && ["WebPage", "Service", "BreadcrumbList"].every((t) => seo.ld[0]["@graph"].some((n) => n["@type"] === t)) && !seo.ld[0]["@graph"].some((n) => n["@type"] === "FAQPage") && seo.ld[1]["@type"] === "FAQPage", "JSON-LD: the head graph (WebPage, Service, BreadcrumbList) and the FAQ block's FAQPage, once each");
   ok(await p.evaluate(() => !!document.querySelector('.phf[data-phf=faq] script[type="application/ld+json"]')), "the FAQPage JSON-LD is printed by the FAQ block itself");
   const faqDom = await p.evaluate(() => [...document.querySelectorAll("#faq details")].map((d) => [d.querySelector("summary").textContent.trim(), [...d.querySelectorAll(".phf-faq-a p")].map((x) => x.textContent.trim()).join(" ")]));
-  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[1].mainEntity.map((q) => [q.name, q.acceptedAnswer.text.replace(/<[^>]+>/g, "").trim()])) && faqDom.length === 11 && seo.ld[1].isPartOf["@id"] === seo.ld[0]["@graph"].find((n) => n["@type"] === "WebPage")["@id"], "the FAQPage JSON-LD equals the visible FAQ and is part of the WebPage");
+  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[1].mainEntity.map((q) => [q.name, q.acceptedAnswer.text.replace(/<[^>]+>/g, "").trim()])) && faqDom.length === 13 && seo.ld[1].isPartOf["@id"] === seo.ld[0]["@graph"].find((n) => n["@type"] === "WebPage")["@id"], "the FAQPage JSON-LD equals the visible FAQ and is part of the WebPage");
   ok((await p.evaluate(() => getComputedStyle(document.querySelector(".phf h2")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro in the blocks, over the kit's heading font");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector("#calc")).color === "rgb(28, 37, 64)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)" && getComputedStyle(document.querySelector(".phf-tip-b")).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(document.querySelector("#t-fn")).borderTopWidth === "1px"), "design colours and controls kept against the Elementor kit's heading, button and input styles");
   // No commercial terms anywhere on the page (text, tooltips, attributes).
@@ -316,7 +316,7 @@ try {
   await p.locator("#faq summary").first().focus();
   await p.keyboard.press("Enter");
   ok(await faqOpen(0), "FAQ: Enter on the focused question opens it");
-  ok(await p.evaluate(() => { const a = document.querySelector("#faq details .phf-faq-a"); return a.getBoundingClientRect().height > 0 && /retail media network sells advertising/.test(a.textContent); }), "FAQ: the answer shows");
+  ok(await p.evaluate(() => { const a = document.querySelector("#faq details .phf-faq-a"); return a.getBoundingClientRect().height > 0 && /^A business selling advertising to brands across the places it reaches its customers/.test(a.textContent.trim()); }), "FAQ: the answer shows");
   await p.keyboard.press("Space");
   ok(!(await faqOpen(0)), "FAQ: Space closes it again");
   await p.keyboard.press("Tab");
@@ -404,7 +404,9 @@ try {
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_operator stored");
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
   ok(st.dl.length === 1 && st.dl[0].source === "Network operator inquiry" && !JSON.stringify(st.dl).includes("ada@"), "dataLayer ph_lead_captured, no contact details");
-  ok((await text(p, "#phf-in-h")) === "You’re in, Ada", "You're in, <first name>");
+  ok((await text(p, "#phf-in-h")) === "Thanks, Ada. Your guided tour is ready.", "the unlocked heading: Thanks, <first name>. Your guided tour is ready.");
+  ok((await text(p, ".phf-in-p")) === "Three short demos, about two minutes each. Choose one below to start.", "the line below the heading");
+  ok(await p.evaluate(() => !/You.re in/i.test(document.body.innerText)), "no \"You're in\" anywhere on the page");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1&ph_test=1", "iframe src with embed=1 and ph_test=1");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-ph")).display === "none" && getComputedStyle(document.getElementById("phf-gate")).display === "none" && window.PH_TOUR && window.PH_TOUR.endpoint === "/wp-json/ph-site/v1/tour-lead"), "placeholder and gate replaced; window.PH_TOUR set");
   const fr = p.frames().find((f) => /\/run-your-own-rmn\/tour\//.test(f.url()));
@@ -492,6 +494,13 @@ try {
   await p.waitForSelector("#phf-mount iframe");
   ok(await p.evaluate(() => { const l = JSON.parse(localStorage.getItem("ph_lead")); return getComputedStyle(document.getElementById("phf-gate")).display === "none" && l.email === "ada@gmail.com" && l.source === "Network operator inquiry"; }), "returning visitor skips the gate (ph_lead restored for the tour, source Network operator inquiry)");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1", "no ph_test outside test mode");
+  ok((await text(p, "#phf-in-h")) === "Thanks, Ada. Your guided tour is ready." && (await text(p, ".phf-in-p")) === "Three short demos, about two minutes each. Choose one below to start.", "returning visitor: the same unlocked copy");
+  await p.close();
+
+  // 8a. Returning visitor whose stored name gives no first name: the heading drops the name.
+  p = await open({ operator: { name: "   ", email: "ada@gmail.com", ts: 1 } });
+  await p.waitForSelector("#phf-mount iframe");
+  ok((await text(p, "#phf-in-h")) === "Thanks. Your guided tour is ready.", "no first name: Thanks. Your guided tour is ready.");
   await p.close();
 
   // 8b. WebMCP: estimate_rmn_earnings drives the page's own calculator and returns the page's own figures; the gate only with consent.
