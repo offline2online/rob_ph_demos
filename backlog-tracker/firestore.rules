@@ -622,7 +622,10 @@ service cloud.firestore {
       // A network operator inquiry (leadType "operator") is a person, not a
       // company: its company name may be blank, it has its own stages, and
       // `operator` holds where they plan to operate, their background and who
-      // they are ("I am": individual, team or retailer, or "" when not given).
+      // they are ("I am": individual, team or retailer, or "" when not given),
+      // the industry they want to run their network in (free text, up to 120),
+      // their message (up to 1,000) and which website form sent it ("request",
+      // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
           "leadType", "operator", "tam",
@@ -635,7 +638,10 @@ service cloud.firestore {
         && (isNonEmptyBoundedString(d.company.get("name", null), 120)
           || (d.get("leadType", "company") == "operator" && d.company.get("name", "") is string && d.company.get("name", "").size() <= 120))
         && (d.get("operator", null) == null || (d.get("operator", null) is map
-          && d.operator.keys().hasOnly(["region", "background", "audience"])
+          && d.operator.keys().hasOnly(["region", "background", "audience", "networkIndustry", "message", "form"])
+          && d.operator.get("networkIndustry", "") is string && d.operator.get("networkIndustry", "").size() <= 120
+          && d.operator.get("message", "") is string && d.operator.get("message", "").size() <= 1000
+          && d.operator.get("form", "") in ["", "request", "tour"]
           && d.operator.get("audience", "") in ["", "individual", "team", "retailer"]
           && d.operator.get("region", "") is string && d.operator.get("region", "").size() <= 200
           && d.operator.get("background", "") is string && d.operator.get("background", "").size() <= 40))

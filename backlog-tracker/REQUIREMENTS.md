@@ -4756,7 +4756,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     inquiry**, the detail's section **Network operator**, and the default source
     label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
-    {region, background, audience}`, the constants are `OPERATOR_*`, the website intake
+    {region, background, audience, networkIndustry, message, form}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
     `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
     (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
@@ -4781,8 +4781,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
     allows a blank company name only on an `operator` lead, keeps each type to its
-    own stages, and limits `operator` to `region`, `background` and `audience`
-    (one of the three keys, or "").
+    own stages, and limits `operator` to `region`, `background`, `audience`
+    (one of the three keys, or ""), `networkIndustry` (a string ≤120),
+    `message` (a string ≤1,000) and `form` (`request`, `tour` or "").
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
     `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
     operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
@@ -4808,9 +4809,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
     one pipeline at a time with its own lanes. A network operator card shows the
-    person, a "Network operator inquiry" chip, I am · region · background (each
+    person, a "Network operator inquiry" chip, I am · region · industry they want to run · background (each
     only when given) and the source;
-    its summary shows the person, Network operator (I am, region, background), Lead
+    its summary shows the person, Network operator (I am, region, industry they want to run, background, message), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
     on that view opens the form as **New network operator inquiry**: the
@@ -4829,8 +4830,47 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
     refuse a network operator inquiry.
+  - **Industry they want to run and their message (15 Nov 2026, ticket
+    hnHZrt9GT1SaGBb6NI1a)**. The Run Your Own RMN page's **Request further
+    information** form asks for "Industry you want to run your network in"
+    (required on the site) and an optional message; the FAQ promises an
+    information pack for that industry and then a 20-minute call. The website
+    sends them as `network_industry` and `message`, with `form: "request"` (the
+    product tour gate sends `form: "tour"`).
+    - **Data**: `operator.networkIndustry` is free text, ≤120 characters (the
+      site sends one of its twelve industries or "Other: <text>");
+      `operator.message` is ≤1,000 characters (longer is cut, not refused);
+      `operator.form` is `request`, `tour` or "" (anything else is stored as "").
+      Older leads have none of the three: nothing is migrated and
+      `normaliseLead` reads each as "".
+    - **Intake** (`operatorFromWebsite`): reads `network_industry` (or
+      `networkIndustry`), `message` and `form`. On a repeat submission from the
+      same email, a new industry replaces the stored one (a blank one is filled;
+      a submission without one leaves it), `form` follows the newest submission
+      that sends one, and a new message never overwrites the first: when the lead
+      already has a different message, the new one is added to its history as a
+      note by `website`, "Website message (YYYY-MM-DD): …". A lead with no
+      message yet takes the new one as its message.
+    - **Board**: the operator card's line reads I am · region · industry they
+      want to run · background, skipping blanks (`companyLine`). The summary's
+      Network operator section adds **Industry they want to run** (after
+      region) and **Message** (last, as a stacked row, only when there is one).
+      The New network operator inquiry form (and its edit) has an **Industry
+      they want to run** text field (≤120); the message and form have no input
+      and an edit keeps them. Built from the existing `ap-row` field and
+      `stackRow`, no new components.
+    - **MCP**: `list_leads` and `get_lead` return `networkIndustry`, `message`
+      and `form` on operator leads (null when blank; absent on company leads);
+      `list_leads` takes an optional `networkIndustry` filter (case-insensitive
+      contains; only operator leads match) and its `q` also searches both;
+      `create_lead(s)` and `update_lead` accept `networkIndustry` and
+      `message`.
+    - Either side can ship first: the console ignores fields it doesn't know,
+      and an older console ignores these.
   - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
-    address, repeat person, company leads unchanged, the MCP views and filter),
+    address, repeat person, industry and message on first and repeat
+    submissions and the 1,000-character cut, company leads unchanged, the MCP
+    views and filters),
     `test/lead-enrich.test.js` (never researched), the network operator cases in
     `test/firestore-rules.test.js`, and the "network operator inquiries" scenario in
     `test/ui/console-click.test.mjs`.

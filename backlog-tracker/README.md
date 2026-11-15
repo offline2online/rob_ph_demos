@@ -2650,7 +2650,15 @@ every destination already existed.
   (`individual`, `team`, `retailer`, or "" when not given), shown first on the
   card's line, as "I am" in the summary and as a select on the form, and
   `list_leads` filters by `audience`. Backgrounds gained `creative-agency` and
-  `retail-owner`. See
+  `retail-owner`.
+  **Industry and message (15 Nov 2026)**: the page's Request further information
+  form sends `network_industry`, `message` and `form: "request"`; they are stored
+  as `operator.networkIndustry` (≤120), `operator.message` (≤1,000, longer is cut)
+  and `operator.form` (`request` or `tour`). A repeat submission replaces the
+  industry and adds a new message to the history as a dated note. The card line
+  shows the industry after the region, the summary adds "Industry they want to
+  run" and "Message", the form has an "Industry they want to run" field, and
+  `list_leads` filters by `networkIndustry`. See
   REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules

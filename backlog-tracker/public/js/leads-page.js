@@ -214,7 +214,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const chipHTML = (l) => `<span class="lead-chip" title="${esc(industryChipText(l))}"><span class="lead-ind-dot" aria-hidden="true"></span>${esc(industryChipText(l))}</span>`;
   const typeChipHTML = (l) => (isOperator(l) ? `<span class="lead-chip lead-type-chip">${esc(leadTypeLabel(l.leadType))}</span>` : "");
   const sourceText = (l) => (l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l));
-  // A network operator inquiry's tile: the person, their lead type, who they are ("I am"), where they plan to operate and their background.
+  // A network operator inquiry's tile: the person, their lead type, who they are ("I am"), where they plan to operate, the industry they want to run and their background.
   function operatorCardHTML(l) {
     const line = companyLine(l);
     const who = l.assignee ? memberName(l.assignee) : "";
@@ -390,7 +390,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       ${group("Network operator", [
         row("I am", esc(audienceLabel(f.audience))),
         row("Where they plan to operate", esc(f.region || "")),
+        row("Industry they want to run", esc(f.networkIndustry || "")),
         row("Background", esc(backgroundLabel(f.background))),
+        f.message ? stackRow(`<p class="ap-row-label">Message</p><p class="ap-row-text">${esc(f.message)}</p>`, "", "lead-sum-message") : "",
       ].join(""), { id: "lead-sum-operator" })}
       ${group("Lead", [
         row("Type", esc(leadTypeLabel(l.leadType))),
@@ -610,6 +612,9 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-region").value = (l.operator && l.operator.region) || "";
     $("lead-background").value = (l.operator && l.operator.background) || "";
     $("lead-audience").value = (l.operator && l.operator.audience) || "";
+    $("lead-network-industry").value = (l.operator && l.operator.networkIndustry) || "";
+    // The message and the form that sent it have no input: an edit keeps them.
+    draft.operator = { message: (l.operator && l.operator.message) || "", form: (l.operator && l.operator.form) || "" };
     $("lead-name").value = l.company.name;
     $("lead-website").value = l.company.website;
     $("lead-industry").value = l.company.industry;
@@ -635,7 +640,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-delete").hidden = !l;
     if (l) { fill(l); if (type !== "operator") { renderEnrichment(l); renderAccount(l); } }
     else {
-      fill({ leadType: type, operator: { region: "", background: "", audience: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
+      fill({ leadType: type, operator: { region: "", background: "", audience: "", networkIndustry: "", message: "", form: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
     }
     backdrop.hidden = false;
     (type === "operator" ? $("lead-contacts").querySelector(".lc-name") : $("lead-name")).focus();
@@ -647,6 +652,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     const fr = formType === "operator";
     return leadFromForm({
       leadType: formType, region: fr ? $("lead-region").value : "", background: fr ? $("lead-background").value : "", audience: fr ? $("lead-audience").value : "",
+      networkIndustry: fr ? $("lead-network-industry").value : "", message: fr && draft.operator ? draft.operator.message : "", form: fr && draft.operator ? draft.operator.form : "",
       name: fr ? "" : $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
       countries: $("lead-countries").value, storeCount: $("lead-stores").value, awsAccountId: $("lead-aws-account").value,
       contacts: draft.contacts, stage: $("lead-stage").value, source: $("lead-source").value, assignee: $("lead-assignee").value,

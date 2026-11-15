@@ -1432,11 +1432,71 @@ const scenarios = [
       const made = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Sam Field") return v; return null; });
       assert.ok(made, "the network operator inquiry was written");
       assert.strictEqual(made.leadType, "operator"); assert.strictEqual(made.company.name, "");
-      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer" });
+      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer", networkIndustry: "", message: "", form: "" });
       assert.strictEqual(made.prospectId, undefined, "never matched to Prospects (TAM)");
       // Back to the company pipeline.
       for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-company", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-company"); await c.page.waitForTimeout(400); }
       await c.visible('.lead-lane[data-stage="demo"] .lead-card', "the company board is back");
+    },
+  },
+  {
+    name: "Promote: Leads - a network operator inquiry shows the industry they want to run and their message; the form saves the industry and an edit keeps the message",
+    seed: () => seed({ leads: {
+      fg: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team", networkIndustry: "Golf clubs", message: "Hello, please send the pack.", form: "request" },
+        contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "" }],
+        stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – request further information", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      fo: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "York", background: "marketing", audience: "individual" },
+        contacts: [{ id: "p2", name: "Old Inquiry", jobTitle: "", buyingRole: "", email: "old@example.com", linkedin: "" }],
+        stage: "applied", source: "website", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 - 1000) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-operator", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-operator"); await c.page.waitForTimeout(400); }
+      const golf = '.lead-card[data-lead-id="fg"]';
+      await c.visible(golf, "the inquiry is on the operator board");
+      const line = (await c.text(`${golf} .lead-card-line`)).trim();
+      assert.strictEqual(line, "Part of an operator team · Leeds, UK · Golf clubs · Ad-tech sales or partnerships", "I am · region · industry · background: " + line);
+      assert.strictEqual((await c.text('.lead-card[data-lead-id="fo"] .lead-card-line')).trim(), "An individual operator · York · Marketing", "an older lead skips the blank industry");
+      await c.page.click(`${golf} .lead-card-name`);
+      await c.visible("#lead-sum-operator", "the summary opens");
+      const sec = await c.text("#lead-sum-operator");
+      assert.ok(/Industry they want to run\s*Golf clubs/.test(sec), "the industry row shows: " + sec);
+      assert.ok(/Message\s*Hello, please send the pack\./.test(sec), "the message row shows: " + sec);
+      assert.ok(sec.indexOf("Leeds, UK") < sec.indexOf("Golf clubs"), "the industry follows the region");
+      // Edit: the industry is a field; the message has no input and is kept.
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the form opens");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "Golf clubs");
+      await c.page.fill("#lead-network-industry", "Other: Bowling alleys");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fg").operator.networkIndustry)) === "Other: Bowling alleys", "the edited industry to persist", 5000);
+      const fg = await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fg").operator);
+      assert.strictEqual(fg.message, "Hello, please send the pack.", "an edit keeps the message"); assert.strictEqual(fg.form, "request", "and the form");
+      // An older lead (no industry or message) still opens, edits and saves.
+      await c.page.keyboard.press("Escape").catch(() => {});
+      await c.page.click('.lead-card[data-lead-id="fo"] .lead-card-name');
+      await c.visible("#lead-sum-operator", "the older lead's summary opens");
+      const old = await c.text("#lead-sum-operator");
+      assert.ok(!old.includes("Industry they want to run") && !old.includes("Message"), "blank rows are skipped: " + old);
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the older lead's form opens");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "");
+      await c.page.fill("#lead-region", "York and Harrogate");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fo").operator.region)) === "York and Harrogate", "the older lead to save", 5000);
+      assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fo").operator), { region: "York and Harrogate", background: "marketing", audience: "individual", networkIndustry: "", message: "", form: "" });
+      // A new network operator inquiry saves the industry.
+      await c.page.keyboard.press("Escape").catch(() => {});
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) { await c.page.click("#leads-add-btn"); await c.page.waitForTimeout(600); }
+      await c.visible("#lead-form", "the new form opens");
+      assert.strictEqual((await c.text("#lead-title")).trim(), "New network operator inquiry");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "", "a new form starts blank");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Robin Green");
+      await c.page.fill("#lead-network-industry", "Golf clubs");
+      await c.page.click("#lead-save");
+      const made = await until(async () => c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Robin Green") return v; return null; }), "the new inquiry to be written", 5000);
+      assert.strictEqual(made.operator.networkIndustry, "Golf clubs"); assert.strictEqual(made.operator.message, "");
     },
   },
   {
