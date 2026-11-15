@@ -496,7 +496,7 @@ const textOf = (res) => ((res && res.content) || []).filter((b) => b.type === "t
 
 // Researches one company. Returns the agent's JSON, or throws with the reason
 // (which the record then shows): a refusal, a cut-off answer, no JSON at all.
-async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now, deadline = 0 }) {
+async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now, deadline = 0, focus = "", searches = 22, fetches = 10 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = workspaceHeaders(workspaceId);
   const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
@@ -505,6 +505,7 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
     website ? `Website: ${website}` : "Website: not known (find it).",
     country ? `Country of interest: ${country}` : "",
     `Today is ${new Date().toISOString().slice(0, 10)}.`,
+    focus,
   ].filter(Boolean).join("\n");
   const base = { model: AGENT_MODEL, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"], system: AGENT_SYSTEM };
   const messages = [{ role: "user", content: ask }];
@@ -521,8 +522,8 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
       cache_control: { type: "ephemeral" },
       output_config: { effort: "medium" },
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 22 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10, max_content_tokens: 12000 },
+        { type: "web_search_20260209", name: "web_search", max_uses: searches },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: fetches, max_content_tokens: 12000 },
       ],
       messages,
     }, { deadline });
@@ -554,6 +555,37 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
   // Said on the record: this is what the run found before time ran out.
   if (short) Object.defineProperty(fixed, "cutShort", { value: true, enumerable: false });
   return fixed;
+}
+
+// One company researched as two halves at once, so the whole brief fits in
+// the function's time: the estate (the site count first) and the people, and
+// the market (retail media, personalisation, news, money). Each half answers
+// in the same JSON shape; its own fields win when the two are put together.
+const ESTATE_KEYS = ["name", "website", "websiteConfidence", "industry", "sector", "countries", "hqCity", "hqCountry", "storeCount", "storeCountBreakdown", "storeCountSource", "estate", "employees", "revenue", "people", "linkedinCompany", "logoUrl", "logoLight", "logoDark", "facts"];
+const RESEARCH_HALVES = [
+  { name: "estate", searches: 12, fetches: 6, focus: "This run covers only part of the brief, and another run covers the rest at the same time. Find: how many physical sites it trades from (first, and most important) with storeCountBreakdown, storeCountSource and estate; its industry, sector, countries and head office; employees and revenue; the people; its LinkedIn page; its logo files; and facts. Leave every other field empty." },
+  { name: "market", searches: 14, fetches: 6, focus: "This run covers only part of the brief, and another run covers the estate, the site count and the people at the same time. Find: summary, retailMedia (with the competitors' networks), personalisation, inStoreDigital, loyalty, primaryCloud, strategy, techStack, vendors, news, financials, fit and talkingPoints. Leave storeCount null and people empty." },
+];
+function mergeHalves(estate, market) {
+  if (!estate) return market; if (!market) return estate;
+  const out = {};
+  for (const k of new Set([...Object.keys(estate), ...Object.keys(market)])) {
+    const own = ESTATE_KEYS.includes(k) ? [estate[k], market[k]] : [market[k], estate[k]];
+    out[k] = blank(own[0]) || (k === "websiteConfidence" && !own[0]) ? own[1] : own[0];
+  }
+  for (const k of ["techStack", "vendors", "countries", "talkingPoints"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = uniq([...(market[k] || []), ...(estate[k] || [])], 40, 400);
+  for (const k of ["news", "facts"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = mergeBy([...(market[k] || []), ...(estate[k] || [])], (x) => JSON.stringify(x && (x.url || x.label || x.title)), 40);
+  if (Array.isArray(estate.people) || Array.isArray(market.people)) out.people = mergeBy([...(estate.people || []), ...(market.people || [])], personKey, 10);
+  return out;
+}
+async function claudeResearchSplit(args) {
+  const runs = await Promise.allSettled(RESEARCH_HALVES.map((h) => claudeResearch({ ...args, focus: h.focus, searches: h.searches, fetches: h.fetches })));
+  const [a, b] = runs.map((r) => (r.status === "fulfilled" ? r.value : null));
+  if (!a && !b) throw runs[0].reason;
+  const out = mergeHalves(a, b);
+  const short = (a && a.cutShort) || (b && b.cutShort) || !a || !b;
+  if (short) Object.defineProperty(out, "cutShort", { value: true, enumerable: false });
+  return out;
 }
 
 // ── Merging, kept apart from the fetching so the test can drive it ──────
@@ -967,12 +999,12 @@ function createLeadEnrich({
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearch)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline });
+      const raw = await (research || claudeResearchSplit)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
       if (blank(Object.entries(cleanFindings(raw)).filter(([k, v]) => k !== "websiteConfidence" && !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
       const n = [found.industry, found.hqCountry, found.storeCount, found.summary, found.logoUrl, found.linkedinCompany].filter((x) => !blank(x)).length + found.techStack.length + found.news.length + (found.financials ? 1 : 0);
-      const cut = raw.cutShort === true ? " The research ran out of time before it finished, so this is what it found up to then; Refresh info runs it again." : "";
+      const cut = raw.cutShort === true ? " Part of the research did not finish in time, so some fields may be missing; Refresh info runs it again." : "";
       return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.${cut}`, found };
     } catch (err) {
       const why = agentError(err);
@@ -1292,5 +1324,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  notesOf, send, RESEARCH_WINDOW_MS, applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  notesOf, send, RESEARCH_WINDOW_MS, mergeHalves, claudeResearchSplit, RESEARCH_HALVES, applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, claudeResearchSplit, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -288,11 +288,12 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
       logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
     });
     await api.onEnrichWrite("leads", created("leads", "l1", db.state));
-    assert.equal(sent.length, 2, "the paused turn is sent back once");
+    assert.equal(sent.length, 3, "two halves, and the paused turn is sent back once");
     assert.equal(sent[0].model, "claude-opus-5-5");
     assert.deepEqual(sent[0].tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
     assert.match(sent[0].messages[0].content, /Company: Greene King/);
-    assert.equal(sent[1].messages.length, 2); assert.equal(sent[1].messages[1].role, "assistant");
+    const resumed = sent.filter((x) => x.messages.length === 2);
+    assert.equal(resumed.length, 1); assert.equal(resumed[0].messages[1].role, "assistant");
     assert.equal(db.state.leads.l1.company.industry, "Pubs & Hospitality");
     assert.equal(db.state.leads.l1.enrichment.financials.summary, "Revenue rose 5% to £2.4bn.");
   });
@@ -380,7 +381,26 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.ok(got.deadline > t0 && got.deadline - t0 <= 400000, "well inside 540 s");
     const e = db.state.leads.l1.enrichment;
     assert.equal(e.request.status, "done");
-    assert.match(e.request.message, /ran out of time/);
+    assert.match(e.request.message, /did not finish in time/);
+  });
+  await test("the research runs as two halves at once, the estate and the market, and puts them together", async () => {
+    const sent = [];
+    const estate = { name: "NAB", storeCount: 601, storeCountBreakdown: "601 branches.", people: [{ name: "Jane Smith", title: "CDO" }], summary: "", news: [], techStack: ["Salesforce"] };
+    const market = { name: "", storeCount: 450, summary: "A bank.", retailMedia: "None yet.", people: [{ name: "J. Smith", title: "Chief Data Officer" }, { name: "Ann Lee", title: "CMO" }], news: [{ title: "Results", url: "https://x/1" }], techStack: ["Salesforce", "AWS"] };
+    class Two { constructor() { this.beta = { messages: { stream: (params) => { sent.push(params); const est = /the people; its LinkedIn/.test(params.messages[0].content); return { finalMessage: async () => text("```json\n" + JSON.stringify(est ? estate : market) + "\n```") }; } } }; } }
+    const out = await claudeResearchSplit({ apiKey: "k", Anthropic: Two, company: "NAB" });
+    assert.equal(sent.length, 2, "both halves are asked at once");
+    assert.deepEqual(sent.map((p) => p.tools[0].max_uses).sort(), [12, 14]);
+    assert.equal(out.storeCount, 601, "the estate half owns the site count");
+    assert.equal(out.summary, "A bank."); assert.equal(out.retailMedia, "None yet.");
+    assert.deepEqual(out.people.map((p) => p.name), ["Jane Smith", "Ann Lee"]);
+    assert.deepEqual(out.techStack, ["Salesforce", "AWS"]);
+    assert.equal(out.cutShort, undefined);
+    class Half { constructor() { this.beta = { messages: { stream: (params) => ({ finalMessage: async () => { if (/the people; its LinkedIn/.test(params.messages[0].content)) throw new Error("overloaded"); return text(JSON.stringify(market)); } }) } }; } }
+    const one = await claudeResearchSplit({ apiKey: "k", Anthropic: Half, company: "NAB" });
+    assert.equal(one.summary, "A bank."); assert.equal(one.cutShort, true, "a missing half is said on the record");
+    class None { constructor() { this.beta = { messages: { stream: () => ({ finalMessage: async () => { throw new Error("overloaded"); } }) } }; } }
+    await assert.rejects(claudeResearchSplit({ apiKey: "k", Anthropic: None, company: "NAB" }), /overloaded/);
   });
   await test("a refusal, an empty answer and an unreadable answer each fail with the reason", async () => {
     await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "refusal", content: [] }]), company: "X" }), /declined/);
