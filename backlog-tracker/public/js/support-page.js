@@ -7,12 +7,16 @@ import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } fr
 import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, supportStats, toMs,
   fmtDuration, fmtPct, fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource,
+  confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
 const LIST_LIMIT = 500;
 const SYNC_EVERY_MS = 3 * 60 * 1000;
+// The confidence beside a suggested reply: a word and a number, coloured by band.
+const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); return `<span class="support-conf support-conf-${b}" title="How sure the AI is that this reply is correct and complete">${short ? `AI draft · ${pct(c)}` : `${CONFIDENCE_LABEL[b]} · ${pct(c)}`}</span>`; };
+const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
 const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 
 async function api(apiHeaders, path, { method = "POST", body } = {}) {
@@ -107,7 +111,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (!force && typing()) { stale = true; return; }
     stale = false;
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
-      const on = b.dataset.supportTab === (route.view === "stats" ? "stats" : "inbox");
+      const on = b.dataset.supportTab === (route.view === "stats" || route.view === "try" ? route.view : "inbox");
       b.classList.toggle("active", on);
       b.setAttribute("aria-selected", String(on));
     });
@@ -120,6 +124,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (listError) { view.innerHTML = `<p class="support-problem" role="alert">Tickets didn't load: ${esc(listError)}</p>`; return; }
     if (!loaded) { view.innerHTML = `<p class="interface-row-empty">Loading…</p>`; return; }
     if (route.view === "stats") renderStats();
+    else if (route.view === "try") renderTry();
     else if (route.view === "ticket") renderTicket();
     else renderInbox();
   }
@@ -128,8 +133,10 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const out = [];
     if (t.highValue) out.push(`<span class="badge support-badge-hv" title="${esc(t.account ? `${t.account.name} · ${t.account.reason}` : "High-value sender")}">High value</span>`);
     if (t.automated) out.push(`<span class="badge badge-status-draft" title="Sent by a machine (${esc(t.automated)}), so it is never answered automatically">Automated</span>`);
+    if (t.unrelated) out.push(`<span class="badge badge-status-draft" title="Not about Personalisation Hub, so no reply was drafted">Not about PH</span>`);
     if (t.spamLikely && t.status !== "spam") out.push(`<span class="badge badge-wp-waiting">Looks like spam</span>`);
-    if (t.category && t.category !== "automated") out.push(`<span class="badge badge-status-draft">${esc(CATEGORY_LABEL[t.category] || t.category)}</span>`);
+    if (t.category && t.category !== "automated" && t.category !== "unrelated") out.push(`<span class="badge badge-status-draft">${esc(CATEGORY_LABEL[t.category] || t.category)}</span>`);
+    if (t.aiDraft && t.status === "open") out.push(confidenceHtml(t.aiDraft.confidence, { short: true }));
     if (t.resolvedBy === "ai" && !t.humanInvolved && t.status === "resolved") out.push(`<span class="badge badge-feature">Answered by AI</span>`);
     if (t.triagePending) out.push(`<span class="badge badge-status-draft">Sorting…</span>`);
     return out.join("");
@@ -193,8 +200,9 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         <label class="support-assign">Assigned to <select id="support-assign" aria-label="Assigned to"><option value="">No one</option>${(members || []).map((m) => `<option value="${esc(m.email)}"${m.email === t.assignee ? " selected" : ""}>${esc(m.name)}</option>`).join("")}${t.assignee && !(members || []).some((m) => m.email === t.assignee) ? `<option value="${esc(t.assignee)}" selected>${esc(t.assignee)}</option>` : ""}</select></label>`}
       </div>`;
     const draftCard = draft && edit && t.status !== "spam" ? `<div class="support-draft">
-        <div class="support-draft-head">${icon("auto_awesome")}<b>Suggested reply</b><span class="support-draft-conf" title="How sure the model is that this answer is correct and complete">${Math.round(draft.confidence * 100)}% confidence</span>
+        <div class="support-draft-head">${icon("auto_awesome")}<b>Suggested reply</b>${confidenceHtml(draft.confidence)}
           ${draft.answerable ? "" : `<span class="badge badge-wp-waiting">Holding reply: the Help Centre doesn't answer this</span>`}</div>
+        ${confidenceChangeHtml(draft.confidenceSteps)}
         <div class="support-draft-text">${esc(draft.text)}</div>
         ${draft.articles.length ? `<div class="support-draft-sources">From: ${draft.articles.map((a) => `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`).join(", ")}</div>` : ""}
         <div class="support-draft-actions"><button type="button" class="btn-ghost" data-support-act="use-draft">Use this reply</button><button type="button" class="btn-ghost" data-support-act="redraft">Write another</button></div></div>`
@@ -252,7 +260,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     view.innerHTML = `<div class="support-stats">
       <div class="support-range" role="group" aria-label="Period">${[7, 30, 90].map((d) => `<button type="button" class="btn-ghost${d === range ? " active" : ""}" data-support-range="${d}" aria-pressed="${d === range}">${d} days</button>`).join("")}</div>
       <div class="support-tiles">
-        ${tile("Tickets received", String(s.received), `${s.spam} spam and ${s.automated} automated not counted`, "Customer emails that opened a ticket in this period. Spam and machine-sent mail are left out of every figure here.")}
+        ${tile("Tickets received", String(s.received), `${s.spam} spam, ${s.automated} automated and ${s.unrelated} not about PH not counted`, "Customer emails that opened a ticket in this period. Spam and machine-sent mail are left out of every figure here.")}
         ${tile("Resolved", String(s.resolved), `${s.open} open · ${s.pending} waiting on customer`)}
         ${tile("Answered by AI alone", fmtPct(s.aiRate), `${s.resolvedByAi} of ${s.resolved} resolved`, "Resolved tickets where the automatic answer was the only reply and no person replied, noted or closed it.")}
         ${tile("Needed a person", String(s.humanInvolved), `${s.needsPerson} waiting for one now`, "Tickets a person replied to, noted or closed.")}
@@ -287,8 +295,58 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }, "The reply wasn't sent");
   }
 
+  // ── Try an email: what the inbox would do with any email, nothing saved or sent ──
+  let tryForm = { fromName: "", fromEmail: "", subject: "", text: "" }, tryResult = null, tryError = "", trying = false;
+  const DECISION_LABEL = { send: "Would be sent by itself", review: "Draft waits for a person to approve", human: "A person answers" };
+  function renderTry() {
+    if (!canEdit()) { view.innerHTML = `<p class="interface-row-empty">Trying an email needs edit access to the Support Inbox.</p>`; return; }
+    const r = tryResult;
+    const field = (id, label, value, type = "text") => `<label class="field-label" for="${id}">${label}</label><input type="${type}" id="${id}" value="${esc(value)}" autocomplete="off">`;
+    const result = trying ? `<p class="interface-row-empty">Matching and drafting… (about 20 seconds)</p>`
+      : tryError ? `<p class="support-problem" role="alert">${esc(tryError)}</p>`
+      : !r ? "" : `<div class="support-try-result">
+        <div class="support-ticket-meta">
+          <span class="badge ${r.relevant ? "badge-feature" : "badge-status-draft"}">${r.relevant ? "About Personalisation Hub" : "Not about Personalisation Hub"}</span>
+          ${r.relevant ? `<span class="badge badge-status-draft">${esc(CATEGORY_LABEL[r.category] || r.category)}</span>` : ""}
+          ${r.spamLikely ? `<span class="badge badge-wp-waiting">Looks like spam</span>` : ""}
+          ${r.highValue ? `<span class="badge support-badge-hv">High value · ${esc(r.highValue.name)}</span>` : ""}
+          ${r.relevant && r.draft ? confidenceHtml(r.confidence) : ""}
+        </div>
+        ${r.summary ? `<p class="support-summary">${icon("auto_awesome")}${esc(r.summary)}</p>` : ""}
+        <h3 class="support-stats-h">Help Centre articles matched</h3>
+        ${r.articles.length ? `<ol class="support-try-articles">${r.articles.map((a) => `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></li>`).join("")}</ol>` : `<p class="interface-row-empty">None${r.relevant ? ": a person would answer this" : ""}.</p>`}
+        <h3 class="support-stats-h">What would happen</h3>
+        <p><b>${esc(DECISION_LABEL[r.decision.action] || r.decision.action)}</b>: ${esc(r.decision.reason)}</p>
+        ${r.draft ? `<h3 class="support-stats-h">The draft</h3><div class="support-draft"><div class="support-draft-head">${icon("auto_awesome")}<b>Suggested reply</b>${confidenceHtml(r.confidence)}</div>${confidenceChangeHtml(r.confidenceSteps)}<div class="support-draft-text">${esc(r.draft)}</div></div>` : ""}
+      </div>`;
+    view.innerHTML = `<div class="support-try">
+      <p class="field-hint">Paste or write any email to see which Help Centre articles it matches and the reply it would draft. Nothing is filed, saved or sent.</p>
+      <div class="support-set-grid">
+        ${field("support-try-name", "From (name)", tryForm.fromName)}
+        ${field("support-try-email", "From (address)", tryForm.fromEmail, "email")}
+        ${field("support-try-subject", "Subject", tryForm.subject)}
+        <label class="field-label" for="support-try-text">Email</label>
+        <textarea id="support-try-text" rows="8">${esc(tryForm.text)}</textarea>
+        <div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-support-act="try"${trying ? " disabled" : ""}>Try it</button></div>
+      </div>
+      ${result}
+    </div>`;
+  }
+  async function runTry() {
+    if (trying) return;
+    if (!tryForm.subject.trim() && !tryForm.text.trim()) { tryError = "Give the email a subject or some text."; tryResult = null; return renderTry(); }
+    trying = true; tryError = ""; tryResult = null;
+    renderTry();
+    try { tryResult = await api(apiHeaders, "preview", { body: tryForm }); }
+    catch (err) { tryError = err.message; }
+    trying = false;
+    if (route.view === "try") renderTry();
+  }
+  const TRY_FIELDS = { "support-try-name": "fromName", "support-try-email": "fromEmail", "support-try-subject": "subject", "support-try-text": "text" };
+
   view.addEventListener("input", (e) => {
-    if (e.target.id === "support-search") {
+    if (TRY_FIELDS[e.target.id]) tryForm[TRY_FIELDS[e.target.id]] = e.target.value;
+    else if (e.target.id === "support-search") {
       search = e.target.value;
       renderList();
     } else if (e.target.id === "support-reply") composer.text = e.target.value;
@@ -322,6 +380,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const a = b.dataset.supportAct;
     if (a === "open-settings") return openSettings();
     if (a === "back") return go(supportHash({}));
+    if (a === "try") return runTry();
     if (!t) return;
     if (a === "open-kanban") return openKanbanTicket(t.kanbanKey);
     if (a === "use-draft" && t.aiDraft) { composer.text = t.aiDraft.text; composer.usedDraft = true; renderTicket(); return $("support-reply").focus(); }
@@ -335,7 +394,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/note`, { body: { text } }); composer.text = ""; }, "The note wasn't saved");
     }
   });
-  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => go(b.dataset.supportTab === "stats" ? "#support/stats" : supportHash({}))));
+  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => go(supportHash({ view: b.dataset.supportTab }))));
   $("support-sync-btn").addEventListener("click", () => sync());
 
   return {

@@ -2974,10 +2974,39 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
 notes and timeline in the `messages` subcollection. For each new customer
-email the function picks the most relevant *published* Help Centre articles
-and asks Claude for a triage: category, one-line summary, whether the
-articles fully answer it, a confidence, and a reply. Then one rule
-(`decideAction`) decides:
+email Claude triages it in steps (`runTriage` in `functions/support-mail.js`):
+
+1. **Match.** It sees the subject and body together with the *whole*
+   published Help Centre, one line per article (category, title, summary,
+   short answer, question variants, keywords). It decides whether the email
+   is about Personalisation Hub or the retail media proposition, and picks
+   up to 3 articles that answer it. Out-of-scope mail (SEO offers, CVs,
+   suppliers' invoices, other products) is labelled "Not about PH", gets no
+   article and no draft, and is left out of the stats.
+2. **Draft from the best article.** It writes the reply from that article's
+   full text and scores its confidence.
+3. **Add answers only when needed.** If that scores under 80%, it writes
+   the reply again from the 2 or 3 best articles combined (never more than
+   3), and keeps whichever scores higher. Both scores are kept on the draft
+   (`confidenceSteps`), and the page shows "Confidence 55% from 1 article,
+   82% with 3 combined".
+
+Every draft opens "Hi <first name>," and "Thanks for your email." (or
+"Hi there," when the name isn't clear, e.g. a role mailbox such as Legal).
+This is added in code (`composeReply`), not left to the model. The
+confidence is shown beside every suggested reply as a word and a number
+(High from 80%, Medium from 60%, Low below). **Try an email** (an editor's
+tab in the Support Inbox) runs any subject and text through all of this
+without filing, saving or sending anything.
+
+`scripts/support-eval.js` (Actions → "Support Inbox matching check",
+`support-eval.yml`) runs 33 made-up emails with known right answers
+(`test/fixtures/support-eval.json`) against the real model and the
+published Help Centre, and re-runs the newest real tickets, printing only
+their SUP key and article titles. Run it after changing the prompts or the
+Help Centre, and add a case whenever a real email is matched badly.
+
+Then one rule (`decideAction`) decides:
 
 - **Sent by itself** and the ticket resolved by AI: only when sending is
   switched on in Settings, the articles answer the question, the reply cites

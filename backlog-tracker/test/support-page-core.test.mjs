@@ -4,7 +4,7 @@
 import assert from "node:assert";
 import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, supportStats, fmtDuration, fmtPct, toMs,
-  searchArticles, articleSnippet, draftSource,
+  searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange,
 } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
@@ -49,6 +49,8 @@ check("routes round-trip and belong to the Support Inbox section", () => {
   assert.deepStrictEqual(supportRoute("#support?queue=spam"), { view: "inbox", queue: "spam", ticketId: "" });
   assert.strictEqual(supportRoute("#support?queue=bogus").queue, "needs-person");
   assert.deepStrictEqual(supportRoute("#support/stats"), { view: "stats", queue: "", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/try"), { view: "try", queue: "", ticketId: "" });
+  assert.strictEqual(supportHash({ view: "try" }), "#support/try");
   assert.deepStrictEqual(supportRoute("#support/ticket/19a%2Fb"), { view: "ticket", queue: "", ticketId: "19a/b" });
   for (const r of [{ view: "inbox", queue: "spam" }, { view: "stats" }, { view: "ticket", ticketId: "19a/b" }, {}]) {
     const back = supportRoute(supportHash(r));
@@ -72,10 +74,12 @@ check("stats: spam and machine mail are left out, AI-only resolutions are separa
     tk("open", { status: "open", needsHuman: true, createdAt: new Date(T0 + D) }),
     tk("wait", { status: "pending", humanInvolved: true, firstResponseAt: new Date(T0 + 2 * H) }),
     tk("spam", { status: "spam" }), tk("news", { status: "open", automated: "mailing list" }),
+    tk("seo", { status: "open", unrelated: true, category: "unrelated" }),
     tk("before", { status: "resolved", createdAt: new Date(T0 - 100 * D) }),
   ];
   const s = supportStats(rows, { from: T0 - D, to: T0 + 2 * D });
-  assert.deepStrictEqual([s.received, s.spam, s.automated], [5, 1, 1]);
+  assert.deepStrictEqual([s.received, s.spam, s.automated, s.unrelated], [5, 1, 1, 1], "mail that isn't about Personalisation Hub is counted on its own");
+  assert.strictEqual(normaliseTicket("x", { category: "unrelated" }).unrelated, true);
   assert.deepStrictEqual([s.resolved, s.resolvedByAi, s.resolvedByPeople, s.open, s.pending, s.needsPerson], [3, 1, 2, 1, 1, 1]);
   assert.strictEqual(fmtPct(s.aiRate), "33%");
   assert.deepStrictEqual([s.humanInvolved, s.highValue, s.reopened], [3, 1, 1]);
@@ -105,6 +109,14 @@ check("inserting a Help Centre article: every word must match, the snippet is th
   assert.strictEqual(draftSource("Hi ", { text: "Hi" }, true), "ai-draft");
   assert.strictEqual(draftSource("Hi there", { text: "Hi" }, true), "ai-draft-edited");
   assert.strictEqual(draftSource("Hi", { text: "Hi" }, false), "manual");
+});
+
+check("confidence reads as a word and a number, and shows what combining answers did", () => {
+  assert.deepStrictEqual([confidenceBand(0.8), confidenceBand(0.79), confidenceBand(0.6), confidenceBand(0.2)], ["high", "medium", "medium", "low"]);
+  assert.strictEqual(CONFIDENCE_LABEL.high, "High confidence");
+  assert.strictEqual(confidenceChange([{ articles: 1, confidence: 0.55 }, { articles: 3, confidence: 0.82 }]), "55% from 1 article, 82% with 3 combined");
+  assert.strictEqual(confidenceChange([{ articles: 1, confidence: 0.9 }]), "");
+  assert.deepStrictEqual(normaliseTicket("x", { aiDraft: { text: "Hi", confidence: 0.8, confidenceSteps: [{ articles: 1, confidence: 0.5 }] } }).aiDraft.confidenceSteps, [{ articles: 1, confidence: 0.5 }]);
 });
 
 let failed = 0;

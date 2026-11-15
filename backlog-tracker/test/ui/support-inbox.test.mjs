@@ -16,7 +16,7 @@ const T0 = Date.now() - 3 * 86400000, H = 3600000, t = (ms) => ({ $ts: ms });
 const ticket = (n, d) => ({ key: `SUP-${n}`, number: n, threadId: `t${n}`, subject: `Subject ${n}`, customerEmail: `c${n}@shop.example`, customerName: `Customer ${n}`, status: "open",
   needsHuman: false, triagePending: false, automated: "", highValue: false, account: null, category: "question", summary: "", snippet: `Snippet ${n}`, createdAt: t(T0), lastMessageAt: t(T0 + n * 60000),
   messageCount: 1, humanInvolved: false, autoRepliesSent: 0, reopenCount: 0, firstResponseAt: null, resolvedAt: null, resolvedBy: "", assignee: "", kanbanKey: "", aiDraft: null, ...d });
-const DRAFT = { text: "Hello Ann,\n\nOpen Displays and Devices, then choose Add display.", confidence: 0.86, answerable: true, articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }] };
+const DRAFT = { text: "Hello Ann,\n\nOpen Displays and Devices, then choose Add display.", confidence: 0.86, confidenceSteps: [{ articles: 1, confidence: 0.62 }, { articles: 2, confidence: 0.86 }], answerable: true, articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }] };
 const connected = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectedBy: "admin@personalisationhub.com",
   connectedAt: new Date(T0).toISOString(), connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
   settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "admin@personalisationhub.com", signature: "Personalisation Hub Support", fromName: "Personalisation Hub Support", vipDomains: ["vip.example"], importDays: 7 } };
@@ -94,7 +94,9 @@ try {
       assert.strictEqual(await page.locator("#support-thread script").count(), 0, "customer text is shown as text, never as markup");
       assert.ok((await page.textContent(".support-msg-in")).includes("<script>alert(1)</script>"));
       assert.ok((await page.textContent(".support-msg-note")).includes("Store 14"));
-      assert.ok((await page.textContent(".support-draft")).includes("86% confidence"));
+      const draftText = await page.textContent(".support-draft");
+      assert.ok(draftText.includes("High confidence · 86%"), "the confidence is shown beside the suggested reply");
+      assert.ok(draftText.includes("Confidence 62% from 1 article, 86% with 2 combined"), "and what combining answers did to it");
       await until(() => page.locator("#support-assign option").count().then((n) => n >= 3), "the member list");
       // Use the draft, add an article, send and resolve.
       await page.click('[data-support-act="use-draft"]');
@@ -134,9 +136,32 @@ try {
     });
   }
 
+  for (const width of [390, 1280]) await run(`Try an email @${width}px`, { seed: seedFor("editor", { supportAnswer: { ok: true, relevant: true, category: "how-to", summary: "Wants to add a display.", spamLikely: false, answerable: true, confidence: 0.91,
+      articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }], highValue: null,
+      decision: { action: "review", reason: "Sending by itself is switched off." }, draft: "Hi Ann,\n\nThanks for your email.\n\nOpen Displays and Devices, then choose Add display." } }), width, height: 900, hash: "#support" }, async (page, o) => {
+    await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
+    await page.click('[data-support-tab="try"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/try", "the Try an email route");
+    await page.fill("#support-try-name", "Ann Lee");
+    await page.fill("#support-try-subject", "New screen");
+    await page.fill("#support-try-text", "How do I add a display?");
+    await page.click('[data-support-act="try"]');
+    await until(() => page.locator(".support-try-result").count(), "the result");
+    const call = o.supportCalls.find((c) => c.path === "preview");
+    assert.deepStrictEqual([call.body.fromName, call.body.subject, call.body.text], ["Ann Lee", "New screen", "How do I add a display?"]);
+    const text = await page.textContent(".support-try-result");
+    for (const want of ["About Personalisation Hub", "High confidence · 91%", "Add a display to a store", "Draft waits for a person to approve", "Hi Ann,"]) assert.ok(text.includes(want), `the result shows "${want}"`);
+    assert.strictEqual(await page.inputValue("#support-try-text"), "How do I add a display?", "the email stays in the form to try again");
+    const a = await audit(page, "#support-page");
+    assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
+    assert.deepStrictEqual(a.small, [], "touch targets under 44px");
+    await shot(page, `try-${width}`);
+  });
+
   await run("a viewer reads but gets no write controls", { seed: seedFor("viewer"), width: 1280, hash: "#support/ticket/t1" }, async (page, o) => {
     await until(() => page.locator(".support-msg-in").count(), "the conversation", 15000);
     assert.strictEqual(await page.locator(".support-composer, .support-actions, #support-reply").count(), 0);
+    assert.ok(await page.locator('[data-support-tab="try"]').isHidden(), "a viewer has no Try an email tab");
     assert.ok(await page.locator("#support-sync-btn").isHidden());
     await page.waitForTimeout(1800);
     assert.deepStrictEqual(o.supportCalls, [], "no sync or write is attempted for a viewer");

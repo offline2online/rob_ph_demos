@@ -5198,6 +5198,29 @@ retailers on the Staff Kanban, and track it all on one stats page.
   for another, and search the Help Centre to insert an article's short
   answer and link. Whether the sent reply was the draft, an edited draft or
   their own words is recorded.
+- **SUP-AI-7** (15 Nov 2026) Matching reads the subject and the body
+  together and chooses from the whole published Help Centre, not a keyword
+  shortlist. At most 3 articles are ever used for one reply.
+- **SUP-AI-8** Only email about the Personalisation Hub platform or the
+  retail media network proposition is matched or drafted. Anything else is
+  labelled "Not about PH", gets no article and no draft, is never answered
+  automatically, and is left out of the stats.
+- **SUP-AI-9** Every drafted reply opens "Hi <first name>," then "Thanks
+  for your email.", or "Hi there," when no first name can be trusted (a
+  company, a role or department such as "Legal", a bare handle). Any
+  greeting, thanks or sign-off the model writes is removed.
+- **SUP-AI-10** The reply is first drafted from the best article alone. If
+  its confidence is under 80%, it is drafted again from the best 2 or 3
+  articles combined and the higher-scoring reply is kept. The confidence is
+  shown beside every suggested reply as a word and a number (High ≥ 80%,
+  Medium ≥ 60%, Low), with the change when answers were combined.
+- **SUP-AI-11** An editor can try any email (Support Inbox → Try an email)
+  and see whether it counts as about Personalisation Hub, the articles
+  matched, the confidence, what would happen and the draft, with nothing
+  filed, saved or sent (40 tries an hour each).
+- **SUP-AI-12** `support-eval.yml` checks the matching against the real
+  model with made-up emails whose right answers are known. Its log never
+  shows a real ticket's subject, sender or text.
 
 ### High-value senders
 
