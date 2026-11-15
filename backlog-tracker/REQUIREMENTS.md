@@ -4474,6 +4474,16 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     read, so the PNG inside it is used (`icoPng`); one holding only bitmaps
     is not copied and keeps its address. Tried on ten real sites: a logo for
     six, the right file for the two that had gone wrong.
+  - **A run always finishes** (15 Nov 2026): the triggers are stopped by the
+    platform after 540 seconds, the most a Firestore-triggered function may
+    run. A bank's research ran past that twice; the platform killed it, so
+    nothing was saved and the record said "running". The research now stops
+    gathering 380 seconds after the run starts (`RESEARCH_WINDOW_MS`), and
+    what it had found by then (its notes, the pages it searched and read) is
+    turned into the record by one short call with no tools (`notesOf`, at
+    most 70 seconds). The run's message says it ran out of time and that
+    Refresh info runs it again. A run left "running" for over 10 minutes
+    still counts as stale and does not block a new one.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
