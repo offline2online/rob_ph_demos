@@ -58,6 +58,7 @@ const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./do
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 const { modelGuardRefusal } = require("../functions/model-requirement");
+const testRounds = require("../functions/test-rounds");
 const kanbanHeal = require("./kanban-e2e-heal");
 const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
@@ -3514,7 +3515,9 @@ async function mainIsAlsoRed(t, culprit, r, branch, runsFor, gh, ghLog) {
     const summary = failureSummaryOf(baseRun.id, ghLog);
     const notes = await appendNote(culprit, heldForMainNote(t.label, baseSha.slice(0, 7), baseRun.url, summary));
     culprit.trainTestReruns = withKey(culprit.trainTestReruns, heldKey);
-    await save({ notes, trainTestReruns: culprit.trainTestReruns });
+    // Not sent back, and not the ticket's fault: recorded, uncounted.
+    const held = testRounds.recordSendBack(culprit, { at: new Date(), by: "tests", category: "main is broken", line: `main is broken: ${summary || `${t.label} fail on main too`}`, counted: false });
+    await save({ notes, trainTestReruns: culprit.trainTestReruns, ...(held || {}) });
     console.log(`[train-base] ${branch}: ${t.workflow} is red on main at ${baseSha.slice(0, 7)} too — ${culprit.id} is not sent back`);
   }
   dropBaseRef(baseSha, gh);
@@ -3546,7 +3549,7 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
   const ejected = [];
   const cards = await runQuery({
     from: [{ collectionId: "backlogItems" }],
-    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested", "trainTestReruns"].map((fieldPath) => ({ fieldPath })) },
+    select: { fields: ["projectId", "title", "status", "deployBranch", "deployCommit", "autoRebuilds", "notes", "revertRequested", "trainTestReruns", "testRound", "sendBacks", "sendBackCount", "countedSendBacks"].map((fieldPath) => ({ fieldPath })) },
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "IN", value: { arrayValue: { values: [{ stringValue: "ready-for-testing" }, { stringValue: "ready-to-publish" }] } } } },
   });
   const byBranch = new Map();
@@ -3575,9 +3578,12 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
           const key = flakyPassKey(c, t.workflow, runs[c.deployCommit]);
           if (!key) continue;
           const notes = await appendNote(c, flakyNote(t.label, c.deployCommit, runs[c.deployCommit].url));
+          // Recorded as a send-back that does not count (no round, no cap):
+          // a flaky red is not the ticket's fault.
+          const flaky = testRounds.recordSendBack(c, { at: new Date(), by: "tests", category: "flaky", line: `${t.label} failed, then passed when re-run`, counted: false });
           c.notes = notes;
           c.trainTestReruns = withKey(c.trainTestReruns, key);
-          await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, updatedAt: new Date().toISOString() });
+          await patchItem(c.id, { notes, trainTestReruns: c.trainTestReruns, ...(flaky || {}), updatedAt: new Date().toISOString() });
           console.log(`[train-rerun] ${branch}: ${t.workflow} passed on re-run at ${c.deployCommit.slice(0, 7)} (${c.id}) — flaky, nothing sent back`);
         }
         // A red the Staff Kanban heal loop owns is fixed forward on the train,
@@ -3645,7 +3651,18 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         // The rebuild must start from the train WITHOUT this ticket's
         // commits, so it is queued by processRevertFromTrain once they are
         // off the branch (rebuildAfterRevert), not here.
-        const plan = selfHealPlan(culprit, project, `${summary ? `${summary}\n` : ""}${text}`, { ignoreLock: true });
+        // Testing rounds (hm84opFjizq3vekk0fC1): the send-back is recorded
+        // now, and the loop cap — not autoRebuilds — decides whether it is
+        // rebuilt: the 3rd counted send-back (then the 5th, …) stops for a
+        // decision instead. No project: nothing to rebuild onto, as before.
+        const failedAt = new Date();
+        const loop = testRounds.recordSendBack(culprit, { at: failedAt, by: "tests", category: "tests", summary: summary || `${t.label} failed`, text });
+        const loopState = { ...testRounds.loopState(culprit), ...(loop || {}) };
+        const plan = !project
+          ? selfHealPlan(culprit, project, `${summary ? `${summary}\n` : ""}${text}`, { ignoreLock: true })
+          : testRounds.capReached(loopState.countedSendBacks)
+            ? { action: "escalate", fields: { blocked: testRounds.loopCapBlock(loopState) }, sentence: testRounds.loopCapNote(loopState) }
+            : { action: "rebuild", fields: {}, sentence: "" };
         const notes = await appendNote(culprit,
           `Sent back automatically (Failed testing [tests]): ${summary ? `Why: ${summary}\n` : ""}${text}. ` +
           (wasApproved ? `It had been approved, but the approved Deploy to Main was parked red on it, so it is taken off rather than holding the release. ` : "") +
@@ -3654,9 +3671,10 @@ async function ejectRedCulprits(runsFor = memoByKey(fetchWorkflowRunsOnSha), fil
         await patchItem(culprit.id, {
           status: "backlog",
           revertRequested: true,
-          lastFailureReason: { category: "tests", summary: summary || `${t.label} failed`, text, action: "failed-testing", at: new Date() },
+          lastFailureReason: { category: "tests", summary: summary || `${t.label} failed`, text, action: "failed-testing", at: failedAt },
           notes,
           updatedAt: new Date().toISOString(),
+          ...(loop || {}),
           ...plan.fields,
           ...(plan.action === "rebuild" ? { rebuildAfterRevert: true } : {}),
         });
@@ -5146,7 +5164,7 @@ async function processApplyPatch(item) {
           `Moved to Ready for Testing directly and flagged as needing no deployment of its own, since there is genuinely nothing left to ship.`;
       }
       const notes = await appendNote(item, text);
-      await patchItem(item.id, { ...outcome.fields, updatedAt: new Date().toISOString(), notes });
+      await patchItem(item.id, { ...outcome.fields, ...(outcome.fields.status === "ready-for-testing" ? testRounds.arrivalFields(item) : {}), updatedAt: new Date().toISOString(), notes });
       if (outcome.fields.status === "ready-for-testing") noteReadyForTesting(project, item.id);
       console.log(`[apply-patch] ${item.id}: no diff against ${deployBranch} — ${outcome.kind}` +
         (outcome.kind === "carried" ? ` (rides on ${outcome.sha.slice(0, 7)}${outcome.carriedByItem ? `, ${outcome.carriedByItem}` : ""})` : ""));
@@ -5211,6 +5229,9 @@ async function processApplyPatch(item) {
 
   await patchItem(item.id, {
     status: "ready-for-testing",
+    // Testing rounds (hm84opFjizq3vekk0fC1): round 1 on first arrival, one
+    // more after each counted send-back.
+    ...testRounds.arrivalFields(item),
     patchReady: false,
     patchAttempts: 0,
     patchAttemptId: null, // landed: a later hand-made patch must not look stale
@@ -5362,6 +5383,19 @@ async function processRevertFromTrain(item) {
     await patchItem(item.id, { revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false, updatedAt: new Date().toISOString(), notes });
     console.log(`[train-revert] ${item.id}: revert request is stale (card is ${item.status}) — cleared`);
     return;
+  }
+  // Testing rounds (hm84opFjizq3vekk0fC1): every send-back reaches here
+  // (Failed testing in the browser, fail_testing over MCP, a Review Batch
+  // kick-back, ejectRedCulprits). Record it unless its writer already did,
+  // and work out now whether its rebuild stops at the loop cap.
+  const loopPlan = testRounds.revertLoopPlan(item);
+  if (Object.keys(loopPlan.fields).length) {
+    try {
+      await patchItem(item.id, { ...loopPlan.fields, updatedAt: new Date().toISOString() });
+      Object.assign(item, loopPlan.fields);
+    } catch (err) {
+      console.log(`[train-revert] ${item.id}: couldn't record the send-back (${scrubSecrets(err.message)})`);
+    }
   }
   const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
   const deployBranch = item.deployBranch;
@@ -5534,7 +5568,14 @@ async function processRevertFromTrain(item) {
     notes,
   });
   console.log(`[train-revert] ${item.id}: reverted ${reverted.length} commit(s) off ${deployBranch}`);
-  if (item.rebuildAfterRevert) {
+  if (item.rebuildAfterRevert && loopPlan.cap) {
+    // The 3rd counted send-back (then the 5th, …): no automatic rebuild.
+    // It waits in Backlog for a decision; Answer, clearing the flag or Ready
+    // for Dev builds it again.
+    const capNotes = await appendNote(item, loopPlan.note);
+    await patchItem(item.id, { rebuildAfterRevert: false, blocked: loopPlan.block, notes: capNotes, updatedAt: new Date().toISOString() });
+    console.log(`[train-revert] ${item.id}: sent back ${loopPlan.state.countedSendBacks} times — flagged needs-decision, not rebuilt`);
+  } else if (item.rebuildAfterRevert) {
     // Sent back (automatically, by Failed testing or fail_testing): rebuild it
     // now the train is clean — unless the release is closing (a ticket on it
     // was approved). Then the release ships without it and the rebuild starts

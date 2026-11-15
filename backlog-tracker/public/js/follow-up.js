@@ -23,8 +23,11 @@ export const TITLE_MAX_CHARS = 200;
 export const NO_REBUILD_CATEGORY = "Blocking a release, not a rebuild";
 
 // The Failed testing write. `at` is the Date stamped on both
-// lastFailureReason and the note.
-export function sendBackFields({ category, text, at }) {
+// lastFailureReason and the note; `who` (the tester's email) goes on
+// lastFailureReason so the send-back the automation records from it
+// (testing rounds: sendBacks, written by processRevertFromTrain — a browser
+// can't write those fields) says who sent it back.
+export function sendBackFields({ category, text, at, who }) {
   return {
     status: "backlog",
     // Nothing leaves Ready for Testing rejected without coming off the
@@ -38,7 +41,7 @@ export function sendBackFields({ category, text, at }) {
     // to make, not a decision to take. Except when the tester only wants it
     // off the release.
     rebuildAfterRevert: category !== NO_REBUILD_CATEGORY,
-    lastFailureReason: { category, text, action: "failed-testing", at },
+    lastFailureReason: { category, text, action: "failed-testing", at, ...(who ? { who } : {}) },
     note: { author: "viewer", text: `Failed testing [${category}]: ${text}`, at },
   };
 }

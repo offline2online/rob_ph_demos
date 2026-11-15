@@ -975,6 +975,7 @@ function unauthorized(res, detail) {
 
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
+const testRounds = require("./test-rounds");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -2681,10 +2682,15 @@ const TOOLS = [
         if ((d.status || "backlog") !== "ready-for-testing") return;
         rows.push({ doc, d });
       });
-      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+      // Testing rounds: a ticket in its 3rd round or later is in a testing
+      // loop and is listed first (highest round first), the rest newest first.
+      rows.forEach((r) => { r.loop = testRounds.loopState(r.d); });
+      const loopRank = (r) => (r.loop.testRound >= testRounds.FIRST_CAP ? r.loop.testRound : 0);
+      rows.sort((x, y) => (loopRank(y) - loopRank(x)) || ((y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0)));
 
-      const cards = rows.map(({ doc, d }) => {
+      const cards = rows.map(({ doc, d, loop }) => {
         const project = projects.get(d.projectId);
+        const last = loop.sendBacks.filter((s) => s.counted !== false).slice(-1)[0] || null;
         return {
           id: doc.id,
           projectId: d.projectId || null,
@@ -2696,6 +2702,10 @@ const TOOLS = [
           desc: d.desc || "",
           previewUrl: safeHref(d.previewUrl),
           testVersion: d.testVersion || null,
+          testRound: Math.max(1, loop.testRound || 0),
+          sendBackCount: loop.sendBackCount,
+          inTestingLoop: loop.testRound >= testRounds.FIRST_CAP,
+          lastSendBack: last ? { at: last.at, by: last.by, who: last.who, category: last.category, line: last.line } : null,
           deployCommit: d.deployCommit || null,
           ...previewStateFields(d),
           trainTest: trainTestOut(d),
@@ -2708,7 +2718,8 @@ const TOOLS = [
       const headline = `Ready for Testing — ${projectLabel}`;
       const rebuilding = cards.filter((c) => c.previewState === "rebuilding").length;
       const running = cards.filter((c) => c.trainTest && (c.trainTest.state === "running" || c.trainTest.state === "starting")).length;
-      const counts = [rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
+      const looping = cards.filter((c) => c.inTestingLoop).length;
+      const counts = [looping ? `${looping} in a testing loop (round ${testRounds.FIRST_CAP} or later, listed first)` : "", rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
       const payload = { kind: "ready-for-testing", projectId: a.projectId || null, projectLabel, count: cards.length, items: cards };
       return boardToolResult(
         `${headline}: ${cards.length} ticket(s) waiting on review${counts ? `; ${counts}` : ""}. Read-only — this view can't change status.`,
@@ -3095,12 +3106,16 @@ const TOOLS = [
       const text = reason || "No reason given.";
       const batch = db().batch();
       ids.forEach((id) => {
+        // Testing rounds: the send-back is recorded here; the automation
+        // applies the loop cap when it takes the ticket off the train.
+        const loop = testRounds.recordSendBack(byId.get(id), { at, by: "person", who: session.email, category, text });
         batch.update(db().collection("backlogItems").doc(id), {
           status: "backlog",
           revertRequested: true,
           // The automation queues the rebuild once the revert has landed.
           rebuildAfterRevert: true,
-          lastFailureReason: { category, text, action: "failed-testing", at },
+          ...(loop || {}),
+          lastFailureReason: { category, text, action: "failed-testing", at, who: session.email },
           notes: FieldValue.arrayUnion({ author: session.email, text: `Failed testing [${category}] (via MCP): ${text}`, at }),
           updatedAt: FieldValue.serverTimestamp(),
         });

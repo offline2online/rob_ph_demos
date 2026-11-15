@@ -190,7 +190,11 @@ deleted by hand).
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
-  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
+  sendBacks?: [{ at: ISO string, by: "person" | "tests" | "review", who: string, category: string, line: string, counted: boolean }], // newest last, last 10 kept; written by the automation (processRevertFromTrain, ejectRedCulprits) and the MCP server (fail_testing) only
+  sendBackCount?: number, // every send-back ever, not capped
+  countedSendBacks?: number, // the send-backs that count towards the loop cap (counted: true)
+  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train" | "review-kickback", at: timestamp, who?: string }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
@@ -1060,6 +1064,66 @@ expected to check whether `notes` shows a later successful pass since
 
 `testPassed` is never written anywhere now. Old cards carrying it are
 simply ignored; there was nothing to migrate.
+
+### Testing rounds (hm84opFjizq3vekk0fC1, 15 Nov 2026)
+
+A ticket that bounced between Backlog and Ready for Testing used to look like
+any other: the number of times it was sent back was worked out from note text
+and shown only inside the Edit and comment modals, the automatic rebuild
+budget (`autoRebuilds`) was never shown, and a person's Failed testing
+rebuilt with no cap at all. The loop is now stored and shown.
+
+- **Stored** (pipeline fields, `firestore.rules` → `itemPipelineFields`; a
+  browser never writes them): `testRound`, `sendBacks` (last 10, newest
+  last, `{at, by, who, category, line, counted}`), `sendBackCount` (every
+  one) and `countedSendBacks`. Logic: `functions/test-rounds.js`, shared by
+  the automation and the MCP server; the board's read side is
+  `public/js/test-rounds-view.js`.
+- **Who records a send-back.** `ejectRedCulprits` (by `tests`) and MCP
+  `fail_testing` (by `person`) write theirs at once. The board's Failed
+  testing and Eject from train keep their existing write (`lastFailureReason`,
+  now with the tester's email as `who`), and a Review Batch kick-back writes
+  `lastFailureReason.action: "review-kickback"`; `processRevertFromTrain`
+  turns each into a `sendBacks` entry when it takes the ticket off the train,
+  skipping one already recorded with the same `at`.
+- **Rounds.** Arriving in Ready for Testing (`processApplyPatch`, the no-diff
+  path) sets `testRound` to `max(testRound, countedSendBacks + 1)`.
+- **Not the ticket's fault, not counted**: category "Blocking a release, not
+  a rebuild", a ticket held because main was broken ("Not sent back: main is
+  broken"), and a red that passed when re-run (flaky). Each is recorded with
+  `counted: false`, adds no round and shows greyed in the list.
+- **On the card, every column**: a "Round N" chip (Material Symbols
+  `replay`) from round 2, warning colour from round 3. Hover lists every
+  send-back (when, who, category, one line); a tap opens the same list on
+  the card. A Ready for Testing card from round 2 shows "Sent back last
+  time: <line>" under its title. The Ready for Testing header shows "N in a
+  testing loop" when a card is at round 3 or later; it toggles a filter to
+  those cards (per viewer, not saved).
+- **The cap.** On the 3rd counted send-back (person, tests and review
+  together) the ticket is not rebuilt: it stays in Backlog with
+  `blocked: {reason: "needs-decision", setBy: "test-rounds", note: "Sent back
+  3 times. Decide: rewrite the ticket, split it, or build it on the Advanced
+  model…"}` and a note listing the three reasons. Answer, clearing the flag
+  (×, which for this flag also requests the build) or Ready for Dev builds it
+  again; the next cap is at 5, then 7. This replaces `autoRebuilds` for
+  send-backs, so there is one number: a test send-back no longer spends
+  `autoRebuilds`, which is left to the other automatic rebuilds (a conflict,
+  a migration number clash). A Review Batch's own third kick-back still
+  blocks as before (`reviewBounceCount`).
+- **Over MCP**, `get_ready_for_testing_board` returns `testRound`,
+  `sendBackCount`, `inTestingLoop` and `lastSendBack` per card and lists
+  looping tickets first.
+- **Report.** The project's ⋮ menu → **Testing loops**: tickets with 2 or
+  more counted send-backs in the last 30 days, with round, reasons, time
+  from first build to approval and the last send-back date. Read-only, the
+  Archived tickets table.
+- **Backfill.** Cards from before this read their loop from notes with
+  `rejectionsOf`'s rules (the same counts; `test/test-rounds.test.js`), and
+  their first recorded send-back stores the lot.
+  `scripts/backfill-test-rounds.js` stores it on every non-archived ticket at
+  once: run it from the deploy session of the train that ships this
+  (`BOARD_API_KEY=… node backlog-tracker/scripts/backfill-test-rounds.js
+  --apply`; without `--apply` it only counts).
 
 ## The single Deploy CTA, and closing the train
 
@@ -4610,6 +4674,16 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     read, so the PNG inside it is used (`icoPng`); one holding only bitmaps
     is not copied and keeps its address. Tried on ten real sites: a logo for
     six, the right file for the two that had gone wrong.
+  - **A run always finishes** (15 Nov 2026): the triggers are stopped by the
+    platform after 540 seconds, the most a Firestore-triggered function may
+    run. A bank's research ran past that twice; the platform killed it, so
+    nothing was saved and the record said "running". The research now stops
+    gathering 380 seconds after the run starts (`RESEARCH_WINDOW_MS`), and
+    what it had found by then (its notes, the pages it searched and read) is
+    turned into the record by one short call with no tools (`notesOf`, at
+    most 70 seconds). The run's message says it ran out of time and that
+    Refresh info runs it again. A run left "running" for over 10 minutes
+    still counts as stale and does not block a new one.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
@@ -4692,7 +4766,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     inquiry**, the detail's section **Network operator**, and the default source
     label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
-    {region, background, audience}`, the constants are `OPERATOR_*`, the website intake
+    {region, background, audience, networkIndustry, message, form}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
     `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
     (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
@@ -4717,8 +4791,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
     allows a blank company name only on an `operator` lead, keeps each type to its
-    own stages, and limits `operator` to `region`, `background` and `audience`
-    (one of the three keys, or "").
+    own stages, and limits `operator` to `region`, `background`, `audience`
+    (one of the three keys, or ""), `networkIndustry` (a string ≤120),
+    `message` (a string ≤1,000) and `form` (`request`, `tour` or "").
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
     `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
     operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
@@ -4744,9 +4819,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
     one pipeline at a time with its own lanes. A network operator card shows the
-    person, a "Network operator inquiry" chip, I am · region · background (each
+    person, a "Network operator inquiry" chip, I am · region · industry they want to run · background (each
     only when given) and the source;
-    its summary shows the person, Network operator (I am, region, background), Lead
+    its summary shows the person, Network operator (I am, region, industry they want to run, background, message), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
     on that view opens the form as **New network operator inquiry**: the
@@ -4765,8 +4840,47 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
     refuse a network operator inquiry.
+  - **Industry they want to run and their message (15 Nov 2026, ticket
+    hnHZrt9GT1SaGBb6NI1a)**. The Run Your Own RMN page's **Request further
+    information** form asks for "Industry you want to run your network in"
+    (required on the site) and an optional message; the FAQ promises an
+    information pack for that industry and then a 20-minute call. The website
+    sends them as `network_industry` and `message`, with `form: "request"` (the
+    product tour gate sends `form: "tour"`).
+    - **Data**: `operator.networkIndustry` is free text, ≤120 characters (the
+      site sends one of its twelve industries or "Other: <text>");
+      `operator.message` is ≤1,000 characters (longer is cut, not refused);
+      `operator.form` is `request`, `tour` or "" (anything else is stored as "").
+      Older leads have none of the three: nothing is migrated and
+      `normaliseLead` reads each as "".
+    - **Intake** (`operatorFromWebsite`): reads `network_industry` (or
+      `networkIndustry`), `message` and `form`. On a repeat submission from the
+      same email, a new industry replaces the stored one (a blank one is filled;
+      a submission without one leaves it), `form` follows the newest submission
+      that sends one, and a new message never overwrites the first: when the lead
+      already has a different message, the new one is added to its history as a
+      note by `website`, "Website message (YYYY-MM-DD): …". A lead with no
+      message yet takes the new one as its message.
+    - **Board**: the operator card's line reads I am · region · industry they
+      want to run · background, skipping blanks (`companyLine`). The summary's
+      Network operator section adds **Industry they want to run** (after
+      region) and **Message** (last, as a stacked row, only when there is one).
+      The New network operator inquiry form (and its edit) has an **Industry
+      they want to run** text field (≤120); the message and form have no input
+      and an edit keeps them. Built from the existing `ap-row` field and
+      `stackRow`, no new components.
+    - **MCP**: `list_leads` and `get_lead` return `networkIndustry`, `message`
+      and `form` on operator leads (null when blank; absent on company leads);
+      `list_leads` takes an optional `networkIndustry` filter (case-insensitive
+      contains; only operator leads match) and its `q` also searches both;
+      `create_lead(s)` and `update_lead` accept `networkIndustry` and
+      `message`.
+    - Either side can ship first: the console ignores fields it doesn't know,
+      and an older console ignores these.
   - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
-    address, repeat person, company leads unchanged, the MCP views and filter),
+    address, repeat person, industry and message on first and repeat
+    submissions and the 1,000-character cut, company leads unchanged, the MCP
+    views and filters),
     `test/lead-enrich.test.js` (never researched), the network operator cases in
     `test/firestore-rules.test.js`, and the "network operator inquiries" scenario in
     `test/ui/console-click.test.mjs`.

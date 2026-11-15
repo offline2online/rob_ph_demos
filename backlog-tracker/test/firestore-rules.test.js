@@ -387,6 +387,13 @@ async function main() {
   await check('A network operator inquiry carries "I am" as audience', "allow", () => setDoc(doc(as(MEMBER), "leads/f8"), { ...OPERATOR, operator: { region: "Leeds, UK", background: "creative-agency", audience: "retailer" } }));
   await check("A blank audience is allowed", "allow", () => setDoc(doc(as(MEMBER), "leads/f9"), { ...OPERATOR, operator: { region: "x", background: "retail-owner", audience: "" } }));
   await check("An audience outside the list is refused", "deny", () => setDoc(doc(as(MEMBER), "leads/f10"), { ...OPERATOR, operator: { region: "x", background: "", audience: "enterprise" } }));
+  const NET = { region: "Leeds, UK", background: "", audience: "", networkIndustry: "Golf clubs", message: "Hello", form: "request" };
+  await check("A network operator inquiry carries the industry they want to run, a message and the form", "allow", () => setDoc(doc(as(MEMBER), "leads/f11"), { ...OPERATOR, operator: NET }));
+  await check("An industry of up to 120 characters and a message of up to 1,000 are allowed", "allow", () => setDoc(doc(as(MEMBER), "leads/f12"), { ...OPERATOR, operator: { ...NET, networkIndustry: "i".repeat(120), message: "m".repeat(1000), form: "tour" } }));
+  await check("An industry over 120 characters is refused", "deny", () => setDoc(doc(as(MEMBER), "leads/f13"), { ...OPERATOR, operator: { ...NET, networkIndustry: "i".repeat(121) } }));
+  await check("A message over 1,000 characters is refused", "deny", () => setDoc(doc(as(MEMBER), "leads/f14"), { ...OPERATOR, operator: { ...NET, message: "m".repeat(1001) } }));
+  await check("The industry and message are strings", "deny", () => setDoc(doc(as(MEMBER), "leads/f15"), { ...OPERATOR, operator: { ...NET, networkIndustry: 7 } }));
+  await check("The form is request, tour or blank", "deny", () => setDoc(doc(as(MEMBER), "leads/f16"), { ...OPERATOR, operator: { ...NET, form: "brochure" } }));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
   const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
@@ -616,6 +623,20 @@ async function main() {
     setDoc(doc(as(BOT), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing", attemptId: "0123456789abcdef" }, patchAttemptId: "0123456789abcdef" }, { merge: true }));
   await check("A human editor can still edit a card that carries a heartbeat", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited while building" }, { merge: true }));
+  // Testing rounds (15 Nov 2026): the loop is the automation's and the MCP
+  // server's record. A browser's Failed testing keeps its existing write
+  // (lastFailureReason, now with the tester's email as `who`), which
+  // processRevertFromTrain turns into a sendBacks entry.
+  for (const [field, value] of [["testRound", 1], ["sendBacks", [{ at: new Date().toISOString(), by: "person", line: "x", counted: true }]], ["sendBackCount", 0], ["countedSendBacks", 0]]) {
+    await check(`A human editor CANNOT write ${field}`, "deny", () =>
+      setDoc(doc(as(MEMBER), "backlogItems/i1"), { [field]: value }, { merge: true }));
+  }
+  await check("The automation user can record a send-back and a testing round", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { testRound: 2, sendBacks: [{ at: new Date().toISOString(), by: "tests", who: "automation", category: "tests", line: "x", counted: true }], sendBackCount: 1, countedSendBacks: 1 }, { merge: true }));
+  await check("A human editor's Failed testing reason (with who) still saves", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { lastFailureReason: { category: "Other", text: "broken", action: "failed-testing", at: new Date(), who: "member@example.com" } }, { merge: true }));
+  await check("A human editor can still edit a card that carries a testing round", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited in round 2" }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));

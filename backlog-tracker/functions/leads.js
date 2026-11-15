@@ -37,6 +37,7 @@ function view(id, data) {
     backgroundLabel: fr && fr.background ? core.backgroundLabel(fr.background) : null,
     audience: fr ? fr.audience || null : null,
     audienceLabel: fr && fr.audience ? core.audienceLabel(fr.audience) : null,
+    ...(fr ? { networkIndustry: fr.networkIndustry || null, message: fr.message || null, form: fr.form || null } : {}),
     websiteActivity: l.websiteActivity.map(({ at, label, detail, page }) => ({ at, label, detail, page })),
     assignee: l.assignee || null,
     customerAccount: l.customerAccount,
@@ -138,6 +139,8 @@ function leadsTools(h) {
     region: { type: "string", description: "Network operator inquiries: where they plan to operate." },
     background: { type: "string", enum: ["", ...core.BACKGROUNDS.map((b) => b.key)], description: `Network operator inquiries: ${core.BACKGROUNDS.map((b) => `${b.key} (${b.label})`).join(", ")}.` },
     audience: { type: "string", enum: ["", ...core.AUDIENCES.map((x) => x.key)], description: `Network operator inquiries, "I am" on the form: ${core.AUDIENCES.map((x) => `${x.key} (${x.label})`).join(", ")}.` },
+    networkIndustry: { type: "string", description: `Network operator inquiries: the industry they want to run their network in (free text, up to ${core.LIMITS.networkIndustry} characters; the website sends one of its industries or "Other: <text>").` },
+    message: { type: "string", description: `Network operator inquiries: their message, up to ${core.LIMITS.message} characters (longer is cut).` },
     stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: `Company leads: ${core.STAGE_KEYS.join(", ")} (default ${core.DEFAULT_STAGE}). Network operator inquiries: ${core.OPERATOR_STAGE_KEYS.join(", ")} (default ${core.OPERATOR_DEFAULT_STAGE}).` },
     source: { type: "string", description: 'Where it came from; "Manual" when blank.' },
     sourceDetail: { type: "string", description: "Which form or demo, up to 120 characters." },
@@ -153,7 +156,7 @@ function leadsTools(h) {
     company: { type: "string", description: "The company's name, when you don't have its leadId (exact, or a unique part of it)." },
   };
   const formOf = (a) => ({
-    leadType: a.leadType, region: a.region, background: a.background, audience: a.audience,
+    leadType: a.leadType, region: a.region, background: a.background, audience: a.audience, networkIndustry: a.networkIndustry, message: a.message,
     name: a.company, website: a.website, industry: a.industry, countries: a.countries, storeCount: a.storeCount,
     awsAccountId: a.awsAccountId, stage: a.stage, source: a.source, assignee: a.assignee, contacts: a.contacts || [],
   });
@@ -183,7 +186,7 @@ function leadsTools(h) {
   const tools = [
     {
       name: "list_leads",
-      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or operator (Network operator inquiries: individuals from the Run Your Own RMN page, with region, background and audience ("I am") and their own stages ${core.OPERATOR_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
+      description: `The Leads pipeline (Promote › Leads): one entry per company with its stage, contacts, buying roles, source, assignee and customer account. Each lead has a leadType: company (retail/company leads; stages ${core.STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}) or operator (Network operator inquiries: individuals from the Run Your Own RMN page, with region, background, audience ("I am"), networkIndustry (the industry they want to run their network in) and message, and their own stages ${core.OPERATOR_STAGES.map((s) => `${s.key} (${s.label})`).join(", ")}). Every filter is optional and they combine. Archived leads are left out unless includeArchived is true. Use it to find the leadId the other lead tools need; get_lead returns one lead in full.`,
       scope: "board.read",
       inputSchema: {
         type: "object",
@@ -191,6 +194,7 @@ function leadsTools(h) {
           leadType: { type: "string", enum: core.LEAD_TYPE_KEYS, description: "Only company leads (company), or only network operator inquiries (operator). Omit for both." },
           stage: { type: "string", enum: core.ALL_STAGE_KEYS, description: "Only leads in this stage. Omit for every stage." },
           audience: { type: "string", enum: core.AUDIENCES.map((x) => x.key), description: `Only network operator inquiries whose "I am" is this: ${core.AUDIENCES.map((x) => `${x.key} (${x.label})`).join(", ")}.` },
+          networkIndustry: { type: "string", description: "Only network operator inquiries whose industry they want to run contains this text (case-insensitive)." },
           company: { type: "string", description: "Only companies whose name contains this text (case-insensitive)." },
           assignee: { type: "string", description: "A member's email, or \"unassigned\"." },
           source: { type: "string", description: "Only leads whose source contains this text." },
@@ -205,7 +209,7 @@ function leadsTools(h) {
       async run(args) {
         const a = args || {};
         const snap = await db().collection(COLLECTION).get();
-        const want = norm(a.company), q = norm(a.q), src = norm(a.source), ind = norm(a.industry), who = norm(a.assignee);
+        const want = norm(a.company), netInd = norm(a.networkIndustry), q = norm(a.q), src = norm(a.source), ind = norm(a.industry), who = norm(a.assignee);
         const leads = [];
         snap.forEach((d) => {
           const data = d.data();
@@ -215,11 +219,12 @@ function leadsTools(h) {
           if (a.leadType && v.leadType !== a.leadType) return;
           if (a.stage && v.stage !== a.stage) return;
           if (a.audience && v.audience !== a.audience) return;
+          if (netInd && !norm(v.networkIndustry).includes(netInd)) return;
           if (want && !v.company.toLowerCase().includes(want)) return;
           if (who && (who === "unassigned" ? v.assignee : norm(v.assignee) !== who)) return;
           if (src && !norm(`${v.source} ${v.sourceLabel} ${v.sourceDetail}`).includes(src)) return;
           if (ind && !norm(v.industry).includes(ind)) return;
-          if (q && !norm([v.company, v.region || "", v.backgroundLabel || "", v.audienceLabel || "", v.website, v.industry, v.countries.join(" "), v.source, v.sourceLabel, v.sourceDetail, v.assignee, v.contacts.map((c) => `${c.name} ${c.email || ""} ${c.jobTitle || ""}`).join(" ")].join(" ")).includes(q)) return;
+          if (q && !norm([v.company, v.region || "", v.backgroundLabel || "", v.audienceLabel || "", v.networkIndustry || "", v.message || "", v.website, v.industry, v.countries.join(" "), v.source, v.sourceLabel, v.sourceDetail, v.assignee, v.contacts.map((c) => `${c.name} ${c.email || ""} ${c.jobTitle || ""}`).join(" ")].join(" ")).includes(q)) return;
           leads.push(v);
         });
         leads.sort((x, y) => core.ALL_STAGE_KEYS.indexOf(x.stage) - core.ALL_STAGE_KEYS.indexOf(y.stage) || x.name.localeCompare(y.name));
@@ -232,7 +237,7 @@ function leadsTools(h) {
     },
     {
       name: "get_lead",
-      description: "One lead in full: its lead type (company, or operator for a Network operator inquiry), company fields (or, for a network operator inquiry, region, background, and audience with audienceLabel: who they said they are under \"I am\"), stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
+      description: "One lead in full: its lead type (company, or operator for a Network operator inquiry), company fields (or, for a network operator inquiry, region, background, audience with audienceLabel: who they said they are under \"I am\", networkIndustry: the industry they want to run their network in, message, and form: request or tour, which website form sent it), stage, source, assignee, every contact with buying role, website activity, tech stack, customer account, linked Prospects (TAM) record, and the history (notes and every change, with who made it).",
       scope: "board.read",
       inputSchema: { type: "object", properties: { ...REF_PROPS }, additionalProperties: false },
       async run(args) {
@@ -243,7 +248,7 @@ function leadsTools(h) {
     },
     {
       name: "create_lead",
-      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. For a Network operator inquiry (an individual) pass leadType operator with the person as the only contact, plus region, background and audience; no company is needed and it starts in applied. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
+      description: "Add one company to the Leads pipeline, as the board's Add button does. Only the company is required; the stage defaults to lead. For a Network operator inquiry (an individual) pass leadType operator with the person as the only contact, plus region, background, audience, networkIndustry and message; no company is needed and it starts in applied. A company whose name already exists (case-insensitive, archived ones too) is refused and the existing lead is returned. Contacts can be given here or added later with add_lead_contact.",
       scope: "board.write",
       inputSchema: {
         type: "object",
@@ -283,7 +288,7 @@ function leadsTools(h) {
     },
     {
       name: "update_lead",
-      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage (and, on a network operator inquiry, region, background and audience; its lead type can't change). Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
+      description: "Edit a lead's own fields: company name, website, industry, countries, store count, AWS account ID, source, source detail, assignee and stage (and, on a network operator inquiry, region, background, audience, networkIndustry and message; its lead type can't change). Send only what changes; a field you omit is left alone (\"\" clears a text field). Contacts, notes, links and archiving have their own tools. Renaming to a name another lead already has is refused.",
       scope: "board.write",
       inputSchema: { type: "object", properties: { ...REF_PROPS, ...LEAD_PROPS, newCompany: { type: "string", description: "Rename the company to this." } }, additionalProperties: false },
       async run(args, session) {
@@ -293,12 +298,15 @@ function leadsTools(h) {
         const before = core.normaliseLead(r.snap.id, r.snap.data());
         const has = (k) => Object.prototype.hasOwnProperty.call(a, k);
         if (has("leadType") && a.leadType !== before.leadType) return toolError("A lead's type can't be changed: create a new lead of the other type instead.");
-        const fr = before.operator || { region: "", background: "", audience: "" };
+        const fr = before.operator || { region: "", background: "", audience: "", networkIndustry: "", message: "", form: "" };
         const form = {
           leadType: before.leadType,
           region: has("region") ? a.region : fr.region,
           background: has("background") ? a.background : fr.background,
           audience: has("audience") ? a.audience : fr.audience,
+          networkIndustry: has("networkIndustry") ? a.networkIndustry : fr.networkIndustry,
+          message: has("message") ? a.message : fr.message,
+          form: fr.form,
           name: a.newCompany != null ? a.newCompany : before.company.name,
           website: has("website") ? a.website : before.company.website,
           industry: has("industry") ? a.industry : before.company.industry,
@@ -327,6 +335,8 @@ function leadsTools(h) {
         if (v.fields.operator && v.fields.operator.region !== fr.region) changed.push("region");
         if (v.fields.operator && v.fields.operator.background !== fr.background) changed.push("background");
         if (v.fields.operator && v.fields.operator.audience !== fr.audience) changed.push("audience");
+        if (v.fields.operator && v.fields.operator.networkIndustry !== fr.networkIndustry) changed.push("industry they want to run");
+        if (v.fields.operator && v.fields.operator.message !== fr.message) changed.push("message");
         if (v.fields.source !== before.source) changed.push("source");
         if (has("sourceDetail") && fields.sourceDetail !== String(was.sourceDetail || "")) changed.push("source detail");
         if (v.fields.assignee !== before.assignee) changed.push("assignee");
