@@ -138,20 +138,29 @@ function operator_calc_outputs( $mode = 'operator' ) {
 	);
 }
 
+/** "How do I get started?" ends with this link to the "Request further information" form (#request-info, the request block): [label, anchor]. */
+const OPERATOR_FAQ_CTA = array( 'Request further information', '#request-info' );
+
 /**
- * "Running your own RMN": [question, answer]. Plain text. Every answer restates something already on the page: the three ways to run a
- * network, "without the upfront cost", the free runway, growing on outcomes and the calculator's Retailer mode (no new figures, no
- * client or brand names, no income share figure, no country positioning). The visible accordion, the FAQPage JSON-LD and the twin's
- * FAQ all print this list, so they always match.
+ * "Running your own RMN": [question, answer] or [question, answer, true] when the answer ends with the OPERATOR_FAQ_CTA link. Plain
+ * text, in Rob's order and word for word from the 15 Nov 2026 brief: what an RMN is, who it is for, costs, making money, hardware,
+ * exclusivity, industries, support, where it runs, the calculator, getting started. Every answer leads to one action, requesting further
+ * information. Never a setup fee, minimum guarantee, revenue-share percentage, runway length or "no lock-in"; no client or brand names,
+ * no country positioning. The visible accordion, the FAQPage JSON-LD and the twin's FAQ all print this list, so they always match.
  */
 function operator_faq() {
 	return array(
 		array( 'What is a retail media network?', 'A retail media network sells advertising on the screens in physical venues, such as stores, clubs, dealerships and forecourts, to brands and advertisers. When you run your own, the network is yours, under your brand: screens adapt in real time to any context, such as location, time and weather, as well as to the person in front of them. Any business with a physical presence can be part of it, with or without screens today.' ),
 		array( 'Who is running your own RMN for?', 'There are three ways to run your own network. An individual operator builds their own income by running a network across many venues of one kind, such as a portfolio of golf clubs. An operator team brings together a retail media expert, an ad sales expert and a creative agency expert, who cover venues, advertisers and campaigns between them. A small to medium retailer runs their own omnichannel retail media network, on their own domain, across their website, app and stores. Each runs the same white-label platform.' ),
-		array( 'What does it cost to get started?', 'You can run your own retail media network without the upfront cost. We onboard you onto the white-label platform in your own AWS account, with the playbooks, templates and sales framework you need to launch. You then roll out with a free runway: time to sign up venues or switch on your stores, and win your first advertisers, before you pay for the platform. Once you\'re live, our model is based on outcomes, so we only grow when you do.' ),
+		array( 'What does it cost to get started?', 'There\'s no large capital outlay. You start on a free runway, so you can sign up venues and win your first advertisers before you pay for the platform. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, because the network runs in your own AWS account and scales with the venues you add, and screens only where a venue doesn\'t already have them. The full commercial terms for your chosen industry are in the information pack we send when you request further information.' ),
+		array( 'How do I make money?', 'You sell advertising across the venues in your network. That can be direct to the endemic brands they already stock, or through the programmatic platforms buyers already use. You agree your own commercial model with each venue. The more venues and displays you add, the more you can earn. Use the calculator above to see the potential for your network.' ),
+		array( 'Do I need to supply screens and hardware?', 'It depends on the industry you choose. Many venues, such as golf clubs, marinas, gyms and car dealerships, already have screens, so roll-out is quick and seamless. Others may need help with hardware. We have recommended hardware partners for each industry and will introduce you. The information pack covers the hardware options for the industry you choose.' ),
+		array( 'Can I get exclusivity?', 'Networks are set up by industry first, then by region, for example golf clubs nationally. We\'re taking on a limited number of operators in each industry, and the first people to sign up get first choice. Exclusivity is earned and kept through performance: hit the agreed roll-out and growth milestones and your industry and territory stay yours.' ),
+		array( 'Which industries can I choose?', 'Any business with a physical location can be part of your network, with or without screens today. That includes car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. The industry you choose shapes how your network runs: venues, hardware, advertisers and roll-out. That\'s why we ask for it when you request further information.' ),
+		array( 'What support do I get?', 'We set you up on the white-label platform in your own AWS account, with the playbooks, templates and sales framework you need to launch. Brands can bring their own creative, or AI can build, target and launch campaigns for them, and you can run the network from the AI tools you already use through MCP. Our dedicated engineering team keeps the platform up to date as retail media evolves.' ),
 		array( 'Where does my retail media network run?', 'On a white-label platform, under your own brand and in your own AWS account. You use your own shopper and venue data, it stays private, and the network and its relationships are yours.' ),
 		array( 'How does the earnings estimate work?', 'The benefits calculator on this page multiplies your venues, visitors per venue per day, the visitors who view the ads and the displays per venue to give your monthly ad views. Ad views ÷ 1,000 × the average CPM gives ad revenue, and your potential income is your share of it, before costs. It also estimates the extra sales from personalised offers. Choose "Operator or team" to see the extra sales for your venues, or "Retailer" to see the extra sales in your stores, which are then added to your income. Change any figure to see your own estimate.' ),
-		array( 'How do I get started?', 'Take the interactive product tour on this page: tell us a little about yourself to unlock it and request further information. Our team will also follow up with more on the opportunity.' ),
+		array( 'How do I get started?', 'Request further information and tell us which industry you want to run your network in. We\'ll send you an information pack covering the commercial model, exclusivity, hardware options and the roll-out plan for that industry, then book a 20-minute call to go through it with you. Places are limited in each industry and allocated on a first-come, first-served basis, so if you have an industry in mind, request your pack now.', true ),
 	);
 }
 
@@ -200,11 +209,15 @@ function operator_out_rows( array $out ) {
 	return $h;
 }
 
-/** The FAQPage JSON-LD for the visible FAQ: the same operator_faq() rows, word for word, part of the page's WebPage. */
+/**
+ * The FAQPage JSON-LD for the visible FAQ: the same operator_faq() rows, word for word, part of the page's WebPage. An answer that ends
+ * with the OPERATOR_FAQ_CTA link carries it as an <a> (HTML links are allowed in an Answer's text), so its text matches what is shown.
+ */
 function operator_faq_ld() {
 	$q = array();
 	foreach ( operator_faq() as $qa ) {
-		$q[] = array( '@type' => 'Question', 'name' => $qa[0], 'acceptedAnswer' => array( '@type' => 'Answer', 'text' => $qa[1] ) );
+		$text = empty( $qa[2] ) ? $qa[1] : $qa[1] . ' <a href="' . OPERATOR_URL . OPERATOR_FAQ_CTA[1] . '">' . OPERATOR_FAQ_CTA[0] . '</a>';
+		$q[]  = array( '@type' => 'Question', 'name' => $qa[0], 'acceptedAnswer' => array( '@type' => 'Answer', 'text' => $text ) );
 	}
 	return array( '@context' => 'https://schema.org', '@type' => 'FAQPage', '@id' => OPERATOR_URL . '#faq', 'url' => OPERATOR_URL, 'inLanguage' => 'en-GB', 'isPartOf' => array( '@id' => OPERATOR_URL . '#webpage' ), 'mainEntity' => $q );
 }
@@ -216,14 +229,17 @@ function operator_block( $name, $inner ) {
 
 /**
  * The FAQ block: "Running your own RMN", one native <details> per operator_faq() row (keyboard, tap and no-JS all work), followed by
- * its FAQPage JSON-LD built from the same rows, so the accordion and the structured data can never drift apart.
+ * its FAQPage JSON-LD built from the same rows, so the accordion and the structured data can never drift apart. "How do I get started?"
+ * ends with the "Request further information" link to #request-info, styled as the page's pink pill.
  */
 function operator_faq_html() {
 	$h = '<section id="faq" class="phf-sec phf-white" aria-labelledby="faq-h"><div class="phf-wrap phf-wrap-faq">'
 		. '<h2 id="faq-h" class="phf-h2s">' . esc_html( OPERATOR_FAQ_TITLE ) . '</h2><div class="phf-faq">';
 	foreach ( operator_faq() as $i => $qa ) {
 		$h .= '<details class="phf-faq-i" id="faq-' . ( $i + 1 ) . '"><summary class="phf-faq-q"><span>' . esc_html( $qa[0] ) . '</span><span class="phf-faq-x" aria-hidden="true"></span></summary>'
-			. '<div class="phf-faq-a"><p>' . esc_html( $qa[1] ) . '</p></div></details>';
+			. '<div class="phf-faq-a"><p>' . esc_html( $qa[1] ) . '</p>'
+			. ( empty( $qa[2] ) ? '' : '<p class="phf-faq-cta"><a class="phf-pill" href="' . esc_attr( OPERATOR_FAQ_CTA[1] ) . '">' . esc_html( OPERATOR_FAQ_CTA[0] ) . '</a></p>' )
+			. '</div></details>';
 	}
 	$h .= '</div></div></section><script type="application/ld+json">' . operator_json_ld( operator_faq_ld() ) . '</script>';
 	return operator_block( 'faq', $h );

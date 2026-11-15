@@ -488,16 +488,43 @@ $faqld = json_decode( $fl->item( 0 )->textContent, true );
 ok( is_array( $faqld ) && 'https://schema.org' === $faqld['@context'] && 'FAQPage' === $faqld['@type'] && 'https://personalisationhub.com/run-your-own-rmn/#faq' === $faqld['@id'] && $wp['@id'] === $faqld['isPartOf']['@id'] && 'en-GB' === $faqld['inLanguage'], 'FAQ JSON-LD: valid FAQPage, isPartOf the WebPage' );
 $byType['FAQPage'] = $faqld;
 $visible = array();
+$faqCta  = array();
 foreach ( $px->query( '//section[@id="faq"]//details' ) as $det ) {
-	$visible[] = array( trim( $px->query( './/summary', $det )->item( 0 )->textContent ), trim( $px->query( './/div[contains(@class,"phf-faq-a")]', $det )->item( 0 )->textContent ) );
+	$paras = array();
+	foreach ( $px->query( './/div[contains(@class,"phf-faq-a")]/p', $det ) as $pp ) { $paras[] = trim( $pp->textContent ); }
+	$visible[] = array( trim( $px->query( './/summary', $det )->item( 0 )->textContent ), implode( ' ', $paras ) );
+	$links     = $px->query( './/div[contains(@class,"phf-faq-a")]//a', $det );
+	$faqCta[]  = $links->length ? array( $links->item( 0 )->getAttribute( 'href' ), trim( $links->item( 0 )->textContent ), $links->item( 0 )->getAttribute( 'class' ), $links->length ) : null;
 }
-$ldq = array_map( function ( $q ) { return array( $q['name'], $q['acceptedAnswer']['text'] ); }, $byType['FAQPage']['mainEntity'] );
-ok( count( $visible ) >= 5 && count( $visible ) <= 6 && $visible === $ldq, 'FAQPage equals the visible FAQ (' . count( $visible ) . ' questions)' );
+// The JSON-LD answer may carry the CTA as an <a>; its text without tags is what the page shows.
+$ldq = array_map( function ( $q ) { return array( $q['name'], trim( strip_tags( $q['acceptedAnswer']['text'] ) ) ); }, $byType['FAQPage']['mainEntity'] );
+ok( 11 === count( $visible ) && $visible === $ldq, 'FAQPage equals the visible FAQ (' . count( $visible ) . ' questions)' );
 ok( 'Running your own RMN' === trim( $px->query( '//section[@id="faq"]//h2' )->item( 0 )->textContent ), 'FAQ titled "Running your own RMN"' );
+// Rob's 15 Nov 2026 order and copy, word for word (1kfzH9SsEgKo4irbpvjh).
+ok( array( 'What is a retail media network?', 'Who is running your own RMN for?', 'What does it cost to get started?', 'How do I make money?', 'Do I need to supply screens and hardware?', 'Can I get exclusivity?', 'Which industries can I choose?', 'What support do I get?', 'Where does my retail media network run?', 'How does the earnings estimate work?', 'How do I get started?' ) === array_column( $visible, 0 ), 'FAQ: the eleven questions in the brief\'s order' );
+$faqCopy = array(
+	2  => 'There\'s no large capital outlay. You start on a free runway, so you can sign up venues and win your first advertisers before you pay for the platform. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, because the network runs in your own AWS account and scales with the venues you add, and screens only where a venue doesn\'t already have them. The full commercial terms for your chosen industry are in the information pack we send when you request further information.',
+	3  => 'You sell advertising across the venues in your network. That can be direct to the endemic brands they already stock, or through the programmatic platforms buyers already use. You agree your own commercial model with each venue. The more venues and displays you add, the more you can earn. Use the calculator above to see the potential for your network.',
+	4  => 'It depends on the industry you choose. Many venues, such as golf clubs, marinas, gyms and car dealerships, already have screens, so roll-out is quick and seamless. Others may need help with hardware. We have recommended hardware partners for each industry and will introduce you. The information pack covers the hardware options for the industry you choose.',
+	5  => 'Networks are set up by industry first, then by region, for example golf clubs nationally. We\'re taking on a limited number of operators in each industry, and the first people to sign up get first choice. Exclusivity is earned and kept through performance: hit the agreed roll-out and growth milestones and your industry and territory stay yours.',
+	6  => 'Any business with a physical location can be part of your network, with or without screens today. That includes car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. The industry you choose shapes how your network runs: venues, hardware, advertisers and roll-out. That\'s why we ask for it when you request further information.',
+	7  => 'We set you up on the white-label platform in your own AWS account, with the playbooks, templates and sales framework you need to launch. Brands can bring their own creative, or AI can build, target and launch campaigns for them, and you can run the network from the AI tools you already use through MCP. Our dedicated engineering team keeps the platform up to date as retail media evolves.',
+	10 => 'Request further information and tell us which industry you want to run your network in. We\'ll send you an information pack covering the commercial model, exclusivity, hardware options and the roll-out plan for that industry, then book a 20-minute call to go through it with you. Places are limited in each industry and allocated on a first-come, first-served basis, so if you have an industry in mind, request your pack now.',
+);
+foreach ( $faqCopy as $i => $want ) {
+	$fq = operator_faq();
+	ok( $want === $fq[ $i ][1], 'FAQ copy word for word: ' . $fq[ $i ][0] );
+}
+ok( 0 === strpos( $visible[0][1], 'A retail media network sells advertising' ) && 0 === strpos( $visible[1][1], 'There are three ways to run your own network.' ) && 0 === strpos( $visible[8][1], 'On a white-label platform' ) && 0 === strpos( $visible[9][1], 'The benefits calculator on this page' ), 'FAQ: the four kept answers are kept' );
+ok( $visible[10][1] === $faqCopy[10] . ' Request further information', '"How do I get started?" shows its answer, then the "Request further information" link' );
+ok( array( '#request-info', 'Request further information', 'phf-pill', 1 ) === $faqCta[10] && 10 === count( array_filter( array_slice( $faqCta, 0, 10 ), 'is_null' ) ), 'FAQ: only "How do I get started?" has a link, one pink pill "Request further information" to #request-info' );
+$lastLd = $byType['FAQPage']['mainEntity'][10]['acceptedAnswer']['text'];
+ok( $faqCopy[10] . ' <a href="https://personalisationhub.com/run-your-own-rmn/#request-info">Request further information</a>' === $lastLd, 'FAQ JSON-LD: the last answer carries the same link, absolute: ' . substr( $lastLd, -110 ) );
+ok( 1 === count( array_filter( $byType['FAQPage']['mainEntity'], function ( $q ) { return false !== strpos( $q['acceptedAnswer']['text'], '<' ); } ) ), 'FAQ JSON-LD: no other answer carries markup' );
 $faqText = implode( ' ', array_merge( ...$visible ) );
-ok( ! preg_match( '/\d/', str_replace( '1,000', '', $faqText ) ), 'FAQ: no figures beyond the page\'s own "1,000"' );
-foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/personaliz|organiz/i', '/fr[a]nch/i', '/\b(UK|Britain|British|America|Australia)\b/' ) as $re ) { ok( ! preg_match( $re, $faqText ), "FAQ: nothing matching $re" ); }
-foreach ( array( 'three ways to run your own network' => 'the three ways', 'individual operator' => 'individual operator', 'operator team' => 'operator team', 'small to medium retailer' => 'small to medium retailer', 'without the upfront cost' => 'without the upfront cost', 'free runway' => 'the free runway', 'based on outcomes, so we only grow when you do' => 'growing on outcomes', '"Retailer" to see the extra sales in your stores, which are then added to your income' => 'the calculator\'s retailer mode' ) as $needle => $what ) { ok( false !== stripos( $faqText, $needle ), "FAQ restates a fact on the page: $what" ); }
+ok( ! preg_match( '/\d/', str_replace( array( '1,000', '20-minute' ), '', $faqText ) ), 'FAQ: no figures beyond the page\'s own "1,000" and the "20-minute" call (no fee, percentage, runway or month figures)' );
+foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/%/', '/\bhalf\b/i', '/personaliz|organiz/i', '/fr[a]nch/i', '/\b(UK|Britain|British|America|Australia)\b/', '/lock-?in/i', '/setup fee|set-up fee/i', '/minimum/i', '/guarantee/i', '/revenue[- ]share/i', '/\bsplit\b/i', '/\d+\s*months?/i' ) as $re ) { ok( ! preg_match( $re, $faqText ), "FAQ: nothing matching $re" ); }
+foreach ( array( 'three ways to run your own network' => 'the three ways', 'individual operator' => 'individual operator', 'operator team' => 'operator team', 'small to medium retailer' => 'small to medium retailer', 'free runway' => 'the free runway', 'based on outcomes, so we only grow when you do' => 'growing on outcomes', '"Retailer" to see the extra sales in your stores, which are then added to your income' => 'the calculator\'s retailer mode', 'request further information' => 'the one next step' ) as $needle => $what ) { ok( false !== stripos( $faqText, $needle ), "FAQ restates a fact on the page: $what" ); }
 $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 ok( '' === operator_seopress_off( '<meta property="og:title" content="x">' ), "on the page SEOPress's own description, canonical, OG and Twitter tags are switched off" );
 $GLOBALS['is_page'] = false;
@@ -524,6 +551,8 @@ foreach ( array( '## Key facts', '**Your brand, your own AWS account:**', "**Wit
 	ok( false !== strpos( $tw, $want ), 'twin has: ' . substr( $want, 0, 60 ) );
 }
 foreach ( operator_faq() as $qa ) { ok( false !== strpos( $tw, '### ' . $qa[0] . "\n\n" . $qa[1] ), 'twin FAQ: ' . $qa[0] ); }
+ok( false !== strpos( $tw, '### How do I get started?' . "\n\n" . operator_faq()[10][1] . "\n\n[Request further information](https://personalisationhub.com/run-your-own-rmn/#request-info)\n\n## Interactive product tour" ) && 1 === substr_count( $tw, '](https://personalisationhub.com/run-your-own-rmn/#request-info)' ), 'twin FAQ: "How do I get started?" ends with the same link, as markdown' );
+ok( 11 === substr_count( substr( $tw, strpos( $tw, "## FAQ\n" ) ), "\n### " ) && ! preg_match( '/lock-?in/i', $tw ), 'twin FAQ: eleven questions, no "no lock-in"' );
 foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/fr[a]nch/i', '/personaliz/i', '/network operator/i', '/world-leading/i' ) as $re ) { ok( ! preg_match( $re, $tw ), "twin: nothing matching $re (no share constant, none of the replaced copy)" ); }
 foreach ( $lines as $l ) { if ( '"' !== $l[0] && ! preg_match( '/^\d\. "/', $l ) ) { ok( false !== strpos( $tw, $l ), 'twin publishes the page\'s line: ' . substr( $l, 0, 60 ) ); } }
 $src = (string) file_get_contents( $dir . '/operator.php' );

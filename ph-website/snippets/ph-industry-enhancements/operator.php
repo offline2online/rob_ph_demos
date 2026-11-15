@@ -468,7 +468,7 @@ function operator_twin() {
 	}
 	$md .= "\nHow it's calculated: " . OPERATOR_HOW_CALC . "\n\nOn the page, a browser agent can run the calculator with the WebMCP tool `estimate_rmn_earnings` (its `audience` is \"operator\" or \"retailer\").\n\n## FAQ\n\n";
 	foreach ( operator_faq() as $qa ) {
-		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n";
+		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n" . ( empty( $qa[2] ) ? '' : '[' . OPERATOR_FAQ_CTA[0] . '](' . OPERATOR_URL . OPERATOR_FAQ_CTA[1] . ")\n\n" );
 	}
 	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, which describes you (' . strtolower( implode( ', ', OPERATOR_AUDIENCES ) ) . '), your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n";
 	return $md;

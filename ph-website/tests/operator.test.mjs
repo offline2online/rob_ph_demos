@@ -3,7 +3,8 @@
 // buttons and inputs, and the three empty mount containers ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, filled server-side by
 // operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
 // served at /run-your-own-rmn/tour/ (the golf club walkthrough). The H1, the blocks inside their mount containers,
-// copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap), the SEO head (one H1, title, description, canonical,
+// copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its eleven questions, the last ending with a
+// "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
 // Start the tour plays a step, returning visitors, the header's Arrange A Demo, the estimate_rmn_earnings WebMCP tool (the page's own
@@ -160,8 +161,8 @@ try {
   ok(seo.d.startsWith("Run your own retail media network (RMN)") && seo.c.join() === "https://personalisationhub.com/run-your-own-rmn/" && seo.og === "Run Your Own Retail Media Network (RMN)" && /^https:\/\//.test(seo.img) && seo.tw === "summary_large_image", "head: description, one canonical, og:title, og:image, twitter card: " + JSON.stringify(seo).slice(0, 300));
   ok(seo.ld.length === 2 && ["WebPage", "Service", "BreadcrumbList"].every((t) => seo.ld[0]["@graph"].some((n) => n["@type"] === t)) && !seo.ld[0]["@graph"].some((n) => n["@type"] === "FAQPage") && seo.ld[1]["@type"] === "FAQPage", "JSON-LD: the head graph (WebPage, Service, BreadcrumbList) and the FAQ block's FAQPage, once each");
   ok(await p.evaluate(() => !!document.querySelector('.phf[data-phf=faq] script[type="application/ld+json"]')), "the FAQPage JSON-LD is printed by the FAQ block itself");
-  const faqDom = await p.evaluate(() => [...document.querySelectorAll("#faq details")].map((d) => [d.querySelector("summary").textContent.trim(), d.querySelector(".phf-faq-a").textContent.trim()]));
-  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[1].mainEntity.map((q) => [q.name, q.acceptedAnswer.text])) && faqDom.length >= 5 && faqDom.length <= 6 && seo.ld[1].isPartOf["@id"] === seo.ld[0]["@graph"].find((n) => n["@type"] === "WebPage")["@id"], "the FAQPage JSON-LD equals the visible FAQ and is part of the WebPage");
+  const faqDom = await p.evaluate(() => [...document.querySelectorAll("#faq details")].map((d) => [d.querySelector("summary").textContent.trim(), [...d.querySelectorAll(".phf-faq-a p")].map((x) => x.textContent.trim()).join(" ")]));
+  ok(JSON.stringify(faqDom) === JSON.stringify(seo.ld[1].mainEntity.map((q) => [q.name, q.acceptedAnswer.text.replace(/<[^>]+>/g, "").trim()])) && faqDom.length === 11 && seo.ld[1].isPartOf["@id"] === seo.ld[0]["@graph"].find((n) => n["@type"] === "WebPage")["@id"], "the FAQPage JSON-LD equals the visible FAQ and is part of the WebPage");
   ok((await p.evaluate(() => getComputedStyle(document.querySelector(".phf h2")).fontFamily)).includes("Kantumruy Pro"), "Kantumruy Pro in the blocks, over the kit's heading font");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector("#calc")).color === "rgb(28, 37, 64)" && getComputedStyle(document.querySelector(".phf-cout")).backgroundColor === "rgb(15, 20, 36)" && getComputedStyle(document.querySelector(".phf-cout-v")).color === "rgb(239, 96, 167)" && getComputedStyle(document.querySelector(".phf-tip-b")).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(document.querySelector("#t-fn")).borderTopWidth === "1px"), "design colours and controls kept against the Elementor kit's heading, button and input styles");
   // No commercial terms anywhere on the page (text, tooltips, attributes).
@@ -280,6 +281,30 @@ try {
     const fb = await faqBoxes(t);
     ok(fb.length === 0, "touch: every FAQ question is at least 44x44 and hit at its centre: " + JSON.stringify(fb));
     await t.close(); }
+
+  // 3c. "How do I get started?" (the last question) ends with a "Request further information" pink pill to #request-info (the request
+  // block, shipped in the same train: a stand-in section carries the anchor here). Keyboard and tap open it, the link scrolls there, it is
+  // a 44x44 tap target, and with every answer open nothing scrolls sideways at 390, 768, 1024 or 1440.
+  for (const w of [390, 768, 1024, 1440]) {
+    const t = await browser.newPage({ viewport: { width: w, height: 844 }, hasTouch: w < 1024, isMobile: w === 390 });
+    await t.route("**/*", (rt) => rt.request().url().startsWith("http://x.test/") ? rt.fulfill({ contentType: "text/html", body: page }) : rt.abort());
+    await t.goto("http://x.test/run-your-own-rmn/");
+    await t.evaluate(() => { const r = document.createElement("section"); r.id = "request-info"; r.style.height = "900px"; (document.querySelector("main") || document.body).appendChild(r); });
+    const last = t.locator("#faq summary").last();
+    ok((await last.textContent()).trim() === "How do I get started?", `FAQ (${w}): the last question is "How do I get started?"`);
+    if (w < 1024) await last.tap(); else { await last.focus(); await t.keyboard.press("Enter"); }
+    ok(await t.evaluate(() => [...document.querySelectorAll("#faq details")].pop().open), `FAQ (${w}): ${w < 1024 ? "a tap" : "Enter"} opens "How do I get started?"`);
+    const cta = await t.evaluate(() => { const a = document.querySelector("#faq details:last-of-type .phf-faq-a a"), r = a.getBoundingClientRect(); a.scrollIntoView({ block: "center", behavior: "instant" }); const r2 = a.getBoundingClientRect(), e = document.elementFromPoint(r2.left + r2.width / 2, r2.top + r2.height / 2); return { text: a.textContent.trim(), href: a.getAttribute("href"), cls: a.className, w: Math.round(r.width), h: Math.round(r.height), hit: !!e && (e === a || a.contains(e)), bg: getComputedStyle(a).backgroundColor, links: document.querySelectorAll("#faq .phf-faq-a a").length }; });
+    ok(cta.text === "Request further information" && cta.href === "#request-info" && cta.cls === "phf-pill" && cta.links === 1 && cta.bg === "rgb(239, 96, 167)", `FAQ (${w}): the answer ends with one pink "Request further information" pill to #request-info: ` + JSON.stringify(cta));
+    ok(cta.w >= 44 && cta.h >= 44 && cta.hit, `FAQ (${w}): the pill is at least 44x44 and hit at its centre: ` + JSON.stringify(cta));
+    await t.evaluate(() => document.querySelectorAll("#faq details").forEach((d) => { d.open = true; }));
+    const sw = await t.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll("#faq *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.className || e.tagName).slice(0, 5) }));
+    ok(sw.sw <= sw.w && sw.wide.length === 0, `FAQ (${w}): every answer open, no horizontal scroll: ` + JSON.stringify(sw));
+    if (w < 1024) await t.locator("#faq .phf-faq-a a").tap(); else await t.click("#faq .phf-faq-a a");
+    await t.waitForFunction(() => Math.abs(document.getElementById("request-info").getBoundingClientRect().top) < 200, null, { timeout: 5000 }).catch(() => {});
+    ok(await t.evaluate(() => location.hash === "#request-info" && Math.abs(document.getElementById("request-info").getBoundingClientRect().top) < 200), `FAQ (${w}): the link scrolls to #request-info`);
+    await t.close();
+  }
 
   // 4. CTAs and the header's Arrange A Demo go to their anchors; #tour focuses the first empty field.
   p = await open();

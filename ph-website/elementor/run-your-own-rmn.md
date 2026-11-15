@@ -144,6 +144,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - One full-width e-flexbox, padding 0, **empty**, with the CSS ID `ph-rmn-faq` (`_cssid`).
 - The snippet puts the FAQ block inside it, server-side, so the questions and their FAQPage JSON-LD are in the first HTML response. The block carries anchor `#faq`, the heading "Running your own RMN", the accordion and its FAQPage JSON-LD, generated from the same list. Never add an Elementor Accordion or FAQ widget for these questions: the structured data would then no longer match.
 - It sits before the tour band. It was added for search and is not in the design.
+- Eleven questions from 15 Nov 2026 (costs, making money, hardware, exclusivity, industries, support and next steps were added). The last, "How do I get started?", ends with a "Request further information" button to `#request-info`, rendered by the block. All of it is code; nothing to change in Elementor.
 
 ### 10. Product tour: mount container, CSS ID `ph-rmn-tour`
 

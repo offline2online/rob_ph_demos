@@ -101,6 +101,11 @@ body .phf .phf-faq-x::after{transform:rotate(90deg)}
 body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
 body .phf .phf-faq-a{padding:0 44px 22px 4px}
 body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
+/* "How do I get started?" ends with the page's pink pill, "Request further information" (#request-info): 54px tall, so a tap target well
+   over 44x44, with the FAQ's own focus ring. */
+body .phf .phf-faq-a p.phf-faq-cta{margin:16px 0 0}
+body .phf .phf-faq-a a.phf-pill{display:inline-block}
+body .phf .phf-faq-a a.phf-pill:focus-visible{outline:3px solid #179BC2;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{transition:none}}
 
 /* Product tour band and the gate */
