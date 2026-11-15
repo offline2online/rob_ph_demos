@@ -1,16 +1,16 @@
-/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the three blocks
-   (calculator, tour, FAQ) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
+/* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the four blocks
+   (calculator, tour, FAQ and, from 15 Nov 2026, the "Request further information" form) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
    fluid from 1440 down to 360. Loaded on that page only. Every block rule is under body .phf so the theme and the Elementor kit (link
    colours, button and input styles, heading sizes) cannot restyle it. The rest of the page is Elementor widgets styled from the site
    kit (ph-website/elementor/run-your-own-rmn.md). */
 /* The Elementor sections' anchors (their containers' CSS IDs) land below the sticky header, like the blocks' own sections. */
-body :is(#top,#why,#who,#how,#venues,#standards,#independents){scroll-margin-top:96px}
+body :is(#top,#why,#who,#how,#venues,#standards,#independents,#request-info){scroll-margin-top:96px}
 body .phf{font-family:"Kantumruy Pro","Segoe UI",Arial,sans-serif;color:#181A1F;background:#FDFDFD;font-size:18px;line-height:1.5;letter-spacing:.24px;overflow-x:clip;-webkit-text-size-adjust:100%}
 body .phf *,body .phf *::before,body .phf *::after{box-sizing:border-box}
 body .phf p,body .phf h2,body .phf ol,body .phf ul,body .phf li{margin:0;padding:0;font-family:inherit;letter-spacing:inherit}
 body .phf a{color:#0E6F8C}
 body .phf a:hover{color:#0A5469}
-body .phf a:focus-visible,body .phf button:focus-visible,body .phf input:focus-visible,body .phf select:focus-visible{outline:3px solid #179BC2;outline-offset:2px;box-shadow:none}
+body .phf a:focus-visible,body .phf button:focus-visible,body .phf input:focus-visible,body .phf select:focus-visible,body .phf textarea:focus-visible{outline:3px solid #179BC2;outline-offset:2px;box-shadow:none}
 html:has(body .phf){scroll-behavior:smooth}
 @media (prefers-reduced-motion:reduce){html:has(body .phf){scroll-behavior:auto}}
 body .phf .phf-sec{scroll-margin-top:96px;border-top:1px solid #E6E7E5}
@@ -65,6 +65,13 @@ body .phf a.phf-pill{background:#EF60A7;color:#0F1424;border:1px solid #EF60A7;b
 body .phf a.phf-pill:hover{background:#F27DB7;color:#0F1424}
 body .phf a.phf-pill-o{background:transparent;color:#FFFFFF;border-color:#3A4360}
 body .phf a.phf-pill-o:hover{background:#1C2540;color:#FFFFFF}
+/* "Earnings per display per month": below the CTA row, a divider, then the label (with its "i") and the figure on one row, in the
+   result rows' style. Operator or team only: operator.js sets `hidden` on it in Retailer mode. */
+body .phf .phf-perd{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:24px;border-top:.5px solid #2A3350;padding:12px 0 0}
+body .phf .phf-perd[hidden]{display:none}
+body .phf .phf-perd-l{font-size:14px;color:#A3ACC0}
+body .phf .phf-perd-v{font-size:15px;font-weight:600;color:#E9EDF6;text-align:right;white-space:nowrap}
+body .phf .phf-cout button.phf-tip-b,body .phf .phf-cout button.phf-tip-b:hover,body .phf .phf-cout button.phf-tip-b:focus{border-color:#A3ACC0;color:#A3ACC0}
 
 /* Info tooltips: hover, keyboard focus and tap (.open, operator.js) */
 body .phf .phf-tip{position:relative;display:inline-flex;align-items:center}
@@ -101,6 +108,11 @@ body .phf .phf-faq-x::after{transform:rotate(90deg)}
 body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
 body .phf .phf-faq-a{padding:0 44px 22px 4px}
 body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
+/* "How do I get started?" ends with the page's pink pill, "Request further information" (#request-info): 54px tall, so a tap target well
+   over 44x44, with the FAQ's own focus ring. */
+body .phf .phf-faq-a p.phf-faq-cta{margin:16px 0 0}
+body .phf .phf-faq-a a.phf-pill{display:inline-block}
+body .phf .phf-faq-a a.phf-pill:focus-visible{outline:3px solid #179BC2;outline-offset:2px}
 @media (prefers-reduced-motion:reduce){body .phf .phf-faq-x::before,body .phf .phf-faq-x::after{transition:none}}
 
 /* Product tour band and the gate */
@@ -131,7 +143,7 @@ body .phf .phf-form{display:flex;flex-direction:column;gap:12px;margin:0}
 body .phf .phf-fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(200px,100%),1fr));gap:12px}
 body .phf .phf-f{display:flex;flex-direction:column;gap:4px;min-width:0}
 body .phf .phf-f label{font-size:14px;font-weight:500;color:#1C2540;margin:0;line-height:1.4}
-body .phf .phf-f input,body .phf .phf-f select{width:100%;font-family:inherit;font-size:16px;font-weight:400;padding:11px 13px;border-radius:8px;border:1px solid #DCE1EB;background:#FFFFFF;color:#1C2540;height:auto;min-height:48px;margin:0;box-shadow:none;letter-spacing:normal;line-height:1.4}
+body .phf .phf-f input,body .phf .phf-f select,body .phf .phf-f textarea{width:100%;font-family:inherit;font-size:16px;font-weight:400;padding:11px 13px;border-radius:8px;border:1px solid #DCE1EB;background:#FFFFFF;color:#1C2540;height:auto;min-height:48px;margin:0;box-shadow:none;letter-spacing:normal;line-height:1.4}
 body .phf .phf-f select:invalid{color:#5A6479}
 body .phf .phf-f [aria-invalid=true]{border-color:#B3261E}
 body .phf .phf-hp{position:absolute!important;left:-9999px!important;width:1px!important;height:1px!important;opacity:0!important}
@@ -149,6 +161,21 @@ body .phf .phf-tbox.phf-open{min-height:0;border:0;border-radius:0;overflow:visi
 body .phf .phf-tbox.phf-open .phf-ph,body .phf .phf-tbox.phf-open .phf-gate{display:none}
 body .phf .phf-tbox.phf-open .phf-mount{display:block}
 body .phf .phf-mount iframe{display:block;width:100%;border:0;min-height:560px}
+
+/* "Request further information" (#request-info), the last block on the page: the tour gate's card, fields and button in a full-width
+   section like the tour band's. The message spans the grid; "Other (tell us)" reveals one more input; the thank-you line replaces the
+   form. */
+body .phf .phf-wrap-req{max-width:1160px}
+body .phf h2.phf-h2-req{margin:0 0 16px;max-width:18em}
+body .phf .phf-req-p{margin:0 0 32px;font-size:18px;color:#5A6479;max-width:40em}
+body .phf .phf-req-card{max-width:760px;box-shadow:none;border:1px solid #DCE1EB}
+body .phf .phf-f[hidden],body .phf .phf-form[hidden],body .phf .phf-rdone[hidden]{display:none}
+body .phf .phf-f-wide{grid-column:1/-1}
+body .phf .phf-f textarea{min-height:112px;resize:vertical}
+body .phf .phf-count{font-size:13px;color:#5A6479}
+body .phf .phf-cons{min-height:44px;align-items:center}
+body .phf .phf-cons input{margin:0}
+body .phf .phf-rdone-h{margin:0;font-size:22px;font-weight:700;color:#1C2540;outline:0}
 
 /* Phones: the 16px gutter, a stacked slider row, a gate that grows with its form */
 @media (max-width:600px){

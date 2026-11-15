@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>HQ Admin capture shell</title>
 <!-- Capture-only stand-in for the HQ Admin chrome around the DSP Integration prototype (sidebar, top bar, breadcrumb),
-     matched to the retail media v1 screenshots. Query: nav=platform|company, crumb=A|B|C, src=<prototype route>. -->
+     matched to the retail media v1 screenshots. Query: nav=platform|company|stores, crumb=A|B|C, src=<prototype route>. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; font-family: Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -34,11 +34,11 @@
 </head>
 <body>
 <div class="side">
-  <div class="club"><div class="badge">FG</div><div><b>Fernhollow</b><small>GOLF CLUB</small></div></div>
+  <div class="club"><div class="badge">FL</div><div><b>Fairlinks</b><small>GOLF NETWORK</small></div></div>
   <div class="nav" style="top:96px">
     <a><span class="ms">campaign</span>Campaigns</a>
     <a><span class="ms">desktop_windows</span>Displays &amp; Devices</a>
-    <a><span class="ms">store</span>Stores / Branches</a>
+    <a id="n-stores"><span class="ms">store</span>Stores / Branches</a>
     <a><span class="ms">monitoring</span>Insights / Analytics</a>
   </div>
   <div class="nav" style="top:850px">
@@ -50,13 +50,13 @@
   <span class="ms burger">menu</span>
   <div class="ph"><svg width="26" height="26" viewBox="0 0 40 40" aria-hidden="true"><rect x="2" y="2" width="7" height="30" fill="#169BC2"/><rect x="9" y="2" width="29" height="7" fill="#EF60A7"/><rect x="31" y="9" width="7" height="29" fill="#FE9226"/><rect x="2" y="31" width="29" height="7" fill="#60D838"/></svg><span>Personalisation<b>Hub</b></span></div>
   <div class="prod"><span class="ms">rocket_launch</span>Production<span class="ms">edit</span></div>
-  <div class="av">FG</div>
+  <div class="av">FL</div>
 </div>
 <div class="crumb" id="crumb"></div>
 <iframe name="app" id="app" title="app"></iframe>
 <script>
   const q = new URLSearchParams(location.search);
-  document.getElementById(q.get("nav") === "company" ? "n-company" : "n-platform").classList.add("on");
+  document.getElementById({ company: "n-company", stores: "n-stores" }[q.get("nav")] || "n-platform").classList.add("on");
   const parts = ["Home"].concat((q.get("crumb") || "").split("|").filter(Boolean));
   document.getElementById("crumb").innerHTML = parts.map(p => `<span>${p.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</span>`).join("<i>&gt;</i>");
   document.getElementById("app").src = q.get("src") || "/";

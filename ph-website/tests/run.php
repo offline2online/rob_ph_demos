@@ -572,5 +572,9 @@ require __DIR__ . '/help-proxy.test.php';
 exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/ph-blog-abilities.test.php' ) . ' 2>&1', $abl_out, $abl_rc );
 ok( 0 === $abl_rc, 'ph-blog-abilities.test.php: ' . implode( ' ', $abl_out ) );
 
+/* Floating CTA: own process (it stubs the hook functions itself) */
+exec( escapeshellarg( PHP_BINARY ) . ' ' . escapeshellarg( __DIR__ . '/cta.test.php' ) . ' 2>&1', $cta_out, $cta_rc );
+ok( 0 === $cta_rc, 'cta.test.php: ' . implode( ' ', $cta_out ) );
+
 fwrite( STDOUT, $fails ? "ph-website: $fails of $n checks FAILED\n" : "ph-website: all $n checks passed\n" );
 exit( $fails ? 1 : 0 );

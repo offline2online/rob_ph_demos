@@ -1,21 +1,38 @@
 {
- "about": "Voiceover for the Run Your Own RMN walkthrough (Fernhollow Golf Club, Corvane Golf). Same rules as tools/retail-media-tour/voiceover-script.json: each line one or two sentences and under 10 seconds; a line with a cue plays when the on-screen tip with that title appears. Build with ../retail-media-tour/build_voiceover.py --script voiceover-script.json --out <dir>/vo, then sync_tour_vo.py here.",
+ "about": "Voiceover for the Run Your Own RMN walkthrough (v2, 15 Nov 2026: the Fairlinks Golf Network of 100 golf clubs sells to Corvane Golf; flow 3 follows a member at Fernhollow Golf Club, one club on the network). Same rules as tools/retail-media-tour/voiceover-script.json: each line one or two sentences and under 10 seconds; a line with a cue plays when the on-screen tip with that title appears. Build with ../retail-media-tour/build_voiceover.py --script voiceover-script.json --out <dir>/vo, then sync_tour_vo.py here.",
  "voice": "af_heart",
  "lang": "en-us",
  "speed": 1.0,
  "steps": [
   {
    "id": "f1-01",
-   "title": "The club's six screen types",
    "lines": [
     {
-     "text": "Fernhollow Golf Club has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar."
+     "text": "The Fairlinks Golf Network runs the screens at 100 connected golf clubs, from one Personalisation Hub account."
+    },
+    {
+     "text": "Every club has the same six screen types.",
+     "cue": "Every club on the network"
+    },
+    {
+     "text": "Whatever the network sets up once goes live at every club.",
+     "cue": "Set once for the network"
     }
    ]
   },
   {
    "id": "f1-02",
-   "title": "Three slots, slot 1 for advertisers",
+   "lines": [
+    {
+     "text": "The network has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar."
+    },
+    {
+     "text": "They're set once, and every club on the network has them."
+    }
+   ]
+  },
+  {
+   "id": "f1-03",
    "lines": [
     {
      "text": "Each one has its own playlist."
@@ -26,11 +43,11 @@
     },
     {
      "cue": "Three slots, all Headquarters",
-     "text": "New slots belong to Headquarters, for the club's own promotions."
+     "text": "New slots belong to Headquarters, for the network's own promotions."
     },
     {
      "cue": "Slot 1 goes to advertisers",
-     "text": "Slot one is the one the club will sell to brands."
+     "text": "Slot one is the one the network will sell to brands."
     },
     {
      "cue": "From Headquarters to Advertiser",
@@ -38,29 +55,27 @@
     },
     {
      "cue": "One advertiser slot in three",
-     "text": "One slot in three now earns media revenue, and two keep promoting the club's own offers."
-    }
-   ]
-  },
-  {
-   "id": "f1-03",
-   "title": "The same on every screen type",
-   "lines": [
-    {
-     "text": "The driving range, first tee, halfway house, locker room and clubhouse bar get the same setup, in a few clicks."
-    },
-    {
-     "text": "The club decides exactly how much screen time it sells."
-    },
-    {
-     "cue": "Six advertiser slots, ready to sell",
-     "text": "Six brand partner slots, one on every screen type, are now ready to sell."
+     "text": "One slot in three now earns media revenue, and two keep promoting the network's own offers."
     }
    ]
   },
   {
    "id": "f1-04",
-   "title": "The advertiser is already set up",
+   "lines": [
+    {
+     "text": "The driving range, first tee, halfway house, locker room and clubhouse bar get the same setup, in a few clicks."
+    },
+    {
+     "text": "The network decides exactly how much screen time it sells."
+    },
+    {
+     "text": "Set once, live at all 100 clubs: the same six brand partner slots now exist at every club.",
+     "cue": "Set once, live at all 100 clubs"
+    }
+   ]
+  },
+  {
+   "id": "f1-05",
    "lines": [
     {
      "text": "Corvane Golf is already set up as a direct advertiser, next to the advertisers synced from DSPs."
@@ -68,21 +83,19 @@
    ]
   },
   {
-   "id": "f1-05",
-   "title": "Create a direct deal",
+   "id": "f1-06",
    "lines": [
     {
      "text": "Slots are always sold through deals. A brand is never assigned to a slot directly."
     },
     {
      "cue": "Create a direct deal",
-     "text": "This direct deal gives Corvane all of December at a fixed CPM, and it's never sent to a DSP."
+     "text": "This direct deal gives Corvane all of December across the whole network at a fixed CPM, and it's never sent to a DSP."
     }
    ]
   },
   {
-   "id": "f1-06",
-   "title": "Put the deal on all six slots",
+   "id": "f1-07",
    "lines": [
     {
      "text": "The six new brand partner slots start unassigned, so nothing plays in them yet."
@@ -96,23 +109,22 @@
      "text": "Each slot's list offers DSPs for open auction, and deals."
     },
     {
-     "text": "The club picks the Corvane deal for all six."
+     "text": "The network picks the Corvane deal for all six."
     },
     {
      "text": "Direct deals and programmatic demand are managed side by side, in one place."
     },
     {
      "cue": "All six brand partner slots",
-     "text": "All six slots now carry the deal, and the deal shows six slots. Then, save the changes."
+     "text": "All six slots now carry the deal, at every one of the 100 clubs. Then, save the changes."
     }
    ]
   },
   {
-   "id": "f1-07",
-   "title": "Finalise and go live",
+   "id": "f1-08",
    "lines": [
     {
-     "text": "The forecast plays are for reference only: this is a direct buy at a fixed CPM."
+     "text": "The forecast plays cover all 100 clubs, for reference only: this is a direct buy at a fixed CPM."
     },
     {
      "cue": "Finalise and go live",
@@ -120,33 +132,31 @@
     },
     {
      "cue": "Live · direct, not sent to a DSP",
-     "text": "Every December window on all six screen types is now Corvane's."
+     "text": "Every December window on all six screen types, at all 100 clubs, is now Corvane's."
     }
    ]
   },
   {
-   "id": "f1-08",
-   "title": "Give Corvane its own login",
+   "id": "f1-09",
    "lines": [
     {
-     "text": "Finally, the club gives Corvane its own login, so the brand can manage its own campaigns."
+     "text": "Finally, the network invites Corvane with its own Advertiser login, so the brand can manage its own campaigns."
     },
     {
-     "cue": "An Advertiser login for Corvane",
-     "text": "Jamie gets the Advertiser role, so Jamie only ever sees Corvane's campaigns."
+     "text": "Jamie gets the Advertiser role, so Jamie only ever sees Corvane's campaigns.",
+     "cue": "An Advertiser login for Corvane"
     },
     {
-     "cue": "Send the invitation",
-     "text": "The invitation goes out, and the club's first brand partner deal is done."
+     "text": "The invitation goes out, and the network's first brand partner deal is done.",
+     "cue": "Send the invitation"
     }
    ]
   },
   {
    "id": "f2-01",
-   "title": "Corvane signs in with its own login",
    "lines": [
     {
-     "text": "Jamie from Corvane signs in with the login the club provided. Corvane can run its own campaigns, or leave them to the club."
+     "text": "Jamie from Corvane signs in with the login the network provided. Corvane can run its own campaigns, or leave them to the network."
     },
     {
      "cue": "Only Corvane's campaigns",
@@ -156,7 +166,6 @@
   },
   {
    "id": "f2-02",
-   "title": "Start a new campaign",
    "lines": [
     {
      "text": "To start a new campaign, Jamie selects Launch a New Campaign, at the top of the list."
@@ -165,7 +174,6 @@
   },
   {
    "id": "f2-03",
-   "title": "Just talk",
    "lines": [
     {
      "text": "There's no form to fill in. Jamie just talks, and the AI campaign agent listens."
@@ -180,7 +188,6 @@
   },
   {
    "id": "f2-04",
-   "title": "The agent writes the brief",
    "lines": [
     {
      "text": "The agent writes the brief from what Jamie said, and from how past campaigns performed."
@@ -204,10 +211,9 @@
   },
   {
    "id": "f2-05",
-   "title": "Generate storyboard and copy",
    "lines": [
     {
-     "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Corvane's, the club's, or an agreed mix of both."
+     "text": "Next, the agent writes the headline and copy from the agreed brand guidelines: Corvane's, the network's, or an agreed mix of both."
     },
     {
      "cue": "Storyboard and copy",
@@ -217,7 +223,6 @@
   },
   {
    "id": "f2-06",
-   "title": "Generate creative preview",
    "lines": [
     {
      "text": "With the copy agreed, the agent generates a creative preview of the first and last frames."
@@ -238,7 +243,6 @@
   },
   {
    "id": "f2-07",
-   "title": "Generate creative assets",
    "lines": [
     {
      "text": "Generate Creative Assets builds the final creative for every screen type, from the pro shop to the clubhouse bar."
@@ -251,14 +255,13 @@
   },
   {
    "id": "f2-08",
-   "title": "Target low-handicap members",
    "lines": [
     {
-     "text": "Corvane also wants a second campaign, just for low-handicap members."
+     "text": "Corvane also wants a second campaign, just for low-handicap members, at every club on the network."
     },
     {
      "cue": "Open the Targeting tab",
-     "text": "Targeting is set on the campaign's Targeting tab, exactly as the club would."
+     "text": "Targeting is set on the campaign's Targeting tab, exactly as the network would."
     },
     {
      "cue": "Target low-handicap members",
@@ -268,30 +271,29 @@
      "text": "Every option is a drop-down, so there's nothing to type and nothing to get wrong."
     },
     {
-     "text": "Only the data sources, attributes and values the club has approved for brands appear here."
+     "text": "Only the data sources, attributes and values the network has approved for brands appear here."
     },
     {
-     "cue": "Controlled by the club",
-     "text": "The club controls 100% of the targeting it shares."
+     "cue": "Controlled by the network",
+     "text": "The network controls 100% of the targeting it shares."
     },
     {
-     "cue": "The club's member segments",
-     "text": "The data stays in the club's own cloud. Corvane only ever picks a segment."
+     "cue": "The network's member segments",
+     "text": "The data stays in the network's own cloud. Corvane only ever picks a segment."
     }
    ]
   },
   {
    "id": "f2-09",
-   "title": "Add purchase history",
    "lines": [
     {
-     "text": "A second rule adds purchase history from the pro shop's point-of-sale data."
+     "text": "A second rule adds purchase history from the pro shops' point-of-sale data, across the network."
     },
     {
      "text": "Purchase History includes golf balls, again picked from a list."
     },
     {
-     "text": "Targeting on real membership and sales data is what makes venue media so valuable, to brands and to the club."
+     "text": "Targeting on real membership and sales data is what makes the network so valuable to brands."
     },
     {
      "cue": "Both rules in place",
@@ -299,20 +301,19 @@
     },
     {
      "cue": "Send for approval",
-     "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to the club."
+     "text": "Saving doesn't submit anything. Send for approval, at the top right, sends the campaign to Fairlinks."
     },
     {
      "cue": "Awaiting approval",
-     "text": "It's now awaiting approval, with no activation toggle until the club approves it."
+     "text": "It's now awaiting approval, with no activation toggle until Fairlinks approves it."
     }
    ]
   },
   {
    "id": "f2-10",
-   "title": "The club approves",
    "lines": [
     {
-     "text": "Every brand campaign needs the club's approval before it can play. Corvane's is waiting in Campaign Approval."
+     "text": "Every brand campaign needs Fairlinks' approval before it can play on the network. Corvane's is waiting in Campaign Approval."
     },
     {
      "cue": "Approve Selected",
@@ -326,14 +327,13 @@
   },
   {
    "id": "f3-01",
-   "title": "Hannah checks in at the pro shop",
    "lines": [
     {
-     "text": "Hannah, a low-handicap member, arrives at Fernhollow for her morning tee time."
+     "text": "Now one club on the network: Fernhollow Golf Club. Hannah, a low-handicap member, arrives for her morning tee time."
     },
     {
      "cue": "Welcome to Fernhollow",
-     "text": "The club's app welcomes her by name and invites her to check in."
+     "text": "Fernhollow's app welcomes her by name and invites her to check in."
     },
     {
      "cue": "Checked in",
@@ -347,7 +347,6 @@
   },
   {
    "id": "f3-02",
-   "title": "Her profile meets Corvane's rules",
    "lines": [
     {
      "text": "Her check-in links to what the club already knows: her membership and what she buys in the pro shop."
@@ -360,10 +359,9 @@
   },
   {
    "id": "f3-03",
-   "title": "Corvane's offer follows Hannah",
    "lines": [
     {
-     "text": "Every screen rotates three campaigns: two for the club, and the brand partner slot."
+     "text": "Every screen rotates three campaigns: two of the network's own, and the brand partner slot it sells."
     },
     {
      "cue": "Three campaigns in every rotation",
@@ -398,33 +396,31 @@
     },
     {
      "cue": "Back at the pro shop",
-     "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one joined-up offer."
+     "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one offer sold by the network."
     }
    ]
   },
   {
    "id": "f3-04",
-   "title": "Booked on all six screen types",
    "lines": [
     {
-     "text": "Behind the scenes, Corvane holds slot one on all six screen types, every day of December."
+     "text": "Now back to the whole network. Corvane holds slot one on all six screen types at all 100 clubs, every day of December."
     },
     {
-     "cue": "Default plus personalised",
-     "text": "Each booking carries the default creative and the personalised members version, both approved."
+     "text": "Each booking carries the default creative and the personalised members version, both approved.",
+     "cue": "Default plus personalised"
     }
    ]
   },
   {
    "id": "f3-05",
-   "title": "What the brand partner slots earn",
    "lines": [
     {
-     "text": "Booking revenue shows what the slots earn: every window sold, at Corvane's fixed CPM."
+     "text": "Booking revenue is for the whole network: 100 clubs, six screen types, every window sold at Corvane's fixed CPM."
     },
     {
-     "cue": "USD 36,231 in two weeks",
-     "text": "That's over 36 thousand dollars in two weeks, from one slot in three."
+     "text": "That's over three and a half million dollars in two weeks, from one slot in three.",
+     "cue": "USD 3,623,124 in two weeks"
     }
    ]
   }

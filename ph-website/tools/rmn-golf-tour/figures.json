@@ -1,0 +1,73 @@
+{
+ "clubs": 100,
+ "cpm": 150,
+ "from": "2026-12-01",
+ "to": "2026-12-14",
+ "types": [
+  {
+   "name": "Pro Shop",
+   "perClub": 3,
+   "displayCount": 300,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.772983,
+   "bookedWindows": 14,
+   "bookedViews": 3116666,
+   "bookedRevenue": 467499.9
+  },
+  {
+   "name": "Driving Range",
+   "perClub": 12,
+   "displayCount": 1200,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.628049,
+   "bookedWindows": 14,
+   "bookedViews": 10129168,
+   "bookedRevenue": 1519375.2
+  },
+  {
+   "name": "First Tee",
+   "perClub": 2,
+   "displayCount": 200,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.628049,
+   "bookedWindows": 14,
+   "bookedViews": 1688190,
+   "bookedRevenue": 253228.5
+  },
+  {
+   "name": "Halfway House",
+   "perClub": 2,
+   "displayCount": 200,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.628049,
+   "bookedWindows": 14,
+   "bookedViews": 1688190,
+   "bookedRevenue": 253228.5
+  },
+  {
+   "name": "Locker Room",
+   "perClub": 4,
+   "displayCount": 400,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.772983,
+   "bookedWindows": 14,
+   "bookedViews": 4155550,
+   "bookedRevenue": 623332.5
+  },
+  {
+   "name": "Clubhouse Bar",
+   "perClub": 4,
+   "displayCount": 400,
+   "playsPerWindow": 960,
+   "vacdPerPlay": 0.628049,
+   "bookedWindows": 14,
+   "bookedViews": 3376394,
+   "bookedRevenue": 506459.1
+  }
+ ],
+ "totals": {
+  "bookedWindows": 84,
+  "bookedViews": 24154158,
+  "bookedRevenue": 3623123.7
+ }
+}
