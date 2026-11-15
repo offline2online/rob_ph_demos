@@ -1,3 +1,6 @@
+// Renders each slide at its settled moment and checks: type fitted (lines and size), the slide
+// inside the safe area (below the logo, above y 1270, inside the side margins), the wipe gone,
+// and the logo matching the surface. Writes one PNG per slide to the output folder.
 const { chromium } = require('playwright');
 const path = require('path');
 (async () => {
@@ -8,40 +11,31 @@ const path = require('path');
   await page.evaluate(() => document.fonts.ready);
   const scenes = await page.evaluate(() => window.SCENES);
   const problems = [];
-  for (const s of scenes) {
-    const last = s === scenes[scenes.length - 1];
-    const t = last ? s.start + 2.6 : s.end - 0.35;
+  for (const [i, s] of scenes.entries()) {
+    const last = i === scenes.length - 1;
+    const t = last ? s.start + 2.6 : s.end - 0.4;
     await page.evaluate((t) => window.renderAt(t), t);
     await page.screenshot({ path: `${outDir}/${s.id}.png` });
     const m = await page.evaluate((id) => {
       const sc = document.getElementById(id);
-      const lines = (el) => el ? Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) : 0;
-      const h = sc.querySelector('.headline, .line'), l = sc.querySelector('.lede'), e = sc.querySelector('.eyebrow');
-      let maxBottom = 0, maxRight = 0, minLeft = 1e9;
-      sc.querySelectorAll('*').forEach((el) => {
-        const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
-        maxBottom = Math.max(maxBottom, r.bottom); maxRight = Math.max(maxRight, r.right); minLeft = Math.min(minLeft, r.left);
-      });
-      // overlap test between leaf visual boxes (chips, pills, nodes, hub, tiles, rows)
-      const boxes = [...sc.querySelectorAll('.chip,.pill,.node,.hub,.tile,.job,.out,.device,.step,.cta,.lobe,.headline,.lede,.eyebrow,.line,.go,.rule')].map((el) => [el.className, el.getBoundingClientRect()]);
-      const ov = [];
-      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
-        const [a, A] = boxes[i], [b, B] = boxes[j];
-        if (A.left < B.right - 1 && B.left < A.right - 1 && A.top < B.bottom - 1 && B.top < A.bottom - 1) {
-          const nested = [...sc.querySelectorAll('*')].some(() => false);
-          ov.push(a + ' x ' + b);
-        }
-      }
-      return { eyebrowLines: lines(e), headlineLines: lines(h), ledeLines: lines(l), headline: h && h.textContent,
-        maxBottom: Math.round(maxBottom), maxRight: Math.round(maxRight), minLeft: Math.round(minLeft), overlaps: ov };
+      const rs = [...sc.querySelectorAll('.ln .li, .rule, .loop, .cta')].map((e) => e.getBoundingClientRect());
+      const r = { top: Math.min(...rs.map((x) => x.top)), bottom: Math.max(...rs.map((x) => x.bottom)),
+        left: Math.min(...rs.map((x) => x.left)), right: Math.max(...rs.map((x) => x.right)) };
+      const txt = sc.querySelector('.txt');
+      const lines = [...sc.querySelectorAll('.ln')].map((l) => l.textContent);
+      const ink = getComputedStyle(document.getElementById('stage')).getPropertyValue('--paper').trim();
+      return { lines, fontSize: parseFloat(txt.style.fontSize), top: Math.round(r.top), bottom: Math.round(r.bottom),
+        left: Math.round(r.left), right: Math.round(r.right), wipe: getComputedStyle(document.getElementById('wipe')).visibility,
+        paper: ink, logoDark: document.getElementById('logoDark').style.opacity, opacity: sc.querySelector('.grp').style.opacity };
     }, s.id);
     console.log(s.id, `t=${t.toFixed(2)}`, JSON.stringify(m));
-    if (m.maxBottom > 1190) problems.push(`${s.id}: content bottom ${m.maxBottom} > 1190`);
-    if (m.maxRight > 992 || m.minLeft < 88) problems.push(`${s.id}: horizontal overflow ${m.minLeft}..${m.maxRight}`);
-    if (m.eyebrowLines > 1) problems.push(`${s.id}: eyebrow wraps`);
-    if (m.headlineLines > 3) problems.push(`${s.id}: headline ${m.headlineLines} lines`);
-    if (m.ledeLines > 3) problems.push(`${s.id}: lede ${m.ledeLines} lines`);
-    if (m.overlaps.length) problems.push(`${s.id}: overlaps ${m.overlaps.join('; ')}`);
+    if (m.top < 210) problems.push(`${s.id}: top ${m.top} < 210 (crowds the logo)`);
+    if (m.bottom > 1270) problems.push(`${s.id}: bottom ${m.bottom} > 1270`);
+    if (m.left < 88 || m.right > 1000) problems.push(`${s.id}: horizontal ${m.left}..${m.right}`);
+    if (m.wipe !== 'hidden') problems.push(`${s.id}: wipe still showing`);
+    if (m.fontSize < 80) problems.push(`${s.id}: type only ${m.fontSize}px`);
+    if ((m.paper === '#0F1424') !== (m.logoDark === '1')) problems.push(`${s.id}: logo does not match surface`);
+    if (parseFloat(m.opacity) < 0.99) problems.push(`${s.id}: not settled at t=${t}`);
   }
   console.log(problems.length ? 'PROBLEMS:\n' + problems.join('\n') : 'All checks passed');
   await browser.close();

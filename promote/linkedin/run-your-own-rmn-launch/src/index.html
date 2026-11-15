@@ -9,36 +9,48 @@
 @font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:600;font-display:block;src:url(data:font/woff2;base64,{{K600}}) format("woff2")}
 @font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:700;font-display:block;src:url(data:font/woff2;base64,{{K700}}) format("woff2")}
 
-/* ph-brand dark surface tokens */
+/* ph-brand tokens. The surface flips between dark and light per slide; accents are the logo colours. */
 :root{
-  --paper:#0F1424; --surface:#171E33; --ink:#E9EDF6; --muted:#A3ACC0; --line:#2A3350;
   --teal:#169BC2; --pink:#EF60A7; --green:#60D838; --orange:#FE9226;
   --font:"Kantumruy Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 }
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0}
-body{background:#070a14;font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
-body.render{background:var(--paper)}
+body{background:#070a14;font-family:var(--font);-webkit-font-smoothing:antialiased;color:#E9EDF6}
+body.render{background:#0F1424}
 
 /* Fixed 1080 x 1350 (4:5) design size */
-#stage{position:relative;width:1080px;height:1350px;background:var(--paper);overflow:hidden;--a:var(--teal)}
-.bar{position:absolute;left:0;top:0;width:100%;height:12px;background:var(--a)}
-.logo{position:absolute;left:88px;top:92px;height:64px;width:auto}
+#stage{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--paper,#0F1424);color:var(--ink,#E9EDF6)}
+.bar{position:absolute;left:0;top:0;width:100%;height:12px;background:var(--bar,#169BC2);z-index:5}
+.logo{position:absolute;left:88px;top:92px;height:64px;width:auto;z-index:5}
+#wipe{position:absolute;inset:0;z-index:4;visibility:hidden}
 
-/* One sentence per slide, every slide anchored to the same top */
-.scene{position:absolute;left:88px;top:420px;width:904px;visibility:hidden}
-.rule{width:128px;height:12px;border-radius:6px;background:var(--sa);transform-origin:left center;margin-bottom:56px}
-.line{margin:0;font-size:140px;line-height:1.02;font-weight:700;letter-spacing:-.035em;color:var(--ink)}
-.w{display:inline-block;will-change:transform,opacity}
-.go{display:flex;align-items:center;justify-content:center;width:168px;height:168px;margin-top:72px;border-radius:50%;background:var(--orange);color:#0F1424}
-.go svg.ic{display:block;width:104px;height:104px;fill:currentColor}
+.slide{position:absolute;left:88px;top:0;width:904px;visibility:hidden;z-index:1}
+.grp{position:relative;transform-origin:0 50%}
+.rule{width:160px;height:14px;border-radius:7px;background:var(--acc);transform-origin:0 50%;margin-bottom:48px}
+.txt{font-weight:700;line-height:1.02;letter-spacing:-.035em;transform-origin:0 50%}
+.ln{display:block;width:max-content;white-space:nowrap}
+.mask .ln{overflow:hidden;padding:.06em .1em .16em 0;margin:-.06em 0 -.16em}
+.li,.w,.c{display:inline-block}
+.w{transform-origin:50% 60%}
+.stretch .w{transform-origin:0 60%}
+
+/* Slide 5: the brand infinity loop draws itself */
+.loop{width:600px;height:317px;margin-top:64px;transform-origin:0 50%}
+.loop svg{display:block;width:600px;height:317px;overflow:visible}
+
+/* Slide 6: the only call to action */
+.ctaRow{margin-top:72px}
+.cta{display:inline-flex;align-items:center;gap:20px;height:120px;padding:0 46px 0 56px;border-radius:999px;background:var(--orange);color:#0F1424;font-size:54px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;transform-origin:0 50%}
+.cta .arr{display:inline-flex}
+.cta svg.ic{display:block;width:60px;height:60px;fill:currentColor}
 
 /* Preview player (not rendered into the video) */
 .player{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px 16px 32px}
 .frame{position:relative;overflow:hidden;border-radius:12px;box-shadow:0 30px 70px -40px rgba(0,0,0,.9)}
 .frame #stage{transform-origin:top left}
-.controls{display:flex;align-items:center;gap:12px;width:100%;max-width:540px;color:var(--muted);font-size:14px}
-.controls button{font:inherit;font-weight:600;color:#0F1424;background:var(--ink);border:0;border-radius:999px;padding:8px 16px;cursor:pointer}
+.controls{display:flex;align-items:center;gap:12px;width:100%;max-width:540px;color:#A3ACC0;font-size:14px}
+.controls button{font:inherit;font-weight:600;color:#0F1424;background:#E9EDF6;border:0;border-radius:999px;padding:8px 16px;cursor:pointer}
 .controls input{flex:1;accent-color:var(--teal)}
 .controls output{min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
 body.render .player{display:block;padding:0}
@@ -51,13 +63,37 @@ body.render .frame{border-radius:0;box-shadow:none}
 <div class="frame" id="frame">
 <div id="stage">
   <div class="bar"></div>
-  <img class="logo" src="{{LOGO}}" alt="Personalisation Hub">
+  <img class="logo" id="logoDark" src="{{LOGO_WHITE}}" alt="Personalisation Hub">
+  <img class="logo" id="logoLight" src="{{LOGO_COLOUR}}" alt="" style="opacity:0">
 
-  <section class="scene" id="s1" style="--sa:var(--teal)"><div class="rule"></div><h1 class="line">Going out on your own?</h1></section>
-  <section class="scene" id="s2" style="--sa:var(--pink)"><div class="rule"></div><h2 class="line">AI is your team now.</h2></section>
-  <section class="scene" id="s3" style="--sa:var(--green)"><div class="rule"></div><h2 class="line">Run your own retail media network.</h2></section>
-  <section class="scene" id="s4" style="--sa:var(--teal)"><div class="rule"></div><h2 class="line">Without the upfront cost.</h2></section>
-  <section class="scene" id="s5" style="--sa:var(--orange)"><div class="rule"></div><h2 class="line">Link in comments.</h2><div class="go" id="go">{{icon:arrow_downward}}</div></section>
+  <section class="slide" id="s1"><div class="grp"><div class="rule"></div>
+    <div class="txt"><div class="ln">Going out</div><div class="ln">on your own?</div></div></div></section>
+
+  <section class="slide" id="s2"><div class="grp"><div class="rule"></div>
+    <div class="txt"><div class="ln">Bricks-and-mortar</div><div class="ln">experiences</div><div class="ln">matter more</div><div class="ln">than ever.</div></div></div></section>
+
+  <section class="slide" id="s3"><div class="grp"><div class="rule"></div>
+    <div class="txt mask"><div class="ln">Run your own</div><div class="ln">in-store retail</div><div class="ln">media network.</div></div></div></section>
+
+  <section class="slide" id="s4"><div class="grp"><div class="rule"></div>
+    <div class="txt stretch"><div class="ln">Earn from</div><div class="ln">every screen.</div></div></div></section>
+
+  <section class="slide" id="s5"><div class="grp"><div class="rule"></div>
+    <div class="txt"><div class="ln">Campaigns that</div><div class="ln">optimise</div><div class="ln">themselves.</div></div>
+    <div class="loop" id="loop">
+      <svg viewBox="-12 -12 424 224" aria-hidden="true" fill="none" stroke-width="22" stroke-linecap="butt" stroke-linejoin="round">
+        <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#169BC2" data-o="-12.5"/>
+        <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#EF60A7" data-o="-37.5"/>
+        <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#FE9226" data-o="-62.5"/>
+        <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#60D838" data-o="-87.5"/>
+      </svg>
+    </div></div></section>
+
+  <section class="slide" id="s6"><div class="grp"><div class="rule"></div>
+    <div class="txt"><div class="ln">Start your</div><div class="ln">next chapter.</div></div>
+    <div class="ctaRow"><span class="cta" id="cta">Link in comments<span class="arr" id="arr">{{icon:arrow_downward}}</span></span></div></div></section>
+
+  <div id="wipe"></div>
 </div>
 </div>
 <div class="controls">
@@ -69,79 +105,168 @@ body.render .frame{border-radius:0;box-shadow:none}
 
 <script>
 (function(){
-  /* Slide timings in seconds. The last slide holds to the end. */
-  var SCENES = [
-    {id:'s1', start:0.0, a:'#169BC2'},
-    {id:'s2', start:2.3, a:'#EF60A7'},
-    {id:'s3', start:4.5, a:'#60D838'},
-    {id:'s4', start:7.2, a:'#169BC2'},
-    {id:'s5', start:9.4, a:'#FE9226'}
-  ];
-  var DURATION = 13.0, WORD_GAP = 0.08, WORD_IN = 0.42, OUT = 0.28;
-  SCENES.forEach(function(s,i){ s.end = i < SCENES.length-1 ? SCENES[i+1].start : DURATION; });
+  var SURF = {
+    dark:  {paper:'#0F1424', ink:'#E9EDF6'},
+    light: {paper:'#F5F7FB', ink:'#1C2540'}
+  };
+  var C = {teal:'#169BC2', pink:'#EF60A7', green:'#60D838', orange:'#FE9226'};
 
-  /* Split each sentence into words so they can punch in one after another */
-  SCENES.forEach(function(s){
+  /* Six slides. mode = how the type comes in; wipe = how this slide arrives. The last slide holds to the end. */
+  var SL = [
+    {id:'s1', start:0.0,  surface:'dark',  acc:C.teal,   mode:'zoom',    max:172, wipe:null},
+    {id:'s2', start:2.3,  surface:'light', acc:C.pink,   mode:'pop',     max:150, wipe:'up'},
+    {id:'s3', start:5.0,  surface:'dark',  acc:C.orange, mode:'rise',    max:150, wipe:'iris'},
+    {id:'s4', start:7.5,  surface:'light', acc:C.green,  mode:'stretch', max:172, wipe:'left'},
+    {id:'s5', start:9.6,  surface:'dark',  acc:C.teal,   mode:'track',   max:132, wipe:'down'},
+    {id:'s6', start:12.1, surface:'light', acc:C.orange, mode:'scale',   max:160, wipe:'iris'}
+  ];
+  var DURATION = 15.5, FITW = 850, COVER = 0.26, UNCOVER = 0.34, T0 = 0.14;
+  SL.forEach(function(s,i){ s.end = i < SL.length-1 ? SL[i+1].start : DURATION; });
+
+  var stage = document.getElementById('stage'), wipe = document.getElementById('wipe');
+  var logoDark = document.getElementById('logoDark'), logoLight = document.getElementById('logoLight');
+
+  /* Split every line into words and letters */
+  SL.forEach(function(s){
     s.el = document.getElementById(s.id);
-    s.rule = s.el.querySelector('.rule');
-    var line = s.el.querySelector('.line');
-    var words = line.textContent.trim().split(/\s+/);
-    line.innerHTML = words.map(function(w){ return '<span class="w">'+w+'</span>'; }).join(' ');
-    s.words = Array.prototype.slice.call(line.querySelectorAll('.w'));
-    s.go = s.el.querySelector('.go');
+    s.el.style.setProperty('--acc', s.acc);
+    s.grp = s.el.querySelector('.grp'); s.rule = s.el.querySelector('.rule'); s.txt = s.el.querySelector('.txt');
+    s.lines = Array.prototype.slice.call(s.el.querySelectorAll('.ln'));
+    s.words = []; s.chars = []; s.inner = [];
+    s.lines.forEach(function(ln){
+      var words = ln.textContent.trim().split(/\s+/);
+      ln.innerHTML = '<span class="li">' + words.map(function(w){
+        return '<span class="w">' + Array.prototype.map.call(w, function(ch){ return '<span class="c">'+ch+'</span>'; }).join('') + '</span>';
+      }).join(' ') + '</span>';
+      s.inner.push(ln.querySelector('.li'));
+      Array.prototype.forEach.call(ln.querySelectorAll('.w'), function(w){ s.words.push(w); });
+      Array.prototype.forEach.call(ln.querySelectorAll('.c'), function(c){ s.chars.push(c); });
+    });
   });
-  var stage = document.getElementById('stage');
+  var segs = Array.prototype.slice.call(document.querySelectorAll('#loop .seg'));
+  var loopEl = document.getElementById('loop'), cta = document.getElementById('cta'), arr = document.getElementById('arr');
+
+  /* Fit each slide's type to the width, then centre the slide vertically */
+  var laidOut = false;
+  function layout(){
+    SL.forEach(function(s){
+      s.lines.forEach(function(ln){ ln.style.letterSpacing = ''; ln.style.filter = ''; });
+      s.txt.style.fontSize = '100px';
+      var maxW = 0; s.lines.forEach(function(ln){ maxW = Math.max(maxW, ln.offsetWidth); });
+      s.fs = Math.min(s.max, Math.floor(100 * FITW / maxW));
+      s.txt.style.fontSize = s.fs + 'px';
+      s.el.style.top = Math.round((1350 - s.grp.offsetHeight) / 2 - 10) + 'px';
+    });
+    laidOut = document.fonts.check('700 100px "Kantumruy Pro"');
+  }
 
   function clamp(x){ return x < 0 ? 0 : x > 1 ? 1 : x; }
-  function eo(t){ return 1 - Math.pow(1-t,4); }
+  function eo(t){ return 1 - Math.pow(1-t,3); }
+  function eox(t){ return t >= 1 ? 1 : 1 - Math.pow(2, -10*t); }
   function ei(t){ return t*t*t; }
-  function rgb(h){ return [1,3,5].map(function(i){ return parseInt(h.substr(i,2),16); }); }
-  function mix(a,b,t){ var A=rgb(a),B=rgb(b); return 'rgb('+A.map(function(v,i){ return Math.round(v+(B[i]-v)*t); }).join(',')+')'; }
+  function eio(t){ return t < .5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+  function back(t, k){ k = k || 1.70158; var c3 = k + 1; return 1 + c3*Math.pow(t-1,3) + k*Math.pow(t-1,2); }
 
   function renderAt(t){
-    /* the top bar follows the slide's single accent, easing across each cut */
-    var acc = SCENES[0].a;
-    SCENES.forEach(function(s){ if (t >= s.start) acc = s.a; });
-    for (var i=1;i<SCENES.length;i++){
-      var b = SCENES[i].start;
-      if (t > b-0.2 && t < b+0.2) acc = mix(SCENES[i-1].a, SCENES[i].a, eo(clamp((t-(b-0.2))/0.4)));
-    }
-    stage.style.setProperty('--a', acc);
+    if (!laidOut) layout();
+    var idx = 0; SL.forEach(function(s,i){ if (t >= s.start) idx = i; });
+    var cur = SL[idx], next = SL[idx+1];
 
-    SCENES.forEach(function(s, idx){
-      var last = idx === SCENES.length-1;
-      var on = t >= s.start && (last || t < s.end);
+    /* surface, logo and top bar follow the slide; they change while the wipe covers the screen */
+    stage.style.setProperty('--paper', SURF[cur.surface].paper);
+    stage.style.setProperty('--ink', SURF[cur.surface].ink);
+    logoDark.style.opacity = cur.surface === 'dark' ? 1 : 0;
+    logoLight.style.opacity = cur.surface === 'light' ? 1 : 0;
+    stage.style.setProperty('--bar', next && t >= next.start - COVER ? next.acc : cur.acc);
+
+    /* the wipe: an accent panel covers the cut, then uncovers the next slide */
+    var w = null;
+    SL.forEach(function(s){ if (s.wipe && t >= s.start - COVER && t < s.start + UNCOVER) w = s; });
+    if (w){
+      var covering = t < w.start, c = eio(clamp((t - (w.start - COVER)) / COVER)), u = eio(clamp((t - w.start) / UNCOVER));
+      wipe.style.visibility = 'visible'; wipe.style.background = w.acc;
+      var clip = 'none', mask = 'none', R = 880;
+      if (w.wipe === 'up')   clip = covering ? 'inset('+((1-c)*100)+'% 0 0 0)' : 'inset(0 0 '+(u*100)+'% 0)';
+      if (w.wipe === 'down') clip = covering ? 'inset(0 0 '+((1-c)*100)+'% 0)' : 'inset('+(u*100)+'% 0 0 0)';
+      if (w.wipe === 'left') clip = covering ? 'inset(0 0 0 '+((1-c)*100)+'%)' : 'inset(0 '+(u*100)+'% 0 0)';
+      if (w.wipe === 'iris'){
+        if (covering) clip = 'circle('+(c*R).toFixed(1)+'px at 50% 50%)';
+        else mask = 'radial-gradient(circle at 50% 50%, transparent '+(u*R).toFixed(1)+'px, #000 '+(u*R+1).toFixed(1)+'px)';
+      }
+      wipe.style.clipPath = clip; wipe.style.webkitMaskImage = mask; wipe.style.maskImage = mask;
+    } else wipe.style.visibility = 'hidden';
+
+    SL.forEach(function(s, i){
+      var on = i === idx;
       s.el.style.visibility = on ? 'visible' : 'hidden';
       if (!on) return;
-      var local = t - s.start;
-      var out = last ? 0 : ei(clamp((t-(s.end-OUT))/OUT));
-      var shift = -out*48;
-      /* accent rule draws first */
-      var r = eo(clamp(local/0.3));
-      s.rule.style.transform = 'translateY('+shift.toFixed(2)+'px) scaleX('+r.toFixed(4)+')';
-      s.rule.style.opacity = (1-out).toFixed(4);
-      /* then the words punch up, one after another */
-      s.words.forEach(function(w,k){
-        var p = eo(clamp((local-0.08-k*WORD_GAP)/WORD_IN));
-        w.style.opacity = (p*(1-out)).toFixed(4);
-        w.style.transform = 'translateY('+((1-p)*90 + shift).toFixed(2)+'px)';
+      var l = t - s.start, dur = s.end - s.start, last = i === SL.length-1;
+      var t0 = s.wipe ? T0 : 0.08;
+      /* the whole slide keeps pushing in, then zooms out towards the viewer as it leaves */
+      var q = last ? 0 : ei(clamp((l - (dur - 0.3)) / 0.3));
+      var push = 1 + 0.07 * eo(clamp(l / dur));
+      s.grp.style.transform = 'scale(' + (push * (1 + 0.45*q)).toFixed(4) + ')';
+      s.grp.style.opacity = (1 - q).toFixed(4);
+      s.rule.style.transform = 'scaleX(' + eo(clamp((l - t0) / 0.4)).toFixed(4) + ')';
+
+      if (s.mode === 'zoom') s.words.forEach(function(wd, k){
+        var p = eox(clamp((l - t0 - k*0.12) / 0.7));
+        wd.style.transform = 'scale(' + (1 + 1.3*(1-p)).toFixed(4) + ')';
+        wd.style.opacity = clamp(p*2).toFixed(4);
+        wd.style.filter = 'blur(' + (18*(1-p)).toFixed(2) + 'px)';
       });
-      /* the orange arrow on the last slide pops in, then nudges down towards the comments */
-      if (s.go){
-        var g = eo(clamp((local-0.55)/0.4)), bt = local - 1.0;
-        var bob = bt > 0 ? 12*Math.max(0, Math.sin(2*Math.PI*bt/1.0)) : 0;
-        s.go.style.opacity = g.toFixed(4);
-        s.go.style.transform = 'translateY('+bob.toFixed(2)+'px) scale('+(0.8+0.2*g).toFixed(4)+')';
+      if (s.mode === 'pop') s.chars.forEach(function(ch, k){
+        var p = clamp((l - t0 - k*0.016) / 0.42);
+        ch.style.transform = 'translateY(' + ((1-eo(p))*40).toFixed(2) + 'px) scale(' + Math.max(0, back(p, 2.2)).toFixed(4) + ')';
+        ch.style.opacity = clamp(p*4).toFixed(4);
+      });
+      if (s.mode === 'rise') s.inner.forEach(function(li, k){
+        var p = eo(clamp((l - t0 - k*0.13) / 0.6));
+        li.style.transform = 'translateY(' + ((1-p)*112).toFixed(2) + '%) skewY(' + ((1-p)*7).toFixed(2) + 'deg) scale(' + (1 + 0.12*(1-p)).toFixed(4) + ')';
+      });
+      if (s.mode === 'stretch') s.words.forEach(function(wd, k){
+        var p = clamp((l - t0 - k*0.1) / 0.55);
+        wd.style.transform = 'scaleX(' + Math.max(0, back(p, 1.4)).toFixed(4) + ')';
+        wd.style.opacity = clamp(p*3).toFixed(4);
+      });
+      if (s.mode === 'track') s.lines.forEach(function(ln, k){
+        var p = eo(clamp((l - t0 - k*0.14) / 0.75));
+        ln.style.letterSpacing = (0.6 - 0.635*p).toFixed(4) + 'em';
+        ln.style.opacity = p.toFixed(4);
+        ln.style.filter = 'blur(' + (12*(1-p)).toFixed(2) + 'px)';
+      });
+      if (s.mode === 'scale'){
+        var p = clamp((l - t0) / 0.65);
+        s.txt.style.transform = 'scale(' + (0.2 + 0.8*Math.max(0, back(p, 1.6))).toFixed(4) + ')';
+        s.txt.style.opacity = clamp(p*2.5).toFixed(4);
+      }
+
+      if (s.id === 's5'){
+        var lp = eo(clamp((l - 0.55) / 0.5));
+        loopEl.style.opacity = lp.toFixed(4);
+        loopEl.style.transform = 'scale(' + (0.85 + 0.15*lp).toFixed(4) + ')';
+        segs.forEach(function(sg, k){
+          var L = 23 * eo(clamp((l - 0.6 - k*0.12) / 0.55));
+          sg.setAttribute('stroke-dasharray', L.toFixed(3) + ' ' + (100 - L).toFixed(3));
+          sg.setAttribute('stroke-dashoffset', (parseFloat(sg.dataset.o) - (l/8)*100).toFixed(3));
+        });
+      }
+      if (s.id === 's6'){
+        var cp = clamp((l - 0.75) / 0.5), bt = l - 1.35;
+        var pulse = bt > 0 ? 1 + 0.03*Math.pow(Math.sin(Math.PI*bt/0.9), 2) : 1;
+        cta.style.opacity = clamp(cp*3).toFixed(4);
+        cta.style.transform = 'scale(' + (Math.max(0, back(cp, 2)) * pulse).toFixed(4) + ')';
+        arr.style.transform = 'translateY(' + (bt > 0 ? 10*Math.max(0, Math.sin(2*Math.PI*bt/0.9)) : 0).toFixed(2) + 'px)';
       }
     });
   }
 
   window.renderAt = renderAt;
   window.DURATION = DURATION;
-  window.SCENES = SCENES.map(function(s){ return {id:s.id, start:s.start, end:s.end}; });
+  window.SCENES = SL.map(function(s){ return {id:s.id, start:s.start, end:s.end}; });
 
   /* Render mode: the capture script drives renderAt frame by frame */
-  if (/[?&]render\b/.test(location.search)){ document.body.classList.add('render'); renderAt(0); return; }
+  if (/[?&]render\b/.test(location.search)){ document.body.classList.add('render'); document.fonts.ready.then(function(){ layout(); renderAt(0); }); return; }
 
   /* Preview mode: fit the stage to the window and play on a loop */
   var frame = document.getElementById('frame'), btn = document.getElementById('play'),
@@ -153,7 +278,7 @@ body.render .frame{border-radius:0;box-shadow:none}
   }
   fit(); window.addEventListener('resize', fit);
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  var playing = !reduce, t0 = performance.now(), pos = reduce ? 6.5 : 0;
+  var playing = !reduce, t0 = 0, pos = reduce ? 6.5 : 0;
   function show(t){ renderAt(t); scrub.value = Math.round(t/DURATION*1000); out.textContent = t.toFixed(1)+'s'; }
   function tick(now){
     if (playing){ pos = ((now - t0)/1000) % DURATION; show(pos); }
@@ -167,8 +292,9 @@ body.render .frame{border-radius:0;box-shadow:none}
   scrub.addEventListener('input', function(){
     pos = scrub.value/1000*DURATION; t0 = performance.now() - pos*1000; show(pos);
   });
-  show(pos);
-  document.fonts.ready.then(function(){ requestAnimationFrame(tick); });
+  document.fonts.ready.then(function(){
+    layout(); show(pos); t0 = performance.now() - pos*1000; requestAnimationFrame(tick);
+  });
 })();
 </script>
 </body>
