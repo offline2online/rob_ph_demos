@@ -14,8 +14,10 @@
  *   are in the first HTML response (operator_mount() on Elementor's frontend content filter; the Elementor MCP cannot add a Shortcode
  *   widget and atomic widgets do not run shortcodes): CSS ID ph-rmn-calculator gets the benefits calculator (the "I am" toggle,
  *   tooltips, 46x46 touch hit areas), ph-rmn-faq the "Running your own RMN" accordion with its FAQPage JSON-LD (generated together) and
- *   ph-rmn-tour the gate, the lead POST and the golf club tour iframe. Each block goes in at most once, a missing container is skipped,
- *   and other pages and ids are untouched. The shortcodes [ph_operator_calculator], [ph_operator_tour] and [ph_operator_faq] stay
+ *   ph-rmn-tour the gate, the lead POST and the golf club tour iframe, and (15 Nov 2026) ph-rmn-request the "Request further
+ *   information" form at the bottom of the page (anchor #request-info; it posts to the same route with form "request"). Each block goes
+ *   in at most once, a missing container is skipped, and other pages and ids are untouched. The shortcodes [ph_operator_calculator],
+ *   [ph_operator_tour], [ph_operator_faq] and [ph_operator_request] stay
  *   registered and render the same blocks; a block already in the content (a Shortcode widget) is not mounted a second time.
  *   operator.css / operator.js are enqueued on that page only, once;
  * - keyed by the resolved id: noindex while hidden (wp_robots, SEOPress's own robots meta and X-Robots-Tag) and no sitemap entry; the
@@ -23,9 +25,10 @@
  *   and JSON-LD (WebPage, Service, BreadcrumbList; the FAQPage comes with the FAQ block); llms.txt, the markdown twin, the agent endpoint
  *   and robots.txt only when live; the estimate_rmn_earnings WebMCP tool (operator.js).
  * Launching is one change: OPERATOR_LIVE = true.
- * - POST ph-site/v1/operator-lead: the product tour gate's lead. One ph_lead per person (lead_find_existing / lead_add_activity /
- *   lead_insert in leads.php), fires ph_lead_captured so leads.php forwards it to the console as a "Network operator inquiry"
- *   (leadType "operator"). The gate's "I am" answer travels with it as `audience` (the label).
+ * - POST ph-site/v1/operator-lead: the product tour gate's lead, and (form "request") the request form's. One ph_lead per person
+ *   (lead_find_existing / lead_add_activity / lead_insert in leads.php), fires ph_lead_captured so leads.php forwards it to the console
+ *   as a "Network operator inquiry" (leadType "operator"). The gate's "I am" answer travels with it as `audience` (the label); the
+ *   request form adds the industry they want to run their network in and an optional message.
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
 
@@ -47,9 +50,9 @@ const OPERATOR_OG_TITLE      = 'Run Your Own Retail Media Network (RMN)';
 const OPERATOR_OG_FALLBACK   = 'https://personalisationhub.com/wp-content/uploads/2026/11/home-hero-bg.webp';
 const OPERATOR_LLMS_SUMMARY  = 'run your own retail media network on a white-label platform with real-time in-store personalisation, in your own AWS account; estimate your earnings with the calculator and take the interactive product tour.';
 /** The blocks' shortcodes: block => tag. */
-const OPERATOR_SHORTCODES    = array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq' );
+const OPERATOR_SHORTCODES    = array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq', 'request' => 'ph_operator_request' );
 /** The page's empty Elementor mount containers, in page order: block => the container's CSS ID (operator_mount_blocks()). */
-const OPERATOR_MOUNTS        = array( 'calculator' => 'ph-rmn-calculator', 'faq' => 'ph-rmn-faq', 'tour' => 'ph-rmn-tour' );
+const OPERATOR_MOUNTS        = array( 'calculator' => 'ph-rmn-calculator', 'faq' => 'ph-rmn-faq', 'tour' => 'ph-rmn-tour', 'request' => 'ph-rmn-request' );
 /** Cache of the resolved page id (operator_page_id()); never the source of truth. */
 const OPERATOR_PAGE_OPTION   = 'ph_operator_page';
 const OPERATOR_STATE_OPTION  = 'ph_operator_state';
@@ -57,6 +60,12 @@ const OPERATOR_STATE_OPTION  = 'ph_operator_state';
 const OPERATOR_SOURCE        = 'operator';
 const OPERATOR_LABEL         = 'Network operator inquiry';
 const OPERATOR_DETAIL        = 'Run Your Own RMN page – product tour';
+/** The request form's source detail (form "request" on the same route). */
+const OPERATOR_REQUEST_DETAIL = 'Run Your Own RMN page – request further information';
+/** The request form's optional message: at most this many characters. */
+const OPERATOR_MESSAGE_MAX   = 1000;
+/** The request form's last industry option; choosing it asks for the industry in a short text input. */
+const OPERATOR_INDUSTRY_OTHER = 'Other (tell us)';
 const OPERATOR_BACKGROUNDS   = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Creative agency', 'Retail business owner or manager', 'Marketing', 'Something else' );
 /** The gate's required "I am" select. The chosen label is stored and sent on as `audience`. */
 const OPERATOR_AUDIENCES     = array( 'An individual operator', 'Part of an operator team', 'A small to medium retailer' );
@@ -84,13 +93,18 @@ function operator_calc( array $s, $mode = 'operator' ) {
 	$views_month    = $viewers * $s['dis'];
 	$ad_revenue     = $views_month * 12 / 1000 * $s['cpm'];
 	$extra_sales    = $viewers * 12 * $s['atv'] * $s['up'] / 100;
+	$displays       = $s['ven'] * $s['dis'];
+	$op_income      = $ad_revenue * OPERATOR_INCOME_SHARE;
 	return array(
 		'venues'        => $s['ven'],
-		'displays'      => $s['ven'] * $s['dis'],
+		'displays'      => $displays,
 		'visitorsMonth' => $visitors_month,
 		'viewsMonth'    => $views_month,
-		'income'        => 'retailer' === $mode ? $ad_revenue * OPERATOR_RETAILER_SHARE + $extra_sales : $ad_revenue * OPERATOR_INCOME_SHARE,
+		'income'        => 'retailer' === $mode ? $ad_revenue * OPERATOR_RETAILER_SHARE + $extra_sales : $op_income,
 		'extraSales'    => $extra_sales,
+		// Earnings per display per month (operator mode only on the page): the operator's potential income a year ÷ displays ÷ 12, in the
+		// same order as operator.js, so both round the same; null with no displays (shown as "–", never NaN or Infinity).
+		'perDisplay'    => $displays > 0 ? $op_income / $displays / 12 : null,
 	);
 }
 
@@ -116,7 +130,13 @@ function operator_view( array $c ) {
 		'visitors'   => operator_count( round( $c['visitorsMonth'] ) ),
 		'views'      => operator_count( round( $c['viewsMonth'] ) ),
 		'extraSales' => operator_money( $c['extraSales'] ),
+		'perDisplay' => operator_per_display( isset( $c['perDisplay'] ) ? $c['perDisplay'] : null ),
 	);
+}
+
+/** Earnings per display per month as shown: whole dollars, rounded half up ($183; operator_money() from $1K), or "–" with no displays. */
+function operator_per_display( $n ) {
+	return null === $n || ! is_finite( (float) $n ) ? '–' : operator_money( round( $n ) ); // rounded to the dollar first: $999.50 is $1K
 }
 
 /* ---------- The page ---------- */
@@ -468,9 +488,10 @@ function operator_twin() {
 	}
 	$md .= "\nHow it's calculated: " . OPERATOR_HOW_CALC . "\n\nOn the page, a browser agent can run the calculator with the WebMCP tool `estimate_rmn_earnings` (its `audience` is \"operator\" or \"retailer\").\n\n## FAQ\n\n";
 	foreach ( operator_faq() as $qa ) {
-		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n";
+		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n" . ( empty( $qa[2] ) ? '' : '[' . OPERATOR_FAQ_CTA[0] . '](' . OPERATOR_URL . OPERATOR_FAQ_CTA[1] . ")\n\n" );
 	}
-	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, which describes you (' . strtolower( implode( ', ', OPERATOR_AUDIENCES ) ) . '), your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n";
+	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, which describes you (' . strtolower( implode( ', ', OPERATOR_AUDIENCES ) ) . '), your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n"
+		. "\n## " . OPERATOR_REQUEST_EB . "\n\n" . OPERATOR_REQUEST_H . ': ' . OPERATOR_REQUEST_P . ' To request further information, use the form at the bottom of the page (' . OPERATOR_URL . '#request-info): your full name, email, where you plan to operate, the industry you want to run your network in (' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ', or another you name), which describes you, your background, anything you\'d like us to know (optional) and your agreement to be contacted.' . "\n";
 	return $md;
 }
 
@@ -534,7 +555,23 @@ function operator_linkedin( $v ) {
 	return array( true, strlen( $v ) > 300 ? '' : $v );
 }
 
-/** Validates and stores a network operator lead. Returns array( status, body ). Pure of HTTP, so it is unit-tested. */
+/** The request form's industries: the page's twelve venue types, then "Other (tell us)". */
+function operator_industries() {
+	return array_merge( OPERATOR_VENUE_TYPES, array( OPERATOR_INDUSTRY_OTHER ) );
+}
+
+/** A string's length in characters (the 1,000-character message limit counts characters, not bytes). */
+function operator_len( $v ) {
+	return function_exists( 'mb_strlen' ) ? mb_strlen( (string) $v, 'UTF-8' ) : strlen( (string) $v );
+}
+
+/**
+ * Validates and stores a network operator lead. Returns array( status, body ). Pure of HTTP, so it is unit-tested.
+ * `form` "request" is the "Request further information" form at the bottom of the page: the same fields as the gate, validated the same
+ * way, plus the industry they want to run their network in (required; "Other (tell us)" needs `industry_other`) and an optional message
+ * of up to 1,000 characters. Its source detail is OPERATOR_REQUEST_DETAIL, its message goes on the lead (ph_lead_message, appended for
+ * a returning person) and into the admin email. Anything else is the tour gate.
+ */
 function operator_handle( array $b ) {
 	if ( ! empty( $b['website'] ) ) { // honeypot: pretend success.
 		return array( 200, array( 'ok' => true ) );
@@ -570,17 +607,42 @@ function operator_handle( array $b ) {
 	if ( ! in_array( $lead['background'], OPERATOR_BACKGROUNDS, true ) ) {
 		return array( 400, array( 'error' => 'Please choose your background.', 'field' => 'background' ) );
 	}
+	$request = isset( $b['form'] ) && 'request' === $b['form'];
+	$detail  = $request ? OPERATOR_REQUEST_DETAIL : OPERATOR_DETAIL;
+	$message = '';
+	if ( $request ) {
+		$lead['network_industry'] = $str( 'industry' );
+		if ( ! in_array( $lead['network_industry'], operator_industries(), true ) ) {
+			return array( 400, array( 'error' => 'Please choose the industry you want to run your network in.', 'field' => 'industry' ) );
+		}
+		if ( OPERATOR_INDUSTRY_OTHER === $lead['network_industry'] ) {
+			$other = $str( 'industry_other' );
+			if ( '' === $other || operator_len( $other ) > 120 ) {
+				return array( 400, array( 'error' => 'Please tell us the industry you want to run your network in.', 'field' => 'industry_other' ) );
+			}
+			$lead['network_industry'] = 'Other: ' . $other;
+		}
+		$raw = isset( $b['message'] ) && is_string( $b['message'] ) ? $b['message'] : '';
+		if ( operator_len( trim( $raw ) ) > OPERATOR_MESSAGE_MAX ) {
+			return array( 400, array( 'error' => 'Please keep your message to 1,000 characters or fewer.', 'field' => 'message' ) );
+		}
+		$message = trim( function_exists( 'sanitize_textarea_field' ) ? sanitize_textarea_field( $raw ) : sanitize_text_field( $raw ) );
+	}
 	if ( empty( $b['consent'] ) ) {
 		return array( 400, array( 'error' => 'Please tick the box to continue.', 'field' => 'consent' ) );
 	}
 	$test = lead_is_test( isset( $b['test'] ) ? $b['test'] : false );
 	$id   = lead_find_existing( $lead['email'], $test );
-	if ( $id ) { // already a lead (an industry tour or download): record the network operator inquiry as activity, not a second lead.
-		lead_add_activity( $id, OPERATOR_LABEL, OPERATOR_DETAIL );
-		foreach ( array( 'linkedin', 'region', 'audience', 'background' ) as $k ) {
-			if ( '' !== $lead[ $k ] && ! get_post_meta( $id, 'ph_lead_' . $k, true ) ) {
+	if ( $id ) { // already a lead (an industry tour, a download, the gate or an earlier request): record it as activity, not a second lead.
+		lead_add_activity( $id, OPERATOR_LABEL, $detail );
+		foreach ( array( 'linkedin', 'region', 'audience', 'background', 'network_industry' ) as $k ) {
+			if ( isset( $lead[ $k ] ) && '' !== $lead[ $k ] && ! get_post_meta( $id, 'ph_lead_' . $k, true ) ) {
 				update_post_meta( $id, 'ph_lead_' . $k, $lead[ $k ] );
 			}
+		}
+		if ( '' !== $message ) { // every message is kept, newest last
+			$old = (string) get_post_meta( $id, 'ph_lead_message', true );
+			update_post_meta( $id, 'ph_lead_message', '' === $old ? $message : $old . "\n\n" . $message );
 		}
 	} else {
 		$id = lead_insert( $lead['name'] . ' / ' . OPERATOR_LABEL ); // leads.php: the private ph_lead post.
@@ -592,10 +654,13 @@ function operator_handle( array $b ) {
 			update_post_meta( $id, 'ph_lead_source_label', OPERATOR_LABEL );
 			update_post_meta( $id, 'ph_lead_consent', 1 );
 			update_post_meta( $id, 'ph_lead_page', OPERATOR_PATH );
+			if ( '' !== $message ) {
+				update_post_meta( $id, 'ph_lead_message', $message );
+			}
 			if ( $test ) {
 				update_post_meta( $id, 'ph_lead_test', '1' );
 			}
-			lead_add_activity( $id, OPERATOR_LABEL, OPERATOR_DETAIL );
+			lead_add_activity( $id, OPERATOR_LABEL, $detail );
 		}
 	}
 	do_action( 'ph_lead_captured', array(
@@ -614,14 +679,22 @@ function operator_handle( array $b ) {
 		'lead_type'        => OPERATOR_SOURCE,
 		'source'           => OPERATOR_SOURCE,
 		'source_label'     => OPERATOR_LABEL,
-		'source_detail'    => OPERATOR_DETAIL,
+		'source_detail'    => $detail,
+		'network_industry' => $request ? $lead['network_industry'] : '', // the request form's "Industry you want to run your network in"
+		'message'          => $message,
+		'form'             => $request ? 'request' : 'tour',
 		'consent'          => true,
 		'page'             => OPERATOR_PATH,
 		'test'             => $test,
 		'post_id'          => (int) $id,
 	) );
 	if ( ! $test ) {
-		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry: ' . $lead['name'], "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\nI am: {$lead['audience']}\nBackground: {$lead['background']}\nPage: " . OPERATOR_PATH );
+		$mail = "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\n"
+			. ( $request ? "Industry: {$lead['network_industry']}\n" : '' )
+			. "I am: {$lead['audience']}\nBackground: {$lead['background']}\n"
+			. ( $request ? 'Message: ' . ( '' !== $message ? $message : '(none)' ) . "\n" : '' )
+			. 'Source: ' . $detail . "\nPage: " . OPERATOR_PATH;
+		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry' . ( $request ? ' (request)' : '' ) . ': ' . $lead['name'], $mail );
 	}
 	return array( 200, array( 'ok' => true ) );
 }
@@ -646,13 +719,16 @@ function operator_enqueue() {
 
 /* ---------- Mount containers ---------- */
 
-/** A block's HTML by name ('calculator', 'faq', 'tour'), or '' for any other name. */
+/** A block's HTML by name ('calculator', 'faq', 'tour', 'request'), or '' for any other name. */
 function operator_block_html( $name ) {
 	if ( 'calculator' === $name ) {
 		return operator_calculator_html();
 	}
 	if ( 'faq' === $name ) {
 		return operator_faq_html();
+	}
+	if ( 'request' === $name ) {
+		return operator_request_html();
 	}
 	return 'tour' === $name ? operator_tour_html() : '';
 }
@@ -694,7 +770,7 @@ function operator_mount( $content ) {
 if ( function_exists( 'add_action' ) && ! defined( 'PH_OPERATOR_TEST' ) ) {
 	add_action( 'init', __NAMESPACE__ . '\\operator_init', 25 );
 
-	// The three blocks go into the page's empty Elementor mount containers, in the first HTML response.
+	// The four blocks go into the page's empty Elementor mount containers, in the first HTML response.
 	add_filter( 'elementor/frontend/the_content', __NAMESPACE__ . '\\operator_mount', 20 );
 	// The same blocks as shortcodes, kept registered. Each enqueues the page's CSS and JS (only on the page; once).
 	add_shortcode( OPERATOR_SHORTCODES['calculator'], function () {
@@ -708,6 +784,10 @@ if ( function_exists( 'add_action' ) && ! defined( 'PH_OPERATOR_TEST' ) ) {
 	add_shortcode( OPERATOR_SHORTCODES['faq'], function () {
 		operator_enqueue();
 		return operator_faq_html();
+	} );
+	add_shortcode( OPERATOR_SHORTCODES['request'], function () {
+		operator_enqueue();
+		return operator_request_html();
 	} );
 	add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\operator_enqueue' ); // in the head on the page, before the content renders.
 

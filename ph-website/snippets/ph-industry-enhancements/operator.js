@@ -1,20 +1,27 @@
 /* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): drives the three
    blocks on the Elementor page (each a .phf element, put into its mount container by operator.php or rendered by a shortcode), wherever
-   Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the header's
-   "Arrange A Demo" (goes to #tour here), the product tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
+   Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the product tour
+   gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
    to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked
-   from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. Each part runs only when its block is
-   on the page. */
+   from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. The "Request further information"
+   form at the bottom of the page (#request-info, 15 Nov 2026) posts to the same route with form "request", shows its thank-you line
+   without a reload and stores the same ph_operator / ph_lead as the gate, so the tour is unlocked afterwards. Each part runs only when
+   its block is on the page. */
 (function () {
   "use strict";
   // The calculator's shares of ad revenue, "Operator or team" and "Retailer": code only, never shown anywhere.
   var SHARE = 0.5, RETAILER_SHARE = 0.7;
   var BACKGROUNDS = ["Agency media or account management", "Ad-tech sales or partnerships", "Retail media", "Creative agency", "Retail business owner or manager", "Marketing", "Something else"];
   var AUDIENCES = ["An individual operator", "Part of an operator team", "A small to medium retailer"]; // the gate's "I am"
-  // The output labels by the toggle's mode. A retailer's extra sales in their own stores are added to their income.
+  // The request form's "Industry you want to run your network in": the page's twelve industries, then "Other (tell us)".
+  var OTHER = "Other (tell us)";
+  var INDUSTRIES = ["Car dealerships", "Golf clubs", "Sailing clubs and marinas", "Fuel and convenience", "Trade suppliers", "Rural and farm supplies", "Independent grocery", "Liquor stores", "Hardware", "Utility shopfronts", "Gyms and leisure centres", "Cafés and bakeries", OTHER];
+  var MESSAGE_MAX = 1000;
+  // The output labels by the toggle's mode. A retailer's extra sales in their own stores are added to their income. "Earnings per
+  // display per month" is an operator output only (its row is hidden in Retailer mode).
   var LABELS = {
-    operator: { yours: "Your potential income a year", venues: "Venues in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales for your venues a year" },
-    retailer: { yours: "Your potential income a year", venues: "Stores in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales in your stores a year" }
+    operator: { yours: "Your potential income a year", venues: "Venues in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales for your venues a year", perDisplay: "Earnings per display per month" },
+    retailer: { yours: "Retailer's potential incremental income a year", venues: "Stores in your network", displays: "Displays in your network", visitors: "Visitors a month across your network", views: "Ad views a month", extraSales: "Extra sales in your stores a year" }
   };
 
   function calc(s, mode) {
@@ -23,7 +30,9 @@
     var viewsMonth = viewers * s.dis;
     var adRevenue = viewsMonth * 12 / 1000 * s.cpm;
     var extraSales = viewers * 12 * s.atv * s.up / 100;
-    return { venues: s.ven, displays: s.ven * s.dis, visitorsMonth: visitorsMonth, viewsMonth: viewsMonth, income: mode === "retailer" ? adRevenue * RETAILER_SHARE + extraSales : adRevenue * SHARE, extraSales: extraSales };
+    var displays = s.ven * s.dis, opIncome = adRevenue * SHARE;
+    // perDisplay: the operator's potential income a year / displays / 12, in operator_calc()'s order; null with no displays.
+    return { venues: s.ven, displays: displays, visitorsMonth: visitorsMonth, viewsMonth: viewsMonth, income: mode === "retailer" ? adRevenue * RETAILER_SHARE + extraSales : opIncome, extraSales: extraSales, perDisplay: displays > 0 ? opIncome / displays / 12 : null };
   }
   function money(n) {
     if (n >= 1e6) return "$" + (n / 1e6).toFixed(1) + "M";
@@ -31,10 +40,11 @@
     return "$" + Math.round(n);
   }
   function count(n) { return Number(n).toLocaleString("en-US"); }
+  function perDisplay(n) { return n === null || n === undefined || !isFinite(n) ? "–" : money(Math.round(n)); } // to the dollar first (half up), then money(); "–" with no displays
   function view(c) {
-    return { yours: money(c.income), venues: count(c.venues), displays: count(c.displays), visitors: count(Math.round(c.visitorsMonth)), views: count(Math.round(c.viewsMonth)), extraSales: money(c.extraSales) };
+    return { yours: money(c.income), venues: count(c.venues), displays: count(c.displays), visitors: count(Math.round(c.visitorsMonth)), views: count(Math.round(c.viewsMonth)), extraSales: money(c.extraSales), perDisplay: perDisplay(c.perDisplay) };
   }
-  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS, AUDIENCES: AUDIENCES, LABELS: LABELS }; return; }
+  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS, AUDIENCES: AUDIENCES, INDUSTRIES: INDUSTRIES, LABELS: LABELS }; return; }
 
   if (!document.querySelector(".phf")) return;
   var $ = function (id) { return document.getElementById(id); };
@@ -52,12 +62,14 @@
     var v = view(calc(s, mode));
     Object.keys(v).forEach(function (k) { var o = out(k); if (o) o.textContent = v[k]; });
   }
-  // The toggle: buttons, so a click, a tap, Enter and Space all switch the mode. aria-pressed, the two renamed rows and the figures follow.
+  // The toggle: buttons, so a click, a tap, Enter and Space all switch the mode. aria-pressed, the three renamed labels (the income,
+  // venues and extra sales), the per-display row (hidden in Retailer mode) and the figures follow.
   var audBtns = [].slice.call(document.querySelectorAll(".phf .phf-aud-b"));
   function setMode(m) {
     mode = m === "retailer" ? "retailer" : "operator";
     audBtns.forEach(function (b) { b.setAttribute("aria-pressed", b.getAttribute("data-aud") === mode ? "true" : "false"); });
-    ["venues", "extraSales"].forEach(function (k) { var l = document.querySelector('.phf [data-lab="' + k + '"]'); if (l) l.textContent = LABELS[mode][k]; });
+    ["yours", "venues", "extraSales"].forEach(function (k) { var l = document.querySelector('.phf [data-lab="' + k + '"]'); if (l) l.textContent = LABELS[mode][k]; });
+    var pd = document.querySelector(".phf .phf-perd"); if (pd) pd.hidden = mode === "retailer";
     update();
   }
   audBtns.forEach(function (b) { b.addEventListener("click", function () { setMode(b.getAttribute("data-aud")); }); });
@@ -201,14 +213,64 @@
     sync();
   }
 
-  /* ---------- Anchors: #tour focuses the first empty field; the header's Arrange A Demo goes to #tour here ---------- */
-  function headerDemo(a) {
-    if (!a.closest(".elementor-location-header, header")) return false;
-    return /arrange\s+a\s+demo/i.test(a.textContent || "");
+  /* ---------- Request further information (#request-info): the gate's fields and checks, plus the industry and a message ---------- */
+  var rform = $("phf-rform"), rbtn = $("phf-rsubmit"), rmsg = $("phf-rmsg"), rdone = $("phf-rdone"), rbusy = false;
+  function rfields() { var f = rform.elements; return [f.name, f.email, f.linkedin, f.region, f.industry, f.industry_other, f.audience, f.background, f.message]; }
+  function otherOn() { return !!rform && rform.elements.industry.value === OTHER; }
+  function rvalid() {
+    if (!rform) return false;
+    var f = rform.elements, n = f.name.value.trim(), e = f.email.value.trim(), r = f.region.value.trim(), o = f.industry_other.value.trim();
+    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && INDUSTRIES.indexOf(f.industry.value) > -1 && (!otherOn() || (o && o.length <= 120)) && AUDIENCES.indexOf(f.audience.value) > -1 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.message.value.trim().length <= MESSAGE_MAX && f.consent.checked);
   }
-  if ($("tour")) [].slice.call(document.querySelectorAll("a")).forEach(function (a) {
-    if (!a.closest(".phf") && headerDemo(a)) { a.setAttribute("href", "#tour"); a.removeAttribute("onclick"); a.removeAttribute("target"); a.setAttribute("data-phf-demo", "1"); }
-  });
+  function rsync() {
+    if (!rform) return;
+    var w = $("r-io-f"), on = otherOn(); if (w) w.hidden = !on; rform.elements.industry_other.required = on;
+    var n = $("r-ms-n"), len = rform.elements.message.value.length; if (n) n.textContent = len ? len.toLocaleString("en-US") + " of 1,000 characters" : "Up to 1,000 characters";
+    rbtn.disabled = rbusy || !rvalid();
+  }
+  function focusRequest() {
+    if (!rform || rform.hidden) { var d = $("phf-rdone-h"); if (d && rform) d.focus({ preventScroll: true }); return; }
+    var f = rfields().filter(function (x) { return x && x.required && !x.value.trim(); })[0] || (!rform.elements.consent.checked ? rform.elements.consent : null) || rform.elements.name;
+    try { f.focus({ preventScroll: true }); } catch (e) { f.focus(); }
+  }
+  if (rform) {
+    rform.addEventListener("input", rsync); rform.addEventListener("change", rsync);
+    rform.addEventListener("submit", function (e) {
+      e.preventDefault(); if (rbusy || !rvalid()) { rsync(); return; }
+      var f = rform.elements;
+      var body = { form: "request", name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), industry: f.industry.value, industry_other: otherOn() ? f.industry_other.value.trim() : "", audience: f.audience.value, background: f.background.value, message: f.message.value.trim(), consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
+      rbusy = true; rsync(); rbtn.textContent = "Sending…"; rmsg.className = "phf-msg"; rmsg.textContent = "";
+      rfields().forEach(function (x) { if (x) x.removeAttribute("aria-invalid"); });
+      var done = function () { rbusy = false; rbtn.textContent = "Request further information"; rsync(); };
+      fetch(CFG.endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j || {} }; }); })
+        .then(function (o) {
+          done();
+          if (!o.ok) {
+            rmsg.className = "phf-msg err"; rmsg.textContent = o.j.error || "Something went wrong. Please try again.";
+            var bad = o.j.field && f[o.j.field]; if (bad && bad.focus) { bad.setAttribute("aria-invalid", "true"); bad.focus(); }
+            return;
+          }
+          push({ event: "ph_lead_captured", source: "Network operator inquiry", form: "request" });
+          write("ph_operator", { name: body.name, email: body.email, ts: Date.now() }); // the same storage as the gate: the tour unlocks
+          var lead = read("ph_lead");
+          if (!lead) { lead = { name: body.name, email: body.email, company: "", source: "Network operator inquiry", ts: Date.now() }; write("ph_lead", lead); }
+          try { window.dispatchEvent(new CustomEvent("ph:lead", { detail: lead })); } catch (x) {}
+          var h = $("phf-rdone-h");
+          h.textContent = "Thanks" + (first(body.name) ? ", " + first(body.name) : "") + ". " + (h.getAttribute("data-ok") || "");
+          rform.hidden = true; rdone.hidden = false;
+          try { h.focus({ preventScroll: true }); } catch (x) { h.focus(); }
+          if (form && !mounted) { showIn(body.name); mountTour(); } // the tour band above is unlocked too
+        })
+        .catch(function () { done(); rmsg.className = "phf-msg err"; rmsg.textContent = "Something went wrong. Please try again."; });
+    });
+    // A known visitor (the gate, an earlier request or an industry lead): name and email are filled in for them.
+    var known = read("ph_operator") || read("ph_lead");
+    if (known) { if (known.name) rform.elements.name.value = known.name; rform.elements.email.value = known.email; }
+    rsync();
+  }
+
+  /* ---------- Anchors: #tour focuses the first empty field (the floating CTA, cta.js, links here when the page has no #request-info) ---------- */
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href='#tour']") : null;
     if (!a) return;
@@ -219,6 +281,18 @@
     focusFirstEmpty();
   });
   if (location.hash === "#tour") setTimeout(focusFirstEmpty, 0);
+  // "Request further information" (the calculator's link, and the hero button once it points here) goes to #request-info and focuses
+  // its first empty field. Without the request block on the page it falls back to the tour gate.
+  document.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a[href='#request-info']") : null;
+    if (!a) return;
+    var t = $("request-info") || $("tour"); if (!t) return;
+    e.preventDefault();
+    try { t.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); } catch (x) { t.scrollIntoView(); }
+    try { history.replaceState(null, "", "#" + t.id); } catch (x) {}
+    if (t.id === "tour") focusFirstEmpty(); else focusRequest();
+  });
+  if (location.hash === "#request-info") setTimeout(function () { if ($("request-info")) focusRequest(); }, 0);
 
   /* ---------- WebMCP: estimate_rmn_earnings (navigator.modelContext.registerTool) ----------
      Drives this page's own calculator (its "I am" toggle and inputs) and returns exactly the figures the page then shows, with that
@@ -228,7 +302,7 @@
      is live. */
   var RANGES = { ven: [0, 100000], dis: [0, 1000], vis: [0, 1000000], cpm: [0, 1000], atv: [0, 100000], view: [5, 100], up: [0, 50] };
   var INPUT_LABELS = { ven: "Venues", dis: "Displays per venue", vis: "Visitors per venue per day", cpm: "Average CPM (USD)", atv: "Average transaction value (USD)", view: "Visitors who view the ads (%)", up: "Uplift from personalised offers (%)" };
-  function figures() { var o = {}; Object.keys(LABELS.operator).forEach(function (k) { var e = out(k); o[k] = e ? e.textContent.trim() : ""; }); return o; }
+  function figures() { var o = {}; Object.keys(LABELS[mode]).forEach(function (k) { var e = out(k); o[k] = e ? e.textContent.trim() : ""; }); return o; } // this mode's outputs only
   function inputs() { var o = {}; Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); if (el) o[k] = Number(el.value); }); return o; }
   function fire(el, type) { el.dispatchEvent(new Event(type, { bubbles: true })); }
   function toolText(t, extra) { var r = { content: [{ type: "text", text: t }] }; if (extra) r.structuredContent = extra; return r; }
@@ -246,9 +320,10 @@
     });
     update();
     var fig = figures(), data = { audience: mode, inputs: inputs(), figures: fig };
+    if (mode === "operator") data.earningsPerDisplayMonth = fig.perDisplay; // operator mode only, as on the page
     var base = "Calculator filled in on the page (" + (mode === "retailer" ? "Retailer" : "Operator or team") + "). " + Object.keys(LABELS[mode]).map(function (k) { return LABELS[mode][k] + ": " + fig[k]; }).join("; ") + ".";
     var wants = ["name", "email", "linkedin", "region", "i_am", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
-    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, which describes them (an individual operator, part of an operator team or a small to medium retailer), their background and whether they agree to be contacted, then call again with name, email, region, i_am, background and consent. Or they can use the form in the tour section.", data));
+    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, which describes them (an individual operator, part of an operator team or a small to medium retailer), their background and whether they agree to be contacted, then call again with name, email, region, i_am, background and consent. Or they can use the \"Request further information\" form at the bottom of the page (#request-info: the same details, the industry they want to run their network in and an optional message; we send an information pack) or the form in the tour section.", data));
     if (args.consent !== true) return Promise.resolve(toolText(base + " Requesting information needs the person's agreement to be contacted (consent=true). Ask them first; nothing was submitted.", data));
     if (!form || mounted) return Promise.resolve(toolText(base + (mounted ? " The product tour is already unlocked on the page." : ""), data));
     var f = form.elements;
@@ -264,7 +339,7 @@
         if (mounted || err || ++n > 100) {
           clearInterval(t);
           if (mounted) { data.tourUnlocked = true; resolve(toolText(base + " The request was sent and the product tour is unlocked on the page. Our team will follow up with more on the opportunity.", data)); }
-          else resolve(toolFail(err || "The request did not go through. The person can use the form in the tour section."));
+          else resolve(toolFail(err || "The request did not go through. The person can use the \"Request further information\" form at the bottom of the page or the form in the tour section."));
         }
       }, 100);
     });
@@ -284,7 +359,7 @@
     try {
       mc.registerTool({
         name: "estimate_rmn_earnings",
-        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, and extra sales for the venues. For a retailer the page counts stores, and the extra sales in those stores are added to the income. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, which describes them (i_am), their background and consent=true, only when they have given them to you and agreed to be contacted.",
+        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, extra sales for the venues and, for an operator, the earnings per display per month (earningsPerDisplayMonth). For a retailer the page counts stores, the extra sales in those stores are added to the income, and the income is the retailer's potential incremental income a year. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, which describes them (i_am), their background and consent=true, only when they have given them to you and agreed to be contacted.",
         inputSchema: { type: "object", properties: props, additionalProperties: false },
         annotations: { readOnlyHint: false },
         execute: estimate
