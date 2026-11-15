@@ -534,7 +534,7 @@ ok( 'Running your own RMN' === trim( $px->query( '//section[@id="faq"]//h2' )->i
 // Rob's 15 Nov 2026 rewrite (B9eyzr7i3Rgkl7EQ5idN): thirteen questions and answers, word for word and in this order.
 $faqWant = array(
 	array( 'What is a retail media network?', 'A business selling advertising to brands across the places it reaches its customers: in-store screens and, for retailers, their website and app. What makes it retail media is the data: campaigns are targeted using first-party data about the venue and its customers, and, where sales data is shared, measured against what actually sells. When you run your own, you bring many independent venues together so brands can buy them as one network.' ),
-	array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and a creative agency expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
+	array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
 	array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
 	array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
 	array( 'What does it cost to get started?', 'You start with a free roll-out runway before platform fees apply, so you can sign up venues and win your first advertisers first. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
@@ -603,6 +603,22 @@ ok( 'Every screen needs a media player to run your network\'s content, so even v
 $cardSI = array_values( array_filter( operator_standards(), function ( $c ) { return 'Seamless integrations' === $c[1]; } ) );
 ok( 1 === count( $cardSI ) && 'Connects to venues\' existing systems through open APIs, and runs on any signage player, including Amazon Signage.' === $cardSI[0][2], '"Seamless integrations" card matches the live Elementor card (page 10785, element 4ce4f48f)' );
 ok( false !== strpos( $tw, '- **Seamless integrations:** ' . $cardSI[0][2] . "\n" ), 'twin: the "Seamless integrations" card\'s new copy' );
+// 15 Nov 2026 (bB30Qb10Oz4eYHXfOCFk): the operator team is a retail media, an ad sales and an IT operations expert, matching the live Elementor card (page 10785, element 29becd9b).
+$teamCard = 'Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.';
+$teamQ2   = 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.';
+ok( 'Operator team' === operator_ways()[1][1] && $teamCard === operator_ways()[1][2], '"Operator team" card matches the live Elementor card (page 10785, element 29becd9b), word for word' );
+ok( 'Who can run their own RMN?' === operator_faq()[1][0] && $teamQ2 === operator_faq()[1][1], 'FAQ Q2: the operator team is a retail media, an ad sales and an IT operations expert' );
+ok( false !== strpos( $tw, '- **Operator team:** ' . $teamCard ) || false !== strpos( $tw, $teamCard ), 'twin: the "Operator team" card\'s new copy' );
+ok( false !== strpos( $tw, '### Who can run their own RMN?' . "\n\n" . $teamQ2 ) && false !== strpos( (string) wp_json_encode( operator_faq_ld() ), 'an IT operations expert' ), 'twin and FAQPage JSON-LD: the new Q2' );
+ok( false !== strpos( $brief, '"Operator team": "' . $teamCard . '"' ), 'brief: the "Operator team" card word for word' );
+$cae = array();
+$it  = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( dirname( __DIR__ ), \FilesystemIterator::SKIP_DOTS ) );
+foreach ( $it as $file ) {
+	$path = $file->getPathname();
+	if ( false !== strpos( $path, '/node_modules/' ) || ! preg_match( '/\.(php|js|mjs|md|json|html|css|txt)$/', $path ) || in_array( basename( $path ), array( 'operator.test.php', 'operator.test.mjs' ), true ) ) { continue; }
+	if ( false !== stripos( (string) file_get_contents( $path ), 'creative agency expert' ) ) { $cae[] = substr( $path, strlen( dirname( __DIR__ ) ) + 1 ); }
+}
+ok( array() === $cae && false === stripos( $tw, 'creative agency expert' ) && false === stripos( (string) wp_json_encode( operator_faq_ld() ), 'creative agency expert' ), 'nothing in ph-website/, the twin or the JSON-LD says "creative agency expert"' . ( $cae ? ' (found in ' . implode( ', ', $cae ) . ')' : '' ) );
 $cardsText = implode( ' ', array_map( function ( $c ) { return $c[1] . ' ' . $c[2]; }, operator_standards() ) );
 $ldText    = (string) wp_json_encode( operator_faq_ld(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
 foreach ( array( 'cards' => $cardsText, 'FAQ' => implode( ' ', array_merge( ...operator_faq() ) ), 'twin' => $tw, 'FAQ JSON-LD' => $ldText ) as $where => $txt ) {
