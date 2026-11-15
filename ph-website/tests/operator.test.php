@@ -680,6 +680,12 @@ list( $st ) = $call( array_merge( $good, array( 'email' => 'gate@x.test' ) ) );
 ok( 'tour' === $GLOBALS['fired'][0][1]['form'] && 'Run Your Own RMN page – product tour' === $GLOBALS['fired'][0][1]['source_detail'] && 'New network operator inquiry: Ada Lovelace' === $GLOBALS['mails'][0][1] && ! isset( $GLOBALS['meta'][1]['ph_lead_network_industry'] ), 'the tour gate is unchanged (no industry asked, its own source detail and email subject)' );
 $reset();
 
+// (15 Nov 2026) The unlocked state above the tour says the guided tour is ready, never "You're in" (it read as approval to run a network).
+$in = html_entity_decode( operator_tour_html(), ENT_QUOTES );
+ok( false !== strpos( $in, '<p class="phf-in-h" id="phf-in-h" tabindex="-1">Thanks. Your guided tour is ready.</p><p class="phf-in-p">Three short demos, about two minutes each. Choose one below to start.</p>' ), 'unlocked block: "Thanks. Your guided tour is ready." and the line below it' );
+foreach ( array( 'tour block' => $in, 'twin' => operator_twin() ) as $k => $v ) { ok( ! preg_match( '/You(\'|’|&#39;|&rsquo;)re in/i', $v ), "no \"You're in\" in the $k" ); }
+foreach ( glob( dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/operator*' ) as $f ) { ok( ! preg_match( '/You(\'|’|&#39;|&rsquo;)re in/i', file_get_contents( $f ) ), 'no "You\'re in" in ' . basename( $f ) ); }
+
 if ( $fails ) {
 	fwrite( STDERR, "operator.test.php: $fails of $count checks failed\n" );
 	exit( 1 );

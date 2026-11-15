@@ -306,7 +306,7 @@ function operator_tour_html() {
 	$h = '<section id="tour" class="phf-sec phf-white" aria-labelledby="tour-h"><div class="phf-wrap phf-wrap-tour">'
 		. '<p class="phf-eb">Interactive product tour</p><h2 id="tour-h" class="phf-h2b phf-h2-tour">' . esc_html( OPERATOR_TOUR_H ) . '</h2>'
 		. '<p class="phf-tour-p">' . esc_html( OPERATOR_TOUR_P ) . '</p>'
-		. '<div class="phf-in" id="phf-in" hidden><p class="phf-in-h" id="phf-in-h" tabindex="-1">You&#39;re in</p><p class="phf-in-p">Three short demos, about two minutes each.</p></div>'
+		. '<div class="phf-in" id="phf-in" hidden><p class="phf-in-h" id="phf-in-h" tabindex="-1">Thanks. Your guided tour is ready.</p><p class="phf-in-p">Three short demos, about two minutes each. Choose one below to start.</p></div>'
 		. '<div class="phf-tbox" id="phf-tbox"><div class="phf-ph" aria-hidden="true"><div class="phf-ph-side"><i class="phf-ph-logo"></i>';
 	foreach ( array( 90, 110, 80, 100, 70, 95, 85, 105, 75 ) as $w ) {
 		$h .= '<i style="width:' . (int) $w . 'px"></i>';

@@ -404,7 +404,9 @@ try {
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_operator stored");
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
   ok(st.dl.length === 1 && st.dl[0].source === "Network operator inquiry" && !JSON.stringify(st.dl).includes("ada@"), "dataLayer ph_lead_captured, no contact details");
-  ok((await text(p, "#phf-in-h")) === "You’re in, Ada", "You're in, <first name>");
+  ok((await text(p, "#phf-in-h")) === "Thanks, Ada. Your guided tour is ready.", "the unlocked heading: Thanks, <first name>. Your guided tour is ready.");
+  ok((await text(p, ".phf-in-p")) === "Three short demos, about two minutes each. Choose one below to start.", "the line below the heading");
+  ok(await p.evaluate(() => !/You.re in/i.test(document.body.innerText)), "no \"You're in\" anywhere on the page");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1&ph_test=1", "iframe src with embed=1 and ph_test=1");
   ok(await p.evaluate(() => getComputedStyle(document.querySelector(".phf-ph")).display === "none" && getComputedStyle(document.getElementById("phf-gate")).display === "none" && window.PH_TOUR && window.PH_TOUR.endpoint === "/wp-json/ph-site/v1/tour-lead"), "placeholder and gate replaced; window.PH_TOUR set");
   const fr = p.frames().find((f) => /\/run-your-own-rmn\/tour\//.test(f.url()));
@@ -492,6 +494,13 @@ try {
   await p.waitForSelector("#phf-mount iframe");
   ok(await p.evaluate(() => { const l = JSON.parse(localStorage.getItem("ph_lead")); return getComputedStyle(document.getElementById("phf-gate")).display === "none" && l.email === "ada@gmail.com" && l.source === "Network operator inquiry"; }), "returning visitor skips the gate (ph_lead restored for the tour, source Network operator inquiry)");
   ok((await p.getAttribute("#phf-mount iframe", "src")) === "/run-your-own-rmn/tour/?embed=1", "no ph_test outside test mode");
+  ok((await text(p, "#phf-in-h")) === "Thanks, Ada. Your guided tour is ready." && (await text(p, ".phf-in-p")) === "Three short demos, about two minutes each. Choose one below to start.", "returning visitor: the same unlocked copy");
+  await p.close();
+
+  // 8a. Returning visitor whose stored name gives no first name: the heading drops the name.
+  p = await open({ operator: { name: "   ", email: "ada@gmail.com", ts: 1 } });
+  await p.waitForSelector("#phf-mount iframe");
+  ok((await text(p, "#phf-in-h")) === "Thanks. Your guided tour is ready.", "no first name: Thanks. Your guided tour is ready.");
   await p.close();
 
   // 8b. WebMCP: estimate_rmn_earnings drives the page's own calculator and returns the page's own figures; the gate only with consent.
