@@ -22,6 +22,7 @@ const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+const buildOrder = require("./build-order");
 
 initializeApp();
 
@@ -230,12 +231,12 @@ function heartbeatHint(itemId, buildAttemptId) {
   return `\n\nHEARTBEAT — build attempt ${buildAttemptId}. PATCH backlogItems/${itemId} with buildSession.heartbeatAt (timestampValue from \`date -u +%Y-%m-%dT%H:%M:%SZ\`), buildSession.phase ("reading", "building", "testing" or "packaging") and buildSession.attemptId "${buildAttemptId}" — an updateMask of exactly those three field paths — as your first action, at each phase change, and at least every 10 minutes while a long command runs (start the command in the background and beat while you wait). No first heartbeat within 10 minutes, or none for 20, and this session is treated as dead and the ticket is started again; a session that keeps beating is never restarted. Immediately before packaging, read the card again: if its buildAttemptId is no longer "${buildAttemptId}", or it has gained a deployCommit since you started, another session has this ticket — do NOT set patchReady and do NOT write buildSession (not even status "done": the record is that session's now); append what you found as a note and stop. Otherwise send patchAttemptId "${buildAttemptId}" in the same PATCH as patchFiles (a patch from a superseded attempt is refused). ROUTINE_INSTRUCTIONS.md → "Heartbeat and build attempt".`;
 }
 
-function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "", buildAttemptId = null }) {
+function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "", buildAttemptId = null, builtOn = [] }) {
   const others = siblings.filter((s) => s.id !== item.id);
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
@@ -318,7 +319,7 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
   };
 }
 
-async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
+async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, builtOnById = {}, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
   const results = new Array(items.length);
   let next = 0;
   let throttled = false;
@@ -334,7 +335,7 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, proj
       if (wait) await new Promise((r) => setTimeout(r, wait));
       if (throttled) { deferNow(); continue; }
       const buildAttemptId = newBuildAttemptId();
-      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix, buildAttemptId });
+      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix, buildAttemptId, builtOn: builtOnById[item.id] || [] });
       try {
         const r = await fireRoutine(fireUrl, token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
@@ -416,6 +417,62 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       if (skipped.length) logger.info("Skipped tickets an earlier click is still building", { projectId: event.params.projectId, skipped });
     }
 
+    // Build order (ZE8h8cfaezOb0eTsRjSH, 14 Nov 2026): a click used to fire
+    // every ticket at once from the same base. Now a ticket whose dependency
+    // is still in Backlog is held (released when the dependency reaches Ready
+    // for Testing), and tickets likely to touch the same files build one after
+    // another; different lanes stay parallel. See functions/build-order.js.
+    let orderPlan = null;
+    let builtOnById = {};
+    if (items.length) {
+      try {
+        const clickIds = new Set(items.map((i) => i.id));
+        const backlogById = new Map(allBacklog.map((i) => [i.id, i]));
+        const outside = [...new Set(items.flatMap((i) => (Array.isArray(i.dependsOnItemIds) ? i.dependsOnItemIds : [])))].filter((id) => !clickIds.has(id));
+        const depsById = {};
+        const toFetch = [];
+        for (const id of outside) {
+          if (backlogById.has(id)) depsById[id] = backlogById.get(id);
+          else toFetch.push(id);
+        }
+        if (toFetch.length) {
+          const snaps = await db.getAll(...toFetch.map((id) => db.collection("backlogItems").doc(id)));
+          snaps.forEach((snap, n) => { depsById[toFetch[n]] = snap.exists ? { id: snap.id, ...snap.data() } : null; });
+        }
+        const building = allBacklog.filter((i) => inFlight.includes(i.id));
+        orderPlan = buildOrder.planBuildOrder(items, { depsById, building });
+        const nowIso = new Date().toISOString();
+        for (const h of orderPlan.held) {
+          await db.collection("backlogItems").doc(h.item.id).set({ blocked: buildOrder.heldBlock(h.waitingFor, nowIso), queuedAfter: null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+        for (const q of orderPlan.queued) {
+          await db.collection("backlogItems").doc(q.item.id).set({ queuedAfter: { itemId: q.after.id, title: q.after.title, at: new Date() }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+        builtOnById = Object.fromEntries(orderPlan.fire.map((i) => [i.id, buildOrder.landedDependencies(i, depsById)]));
+        items = orderPlan.fire;
+        if (orderPlan.summary) logger.info("Build order applied to a click", { projectId: event.params.projectId, summary: orderPlan.summary });
+      } catch (err) {
+        // Ordering is an improvement, never a reason a click does nothing.
+        logger.error("Build order could not be worked out; firing the click unordered", { projectId: event.params.projectId, error: err instanceof Error ? err.message : String(err) });
+        orderPlan = null;
+      }
+    }
+    const buildOrderRecord = orderPlan && orderPlan.summary
+      ? { summary: orderPlan.summary, heldItemIds: orderPlan.held.map((h) => h.item.id), queuedItemIds: orderPlan.queued.map((q) => q.item.id), notSent: orderPlan.notSent, at: new Date() }
+      : null;
+
+    if (items.length === 0 && buildOrderRecord) {
+      // Everything in the click is held or queued: say so on the project
+      // rather than the click looking like it did nothing.
+      await db.collection("projects").doc(event.params.projectId).set({
+        notifyRoutine: orderPlan.notSent.length
+          ? { status: "error", errorMessage: `Nothing started. ${buildOrderRecord.summary}`, firedAt: new Date(), buildOrder: buildOrderRecord }
+          : { buildOrder: buildOrderRecord },
+      }, { merge: true });
+      logger.info("Notify requested, but every ticket in the click is held or queued", { projectId: event.params.projectId, summary: buildOrderRecord.summary });
+      return;
+    }
+
     if (items.length === 0) {
       if (inFlight.length) {
         logger.info("Notify requested, but every ticket in scope is already being built — nothing new to fire", { projectId: event.params.projectId, inFlight });
@@ -479,7 +536,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       // touch the same file from overwriting each other.
       const fired = await fireBuildSessionsPerItem({
         items, fireUrl, token, projectId: event.params.projectId, projectName,
-        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(),
+        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(), builtOnById,
       });
       const carried = ((previous && previous.sessions) || []).filter((x) => x && inFlight.includes(x.itemId));
       const sessions = [...carried, ...fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }))];
@@ -495,7 +552,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           // Only a fire that started a session replaces the card's current
           // attempt: after a failed fire the earlier session is still the one
           // whose patch may land.
-          await db.collection("backlogItems").doc(f.itemId).set({ lastFire, ...(lastFire.buildAttemptId ? { buildAttemptId: lastFire.buildAttemptId } : {}) }, { merge: true });
+          await db.collection("backlogItems").doc(f.itemId).set({ lastFire, ...(lastFire.buildAttemptId ? { buildAttemptId: lastFire.buildAttemptId } : {}), ...(item && item.queuedAfter ? { queuedAfter: null } : {}) }, { merge: true });
         } catch (err) {
           logger.error("Couldn't record the fire outcome on the card", { projectId: event.params.projectId, itemId: f.itemId, error: err instanceof Error ? err.message : String(err) });
         }
@@ -529,6 +586,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sentItemIds,
           errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
           firedVia: routineCredVia,
+          // What the click held or queued (null when it fired everything).
+          buildOrder: buildOrderRecord,
           // merge:true merges maps deeply, so a previous click's outcome would
           // otherwise survive into this one (finishedAt from 3 Oct did).
           finishedAt: FieldValue.delete(),
@@ -1770,6 +1829,59 @@ async function runTicketIntake(event) {
   upd.updatedAt = FieldValue.serverTimestamp();
   await event.data.after.ref.update(upd);
 }
+// Dependencies become data at intake (ZE8h8cfaezOb0eTsRjSH, 14 Nov 2026). The
+// Dependencies section used to be prose only, so a ticket that named another
+// was still fired before it and wasted a session. On a create or a description
+// edit, ticket ids and the exact titles of open tickets in the same project
+// are resolved into dependsOnItemIds with dependsOnSource "intake"; anything
+// else stays prose. A list a build session or a person set is only added to,
+// never overwritten (mergeDependsOn), and a reference that would close a loop
+// is left out. A list changed by anyone else (the Edit item picker, a build
+// session) is marked as theirs so a later description edit can't drop it.
+// Idempotent on its own output, which is what stops it looping.
+const sameIdList = (a, b) => JSON.stringify(Array.isArray(a) ? a : []) === JSON.stringify(Array.isArray(b) ? b : []);
+async function runDependencyIntake(event, db = getFirestore()) {
+  const after = event.data?.after?.data();
+  if (!after || after.status !== "backlog") return null;
+  const before = event.data?.before?.data();
+  const selfId = event.params.itemId;
+  const upd = {};
+  let ids = Array.isArray(after.dependsOnItemIds) ? after.dependsOnItemIds : [];
+  let source = after.dependsOnSource || null;
+  if (before && !sameIdList(before.dependsOnItemIds, after.dependsOnItemIds) && (before.dependsOnSource || null) === source && (!source || source === "intake")) {
+    const b = after.blocked;
+    source = b && b.reason === buildOrder.DEPENDENCY_REASON && b.setBy !== buildOrder.BUILD_ORDER_SETTER ? "build" : "manual";
+    upd.dependsOnSource = source;
+  }
+  if (!before || before.desc !== after.desc) {
+    const projectSnap = await db.collection("backlogItems").where("projectId", "==", after.projectId || "").get();
+    const sameProject = new Map();
+    projectSnap.forEach((d) => { if (d.id !== selfId) sameProject.set(d.id, { id: d.id, ...d.data() }); });
+    const candidates = [...sameProject.values()].filter((x) => buildOrder.OPEN_STATUSES.includes(x.status || "backlog"));
+    const refs = buildOrder.findDependencyReferences(after.desc, candidates, { selfId });
+    const known = new Map(sameProject);
+    const unknown = refs.ids.filter((id) => !known.has(id));
+    if (unknown.length) {
+      const snaps = await db.getAll(...unknown.map((id) => db.collection("backlogItems").doc(id)));
+      snaps.forEach((snap) => { if (snap.exists) known.set(snap.id, { id: snap.id, ...snap.data() }); });
+    }
+    // An id that names no ticket stays prose.
+    const found = [...refs.ids.filter((id) => known.has(id)), ...refs.titleIds];
+    const merged = buildOrder.mergeDependsOn(ids, source, found);
+    const depsOf = (id) => (known.get(id) || {}).dependsOnItemIds || [];
+    const accepted = merged.ids.filter((id) => ids.includes(id) || !buildOrder.findCycle(selfId, [id], depsOf));
+    if (!sameIdList(accepted, ids) || (merged.source || null) !== (after.dependsOnSource || null)) {
+      upd.dependsOnItemIds = accepted;
+      upd.dependsOnSource = accepted.length ? merged.source : (merged.source === "intake" ? null : merged.source);
+    }
+  }
+  if (!Object.keys(upd).length) return null;
+  if ("dependsOnSource" in upd && upd.dependsOnSource === (after.dependsOnSource || null) && !("dependsOnItemIds" in upd)) return null;
+  await event.data.after.ref.update(upd);
+  return upd;
+}
+exports.onBacklogItemDependencies = onDocumentWritten("backlogItems/{itemId}", (event) => runDependencyIntake(event));
+
 // Groom Backlog packages (ticket 4rc1t7zXf5o8q8BUTbQ5): the board queues
 // selected packages on projects/{id}.packageQueue; these two triggers run them
 // one batch at a time. Cards of a running batch carry packageId, so the card
@@ -2449,4 +2561,4 @@ exports.kanbanNotifyComment = mcp.kanbanNotifyComment;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };
+exports.__test = { runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };

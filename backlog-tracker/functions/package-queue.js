@@ -15,6 +15,11 @@ function itemOutcome(item) {
   if (!item) return "gone";
   if (item.status && item.status !== "backlog") return "landed";
   if (item.patchReady) return "pending";
+  // Build order (ZE8h8cfaezOb0eTsRjSH): the click held it for a dependency or
+  // queued it behind a same-area ticket. It starts by itself later, so the
+  // batch neither waits for it nor counts it as a failure.
+  if (item.queuedAfter && item.queuedAfter.itemId && !(item.blocked && item.blocked.reason)) return "deferred";
+  if (item.blocked && item.blocked.setBy === "build-order") return "deferred";
   const session = item.buildSession || {};
   if (session.status === "error") return "failed";
   if (item.blocked) return "failed";
@@ -31,7 +36,9 @@ function batchOutcome(pkg, itemsById, nowMs) {
   const bad = outcomes.filter((o) => o === "failed").length;
   const landed = outcomes.filter((o) => o === "landed").length;
   if (bad) return { done: true, ok: false, note: `${bad} of ${pkg.itemIds.length} ticket(s) did not build` };
-  if (!landed) return { done: true, ok: false, note: "Nothing left in Backlog to build" };
+  const deferred = outcomes.filter((o) => o === "deferred").length;
+  if (!landed && !deferred) return { done: true, ok: false, note: "Nothing left in Backlog to build" };
+  if (deferred) return { done: true, ok: true, note: `${deferred} ticket(s) build later, in order (held for a dependency or queued behind a same-area ticket)` };
   return { done: true, ok: true, note: null };
 }
 

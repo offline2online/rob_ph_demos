@@ -261,6 +261,13 @@ safe and moving:
   "The automatic rebuild requested at … never started (…). Click Ready for
   Dev to build it again." — and `rebuildRequestedAt` is cleared. Tests:
   `test/rebuild-requests.test.js`, `test/notify-fanout.test.js`.
+- **Build order** (`functions/build-order.js`, 14 Nov 2026) — dependencies
+  are read from the Dependencies section at intake (`onBacklogItemDependencies`)
+  and can be set under Edit item → Builds after or over MCP; a Ready for Dev
+  click holds a ticket whose dependency is still in Backlog, and queues
+  tickets likely to touch the same files one behind another (`queuedAfter`,
+  released by `sweepBuildQueue`). REQUIREMENTS.md → "Build order"; tests:
+  `test/build-order.test.js`.
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
   waits flagged `blocked.reason: "waiting-on-dependency"` (not a question:
   the card reads "Waiting for: <ticket title>" with a link, no Answer button,

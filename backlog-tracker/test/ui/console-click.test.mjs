@@ -1001,6 +1001,50 @@ const scenarios = [
     },
   },
   {
+    name: "Build order: a card with a dependency in Backlog shows 'After: <title>'; a queued card says what it builds after",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems["b-dep"] = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [], blocked: null };
+      s.docs.backlogItems.b1.dependsOnItemIds = ["b-dep"];
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Second ticket", dependsOnItemIds: [], queuedAfter: { itemId: "b-dep", title: "Roles page" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .order-chip', "After: Roles page", "the After chip");
+      assert.match(await c.page.getAttribute('.card[data-id="b1"] .order-chip', "title"), /Builds after:\n• Roles page — Backlog/);
+      await c.waitText('.card[data-id="b2"] .order-chip-queued', "Queued: builds after Roles page", "the Queued chip");
+      assert.strictEqual(await c.page.locator('.card[data-id="b2"] .blocked-answer-btn').count(), 0, "queued is not a question");
+    },
+  },
+  {
+    name: "Build order: Edit item → Builds after adds a ticket, refuses a loop, and saves only dependsOnItemIds",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [] };
+      s.docs.backlogItems.b3 = { ...s.docs.backlogItems.b1, title: "Reports export", dependsOnItemIds: ["b1"] };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.page.fill("#ei-deps-search", "Reports");
+      await c.click('#ei-deps-results .ei-dep-option[data-dep-id="b3"]', "pick Reports export");
+      await c.waitText("#ei-deps-error", "That would make a loop", "the loop refusal");
+      assert.strictEqual(await c.page.locator("#ei-deps-chips .ei-dep-chip").count(), 0, "nothing added");
+      await c.page.fill("#ei-deps-search", "Roles");
+      await c.click('#ei-deps-results .ei-dep-option[data-dep-id="b2"]', "pick Roles page");
+      await c.waitText("#ei-deps-chips", "Roles page", "the chosen ticket");
+      await c.click("#ei-save", "Save changes");
+      const writes = await c.waitWrites(1);
+      const w = writes.find((x) => x.path === "backlogItems/b1");
+      assert.ok(w, JSON.stringify(writes));
+      assert.deepStrictEqual(w.data.dependsOnItemIds, ["b2"]);
+      assert.ok(!("title" in w.data) && !("dependsOnSource" in w.data), "only the list is written; who set it is the trigger's");
+    },
+  },
+  {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
     seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
     async run(c) {

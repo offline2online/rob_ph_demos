@@ -175,6 +175,9 @@ deleted by hand).
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
   patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
+  dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
+  dependsOnSource?: "intake" | "build" | "manual" | null, // 14 Nov 2026 — who set dependsOnItemIds. Intake replaces only its own list; a "build" or "manual" list is only ever added to. Written by the intake trigger and MCP, never a browser (a pipeline field in firestore.rules)
+  queuedAfter?: { itemId: string, title: string, at: timestamp } | null, // 14 Nov 2026 — a Ready for Dev click queued this ticket behind a same-area lane-mate; the automation starts it when that one lands or fails (sweepBuildQueue) and the card shows "Queued: builds after <title>". Function/automation only
   buildSession?: { status?: "done" | "error", finishedAt?, reportedAt?: timestamp, errorMessage?, heartbeatAt?: timestamp, phase?: "reading" | "building" | "testing" | "packaging", attemptId?: string }, // the session's own report. heartbeatAt/phase/attemptId (14 Nov 2026) are its heartbeat: written when it starts, at each phase change and at least every 10 minutes; a heartbeat counts only when attemptId equals the card's buildAttemptId. Automation/Routine identity only (a pipeline field in firestore.rules)
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
@@ -471,7 +474,8 @@ busy. Now:
   flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
   `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
   has no Answer button, and unblocks by itself when its dependencies have left
-  Backlog.
+  Backlog. See "Build order" below for how dependencies are recorded and how
+  a click orders the builds.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while
@@ -613,6 +617,76 @@ it (`laterPassFor`). This is the chip's side of "fixed further up the train",
 which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
+
+### Build order (14 Nov 2026, ticket ZE8h8cfaezOb0eTsRjSH)
+
+A Ready for Dev click used to start one session per ticket, four at a time,
+in array order, all from the same base. Nothing decided order: 104 tickets
+(8%) carry "Not built: since this patch was written … changed … in the same
+places" because siblings built in parallel collided, and dependants were
+sent before their dependency and wasted a session. The rules, all in
+`functions/build-order.js` (pure, shared by the trigger, MCP, the automation
+and `test/build-order.test.js`):
+
+- **Dependencies are data at intake.** On a create or a description edit
+  (board, MCP `create_backlog_item` / `update_backlog_item`, the intake
+  trigger `onBacklogItemDependencies`), the Dependencies section is read:
+  20-character ticket ids (any project; an id that names no ticket stays
+  prose) and the exact titles of open tickets in the same project (quoted,
+  or verbatim for a title of four words or more). They are stored in
+  `dependsOnItemIds` with `dependsOnSource: "intake"`. Intake replaces only
+  its own list; a list a build session (`"build"`) or a person
+  (`"manual"`) set is merged, never overwritten. A reference that would
+  close a loop is left out.
+- **Settable by hand.** Edit item → **Builds after** searches open tickets
+  (this project first) and refuses a loop with the loop named ("A waits for
+  B waits for A"). MCP `create_backlog_item` / `update_backlog_item` take
+  `dependsOnItemIds` with the same check; `get_backlog_item` and
+  `list_backlog_items` return `dependsOn` (id, title, status).
+- **A click builds in order** (`notifyOnProjectReadyForReview`, so the board
+  click, `send_to_build` and a Groom package batch alike): a ticket whose
+  dependency is in the same click, or still in Backlog, is not fired but
+  held (`blocked: {reason: "waiting-on-dependency", note: "Waiting for:
+  <titles>", setBy: "build-order"}`) and released by `releaseDependents` /
+  `sweepDependencyWaits` when the dependency reaches Ready for Testing. A
+  dependency on the train, approved or live (or archived, or deleted) holds
+  nothing. When a held ticket's dependency was not sent and is not
+  building, the click says so: `projects/{id}.notifyRoutine.buildOrder`
+  `{summary, heldItemIds, queuedItemIds, notSent, at}` ("2 held: they need
+  "X", which was not sent"), shown beside the Ready for Dev button for two
+  hours; when nothing could start, `notifyRoutine` is an error saying that.
+- **Same-area tickets go one at a time; different areas stay parallel.**
+  Tickets that share a groom area (`groomAreas`), a file path (by file name;
+  `index.js` and the like keep their folder; Markdown files don't count), a
+  named function (camelCase, eight characters or more) or a quoted spec
+  section (`→ "Section"`) in their Outcome or Spec reference form a lane.
+  A lane fires its first ticket (priority high → medium/unset → low, then
+  oldest first) and queues the rest (`queuedAfter`; the card shows "Queued:
+  builds after <title>", not blocked, no Answer button). A ticket sharing a
+  lane with a build an earlier click is still running queues behind it.
+  `sweepBuildQueue` (every automation run) starts a queued ticket when the
+  one ahead of it lands, fails (its current attempt reports error or done
+  without a patch, its fire failed, or it is blocked), is archived or
+  deleted, or after three hours; it builds on the train tip after that.
+  Lanes are decided without a model call. `FANOUT_CONCURRENCY` (4) still
+  caps how many fire at once.
+- **Deadlock check.** `sweepDependencyWaits` rewrites a waiter's flag when a
+  dependency is itself blocked on a person: "Waiting for <title>, which is
+  blocked: it needs a decision …" (`blocked.stuckOn`), and restores it when
+  that is settled. An archived or deleted dependency releases the waiter
+  with a note. A loop a build session created is flagged on every ticket in
+  it as a question (`waiting-on-input`, setBy `dependency-cycle`, never
+  auto-answered or turned back into a wait).
+- **Fire text.** A fired ticket's prompt lists "Already landed and in your
+  base: …" — each dependency on the train or live, with its commit — so the
+  session reads those commits instead of rediscovering them.
+- **Card.** A Backlog card with dependencies still in Backlog shows "After:
+  <title>" (+N); the hover lists every dependency with its status.
+- **Rules.** Browsers may write `dependsOnItemIds` (a list of at most 20
+  strings); `dependsOnSource` and `queuedAfter` are pipeline fields.
+
+Ticket ZmEWDC40NYOiojehfPjk (owner scoping) builds on this: it adds owner
+permissions and the contract-change flag, not a second link field.
 
 ### Flaky tests: retry once, record, ticket at three
 

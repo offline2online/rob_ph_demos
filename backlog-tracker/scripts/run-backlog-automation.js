@@ -57,6 +57,8 @@ const { trainLockShouldClear, trainHandoverReason } = require("../functions/trai
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
+// Build order (ZE8h8cfaezOb0eTsRjSH): dependency waits, deadlocks and lanes.
+const buildOrder = require("../functions/build-order");
 const { modelGuardRefusal } = require("../functions/model-requirement");
 const testRounds = require("../functions/test-rounds");
 const kanbanHeal = require("./kanban-e2e-heal");
@@ -1231,6 +1233,9 @@ const ITEM_ID_RE = /\b[A-Za-z0-9]{20}\b/g;
 function dependencyIdsOf(item) {
   const b = item && item.blocked;
   if (!b || (b.reason !== "waiting-on-input" && b.reason !== DEPENDENCY_REASON)) return null;
+  // Two tickets waiting for each other were put to a person; that question
+  // is answered on the card, never turned back into a wait.
+  if (b.setBy === buildOrder.CYCLE_SETTER) return null;
   if (Array.isArray(item.dependsOnItemIds) && item.dependsOnItemIds.length) return item.dependsOnItemIds;
   const note = typeof b.note === "string" ? b.note : "";
   if (b.reason === DEPENDENCY_REASON) return null;
@@ -1251,35 +1256,78 @@ function dependencyMigration(item, titleById) {
     blocked: { reason: DEPENDENCY_REASON, note: dependencyNote(ids.map((id) => titleById[id] || "another ticket")), setBy: "dependency-migration", setAt: new Date().toISOString() },
   };
 }
+// Every run: release a waiter whose dependencies have all left Backlog (or
+// will never land: deleted, archived), say so when one waits behind a ticket
+// that is itself blocked on a person ("Waiting for X, which is blocked: …"),
+// and put a loop a build session created (A waits for B waits for A) to a
+// person on both cards — see buildOrder.dependencyWaitPlan.
 async function sweepDependencyWaits() {
   const backlog = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
   });
-  const titleCache = {}, statusCache = {};
+  const backlogById = new Map(backlog.map((b) => [b.id, b]));
+  const docCache = {};
   const look = async (id) => {
-    if (!(id in statusCache)) {
-      const d = await getItem(id).catch(() => undefined);
-      statusCache[id] = d === undefined ? "backlog" : d && d.status;
-      titleCache[id] = (d && d.title) || "another ticket";
+    if (!(id in docCache)) {
+      if (backlogById.has(id)) docCache[id] = backlogById.get(id);
+      else {
+        const d = await getItem(id).catch(() => undefined);
+        // A read that failed is treated as still in Backlog: never release on an error.
+        docCache[id] = d === undefined ? { id, status: "backlog", title: "another ticket" } : d;
+      }
     }
+    return docCache[id];
   };
+  const depsOf = (id) => {
+    const b = backlogById.get(id);
+    return b && b.blocked && b.blocked.reason === DEPENDENCY_REASON && Array.isArray(b.dependsOnItemIds) ? b.dependsOnItemIds : [];
+  };
+  const titleOf = (id) => ((docCache[id] || backlogById.get(id) || {}).title) || "another ticket";
+  const cycled = new Set();
   for (const w of backlog) {
     const ids = dependencyIdsOf(w);
-    if (!ids) continue;
+    if (!ids || cycled.has(w.id)) continue;
     try {
-      for (const id of ids) await look(id);
+      const depsById = {};
+      for (const id of ids) depsById[id] = await look(id);
+      const statusById = Object.fromEntries(Object.entries(depsById).map(([id, d]) => [id, d ? d.status : null]));
       const stamp = new Date().toISOString();
-      if (w.blocked.reason !== DEPENDENCY_REASON && !dependenciesLanded(ids, statusCache)) {
-        const m = dependencyMigration(w, titleCache);
+      if (w.blocked.reason !== DEPENDENCY_REASON && !dependenciesLanded(ids, statusById)) {
+        const m = dependencyMigration(w, Object.fromEntries(ids.map((id) => [id, titleOf(id)])));
         await patchItem(w.id, { ...m, updatedAt: stamp });
         console.log(`[dependency] ${w.id}: converted from a question to a dependency wait`);
         continue;
       }
-      if (!dependenciesLanded(ids, statusCache)) continue;
+      const plan = buildOrder.dependencyWaitPlan({ ...w, dependsOnItemIds: ids }, depsById, depsOf);
+      if (plan.action === "wait") continue;
+      if (plan.action === "cycle") {
+        const loopIds = [...new Set(plan.path)];
+        for (const id of loopIds) {
+          const card = backlogById.get(id);
+          if (!card || cycled.has(id)) continue;
+          cycled.add(id);
+          const block = buildOrder.cycleBlock(plan.path, titleOf, stamp);
+          const notes = await appendNote(card, `Not built: ${block.note}`);
+          await patchItem(id, { blocked: block, notes, updatedAt: stamp });
+        }
+        console.log(`[dependency] loop flagged for a person: ${plan.path.join(" -> ")}`);
+        continue;
+      }
+      if (plan.action === "stuck") {
+        await patchItem(w.id, { blocked: { ...w.blocked, note: plan.note, stuckOn: plan.stuckOn, setAt: w.blocked.setAt || stamp }, updatedAt: stamp });
+        console.log(`[dependency] ${w.id}: waits behind blocked ${plan.stuckOn.itemId}`);
+        continue;
+      }
+      if (plan.action === "unstuck") {
+        const waitIds = ids.filter((id) => depsById[id] && (depsById[id].status || "backlog") === "backlog");
+        await patchItem(w.id, { blocked: { ...buildOrder.heldBlock(waitIds.map((id) => ({ title: titleOf(id) })), stamp), setBy: w.blocked.setBy || "dependency" }, updatedAt: stamp });
+        continue;
+      }
+      // release
       const project = await getProject(w.projectId).catch(() => null);
       if (!project) continue;
-      const notes = await appendNote(w, `Released: everything this ticket was waiting for has landed (${ids.map((id) => titleCache[id]).join("; ")}), so it is no longer blocked.`);
+      const notes = await appendNote(w, plan.note || `Released: everything this ticket was waiting for has landed (${ids.map(titleOf).join("; ")}), so it is no longer blocked.`);
       await patchItem(w.id, { blocked: null, blockedClearedAt: stamp, notes, updatedAt: stamp, ...(project.trainLocked ? { buildAfterTrain: true } : {}) });
       if (!project.trainLocked) queueBuildRequest(project, w.id);
       console.log(`[dependency] ${w.id}: released by sweep`);
@@ -1290,7 +1338,13 @@ async function sweepDependencyWaits() {
 }
 
 async function releaseDependents(landed) {
+  const projects = new Map();
+  const projectFor = async (id) => {
+    if (!projects.has(id)) projects.set(id, await getProject(id).catch(() => null));
+    return projects.get(id);
+  };
   for (const [projectId, { ids, project }] of landed) {
+    projects.set(projectId, project);
     for (const landedId of ids) {
       let waiting = [];
       try {
@@ -1302,25 +1356,72 @@ async function releaseDependents(landed) {
         console.log(`[parallel] couldn't look up tickets waiting on ${landedId}: ${err.message}`);
         continue;
       }
-      for (const w of waiting.filter((x) => x.status === "backlog")) {
+      // Only a ticket held for its dependencies is released here; one with an
+      // unrelated flag (a question) keeps it.
+      for (const w of waiting.filter((x) => x.status === "backlog" && (!x.blocked || !x.blocked.reason || x.blocked.reason === DEPENDENCY_REASON))) {
         const deps = Array.isArray(w.dependsOnItemIds) ? w.dependsOnItemIds : [];
         const statusById = {};
+        const titles = [];
         for (const d of deps) {
-          if (d === landedId) { statusById[d] = "ready-for-testing"; continue; }
+          if (d === landedId) { statusById[d] = "ready-for-testing"; }
           const dep = await getItem(d).catch(() => undefined);
-          statusById[d] = dep === undefined ? "backlog" : dep && dep.status;
+          if (d !== landedId) statusById[d] = dep === undefined ? "backlog" : dep && dep.status;
+          titles.push((dep && dep.title) || d);
         }
         if (!dependenciesLanded(deps, statusById)) continue;
-        const locked = !!project.trainLocked;
+        // A cross-project dependency: the waiter builds on its own project's train.
+        const wProject = w.projectId && w.projectId !== projectId ? await projectFor(w.projectId) : project;
+        if (!wProject) continue;
+        const wasBlocked = !!(w.blocked && w.blocked.reason);
+        const locked = !!wProject.trainLocked;
+        if (!wasBlocked) continue; // never held (it fired after its dependency landed): nothing to release
         const notes = await appendNote(w,
-          `Released: ${deps.join(", ")} ${deps.length === 1 ? "has" : "have"} reached Ready for Testing, so this ticket is no longer blocked. ` +
+          `Released: ${titles.join("; ")} ${deps.length === 1 ? "has" : "have"} reached Ready for Testing, so this ticket is no longer blocked. ` +
           (locked
             ? `This project's train is closing (an approval locked it), so the build starts by itself as soon as that train has merged.`
             : `A build was requested for it automatically; this card will say when it starts.`));
         await patchItem(w.id, { blocked: null, blockedClearedAt: new Date().toISOString(), notes, updatedAt: new Date().toISOString(), ...(locked ? { buildAfterTrain: true } : {}) });
-        if (!locked) queueBuildRequest(project, w.id);
+        if (!locked) queueBuildRequest(wProject, w.id);
         console.log(`[parallel] ${w.id}: released (waited on ${deps.join(", ")})${locked ? " — train locked, not rebuilt" : ""}`);
       }
+    }
+  }
+}
+
+// Same-area tickets build one at a time (ZE8h8cfaezOb0eTsRjSH): a Ready for
+// Dev click queues a ticket behind the lane-mate it would collide with
+// (backlogItems.queuedAfter, written by functions/index.js). Every run, a
+// queued ticket whose lane-mate has landed, failed, been blocked, archived or
+// deleted is let go and its build requested, so it builds on the train tip
+// after the previous one. Not a blocked flag: nothing to answer.
+async function sweepBuildQueue(nowMs = Date.now()) {
+  const backlog = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+  });
+  const byId = new Map(backlog.map((b) => [b.id, b]));
+  for (const w of backlog.filter((x) => x.queuedAfter && x.queuedAfter.itemId)) {
+    try {
+      const predId = w.queuedAfter.itemId;
+      const pred = byId.has(predId) ? byId.get(predId) : await getItem(predId).catch(() => undefined);
+      if (pred === undefined) continue; // couldn't read it: try next run
+      const plan = buildOrder.queueReleasePlan(w, pred, nowMs);
+      if (!plan.release) continue;
+      const stamp = new Date().toISOString();
+      if (w.blocked && w.blocked.reason) {
+        // Held for something else meanwhile: just drop the queue marker.
+        await patchItem(w.id, { queuedAfter: null, updatedAt: stamp });
+        continue;
+      }
+      const project = await getProject(w.projectId).catch(() => null);
+      if (!project) continue;
+      const locked = !!project.trainLocked;
+      const notes = await appendNote(w, `Queue: ${plan.why}, so this ticket ${locked ? "builds as soon as this project's closing train has merged" : "builds now, on the train as it is after that"}.`);
+      await patchItem(w.id, { queuedAfter: null, notes, updatedAt: stamp, ...(locked ? { buildAfterTrain: true } : {}) });
+      if (!locked) queueBuildRequest(project, w.id);
+      console.log(`[build-queue] ${w.id}: released (${plan.why})`);
+    } catch (err) {
+      console.log(`[build-queue] ${w.id}: ${err.message}`);
     }
   }
 }
@@ -7602,6 +7703,11 @@ async function main() {
     console.error(`[dependency] sweep failed: ${err.message}`);
   }
   try {
+    await sweepBuildQueue();
+  } catch (err) {
+    console.error(`[build-queue] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepRebuildRequests();
   } catch (err) {
     console.error(`[rebuild] sweep failed: ${err.message}`);
@@ -7798,7 +7904,7 @@ if (require.main === module) {
 // this module loads if not guarded — see the require.main check).
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
-  dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits,
+  dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,

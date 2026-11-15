@@ -346,8 +346,8 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
-| `update_backlog_item` (title, description, type, area, model); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
+| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
+| `update_backlog_item` (title, description, type, area, model, `dependsOnItemIds`); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
@@ -365,7 +365,7 @@ prompt to use, getting its API trigger's fire URL and token, then calling
 `set_my_routine_binding` with both. There's no way to automate the
 claude.ai/code/routines step itself: the routines API has no delegated-OAuth
 "fire on behalf of" flow, so a Routine's fire URL/token is per-Routine and
-hand-generated once — this is the closest one-click setup the API allows.
+hand-generated once.
 `set_my_routine_binding` is **write-only**: your stored `fireUrl`/`token`
 are never returned by this or any other tool — `whoami`'s
 `hasRoutineBinding` only ever says whether one is set, never its value.
