@@ -1,5 +1,5 @@
 {
- "about": "The Fairlinks Golf Network seed (v3): 100 fictional clubs, each with only the display types it has screens for. Written by slots_golf.py; read by stores.html, the tour figures and the tests.",
+ "about": "The Fairlinks Golf Network seed (v4): 100 fictional clubs of 2 to 16 screens, each with its own mix of the display types it has screens for. Written by slots_golf.py; read by stores.html, the tour figures and the tests.",
  "types": [
   {
    "id": "proshop",
@@ -31,15 +31,15 @@
    "code": "FGN-001",
    "name": "Fernhollow Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 2,
+    "range": 2,
     "tee": 1,
     "halfway": 1,
     "locker": 1,
     "bar": 2
    },
-   "total": 7,
-   "staff": 4,
+   "total": 9,
+   "staff": 5,
    "segments": [
     "Members' club",
     "Parkland"
@@ -49,13 +49,14 @@
    "code": "FGN-002",
    "name": "Fernmead Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 2,
     "range": 2,
-    "tee": 1,
-    "bar": 1
+    "tee": 2,
+    "halfway": 2,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 10,
+   "total": 12,
+   "staff": 13,
    "segments": [
     "Members' club",
     "Heathland"
@@ -65,15 +66,15 @@
    "code": "FGN-003",
    "name": "Fernwick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 3,
+    "range": 2,
     "tee": 1,
-    "halfway": 1,
-    "locker": 1,
-    "bar": 2
+    "halfway": 2,
+    "locker": 2,
+    "bar": 3
    },
-   "total": 7,
-   "staff": 9,
+   "total": 13,
+   "staff": 11,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -84,10 +85,11 @@
    "name": "Fernstow Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 3,
     "bar": 1
    },
-   "total": 2,
-   "staff": 5,
+   "total": 5,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Links"
@@ -97,9 +99,10 @@
    "code": "FGN-005",
    "name": "Ferncombe Golf Club",
    "screens": {
+    "proshop": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 3,
    "segments": [
     "Resort",
@@ -110,10 +113,12 @@
    "code": "FGN-006",
    "name": "Fernbrae Golf Club",
    "screens": {
-    "bar": 1
+    "proshop": 1,
+    "range": 2,
+    "bar": 4
    },
-   "total": 1,
-   "staff": 10,
+   "total": 7,
+   "staff": 12,
    "segments": [
     "Members' club",
     "Parkland"
@@ -123,13 +128,13 @@
    "code": "FGN-007",
    "name": "Fernholt Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 2,
     "range": 1,
-    "tee": 1,
-    "bar": 1
+    "tee": 2,
+    "bar": 4
    },
-   "total": 4,
-   "staff": 9,
+   "total": 9,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Heathland"
@@ -139,12 +144,11 @@
    "code": "FGN-008",
    "name": "Fernlea Golf Club",
    "screens": {
-    "proshop": 1,
     "range": 1,
     "bar": 1
    },
-   "total": 3,
-   "staff": 7,
+   "total": 2,
+   "staff": 6,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -154,14 +158,13 @@
    "code": "FGN-009",
    "name": "Fernford Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "range": 4,
     "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "locker": 1,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 5,
+   "total": 10,
+   "staff": 7,
    "segments": [
     "Members' club",
     "Links"
@@ -171,13 +174,13 @@
    "code": "FGN-010",
    "name": "Ferngarth Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 2,
+    "tee": 2,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 3,
+   "total": 8,
+   "staff": 4,
    "segments": [
     "Resort",
     "Parkland"
@@ -187,13 +190,13 @@
    "code": "FGN-011",
    "name": "Quillhollow Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
+    "proshop": 3,
+    "tee": 2,
+    "halfway": 1,
     "bar": 1
    },
-   "total": 4,
-   "staff": 10,
+   "total": 7,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Parkland"
@@ -203,10 +206,11 @@
    "code": "FGN-012",
    "name": "Quillmead Golf Club",
    "screens": {
-    "bar": 1
+    "locker": 1,
+    "bar": 2
    },
-   "total": 1,
-   "staff": 7,
+   "total": 3,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Heathland"
@@ -216,12 +220,13 @@
    "code": "FGN-013",
    "name": "Quillwick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "proshop": 3,
+    "tee": 1,
+    "halfway": 1,
+    "bar": 3
    },
-   "total": 3,
-   "staff": 6,
+   "total": 8,
+   "staff": 7,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -231,10 +236,11 @@
    "code": "FGN-014",
    "name": "Quillstow Golf Club",
    "screens": {
-    "bar": 1
+    "range": 1,
+    "bar": 2
    },
-   "total": 1,
-   "staff": 3,
+   "total": 3,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Links"
@@ -244,14 +250,13 @@
    "code": "FGN-015",
    "name": "Quillcombe Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 2,
+    "tee": 2,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 11,
+   "total": 10,
+   "staff": 13,
    "segments": [
     "Resort",
     "Parkland"
@@ -262,12 +267,14 @@
    "name": "Quillbrae Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 2,
+    "range": 4,
     "tee": 1,
-    "bar": 1
+    "halfway": 2,
+    "locker": 2,
+    "bar": 2
    },
-   "total": 5,
-   "staff": 9,
+   "total": 12,
+   "staff": 12,
    "segments": [
     "Members' club",
     "Parkland"
@@ -278,13 +285,14 @@
    "name": "Quillholt Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "range": 3,
+    "tee": 2,
+    "halfway": 2,
+    "locker": 1,
+    "bar": 2
    },
-   "total": 5,
-   "staff": 7,
+   "total": 11,
+   "staff": 9,
    "segments": [
     "Members' club",
     "Heathland"
@@ -294,13 +302,12 @@
    "code": "FGN-018",
    "name": "Quilllea Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 3,
+    "tee": 2,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 5,
+   "total": 8,
+   "staff": 6,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -311,10 +318,11 @@
    "name": "Quillford Golf Club",
    "screens": {
     "proshop": 1,
-    "bar": 1
+    "halfway": 1,
+    "bar": 2
    },
-   "total": 2,
-   "staff": 2,
+   "total": 4,
+   "staff": 3,
    "segments": [
     "Members' club",
     "Links"
@@ -324,9 +332,10 @@
    "code": "FGN-020",
    "name": "Quillgarth Golf Club",
    "screens": {
+    "locker": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 9,
    "segments": [
     "Resort",
@@ -338,10 +347,12 @@
    "name": "Wrennhollow Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 2,
+    "halfway": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 7,
+   "total": 5,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Parkland"
@@ -351,13 +362,13 @@
    "code": "FGN-022",
    "name": "Wrennmead Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 2,
     "range": 1,
     "tee": 1,
-    "bar": 1
+    "bar": 4
    },
-   "total": 4,
-   "staff": 6,
+   "total": 8,
+   "staff": 7,
    "segments": [
     "Members' club",
     "Heathland"
@@ -367,12 +378,13 @@
    "code": "FGN-023",
    "name": "Wrennwick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 2,
+    "locker": 1,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 4,
+   "total": 7,
+   "staff": 5,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -383,10 +395,12 @@
    "name": "Wrennstow Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 2,
+    "locker": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 10,
+   "total": 5,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Links"
@@ -396,10 +410,11 @@
    "code": "FGN-025",
    "name": "Wrenncombe Golf Club",
    "screens": {
-    "bar": 1
+    "range": 1,
+    "bar": 3
    },
-   "total": 1,
-   "staff": 8,
+   "total": 4,
+   "staff": 9,
    "segments": [
     "Resort",
     "Parkland"
@@ -410,10 +425,13 @@
    "name": "Wrennbrae Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 1,
+    "halfway": 1,
+    "locker": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 6,
+   "total": 5,
+   "staff": 7,
    "segments": [
     "Members' club",
     "Parkland"
@@ -423,9 +441,10 @@
    "code": "FGN-027",
    "name": "Wrennholt Golf Club",
    "screens": {
+    "halfway": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 4,
    "segments": [
     "Members' club",
@@ -436,13 +455,14 @@
    "code": "FGN-028",
    "name": "Wrennlea Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 2,
-    "tee": 1,
-    "bar": 1
+    "proshop": 3,
+    "range": 3,
+    "tee": 2,
+    "locker": 2,
+    "bar": 3
    },
-   "total": 5,
-   "staff": 3,
+   "total": 13,
+   "staff": 6,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -452,15 +472,14 @@
    "code": "FGN-029",
    "name": "Wrennford Golf Club",
    "screens": {
-    "proshop": 2,
-    "range": 3,
-    "tee": 1,
-    "halfway": 1,
-    "locker": 1,
-    "bar": 2
+    "proshop": 3,
+    "range": 4,
+    "tee": 2,
+    "locker": 2,
+    "bar": 4
    },
-   "total": 10,
-   "staff": 12,
+   "total": 15,
+   "staff": 14,
    "segments": [
     "Members' club",
     "Links"
@@ -471,11 +490,12 @@
    "name": "Wrenngarth Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 2,
     "tee": 1,
-    "bar": 1
+    "bar": 2
    },
-   "total": 3,
-   "staff": 8,
+   "total": 6,
+   "staff": 9,
    "segments": [
     "Resort",
     "Parkland"
@@ -485,10 +505,12 @@
    "code": "FGN-031",
    "name": "Marrowhollow Golf Club",
    "screens": {
-    "bar": 1
+    "range": 1,
+    "tee": 1,
+    "bar": 2
    },
-   "total": 1,
-   "staff": 5,
+   "total": 4,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Parkland"
@@ -498,12 +520,13 @@
    "code": "FGN-032",
    "name": "Marrowmead Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 3,
+    "range": 2,
+    "halfway": 1,
     "bar": 1
    },
-   "total": 3,
-   "staff": 4,
+   "total": 7,
+   "staff": 5,
    "segments": [
     "Members' club",
     "Heathland"
@@ -513,11 +536,12 @@
    "code": "FGN-033",
    "name": "Marrowwick Golf Club",
    "screens": {
-    "proshop": 1,
-    "bar": 1
+    "halfway": 1,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 2,
-   "staff": 10,
+   "total": 5,
+   "staff": 11,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -527,10 +551,12 @@
    "code": "FGN-034",
    "name": "Marrowstow Golf Club",
    "screens": {
+    "range": 1,
+    "halfway": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 8,
+   "total": 3,
+   "staff": 9,
    "segments": [
     "Members' club",
     "Links"
@@ -540,12 +566,12 @@
    "code": "FGN-035",
    "name": "Marrowcombe Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "range": 2,
+    "tee": 1,
+    "bar": 4
    },
-   "total": 3,
-   "staff": 7,
+   "total": 7,
+   "staff": 8,
    "segments": [
     "Resort",
     "Parkland"
@@ -555,14 +581,14 @@
    "code": "FGN-036",
    "name": "Marrowbrae Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "proshop": 3,
+    "range": 2,
+    "halfway": 2,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 5,
-   "staff": 5,
+   "total": 11,
+   "staff": 7,
    "segments": [
     "Members' club",
     "Parkland"
@@ -572,13 +598,12 @@
    "code": "FGN-037",
    "name": "Marrowholt Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 3,
     "range": 1,
-    "tee": 1,
-    "bar": 1
+    "bar": 4
    },
-   "total": 4,
-   "staff": 3,
+   "total": 8,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Heathland"
@@ -588,13 +613,14 @@
    "code": "FGN-038",
    "name": "Marrowlea Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 2,
+    "range": 2,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "bar": 2
    },
-   "total": 4,
-   "staff": 10,
+   "total": 9,
+   "staff": 12,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -604,15 +630,15 @@
    "code": "FGN-039",
    "name": "Marrowford Golf Club",
    "screens": {
-    "proshop": 2,
-    "range": 2,
-    "tee": 1,
+    "proshop": 3,
+    "range": 4,
+    "tee": 2,
     "halfway": 1,
     "locker": 1,
-    "bar": 2
+    "bar": 3
    },
-   "total": 9,
-   "staff": 10,
+   "total": 14,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Links"
@@ -622,9 +648,10 @@
    "code": "FGN-040",
    "name": "Marrowgarth Golf Club",
    "screens": {
+    "proshop": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 5,
    "segments": [
     "Resort",
@@ -635,10 +662,12 @@
    "code": "FGN-041",
    "name": "Tansyhollow Golf Club",
    "screens": {
+    "proshop": 1,
+    "halfway": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 3,
+   "total": 3,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Parkland"
@@ -648,13 +677,14 @@
    "code": "FGN-042",
    "name": "Tansymead Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 2,
+    "tee": 2,
+    "halfway": 1,
+    "bar": 2
    },
-   "total": 4,
-   "staff": 11,
+   "total": 9,
+   "staff": 13,
    "segments": [
     "Members' club",
     "Heathland"
@@ -664,13 +694,13 @@
    "code": "FGN-043",
    "name": "Tansywick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 2,
+    "tee": 2,
+    "halfway": 1,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 9,
+   "total": 8,
+   "staff": 10,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -680,12 +710,13 @@
    "code": "FGN-044",
    "name": "Tansystow Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 2,
+    "halfway": 1,
+    "locker": 1,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 7,
+   "total": 6,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Links"
@@ -695,15 +726,14 @@
    "code": "FGN-045",
    "name": "Tansycombe Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 3,
     "range": 2,
-    "tee": 1,
-    "halfway": 1,
-    "locker": 1,
-    "bar": 2
+    "tee": 2,
+    "halfway": 2,
+    "bar": 4
    },
-   "total": 8,
-   "staff": 6,
+   "total": 13,
+   "staff": 8,
    "segments": [
     "Resort",
     "Parkland"
@@ -714,12 +744,13 @@
    "name": "Tansybrae Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 2,
+    "range": 3,
     "tee": 1,
-    "bar": 1
+    "locker": 1,
+    "bar": 3
    },
-   "total": 5,
-   "staff": 3,
+   "total": 9,
+   "staff": 5,
    "segments": [
     "Members' club",
     "Parkland"
@@ -732,10 +763,12 @@
     "proshop": 1,
     "range": 1,
     "tee": 1,
-    "bar": 1
+    "halfway": 2,
+    "locker": 1,
+    "bar": 2
    },
-   "total": 4,
-   "staff": 10,
+   "total": 8,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Heathland"
@@ -745,13 +778,14 @@
    "code": "FGN-048",
    "name": "Tansylea Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 3,
+    "range": 3,
+    "tee": 2,
+    "locker": 1,
+    "bar": 4
    },
-   "total": 4,
-   "staff": 8,
+   "total": 13,
+   "staff": 11,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -761,13 +795,14 @@
    "code": "FGN-049",
    "name": "Tansyford Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 3,
+    "range": 1,
     "tee": 1,
     "halfway": 1,
-    "bar": 1
+    "bar": 4
    },
-   "total": 4,
-   "staff": 6,
+   "total": 10,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Links"
@@ -777,12 +812,12 @@
    "code": "FGN-050",
    "name": "Tansygarth Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 2,
+    "halfway": 1,
+    "bar": 3
    },
-   "total": 3,
-   "staff": 4,
+   "total": 6,
+   "staff": 5,
    "segments": [
     "Resort",
     "Parkland"
@@ -793,12 +828,13 @@
    "name": "Corriehollow Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 1,
+    "range": 2,
     "tee": 1,
-    "bar": 1
+    "locker": 1,
+    "bar": 2
    },
-   "total": 4,
-   "staff": 11,
+   "total": 7,
+   "staff": 12,
    "segments": [
     "Members' club",
     "Parkland"
@@ -809,11 +845,13 @@
    "name": "Corriemead Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "range": 3,
+    "tee": 2,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 3,
-   "staff": 9,
+   "total": 10,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Heathland"
@@ -823,14 +861,14 @@
    "code": "FGN-053",
    "name": "Corriewick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
+    "proshop": 3,
+    "range": 3,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "bar": 2
    },
-   "total": 5,
-   "staff": 7,
+   "total": 11,
+   "staff": 9,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -842,10 +880,12 @@
    "screens": {
     "proshop": 1,
     "range": 1,
-    "bar": 1
+    "tee": 1,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 3,
-   "staff": 5,
+   "total": 7,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Links"
@@ -856,10 +896,11 @@
    "name": "Corriecombe Golf Club",
    "screens": {
     "proshop": 1,
-    "bar": 1
+    "range": 1,
+    "bar": 2
    },
-   "total": 2,
-   "staff": 2,
+   "total": 4,
+   "staff": 3,
    "segments": [
     "Resort",
     "Parkland"
@@ -869,13 +910,11 @@
    "code": "FGN-056",
    "name": "Corriebrae Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "range": 4,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 10,
+   "total": 7,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Parkland"
@@ -885,14 +924,15 @@
    "code": "FGN-057",
    "name": "Corrieholt Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
+    "proshop": 2,
+    "range": 3,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "locker": 1,
+    "bar": 2
    },
-   "total": 5,
-   "staff": 8,
+   "total": 11,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Heathland"
@@ -903,10 +943,12 @@
    "name": "Corrielea Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 1,
+    "tee": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 5,
+   "total": 4,
+   "staff": 6,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -916,11 +958,11 @@
    "code": "FGN-059",
    "name": "Corrieford Golf Club",
    "screens": {
-    "proshop": 1,
+    "range": 4,
     "bar": 1
    },
-   "total": 2,
-   "staff": 3,
+   "total": 5,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Links"
@@ -930,9 +972,10 @@
    "code": "FGN-060",
    "name": "Corriegarth Golf Club",
    "screens": {
+    "proshop": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 10,
    "segments": [
     "Resort",
@@ -943,12 +986,13 @@
    "code": "FGN-061",
    "name": "Briskhollow Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 1,
+    "halfway": 1,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 9,
+   "total": 6,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Parkland"
@@ -959,11 +1003,12 @@
    "name": "Briskmead Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "range": 2,
+    "locker": 2,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 7,
+   "total": 7,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Heathland"
@@ -973,10 +1018,12 @@
    "code": "FGN-063",
    "name": "Briskwick Golf Club",
    "screens": {
+    "range": 1,
+    "tee": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 4,
+   "total": 3,
+   "staff": 5,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -987,12 +1034,13 @@
    "name": "Briskstow Golf Club",
    "screens": {
     "proshop": 1,
-    "range": 2,
-    "tee": 1,
-    "bar": 1
+    "range": 4,
+    "tee": 2,
+    "halfway": 1,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 3,
+   "total": 12,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Links"
@@ -1003,11 +1051,12 @@
    "name": "Briskcombe Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 3,
     "tee": 1,
     "bar": 1
    },
-   "total": 3,
-   "staff": 10,
+   "total": 6,
+   "staff": 11,
    "segments": [
     "Resort",
     "Parkland"
@@ -1017,11 +1066,11 @@
    "code": "FGN-066",
    "name": "Briskbrae Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 1,
+    "bar": 2
    },
-   "total": 3,
+   "total": 5,
    "staff": 8,
    "segments": [
     "Members' club",
@@ -1032,11 +1081,14 @@
    "code": "FGN-067",
    "name": "Briskholt Golf Club",
    "screens": {
-    "proshop": 1,
-    "bar": 1
+    "proshop": 2,
+    "range": 1,
+    "tee": 2,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 2,
-   "staff": 5,
+   "total": 9,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1046,12 +1098,12 @@
    "code": "FGN-068",
    "name": "Brisklea Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "bar": 1
+    "proshop": 3,
+    "range": 2,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 4,
+   "total": 7,
+   "staff": 5,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1061,12 +1113,12 @@
    "code": "FGN-069",
    "name": "Briskford Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 2,
+    "range": 1,
     "halfway": 1,
     "bar": 1
    },
-   "total": 4,
+   "total": 5,
    "staff": 11,
    "segments": [
     "Members' club",
@@ -1077,12 +1129,12 @@
    "code": "FGN-070",
    "name": "Briskgarth Golf Club",
    "screens": {
-    "proshop": 1,
+    "range": 2,
     "tee": 1,
-    "bar": 1
+    "bar": 3
    },
-   "total": 3,
-   "staff": 9,
+   "total": 6,
+   "staff": 10,
    "segments": [
     "Resort",
     "Parkland"
@@ -1092,15 +1144,14 @@
    "code": "FGN-071",
    "name": "Hazlehollow Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 2,
-    "tee": 1,
-    "halfway": 1,
-    "locker": 1,
-    "bar": 2
+    "proshop": 2,
+    "range": 4,
+    "tee": 2,
+    "locker": 2,
+    "bar": 4
    },
-   "total": 8,
-   "staff": 8,
+   "total": 14,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1110,12 +1161,13 @@
    "code": "FGN-072",
    "name": "Hazlemead Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 2,
+    "tee": 1,
+    "halfway": 2,
     "bar": 1
    },
-   "total": 3,
-   "staff": 5,
+   "total": 6,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1125,9 +1177,10 @@
    "code": "FGN-073",
    "name": "Hazlewick Golf Club",
    "screens": {
+    "tee": 1,
     "bar": 1
    },
-   "total": 1,
+   "total": 2,
    "staff": 2,
    "segments": [
     "Pay and play",
@@ -1138,10 +1191,12 @@
    "code": "FGN-074",
    "name": "Hazlestow Golf Club",
    "screens": {
-    "bar": 1
+    "range": 1,
+    "tee": 1,
+    "bar": 2
    },
-   "total": 1,
-   "staff": 9,
+   "total": 4,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Links"
@@ -1151,13 +1206,13 @@
    "code": "FGN-075",
    "name": "Hazlecombe Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 2,
+    "range": 2,
     "tee": 1,
-    "bar": 1
+    "bar": 4
    },
-   "total": 4,
-   "staff": 8,
+   "total": 9,
+   "staff": 10,
    "segments": [
     "Resort",
     "Parkland"
@@ -1168,10 +1223,11 @@
    "name": "Hazlebrae Golf Club",
    "screens": {
     "proshop": 1,
-    "bar": 1
+    "tee": 1,
+    "bar": 2
    },
-   "total": 2,
-   "staff": 5,
+   "total": 4,
+   "staff": 6,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1181,11 +1237,14 @@
    "code": "FGN-077",
    "name": "Hazleholt Golf Club",
    "screens": {
-    "proshop": 1,
+    "range": 1,
+    "tee": 1,
+    "halfway": 1,
+    "locker": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 3,
+   "total": 5,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1195,10 +1254,11 @@
    "code": "FGN-078",
    "name": "Hazlelea Golf Club",
    "screens": {
+    "halfway": 2,
     "bar": 1
    },
-   "total": 1,
-   "staff": 10,
+   "total": 3,
+   "staff": 11,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1208,13 +1268,14 @@
    "code": "FGN-079",
    "name": "Hazleford Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
+    "proshop": 2,
     "tee": 1,
-    "bar": 1
+    "halfway": 1,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 9,
+   "total": 8,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Links"
@@ -1225,10 +1286,12 @@
    "name": "Hazlegarth Golf Club",
    "screens": {
     "proshop": 1,
+    "range": 1,
+    "locker": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 6,
+   "total": 4,
+   "staff": 7,
    "segments": [
     "Resort",
     "Parkland"
@@ -1238,13 +1301,14 @@
    "code": "FGN-081",
    "name": "Pellowhollow Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 2,
-    "tee": 1,
-    "bar": 1
+    "range": 4,
+    "tee": 2,
+    "halfway": 1,
+    "locker": 1,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 5,
+   "total": 12,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1255,11 +1319,12 @@
    "name": "Pellowmead Golf Club",
    "screens": {
     "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 1,
+    "tee": 2,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 3,
+   "total": 6,
+   "staff": 4,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1269,13 +1334,13 @@
    "code": "FGN-083",
    "name": "Pellowwick Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "bar": 1
+    "proshop": 2,
+    "tee": 2,
+    "locker": 1,
+    "bar": 3
    },
-   "total": 4,
-   "staff": 10,
+   "total": 8,
+   "staff": 11,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1285,13 +1350,14 @@
    "code": "FGN-084",
    "name": "Pellowstow Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 2,
+    "range": 4,
+    "tee": 2,
     "halfway": 1,
     "bar": 1
    },
-   "total": 4,
-   "staff": 8,
+   "total": 10,
+   "staff": 10,
    "segments": [
     "Members' club",
     "Links"
@@ -1301,15 +1367,14 @@
    "code": "FGN-085",
    "name": "Pellowcombe Golf Club",
    "screens": {
-    "proshop": 2,
-    "range": 3,
-    "tee": 1,
-    "halfway": 1,
-    "locker": 1,
-    "bar": 2
+    "proshop": 3,
+    "range": 4,
+    "tee": 2,
+    "halfway": 2,
+    "bar": 4
    },
-   "total": 10,
-   "staff": 8,
+   "total": 15,
+   "staff": 10,
    "segments": [
     "Resort",
     "Parkland"
@@ -1319,15 +1384,15 @@
    "code": "FGN-086",
    "name": "Pellowbrae Golf Club",
    "screens": {
-    "proshop": 2,
+    "proshop": 3,
     "range": 4,
-    "tee": 1,
-    "halfway": 1,
-    "locker": 2,
-    "bar": 2
+    "tee": 2,
+    "halfway": 2,
+    "locker": 1,
+    "bar": 4
    },
-   "total": 12,
-   "staff": 7,
+   "total": 16,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1337,13 +1402,14 @@
    "code": "FGN-087",
    "name": "Pellowholt Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 3,
+    "range": 1,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "bar": 3
    },
-   "total": 4,
-   "staff": 11,
+   "total": 10,
+   "staff": 13,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1353,10 +1419,12 @@
    "code": "FGN-088",
    "name": "Pellowlea Golf Club",
    "screens": {
+    "proshop": 1,
+    "range": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 8,
+   "total": 3,
+   "staff": 9,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1366,13 +1434,14 @@
    "code": "FGN-089",
    "name": "Pellowford Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 3,
+    "range": 2,
+    "tee": 2,
     "halfway": 1,
     "bar": 1
    },
-   "total": 4,
-   "staff": 7,
+   "total": 9,
+   "staff": 9,
    "segments": [
     "Members' club",
     "Links"
@@ -1382,10 +1451,12 @@
    "code": "FGN-090",
    "name": "Pellowgarth Golf Club",
    "screens": {
+    "proshop": 1,
+    "range": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 4,
+   "total": 3,
+   "staff": 5,
    "segments": [
     "Resort",
     "Parkland"
@@ -1395,11 +1466,12 @@
    "code": "FGN-091",
    "name": "Sorrelhollow Golf Club",
    "screens": {
-    "proshop": 1,
+    "proshop": 3,
+    "locker": 1,
     "bar": 1
    },
-   "total": 2,
-   "staff": 2,
+   "total": 5,
+   "staff": 3,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1409,14 +1481,14 @@
    "code": "FGN-092",
    "name": "Sorrelmead Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
+    "proshop": 3,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "locker": 1,
+    "bar": 4
    },
-   "total": 5,
-   "staff": 10,
+   "total": 11,
+   "staff": 12,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1427,11 +1499,13 @@
    "name": "Sorrelwick Golf Club",
    "screens": {
     "proshop": 1,
-    "tee": 1,
+    "range": 1,
+    "halfway": 2,
+    "locker": 1,
     "bar": 1
    },
-   "total": 3,
-   "staff": 8,
+   "total": 6,
+   "staff": 9,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1441,13 +1515,13 @@
    "code": "FGN-094",
    "name": "Sorrelstow Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "range": 3,
+    "tee": 2,
     "halfway": 1,
-    "bar": 1
+    "bar": 3
    },
-   "total": 4,
-   "staff": 6,
+   "total": 9,
+   "staff": 8,
    "segments": [
     "Members' club",
     "Links"
@@ -1457,12 +1531,12 @@
    "code": "FGN-095",
    "name": "Sorrelcombe Golf Club",
    "screens": {
-    "proshop": 1,
-    "tee": 1,
+    "proshop": 3,
+    "tee": 2,
     "bar": 1
    },
-   "total": 3,
-   "staff": 4,
+   "total": 6,
+   "staff": 5,
    "segments": [
     "Resort",
     "Parkland"
@@ -1472,10 +1546,12 @@
    "code": "FGN-096",
    "name": "Sorrelbrae Golf Club",
    "screens": {
+    "proshop": 1,
+    "range": 1,
     "bar": 1
    },
-   "total": 1,
-   "staff": 10,
+   "total": 3,
+   "staff": 11,
    "segments": [
     "Members' club",
     "Parkland"
@@ -1485,10 +1561,12 @@
    "code": "FGN-097",
    "name": "Sorrelholt Golf Club",
    "screens": {
-    "bar": 1
+    "tee": 1,
+    "locker": 1,
+    "bar": 2
    },
-   "total": 1,
-   "staff": 8,
+   "total": 4,
+   "staff": 9,
    "segments": [
     "Members' club",
     "Heathland"
@@ -1499,11 +1577,11 @@
    "name": "Sorrellea Golf Club",
    "screens": {
     "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 3,
+    "bar": 2
    },
-   "total": 3,
-   "staff": 7,
+   "total": 6,
+   "staff": 8,
    "segments": [
     "Pay and play",
     "Parkland"
@@ -1514,10 +1592,11 @@
    "name": "Sorrelford Golf Club",
    "screens": {
     "proshop": 1,
-    "tee": 1,
-    "bar": 1
+    "range": 1,
+    "halfway": 1,
+    "bar": 2
    },
-   "total": 3,
+   "total": 5,
    "staff": 5,
    "segments": [
     "Members' club",
@@ -1528,14 +1607,14 @@
    "code": "FGN-100",
    "name": "Sorrelgarth Golf Club",
    "screens": {
-    "proshop": 1,
-    "range": 1,
-    "tee": 1,
-    "halfway": 1,
-    "bar": 1
+    "proshop": 3,
+    "range": 2,
+    "tee": 2,
+    "halfway": 2,
+    "bar": 3
    },
-   "total": 5,
-   "staff": 3,
+   "total": 12,
+   "staff": 6,
    "segments": [
     "Resort",
     "Parkland"

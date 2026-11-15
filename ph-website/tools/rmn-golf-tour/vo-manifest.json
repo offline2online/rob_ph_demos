@@ -8,10 +8,10 @@
    "cue": null
   },
   {
-   "file": "f1-01-2-1ab9a4d38f.mp3",
-   "hash": "1ab9a4d38f",
-   "text": "Clubs differ: some have one screen, some three, some seven or more.",
-   "duration": 3.8,
+   "file": "f1-01-2-246dbb3133.mp3",
+   "hash": "246dbb3133",
+   "text": "Clubs differ: the smallest have two screens, most have five to nine, and the flagships up to sixteen.",
+   "duration": 6.06,
    "cue": "Every club is different"
   },
   {
@@ -480,10 +480,10 @@
  ],
  "f3-01": [
   {
-   "file": "f3-01-1-0d9073fe2a.mp3",
-   "hash": "0d9073fe2a",
-   "text": "Now one club on the network: Fernhollow Golf Club, with seven screens. Hannah, a low-handicap member, arrives for her tee time.",
-   "duration": 8.15,
+   "file": "f3-01-1-1107b8367e.mp3",
+   "hash": "1107b8367e",
+   "text": "Now one club on the network: Fernhollow Golf Club, with nine screens. Hannah, a low-handicap member, arrives for her tee time.",
+   "duration": 8.11,
    "cue": null
   },
   {
@@ -621,11 +621,11 @@
    "cue": null
   },
   {
-   "file": "f3-05-2-3f9c748bd4.mp3",
-   "hash": "3f9c748bd4",
-   "text": "That's over one and a quarter million dollars in two weeks, from one slot in three.",
-   "duration": 4.54,
-   "cue": "USD 1,272,096 in two weeks"
+   "file": "f3-05-2-35ad457186.mp3",
+   "hash": "35ad457186",
+   "text": "That's over two and a half million dollars in two weeks, from one slot in three.",
+   "duration": 4.29,
+   "cue": "USD 2,570,400 in two weeks"
   }
  ]
 }

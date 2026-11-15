@@ -1,6 +1,7 @@
 // Captures every real prototype screen for the Run Your Own RMN walkthrough: the Fairlinks Golf Network (100 golf clubs, six screen types) and Corvane Golf.
 // v2 (15 Nov 2026): the network seed; N0-stores is the capture-only Stores / Branches list (stores.html).
 // v3 (15 Nov 2026): clubs differ in how many screens they have (network.json from slots_golf.py); stores.html reads it.
+// v4 (15 Nov 2026): clubs have 2 to 16 screens, each with its own mix of the six types; only the screens whose figures changed were re-captured.
 // Same approach as tools/retail-media-tour/cap5.js, made self-contained:
 //   node cap_golf.js --snap <dir with golf-*.json from slots_golf.py> --fonts <dir with fonts.css + woff2> --out <img dir> [ids...]
 // It serves dsp-integration/prototype and dsp-integration/mockups on localhost:8790, frames them in shell.html (the HQ Admin

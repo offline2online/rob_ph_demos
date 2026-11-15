@@ -2,9 +2,10 @@
 (dsp-integration/prototype/demo/api-snapshot.json). Six golf club screen types, three slots per playlist, slot 1 owned by
 Advertiser, slots 2 and 3 by Headquarters. Fictional names only: the Fairlinks Golf Network (100 connected golf clubs, one of them
 Fernhollow Golf Club) sells to Corvane Golf. v2 (15 Nov 2026): display types and playlists are set once for the network, and every
-view, play and revenue figure is for the whole network. v3 (15 Nov 2026): clubs differ in how many screens they have (1 to 12) and
-have only the display types they have screens for (network(), written to network.json), so each slot's displayCount is the number
-of screens of that type across the network, and each display type has its own assumed viewers per play (vacdPerPlay).
+view, play and revenue figure is for the whole network. v3 (15 Nov 2026): clubs differ in how many screens they have and have only
+the display types they have screens for (network(), written to network.json), so each slot's displayCount is the number of screens
+of that type across the network, and each display type has its own assumed viewers per play (vacdPerPlay). v4 (15 Nov 2026): every
+club has 2 to 16 screens and its own mix of the six types, and no two neighbouring clubs have the same total.
 
     python3 slots_golf.py <api-snapshot.json> <out dir>
 
@@ -27,41 +28,54 @@ DT = [  # id, name, description (where the screen sits and who stands in front o
     ('bar', 'Clubhouse Bar', 'Clubhouse bar: members and guests after the round', 1920, 1080, 'landscape', 'pl_bar', ['Bar menu', 'Functions'], 2.8),
 ]
 TYPE_IDS = [d[0] for d in DT]
-# ---------- the network seed (v3, 15 Nov 2026): clubs differ in how many screens they have ----------
+# ---------- the network seed (v4, 15 Nov 2026): every club is a different size, with its own mix of screen types ----------
 # Each club only has the display types it has screens for. A screen's type is where it sits in the club. Every total in the tour
 # (Stores / Branches, the per-type counts, the deal's reach, views and revenue) is derived from this list; nothing is hand-typed.
-SHAPES = {  # shape -> screens per type, in TYPE_IDS order (proshop, range, tee, halfway, locker, bar), and how many clubs have it
-    'bar':              ((0, 0, 0, 0, 0, 1), 20),  # 1 screen: the clubhouse bar
-    'shop-bar':         ((1, 0, 0, 0, 0, 1), 14),  # 2 screens
-    'shop-tee-bar':     ((1, 0, 1, 0, 0, 1), 12),  # 3
-    'shop-range-bar':   ((1, 1, 0, 0, 0, 1), 10),  # 3
-    'shop-range-tee-bar': ((1, 1, 1, 0, 0, 1), 14),  # 4
-    'shop-tee-half-bar': ((1, 0, 1, 1, 0, 1), 8),  # 4
-    'five':             ((1, 1, 1, 1, 0, 1), 8),   # 5
-    'five-range':       ((1, 2, 1, 0, 0, 1), 6),   # 5
-    'flagship-7':       ((1, 1, 1, 1, 1, 2), 2),   # 7, all six types (Fernhollow is one)
-    'flagship-8':       ((1, 2, 1, 1, 1, 2), 2),   # 8
-    'flagship-9':       ((2, 2, 1, 1, 1, 2), 1),   # 9
-    'flagship-10':      ((2, 3, 1, 1, 1, 2), 2),   # 10
-    'flagship-12':      ((2, 4, 1, 1, 2, 2), 1),   # 12
+# v3 built the clubs from 13 fixed shapes, so neighbouring rows repeated the same totals; v4 draws each club's mix on its own.
+SIZES = {  # screens per club -> how many clubs have that many (100 in all; no total covers more than 12 clubs)
+    2: 7, 3: 9, 4: 9,                     # small: a quarter of the network
+    5: 11, 6: 11, 7: 10, 8: 9, 9: 9,      # mid-size: half (Fernhollow is one of the nines)
+    10: 6, 11: 5, 12: 5, 13: 4,           # large: a fifth
+    14: 2, 15: 2, 16: 1,                  # a handful of flagships
 }
+TYPE_RANGE = {'proshop': (0, 3), 'range': (0, 4), 'tee': (0, 2), 'halfway': (0, 2), 'locker': (0, 2), 'bar': (1, 4)}  # screens per club
+TYPE_WEIGHT = {'proshop': 3.0, 'range': 2.6, 'tee': 1.8, 'halfway': 1.2, 'locker': 1.0, 'bar': 2.4}  # how often a club adds one more of each
+FERNHOLLOW = {'proshop': 2, 'range': 2, 'tee': 1, 'halfway': 1, 'locker': 1, 'bar': 2}  # 9 screens, all six types
 STEMS = ['Fern', 'Quill', 'Wrenn', 'Marrow', 'Tansy', 'Corrie', 'Brisk', 'Hazle', 'Pellow', 'Sorrel']
 ENDS = ['hollow', 'mead', 'wick', 'stow', 'combe', 'brae', 'holt', 'lea', 'ford', 'garth']
 SEGMENTS = [["Members' club", 'Parkland'], ["Members' club", 'Heathland'], ['Pay and play', 'Parkland'], ["Members' club", 'Links'], ['Resort', 'Parkland']]
 
 
+def club_mix(total, rnd):
+    """One club's screens per type for a club of `total` screens: a Clubhouse Bar screen first, then one screen at a time to a type
+    that still has room, weighted towards the pro shop, the range and the bar (TYPE_WEIGHT), within TYPE_RANGE."""
+    per = {t: TYPE_RANGE[t][0] for t in TYPE_IDS}
+    while sum(per.values()) < total:
+        room = [t for t in TYPE_IDS if per[t] < TYPE_RANGE[t][1]]
+        per[rnd.choices(room, [TYPE_WEIGHT[t] for t in room])[0]] += 1
+    return per
+
+
 def network():
-    """The network's 100 clubs, Fernhollow Golf Club first (a 7-screen club with all six types), the rest in a fixed shuffled order."""
+    """The network's 100 clubs, Fernhollow Golf Club first (9 screens on all six types), the rest in a fixed shuffled order in which
+    no two neighbouring clubs have the same number of screens (Stores / Branches lists them in this order)."""
     import random
+    rnd = random.Random(15112026)
     names = [a + z + ' Golf Club' for a in STEMS for z in ENDS]
-    shapes = [k for k, (_c, n) in SHAPES.items() for _ in range(n)]
-    assert len(names) == 100 and len(shapes) == 100, (len(names), len(shapes))
-    shapes.remove('flagship-7')
-    random.Random(15112026).shuffle(shapes)
-    shapes.insert(0, 'flagship-7')
+    totals = [n for n, k in SIZES.items() for _ in range(k)]
+    assert len(names) == 100 and len(totals) == 100, (len(names), len(totals))
+    totals.remove(sum(FERNHOLLOW.values()))
+    rnd.shuffle(totals)
+    mixes = [FERNHOLLOW] + [club_mix(n, rnd) for n in totals]
+    for i in range(1, len(mixes)):  # no two neighbours share a total: swap in the next later club that fits between its neighbours
+        if sum(mixes[i].values()) != sum(mixes[i - 1].values()): continue
+        for j in range(i + 1, len(mixes)):
+            nj = sum(mixes[j].values())
+            if nj != sum(mixes[i - 1].values()) and (i + 1 >= len(mixes) or nj != sum(mixes[i + 1].values())) \
+                    and sum(mixes[i].values()) != sum(mixes[j - 1].values()) and (j + 1 >= len(mixes) or sum(mixes[i].values()) != sum(mixes[j + 1].values())):
+                mixes[i], mixes[j] = mixes[j], mixes[i]; break
     clubs = []
-    for i, (nm, sh) in enumerate(zip(names, shapes)):
-        per = dict(zip(TYPE_IDS, SHAPES[sh][0]))
+    for i, (nm, per) in enumerate(zip(names, mixes)):
         clubs.append({'code': f'FGN-{i + 1:03d}', 'name': nm, 'screens': {k: v for k, v in per.items() if v}, 'total': sum(per.values()),
                       'staff': 2 + (i * 7) % 9 + sum(per.values()) // 3, 'segments': SEGMENTS[i % len(SEGMENTS)]})
     return clubs
@@ -341,7 +355,7 @@ if __name__ == '__main__':
     # recomputes from the seed (screens per type = the sum over the clubs; views = plays per window x screens x viewers per play; revenue
     # = views x CPM / 1,000). sync_tour_figures.py copies figures.json into tour.html (const GNET).
     here = os.path.dirname(os.path.abspath(__file__))
-    json.dump({'about': 'The Fairlinks Golf Network seed (v3): 100 fictional clubs, each with only the display types it has screens for. Written by slots_golf.py; read by stores.html, the tour figures and the tests.',
+    json.dump({'about': 'The Fairlinks Golf Network seed (v4): 100 fictional clubs of 2 to 16 screens, each with its own mix of the display types it has screens for. Written by slots_golf.py; read by stores.html, the tour figures and the tests.',
                'types': [{'id': d[0], 'name': d[1]} for d in DT], 'clubs': CLUB_LIST}, open(os.path.join(here, 'network.json'), 'w'), indent=1, ensure_ascii=False)
     open(os.path.join(here, 'network.json'), 'a').write('\n')
     deal = json.load(open(os.path.join(OUT, 'golf-assigned.json')))['routes']['/admin/v1/buyers-lists']['items'][0]
