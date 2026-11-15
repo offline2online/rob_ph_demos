@@ -2,7 +2,7 @@
 // (operator-render.php: Elementor containers and widgets for the brief's sections, an Elementor kit stylesheet that restyles headings,
 // buttons and inputs, and the three empty mount containers ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, filled server-side by
 // operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
-// served at /run-your-own-rmn/tour/ (the golf network walkthrough, v2: the Fairlinks Golf Network's 100 clubs). The H1, the blocks inside their mount containers,
+// served at /run-your-own-rmn/tour/ (the golf network walkthrough, v3: the Fairlinks Golf Network's 100 clubs, each with its own number of screens). The H1, the blocks inside their mount containers,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its thirteen questions, the last ending with a
 // "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
@@ -110,8 +110,8 @@ try {
     await p.route("**/*", (rt) => {
       const u = rt.request().url(); p.__reqs.push(u);
       if (/\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) { if (posts) posts.push(JSON.parse(rt.request().postData())); return rt.fulfill({ status, contentType: "application/json", body: JSON.stringify(reply) }); }
-      if (/\/assets\/v2\/img\//.test(u)) { const g = u.match(/\/run-your-own-rmn\/tour\/assets\/v2\/img\/([\w.-]+)$/), f = g && path.join(here, "..", "tour-assets", "rmn-golf", "v2", "img", g[1] + ".b64"); return rt.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? Buffer.from(fs.readFileSync(f, "ascii"), "base64") : tinyJpg }); }
-      if (/\/assets\/v[12]\//.test(u)) return rt.fulfill({ status: 404, body: "" });
+      if (/\/assets\/v3\/img\//.test(u)) { const g = u.match(/\/run-your-own-rmn\/tour\/assets\/v3\/img\/([\w.-]+)$/), f = g && path.join(here, "..", "tour-assets", "rmn-golf", "v3", "img", g[1] + ".b64"); return rt.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? Buffer.from(fs.readFileSync(f, "ascii"), "base64") : tinyJpg }); }
+      if (/\/assets\/v[123]\//.test(u)) return rt.fulfill({ status: 404, body: "" });
       if (/\/run-your-own-rmn\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
       if (/\/wp-json\//.test(u)) return rt.fulfill({ contentType: "application/json", body: '{"found":false}' });
       if (u.startsWith("http://x.test/run-your-own-rmn/")) return rt.fulfill({ contentType: "text/html", body: page });
@@ -140,7 +140,8 @@ try {
   ok((await p.evaluate(() => [...document.querySelectorAll(".elementor-element[id]")].map((e) => e.id).join())) === "top,why,who,how,venues,standards,ph-rmn-calculator,independents,ph-rmn-faq,ph-rmn-tour,ph-rmn-request" && (await p.evaluate(() => ["calculator", "faq", "tour"].every((id) => document.getElementById(id).closest(".phf")))), "anchors: the Elementor sections' and mount containers' CSS IDs, and the blocks' own #calculator, #faq and #tour");
   ok((await p.evaluate(() => document.querySelectorAll("h1").length)) === 1, "exactly one H1 on the page");
   for (const s of ["Benefits calculator", "Your network", "Your figures", "Assumptions", "Your potential income a year", "How it's calculated", "Running your own RMN", "What is a retail media network?", "How do I get started?", "Interactive product tour", "Unlock the product tour", "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.", "Operator or team", "Retailer", "For retailers, those extra sales in your stores are added to your income."]) ok(all.includes(s), "block copy: " + s);
-  ok(!/network operator|world-leading/i.test(all), "none of the replaced copy on the page");
+  // The tour band's intro names "a network operator" by request (v3 ticket, 15 Nov 2026); everywhere else the replaced copy stays gone.
+  ok(!/network operator|world-leading/i.test(all.replace("Watch a network operator sell screens across 100 golf clubs", "")), "none of the replaced copy on the page");
   // The blocks' copy replacements, exact (the head-start paragraph is Elementor copy now: the brief carries it, tests/operator.test.php).
   ok((await text(p, ".phf-cin-h")) === "Your network", "copy: calculator panel heading");
   ok((await text(p, ".phf-gate-p")) === "Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.", "copy: tour gate intro");
@@ -436,6 +437,18 @@ try {
   assert.deepStrictEqual(rq.labels, ["Full name", "Email", "LinkedIn profile (optional)", "Where you plan to operate", "Industry you want to run your network in", "Your industry", "I am", "Your background", "Anything you'd like us to know (optional)"], "request: the fields, the industry after Where you plan to operate");
   assert.deepStrictEqual(rq.ind, F.INDUSTRIES, "request: the industries list (JS) equals the form's (PHP)");
   ok(rq.ind.length === 13 && rq.ind[12] === "Other (tell us)" && JSON.stringify(rq.ia) === JSON.stringify(F.AUDIENCES) && rq.bg === 7 && rq.last === "ph-rmn-request" && rq.font.includes("Kantumruy Pro"), "request: twelve industries and Other, the three I am options, seven backgrounds; the last block on the page, in the page's font");
+  // (v3 ticket, 15 Nov 2026) The tour band's intro is the network operator's, and the request form's fields line up along the bottom of
+  // each row at 1440, 1180, 1024 and 820 wide, although "Industry you want to run your network in" wraps to two lines.
+  ok((await text(p, ".phf-tour-p")) === "Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer's journey at a club on the network.", "tour band: the network operator's intro");
+  for (const w of [1440, 1180, 1024, 820]) {
+    await p.setViewportSize({ width: w, height: 1000 }); await p.waitForTimeout(150);
+    const rows = await p.evaluate(() => { const by = {}; for (const f of document.querySelectorAll("#phf-rform .phf-f:not([hidden])")) { const c = f.querySelector("input,select,textarea"), r = f.getBoundingClientRect(), b = c.getBoundingClientRect(); (by[Math.round(r.top)] = by[Math.round(r.top)] || []).push({ id: c.id, bottom: Math.round(b.bottom), top: Math.round(b.top), lab: f.querySelector("label").getBoundingClientRect().height }); } return Object.values(by); });
+    const bad = rows.filter((r) => r.length > 1 && Math.max(...r.map((x) => x.bottom)) - Math.min(...r.map((x) => x.bottom)) > 1);
+    ok(!bad.length && rows.some((r) => r.length > 1), `request at ${w}px: the fields in each row line up along the bottom: ` + JSON.stringify(bad));
+    const ind = rows.flat().find((x) => x.id === "r-in");
+    ok(ind && rows.find((r) => r.some((x) => x.id === "r-in")).every((x) => Math.abs(x.top - ind.top) <= 1 || x.id === "r-ms"), `request at ${w}px: the industry field sits level with its neighbours`);
+  }
+  await p.setViewportSize({ width: 1440, height: 1000 });
   ok(await rdis(), "request: the button is disabled when empty");
   await p.fill("#r-fn", "Ada Lovelace"); await p.fill("#r-em", "ada@gmail.com"); await p.fill("#r-rg", "Leeds");
   await p.selectOption("#r-ia", "An individual operator"); await p.selectOption("#r-bg", "Retail media"); await p.check("#r-cs");
@@ -611,8 +624,8 @@ try {
       await tf.locator("#start").tap();
       await tf.waitForFunction(() => !!document.querySelector('#dots [aria-current="true"]'), null, { timeout: 15000 });
       ok(true, `${name}: the tour plays`);
-      const gt = await tf.evaluate(() => ({ title: document.title, cap: document.getElementById("capT").textContent, img: [...document.querySelectorAll("#stage .rm-shot img")].map((i) => i.complete && i.naturalWidth >= 1600 && /\/run-your-own-rmn\/tour\/assets\/v2\/img\//.test(i.src)) }));
-      ok(/Run Your Own RMN/.test(gt.title) && /One network, 100 golf clubs/.test(gt.cap) && gt.img.length > 0 && gt.img.every(Boolean), `${name}: it is the golf network tour (v2), on its real screenshots: ` + JSON.stringify(gt));
+      const gt = await tf.evaluate(() => ({ title: document.title, cap: document.getElementById("capT").textContent, img: [...document.querySelectorAll("#stage .rm-shot img")].map((i) => i.complete && i.naturalWidth >= 1600 && /\/run-your-own-rmn\/tour\/assets\/v3\/img\//.test(i.src)) }));
+      ok(/Run Your Own RMN/.test(gt.title) && /One network, 100 golf clubs/.test(gt.cap) && gt.img.length > 0 && gt.img.every(Boolean), `${name}: it is the golf network tour (v3), on its real screenshots: ` + JSON.stringify(gt));
       await tf.waitForSelector("#fs", { state: "visible" });
       await tf.locator("#fs").tap();
       await tf.waitForFunction(() => document.documentElement.classList.contains("fs"));

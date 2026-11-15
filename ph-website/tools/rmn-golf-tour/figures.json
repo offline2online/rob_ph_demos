@@ -3,71 +3,120 @@
  "cpm": 150,
  "from": "2026-12-01",
  "to": "2026-12-14",
+ "screens": 343,
+ "clubsBySize": {
+  "1": 20,
+  "2": 14,
+  "3": 22,
+  "4": 22,
+  "5": 14,
+  "7": 2,
+  "8": 2,
+  "9": 1,
+  "10": 2,
+  "12": 1
+ },
+ "fernhollow": {
+  "code": "FGN-001",
+  "name": "Fernhollow Golf Club",
+  "screens": {
+   "proshop": 1,
+   "range": 1,
+   "tee": 1,
+   "halfway": 1,
+   "locker": 1,
+   "bar": 2
+  },
+  "total": 7,
+  "staff": 4,
+  "segments": [
+   "Members' club",
+   "Parkland"
+  ]
+ },
+ "deal": {
+  "screens": 343,
+  "clubs": 100,
+  "forecastPlays": 10207680,
+  "committedPlays": 9186912
+ },
  "types": [
   {
+   "id": "proshop",
    "name": "Pro Shop",
-   "perClub": 3,
-   "displayCount": 300,
+   "audience": "Pro shop counter: members and visitors checking in and buying",
+   "clubs": 80,
+   "displayCount": 84,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.772983,
+   "vacdPerPlay": 1.2,
    "bookedWindows": 14,
-   "bookedViews": 3116666,
-   "bookedRevenue": 467499.9
+   "bookedViews": 1354752,
+   "bookedRevenue": 203212.8
   },
   {
+   "id": "range",
    "name": "Driving Range",
-   "perClub": 12,
-   "displayCount": 1200,
+   "audience": "Range bays: players warming up before a round",
+   "clubs": 46,
+   "displayCount": 62,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.628049,
+   "vacdPerPlay": 0.8,
    "bookedWindows": 14,
-   "bookedViews": 10129168,
-   "bookedRevenue": 1519375.2
+   "bookedViews": 666624,
+   "bookedRevenue": 99993.6
   },
   {
+   "id": "tee",
    "name": "First Tee",
-   "perClub": 2,
-   "displayCount": 200,
+   "audience": "First tee and starter's hut: golfers about to tee off",
+   "clubs": 56,
+   "displayCount": 56,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.628049,
+   "vacdPerPlay": 2.4,
    "bookedWindows": 14,
-   "bookedViews": 1688190,
-   "bookedRevenue": 253228.5
+   "bookedViews": 1806336,
+   "bookedRevenue": 270950.4
   },
   {
+   "id": "halfway",
    "name": "Halfway House",
-   "perClub": 2,
-   "displayCount": 200,
+   "audience": "Halfway house counter: golfers at the turn",
+   "clubs": 24,
+   "displayCount": 24,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.628049,
+   "vacdPerPlay": 1.6,
    "bookedWindows": 14,
-   "bookedViews": 1688190,
-   "bookedRevenue": 253228.5
+   "bookedViews": 516096,
+   "bookedRevenue": 77414.4
   },
   {
+   "id": "locker",
    "name": "Locker Room",
-   "perClub": 4,
-   "displayCount": 400,
+   "audience": "Locker room: members changing before and after a round",
+   "clubs": 8,
+   "displayCount": 9,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.772983,
+   "vacdPerPlay": 0.6,
    "bookedWindows": 14,
-   "bookedViews": 4155550,
-   "bookedRevenue": 623332.5
+   "bookedViews": 72576,
+   "bookedRevenue": 10886.4
   },
   {
+   "id": "bar",
    "name": "Clubhouse Bar",
-   "perClub": 4,
-   "displayCount": 400,
+   "audience": "Clubhouse bar: members and guests after the round",
+   "clubs": 100,
+   "displayCount": 108,
    "playsPerWindow": 960,
-   "vacdPerPlay": 0.628049,
+   "vacdPerPlay": 2.8,
    "bookedWindows": 14,
-   "bookedViews": 3376394,
-   "bookedRevenue": 506459.1
+   "bookedViews": 4064256,
+   "bookedRevenue": 609638.4
   }
  ],
  "totals": {
   "bookedWindows": 84,
-  "bookedViews": 24154158,
-  "bookedRevenue": 3623123.7
+  "bookedViews": 8480640,
+  "bookedRevenue": 1272096.0
  }
 }

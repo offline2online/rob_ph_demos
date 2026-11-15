@@ -171,6 +171,8 @@ body .phf .phf-req-p{margin:0 0 32px;font-size:18px;color:#5A6479;max-width:40em
 body .phf .phf-req-card{max-width:760px;box-shadow:none;border:1px solid #DCE1EB}
 body .phf .phf-f[hidden],body .phf .phf-form[hidden],body .phf .phf-rdone[hidden]{display:none}
 body .phf .phf-f-wide{grid-column:1/-1}
+/* Request form (15 Nov 2026): a label that wraps to two lines ("Industry you want to run your network in") no longer pushes its field below its neighbours: each field sits at the bottom of its grid cell, so the fields in a row line up along the bottom. */
+body .phf .phf-req-card .phf-f{justify-content:flex-end}
 body .phf .phf-f textarea{min-height:112px;resize:vertical}
 body .phf .phf-count{font-size:13px;color:#5A6479}
 body .phf .phf-cons{min-height:44px;align-items:center}

@@ -29,7 +29,7 @@ const OPERATOR_HERO_P      = 'AI has changed what one person can achieve (the ri
 const OPERATOR_FAQ_TITLE   = 'Running your own RMN';
 const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers. For retailers, those extra sales in your stores are added to your income.';
 const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
-const OPERATOR_TOUR_P      = 'Watch a venue sell its screens, a brand create a campaign by talking, and one visitor\'s journey from arrival to checkout.';
+const OPERATOR_TOUR_P      = 'Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer\'s journey at a club on the network.';
 const OPERATOR_GATE_P      = 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.';
 /** The "Request further information" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
 const OPERATOR_REQUEST_EB  = 'Request further information';
