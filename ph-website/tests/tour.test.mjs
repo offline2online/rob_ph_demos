@@ -837,18 +837,19 @@ try {
       }
     } else console.log("tour: voiceover timing tests skipped (set TOUR_ASSETS_DIR to a checkout of tag tour-assets-retail-media-v1)");
   }
-  // Run Your Own RMN (14 Nov 2026): the same retail media walkthrough set in a golf club, on /run-your-own-rmn/tour/ (the Run Your Own RMN page's tour).
-  // Fernhollow Golf Club sells six screen types to Corvane Golf. Its screenshots and voiceover are base64 text in the repo (tour-assets/rmn-golf),
-  // served here decoded, the way tour.php serves them; every served file is checked against SHA256SUMS.
+  // Run Your Own RMN (14 Nov 2026; v2 15 Nov 2026): the retail media walkthrough told from a network operator's view, on /run-your-own-rmn/tour/.
+  // The Fairlinks Golf Network sells six screen types at its 100 golf clubs to Corvane Golf; flow 3 goes into one club, Fernhollow Golf Club.
+  // Its screenshots and voiceover are base64 text in the repo (tour-assets/rmn-golf/v2), served here decoded, the way tour.php serves them;
+  // every served file is checked against SHA256SUMS.
   { const sourceTour = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");
     const fast = sourceTour.replace("const k = reduce ? .35 : 1;", "const k = .02;");
-    const gdir = path.join(here, "..", "tour-assets", "rmn-golf");
+    const gdir = path.join(here, "..", "tour-assets", "rmn-golf", "v2");
     const crypto = await import("crypto");
     const gscript = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(here, "..", "tools", "rmn-golf-tour", "voiceover-script.json"), "utf8")).steps.map((s) => [s.id, s.lines.map((l) => l.text)]));
     const gsums = Object.fromEntries(fs.readFileSync(path.join(gdir, "SHA256SUMS"), "utf8").trim().split("\n").map((l) => l.trim().split(/\s+/).reverse()));
     const decode = (k) => Buffer.from(fs.readFileSync(path.join(gdir, k + ".b64"), "ascii"), "base64");
     const served = [];
-    const serveGolf = (r) => { const m = r.request().url().match(/^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v1\/((?:img|vo)\/[\w.-]+)$/); if (!m || !gsums[m[1]]) return r.fulfill({ status: 404, body: "" }); const raw = decode(m[1]); served.push([m[1], crypto.createHash("sha256").update(raw).digest("hex")]); return r.fulfill({ contentType: /^img/.test(m[1]) ? "image/jpeg" : "audio/mpeg", body: raw }); };
+    const serveGolf = (r) => { const m = r.request().url().match(/^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v2\/((?:img|vo)\/[\w.-]+)$/); if (!m || !gsums[m[1]]) return r.fulfill({ status: 404, body: "" }); const raw = decode(m[1]); served.push([m[1], crypto.createHash("sha256").update(raw).digest("hex")]); return r.fulfill({ contentType: /^img/.test(m[1]) ? "image/jpeg" : "audio/mpeg", body: raw }); };
     const GURL = "http://x.test/run-your-own-rmn/tour/?embed=1";
     // every asset in the repo decodes to its SHA256SUMS entry
     const sumBad = Object.entries(gsums).filter(([k, h]) => crypto.createHash("sha256").update(decode(k)).digest("hex") !== h).map(([k]) => k);
@@ -856,35 +857,37 @@ try {
     // Gate: golf copy, its own three demos, the lead posted as industry rmn.
     { const g = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       let body = null;
-      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } if (/\/assets\/v1\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
+      await g.route("**/*", (r) => { const u = r.request().url(); if (/tour-lead$/.test(u)) { body = JSON.parse(r.request().postData()); return r.fulfill({ contentType: "application/json", body: '{"ok":true}' }); } if (/\/assets\/v2\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
       await g.addInitScript(() => { window.PH_TOUR = { endpoint: "/wp-json/ph-site/v1/tour-lead", nonce: "" }; });
       await g.goto(GURL + "&ph_test=1");
       await g.waitForSelector(".g-flow");
-      assert.deepStrictEqual(await g.locator(".g-flow b").allTextContents(), ["Venue setup", "Advertiser creates by talking", "Member journey & outcome"], "golf gate demos");
-      assert.ok(/golf club sell its screens to a golf brand/i.test(await g.locator(".g-panel h3").textContent()), "gate headline is golf copy");
+      assert.deepStrictEqual(await g.locator(".g-flow b").allTextContents(), ["Network setup", "Advertiser creates by talking", "Member journey & outcome"], "golf gate demos");
+      assert.ok(/Fairlinks Golf Network sell screens across 100 golf clubs to one brand/.test(await g.locator(".g-panel h3").textContent()), "gate headline is the network's copy");
+      assert.ok(!/Fernhollow/.test(await g.locator("#gate").innerText()), "the gate never names the one club");
       await g.locator(".g-flow").nth(2).click();
       await g.fill("input[name=name]", "Ada Lovelace"); await g.fill("input[name=company]", "Fairway Media"); await g.fill("input[name=email]", "ada@fairway.example"); await g.check("input[name=consent]");
       await g.click("#gsub"); await g.waitForFunction(() => document.getElementById("gate").hidden);
       assert.ok(body && body.industry === "rmn" && body.flow === "Member journey & outcome" && body.page === "/run-your-own-rmn/tour/" && body.test === true, "golf lead body: " + JSON.stringify(body));
       await g.close(); }
-    // Walk every step of the three flows (a stored lead's company never replaces the club).
+    // Walk every step of the three flows (a stored lead's company never replaces the network).
     const hooked = fast.replace('document.getElementById("prev").onclick', "window.__t = { S, D };\n$&");
     const t = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
     const errs = []; t.on("pageerror", (e) => errs.push(e.message));
     const reqs = []; t.on("request", (q) => reqs.push(q.url()));
-    await t.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
+    await t.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v2\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
     await t.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "Bayside Test Stores", email: "s@k.example", source: "Network operator inquiry" })); window.__steps = [[], [], []]; setInterval(() => { const i = [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"), f = window.__t && window.__t.S.flow; if (i >= 0 && window.__steps[f] && !window.__steps[f].includes(i)) window.__steps[f].push(i); }, 5); });
     await t.goto(GURL);
     await t.waitForSelector("#fs", { state: "visible" });
     assert.ok(/Run Your Own RMN/.test(await t.title()), "document title: " + await t.title());
-    assert.deepStrictEqual(await t.locator(".chip").evaluateAll((c) => c.map((x) => x.childNodes[1].textContent)), ["Venue setup", "Advertiser creates by talking", "Member journey & outcome"], "three golf flows");
-    const seen = new Set(), blanks = [], broken = [], badCaps = [], offTarget = [], shots = new Set();
+    assert.deepStrictEqual(await t.locator(".chip").evaluateAll((c) => c.map((x) => x.childNodes[1].textContent)), ["Network setup", "Advertiser creates by talking", "Member journey & outcome"], "three golf flows");
+    const seenF = [new Set(), new Set(), new Set()], seen = new Set(), blanks = [], broken = [], badCaps = [], offTarget = [], shots = new Set();
     const stepOf = () => t.evaluate(() => [...document.querySelectorAll("#dots .dot")].findIndex((d) => d.getAttribute("aria-current") === "true"));
     for (let f = 0; f < 3; f++) {
       await t.click(`.chip[data-k="${f}"]`); await t.click("#play"); const t0 = Date.now();
       for (;;) {
         const a = await stepOf();
-        seen.add(await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" ")].join("\n")));
+        const snap = await t.evaluate(() => [document.getElementById("stage").innerText, document.getElementById("capT").textContent, document.getElementById("capS").textContent, document.getElementById("card").innerText, document.getElementById("tip") ? document.getElementById("tip").innerText : "", [...document.querySelectorAll("#stage svg text")].map((x) => x.textContent).join(" ")].join("\n"));
+        seen.add(snap); seenF[f].add(snap);
         const capS = await t.textContent("#capS"), b = await stepOf();
         if (a >= 0 && a === b && capS.trim() && !(gscript[`f${f + 1}-${String(a + 1).padStart(2, "0")}`] || []).includes(capS)) badCaps.push(`f${f + 1}-${a + 1}: ${capS}`);
         // every click and highlight box sits on its screenshot
@@ -905,17 +908,28 @@ try {
     assert.deepStrictEqual(broken, [], "golf: no broken image");
     assert.deepStrictEqual(offTarget, [], "golf: every hotspot lies on its screenshot");
     assert.deepStrictEqual(badCaps, [], "golf: every caption is a line of the golf script");
-    assert.deepStrictEqual(await t.evaluate(() => window.__steps.map((x) => x.length)), [8, 10, 5], "golf: all steps of the three flows played (8, 10 and 5)");
+    assert.deepStrictEqual(await t.evaluate(() => window.__steps.map((x) => x.length)), [9, 10, 5], "golf: all steps of the three flows played (9, 10 and 5)");
     const usedShots = [...shots].map((u) => (u.match(/\/img\/([\w.-]+)\.jpg$/) || [])[1]).filter(Boolean);
     const hotNames = Object.keys(JSON.parse(sourceTour.match(/const HOT_GOLF = (\{.*?\});/)[1])).filter((k) => !k.includes("#"));
     assert.deepStrictEqual(hotNames.filter((n) => !usedShots.includes(n)), [], "golf: every screenshot is shown during the walk");
     const thirdParty = reqs.filter((u) => !u.startsWith("http://x.test/") && !/^https:\/\/fonts\.(googleapis|gstatic)\.com\//.test(u));
     assert.deepStrictEqual(thirdParty, [], "golf: no third-party request for screenshots or audio");
-    assert.ok(reqs.some((u) => /^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v1\/img\/[\w.-]+\.jpg$/.test(u)) && !reqs.some((u) => /\/industries\/retail-media\/tour\/assets\//.test(u)), "golf: screenshots load from its own same-origin route");
+    assert.ok(reqs.some((u) => /^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v2\/img\/[\w.-]+\.jpg$/.test(u)) && !reqs.some((u) => /\/industries\/retail-media\/tour\/assets\//.test(u)), "golf: screenshots load from its own same-origin route");
     assert.deepStrictEqual(served.filter(([k, h]) => gsums[k] !== h), [], "golf: every served file matches its sha256");
     const text = [...seen].join("\n");
-    for (const need of ["Fernhollow Golf Club", "Corvane Golf", "Pro Shop", "Driving Range", "First Tee", "Halfway House", "Locker Room", "Clubhouse Bar", "Hannah", "Low-handicap members", "Golf balls", "Jamie", "USD 36,231"]) assert.ok(text.includes(need), "golf content shown: " + need);
-    assert.ok(!/Bayside/.test(text), "the club stays Fernhollow Golf Club whatever the visitor's company");
+    for (const need of ["Fairlinks Golf Network", "Fernhollow Golf Club", "Corvane Golf", "Pro Shop", "Driving Range", "First Tee", "Halfway House", "Locker Room", "Clubhouse Bar", "Hannah", "Low-handicap members", "Golf balls", "Jamie", "USD 3,623,124"]) assert.ok(text.includes(need), "golf content shown: " + need);
+    assert.ok(!/Bayside/.test(text), "the network stays the Fairlinks Golf Network whatever the visitor's company");
+    // v2: flows 1 and 2 are the network's and never name the one club; flow 3 goes into it explicitly. All three talk about the 100 clubs.
+    const fText = seenF.map((x) => [...x].join("\n"));
+    assert.ok(!/Fernhollow/.test(fText[0]) && !/Fernhollow/.test(fText[1]), "flows 1 and 2 never say Fernhollow: " + JSON.stringify((fText[0] + fText[1]).match(/.{0,60}Fernhollow.{0,40}/g)));
+    assert.ok(/Now one club on the network: Fernhollow Golf Club/.test(fText[2]), "flow 3 makes the switch to one club explicit");
+    for (let f = 0; f < 3; f++) assert.ok(/100 (golf )?clubs/.test(fText[f]) && /network/i.test(fText[f]), `flow ${f + 1} mentions the network and its 100 clubs`);
+    assert.ok(/Set once, live at all 100 clubs/.test(fText[0]), "flow 1 says the slots are set once and live at all 100 clubs");
+    assert.ok(/Fairlinks approves/.test(fText[1]) && !/The club approves/.test(fText[1]), "flow 2: Fairlinks approves, not the club");
+    const singleClub = (fText[0] + "\n" + fText[1]).match(/.{0,50}\b(the club's|the club approves|the club adds|by the club|a golf club sell)\b.{0,30}/gi);
+    assert.ok(!singleClub, "flows 1 and 2: no line implies one club runs the network: " + JSON.stringify(singleClub));
+    for (const [id, lines] of Object.entries(gscript)) if (!/^f3-/.test(id)) assert.ok(!lines.some((l) => /Fernhollow/.test(l)), `voiceover ${id} never says Fernhollow`);
+    assert.ok(gscript["f3-01"].some((l) => /Now one club on the network: Fernhollow Golf Club/.test(l)), "voiceover f3-01 makes the switch to Fernhollow");
     const conv = text.match(/forecourt|\bpumps?\b|cooler|Frostline|cold drinks?|\bfuel|Larkspur|Highway 9|Emma\b|Loyalty Gold/gi);
     assert.ok(!conv, "no convenience terms in the golf tour: " + JSON.stringify(conv));
     const banned = text.match(/telco|pharmac|prescription|Google|Trade Desk|Amazon|Titleist|Callaway|TaylorMade|Ping\b|Srixon|Coca|Pepsi|Red Bull|Monster|personalization|Display Types & DSP|DSP Integration|Visitor Profile|Elementor|Angie|rob_ph|ph-mcp|backlog/gi);
@@ -926,18 +940,18 @@ try {
     // Voiceover on: the golf clips play from the same-origin route and match their sha256.
     { const v = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
       const vr = []; v.on("request", (q) => vr.push(q.url()));
-      await v.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
+      await v.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v2\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: sourceTour }) : r.abort(); });
       await v.addInitScript(() => { localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "X", email: "s@k.example" })); localStorage.setItem("ph_tour_voiceover", "on"); });
       await v.goto(GURL); await v.waitForSelector("#start", { state: "visible" }); await v.click("#start");
-      await v.waitForFunction(() => /six screen types/.test(document.getElementById("capS").textContent), null, { timeout: 8000 });
+      await v.waitForFunction(() => /100 connected golf clubs/.test(document.getElementById("capS").textContent), null, { timeout: 8000 });
       await v.waitForTimeout(1500);
-      assert.ok(vr.some((u) => /^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v1\/vo\/f1-01-1-[0-9a-f]{10}\.mp3$/.test(u)), "golf voiceover: f1-01 is fetched from the same-origin route");
+      assert.ok(vr.some((u) => /^http:\/\/x\.test\/run-your-own-rmn\/tour\/assets\/v2\/vo\/f1-01-1-[0-9a-f]{10}\.mp3$/.test(u)), "golf voiceover: f1-01 is fetched from the same-origin route");
       assert.deepStrictEqual(served.filter(([k, h]) => gsums[k] !== h), [], "golf voiceover: every clip matches its sha256");
       await v.close(); }
     // Train preview (no tour.php): the .b64 files are fetched from the repo and shown as blob URLs.
     { const pv = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
       const errs2 = []; pv.on("pageerror", (e) => errs2.push(e.message));
-      await pv.route("**/*", (r) => { const u = r.request().url(); const m = u.match(/^https:\/\/raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/ph-website\/tour-assets\/rmn-golf\/((?:img|vo)\/[\w.-]+)\.b64$/); if (m) return r.fulfill({ contentType: "text/plain", body: fs.readFileSync(path.join(gdir, m[1] + ".b64"), "ascii") }); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await pv.route("**/*", (r) => { const u = r.request().url(); const m = u.match(/^https:\/\/raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/ph-website\/tour-assets\/rmn-golf\/v2\/((?:img|vo)\/[\w.-]+)\.b64$/); if (m) return r.fulfill({ contentType: "text/plain", body: fs.readFileSync(path.join(gdir, m[1] + ".b64"), "ascii") }); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
       await pv.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "X", email: "s@k.example" })));
       await pv.goto("http://x.test/preview/tour.html?ind=rmn"); await pv.waitForSelector("#start", { state: "visible" }); await pv.click("#start");
       await pv.waitForFunction(() => { const i = document.querySelector("#stage .rm-shot img"); return i && /^blob:/.test(i.src) && i.complete && i.naturalWidth === 1600; }, null, { timeout: 10000 });
@@ -945,7 +959,7 @@ try {
       await pv.close(); }
     // 390px wide: no sideways scroll on a screenshot step or on the six-screen member scene.
     { const m = await browser.newPage({ viewport: { width: 390, height: 800 }, reducedMotion: "reduce" });
-      await m.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
+      await m.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v2\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: fast }) : r.abort(); });
       await m.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "X", email: "s@k.example" })));
       await m.goto(GURL); await m.waitForSelector("#fs", { state: "visible" });
       for (const f of [0, 2]) {
@@ -956,7 +970,7 @@ try {
       await m.close(); }
     // The six club screens fit the stage and the stops sit on their screens.
     { const c = await browser.newPage({ viewport: { width: 1280, height: 800 }, reducedMotion: "reduce" });
-      await c.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v1\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
+      await c.route("**/*", (r) => { const u = r.request().url(); if (/\/assets\/v2\//.test(u)) return serveGolf(r); return u.startsWith("http://x.test/") ? r.fulfill({ contentType: "text/html", body: hooked }) : r.abort(); });
       await c.addInitScript(() => localStorage.setItem("ph_lead", JSON.stringify({ name: "Sam", company: "X", email: "s@k.example" })));
       await c.goto(GURL); await c.waitForSelector("#fs", { state: "visible" });
       await c.click('.chip[data-k="2"]'); await c.click("#play");
@@ -966,6 +980,29 @@ try {
       assert.ok(geo.inside && geo.aligned && geo.n === 6, "six club screens inside the stage, each stop centred on its screen: " + JSON.stringify(geo));
       assert.deepStrictEqual(geo.labels, ["Pro Shop", "Driving Range", "First Tee", "Halfway House", "Locker Room", "Clubhouse Bar"], "the member journey's six screens");
       await c.close(); }
+    // The network's revenue, recomputed the way the booking revenue screen computes it (tools/rmn-golf-tour/figures.json, written by slots_golf.py
+    // from the same seed as the screenshots): each window's assumed views = plays per window × screens of that type at all 100 clubs × viewers per
+    // play, and its revenue = views × the deal's CPM ÷ 1,000. Every figure the tour quotes must equal the recomputed one.
+    { const fig = JSON.parse(fs.readFileSync(path.join(here, "..", "tools", "rmn-golf-tour", "figures.json"), "utf8"));
+      assert.strictEqual(fig.clubs, 100, "the network has 100 clubs");
+      assert.strictEqual(fig.cpm, 150, "the deal's CPM is USD 150");
+      let views = 0, cents = 0, windows = 0, displays = 0;
+      for (const ty of fig.types) {
+        assert.strictEqual(ty.displayCount, ty.perClub * fig.clubs, `${ty.name}: screens = per club × 100 clubs`);
+        const perWindow = Math.round(ty.playsPerWindow * ty.displayCount * ty.vacdPerPlay);
+        assert.strictEqual(ty.bookedViews, perWindow * ty.bookedWindows, `${ty.name}: booked views = plays × screens × viewers per play × windows`);
+        const rev = Math.round(perWindow * fig.cpm / 1000 * 100) * ty.bookedWindows;
+        assert.strictEqual(Math.round(ty.bookedRevenue * 100), rev, `${ty.name}: revenue = views × CPM ÷ 1,000`);
+        views += ty.bookedViews; cents += rev; windows += ty.bookedWindows; displays += ty.perClub;
+      }
+      assert.strictEqual(displays, 27, "27 screens at every club");
+      assert.strictEqual(windows, 84, "84 windows: six screen types × 14 days");
+      assert.strictEqual(Math.round(fig.totals.bookedRevenue * 100), cents, "the screen's total equals the recomputed total");
+      const usd = (n, d = 0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+      const tour = sourceTour;
+      for (const need of [`USD ${usd(Math.round(cents / 100))} in two weeks`, `${usd(views)} assumed views × USD ${fig.cpm} CPM ÷ 1,000 = USD ${usd(cents / 100, 2)}`, `USD ${(cents / 1e8).toFixed(2)}m`, `${usd(views)} assumed views at USD ${fig.cpm} CPM`, `${usd(displays * fig.clubs)} connected displays`])
+        assert.ok(tour.includes(need), "tour quotes the recomputed figure: " + need);
+      assert.ok(!/36,231/.test(tour.slice(tour.indexOf("const G3 = ["), tour.indexOf("const FLOWDEF_G"))), "the single-club figure is gone"); }
   }
   // Fuel & convenience: the three standard flows on recreated HQ Admin screens (as pharmacy), convenience content, a four-location shopper scene, end card CTA to retail media.
   { const src = fs.readFileSync(path.join(dir, "tour", "tour.html"), "utf8");

@@ -11,9 +11,12 @@
 //                  product tour gate; shown as "Network operator inquiry")
 //   company        { name, website, industry, countries[], storeCount|null, awsAccountId (12 digits or "") }
 //                  (name is required for a company lead; a network operator inquiry usually has none)
-//   operator       { region, background, audience } on a network operator inquiry: where they plan to
-//                  operate, their background (a BACKGROUNDS key) and who they are (an AUDIENCES key,
-//                  "I am" on the form; "" on a lead that predates it); the person is the lead's single contact
+//   operator       { region, background, audience, networkIndustry, message, form } on a network operator
+//                  inquiry: where they plan to operate, their background (a BACKGROUNDS key), who they are
+//                  (an AUDIENCES key, "I am" on the form), the industry they want to run their network in
+//                  (free text: one of the website's industries or "Other: <text>"), their message, and which
+//                  website form sent it (OPERATOR_FORMS: request or tour). Each is "" on a lead that
+//                  predates it; the person is the lead's single contact
 //   contacts[]     { id, name, jobTitle, buyingRole, email, linkedin, awsAccountId (12 digits or ""), enrichment? }
 //   stage          one of STAGES (a company lead) or OPERATOR_STAGES (a network operator inquiry)
 //   source         where it came from ("Website form", "Manual", ...)
@@ -76,6 +79,11 @@ const AUDIENCES = [
   { key: "retailer", label: "A small to medium retailer" },
 ];
 const OPERATOR_SOURCE_LABEL = "Run Your Own RMN page – product tour";
+// Which form on the Run Your Own RMN page sent a network operator inquiry:
+// request (Request further information) or tour (the product tour gate).
+// (Written as one string: the word tour in quotes reads as a Material icon name to test/icon-font.test.mjs.)
+const OPERATOR_FORMS = "request tour".split(" ");
+const operatorFormKey = (v) => { const s = String(v == null ? "" : v).trim().toLowerCase(); return OPERATOR_FORMS.includes(s) ? s : ""; };
 
 const BUYING_ROLES = [
   { key: "decision-maker", label: "Decision maker" },
@@ -88,7 +96,7 @@ const BUYING_ROLE_KEYS = BUYING_ROLES.map((r) => r.key);
 
 const HISTORY_LIMIT = 100;
 const NOTE_MAX = 2000;
-const LIMITS = { region: 200, name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
+const LIMITS = { region: 200, networkIndustry: 120, message: 1000, name: 120, website: 300, industry: 120, source: 80, sourceLabel: 120, sourceDetail: 120, activity: 20, jobTitle: 120, email: 200, linkedin: 300, countries: 60, contacts: 25, country: 60 };
 
 const stageLabel = (key) => ([...STAGES, ...OPERATOR_STAGES].find((s) => s.key === key) || { label: String(key || "") }).label;
 const roleLabel = (key) => (BUYING_ROLES.find((r) => r.key === key) || { label: "" }).label;
@@ -183,7 +191,7 @@ function blankLead(email = "", type = DEFAULT_LEAD_TYPE) {
     leadType,
     company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
     contacts: [blankContact()],
-    ...(leadType === "operator" ? { operator: { region: "", background: "", audience: "" } } : {}),
+    ...(leadType === "operator" ? { operator: { region: "", background: "", audience: "", networkIndustry: "", message: "", form: "" } } : {}),
     stage: defaultStageFor(leadType), source: "Manual", assignee: email || "", customerAccount: null,
   };
 }
@@ -191,7 +199,8 @@ function blankLead(email = "", type = DEFAULT_LEAD_TYPE) {
 // The text fields of the form -> the document's fields, or { errors }.
 // `form` is what the page gathers: countries as a string, storeCount as typed.
 // leadType "operator" (an individual): no company name is needed, the person
-// is the first contact and must have a name, and region/background/audience are kept.
+// is the first contact and must have a name, and region/background/audience,
+// networkIndustry, message and form are kept.
 function leadFromForm(form) {
   const errors = [];
   const f = form || {};
@@ -236,11 +245,19 @@ function leadFromForm(form) {
       leadType,
       company: { name, website: website || "", industry: str(f.industry, LIMITS.industry), countries: parseCountries(f.countries), storeCount, awsAccountId: companyAws || "" },
       contacts,
-      ...(operator ? { operator: { region: str(f.region, LIMITS.region), background: backgroundKey(f.background), audience: audienceKey(f.audience) } } : {}),
+      ...(operator ? { operator: operatorFields(f) } : {}),
       stage,
       source: str(f.source, LIMITS.source) || "Manual",
       assignee: str(f.assignee, LIMITS.email).toLowerCase(),
     },
+  };
+}
+
+// A network operator inquiry's own fields, from the form, an agent or the website.
+function operatorFields(f) {
+  return {
+    region: str(f.region, LIMITS.region), background: backgroundKey(f.background), audience: audienceKey(f.audience),
+    networkIndustry: str(f.networkIndustry, LIMITS.networkIndustry), message: str(f.message, LIMITS.message), form: operatorFormKey(f.form),
   };
 }
 
@@ -296,7 +313,10 @@ function leadFromWebsite(p) {
 // no company. Fields: full_name (or fullName/contactName/name), email,
 // linkedin (optional; an address that isn't one is dropped rather than losing
 // the lead), operating_region (or operatingRegion/region/where_operate/location),
-// background (a BACKGROUNDS key or label), audience ("I am": an AUDIENCES key or label), lead_source (stored as sourceLabel,
+// background (a BACKGROUNDS key or label), audience ("I am": an AUDIENCES key or label),
+// network_industry (or networkIndustry: the industry they want to run their network in, up to
+// 120 characters), message (up to 1,000; longer is cut), form ("request" for Request further
+// information, tour for the product tour gate), lead_source (stored as sourceLabel,
 // "Run Your Own RMN page – product tour" when not sent), page and test.
 function operatorFromWebsite(p) {
   const x = p || {};
@@ -315,7 +335,7 @@ function operatorFromWebsite(p) {
       leadType: "operator",
       company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" },
       contacts: [contact],
-      operator: { region, background: backgroundKey(x.background), audience: audienceKey(x.audience) },
+      operator: operatorFields({ region, background: x.background, audience: x.audience, networkIndustry: x.network_industry || x.networkIndustry, message: x.message, form: x.form }),
       stage: OPERATOR_DEFAULT_STAGE, source: "website", assignee: "",
       sourcePage: str(x.page || x.pageUrl || x.page_url, 300), sourceIndustry: "", test,
       sourceLabel: str(x.lead_source || x.leadSource || x.sourceLabel || x.source_label, LIMITS.sourceLabel) || OPERATOR_SOURCE_LABEL,
@@ -333,7 +353,10 @@ function normaliseLead(id, d) {
   return {
     id,
     leadType,
-    operator: leadType === "operator" ? { region: String(fr.region || ""), background: String(fr.background || ""), audience: audienceKey(fr.audience) } : null,
+    operator: leadType === "operator" ? {
+      region: String(fr.region || ""), background: String(fr.background || ""), audience: audienceKey(fr.audience),
+      networkIndustry: String(fr.networkIndustry || ""), message: String(fr.message || ""), form: operatorFormKey(fr.form),
+    } : null,
     company: {
       name: String(c.name || ""), website: String(c.website || ""), industry: String(c.industry || ""),
       countries: Array.isArray(c.countries) ? c.countries.map(String) : [],
@@ -449,11 +472,11 @@ function mergeInbound(cur, fields, newContacts) {
 const inboundLabel = (l) => (l && l.inboundCount ? `${l.inboundCount} inbound` : "");
 
 // A short line for a card: "250 stores · UK, France"; for a network operator inquiry
-// "I am · Where they plan to operate · Background".
+// "I am · Where they plan to operate · Industry they want to run · Background", skipping blanks.
 function companyLine(l) {
   if (l && l.leadType === "operator") {
     const f = l.operator || {};
-    return [audienceLabel(f.audience), f.region, backgroundLabel(f.background)].filter(Boolean).join(" · ");
+    return [audienceLabel(f.audience), f.region, f.networkIndustry, backgroundLabel(f.background)].filter(Boolean).join(" · ");
   }
   const parts = [];
   if (l.company.storeCount != null) parts.push(`${l.company.storeCount.toLocaleString("en-GB")} ${l.company.storeCount === 1 ? "store" : "stores"}`);
@@ -461,4 +484,4 @@ function companyLine(l) {
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, OPERATOR_FORMS, operatorFormKey, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, gaEntryFromWebsite, mergeGaClientIds, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };

@@ -28,6 +28,7 @@ import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
+import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
@@ -447,6 +448,8 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
+// The Testing loops page's project (null when closed) — see openTestingLoopsPage.
+let testingLoopsProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
 let archiveFilters = { type: "", category: "", search: "" };
 
@@ -556,6 +559,7 @@ function closeAllSubPages() {
   const deniedPage = document.getElementById("access-denied-page");
   if (deniedPage) deniedPage.hidden = true;
   closeArchivePage();
+  closeTestingLoopsPage();
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
@@ -1116,7 +1120,8 @@ function cardHTML(item) {
       ${popText
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
-      ${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${sentBackLastTimeHTML(item)}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1195,10 +1200,41 @@ function needsDecisionChipHTML(pid) {
   return n ? `<span class="blocked-flag blocked-flag-needs-decision needs-decision-chip" title="Backlog tickets flagged as needing a decision from you"><span class="material-symbols-outlined">gavel</span>${n} need${n === 1 ? "s" : ""} your decision</span>` : "";
 }
 
+// ── Testing rounds (hm84opFjizq3vekk0fC1) ─────────────────────────────────
+// Per-viewer, in memory: which cards have their Round chip's send-back list
+// open, and which projects' Ready for Testing column shows only the tickets
+// in a testing loop (round 3 or later).
+const expandedRoundChips = new Set();
+const loopFilterProjects = new Set();
+function loopingTestingItems(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && isLooping(i));
+}
+// The Ready for Testing header's "N in a testing loop" — a toggle that
+// filters the column to those tickets. Nothing when no ticket is looping.
+function testingLoopChipHTML(pid) {
+  const n = loopingTestingItems(pid).length;
+  if (!n && !loopFilterProjects.has(pid)) return "";
+  const on = loopFilterProjects.has(pid);
+  return `<button type="button" class="loop-filter-btn${on ? " loop-filter-on" : ""}" data-project-id="${escapeHTML(pid)}" aria-pressed="${on}" title="${on ? "Show every ticket in Ready for Testing" : `Show only the tickets in round ${LOOP_ROUND} or later`}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>${n} in a testing loop${on ? " · show all" : ""}</button>`;
+}
+
 async function clearBlocked(id) {
   // blockedClearedAt: the automation's unbuilt-report sweep must not raise
   // the flag again on a card a person has just cleared.
-  await updateDoc(doc(db, "backlogItems", id), { blocked: null, blockedClearedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const item = allItems.find((i) => i.id === id);
+  // A ticket stopped at the testing-loop cap (needs-decision, set by
+  // test-rounds) is built again when the flag is cleared, the same way the
+  // Answer button rebuilds it; the next cap is two send-backs later.
+  const loopCap = !!(item && item.blocked && item.blocked.setBy === "test-rounds" && item.status === "backlog");
+  const pid = item ? item.projectId || GENERAL_PROJECT_ID : null;
+  const project = loopCap ? projects.find((p) => p.id === pid) : null;
+  const locked = loopCap && isTrainLocked(project);
+  await updateDoc(doc(db, "backlogItems", id), { blocked: null, blockedClearedAt: serverTimestamp(), ...(locked ? { buildAfterTrain: true } : {}), updatedAt: serverTimestamp() });
+  if (loopCap && project && !locked) {
+    notifyOptimisticClicks[pid] = Date.now();
+    render();
+    await writeNotifyRequest(pid, [id]);
+  }
 }
 
 // Cards a Ready for Dev click can actually build: not blocked on a question
@@ -1478,6 +1514,9 @@ function optionsMenuHTML(project) {
   let html = `
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
+    </button>
+    <button type="button" class="options-menu-item project-loops-btn" data-project-id="${escapeHTML(pid)}">
+      Testing loops
     </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
@@ -2464,7 +2503,10 @@ function projectSectionHTML(project) {
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
-    const listItems = cardsByCol[col.key];
+    // "N in a testing loop" filter (Ready for Testing only, per viewer).
+    const listItems = col.key === "ready-for-testing" && loopFilterProjects.has(project.id)
+      ? cardsByCol[col.key].filter((i) => isLooping(i))
+      : cardsByCol[col.key];
     // "Select all" makes sense in two columns now: Backlog (what "Ready for
     // Dev" acts on) and Ready for Testing (what "Approved for Deployment" acts
     // on, restricted to the noDeploymentRequired-excluded, checkbox-eligible
@@ -2504,7 +2546,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? backlogBulkBarHTML(project.id) + needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? backlogBulkBarHTML(project.id) + needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? testingLoopChipHTML(project.id) + reviewBatchInlineHTML(project) : "")}</div>
       ${col.key === "backlog" ? groomPackagesHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
@@ -3327,6 +3369,7 @@ function loadArchivedItems() {
     rebuildAllItems();
     render();
     if (archiveProjectId) renderArchivePage();
+    if (testingLoopsProjectId) renderTestingLoopsPage();
     if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
     if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
     renderHealthStrip();
@@ -3461,6 +3504,7 @@ onSnapshot(query(itemsRef, where("status", "!=", "archived")), (snap) => {
   if (!snap.metadata.fromCache || !snap.empty) itemsFirstSnapshot = false;
   render();
   if (archiveProjectId) renderArchivePage();
+  if (testingLoopsProjectId) renderTestingLoopsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The review page's "goes live when…" hint tracks the source tickets' status.
   if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
@@ -3717,7 +3761,7 @@ async function failTestingNow(id, item) {
   if (result.choice === FAILED_TESTING_CHOICES.FOLLOW_UP) return fileFollowUp(item, trimmed);
   const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
   const at = new Date();
-  const send = sendBackFields({ category, text: trimmed, at });
+  const send = sendBackFields({ category, text: trimmed, at, who: (auth.currentUser && auth.currentUser.email) || "" });
   await updateDoc(doc(db, "backlogItems", id), {
     status: send.status,
     revertRequested: send.revertRequested,
@@ -3800,7 +3844,7 @@ async function ejectFromTrainNow(id, item) {
     // the notes/board history); nothing in the automation branches on it.
     revertRequested: true,
     ejectedFromTrain: true,
-    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date() },
+    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date(), ...(auth.currentUser && auth.currentUser.email ? { who: auth.currentUser.email } : {}) },
     notes: arrayUnion({ author: "viewer", text: `Ejected from train [${category}]: ${trimmed}`, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
@@ -4747,6 +4791,20 @@ projectsRoot.addEventListener("click", async (e) => {
   if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id, { answer: blockedResolveBtn.dataset.answer === "1" }); return; }
   const blockedClearBtn = e.target.closest(".blocked-clear-btn");
   if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
+  const roundChip = e.target.closest(".round-chip");
+  if (roundChip) {
+    const id = roundChip.dataset.id;
+    if (expandedRoundChips.has(id)) expandedRoundChips.delete(id); else expandedRoundChips.add(id);
+    render();
+    return;
+  }
+  const loopFilterBtn = e.target.closest(".loop-filter-btn");
+  if (loopFilterBtn) {
+    const pid = loopFilterBtn.dataset.projectId;
+    if (loopFilterProjects.has(pid)) loopFilterProjects.delete(pid); else loopFilterProjects.add(pid);
+    render();
+    return;
+  }
   const delBtn = e.target.closest(".delete-btn");
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
@@ -4816,6 +4874,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (e2eRunBtn) { closeAllOptionMenus(); requestE2E(e2eRunBtn.dataset.projectId, e2eRunBtn.dataset.mode); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
+  const loopsNavBtn = e.target.closest(".project-loops-btn");
+  if (loopsNavBtn) { closeAllOptionMenus(); openTestingLoopsPage(loopsNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
   const feedBtn = e.target.closest(".feed-requirements-btn");
@@ -6298,6 +6358,59 @@ archiveFilterCategory.addEventListener("change", () => {
   archiveFilters.category = archiveFilterCategory.value;
   renderArchivePage();
 });
+
+// ── Testing loops page (project ⋮ menu; hm84opFjizq3vekk0fC1) ───────────
+// Read-only: tickets with 2 or more counted send-backs in the last 30 days,
+// their round, reasons and time from first build to approval. Same table
+// component and page shell as Archived tickets. Includes archived tickets,
+// so it loads them (ensureArchivedItems) like the archive page does.
+let testingLoopsList = null;
+const STATUS_LABELS = { backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", archived: "Archived" };
+function openTestingLoopsPage(pid) {
+  closeAllSubPages();
+  ensureArchivedItems();
+  testingLoopsProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  document.getElementById("testing-loops-page").hidden = false;
+  renderTestingLoopsPage();
+}
+function closeTestingLoopsPage() {
+  const page = document.getElementById("testing-loops-page");
+  if (!page || page.hidden) { testingLoopsProjectId = null; return; }
+  testingLoopsProjectId = null;
+  page.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+function getTestingLoopsList() {
+  if (!testingLoopsList) {
+    const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
+    testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
+      id: "testing-loops", searchLabel: "Search title or reasons", emptyText: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
+      columns: [
+        { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => r.title,
+          html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
+        { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
+          html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
+        { key: "recent", header: "Send-backs", width: 120, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
+        { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
+          html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
+        { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
+          html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
+        { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
+      ],
+    });
+  }
+  return testingLoopsList;
+}
+function renderTestingLoopsPage() {
+  if (!testingLoopsProjectId) return;
+  document.getElementById("testing-loops-project-name").textContent = projectName(testingLoopsProjectId);
+  const rows = testingLoopRows(allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId));
+  document.getElementById("testing-loops-count").textContent = `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
+  getTestingLoopsList().setRows(rows);
+}
 
 // ── Archived projects page (top-level — a whole project, not one ticket) ──
 const archivedProjectsPage = document.getElementById("archived-projects-page");
@@ -12222,6 +12335,7 @@ const ROUTE_TITLES = {
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#support": "Support Inbox",
   "#support/stats": "Support Inbox: Stats",
+  "#support/try": "Support Inbox: Try an email",
   "#settings/support": "Settings: Support inbox",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",

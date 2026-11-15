@@ -418,6 +418,14 @@ What the train changes:
   automatic send-back now opens with a one-line `Why:` (the failing test,
   from the run's log — `lastFailureReason.summary`), and the board shows one
   line per rejection above a ticket's comments (`public/js/rejection-summary.js`).
+  **Testing rounds** (15 Nov 2026): every send-back is stored on the card
+  (`testRound`, `sendBacks`, `sendBackCount`, `countedSendBacks` —
+  `functions/test-rounds.js`, read by `public/js/test-rounds-view.js`), a
+  "Round N" chip shows from round 2 in every column, and the 3rd counted
+  send-back flags the ticket needs-decision instead of rebuilding it; the ⋮
+  menu's **Testing loops** lists the looping tickets.
+  `scripts/backfill-test-rounds.js` stores the fields on older cards.
+  REQUIREMENTS.md → "Testing rounds".
   **A failed train test is re-run once before anyone acts on it** (19 Oct
   2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
   is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
@@ -2644,7 +2652,15 @@ every destination already existed.
   (`individual`, `team`, `retailer`, or "" when not given), shown first on the
   card's line, as "I am" in the summary and as a select on the form, and
   `list_leads` filters by `audience`. Backgrounds gained `creative-agency` and
-  `retail-owner`. See
+  `retail-owner`.
+  **Industry and message (15 Nov 2026)**: the page's Request further information
+  form sends `network_industry`, `message` and `form: "request"`; they are stored
+  as `operator.networkIndustry` (≤120), `operator.message` (≤1,000, longer is cut)
+  and `operator.form` (`request` or `tour`). A repeat submission replaces the
+  industry and adds a new message to the history as a dated note. The card line
+  shows the industry after the region, the summary adds "Industry they want to
+  run" and "Message", the form has an "Industry they want to run" field, and
+  `list_leads` filters by `networkIndustry`. See
   REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules
@@ -2976,10 +2992,39 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
 notes and timeline in the `messages` subcollection. For each new customer
-email the function picks the most relevant *published* Help Centre articles
-and asks Claude for a triage: category, one-line summary, whether the
-articles fully answer it, a confidence, and a reply. Then one rule
-(`decideAction`) decides:
+email Claude triages it in steps (`runTriage` in `functions/support-mail.js`):
+
+1. **Match.** It sees the subject and body together with the *whole*
+   published Help Centre, one line per article (category, title, summary,
+   short answer, question variants, keywords). It decides whether the email
+   is about Personalisation Hub or the retail media proposition, and picks
+   up to 3 articles that answer it. Out-of-scope mail (SEO offers, CVs,
+   suppliers' invoices, other products) is labelled "Not about PH", gets no
+   article and no draft, and is left out of the stats.
+2. **Draft from the best article.** It writes the reply from that article's
+   full text and scores its confidence.
+3. **Add answers only when needed.** If that scores under 80%, it writes
+   the reply again from the 2 or 3 best articles combined (never more than
+   3), and keeps whichever scores higher. Both scores are kept on the draft
+   (`confidenceSteps`), and the page shows "Confidence 55% from 1 article,
+   82% with 3 combined".
+
+Every draft opens "Hi <first name>," and "Thanks for your email." (or
+"Hi there," when the name isn't clear, e.g. a role mailbox such as Legal).
+This is added in code (`composeReply`), not left to the model. The
+confidence is shown beside every suggested reply as a word and a number
+(High from 80%, Medium from 60%, Low below). **Try an email** (an editor's
+tab in the Support Inbox) runs any subject and text through all of this
+without filing, saving or sending anything.
+
+`scripts/support-eval.js` (Actions → "Support Inbox matching check",
+`support-eval.yml`) runs 33 made-up emails with known right answers
+(`test/fixtures/support-eval.json`) against the real model and the
+published Help Centre, and re-runs the newest real tickets, printing only
+their SUP key and article titles. Run it after changing the prompts or the
+Help Centre, and add a case whenever a real email is matched badly.
+
+Then one rule (`decideAction`) decides:
 
 - **Sent by itself** and the ticket resolved by AI: only when sending is
   switched on in Settings, the articles answer the question, the reply cites

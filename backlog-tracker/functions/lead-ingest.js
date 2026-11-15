@@ -29,6 +29,12 @@
 // and never touches Prospects (TAM), the AWS record, company matching or
 // enrichment. The same email again (same test flag) is the same person: the
 // submission is added to their lead's website activity and inbound count.
+// network_industry (the industry they want to run their network in) and message
+// (the Request further information form) are kept on operator.networkIndustry /
+// operator.message, and form ("request" or "tour") on operator.form. On a repeat
+// submission a new industry replaces the old one (a blank one is filled), and a
+// new message is added to the lead's history as a dated note; the first message
+// is never overwritten.
 "use strict";
 const crypto = require("crypto");
 const { FieldValue } = require("firebase-admin/firestore");
@@ -124,13 +130,23 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       return [201, { ok: true, leadId: ref.id, created: true, leadType: "operator", test: r.test }];
     }
     const cur = core.normaliseLead(existing.id, existing.data());
-    const was = cur.operator || { region: "", background: "", audience: "" };
+    const was = cur.operator || { region: "", background: "", audience: "", networkIndustry: "", message: "", form: "" };
+    const nw = r.fields.operator;
+    // A new message never overwrites the first: it goes in the history, dated.
+    const newMessage = nw.message && was.message && nw.message !== was.message;
+    const history = newMessage
+      ? core.appendHistory(cur.history.map(({ atMs, ...h }) => h), core.historyEntry(BY, "note", `Website message (${entry.at.slice(0, 10)}): ${nw.message}`, entry.at))
+      : null;
     const contacts = cur.contacts.map(({ enrichment, ...c }) => (enrichment ? { ...c, enrichment } : c));
     const i = contacts.findIndex((c) => nameKey(c.email) === email);
     if (i >= 0) for (const k of ["name", "linkedin"]) if (!contacts[i][k] && r.contact[k]) contacts[i][k] = r.contact[k];
     await existing.ref.update({
       contacts, inboundCount: (cur.inboundCount || 0) + 1,
-      operator: { region: was.region || r.fields.operator.region, background: was.background || r.fields.operator.background, audience: was.audience || r.fields.operator.audience },
+      operator: {
+        region: was.region || nw.region, background: was.background || nw.background, audience: was.audience || nw.audience,
+        networkIndustry: nw.networkIndustry || was.networkIndustry, message: was.message || nw.message, form: nw.form || was.form,
+      },
+      ...(history ? { history } : {}),
       ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage }),
       ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
       websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),

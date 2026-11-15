@@ -227,7 +227,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
       const d = db.docs.get(r.body.leadId);
       assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied", "the operator pipeline's first stage");
       assert.equal(d.company.name, "", "no company needed");
-      assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key, audience: "" });
+      assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key, audience: "", networkIndustry: "", message: "", form: "" });
       assert.equal(d.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/run-your-own-rmn/");
       assert.deepEqual(d.contacts.map((c) => [c.name, c.email, c.linkedin]), [["Alex Rivers", "alex@gmail.example", "https://linkedin.com/in/alexrivers"]]);
       assert.equal(d.prospectId, undefined); assert.equal(db.prospects.size, 1, "no TAM record created");
@@ -242,11 +242,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     const post = async (extra) => { const r = res(); await api.handle(req({ ...GATE, email: `p${db.docs.size}@x.example`, ...extra }), r); assert.equal(r.code, 201); return db.docs.get(r.body.leadId); };
     const d = await post({ audience: "A small to medium retailer", background: "Creative agency" });
     assert.equal(d.stage, "applied");
-    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "creative-agency", audience: "retailer" });
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "creative-agency", audience: "retailer", networkIndustry: "", message: "", form: "" });
     const n = core.normaliseLead("x", d);
     assert.equal(core.companyLine(n), "A small to medium retailer · Leeds and West Yorkshire · Creative agency", "the card's line: I am, then region and background");
     assert.equal(core.audienceLabel(n.operator.audience), "A small to medium retailer");
-    assert.deepEqual((await post({ audience: "TEAM", background: "retail business owner or manager" })).operator, { region: "Leeds and West Yorkshire", background: "retail-owner", audience: "team" });
+    assert.deepEqual((await post({ audience: "TEAM", background: "retail business owner or manager" })).operator, { region: "Leeds and West Yorkshire", background: "retail-owner", audience: "team", networkIndustry: "", message: "", form: "" });
     assert.equal((await post({ audience: "an individual OPERATOR" })).operator.audience, "individual");
     assert.equal((await post({ audience: "A large enterprise" })).operator.audience, "", "an unknown audience is stored blank");
     assert.equal((await post({ audience: "" })).operator.audience, "");
@@ -274,7 +274,7 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     assert.equal(r.code, 200); assert.equal(r.body.created, false); assert.equal(db.docs.size, 1);
     const d = db.docs.get(r.body.leadId);
     assert.equal(d.inboundCount, 2); assert.equal(d.websiteActivity.length, 2);
-    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "marketing", audience: "team" }, "blanks are filled");
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "marketing", audience: "team", networkIndustry: "", message: "", form: "" }, "blanks are filled");
     await api.handle(req({ ...FORM, email: "alex@gmail.example" }), res());
     assert.equal(db.docs.size, 2, "a company lead from the same email is a separate lead");
     await api.handle(req({ ...GATE, test: "1" }), res());
@@ -354,6 +354,76 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
     const one = await get.run({ leadId: v.id });
     assert.equal(one.leadType, "operator"); assert.equal(one.leadTypeLabel, "Network operator inquiry"); assert.equal(one.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(one.sourcePage, "/run-your-own-rmn/");
     assert.equal((await get.run({ company: "alex rivers" })).id, v.id, "found by the person's name");
+  });
+  // ── Industry they want to run and their message: the Request further information form (15 Nov 2026) ──
+  await test("the Request further information form keeps the industry they want to run, the message and the form; a repeat replaces the industry and adds the message as a dated note", async () => {
+    let t = "2026-11-15T09:00:00.000Z";
+    const db = fakeDb(); const api = createLeadIngest({ db, key: () => "k", now: () => new Date(t) });
+    const REQ = { ...GATE, form: "request", network_industry: "Golf clubs", message: "Hello" };
+    let r = res(); await api.handle(req(REQ), r);
+    assert.equal(r.code, 201); let d = db.docs.get(r.body.leadId);
+    assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied", "lands in Applied");
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "", audience: "", networkIndustry: "Golf clubs", message: "Hello", form: "request" });
+    const n0 = core.normaliseLead("x", d);
+    assert.equal(core.companyLine(n0), "Leeds and West Yorkshire · Golf clubs", "the card line shows the industry after the region");
+    t = "2026-11-16T10:30:00.000Z";
+    r = res(); await api.handle(req({ ...GATE, form: "request", networkIndustry: "Other: Bowling alleys", message: "Any update?" }), r);
+    assert.equal(r.code, 200); assert.equal(db.docs.size, 1); d = db.docs.get(r.body.leadId);
+    assert.equal(d.operator.networkIndustry, "Other: Bowling alleys", "a new industry replaces the old one");
+    assert.equal(d.operator.message, "Hello", "the first message is never overwritten");
+    const note = d.history[d.history.length - 1];
+    assert.deepEqual(note, { at: t, by: "website", kind: "note", text: "Website message (2026-11-16): Any update?" }, "the new message is a dated note");
+    r = res(); await api.handle(req({ ...GATE, form: "tour" }), r); d = db.docs.get(r.body.leadId);
+    assert.equal(d.operator.networkIndustry, "Other: Bowling alleys", "a submission without an industry keeps it");
+    assert.equal(d.operator.form, "tour"); assert.equal(d.history.length, 1, "no message, no note");
+    r = res(); await api.handle(req({ ...GATE, message: "Hello" }), r);
+    assert.equal(db.docs.get(r.body.leadId).history.length, 1, "the same message again adds no note");
+  });
+  await test("a blank industry is filled on a repeat, a 1,001-character message is cut to 1,000, an unknown form is blank, and an older lead reads blanks", async () => {
+    const { db, api } = mkApi();
+    let r = res(); await api.handle(req({ ...GATE, message: "x".repeat(1001), form: "brochure" }), r);
+    let d = db.docs.get(r.body.leadId);
+    assert.equal(d.operator.message.length, 1000); assert.equal(d.operator.form, ""); assert.equal(d.operator.networkIndustry, "");
+    r = res(); await api.handle(req({ ...GATE, network_industry: "Golf clubs" }), r); d = db.docs.get(r.body.leadId);
+    assert.equal(d.operator.networkIndustry, "Golf clubs", "a blank industry is filled");
+    assert.equal(core.operatorFromWebsite({ ...GATE, network_industry: "y".repeat(130) }).fields.operator.networkIndustry.length, 120);
+    const old = core.normaliseLead("o", { leadType: "operator", operator: { region: "Leeds", background: "adtech", audience: "team" } });
+    assert.deepEqual([old.operator.networkIndustry, old.operator.message, old.operator.form], ["", "", ""], "a lead from before the fields has none");
+    assert.equal(core.companyLine(old), "Part of an operator team · Leeds · Ad-tech sales or partnerships");
+    const blank = core.blankLead("", "operator").operator;
+    assert.deepEqual(blank, { region: "", background: "", audience: "", networkIndustry: "", message: "", form: "" });
+  });
+  await test("MCP: get_lead returns the industry and message, list_leads filters by networkIndustry, update_lead edits it, create_lead takes both", async () => {
+    const db = fakeDb(); const api = createLeadIngest({ db, key: () => "k" });
+    await api.handle(req(FORM), res());
+    await api.handle(req({ ...GATE, form: "request", network_industry: "Golf clubs", message: "Hello" }), res());
+    await api.handle(req({ ...GATE, full_name: "Sam Team", email: "sam@x.example", network_industry: "Cinemas" }), res());
+    stubDb = db;
+    const tools = leadsTools({ textResult: (x) => x, toolError: (m) => ({ error: m }), audit: async () => {} });
+    const tool = (name) => tools.find((t) => t.name === name);
+    const golf = await tool("list_leads").run({ networkIndustry: "GOLF" });
+    assert.deepEqual(golf.leads.map((l) => l.name), ["Alex Rivers"], "case-insensitive contains");
+    assert.equal(golf.leads[0].networkIndustry, "Golf clubs"); assert.equal(golf.leads[0].message, "Hello");
+    assert.equal((await tool("list_leads").run({ networkIndustry: "bowling" })).total, 0);
+    const co = (await tool("list_leads").run({ leadType: "company" })).leads[0];
+    assert.equal(co.networkIndustry, undefined, "a company lead has no operator fields"); assert.equal(co.message, undefined);
+    assert.ok(JSON.stringify(tool("list_leads").inputSchema).includes('"networkIndustry":{"type":"string"'), "list_leads takes a networkIndustry filter");
+    const one = await tool("get_lead").run({ leadId: golf.leads[0].id });
+    assert.equal(one.networkIndustry, "Golf clubs"); assert.equal(one.message, "Hello"); assert.equal(one.form, "request");
+    const session = { email: "ed@example.com" };
+    const up = await tool("update_lead").run({ leadId: one.id, networkIndustry: "Other: Bowling alleys" }, session);
+    assert.equal(up.updated, true); assert.deepEqual(up.changed, ["industry they want to run"]);
+    const after = db.docs.get(one.id).operator;
+    assert.deepEqual(after, { region: "Leeds and West Yorkshire", background: "", audience: "", networkIndustry: "Other: Bowling alleys", message: "Hello", form: "request" }, "the message and form are kept");
+    const sam = (await tool("list_leads").run({ q: "cinemas" })).leads[0];
+    const up2 = await tool("update_lead").run({ leadId: sam.id, message: "Called back" }, session);
+    assert.deepEqual(up2.changed, ["message"]); assert.equal(db.docs.get(sam.id).operator.networkIndustry, "Cinemas");
+    for (const name of ["create_lead", "create_leads", "update_lead"]) {
+      const schema = JSON.stringify(tool(name).inputSchema);
+      assert.ok(schema.includes('"networkIndustry":{"type":"string"') && schema.includes('"message":{"type":"string"'), name + " accepts networkIndustry and message");
+    }
+    const made = await tool("create_lead").run({ leadType: "operator", contacts: [{ name: "Pat Op" }], networkIndustry: "Golf clubs", message: "Hi" }, session);
+    assert.equal(made.created, true); assert.equal(made.lead.networkIndustry, "Golf clubs"); assert.equal(made.lead.message, "Hi");
   });
   assert.ok(core.leadFromWebsite({ company: "X", test: "on" }).test);
   console.log(`${n} passed`);
