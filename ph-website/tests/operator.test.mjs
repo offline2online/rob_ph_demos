@@ -5,7 +5,7 @@
 // served at /run-your-own-rmn/tour/ (the golf network walkthrough, v3: the Fairlinks Golf Network's 100 clubs, each with its own number of screens). The H1, the blocks inside their mount containers,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its thirteen questions, the last ending with a
 // "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
-// OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
+// OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid; no "I am" select on it or the request form since 15 Nov 2026, and both forms' rows have no empty slot from 390 to 1440 wide,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
 // Start the tour plays a step, returning visitors, links to #tour (the header is left alone), the estimate_rmn_earnings WebMCP tool (the page's own
 // figures for the defaults in both modes; the gate only with the person's details and consent; never a share), no horizontal scroll at
@@ -123,7 +123,6 @@ try {
   const text = (p, sel) => p.evaluate((s) => document.querySelector(s).textContent.trim(), sel);
   const fill = async (p, o) => {
     for (const k of ["name", "email", "linkedin", "region"]) if (o[k] !== undefined) await p.fill(`#phf-form [name=${k}]`, o[k]);
-    if (o.audience) await p.selectOption("#phf-form [name=audience]", o.audience);
     if (o.background) await p.selectOption("#phf-form [name=background]", o.background);
     if (o.consent) await p.check("#phf-form [name=consent]");
   };
@@ -401,20 +400,16 @@ try {
   const dis = () => p.locator("#phf-unlock").isDisabled();
   ok(await dis(), "Unlock disabled when empty");
   await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
-  await p.check("#t-cs");
-  ok(await dis(), 'still disabled without "I am" (it is required)');
-  await p.uncheck("#t-cs");
-  await fill(p, { audience: "A small to medium retailer" });
   ok(await dis(), "still disabled without consent");
   await p.check("#t-cs"); ok(!(await dis()), "enabled once valid (personal email accepted)");
-  ok(await p.evaluate(() => { const s = document.getElementById("t-ia"), f = [...document.querySelectorAll("#phf-form .phf-f label")].map((l) => l.textContent); return s.required && s.name === "audience" && [...s.options].map((o) => o.text).join("|") === "Select one|An individual operator|Part of an operator team|A small to medium retailer" && f.join("|") === "Full name|Email|LinkedIn profile (optional)|Where you plan to operate|I am|Your background"; }), 'the gate has a required select "I am" (three options) after "Where you plan to operate"');
+  ok(await p.evaluate(() => { const f = [...document.querySelectorAll("#phf-form .phf-f label")].map((l) => l.textContent); return !document.getElementById("t-ia") && !document.querySelector("#phf-form [name=audience]") && f.join("|") === "Full name|Email|LinkedIn profile (optional)|Where you plan to operate|Your background"; }), 'the gate has no "I am" select: name, email, LinkedIn, where, background');
   await p.fill("#t-li", "example.com/ada"); ok(await dis(), "disabled with a non-LinkedIn address");
   await p.fill("#t-li", "linkedin.com/in/ada"); ok(!(await dis()), "a LinkedIn address without https:// is fine");
   ok(await p.evaluate(() => { const s = document.getElementById("t-bg"); return s.options.length === 8 && [...s.options].slice(1).map((o) => o.text).join("|") === "Agency media or account management|Ad-tech sales or partnerships|Retail media|Creative agency|Retail business owner or manager|Marketing|Something else"; }), "the 7 backgrounds, in the design's order");
   await p.click("#phf-unlock");
   await p.waitForSelector("#phf-mount iframe");
   assert.strictEqual(posts.length, 1, "one post");
-  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", audience: "A small to medium retailer", background: "Retail media", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "post body (\"I am\" travels as audience, the label)");
+  assert.deepStrictEqual(posts[0], { name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "linkedin.com/in/ada", region: "Leeds", background: "Retail media", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "post body (no audience)");
   const st = await p.evaluate(() => ({ f: JSON.parse(localStorage.getItem("ph_operator")), l: JSON.parse(localStorage.getItem("ph_lead")), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
   ok(st.f.name === "Ada Lovelace" && st.f.email === "ada@gmail.com" && st.f.ts > 0, "ph_operator stored");
   ok(st.l.name === "Ada Lovelace" && st.l.email === "ada@gmail.com" && st.l.company === "" && st.l.source === "Network operator inquiry", "ph_lead stored for the tour, source \"Network operator inquiry\"");
@@ -446,11 +441,11 @@ try {
   const rposts = [];
   p = await open({ search: "?ph_test=1", posts: rposts });
   const rdis = () => p.locator("#phf-rsubmit").isDisabled();
-  const rq = await p.evaluate(() => ({ eb: document.querySelector("#request-info .phf-eb").textContent, h: document.querySelector("#request-info h2").textContent, p: document.querySelector("#request-info .phf-req-p").textContent, btn: document.getElementById("phf-rsubmit").textContent, labels: [...document.querySelectorAll("#phf-rform .phf-f label")].map((l) => l.textContent), ind: [...document.querySelectorAll("#r-in option")].slice(1).map((o) => o.text), ia: [...document.querySelectorAll("#r-ia option")].slice(1).map((o) => o.text), bg: [...document.querySelectorAll("#r-bg option")].length - 1, last: document.querySelector("main").lastElementChild.lastElementChild.id, font: getComputedStyle(document.querySelector("#request-info h2")).fontFamily }));
+  const rq = await p.evaluate(() => ({ eb: document.querySelector("#request-info .phf-eb").textContent, h: document.querySelector("#request-info h2").textContent, p: document.querySelector("#request-info .phf-req-p").textContent, btn: document.getElementById("phf-rsubmit").textContent, labels: [...document.querySelectorAll("#phf-rform .phf-f label")].map((l) => l.textContent), ind: [...document.querySelectorAll("#r-in option")].slice(1).map((o) => o.text), ia: !!document.querySelector("#r-ia, #phf-rform [name=audience]"), bg: [...document.querySelectorAll("#r-bg option")].length - 1, last: document.querySelector("main").lastElementChild.lastElementChild.id, font: getComputedStyle(document.querySelector("#request-info h2")).fontFamily }));
   ok(rq.eb === "Request further information" && rq.h === "Talk to us about running your own RMN" && rq.p === "Tell us which industry you want to run your network in and we'll send you an information pack with the full detail, then book a 20-minute call to go through it. Places are limited in each industry." && rq.btn === "Request further information", "request: eyebrow, H2, intro and button copy: " + JSON.stringify(rq).slice(0, 300));
-  assert.deepStrictEqual(rq.labels, ["Full name", "Email", "LinkedIn profile (optional)", "Where you plan to operate", "Industry you want to run your network in", "Your industry", "I am", "Your background", "Anything you'd like us to know (optional)"], "request: the fields, the industry after Where you plan to operate");
+  assert.deepStrictEqual(rq.labels, ["Full name", "Email", "LinkedIn profile (optional)", "Where you plan to operate", "Industry you want to run your network in", "Your industry", "Your background", "Anything you'd like us to know (optional)"], "request: the fields, the industry after Where you plan to operate");
   assert.deepStrictEqual(rq.ind, F.INDUSTRIES, "request: the industries list (JS) equals the form's (PHP)");
-  ok(rq.ind.length === 13 && rq.ind[12] === "Other (tell us)" && JSON.stringify(rq.ia) === JSON.stringify(F.AUDIENCES) && rq.bg === 7 && rq.last === "ph-rmn-request" && rq.font.includes("Kantumruy Pro"), "request: twelve industries and Other, the three I am options, seven backgrounds; the last block on the page, in the page's font");
+  ok(rq.ind.length === 13 && rq.ind[12] === "Other (tell us)" && rq.ia === false && !("AUDIENCES" in F) && rq.bg === 7 && rq.last === "ph-rmn-request" && rq.font.includes("Kantumruy Pro"), "request: twelve industries and Other, no I am select, seven backgrounds; the last block on the page, in the page's font");
   // (v3 ticket, 15 Nov 2026) The tour band's intro is the network operator's, and the request form's fields line up along the bottom of
   // each row at 1440, 1180, 1024 and 820 wide, although "Industry you want to run your network in" wraps to two lines.
   ok((await text(p, ".phf-tour-p")) === "Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer's journey at a club on the network.", "tour band: the network operator's intro");
@@ -462,10 +457,17 @@ try {
     const ind = rows.flat().find((x) => x.id === "r-in");
     ok(ind && rows.find((r) => r.some((x) => x.id === "r-in")).every((x) => Math.abs(x.top - ind.top) <= 1 || x.id === "r-ms"), `request at ${w}px: the industry field sits level with its neighbours`);
   }
+  // (15 Nov 2026, ticket ffYNyFeRIkHRlc3MMFCI) With "I am" gone, both forms re-flow with no empty slot: every row of the gate and the
+  // request form reaches the right-hand edge of its grid, from 390 to 1440 wide, with no horizontal scroll and every control at least 44x44.
+  for (const w of [1440, 1180, 1024, 820, 390]) {
+    await p.setViewportSize({ width: w, height: 1000 }); await p.waitForTimeout(150);
+    const lay = await p.evaluate(() => ["#phf-form", "#phf-rform"].map((s) => { const g = document.querySelector(s + " .phf-fgrid"), gr = g.getBoundingClientRect(), by = {}; for (const f of g.querySelectorAll(".phf-f:not([hidden])")) { const r = f.getBoundingClientRect(); (by[Math.round(r.top)] = by[Math.round(r.top)] || []).push(r); } const cols = getComputedStyle(g).gridTemplateColumns.split(" ").length; const gaps = Object.values(by).filter((row) => Math.max(...row.map((r) => r.right)) < gr.right - 1 || Math.min(...row.map((r) => r.left)) > gr.left + 1).map((row) => row.length); const small = [...document.querySelectorAll(s + " input:not(.phf-hp):not([type=checkbox]), " + s + " select, " + s + " textarea, " + s + " button, " + s + " .phf-cons")].filter((e) => e.offsetParent).map((e) => e.getBoundingClientRect()).filter((r) => r.width < 44 || r.height < 44 || r.right > innerWidth); return { s, cols, rows: Object.keys(by).length, gaps, small: small.length, sw: document.documentElement.scrollWidth, w: innerWidth }; }));
+    for (const l of lay) ok(!l.gaps.length && !l.small && l.sw <= l.w, `${l.s} at ${w}px: ${l.cols} column(s), ${l.rows} rows, no empty slot, controls at least 44x44, no horizontal scroll: ` + JSON.stringify(l));
+  }
   await p.setViewportSize({ width: 1440, height: 1000 });
   ok(await rdis(), "request: the button is disabled when empty");
   await p.fill("#r-fn", "Ada Lovelace"); await p.fill("#r-em", "ada@gmail.com"); await p.fill("#r-rg", "Leeds");
-  await p.selectOption("#r-ia", "An individual operator"); await p.selectOption("#r-bg", "Retail media"); await p.check("#r-cs");
+  await p.selectOption("#r-bg", "Retail media"); await p.check("#r-cs");
   ok(await rdis(), "request: still disabled without the industry (it is required)");
   ok(await p.evaluate(() => document.getElementById("r-io-f").hidden), "request: the Other input is hidden at rest");
   await p.selectOption("#r-in", "Other (tell us)");
@@ -482,14 +484,14 @@ try {
   await p.evaluate(() => { window.__noReload = 1; });
   await p.click("#phf-rsubmit");
   await p.waitForFunction(() => !document.getElementById("phf-rdone").hidden);
-  assert.deepStrictEqual(rposts[0], { form: "request", name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "", region: "Leeds", industry: "Golf clubs", industry_other: "", audience: "An individual operator", background: "Retail media", message: "We run nine clubs in Yorkshire.", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "request: the body posted to ph-site/v1/operator-lead (form request, test mode)");
+  assert.deepStrictEqual(rposts[0], { form: "request", name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "", region: "Leeds", industry: "Golf clubs", industry_other: "", background: "Retail media", message: "We run nine clubs in Yorkshire.", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "request: the body posted to ph-site/v1/operator-lead (form request, test mode)");
   const rd = await p.evaluate(() => ({ t: document.getElementById("phf-rdone-h").textContent, f: document.getElementById("phf-rform").hidden, focus: document.activeElement.id, noReload: window.__noReload === 1, op: JSON.parse(localStorage.getItem("ph_operator")), lead: JSON.parse(localStorage.getItem("ph_lead")), tour: !!document.querySelector("#phf-mount iframe"), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
   ok(rd.t === "Thanks, Ada. We'll send your information pack shortly." && rd.f && rd.focus === "phf-rdone-h" && rd.noReload, "request: the thank-you line replaces the form without a reload: " + JSON.stringify(rd).slice(0, 200));
   ok(rd.op.email === "ada@gmail.com" && rd.lead.source === "Network operator inquiry" && rd.tour && rd.dl.length === 1 && !JSON.stringify(rd.dl).includes("ada@"), "request: the gate's storage is written, so the tour is unlocked; a dataLayer event with no contact details");
   ok(p.__reqs.filter((u) => /operator-lead$/.test(u)).length === 1 && p.__errs.length === 0, "request: one post, no page errors");
   await p.close();
   p = await open({ status: 400, reply: { error: "Please choose the industry you want to run your network in.", field: "industry" } });
-  await p.fill("#r-fn", "Ada"); await p.fill("#r-em", "ada@x.test"); await p.fill("#r-rg", "x"); await p.selectOption("#r-in", "Hardware"); await p.selectOption("#r-ia", "An individual operator"); await p.selectOption("#r-bg", "Marketing"); await p.check("#r-cs");
+  await p.fill("#r-fn", "Ada"); await p.fill("#r-em", "ada@x.test"); await p.fill("#r-rg", "x"); await p.selectOption("#r-in", "Hardware"); await p.selectOption("#r-bg", "Marketing"); await p.check("#r-cs");
   await p.click("#phf-rsubmit");
   await p.waitForFunction(() => /industry/.test(document.getElementById("phf-rmsg").textContent));
   ok(await p.evaluate(() => document.activeElement.id === "r-in" && document.getElementById("r-in").getAttribute("aria-invalid") === "true" && !document.getElementById("phf-rform").hidden && !localStorage.getItem("ph_operator")), "request 400: message, field focused, form kept, nothing stored");
@@ -500,7 +502,7 @@ try {
 
   // 6. Errors: a 400 names the field.
   p = await open({ status: 400, reply: { error: "Please tell us where you plan to operate.", field: "region" } });
-  await fill(p, { name: "Ada", email: "ada@x.test", region: "x", audience: "An individual operator", background: "Creative agency", consent: true });
+  await fill(p, { name: "Ada", email: "ada@x.test", region: "x", background: "Creative agency", consent: true });
   await p.click("#phf-unlock");
   await p.waitForFunction(() => /where you plan/.test(document.getElementById("phf-msg").textContent));
   ok(await p.evaluate(() => document.activeElement.id === "t-rg" && document.getElementById("t-rg").getAttribute("aria-invalid") === "true" && !localStorage.getItem("ph_operator") && !document.querySelector("#phf-mount iframe")), "400: message, field focused, nothing stored, no tour");
@@ -511,7 +513,7 @@ try {
   p = await open({ lead: industry, posts: [] });
   ok((await p.inputValue("#t-fn")) === "Grace Hopper" && (await p.inputValue("#t-em")) === "grace@orbit.example" && (await p.inputValue("#t-rg")) === "", "industry lead: name and email prefilled, the rest asked");
   ok(await p.locator("#phf-unlock").isDisabled(), "still asks for the remaining fields");
-  await fill(p, { region: "Bristol", audience: "Part of an operator team", background: "Retail business owner or manager", consent: true });
+  await fill(p, { region: "Bristol", background: "Retail business owner or manager", consent: true });
   await p.click("#phf-unlock"); await p.waitForSelector("#phf-mount iframe");
   ok(JSON.stringify(await p.evaluate(() => JSON.parse(localStorage.getItem("ph_lead")))) === JSON.stringify(industry), "the industry ph_lead is not overwritten");
   await p.close();
@@ -536,11 +538,11 @@ try {
   const tools = await p.evaluate(() => window.__tools.map((t) => ({ name: t.name, d: t.description, s: t.inputSchema })));
   ok(tools.length === 1 && tools[0].name === "estimate_rmn_earnings", "WebMCP: one tool, estimate_rmn_earnings, registered on the page");
   ok(/running your own retail media network \(RMN\)/i.test(tools[0].d) && /consent=true/.test(tools[0].d) && tools[0].s.properties.consent.type === "boolean" && tools[0].s.properties.view.maximum === 100 && JSON.stringify(tools[0].s.properties.background.enum) === JSON.stringify(F.BACKGROUNDS), "WebMCP: described as running your own retail media network; schema from the page");
-  ok(JSON.stringify(tools[0].s.properties.audience.enum) === '["operator","retailer"]' && /default/.test(tools[0].s.properties.audience.description) && JSON.stringify(tools[0].s.properties.i_am.enum) === JSON.stringify(F.AUDIENCES) && !(tools[0].s.required || []).length, 'WebMCP: an optional audience ("operator" | "retailer", default operator) and i_am (the gate\'s three options)');
+  ok(JSON.stringify(tools[0].s.properties.audience.enum) === '["operator","retailer"]' && /default/.test(tools[0].s.properties.audience.description) && !("i_am" in tools[0].s.properties) && !/i_am|which describes them/.test(tools[0].d) && !(tools[0].s.required || []).length, 'WebMCP: an optional audience ("operator" | "retailer", default operator); no i_am parameter or mention');
   const est = (a) => p.evaluate((args) => window.__tools[0].execute(args), a);
   let w = await est({});
   assert.deepStrictEqual(w.structuredContent.figures, d, "WebMCP: the defaults return the page's own figures ($591K, 90, 270, 2,190,000, 3,942,000, $59.1M)");
-  ok(w.structuredContent.inputs.ven === 90 && /Your potential income a year: \$591K/.test(w.content[0].text) && /consent/.test(w.content[0].text) && wposts.length === 0, "WebMCP: figures in the text, asks for the person's details, nothing posted");
+  ok(w.structuredContent.inputs.ven === 90 && /Your potential income a year: \$591K/.test(w.content[0].text) && /consent/.test(w.content[0].text) && !/i_am|which describes them/.test(w.content[0].text) && wposts.length === 0, "WebMCP: figures in the text, asks for the person's details, nothing posted");
   ok(w.structuredContent.earningsPerDisplayMonth === "$183" && /Earnings per display per month: \$183/.test(w.content[0].text) && /#request-info/.test(w.content[0].text), "WebMCP: operator mode returns earningsPerDisplayMonth $183 and says how to request information");
   ok(w.structuredContent.audience === "operator" && /Venues in your network: 90/.test(w.content[0].text) && /Extra sales for your venues a year: \$59\.1M/.test(w.content[0].text), "WebMCP: no audience means operator, with the operator labels");
   ok(!/0\.5|50\s*%|0\.7|70\s*%|\bhalf\b|SHARE/i.test(JSON.stringify([w, tools])), "WebMCP: neither share constant is ever in the tool or its result");
@@ -562,16 +564,14 @@ try {
   w = await est({ ven: -5, view: 500 });
   ok(w.structuredContent.inputs.ven === 0 && w.structuredContent.inputs.view === 100, "WebMCP: figures clamped to the inputs' ranges");
   await est({ ven: 90, view: 60 });
-  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "An individual operator", background: "Retail media" });
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
   ok(/agreement to be contacted/.test(w.content[0].text) && wposts.length === 0 && !(await p.$("#phf-mount iframe")), "WebMCP: details without consent submit nothing");
   w = await est({ name: "Ada Lovelace", email: "nope", region: "Leeds", background: "Retail media", consent: true });
   ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, "WebMCP: invalid details are not submitted");
-  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media", consent: true });
-  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, 'WebMCP: without "I am" the details are not submitted');
-  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "A large retailer", background: "Retail media", consent: true });
-  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, 'WebMCP: an "I am" that is not one of the three is not submitted');
-  w = await est({ audience: "retailer", name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", i_am: "A small to medium retailer", background: "Retail business owner or manager", consent: true });
-  ok(!w.isError && w.structuredContent.tourUnlocked === true && wposts.length === 1 && wposts[0].email === "ada@gmail.com" && wposts[0].audience === "A small to medium retailer" && wposts[0].background === "Retail business owner or manager" && wposts[0].consent === true && wposts[0].test === true && wposts[0].page === "/run-your-own-rmn/", "WebMCP: with the person's details and consent the page's own gate posts once and the tour unlocks");
+  w = await est({ name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Astronaut", consent: true });
+  ok(/not accepted/.test(w.content[0].text) && wposts.length === 0, "WebMCP: a background that is not on the list is not submitted");
+  w = await est({ audience: "retailer", name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail business owner or manager", consent: true });
+  ok(!w.isError && w.structuredContent.tourUnlocked === true && wposts.length === 1 && wposts[0].email === "ada@gmail.com" && !("audience" in wposts[0]) && wposts[0].background === "Retail business owner or manager" && wposts[0].consent === true && wposts[0].test === true && wposts[0].page === "/run-your-own-rmn/", "WebMCP: with the person's details and consent the page's own gate posts once and the tour unlocks");
   ok((await p.evaluate(() => (window.dataLayer || []).filter((e) => e.event === "ph_agent_tool" && e.tool === "estimate_rmn_earnings").length)) >= 1 && !(await p.evaluate(() => JSON.stringify(window.dataLayer))).includes("ada@"), "WebMCP: a ph_agent_tool event, no contact details in the dataLayer");
   ok(p.__errs.length === 0 && !NAMES(JSON.stringify(tools)), "WebMCP: no page errors, neither name in the tool");
   await p.close();
@@ -627,9 +627,9 @@ try {
       await p.locator(".phf-aud button[data-aud=retailer]").tap();
       ok(await p.evaluate(() => document.querySelector(".phf-perd").hidden && document.querySelector('.phf [data-lab="yours"]').textContent === "Retailer's potential incremental income a year"), `${name}: Retailer hides it and shows the retailer income label`);
       await p.locator(".phf-aud button[data-aud=operator]").tap();
-      await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", audience: "An individual operator", background: "Retail media" });
+      await fill(p, { name: "Ada Lovelace", email: "ada@gmail.com", region: "Leeds", background: "Retail media" });
       await p.locator("#t-cs").tap();
-      ok(!(await p.locator("#phf-unlock").isDisabled()), `${name}: the gate is usable (Unlock enabled once valid, with "I am" chosen)`);
+      ok(!(await p.locator("#phf-unlock").isDisabled()), `${name}: the gate is usable (Unlock enabled once valid, no "I am" to choose)`);
       await p.locator("#phf-unlock").tap();
       await p.waitForSelector("#phf-mount iframe");
       ok(await p.evaluate(() => getComputedStyle(document.getElementById("phf-gate")).display === "none" && getComputedStyle(document.querySelector(".phf-ph")).display === "none"), `${name}: the gate submit unlocks the tour`);
@@ -654,7 +654,7 @@ try {
       const rb = await p.evaluate(() => [...document.querySelectorAll("#phf-rform input:not([type=hidden]):not(.phf-hp):not([type=checkbox]), #phf-rform select, #phf-rform textarea, #phf-rform button, #phf-rform .phf-cons")].filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return { id: e.id || e.className, w: Math.round(r.width), h: Math.round(r.height), r: r.right }; }).filter((b) => b.w < 44 || b.h < 44 || b.r > innerWidth));
       ok(rb.length === 0, `${name}: the request form's controls are at least 44x44 and inside the viewport: ` + JSON.stringify(rb));
       for (const [k, v] of [["#r-fn", "Ada Lovelace"], ["#r-em", "ada@gmail.com"], ["#r-rg", "Leeds"]]) { await p.locator(k).tap(); await p.fill(k, v); }
-      await p.selectOption("#r-in", "Golf clubs"); await p.selectOption("#r-ia", "An individual operator"); await p.selectOption("#r-bg", "Retail media");
+      await p.selectOption("#r-in", "Golf clubs"); await p.selectOption("#r-bg", "Retail media");
       await p.locator("#r-cs").tap();
       ok(!(await p.locator("#phf-rsubmit").isDisabled()), `${name}: the request form is usable by tap`);
       await p.locator("#phf-rsubmit").tap();

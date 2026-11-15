@@ -27,7 +27,8 @@
  * Launched 15 Nov 2026 by that one change: OPERATOR_LIVE = true. The ph_operator_live filter returning false hides the page again.
  * - POST ph-site/v1/operator-lead: the product tour gate's lead, and (form "request") the request form's. One ph_lead per person
  *   (lead_find_existing / lead_add_activity / lead_insert in leads.php), fires ph_lead_captured so leads.php forwards it to the console
- *   as a "Network operator inquiry" (leadType "operator"). The gate's "I am" answer travels with it as `audience` (the label); the
+ *   as a "Network operator inquiry" (leadType "operator"). The "I am" select was removed from both forms on 15 Nov 2026: an `audience`
+ *   in the body is ignored, and the lead, the admin email and the console payload carry none (the console stores a blank). The
  *   request form adds the industry they want to run their network in and an optional message.
  */
 namespace AngieSnippets\PhIndustryEnhancements_10063;
@@ -67,8 +68,6 @@ const OPERATOR_MESSAGE_MAX   = 1000;
 /** The request form's last industry option; choosing it asks for the industry in a short text input. */
 const OPERATOR_INDUSTRY_OTHER = 'Other (tell us)';
 const OPERATOR_BACKGROUNDS   = array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Creative agency', 'Retail business owner or manager', 'Marketing', 'Something else' );
-/** The gate's required "I am" select. The chosen label is stored and sent on as `audience`. */
-const OPERATOR_AUDIENCES     = array( 'An individual operator', 'Part of an operator team', 'A small to medium retailer' );
 const OPERATOR_TOUR_PATH     = '/run-your-own-rmn/tour/';
 /**
  * Calculator shares of ad revenue: "Operator or team" mode, and "Retailer" mode (which also adds the extra sales in the retailer's own
@@ -490,8 +489,8 @@ function operator_twin() {
 	foreach ( operator_faq() as $qa ) {
 		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n" . ( empty( $qa[2] ) ? '' : '[' . OPERATOR_FAQ_CTA[0] . '](' . OPERATOR_URL . OPERATOR_FAQ_CTA[1] . ")\n\n" );
 	}
-	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, which describes you (' . strtolower( implode( ', ', OPERATOR_AUDIENCES ) ) . '), your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n"
-		. "\n## " . OPERATOR_REQUEST_EB . "\n\n" . OPERATOR_REQUEST_H . ': ' . OPERATOR_REQUEST_P . ' To request further information, use the form at the bottom of the page (' . OPERATOR_URL . '#request-info): your full name, email, where you plan to operate, the industry you want to run your network in (' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ', or another you name), which describes you, your background, anything you\'d like us to know (optional) and your agreement to be contacted.' . "\n";
+	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n"
+		. "\n## " . OPERATOR_REQUEST_EB . "\n\n" . OPERATOR_REQUEST_H . ': ' . OPERATOR_REQUEST_P . ' To request further information, use the form at the bottom of the page (' . OPERATOR_URL . '#request-info): your full name, email, where you plan to operate, the industry you want to run your network in (' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ', or another you name), your background, anything you\'d like us to know (optional) and your agreement to be contacted.' . "\n";
 	return $md;
 }
 
@@ -599,10 +598,7 @@ function operator_handle( array $b ) {
 	if ( '' === $lead['region'] || strlen( $lead['region'] ) > 120 ) {
 		return array( 400, array( 'error' => 'Please tell us where you plan to operate.', 'field' => 'region' ) );
 	}
-	$lead['audience'] = $str( 'audience' ); // the gate's "I am"
-	if ( ! in_array( $lead['audience'], OPERATOR_AUDIENCES, true ) ) {
-		return array( 400, array( 'error' => 'Please tell us which describes you.', 'field' => 'audience' ) );
-	}
+	// No "I am" since 15 Nov 2026: an `audience` still sent by an old page or an agent is ignored, never an error.
 	$lead['background'] = $str( 'background' );
 	if ( ! in_array( $lead['background'], OPERATOR_BACKGROUNDS, true ) ) {
 		return array( 400, array( 'error' => 'Please choose your background.', 'field' => 'background' ) );
@@ -635,7 +631,7 @@ function operator_handle( array $b ) {
 	$id   = lead_find_existing( $lead['email'], $test );
 	if ( $id ) { // already a lead (an industry tour, a download, the gate or an earlier request): record it as activity, not a second lead.
 		lead_add_activity( $id, OPERATOR_LABEL, $detail );
-		foreach ( array( 'linkedin', 'region', 'audience', 'background', 'network_industry' ) as $k ) {
+		foreach ( array( 'linkedin', 'region', 'background', 'network_industry' ) as $k ) {
 			if ( isset( $lead[ $k ] ) && '' !== $lead[ $k ] && ! get_post_meta( $id, 'ph_lead_' . $k, true ) ) {
 				update_post_meta( $id, 'ph_lead_' . $k, $lead[ $k ] );
 			}
@@ -675,7 +671,6 @@ function operator_handle( array $b ) {
 		'job_title'        => $lead['background'],
 		'region'           => $lead['region'],
 		'background'       => $lead['background'],
-		'audience'         => $lead['audience'], // "I am": the label. The console ignores it until it has the field.
 		'lead_type'        => OPERATOR_SOURCE,
 		'source'           => OPERATOR_SOURCE,
 		'source_label'     => OPERATOR_LABEL,
@@ -691,7 +686,7 @@ function operator_handle( array $b ) {
 	if ( ! $test ) {
 		$mail = "Name: {$lead['name']}\nEmail: {$lead['email']}\nLinkedIn: {$lead['linkedin']}\nWhere they plan to operate: {$lead['region']}\n"
 			. ( $request ? "Industry: {$lead['network_industry']}\n" : '' )
-			. "I am: {$lead['audience']}\nBackground: {$lead['background']}\n"
+			. "Background: {$lead['background']}\n"
 			. ( $request ? 'Message: ' . ( '' !== $message ? $message : '(none)' ) . "\n" : '' )
 			. 'Source: ' . $detail . "\nPage: " . OPERATOR_PATH;
 		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry' . ( $request ? ' (request)' : '' ) . ': ' . $lead['name'], $mail );

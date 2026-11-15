@@ -325,12 +325,7 @@ function operator_tour_html() {
 		. '<div class="phf-f"><label for="t-em">Email</label><input id="t-em" name="email" type="email" autocomplete="email" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-li">LinkedIn profile (optional)</label><input id="t-li" name="linkedin" type="url" inputmode="url" autocomplete="url" maxlength="300"></div>'
 		. '<div class="phf-f"><label for="t-rg">Where you plan to operate</label><input id="t-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
-		. '<div class="phf-f"><label for="t-ia">I am</label><select id="t-ia" name="audience" required><option value="" selected disabled>Select one</option>';
-	foreach ( OPERATOR_AUDIENCES as $a ) {
-		$h .= '<option>' . esc_html( $a ) . '</option>';
-	}
-	$h .= '</select></div>'
-		. '<div class="phf-f"><label for="t-bg">Your background</label><select id="t-bg" name="background" required><option value="" selected disabled>Select your background</option>';
+		. '<div class="phf-f phf-f-wide"><label for="t-bg">Your background</label><select id="t-bg" name="background" required><option value="" selected disabled>Select your background</option>';
 	foreach ( OPERATOR_BACKGROUNDS as $b ) {
 		$h .= '<option>' . esc_html( $b ) . '</option>';
 	}
@@ -372,7 +367,6 @@ function operator_request_html() {
 		. '<div class="phf-f"><label for="r-rg">Where you plan to operate</label><input id="r-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="r-in">Industry you want to run your network in</label><select id="r-in" name="industry" required>' . operator_options( 'Select an industry', operator_industries() ) . '</select></div>'
 		. '<div class="phf-f" id="r-io-f" hidden><label for="r-io">Your industry</label><input id="r-io" name="industry_other" type="text" maxlength="120" autocomplete="off"></div>'
-		. '<div class="phf-f"><label for="r-ia">I am</label><select id="r-ia" name="audience" required>' . operator_options( 'Select one', OPERATOR_AUDIENCES ) . '</select></div>'
 		. '<div class="phf-f"><label for="r-bg">Your background</label><select id="r-bg" name="background" required>' . operator_options( 'Select your background', OPERATOR_BACKGROUNDS ) . '</select></div>'
 		. '<div class="phf-f phf-f-wide"><label for="r-ms">Anything you&#39;d like us to know (optional)</label><textarea id="r-ms" name="message" rows="4" maxlength="' . (int) OPERATOR_MESSAGE_MAX . '" aria-describedby="r-ms-n"></textarea><span class="phf-count" id="r-ms-n">Up to 1,000 characters</span></div>'
 		. '</div>'
