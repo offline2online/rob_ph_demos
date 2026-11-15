@@ -2,7 +2,7 @@
 // (operator-render.php: Elementor containers and widgets for the brief's sections, an Elementor kit stylesheet that restyles headings,
 // buttons and inputs, and the three empty mount containers ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, filled server-side by
 // operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
-// served at /run-your-own-rmn/tour/ (the golf club walkthrough). The H1, the blocks inside their mount containers,
+// served at /run-your-own-rmn/tour/ (the golf network walkthrough, v2: the Fairlinks Golf Network's 100 clubs). The H1, the blocks inside their mount containers,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its eleven questions, the last ending with a
 // "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
@@ -108,8 +108,8 @@ try {
     await p.route("**/*", (rt) => {
       const u = rt.request().url(); p.__reqs.push(u);
       if (/\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) { if (posts) posts.push(JSON.parse(rt.request().postData())); return rt.fulfill({ status, contentType: "application/json", body: JSON.stringify(reply) }); }
-      if (/\/assets\/v1\/img\//.test(u)) { const g = u.match(/\/run-your-own-rmn\/tour\/assets\/v1\/img\/([\w.-]+)$/), f = g && path.join(here, "..", "tour-assets", "rmn-golf", "img", g[1] + ".b64"); return rt.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? Buffer.from(fs.readFileSync(f, "ascii"), "base64") : tinyJpg }); }
-      if (/\/assets\/v1\//.test(u)) return rt.fulfill({ status: 404, body: "" });
+      if (/\/assets\/v2\/img\//.test(u)) { const g = u.match(/\/run-your-own-rmn\/tour\/assets\/v2\/img\/([\w.-]+)$/), f = g && path.join(here, "..", "tour-assets", "rmn-golf", "v2", "img", g[1] + ".b64"); return rt.fulfill({ contentType: "image/jpeg", body: f && fs.existsSync(f) ? Buffer.from(fs.readFileSync(f, "ascii"), "base64") : tinyJpg }); }
+      if (/\/assets\/v[12]\//.test(u)) return rt.fulfill({ status: 404, body: "" });
       if (/\/run-your-own-rmn\/tour\//.test(u)) return rt.fulfill({ contentType: "text/html", body: tourHtml });
       if (/\/wp-json\//.test(u)) return rt.fulfill({ contentType: "application/json", body: '{"found":false}' });
       if (u.startsWith("http://x.test/run-your-own-rmn/")) return rt.fulfill({ contentType: "text/html", body: page });
@@ -491,8 +491,8 @@ try {
       await tf.locator("#start").tap();
       await tf.waitForFunction(() => !!document.querySelector('#dots [aria-current="true"]'), null, { timeout: 15000 });
       ok(true, `${name}: the tour plays`);
-      const gt = await tf.evaluate(() => ({ title: document.title, cap: document.getElementById("capT").textContent, img: [...document.querySelectorAll("#stage .rm-shot img")].map((i) => i.complete && i.naturalWidth >= 1600 && /\/run-your-own-rmn\/tour\/assets\/v1\/img\//.test(i.src)) }));
-      ok(/Run Your Own RMN/.test(gt.title) && /six screen types/.test(gt.cap) && gt.img.length > 0 && gt.img.every(Boolean), `${name}: it is the golf club tour, on its real screenshots: ` + JSON.stringify(gt));
+      const gt = await tf.evaluate(() => ({ title: document.title, cap: document.getElementById("capT").textContent, img: [...document.querySelectorAll("#stage .rm-shot img")].map((i) => i.complete && i.naturalWidth >= 1600 && /\/run-your-own-rmn\/tour\/assets\/v2\/img\//.test(i.src)) }));
+      ok(/Run Your Own RMN/.test(gt.title) && /One network, 100 golf clubs/.test(gt.cap) && gt.img.length > 0 && gt.img.every(Boolean), `${name}: it is the golf network tour (v2), on its real screenshots: ` + JSON.stringify(gt));
       await tf.waitForSelector("#fs", { state: "visible" });
       await tf.locator("#fs").tap();
       await tf.waitForFunction(() => document.documentElement.classList.contains("fs"));

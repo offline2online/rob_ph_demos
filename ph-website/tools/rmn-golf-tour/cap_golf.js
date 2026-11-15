@@ -1,4 +1,5 @@
-// Captures every real prototype screen for the Run Your Own RMN (golf club) walkthrough: six screen types, Corvane Golf.
+// Captures every real prototype screen for the Run Your Own RMN walkthrough: the Fairlinks Golf Network (100 golf clubs, six screen types) and Corvane Golf.
+// v2 (15 Nov 2026): the network seed; N0-stores is the capture-only Stores / Branches list (stores.html).
 // Same approach as tools/retail-media-tour/cap5.js, made self-contained:
 //   node cap_golf.js --snap <dir with golf-*.json from slots_golf.py> --fonts <dir with fonts.css + woff2> --out <img dir> [ids...]
 // It serves dsp-integration/prototype and dsp-integration/mockups on localhost:8790, frames them in shell.html (the HQ Admin
@@ -16,15 +17,15 @@ fs.mkdirSync(OUT, { recursive: true });
 const HOT = {};
 const want = id => !ONLY.length || ONLY.some(o => id.startsWith(o));
 const users = { items: [
-  { email: 'claire.whitlock@fernhollow-golf.example', firstName: 'Claire', lastName: 'Whitlock', role: 'Admin', lastLoginAt: '2026-11-04T08:12:00Z' },
-  { email: 'tom.ashby@fernhollow-golf.example', firstName: 'Tom', lastName: 'Ashby', role: 'Marketing', lastLoginAt: '2026-11-04T01:05:00Z' },
-  { email: 'priya.nair@fernhollow-golf.example', firstName: 'Priya', lastName: 'Nair', role: 'Help Desk', lastLoginAt: '2026-11-02T03:30:00Z' },
+  { email: 'claire.whitlock@fairlinks-golf.example', firstName: 'Claire', lastName: 'Whitlock', role: 'Admin', lastLoginAt: '2026-11-04T08:12:00Z' },
+  { email: 'tom.ashby@fairlinks-golf.example', firstName: 'Tom', lastName: 'Ashby', role: 'Marketing', lastLoginAt: '2026-11-04T01:05:00Z' },
+  { email: 'priya.nair@fairlinks-golf.example', firstName: 'Priya', lastName: 'Nair', role: 'Help Desk', lastLoginAt: '2026-11-02T03:30:00Z' },
 ] };
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png' };
 const server = http.createServer((q, r) => {
   let p = decodeURIComponent(q.url.split('?')[0]);
   let f;
-  if (p === '/shell.html') f = path.join(__dirname, 'shell.html');
+  if (p === '/shell.html' || p === '/stores.html') f = path.join(__dirname, p.slice(1));
   else if (p.startsWith('/mockups/')) f = path.join(MOCK, p.slice(9));
   else if (p.startsWith('/fonts/')) f = path.join(FONTS, p.slice(7));
   else f = path.join(PROTO, p === '/' ? 'index.html' : p);
@@ -91,6 +92,14 @@ const PLAYLISTS = [
 (async () => {
   const b = await chromium.launch();
   let s;
+  if (want('N0')) {  // the network: Stores / Branches lists the 100 connected golf clubs (capture-only page, stores.html)
+    s = await openShell(b, { nav: 'stores', crumb: 'Stores / Branches', src: '/stores.html', snap: 'pre' });
+    await shot(s.p, 'N0-stores', s.f.locator('#count'));
+    await extra('N0-stores', 'meta', [s.f.locator('#meta')]);
+    await extra('N0-stores', 'rows', [s.f.locator('#rows tr').first(), s.f.locator('#rows tr').nth(9)]);
+    await extra('N0-stores', 'club', [s.f.locator('#rows tr[data-club="Fernhollow Golf Club"]')]);
+    await s.p.close();
+  }
   if (want('P1-')) {
     s = await openShell(b, { nav: 'platform', crumb: `${PA}|Display Types`, src: '/#/display-types', snap: 'pre' });
     await shot(s.p, 'P1-display-types', s.f.getByText('Playlist Management', { exact: true }).first());
@@ -165,7 +174,7 @@ const PLAYLISTS = [
     await nd.click(); await s.f.waitForTimeout(700);
     const dlg = s.f.locator('[role=dialog]').last();
     await dlg.locator('input[placeholder="e.g. Q4 FMCG private auction"]').fill('Corvane direct');
-    await dlg.locator('textarea').fill('Corvane Golf books the club directly, with no DSP: brand partner slots on all six screen types at a fixed CPM.');
+    await dlg.locator('textarea').fill('Corvane Golf books the network directly, with no DSP: brand partner slots on all six screen types at all 100 clubs, at a fixed CPM.');
     await antSelect(s.f, dlg, 'Deal type', 'Direct advertiser');
     await antSelect(s.f, dlg, 'Buyers', 'Corvane Golf');
     await dlg.getByText('New deal and buyers list').click();
@@ -250,6 +259,7 @@ const PLAYLISTS = [
       await extra('22-booking-revenue', 'rev', [g2.locator('[col-id]').filter({ hasText: /Estimated revenue/ }).first(), g2.locator('.ag-row').last()]); }
     await s.p.close();
   }
+  for (const k in HOT) if (HOT[k]) { const [x, y, w, h] = HOT[k]; HOT[k] = [x, y, Math.min(w, W - x), Math.min(h, H - y)]; }  // clipped to the screen
   const prev = fs.existsSync(HOTF) ? JSON.parse(fs.readFileSync(HOTF, 'utf8')) : {};
   fs.writeFileSync(HOTF, JSON.stringify(Object.assign(prev, HOT), null, 1) + '\n');
   await b.close(); server.close();
