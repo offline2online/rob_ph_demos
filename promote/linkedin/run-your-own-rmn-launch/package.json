@@ -5,7 +5,9 @@
   "scripts": {
     "build": "node build.mjs",
     "check": "node check.cjs dist/run-your-own-rmn-launch.html check",
-    "render": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch.mp4 dist/run-your-own-rmn-launch-cover.png 7.7"
+    "check:9x16": "node check.cjs dist/run-your-own-rmn-launch.html check-9x16 9x16",
+    "render": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch.mp4 dist/run-your-own-rmn-launch-cover.png 7.7",
+    "render:9x16": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch-9x16.mp4 dist/run-your-own-rmn-launch-9x16-cover.png 7.7 9x16"
   },
   "devDependencies": {
     "@fontsource/kantumruy-pro": "5.3.0",

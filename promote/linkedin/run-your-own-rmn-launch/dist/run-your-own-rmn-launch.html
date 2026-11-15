@@ -19,7 +19,7 @@ html,body{margin:0}
 body{background:#070a14;font-family:var(--font);-webkit-font-smoothing:antialiased;color:#E9EDF6}
 body.render{background:#0F1424}
 
-/* Fixed 1080 x 1350 (4:5) design size */
+/* Fixed design size: 1080 x 1350 (4:5, feed) by default, 1080 x 1920 (9:16, stories) with ?ratio=9x16 */
 #stage{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--paper,#0F1424);color:var(--ink,#E9EDF6)}
 .bar{position:absolute;left:0;top:0;width:100%;height:12px;background:var(--bar,#169BC2);z-index:5}
 .logo{position:absolute;left:88px;top:92px;height:64px;width:auto;z-index:5}
@@ -124,6 +124,12 @@ body.render .frame{border-radius:0;box-shadow:none}
   SL.forEach(function(s,i){ s.end = i < SL.length-1 ? SL[i+1].start : DURATION; });
 
   var stage = document.getElementById('stage'), wipe = document.getElementById('wipe');
+  /* 9:16 keeps the logo and every line clear of the stories UI (top ~270px, bottom ~380px) */
+  var RATIO = /[?&]ratio=9x16\b/.test(location.search) ? '9x16' : '4x5';
+  var W = 1080, H = RATIO === '9x16' ? 1920 : 1350, MID = RATIO === '9x16' ? 940 : 665;
+  var R = Math.ceil(Math.sqrt(W*W/4 + H*H/4)) + 10;
+  stage.style.height = H + 'px';
+  if (RATIO === '9x16') Array.prototype.forEach.call(document.querySelectorAll('.logo'), function(lg){ lg.style.top = '270px'; });
   var logoDark = document.getElementById('logoDark'), logoLight = document.getElementById('logoLight');
 
   /* Split every line into words and letters */
@@ -155,7 +161,7 @@ body.render .frame{border-radius:0;box-shadow:none}
       var maxW = 0; s.lines.forEach(function(ln){ maxW = Math.max(maxW, ln.offsetWidth); });
       s.fs = Math.min(s.max, Math.floor(100 * FITW / maxW));
       s.txt.style.fontSize = s.fs + 'px';
-      s.el.style.top = Math.round((1350 - s.grp.offsetHeight) / 2 - 10) + 'px';
+      s.el.style.top = Math.round(MID - s.grp.offsetHeight / 2) + 'px';
     });
     laidOut = document.fonts.check('700 100px "Kantumruy Pro"');
   }
@@ -185,7 +191,7 @@ body.render .frame{border-radius:0;box-shadow:none}
     if (w){
       var covering = t < w.start, c = eio(clamp((t - (w.start - COVER)) / COVER)), u = eio(clamp((t - w.start) / UNCOVER));
       wipe.style.visibility = 'visible'; wipe.style.background = w.acc;
-      var clip = 'none', mask = 'none', R = 880;
+      var clip = 'none', mask = 'none';
       if (w.wipe === 'up')   clip = covering ? 'inset('+((1-c)*100)+'% 0 0 0)' : 'inset(0 0 '+(u*100)+'% 0)';
       if (w.wipe === 'down') clip = covering ? 'inset(0 0 '+((1-c)*100)+'% 0)' : 'inset('+(u*100)+'% 0 0 0)';
       if (w.wipe === 'left') clip = covering ? 'inset(0 0 0 '+((1-c)*100)+'%)' : 'inset(0 '+(u*100)+'% 0 0)';
@@ -263,6 +269,7 @@ body.render .frame{border-radius:0;box-shadow:none}
 
   window.renderAt = renderAt;
   window.DURATION = DURATION;
+  window.STAGE = {w:W, h:H, ratio:RATIO};
   window.SCENES = SL.map(function(s){ return {id:s.id, start:s.start, end:s.end}; });
 
   /* Render mode: the capture script drives renderAt frame by frame */
@@ -272,9 +279,9 @@ body.render .frame{border-radius:0;box-shadow:none}
   var frame = document.getElementById('frame'), btn = document.getElementById('play'),
       scrub = document.getElementById('scrub'), out = document.getElementById('time');
   function fit(){
-    var s = Math.min(1, (window.innerWidth-32)/1080, (window.innerHeight-120)/1350);
+    var s = Math.min(1, (window.innerWidth-32)/W, (window.innerHeight-120)/H);
     stage.style.transform = 'scale('+s+')';
-    frame.style.width = (1080*s)+'px'; frame.style.height = (1350*s)+'px';
+    frame.style.width = (W*s)+'px'; frame.style.height = (H*s)+'px';
   }
   fit(); window.addEventListener('resize', fit);
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

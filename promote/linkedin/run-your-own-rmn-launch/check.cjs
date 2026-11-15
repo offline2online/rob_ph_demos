@@ -1,13 +1,15 @@
 // Renders each slide at its settled moment and checks: type fitted (lines and size), the slide
-// inside the safe area (below the logo, above y 1270, inside the side margins), the wipe gone,
+// inside the safe area (below the logo and, for 9:16, clear of the stories UI; inside the side margins), the wipe gone,
 // and the logo matching the surface. Writes one PNG per slide to the output folder.
 const { chromium } = require('playwright');
 const path = require('path');
 (async () => {
-  const [file, outDir] = process.argv.slice(2);
+  const [file, outDir, ratio] = process.argv.slice(2);
+  const tall = ratio === '9x16', H = tall ? 1920 : 1350;
+  const SAFE_TOP = tall ? 360 : 210, SAFE_BOTTOM = tall ? 1540 : 1270;
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1080, height: 1350 }, deviceScaleFactor: 1 });
-  await page.goto('file://' + path.resolve(file) + '?render');
+  const page = await browser.newPage({ viewport: { width: 1080, height: H }, deviceScaleFactor: 1 });
+  await page.goto('file://' + path.resolve(file) + '?render' + (tall ? '&ratio=9x16' : ''));
   await page.evaluate(() => document.fonts.ready);
   const scenes = await page.evaluate(() => window.SCENES);
   const problems = [];
@@ -29,8 +31,8 @@ const path = require('path');
         paper: ink, logoDark: document.getElementById('logoDark').style.opacity, opacity: sc.querySelector('.grp').style.opacity };
     }, s.id);
     console.log(s.id, `t=${t.toFixed(2)}`, JSON.stringify(m));
-    if (m.top < 210) problems.push(`${s.id}: top ${m.top} < 210 (crowds the logo)`);
-    if (m.bottom > 1270) problems.push(`${s.id}: bottom ${m.bottom} > 1270`);
+    if (m.top < SAFE_TOP) problems.push(`${s.id}: top ${m.top} < ${SAFE_TOP} (crowds the logo)`);
+    if (m.bottom > SAFE_BOTTOM) problems.push(`${s.id}: bottom ${m.bottom} > ${SAFE_BOTTOM}`);
     if (m.left < 88 || m.right > 1000) problems.push(`${s.id}: horizontal ${m.left}..${m.right}`);
     if (m.wipe !== 'hidden') problems.push(`${s.id}: wipe still showing`);
     if (m.fontSize < 80) problems.push(`${s.id}: type only ${m.fontSize}px`);
