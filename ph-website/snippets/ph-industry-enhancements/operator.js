@@ -1,7 +1,7 @@
 /* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): drives the three
    blocks on the Elementor page (each a .phf element, put into its mount container by operator.php or rendered by a shortcode), wherever
-   Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the header's
-   "Arrange A Demo" (goes to #tour here), the product tour gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
+   Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the product tour
+   gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
    to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked
    from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. Each part runs only when its block is
    on the page. */
@@ -201,14 +201,7 @@
     sync();
   }
 
-  /* ---------- Anchors: #tour focuses the first empty field; the header's Arrange A Demo goes to #tour here ---------- */
-  function headerDemo(a) {
-    if (!a.closest(".elementor-location-header, header")) return false;
-    return /arrange\s+a\s+demo/i.test(a.textContent || "");
-  }
-  if ($("tour")) [].slice.call(document.querySelectorAll("a")).forEach(function (a) {
-    if (!a.closest(".phf") && headerDemo(a)) { a.setAttribute("href", "#tour"); a.removeAttribute("onclick"); a.removeAttribute("target"); a.setAttribute("data-phf-demo", "1"); }
-  });
+  /* ---------- Anchors: #tour focuses the first empty field (the floating CTA, cta.js, links here when the page has no #request-info) ---------- */
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href='#tour']") : null;
     if (!a) return;

@@ -7,7 +7,7 @@
 // "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid, with its required "I am" select,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
-// Start the tour plays a step, returning visitors, the header's Arrange A Demo, the estimate_rmn_earnings WebMCP tool (the page's own
+// Start the tour plays a step, returning visitors, links to #tour (the header is left alone), the estimate_rmn_earnings WebMCP tool (the page's own
 // figures for the defaults in both modes; the gate only with the person's details and consent; never a share), no horizontal scroll at
 // 360/390/768/1440, and enhance.js's known-visitor rule (name, company and email).
 // Neither the retired offer name (checked with the pattern fr[a]nch) nor the page's previous name (a bracketed pattern) appears, so this
@@ -306,7 +306,7 @@ try {
     await t.close();
   }
 
-  // 4. CTAs and the header's Arrange A Demo go to their anchors; #tour focuses the first empty field.
+  // 4. CTAs go to their anchors; #tour focuses the first empty field. operator.js leaves the header alone.
   p = await open();
   ok((await p.getAttribute("#top .elementor-button >> nth=0", "href")) === "#calculator" && (await p.getAttribute("#top .elementor-button >> nth=1", "href")) === "#tour", "hero CTAs (Elementor buttons, the brief's anchors)");
   ok((await p.getAttribute(".phf-cctas a:first-child", "href")) === "#tour" && (await p.getAttribute(".phf-cctas a:last-child", "href")) === "#how", "calculator CTAs");
@@ -315,9 +315,11 @@ try {
   ok(true, "Request further information focuses Full name");
   await p.fill("#t-fn", "Ada Lovelace");
   await p.evaluate(() => window.scrollTo(0, 0));
-  await p.click("#hdr-demo");
+  ok((await p.getAttribute("#hdr-demo", "href")).indexOf("elementor-action") > -1, "operator.js no longer rewrites a header Arrange A Demo (the header button is gone; the floating CTA, cta.js, replaces it)");
+  await p.evaluate(() => { const a = document.createElement("a"); a.href = "#tour"; a.id = "to-tour"; a.textContent = "to the tour"; document.querySelector("main").prepend(a); });
+  await p.evaluate(() => document.getElementById("to-tour").click());
   await p.waitForFunction(() => document.activeElement && document.activeElement.id === "t-em");
-  ok((await p.evaluate(() => window.__cal)) === 0 && (await p.getAttribute("#hdr-demo", "href")) === "#tour", "header Arrange A Demo goes to #tour (no demo pop-up) and focuses the first empty field");
+  ok((await p.evaluate(() => window.__cal)) === 0, "a link to #tour focuses the first empty field (no demo pop-up)");
   ok(await p.evaluate(() => { const t = document.getElementById("tour").getBoundingClientRect().top; return t >= 0 && t < 200; }), "scrolled to the tour band");
   await p.close();
 
