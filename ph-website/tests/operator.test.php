@@ -1,6 +1,7 @@
 <?php
 /**
- * php ph-website/tests/operator.test.php : the hidden Run Your Own RMN page, /run-your-own-rmn/ (snippet 10063, operator.php), an
+ * php ph-website/tests/operator.test.php : the Run Your Own RMN page (launched 15 Nov 2026: OPERATOR_LIVE ships true, and one pass forces it
+ * hidden through ph_operator_live), /run-your-own-rmn/ (snippet 10063, operator.php), an
  * Elementor page built from ph-website/elementor/run-your-own-rmn.md. POST ph-site/v1/operator-lead validation (400 with the field),
  * optional and normalised LinkedIn, the required "I am" (stored and sent on as `audience`), the background allow-list, honeypot, 429, personal email accepted, one lead per person in both
  * orders, the ph_lead_captured payload and the console ingest body (leadType, source detail "Run Your Own RMN page – product tour"),
@@ -69,6 +70,7 @@ require $dir . '/leads.php';
 require $dir . '/operator.php';
 require $dir . '/redirects.php';
 require $dir . '/ai-surface.php';
+require $dir . '/tour.php'; // TOUR_INDUSTRIES: the golf tour joins llms.txt and the twins only when the page is live (ai_tours())
 }
 
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
@@ -314,15 +316,19 @@ ok( array( '/retail-media-platform' ) === array_keys( redirect_map() ), 'redirec
 ok( ! in_array( '/run-your-own-rmn/', redirect_map(), true ) && '' === redirect_target( '/run-your-own-rmn/' ), 'nothing redirects to or from /run-your-own-rmn/' );
 ok( ! preg_match( '/fr[a]nch/i', (string) file_get_contents( $dir . '/redirects.php' ) ), 'redirects.php never names the retired offer' );
 
-/* noindex state and sitemaps */
+/* Launched 15 Nov 2026: OPERATOR_LIVE ships true, so with no filter the page is live: indexable, in both sitemaps, the header item on
+   every page, and llms.txt, the twin, the agent endpoint, robots.txt and the golf tour name it. One pass then forces it hidden through
+   the ph_operator_live filter, and every one of those goes back to hidden. */
+ok( true === OPERATOR_LIVE, 'OPERATOR_LIVE ships true (launched 15 Nov 2026)' );
+ok( ! array_key_exists( 'ph_operator_live', $GLOBALS['filters'] ) && true === operator_is_live(), 'live by default: operator_is_live() with no filter' );
 $d = $mkpage( 7 );
 operator_sync_state();
-ok( 'yes' === $GLOBALS['meta'][7]['_seopress_robots_index'] && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'hidden: SEOPress noindex set on the page' );
-$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
-ok( array( 7 ) === $args['post__not_in'], 'hidden: left out of the sitemap queries' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live (default): no SEOPress noindex on the page, state live' );
+ok( ! isset( operator_sitemap_args( array( 'post_type' => 'page' ) )['post__not_in'] ), 'live (default): in the WordPress and SEOPress sitemap queries' );
 $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 $r = operator_robots( array( 'index' => true, 'follow' => true ) );
-ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'hidden: wp_robots noindex on /run-your-own-rmn/' );
+ok( empty( $r['noindex'] ) && ! empty( $r['index'] ), 'live (default): wp_robots indexable on /run-your-own-rmn/' );
+ok( false === strpos( $hsrc, "if ( operator_is_live() && ! headers_sent() )" ) && false !== strpos( $hsrc, "if ( ! operator_is_live() && ! headers_sent() ) {\n\t\t\theader( 'X-Robots-Tag: noindex' );" ), 'X-Robots-Tag noindex is sent on the page only while not live' );
 ok( 'Run Your Own Retail Media Network (RMN) - Personalisation Hub' === operator_document_title( 'Old - Personalisation Hub' ), 'document title "Run Your Own Retail Media Network (RMN) - Personalisation Hub" on the page' );
 $other = new \WP_Post(); $other->ID = 99; $other->post_name = 'about-us'; $GLOBALS['qo'] = $other;
 ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ) && 'T' === operator_document_title( 'T' ), 'another page: keyed by the resolved id, so untouched' );
@@ -330,14 +336,39 @@ $GLOBALS['qo'] = $d;
 $GLOBALS['is_page'] = false;
 ok( array( 'index' => true ) === operator_robots( array( 'index' => true ) ), 'other pages: robots unchanged' );
 ok( 'Home | X' === operator_document_title( 'Home | X' ), 'other pages: title unchanged' );
+$hmk = function ( $id, $title, $url, $parent = 0 ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => array( 'menu-item' ), 'current' => false, 'menu_order' => 0 ); };
+$hdr = function () use ( $hmk ) { return array( $hmk( 1, 'Features', '/features/' ), $hmk( 3, 'Industry', '/industries/' ), $hmk( 4, 'Telco', '/industries/telco/', 3 ), $hmk( 5, 'Support', '/support-centre/' ), $hmk( 6, 'Blog', '/blog/' ) ); };
+$top = function ( $items ) { return implode( ',', array_map( function ( $i ) { return $i->title; }, array_filter( $items, function ( $i ) { return '0' === (string) $i->menu_item_parent; } ) ) ); };
+ok( 'Features,Industry,Run Your Own RMN,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'live (default): a non-operator page\'s header gets "Run Your Own RMN" between Industry and Support' );
+$wp_robots0 = "User-agent: *\nDisallow: /wp-admin/\n";
+ok( false !== strpos( operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), '## Run your own RMN' ), 'live (default): llms.txt gets the "Run your own RMN" section' );
+ok( is_array( operator_agent_page( operator_is_live() ) ), 'live (default): the agent endpoint lists the page and its twin' );
+ok( false !== strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'Allow: /run-your-own-rmn/' ), 'live (default): robots.txt allows /run-your-own-rmn/ for AI agents' );
+$tours = ai_tours();
+ok( isset( $tours['rmn'] ) && 5 === count( $tours ) && false !== strpos( ai_tours_llms_md(), '/run-your-own-rmn/' ) && '' !== ai_tour_section( 'rmn' ), 'live (default): the golf tour joins llms.txt and the twins' );
+ok( 1 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'live (default): the head links the markdown twin' );
+
+/* Forced hidden through the ph_operator_live filter: everything back to hidden */
+$GLOBALS['filters']['ph_operator_live'] = false;
+ok( false === operator_is_live(), 'ph_operator_live false: hidden' );
+operator_sync_state();
+ok( 'yes' === ( $GLOBALS['meta'][7]['_seopress_robots_index'] ?? '' ) && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'forced hidden: SEOPress noindex set on the page' );
+$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
+ok( array( 7 ) === ( $args['post__not_in'] ?? null ), 'forced hidden: left out of the sitemap queries' );
+$GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
+$r = operator_robots( array( 'index' => true, 'follow' => true ) );
+ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'forced hidden: wp_robots noindex on /run-your-own-rmn/' );
+$GLOBALS['is_page'] = false;
+ok( 'Features,Industry,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'forced hidden: a non-operator page\'s header is unchanged' );
+ok( "## Pricing and trial\n" === operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), 'forced hidden: llms.txt unchanged' );
+ok( null === operator_agent_page( operator_is_live() ), 'forced hidden: the agent endpoint gets nothing' );
+ok( false === strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'run-your-own-rmn' ), 'forced hidden: robots.txt does not name the page' );
+ok( ! isset( ai_tours()['rmn'] ) && 4 === count( ai_tours() ) && false === strpos( ai_tours_llms_md(), 'run-your-own-rmn' ) && '' === ai_tour_section( 'rmn' ), 'forced hidden: the golf tour is out of llms.txt and the twins' );
+ok( 0 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'forced hidden: no twin link in the head' );
 $GLOBALS['filters']['ph_operator_live'] = true;
 operator_sync_state();
-ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live: SEOPress noindex removed' );
-ok( ! isset( operator_sitemap_args( array() )['post__not_in'] ), 'live: in the sitemaps' );
-$GLOBALS['is_page'] = true;
-ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ), 'live: indexable' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'back to live: SEOPress noindex removed again' );
 unset( $GLOBALS['filters']['ph_operator_live'] ); $GLOBALS['is_page'] = false;
-ok( false === OPERATOR_LIVE, 'OPERATOR_LIVE ships false' );
 
 /* Header menu (the page exists: $d, id 7) */
 $mk = function ( $id, $title, $url, $parent = 0, $cur = false ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => $cur ? array( 'menu-item', 'current-menu-item' ) : array( 'menu-item' ), 'current' => $cur, 'menu_order' => 0 ); };

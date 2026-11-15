@@ -1,7 +1,7 @@
 <?php
 /**
  * Run Your Own RMN page (13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): personalisationhub.com/run-your-own-rmn/,
- * "Run Your Own RMN" (run your own retail media network), HIDDEN until launch. The offer is "network operator" and its leads are
+ * "Run Your Own RMN" (run your own retail media network), hidden 13 to 15 Nov 2026, LAUNCHED 15 Nov 2026. The offer is "network operator" and its leads are
  * "Network operator inquiry". The retired offer name appears nowhere: not in what a visitor sees, and not in a file, function,
  * constant, option, route, key, class, comment or test. Neither does the page's previous name.
  *
@@ -24,7 +24,7 @@
  *   header's "Run Your Own RMN" item only on the page while hidden; the title, meta description, canonical, Open Graph, Twitter card
  *   and JSON-LD (WebPage, Service, BreadcrumbList; the FAQPage comes with the FAQ block); llms.txt, the markdown twin, the agent endpoint
  *   and robots.txt only when live; the estimate_rmn_earnings WebMCP tool (operator.js).
- * Launching is one change: OPERATOR_LIVE = true.
+ * Launched 15 Nov 2026 by that one change: OPERATOR_LIVE = true. The ph_operator_live filter returning false hides the page again.
  * - POST ph-site/v1/operator-lead: the product tour gate's lead, and (form "request") the request form's. One ph_lead per person
  *   (lead_find_existing / lead_add_activity / lead_insert in leads.php), fires ph_lead_captured so leads.php forwards it to the console
  *   as a "Network operator inquiry" (leadType "operator"). The gate's "I am" answer travels with it as `audience` (the label); the
@@ -36,7 +36,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const OPERATOR_LIVE          = false;
+const OPERATOR_LIVE          = true;
 const OPERATOR_SLUG          = 'run-your-own-rmn';
 const OPERATOR_PATH          = '/run-your-own-rmn/';
 const OPERATOR_TITLE         = 'Run Your Own RMN';
