@@ -117,20 +117,38 @@ async function runTriage({ apiKey, workspaceId, Anthropic, ticket, messages, art
   const base = { relevant: sel.relevant, category: sel.category, summary: sel.question, spamLikely: sel.spamLikely, selectedIds: sel.articleIds };
   if (!sel.relevant || sel.spamLikely) return Object.assign(base, { answerable: false, confidence: 0, reply: "", articleIds: [] });
   const byId = new Map(articles.map((a) => [a.id, a]));
-  const chosen = sel.articleIds.map((id) => byId.get(id)).filter(Boolean);
-  const texts = chosen.map((a) =>
-    `<article id="${a.id}" url="${a.url}">\nTitle: ${a.title}\n${a.directAnswer ? `Short answer: ${a.directAnswer}\n` : ""}${a.summary ? `Summary: ${a.summary}\n` : ""}${core.clip(a.body, 8000)}\n</article>`).join("\n\n");
-  const draft = await callJson({
-    apiKey, workspaceId, Anthropic, system: core.TRIAGE_SYSTEM, schema: core.TRIAGE_SCHEMA, effort: "medium",
-    content: `${email}\n\nWhat they need, as understood: ${sel.question || "(not stated)"}\n\n<help_articles>\n${texts || "(no article answers this)"}\n</help_articles>`,
-  });
-  const ids = new Set(chosen.map((a) => a.id));
+  const chosen = sel.articleIds.map((id) => byId.get(id)).filter(Boolean).slice(0, core.MAX_ARTICLES);
+  const draftFrom = async (list) => {
+    const texts = list.map((a) =>
+      `<article id="${a.id}" url="${a.url}">\nTitle: ${a.title}\n${a.directAnswer ? `Short answer: ${a.directAnswer}\n` : ""}${a.summary ? `Summary: ${a.summary}\n` : ""}${core.clip(a.body, 8000)}\n</article>`).join("\n\n");
+    const d = await callJson({
+      apiKey, workspaceId, Anthropic, system: core.TRIAGE_SYSTEM, schema: core.TRIAGE_SCHEMA, effort: "medium",
+      content: `${email}\n\nWhat they need, as understood: ${sel.question || "(not stated)"}\n\n<help_articles>\n${texts || "(no article answers this)"}\n</help_articles>`,
+    });
+    const ids = new Set(list.map((a) => a.id));
+    const c = Number(d.confidence);
+    return {
+      summary: d.summary, reply: d.reply, answerable: d.answerable === true && list.length > 0,
+      confidence: Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 0,
+      articleIds: (Array.isArray(d.articleIds) ? d.articleIds : []).filter((id) => ids.has(id)),
+      articles: list.length,
+    };
+  };
+  // The best article alone first; 2 or 3 together only when that scores low.
+  let best = await draftFrom(chosen.slice(0, 1));
+  const steps = chosen.length ? [{ articles: best.articles, confidence: best.confidence }] : [];
+  if (chosen.length > 1 && best.confidence < core.CONFIDENCE_BOOST_BELOW) {
+    const wider = await draftFrom(chosen);
+    steps.push({ articles: wider.articles, confidence: wider.confidence });
+    if (wider.confidence >= best.confidence) best = wider;
+  }
   return Object.assign(base, {
-    summary: draft.summary || sel.question,
-    answerable: draft.answerable === true && chosen.length > 0,
-    confidence: draft.confidence,
-    reply: draft.reply,
-    articleIds: (Array.isArray(draft.articleIds) ? draft.articleIds : []).filter((id) => ids.has(id)),
+    summary: best.summary || sel.question,
+    answerable: best.answerable,
+    confidence: best.confidence,
+    confidenceSteps: steps,
+    reply: best.reply,
+    articleIds: best.articleIds,
   });
 }
 
@@ -416,7 +434,7 @@ function createSupportMail({
       triagePending: false, updatedAt: now(), needsHuman: decision.needsHuman, triageReason: aiError || decision.reason,
       category: triage ? triage.category : ticket.category || "", summary: triage ? triage.summary : ticket.summary || "",
       spamLikely: Boolean(triage && triage.spamLikely), unrelated: Boolean(triage && triage.relevant === false),
-      aiDraft: draftText ? { text: draftText, confidence: triage.confidence, answerable: triage.answerable, articles: cited, at: now() } : null,
+      aiDraft: draftText ? { text: draftText, confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, answerable: triage.answerable, articles: cited, at: now() } : null,
     };
     if (decision.action === "send") {
       try {
@@ -460,7 +478,7 @@ function createSupportMail({
     const view = (id) => { const a = all.find((x) => x.id === id); return a ? { id, title: a.title, url: a.url } : null; };
     return {
       ok: true, relevant: triage.relevant, category: triage.category, summary: triage.summary, spamLikely: triage.spamLikely,
-      answerable: triage.answerable, confidence: triage.confidence, articles: triage.articleIds.map(view).filter(Boolean),
+      answerable: triage.answerable, confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: triage.articleIds.map(view).filter(Boolean),
       highValue: account ? { name: account.name, reason: account.reason } : null,
       decision: { action: decision.action, reason: decision.reason }, draft,
     };

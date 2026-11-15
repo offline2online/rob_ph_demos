@@ -108,7 +108,8 @@ check("FAQ ranking: loose matching, best first, nothing for an unrelated email",
 
 check("every draft opens with the first name (or 'there') and thanks, and the model's own opening and sign-off are removed", () => {
   const cases = [["Ann Lee", "ann@x.example", "Ann"], ["Lee, Ann", "", "Ann"], ["ANN LEE", "", "Ann"], ["Dr. Raj Patel", "", "Raj"], ["O'Neil Sam", "", "O'Neil"], ["Zoë", "", "Zoë"],
-    ["Acme Retail Ltd", "info@acme.example", ""], ["Support Team", "support@x.example", ""], ["", "ann.lee@shop.example", "Ann"], ["", "jsmith@shop.example", ""], ["", "info.desk@x.example", ""]];
+    ["Acme Retail Ltd", "info@acme.example", ""], ["Support Team", "support@x.example", ""], ["", "ann.lee@shop.example", "Ann"], ["", "jsmith@shop.example", ""], ["", "info.desk@x.example", ""],
+    ["Legal", "legal@bank.example", ""], ["Store Manager Kingston", "kingston.manager@retail.example", ""], ["Cloud Team", "cloud@x.example", ""], ["IT", "ann.lee@x.example", ""]];
   for (const [name, email, want] of cases) assert.strictEqual(core.firstNameOf(name, email), want, `${name} <${email}>`);
   assert.strictEqual(core.composeReply("Ann", "Hi Ann,\n\nThank you for your email.\n\nOpen Displays.\n\nKind regards,\nSupport"), "Hi Ann,\n\nThanks for your email.\n\nOpen Displays.");
   assert.strictEqual(core.composeReply("", "Hello there!\nI hope you are well. Open Displays."), "Hi there,\n\nThanks for your email.\n\nOpen Displays.");
@@ -120,10 +121,17 @@ check("matching: the whole catalogue is offered one line per article, and only r
   const line = core.articleIndexLine({ id: "a1", title: "Add a display", summary: "Pair a screen", directAnswer: "Open Displays", keywords: ["pairing"], questionVariants: ["How do I add a screen?"] }, "Digital Signage");
   assert.strictEqual(line, "a1 | Digital Signage | Add a display | Pair a screen | Open Displays | asked as: How do I add a screen? | keywords: pairing");
   const sel = core.cleanSelection({ relevant: true, question: "q", category: "how-to", articleIds: ["a1", "zz", "a2", "a3", "a4", "a5"], spamLikely: false }, ["a1", "a2", "a3", "a4", "a5"]);
-  assert.deepStrictEqual(sel.articleIds, ["a1", "a2", "a3", "a4"], "at most 4, invented ids dropped");
+  assert.deepStrictEqual(sel.articleIds, ["a1", "a2", "a3"], "at most 3, invented ids dropped");
   const off = core.cleanSelection({ relevant: false, category: "how-to", articleIds: ["a1"] }, ["a1"]);
   assert.deepStrictEqual([off.relevant, off.category, off.articleIds], [false, "unrelated", []]);
   assert.ok(/retail media/i.test(core.SELECT_SYSTEM) && /Out of scope/.test(core.SELECT_SYSTEM), "the scope names the retail media proposition and what is out of scope");
+});
+
+check("never more than 3 articles, and the confidence steps are cleaned", () => {
+  const t = core.cleanTriage({ answerable: true, reply: "x", articleIds: ["a", "b", "c", "d"], confidenceSteps: [{ articles: 9, confidence: 2 }, { articles: "1", confidence: "0.5" }, { articles: 2, confidence: 0.9 }] }, ["a", "b", "c", "d"]);
+  assert.deepStrictEqual(t.articleIds, ["a", "b", "c"]);
+  assert.deepStrictEqual(t.confidenceSteps, [{ articles: 3, confidence: 1 }, { articles: 1, confidence: 0.5 }]);
+  assert.strictEqual(core.MAX_ARTICLES, 3);
 });
 
 check("an email that isn't about Personalisation Hub gets no draft and no article, whatever else the model said", () => {

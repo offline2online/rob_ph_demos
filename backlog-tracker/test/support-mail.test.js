@@ -5,7 +5,7 @@
 "use strict";
 const assert = require("assert");
 const crypto = require("crypto");
-const { createSupportMail, SCOPE } = require("../functions/support-mail");
+const { createSupportMail, runTriage, SCOPE } = require("../functions/support-mail");
 
 const ENC = crypto.randomBytes(32).toString("base64");
 const BOARD = "board-key-123";
@@ -259,6 +259,47 @@ check("Try an email: the decision and the draft for an email, with nothing filed
   assert.strictEqual(t.google.calls.sent.length, 0, "nothing was sent");
   for (let i = 0; i < 39; i++) await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } });
   assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } })).statusCode, 429);
+});
+
+// A stand-in for the Anthropic SDK: answers each call by which step it is.
+function fakeModel(answers) {
+  const calls = [];
+  class Client {
+    constructor() { this.beta = { messages: { create: async (req) => {
+      const step = req.system.startsWith("You route") ? "select" : "draft";
+      const n = (req.messages[0].content.match(/<article id=/g) || []).length;
+      calls.push({ step, articles: n });
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(answers(step, n)) }] };
+    } } }; }
+  }
+  return { Client, calls };
+}
+const ARTS = ["a1", "a2", "a3"].map((id, i) => ({ id, title: `Article ${i + 1}`, summary: "", directAnswer: "", keywords: [], questionVariants: [], categoryName: "Digital Signage", body: `Body ${i + 1}`, url: `https://x.example/${id}` }));
+const TICKET = { subject: "Screens", customerEmail: "ann@shop.example", customerName: "Ann Lee" };
+const MSGS = [{ direction: "in", text: "How do I add a display?" }];
+
+check("triage: the best article alone first; under 80% confidence it is written again from up to 3 articles together, and the better reply is kept", async () => {
+  const sel = { relevant: true, question: "add a display", category: "how-to", articleIds: ["a1", "a2", "a3", "a4"], spamLikely: false };
+  const low = fakeModel((step, n) => step === "select" ? sel : { summary: "s", answerable: true, reply: `from ${n}`, articleIds: ["a1", "a2", "a3"].slice(0, n), confidence: n === 1 ? 0.55 : 0.84 });
+  const r1 = await runTriage({ apiKey: "k", Anthropic: low.Client, ticket: TICKET, messages: MSGS, articles: ARTS });
+  assert.deepStrictEqual(low.calls.map((c) => `${c.step}:${c.articles}`), ["select:0", "draft:1", "draft:3"], "never more than 3 articles");
+  assert.deepStrictEqual([r1.reply, r1.confidence, r1.confidenceSteps], ["from 3", 0.84, [{ articles: 1, confidence: 0.55 }, { articles: 3, confidence: 0.84 }]]);
+  const high = fakeModel((step, n) => step === "select" ? sel : { summary: "s", answerable: true, reply: `from ${n}`, articleIds: ["a1"], confidence: 0.9 });
+  const r2 = await runTriage({ apiKey: "k", Anthropic: high.Client, ticket: TICKET, messages: MSGS, articles: ARTS });
+  assert.deepStrictEqual([high.calls.length, r2.reply, r2.confidenceSteps.length], [2, "from 1", 1], "a confident first answer is not padded out");
+  const worse = fakeModel((step, n) => step === "select" ? sel : { summary: "s", answerable: true, reply: `from ${n}`, articleIds: ["a1"], confidence: n === 1 ? 0.7 : 0.6 });
+  const r3 = await runTriage({ apiKey: "k", Anthropic: worse.Client, ticket: TICKET, messages: MSGS, articles: ARTS });
+  assert.deepStrictEqual([r3.reply, r3.confidence], ["from 1", 0.7], "combining that scores lower is dropped");
+  const off = fakeModel((step) => step === "select" ? { relevant: false, question: "SEO offer", category: "other", articleIds: [], spamLikely: false } : assert.fail("no draft for unrelated mail"));
+  const r4 = await runTriage({ apiKey: "k", Anthropic: off.Client, ticket: TICKET, messages: MSGS, articles: ARTS });
+  assert.deepStrictEqual([off.calls.length, r4.relevant, r4.reply], [1, false, ""]);
+});
+
+check("the confidence steps are kept on the ticket's draft", async () => {
+  const t = make({ mail: [gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000 })], triage: async () => ({ ...GOOD, confidence: 0.82, confidenceSteps: [{ articles: 1, confidence: 0.5 }, { articles: 3, confidence: 0.82 }] }) });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual(ticketOf(t, "t1").aiDraft.confidenceSteps, [{ articles: 1, confidence: 0.5 }, { articles: 3, confidence: 0.82 }]);
 });
 
 check("machine-sent mail is never drafted or answered, even with sending switched on", async () => {

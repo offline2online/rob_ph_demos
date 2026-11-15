@@ -12093,6 +12093,7 @@ const ROUTE_TITLES = {
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#support": "Support Inbox",
   "#support/stats": "Support Inbox: Stats",
+  "#support/try": "Support Inbox: Try an email",
   "#settings/support": "Settings: Support inbox",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",

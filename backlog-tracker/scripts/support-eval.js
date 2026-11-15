@@ -82,6 +82,7 @@ async function main() {
     console.log(`     subject: ${r.c.subject || "(none)"}`);
     if (r.error) { console.log(`     error: ${r.error}\n`); continue; }
     console.log(`     about Personalisation Hub: ${r.t.relevant ? "yes" : "no"} (expected ${r.c.relevant ? "yes" : "no"}) · category ${r.t.category} · confidence ${Math.round(r.t.confidence * 100)}% · ${r.t.answerable ? "answered" : "holding reply / none"}`);
+    if ((r.t.confidenceSteps || []).length > 1) console.log(`     confidence: ${r.t.confidenceSteps.map((x) => `${Math.round(x.confidence * 100)}% from ${x.articles} article${x.articles === 1 ? "" : "s"}`).join(" → ")}`);
     console.log(`     understood: ${r.t.summary}`);
     console.log(`     chose: ${r.chosen.length ? r.chosen.map((id) => `${title.get(id)}${r.c.articles.includes(id) ? " ✓" : ""}`).join(" | ") : "(none)"}`);
     if (r.c.articles.length) console.log(`     right answers: ${r.c.articles.map((id) => title.get(id)).join(" | ")}`);
@@ -96,6 +97,8 @@ async function main() {
   console.log(`about Personalisation Hub decided right: ${relevance}/${n}`);
   console.log(`a right article among those chosen: ${withArticles.filter((r) => r.chosen.some((id) => r.c.articles.includes(id))).length}/${withArticles.length}`);
   console.log(`a right article chosen first: ${withArticles.filter((r) => r.top1).length}/${withArticles.length}`);
+  const confs = results.filter((r) => !r.error && r.t.relevant && r.t.answerable).map((r) => r.t.confidence);
+  if (confs.length) console.log(`answered: ${confs.length}, average confidence ${Math.round(confs.reduce((x, y) => x + y, 0) / confs.length * 100)}%, ${confs.filter((c) => c >= 0.8).length} at 80% or more; ${results.filter((r) => (r.t && r.t.confidenceSteps || []).length > 1).length} needed more articles`);
   console.log(`cases passed: ${n - bad.length}/${n}${bad.length ? ` (failed: ${bad.map((r) => r.c.id).join(", ")})` : ""}`);
 
   const replay = Number(process.env.REPLAY || 0);
@@ -106,8 +109,10 @@ async function main() {
 // The newest real tickets again, printing nothing a customer wrote.
 async function replayTickets(n, articles, title) {
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) { console.log("\nreplay: skipped (no service account)"); return; }
-  const { initializeApp, applicationDefault } = require("firebase-admin/app");
-  const { getFirestore } = require("firebase-admin/firestore");
+  // firebase-admin is a dependency of functions/, not of this folder.
+  const fromFunctions = (m) => require(require.resolve(m, { paths: [path.join(__dirname, "..", "functions")] }));
+  const { initializeApp, applicationDefault } = fromFunctions("firebase-admin/app");
+  const { getFirestore } = fromFunctions("firebase-admin/firestore");
   initializeApp({ credential: applicationDefault() });
   const db = getFirestore();
   const snap = await db.collection("supportTickets").orderBy("lastMessageAt", "desc").limit(Math.min(n, 20)).get();
