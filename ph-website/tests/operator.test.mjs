@@ -4,7 +4,7 @@
 // operator_mount() as on the live page) with operator.php's real head, operator.css, operator.js and site.js, and the real tour.html
 // served at /run-your-own-rmn/tour/ (the golf network walkthrough, v4: the Fairlinks Golf Network's 100 clubs, each with 2 to 16 screens and its own mix of screen types). The H1, the blocks inside their mount containers,
 // copy and section order, the "Running your own RMN" FAQ accordion (keyboard and tap; its thirteen questions, the last ending with a
-// "Request further information" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
+// "Register your interest" pill that scrolls to #request-info), the SEO head (one H1, title, description, canonical,
 // OG, the head JSON-LD and the FAQ block's FAQPage JSON-LD equal to its questions), the calculator defaults and live updates, its "I am" toggle (Operator or team / Retailer: click, tap and keyboard, aria-pressed, $60.0M and the retailer labels), tooltips (hover, focus, tap), no commercial terms, the gate (disabled until valid; no "I am" select on it or the request form since 15 Nov 2026, and both forms' rows have no empty slot from 390 to 1440 wide,
 // the body it posts, ph_operator and ph_lead, an existing ph_lead never overwritten), the tour framed in place and unlocked with no form,
 // Start the tour plays a step, returning visitors, links to #tour (the header is left alone), the estimate_rmn_earnings WebMCP tool (the page's own
@@ -130,7 +130,7 @@ try {
   // 1. Copy and section order.
   let p = await open();
   const heads = await p.evaluate(() => [...document.querySelectorAll("main h1, main h2")].map((h) => h.textContent.trim()));
-  assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Three ways to run your own network", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end", "Talk to us about running your own RMN"], "section order");
+  assert.deepStrictEqual(heads, ["Run your own retail media network", "Your head start in a changing industry", "Three ways to run your own network", "How it works", "Any business with a physical presence", "Built to fix retail media's fragmentation", "What could it be worth to you?", "Give independents a fighting chance", "Running your own RMN", "See a retail media network run end to end", "Register your interest in running your own RMN"], "section order");
   const all = await p.evaluate(() => document.querySelector("main").textContent);
   ok((await text(p, "main h1")) === "Run your own retail media network", "H1 (an Elementor Heading widget)");
   const blocks = await p.evaluate(() => [...document.querySelectorAll(".phf")].map((b) => [b.dataset.phf, b.parentElement.id, b.parentElement.children.length, !!b.closest("[data-elementor-type=wp-page]")]));
@@ -169,7 +169,7 @@ try {
   ok(faqDom[1][0] === "Who can run their own RMN?" && faqDom[1][1] === "An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs. Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.", "FAQ shows Q2, the operator team with an IT operations expert, word for word");
   // 15 Nov 2026 (92tOS4qL1KqeOF3jPu24): Q8 and Q13 on region and industry, expertise and existing relationships.
   ok(faqDom[7][0] === "Can I get exclusive rights to an industry?" && faqDom[7][1] === "Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.", "FAQ shows Q8, region and industry and existing relationships, word for word");
-  ok(faqDom[12][0] === "How do I get started?" && faqDom[12][1] === "Request further information and tell us your industry and the relationships you have in it. We'll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so request your pack now. Request further information", "FAQ shows Q13, your industry and the relationships you have in it, word for word, then the link");
+  ok(faqDom[12][0] === "How do I get started?" && faqDom[12][1] === "Register your interest and tell us your industry and the relationships you have in it. There's no commitment: we'll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so register your interest now. Register your interest", "FAQ shows Q13, your industry and the relationships you have in it, word for word, then the link");
   ok(!/industry first|then by region|first come, first served/i.test(faqDom.flat().join(" ") + JSON.stringify(seo.ld[1])), "nothing in the FAQ or its JSON-LD says \"industry first\", \"then by region\" or \"first come, first served\"");
   ok(!/creative agency expert/i.test(await p.evaluate(() => document.body.innerText)) && !/creative agency expert/i.test(JSON.stringify(seo.ld)), "nothing on the page or in its JSON-LD says \"creative agency expert\"");
   // 15 Nov 2026 (ayzaMouFF6U5CIsAMbSx): direct advertiser deals only, and Amazon Signage named in the hardware answer.
@@ -348,7 +348,7 @@ try {
     ok(fb.length === 0, "touch: every FAQ question is at least 44x44 and hit at its centre: " + JSON.stringify(fb));
     await t.close(); }
 
-  // 3c. "How do I get started?" (the last question) ends with a "Request further information" pink pill to #request-info (the request
+  // 3c. "How do I get started?" (the last question) ends with a "Register your interest" pink pill to #request-info (the request
   // block, shipped in the same train: a stand-in section carries the anchor here). Keyboard and tap open it, the link scrolls there, it is
   // a 44x44 tap target, and with every answer open nothing scrolls sideways at 390, 768, 1024 or 1440.
   for (const w of [390, 768, 1024, 1440]) {
@@ -361,7 +361,7 @@ try {
     if (w < 1024) await last.tap(); else { await last.focus(); await t.keyboard.press("Enter"); }
     ok(await t.evaluate(() => [...document.querySelectorAll("#faq details")].pop().open), `FAQ (${w}): ${w < 1024 ? "a tap" : "Enter"} opens "How do I get started?"`);
     const cta = await t.evaluate(() => { const a = document.querySelector("#faq details:last-of-type .phf-faq-a a"), r = a.getBoundingClientRect(); a.scrollIntoView({ block: "center", behavior: "instant" }); const r2 = a.getBoundingClientRect(), e = document.elementFromPoint(r2.left + r2.width / 2, r2.top + r2.height / 2); return { text: a.textContent.trim(), href: a.getAttribute("href"), cls: a.className, w: Math.round(r.width), h: Math.round(r.height), hit: !!e && (e === a || a.contains(e)), bg: getComputedStyle(a).backgroundColor, links: document.querySelectorAll("#faq .phf-faq-a a").length }; });
-    ok(cta.text === "Request further information" && cta.href === "#request-info" && cta.cls === "phf-pill" && cta.links === 1 && cta.bg === "rgb(239, 96, 167)", `FAQ (${w}): the answer ends with one pink "Request further information" pill to #request-info: ` + JSON.stringify(cta));
+    ok(cta.text === "Register your interest" && cta.href === "#request-info" && cta.cls === "phf-pill" && cta.links === 1 && cta.bg === "rgb(239, 96, 167)", `FAQ (${w}): the answer ends with one pink "Register your interest" pill to #request-info: ` + JSON.stringify(cta));
     ok(cta.w >= 44 && cta.h >= 44 && cta.hit, `FAQ (${w}): the pill is at least 44x44 and hit at its centre: ` + JSON.stringify(cta));
     await t.evaluate(() => document.querySelectorAll("#faq details").forEach((d) => { d.open = true; }));
     const sw = await t.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll("#faq *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.className || e.tagName).slice(0, 5) }));
@@ -378,11 +378,11 @@ try {
   ok((await p.getAttribute(".phf-cctas a:first-child", "href")) === "#request-info" && (await p.getAttribute(".phf-cctas a:last-child", "href")) === "#how", "calculator CTAs");
   await p.click(".phf-cctas a:first-child");
   await p.waitForFunction(() => document.activeElement && document.activeElement.id === "r-fn");
-  ok(await p.evaluate(() => { const t = document.getElementById("request-info").getBoundingClientRect().top; return location.hash === "#request-info" && t >= 0 && t < 200; }), "the calculator's Request further information scrolls to #request-info and focuses its Full name");
+  ok(await p.evaluate(() => { const t = document.getElementById("request-info").getBoundingClientRect().top; return location.hash === "#request-info" && t >= 0 && t < 200; }), "the calculator's Register your interest scrolls to #request-info and focuses its Full name");
   await p.evaluate(() => window.scrollTo(0, 0));
   await p.click("#top .elementor-button >> nth=1");
   await p.waitForFunction(() => document.activeElement && document.activeElement.id === "r-fn");
-  ok(true, "the hero's Request further information (pointed at #request-info by the deploy session) goes there too");
+  ok(true, "the hero's Register your interest (pointed at #request-info by the deploy session) goes there too");
   await p.click(".phf-cctas a:first-child"); // back to the form for the tour checks below
   await p.fill("#t-fn", "Ada Lovelace");
   await p.evaluate(() => window.scrollTo(0, 0));
@@ -436,13 +436,13 @@ try {
   ok(p.__reqs.some((u) => /\/wp-json\/ph-site\/v1\/operator-lead$/.test(u)) && !p.__reqs.some((u) => NAMES(u)), "the gate posts to ph-site/v1/operator-lead; no request names either");
   await p.close();
 
-  // 5b. (15 Nov 2026) "Request further information" at the bottom of the page: the gate's fields plus the industry and a message,
+  // 5b. (15 Nov 2026) "Register your interest" at the bottom of the page: the gate's fields plus the industry and a message,
   // posts form "request" in test mode, the thank-you line without a reload, the same storage as the gate (the tour unlocks).
   const rposts = [];
   p = await open({ search: "?ph_test=1", posts: rposts });
   const rdis = () => p.locator("#phf-rsubmit").isDisabled();
   const rq = await p.evaluate(() => ({ eb: document.querySelector("#request-info .phf-eb").textContent, h: document.querySelector("#request-info h2").textContent, p: document.querySelector("#request-info .phf-req-p").textContent, btn: document.getElementById("phf-rsubmit").textContent, labels: [...document.querySelectorAll("#phf-rform .phf-f label")].map((l) => l.textContent), ind: [...document.querySelectorAll("#r-in option")].slice(1).map((o) => o.text), ia: !!document.querySelector("#r-ia, #phf-rform [name=audience]"), bg: [...document.querySelectorAll("#r-bg option")].length - 1, last: document.querySelector("main").lastElementChild.lastElementChild.id, font: getComputedStyle(document.querySelector("#request-info h2")).fontFamily }));
-  ok(rq.eb === "Request further information" && rq.h === "Talk to us about running your own RMN" && rq.p === "Tell us which industry you want to run your network in and we'll send you an information pack with the full detail, then book a 20-minute call to go through it. Places are limited in each industry." && rq.btn === "Request further information", "request: eyebrow, H2, intro and button copy: " + JSON.stringify(rq).slice(0, 300));
+  ok(rq.eb === "Register your interest" && rq.h === "Register your interest in running your own RMN" && rq.p === "Registering your interest is free and there's no commitment. Tell us which industry you'd like to run your network in and we'll send you an information pack, then book a 20-minute call. Places are limited in each industry." && rq.btn === "Register your interest", "request: eyebrow, H2, intro and button copy: " + JSON.stringify(rq).slice(0, 300));
   assert.deepStrictEqual(rq.labels, ["Full name", "Email", "LinkedIn profile (optional)", "Where you plan to operate", "Industry you want to run your network in", "Your industry", "Your background", "Anything you'd like us to know (optional)"], "request: the fields, the industry after Where you plan to operate");
   assert.deepStrictEqual(rq.ind, F.INDUSTRIES, "request: the industries list (JS) equals the form's (PHP)");
   ok(rq.ind.length === 13 && rq.ind[12] === "Other (tell us)" && rq.ia === false && !("AUDIENCES" in F) && rq.bg === 7 && rq.last === "ph-rmn-request" && rq.font.includes("Kantumruy Pro"), "request: twelve industries and Other, no I am select, seven backgrounds; the last block on the page, in the page's font");
@@ -486,7 +486,7 @@ try {
   await p.waitForFunction(() => !document.getElementById("phf-rdone").hidden);
   assert.deepStrictEqual(rposts[0], { form: "request", name: "Ada Lovelace", email: "ada@gmail.com", linkedin: "", region: "Leeds", industry: "Golf clubs", industry_other: "", background: "Retail media", message: "We run nine clubs in Yorkshire.", consent: true, page: "/run-your-own-rmn/", test: true, website: "" }, "request: the body posted to ph-site/v1/operator-lead (form request, test mode)");
   const rd = await p.evaluate(() => ({ t: document.getElementById("phf-rdone-h").textContent, f: document.getElementById("phf-rform").hidden, focus: document.activeElement.id, noReload: window.__noReload === 1, op: JSON.parse(localStorage.getItem("ph_operator")), lead: JSON.parse(localStorage.getItem("ph_lead")), tour: !!document.querySelector("#phf-mount iframe"), dl: (window.dataLayer || []).filter((e) => e.event === "ph_lead_captured") }));
-  ok(rd.t === "Thanks, Ada. We'll send your information pack shortly." && rd.f && rd.focus === "phf-rdone-h" && rd.noReload, "request: the thank-you line replaces the form without a reload: " + JSON.stringify(rd).slice(0, 200));
+  ok(rd.t === "Thanks, Ada. Your interest is registered. We'll send your information pack shortly." && rd.f && rd.focus === "phf-rdone-h" && rd.noReload, "request: the thank-you line replaces the form without a reload: " + JSON.stringify(rd).slice(0, 200));
   ok(rd.op.email === "ada@gmail.com" && rd.lead.source === "Network operator inquiry" && rd.tour && rd.dl.length === 1 && !JSON.stringify(rd.dl).includes("ada@"), "request: the gate's storage is written, so the tour is unlocked; a dataLayer event with no contact details");
   ok(p.__reqs.filter((u) => /operator-lead$/.test(u)).length === 1 && p.__errs.length === 0, "request: one post, no page errors");
   await p.close();
@@ -495,6 +495,7 @@ try {
   await p.click("#phf-rsubmit");
   await p.waitForFunction(() => /industry/.test(document.getElementById("phf-rmsg").textContent));
   ok(await p.evaluate(() => document.activeElement.id === "r-in" && document.getElementById("r-in").getAttribute("aria-invalid") === "true" && !document.getElementById("phf-rform").hidden && !localStorage.getItem("ph_operator")), "request 400: message, field focused, form kept, nothing stored");
+  ok((await text(p, "#phf-rsubmit")) === "Register your interest", "request 400: the button reads \"Register your interest\" again after Sending…");
   await p.close();
   p = await open({ operator: { name: "Grace Hopper", email: "grace@x.test", ts: 1 } });
   ok((await p.inputValue("#r-fn")) === "Grace Hopper" && (await p.inputValue("#r-em")) === "grace@x.test", "request: a known visitor's name and email are filled in");
@@ -659,7 +660,7 @@ try {
       ok(!(await p.locator("#phf-rsubmit").isDisabled()), `${name}: the request form is usable by tap`);
       await p.locator("#phf-rsubmit").tap();
       await p.waitForFunction(() => !document.getElementById("phf-rdone").hidden);
-      ok((await p.evaluate(() => document.getElementById("phf-rdone-h").textContent === "Thanks, Ada. We'll send your information pack shortly." && document.documentElement.scrollWidth <= innerWidth)), `${name}: the request form submits and thanks them, no horizontal scroll`);
+      ok((await p.evaluate(() => document.getElementById("phf-rdone-h").textContent === "Thanks, Ada. Your interest is registered. We'll send your information pack shortly." && document.documentElement.scrollWidth <= innerWidth)), `${name}: the request form submits and thanks them, no horizontal scroll`);
       ok(p.__errs.length === 0, `${name}: no page errors: ` + p.__errs.join("; "));
       await p.__ctx.close();
     }

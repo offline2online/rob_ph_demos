@@ -14,8 +14,8 @@
  *   are in the first HTML response (operator_mount() on Elementor's frontend content filter; the Elementor MCP cannot add a Shortcode
  *   widget and atomic widgets do not run shortcodes): CSS ID ph-rmn-calculator gets the benefits calculator (the "I am" toggle,
  *   tooltips, 46x46 touch hit areas), ph-rmn-faq the "Running your own RMN" accordion with its FAQPage JSON-LD (generated together) and
- *   ph-rmn-tour the gate, the lead POST and the golf club tour iframe, and (15 Nov 2026) ph-rmn-request the "Request further
- *   information" form at the bottom of the page (anchor #request-info; it posts to the same route with form "request"). Each block goes
+ *   ph-rmn-tour the gate, the lead POST and the golf club tour iframe, and (15 Nov 2026) ph-rmn-request the "Register your
+ *   interest" form at the bottom of the page (anchor #request-info; it posts to the same route with form "request"). Each block goes
  *   in at most once, a missing container is skipped, and other pages and ids are untouched. The shortcodes [ph_operator_calculator],
  *   [ph_operator_tour], [ph_operator_faq] and [ph_operator_request] stay
  *   registered and render the same blocks; a block already in the content (a Shortcode widget) is not mounted a second time.
@@ -62,7 +62,7 @@ const OPERATOR_SOURCE        = 'operator';
 const OPERATOR_LABEL         = 'Network operator inquiry';
 const OPERATOR_DETAIL        = 'Run Your Own RMN page – product tour';
 /** The request form's source detail (form "request" on the same route). */
-const OPERATOR_REQUEST_DETAIL = 'Run Your Own RMN page – request further information';
+const OPERATOR_REQUEST_DETAIL = 'Run Your Own RMN page – register your interest';
 /** The request form's optional message: at most this many characters. */
 const OPERATOR_MESSAGE_MAX   = 1000;
 /** The request form's last industry option; choosing it asks for the industry in a short text input. */
@@ -490,7 +490,7 @@ function operator_twin() {
 		$md .= '### ' . $qa[0] . "\n\n" . $qa[1] . "\n\n" . ( empty( $qa[2] ) ? '' : '[' . OPERATOR_FAQ_CTA[0] . '](' . OPERATOR_URL . OPERATOR_FAQ_CTA[1] . ")\n\n" );
 	}
 	$md .= "## Interactive product tour\n\n" . OPERATOR_TOUR_H . ': ' . OPERATOR_TOUR_P . ' Unlock it on the page (' . OPERATOR_URL . '#tour) with your full name, email, where you plan to operate, your background and your agreement to be contacted; our team will also follow up with more on the opportunity.' . "\n"
-		. "\n## " . OPERATOR_REQUEST_EB . "\n\n" . OPERATOR_REQUEST_H . ': ' . OPERATOR_REQUEST_P . ' To request further information, use the form at the bottom of the page (' . OPERATOR_URL . '#request-info): your full name, email, where you plan to operate, the industry you want to run your network in (' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ', or another you name), your background, anything you\'d like us to know (optional) and your agreement to be contacted.' . "\n";
+		. "\n## " . OPERATOR_REQUEST_EB . "\n\n" . OPERATOR_REQUEST_H . ': ' . OPERATOR_REQUEST_P . ' To register your interest, use the form at the bottom of the page (' . OPERATOR_URL . '#request-info): your full name, email, where you plan to operate, the industry you want to run your network in (' . strtolower( implode( ', ', OPERATOR_VENUE_TYPES ) ) . ', or another you name), your background, anything you\'d like us to know (optional) and your agreement to be contacted.' . "\n";
 	return $md;
 }
 
@@ -566,7 +566,7 @@ function operator_len( $v ) {
 
 /**
  * Validates and stores a network operator lead. Returns array( status, body ). Pure of HTTP, so it is unit-tested.
- * `form` "request" is the "Request further information" form at the bottom of the page: the same fields as the gate, validated the same
+ * `form` "request" is the "Register your interest" form at the bottom of the page: the same fields as the gate, validated the same
  * way, plus the industry they want to run their network in (required; "Other (tell us)" needs `industry_other`) and an optional message
  * of up to 1,000 characters. Its source detail is OPERATOR_REQUEST_DETAIL, its message goes on the lead (ph_lead_message, appended for
  * a returning person) and into the admin email. Anything else is the tour gate.
@@ -689,7 +689,7 @@ function operator_handle( array $b ) {
 			. "Background: {$lead['background']}\n"
 			. ( $request ? 'Message: ' . ( '' !== $message ? $message : '(none)' ) . "\n" : '' )
 			. 'Source: ' . $detail . "\nPage: " . OPERATOR_PATH;
-		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry' . ( $request ? ' (request)' : '' ) . ': ' . $lead['name'], $mail );
+		wp_mail( get_option( 'admin_email' ), 'New network operator inquiry' . ( $request ? ' (registered interest)' : '' ) . ': ' . $lead['name'], $mail );
 	}
 	return array( 200, array( 'ok' => true ) );
 }

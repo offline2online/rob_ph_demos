@@ -50,7 +50,7 @@ sort( $keys );
 ok( array( 'convenience', 'pharmacy', 'retail-media', 'telco' ) === $keys, 'tour pages: the industry tours from TOUR_INDUSTRIES, not the operator page: ' . implode( ',', $keys ) );
 
 $c = cta_config( true, false );
-ok( 'request' === $c['variant'] && 'Request further information' === $c['label'] && 'scroll' === $c['action'] && '#request-info' === $c['target'], 'request config: label, scroll, #request-info' );
+ok( 'request' === $c['variant'] && 'Register your interest' === $c['label'] && 'scroll' === $c['action'] && '#request-info' === $c['target'], 'request config: label, scroll, #request-info' );
 $c = cta_config( false, true );
 ok( 'tour' === $c['variant'] && 'Take the guided tour' === $c['label'] && 'scroll' === $c['action'] && '#ph-tour' === $c['target'], 'tour config: label, scroll, #ph-tour' );
 $c = cta_config( false, false );
@@ -178,7 +178,7 @@ $ojs = file_get_contents( $dir . 'operator.js' );
 ok( false === strpos( $ojs, 'headerDemo' ) && false === strpos( $ojs, 'arrange\\s+a\\s+demo' ) && false === strpos( $ojs, 'data-phf-demo' ), 'operator.js no longer points the header\'s Arrange A Demo at #tour' );
 $cjs = file_get_contents( $dir . 'cta.js' );
 ok( false !== strpos( $cjs, 'event: "ph_floating_cta", variant: v' ), 'cta.js pushes ph_floating_cta with the variant only' );
-ok( false !== strpos( $cjs, 'Request further information' ) && false !== strpos( $cjs, 'Take the guided tour' ) && false !== strpos( $cjs, 'Arrange a demo' ), 'cta.js labels match cta.php' );
+ok( false !== strpos( $cjs, 'Register your interest' ) && false !== strpos( $cjs, 'Take the guided tour' ) && false !== strpos( $cjs, 'Arrange a demo' ), 'cta.js labels match cta.php' );
 foreach ( array( 'cta.php', 'cta.js', 'cta.css' ) as $f ) {
 	$src = file_get_contents( $dir . $f );
 	ok( 0 === preg_match( '/fr[a]nch|own[ -]bo[s]s|be-your[-]own|ph[-]bo[s]s/i', $src ), "$f: no retired names" );

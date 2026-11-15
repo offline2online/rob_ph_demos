@@ -2,7 +2,7 @@
 /**
  * Floating CTA (15 Nov 2026): one call to action fixed in the bottom-right corner of every front-end page, replacing the header's
  * "Arrange a Demo" button (removed from header template 2330 by the deploy session). It adapts to what the page offers:
- * - "request": the Run Your Own RMN page (operator_page_id()), "Request further information", scrolls to #request-info;
+ * - "request": the Run Your Own RMN page (operator_page_id()), "Register your interest", scrolls to #request-info;
  * - "tour": an industry page with a guided tour (telco, pharmacy, retail media, convenience and any later TOUR_INDUSTRIES entry that
  *   lives under /industries/), "Take the guided tour", scrolls to the tour band (.ph-ind-tour, id ph-tour) and focuses its gate or start;
  * - "demo": every other page, "Arrange a demo", opens the same demo pop-up the header button opened (window.PH_SITE_DEMO from site.js,
@@ -26,7 +26,7 @@ const CTA_POPUP_ID = 2658;
 const CTA_DEMO_URL = 'https://calendly.com/rob-offline2online/30min?hide_gdpr_banner=1&primary_color=179bc2';
 /** Each variant's default label, action ('scroll' renders an <a>, 'demo' a <button>) and target (an in-page anchor, '' for the pop-up). */
 const CTA_VARIANTS = array(
-	'request' => array( 'label' => 'Request further information', 'action' => 'scroll', 'target' => '#request-info' ),
+	'request' => array( 'label' => 'Register your interest', 'action' => 'scroll', 'target' => '#request-info' ),
 	'tour'    => array( 'label' => 'Take the guided tour', 'action' => 'scroll', 'target' => '#ph-tour' ),
 	'demo'    => array( 'label' => 'Arrange a demo', 'action' => 'demo', 'target' => '' ),
 );

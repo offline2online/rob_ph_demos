@@ -3,7 +3,7 @@
    Elementor puts them. The calculator and its "I am" toggle (Operator or team / Retailer), info tooltips, anchors, the product tour
    gate and the estimate_rmn_earnings WebMCP tool. A network operator lead posts
    to ph-site/v1/operator-lead; on success the Run Your Own RMN tour (a golf club, /run-your-own-rmn/tour/) is framed in place, unlocked
-   from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. The "Request further information"
+   from the stored ph_lead with no second form. The FAQ is native <details> and needs no script. The "Register your interest"
    form at the bottom of the page (#request-info, 15 Nov 2026) posts to the same route with form "request", shows its thank-you line
    without a reload and stores the same ph_operator / ph_lead as the gate, so the tour is unlocked afterwards. Each part runs only when
    its block is on the page. */
@@ -212,7 +212,7 @@
     sync();
   }
 
-  /* ---------- Request further information (#request-info): the gate's fields and checks, plus the industry and a message ---------- */
+  /* ---------- Register your interest (#request-info): the gate's fields and checks, plus the industry and a message ---------- */
   var rform = $("phf-rform"), rbtn = $("phf-rsubmit"), rmsg = $("phf-rmsg"), rdone = $("phf-rdone"), rbusy = false;
   function rfields() { var f = rform.elements; return [f.name, f.email, f.linkedin, f.region, f.industry, f.industry_other, f.background, f.message]; }
   function otherOn() { return !!rform && rform.elements.industry.value === OTHER; }
@@ -240,7 +240,7 @@
       var body = { form: "request", name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), industry: f.industry.value, industry_other: otherOn() ? f.industry_other.value.trim() : "", background: f.background.value, message: f.message.value.trim(), consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
       rbusy = true; rsync(); rbtn.textContent = "Sending…"; rmsg.className = "phf-msg"; rmsg.textContent = "";
       rfields().forEach(function (x) { if (x) x.removeAttribute("aria-invalid"); });
-      var done = function () { rbusy = false; rbtn.textContent = "Request further information"; rsync(); };
+      var done = function () { rbusy = false; rbtn.textContent = "Register your interest"; rsync(); };
       fetch(CFG.endpoint, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
         .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, j: j || {} }; }); })
         .then(function (o) {
@@ -280,7 +280,7 @@
     focusFirstEmpty();
   });
   if (location.hash === "#tour") setTimeout(focusFirstEmpty, 0);
-  // "Request further information" (the calculator's link, and the hero button once it points here) goes to #request-info and focuses
+  // "Register your interest" (the calculator's link, the hero button and the FAQ's link) goes to #request-info and focuses
   // its first empty field. Without the request block on the page it falls back to the tour gate.
   document.addEventListener("click", function (e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href='#request-info']") : null;
@@ -322,8 +322,8 @@
     if (mode === "operator") data.earningsPerDisplayMonth = fig.perDisplay; // operator mode only, as on the page
     var base = "Calculator filled in on the page (" + (mode === "retailer" ? "Retailer" : "Operator or team") + "). " + Object.keys(LABELS[mode]).map(function (k) { return LABELS[mode][k] + ": " + fig[k]; }).join("; ") + ".";
     var wants = ["name", "email", "linkedin", "region", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
-    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, their background and whether they agree to be contacted, then call again with name, email, region, background and consent. Or they can use the \"Request further information\" form at the bottom of the page (#request-info: the same details, the industry they want to run their network in and an optional message; we send an information pack) or the form in the tour section.", data));
-    if (args.consent !== true) return Promise.resolve(toolText(base + " Requesting information needs the person's agreement to be contacted (consent=true). Ask them first; nothing was submitted.", data));
+    if (!wants) return Promise.resolve(toolText(base + " To register their interest and unlock the product tour, ask the person for their full name, email, where they plan to operate, their background and whether they agree to be contacted, then call again with name, email, region, background and consent. Or they can register their interest with the form at the bottom of the page (#request-info: free, no commitment; the same details, the industry they want to run their network in and an optional message; we send an information pack) or the form in the tour section.", data));
+    if (args.consent !== true) return Promise.resolve(toolText(base + " Registering their interest needs the person's agreement to be contacted (consent=true). Ask them first; nothing was submitted.", data));
     if (!form || mounted) return Promise.resolve(toolText(base + (mounted ? " The product tour is already unlocked on the page." : ""), data));
     var f = form.elements;
     ["name", "email", "linkedin", "region"].forEach(function (k) { if (typeof args[k] === "string") { f[k].value = args[k]; fire(f[k], "input"); } });
@@ -337,7 +337,7 @@
         if (mounted || err || ++n > 100) {
           clearInterval(t);
           if (mounted) { data.tourUnlocked = true; resolve(toolText(base + " The request was sent and the product tour is unlocked on the page. Our team will follow up with more on the opportunity.", data)); }
-          else resolve(toolFail(err || "The request did not go through. The person can use the \"Request further information\" form at the bottom of the page or the form in the tour section."));
+          else resolve(toolFail(err || "The request did not go through. To register their interest, the person can use the form at the bottom of the page or the form in the tour section."));
         }
       }, 100);
     });
@@ -347,7 +347,7 @@
     window.__phRmnMcp = 1;
     var props = { audience: { type: "string", enum: ["operator", "retailer"], description: "Who the estimate is for: \"operator\" (an individual operator or an operator team; the default) or \"retailer\" (a small to medium retailer running the network in their own stores). Sets the page's toggle; the figures returned are that mode's." } };
     Object.keys(IDS).forEach(function (k) { var el = $(IDS[k]); props[k] = { type: "number", minimum: RANGES[k][0], maximum: RANGES[k][1], description: INPUT_LABELS[k] + " (default " + (el ? el.defaultValue : "") + ")" }; });
-    props.name = { type: "string", maxLength: 120, description: "The person's full name, only if they gave it to you to request information" };
+    props.name = { type: "string", maxLength: 120, description: "The person's full name, only if they gave it to you to register their interest" };
     props.email = { type: "string", maxLength: 120, description: "The person's email, only if they gave it to you" };
     props.linkedin = { type: "string", maxLength: 300, description: "Optional: their LinkedIn profile address" };
     props.region = { type: "string", maxLength: 120, description: "Where they plan to operate, only if they told you" };
@@ -356,7 +356,7 @@
     try {
       mc.registerTool({
         name: "estimate_rmn_earnings",
-        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, extra sales for the venues and, for an operator, the earnings per display per month (earningsPerDisplayMonth). For a retailer the page counts stores, the extra sales in those stores are added to the income, and the income is the retailer's potential incremental income a year. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, their background and consent=true, only when they have given them to you and agreed to be contacted.",
+        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, extra sales for the venues and, for an operator, the earnings per display per month (earningsPerDisplayMonth). For a retailer the page counts stores, the extra sales in those stores are added to the income, and the income is the retailer's potential incremental income a year. Give any figures you know; the rest keep the page's values. To also register the person's interest (free, no commitment) and unlock the product tour, pass the person's own full name, email, where they plan to operate, their background and consent=true, only when they have given them to you and agreed to be contacted.",
         inputSchema: { type: "object", properties: props, additionalProperties: false },
         annotations: { readOnlyHint: false },
         execute: estimate

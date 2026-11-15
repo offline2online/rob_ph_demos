@@ -1,7 +1,7 @@
 <?php
 /**
  * The Run Your Own RMN page's four interactive blocks (an Elementor page from 14 Nov 2026): operator_calculator_html(),
- * operator_tour_html(), operator_faq_html() and (15 Nov 2026) operator_request_html(), the "Request further information" form at the
+ * operator_tour_html(), operator_faq_html() and (15 Nov 2026) operator_request_html(), the "Register your interest" form at the
  * bottom of the page. operator.php puts each inside its empty Elementor mount container (CSS IDs ph-rmn-calculator, ph-rmn-faq,
  * ph-rmn-tour, ph-rmn-request), server-side; the shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq] and
  * [ph_operator_request] render the same blocks. Every other section (hero, "Why it beats anything out there", why, who, how, venues,
@@ -31,12 +31,12 @@ const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view th
 const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
 const OPERATOR_TOUR_P      = 'Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer\'s journey at a club on the network.';
 const OPERATOR_GATE_P      = 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.';
-/** The "Request further information" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
-const OPERATOR_REQUEST_EB  = 'Request further information';
-const OPERATOR_REQUEST_H   = 'Talk to us about running your own RMN';
-const OPERATOR_REQUEST_P   = 'Tell us which industry you want to run your network in and we\'ll send you an information pack with the full detail, then book a 20-minute call to go through it. Places are limited in each industry.';
-const OPERATOR_REQUEST_BTN = 'Request further information';
-const OPERATOR_REQUEST_OK  = 'We\'ll send your information pack shortly.';
+/** The "Register your interest" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
+const OPERATOR_REQUEST_EB  = 'Register your interest';
+const OPERATOR_REQUEST_H   = 'Register your interest in running your own RMN';
+const OPERATOR_REQUEST_P   = 'Registering your interest is free and there\'s no commitment. Tell us which industry you\'d like to run your network in and we\'ll send you an information pack, then book a 20-minute call. Places are limited in each industry.';
+const OPERATOR_REQUEST_BTN = 'Register your interest';
+const OPERATOR_REQUEST_OK  = 'Your interest is registered. We\'ll send your information pack shortly.';
 /** The calculator's "I am" toggle: mode => button label. "operator" is the default. */
 const OPERATOR_MODES       = array( 'operator' => 'Operator or team', 'retailer' => 'Retailer' );
 /** "Your head start in a changing industry": its two paragraphs. */
@@ -150,8 +150,8 @@ function operator_calc_outputs( $mode = 'operator' ) {
 	return $out;
 }
 
-/** "How do I get started?" ends with this link to the "Request further information" form (#request-info, the request block): [label, anchor]. */
-const OPERATOR_FAQ_CTA = array( 'Request further information', '#request-info' );
+/** "How do I get started?" ends with this link to the "Register your interest" form (#request-info, the request block): [label, anchor]. */
+const OPERATOR_FAQ_CTA = array( 'Register your interest', '#request-info' );
 
 /** The per-display row's label and its tooltip (no share, no figure: it is worked out from the income). */
 const OPERATOR_PER_DISPLAY_LABEL = 'Earnings per display per month';
@@ -180,11 +180,11 @@ function operator_faq() {
 		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
 		array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
 		array( 'Can I get exclusive rights to an industry?', 'Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
-		array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you request further information.' ),
+		array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you register your interest.' ),
 		array( 'What do I get?', 'The white-label platform, under your brand and in your own AWS account, with the playbooks, templates and sales framework to launch. Campaigns are created by talking a brief to the AI campaign agent, which builds the creative for every screen type, and they can adapt to context such as time, weather and local stock. Venue and customer data stays in your account, and the network and its advertiser relationships are yours.' ),
 		array( 'How do advertisers know it works?', 'Every campaign reports plays and views by screen and venue. Where a venue shares its sales data, results are matched to sales of the advertised products, which is what brands pay a premium for.' ),
 		array( 'How does the earnings estimate work?', 'The calculator multiplies venues, visitors per venue per day, the share who view the ads and displays per venue to get monthly ad views, then applies the CPM to get ad revenue. Your potential income is your share of that, before costs. It also estimates extra sales from personalised offers, which Retailer mode adds to the retailer\'s potential incremental income. It\'s an estimate to explore the opportunity, not a forecast.' ),
-		array( 'How do I get started?', 'Request further information and tell us your industry and the relationships you have in it. We\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so request your pack now.', true ),
+		array( 'How do I get started?', 'Register your interest and tell us your industry and the relationships you have in it. There\'s no commitment: we\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so register your interest now.', true ),
 	);
 }
 
@@ -254,7 +254,7 @@ function operator_block( $name, $inner ) {
 /**
  * The FAQ block: "Running your own RMN", one native <details> per operator_faq() row (keyboard, tap and no-JS all work), followed by
  * its FAQPage JSON-LD built from the same rows, so the accordion and the structured data can never drift apart. "How do I get started?"
- * ends with the "Request further information" link to #request-info, styled as the page's pink pill.
+ * ends with the "Register your interest" link to #request-info, styled as the page's pink pill.
  */
 function operator_faq_html() {
 	$h = '<section id="faq" class="phf-sec phf-white" aria-labelledby="faq-h"><div class="phf-wrap phf-wrap-faq">'
@@ -283,7 +283,7 @@ function operator_mode_toggle() {
 
 /**
  * The calculator block: "What could it be worth to you?", the "I am" toggle, inputs and tooltips, the result panel at the defaults
- * (Operator or team), its two CTAs ("Request further information" goes to #request-info) and, below them, "Earnings per display per
+ * (Operator or team), its two CTAs ("Register your interest" goes to #request-info) and, below them, "Earnings per display per
  * month" with its tooltip (operator mode only: operator.js sets `hidden` on it in Retailer mode).
  */
 function operator_calculator_html() {
@@ -298,7 +298,7 @@ function operator_calculator_html() {
 		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l" data-lab="yours">' . esc_html( operator_calc_outputs()['yours'] ) . '</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
 		. operator_out_rows( $out )
 		. '<div class="phf-how"><span class="phf-tip"><button type="button" class="phf-how-b" aria-describedby="c-how-tip" aria-expanded="false"><span class="phf-how-i" aria-hidden="true">i</span>How it&#39;s calculated</button><span class="phf-tipbox" role="tooltip" id="c-how-tip">' . esc_html( OPERATOR_HOW_CALC ) . '</span></span></div>'
-		. '<div class="phf-cctas"><a class="phf-pill" href="#request-info">Request further information</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
+		. '<div class="phf-cctas"><a class="phf-pill" href="#request-info">Register your interest</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
 		. '<div class="phf-perd" data-mode="operator"><span class="phf-clab"><span class="phf-perd-l" data-lab="perDisplay">' . esc_html( OPERATOR_PER_DISPLAY_LABEL ) . '</span>'
 		. operator_tip( 'c-perd-tip', 'About ' . strtolower( OPERATOR_PER_DISPLAY_LABEL ), OPERATOR_PER_DISPLAY_TIP ) . '</span><span class="phf-perd-v" data-out="perDisplay">' . esc_html( $out['perDisplay'] ) . '</span></div>'
 		. '</div></div></div></section>';
@@ -348,7 +348,7 @@ function operator_options( $placeholder, array $labels ) {
 }
 
 /**
- * The request block (15 Nov 2026), anchor #request-info, at the bottom of the page: "Request further information", for visitors who
+ * The request block (15 Nov 2026), anchor #request-info, at the bottom of the page: "Register your interest" (no commitment), for visitors who
  * want to give their details without going through the tour gate. The gate's card, fonts, colours, inputs and tablet layout in a
  * full-width section like the tour's. The gate's fields, validated the same way, plus "Industry you want to run your network in" (the
  * page's twelve industries and "Other (tell us)", which shows a short text input) and an optional "Anything you'd like us to know"

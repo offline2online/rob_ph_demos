@@ -74,7 +74,7 @@ foreach ( operator_why_items() as $w ) { $why .= $h( 'p', $w[1] ) . $t( $w[2] );
 $steps = '';
 foreach ( operator_steps() as $s ) { $steps .= $h( 'p', $s[0] . ' ' . $s[1] ) . $t( $s[2] ); }
 $out  = '<div data-elementor-type="wp-page" data-elementor-id="10900" class="elementor elementor-10900" data-elementor-post-type="page">';
-$out .= $con( 'top', $h( 'h1', OPERATOR_H1 ) . $h( 'p', OPERATOR_SUBLINE ) . $t( OPERATOR_HERO_P ) . $b( 'See how much you can earn', '#calculator' ) . $b( 'Request further information', '#request-info' ) . $h( 'p', 'Why it beats anything out there' ) . $why, '#F9FAFD' );
+$out .= $con( 'top', $h( 'h1', OPERATOR_H1 ) . $h( 'p', OPERATOR_SUBLINE ) . $t( OPERATOR_HERO_P ) . $b( 'See how much you can earn', '#calculator' ) . $b( 'Register your interest', '#request-info' ) . $h( 'p', 'Why it beats anything out there' ) . $why, '#F9FAFD' );
 $out .= $con( 'why', $h( 'h2', 'Your head start in a changing industry' ) );
 $out .= $con( 'who', $h( 'h2', 'Three ways to run your own network' ), '#F9FAFD' );
 $out .= $con( 'how', $h( 'h2', 'How it works' ) . $steps );

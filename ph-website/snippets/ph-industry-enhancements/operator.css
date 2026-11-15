@@ -1,5 +1,5 @@
 /* PH Run Your Own RMN page (/run-your-own-rmn/, 13 Nov 2026; renamed 14 Nov 2026; an Elementor page from 14 Nov 2026): the four blocks
-   (calculator, tour, FAQ and, from 15 Nov 2026, the "Request further information" form) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
+   (calculator, tour, FAQ and, from 15 Nov 2026, the "Register your interest" form) that operator.php puts into the page's mount containers, in the approved design as updated on 14 Nov 2026,
    fluid from 1440 down to 360. Loaded on that page only. Every block rule is under body .phf so the theme and the Elementor kit (link
    colours, button and input styles, heading sizes) cannot restyle it. The rest of the page is Elementor widgets styled from the site
    kit (ph-website/elementor/run-your-own-rmn.md). */
@@ -108,7 +108,7 @@ body .phf .phf-faq-x::after{transform:rotate(90deg)}
 body .phf .phf-faq-i[open] .phf-faq-x::after{transform:rotate(0)}
 body .phf .phf-faq-a{padding:0 44px 22px 4px}
 body .phf .phf-faq-a p{font-size:18px;color:#3A3D44;max-width:44em}
-/* "How do I get started?" ends with the page's pink pill, "Request further information" (#request-info): 54px tall, so a tap target well
+/* "How do I get started?" ends with the page's pink pill, "Register your interest" (#request-info): 54px tall, so a tap target well
    over 44x44, with the FAQ's own focus ring. */
 body .phf .phf-faq-a p.phf-faq-cta{margin:16px 0 0}
 body .phf .phf-faq-a a.phf-pill{display:inline-block}
@@ -162,7 +162,7 @@ body .phf .phf-tbox.phf-open .phf-ph,body .phf .phf-tbox.phf-open .phf-gate{disp
 body .phf .phf-tbox.phf-open .phf-mount{display:block}
 body .phf .phf-mount iframe{display:block;width:100%;border:0;min-height:560px}
 
-/* "Request further information" (#request-info), the last block on the page: the tour gate's card, fields and button in a full-width
+/* "Register your interest" (#request-info), the last block on the page: the tour gate's card, fields and button in a full-width
    section like the tour band's. The message spans the grid; "Other (tell us)" reveals one more input; the thank-you line replaces the
    form. */
 body .phf .phf-wrap-req{max-width:1160px}
