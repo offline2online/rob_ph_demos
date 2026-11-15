@@ -20,7 +20,7 @@ It's built for people with experience in:
 → Creative and campaigns
 → Personalisation and conversion
 
-You run the network under your own brand, in an industry you know and love: golf clubs, car dealerships, fuel and convenience, liquor stores, rural supplies, marinas, gyms and more. Any business with a physical presence can join, with or without screens today.
+You build and own the network, under your own brand, in an industry you know and love: golf clubs, car dealerships, fuel and convenience, liquor stores, rural supplies, marinas, gyms and more. Any business with a physical presence can join, with or without screens today.
 
 You earn advertising revenue, and you help those venues convert more shoppers in store. It gives independents a fighting chance against the big chains.
 
@@ -46,4 +46,5 @@ Here's the link: https://personalisationhub.com/run-your-own-rmn/
 - **Venues list follows the page's list.** Added car dealerships, marinas and gyms, plus "with or without screens today".
 - **The commercial model is in the page's words:** "without the upfront cost", "a free runway to roll out", "we only grow when you do". No fee amounts, splits or runway length, which the page never states.
 - **Two reasons to click that the page now has:** "Places are limited in each industry" (from the page FAQ) and the earnings calculator.
+- **Build and own, not just run** (Rob, 15 Nov 2026): the network is yours, so the post says "build and own", as the video does.
 - **"A fighting chance"** comes from the page's independents section ("Give independents a fighting chance").

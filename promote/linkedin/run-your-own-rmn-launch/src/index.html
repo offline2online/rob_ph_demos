@@ -67,13 +67,13 @@ body.render .frame{border-radius:0;box-shadow:none}
   <img class="logo" id="logoLight" src="{{LOGO_COLOUR}}" alt="" style="opacity:0">
 
   <section class="slide" id="s1"><div class="grp"><div class="rule"></div>
-    <div class="txt"><div class="ln">Going out</div><div class="ln">on your own?</div></div></div></section>
+    <div class="txt"><div class="ln">Considering</div><div class="ln">going out</div><div class="ln">on your own?</div></div></div></section>
 
   <section class="slide" id="s2"><div class="grp"><div class="rule"></div>
     <div class="txt"><div class="ln">Bricks-and-mortar</div><div class="ln">experiences</div><div class="ln">matter more</div><div class="ln">than ever.</div></div></div></section>
 
   <section class="slide" id="s3"><div class="grp"><div class="rule"></div>
-    <div class="txt mask"><div class="ln">Run your own</div><div class="ln">in-store retail</div><div class="ln">media network.</div></div></div></section>
+    <div class="txt mask"><div class="ln">Why not build</div><div class="ln">and own a retail</div><div class="ln">media network?</div></div></div></section>
 
   <section class="slide" id="s4"><div class="grp"><div class="rule"></div>
     <div class="txt stretch"><div class="ln">Earn from</div><div class="ln">every screen.</div></div></div></section>
@@ -114,13 +114,13 @@ body.render .frame{border-radius:0;box-shadow:none}
   /* Six slides. mode = how the type comes in; wipe = how this slide arrives. The last slide holds to the end. */
   var SL = [
     {id:'s1', start:0.0,  surface:'dark',  acc:C.teal,   mode:'zoom',    max:172, wipe:null},
-    {id:'s2', start:2.3,  surface:'light', acc:C.pink,   mode:'pop',     max:150, wipe:'up'},
-    {id:'s3', start:5.0,  surface:'dark',  acc:C.orange, mode:'rise',    max:150, wipe:'iris'},
-    {id:'s4', start:7.5,  surface:'light', acc:C.green,  mode:'stretch', max:172, wipe:'left'},
-    {id:'s5', start:9.6,  surface:'dark',  acc:C.teal,   mode:'track',   max:132, wipe:'down'},
-    {id:'s6', start:12.1, surface:'light', acc:C.orange, mode:'scale',   max:160, wipe:'iris'}
+    {id:'s2', start:2.6,  surface:'light', acc:C.pink,   mode:'pop',     max:150, wipe:'up'},
+    {id:'s3', start:5.3,  surface:'dark',  acc:C.orange, mode:'rise',    max:150, wipe:'iris'},
+    {id:'s4', start:8.1,  surface:'light', acc:C.green,  mode:'stretch', max:172, wipe:'left'},
+    {id:'s5', start:10.2,  surface:'dark',  acc:C.teal,   mode:'track',   max:132, wipe:'down'},
+    {id:'s6', start:12.7, surface:'light', acc:C.orange, mode:'scale',   max:160, wipe:'iris'}
   ];
-  var DURATION = 15.5, FITW = 850, COVER = 0.26, UNCOVER = 0.34, T0 = 0.14;
+  var DURATION = 16.1, FITW = 850, COVER = 0.26, UNCOVER = 0.34, T0 = 0.14;
   SL.forEach(function(s,i){ s.end = i < SL.length-1 ? SL[i+1].start : DURATION; });
 
   var stage = document.getElementById('stage'), wipe = document.getElementById('wipe');
