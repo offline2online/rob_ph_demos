@@ -65,10 +65,27 @@ const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "
 // useful size, and an animated file (a site's animated favicon, an animated
 // SVG) is never kept as it is. Uses sharp, which the functions already ship.
 const LOGO_PX = 800;
+const LOGO_RULE = 2; // 2 (14 Nov 2026): the company's own logo only, see chooseLogos
 async function toStaticPng(bytes, ext) {
   const sharp = require("sharp");
   const img = ext === "svg" ? sharp(bytes, { density: 600 }) : sharp(bytes, { pages: 1 });
   return img.resize({ width: LOGO_PX, height: LOGO_PX, fit: "inside", withoutEnlargement: ext !== "svg" }).png().toBuffer();
+}
+// The largest image inside an .ico file when it is stored as a PNG (most
+// modern icons are); null when the file is not an .ico or holds only bitmaps.
+function icoPng(bytes) {
+  if (!bytes || bytes.length < 22 || bytes.readUInt16LE(0) !== 0 || bytes.readUInt16LE(2) !== 1) return null;
+  const n = bytes.readUInt16LE(4);
+  let best = null;
+  for (let i = 0; i < n && 6 + (i + 1) * 16 <= bytes.length; i++) {
+    const o = 6 + i * 16;
+    const w = bytes[o] || 256, size = bytes.readUInt32LE(o + 8), off = bytes.readUInt32LE(o + 12);
+    if (off + size > bytes.length || size < 8) continue;
+    const data = bytes.slice(off, off + size);
+    if (data.readUInt32BE(0) !== 0x89504e47) continue; // not a PNG inside
+    if (!best || w > best.w) best = { w, data };
+  }
+  return best ? best.data : null;
 }
 // More than one frame in a GIF, or animation in an SVG.
 function isAnimated(bytes, ext) {
@@ -169,35 +186,67 @@ function readPage(html, base) {
 // version for light backgrounds.
 const FOR_DARK = /(^|[^a-z])(white|light|reverse[d]?|negative|inverse|inverted|knockout|wht)([^a-z]|$)/i;
 function pageLogos(html, abs) {
-  const out = { light: "", dark: "" };
-  for (const m of String(html || "").matchAll(/<img\s[^>]*>/gi)) {
+  const h = String(html || "");
+  // Where the site's own header ends: a logo before this point is the site's logo.
+  const ends = [h.search(/<\/header>/i), h.search(/<main[\s>]/i)].filter((i) => i > 0);
+  const headerEnd = ends.length ? Math.min(...ends) : -1;
+  const images = [];
+  for (const m of h.matchAll(/<img\s[^>]*>/gi)) {
     const tag = m[0];
     const src = (tag.match(/\ssrc\s*=\s*["']([^"']+)["']/i) || [])[1] || (tag.match(/\sdata-src\s*=\s*["']([^"']+)["']/i) || [])[1];
     if (!src || /^data:/i.test(src) || !/logo/i.test(tag)) continue;
     const url = abs(src);
     if (!url) continue;
-    const file = url.split("?")[0].split("/").pop() || "";
-    if (FOR_DARK.test(file)) { if (!out.dark) out.dark = url; } else if (!out.light) out.light = url;
-    if (out.light && out.dark) break;
+    const file = decodeURIComponent(url.split("?")[0].split("/").pop() || "");
+    const alt = entity((tag.match(/\salt\s*=\s*"([^"]*)"/i) || tag.match(/\salt\s*=\s*'([^']*)'/i) || [])[1]);
+    images.push({ url, file, alt, inHeader: (headerEnd > 0 && m.index < headerEnd) || /class\s*=\s*["'][^"']*(site-logo|navbar-brand|header|masthead|brand-logo)/i.test(tag), dark: FOR_DARK.test(file) });
+    if (images.length >= 40) break;
   }
   // The logo the site declares for itself in its structured data (schema.org Organization.logo).
-  if (!out.light) {
-    for (const m of String(html || "").matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-      let found = "";
-      const walk = (v, depth) => {
-        if (found || !v || depth > 6) return;
-        if (Array.isArray(v)) { v.forEach((x) => walk(x, depth + 1)); return; }
-        if (typeof v !== "object") return;
-        const l = v.logo;
-        const u = typeof l === "string" ? l : (l && typeof l === "object" ? (l.url || l.contentUrl || "") : "");
-        if (u && typeof u === "string") { found = abs(u); if (found) return; }
-        Object.values(v).forEach((x) => walk(x, depth + 1));
-      };
-      try { walk(JSON.parse(m[1]), 0); } catch { /* not JSON */ }
-      if (found) { if (FOR_DARK.test(found.split("?")[0].split("/").pop() || "")) { if (!out.dark) out.dark = found; } else out.light = found; break; }
-    }
+  const declared = { light: "", dark: "" };
+  for (const m of h.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let found = "";
+    const walk = (v, depth) => {
+      if (found || !v || depth > 6) return;
+      if (Array.isArray(v)) { v.forEach((x) => walk(x, depth + 1)); return; }
+      if (typeof v !== "object") return;
+      const l = v.logo;
+      const u = typeof l === "string" ? l : (l && typeof l === "object" ? (l.url || l.contentUrl || "") : "");
+      if (u && typeof u === "string") { found = abs(u); if (found) return; }
+      Object.values(v).forEach((x) => walk(x, depth + 1));
+    };
+    try { walk(JSON.parse(m[1]), 0); } catch { /* not JSON */ }
+    if (found) { if (FOR_DARK.test(found.split("?")[0].split("/").pop() || "")) declared.dark = found; else declared.light = found; break; }
   }
-  return out;
+  return { declared, images };
+}
+
+// A company's name without where it trades or how it is incorporated, squashed
+// to letters and digits: "7-Eleven Australia" -> "7eleven". "" when too short to match on.
+const NAME_NOISE = ["the", "plc", "ltd", "limited", "group", "inc", "incorporated", "corp", "corporation", "co", "company", "holdings", "pty", "llc", "gmbh", "sa", "ag", "nv", "and",
+  "australia", "australian", "uk", "usa", "us", "america", "american", "canada", "ireland", "europe", "international", "global", "nz", "zealand", "new", "united", "kingdom", "states"];
+function coreName(company) {
+  // A hyphen inside a word joins it ("Co-op" is "coop", not "co" and "op").
+  const words = String(company || "").toLowerCase().replace(/&/g, " and ").replace(/([a-z0-9])-(?=[a-z0-9])/g, "$1").replace(/[^a-z0-9\u00c0-\u024f]+/g, " ").split(/\s+/).filter(Boolean);
+  const kept = words.filter((w) => !NAME_NOISE.includes(w));
+  return { words: kept, squashed: kept.join(""), plain: kept.join(" ") };
+}
+const squash = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9\u00c0-\u024f]+/g, "");
+
+// Which of a page's images is this company's logo. Not any image that says
+// "logo": a home page shows partners', campaigns' and awards' logos too. In
+// order: the one the site declares in its structured data; one in the site's
+// header; one elsewhere whose FILE is named for the company and "logo".
+function chooseLogos(pageInfo, company) {
+  const info = pageInfo && typeof pageInfo === "object" ? pageInfo : {};
+  const declared = info.declared || {};
+  const images = Array.isArray(info.images) ? info.images : [];
+  const core = coreName(company).squashed;
+  const named = (t) => core.length >= 3 && squash(t).includes(core);
+  const rank = (x) => (x.inHeader ? (named(x.file) || named(x.alt) ? 4 : 3) : (named(x.file) && /logo/i.test(x.file) ? 2 : 0));
+  const best = (dark) => images.filter((x) => x.dark === dark && rank(x) > 0).sort((a, b) => rank(b) - rank(a))[0];
+  const light = best(false), dark = best(true);
+  return { light: declared.light || (light ? light.url : ""), dark: declared.dark || (dark ? dark.url : "") };
 }
 
 // Wikimedia Commons' own search results -> the company's logo files. A file
@@ -228,7 +277,7 @@ function commonsLogos(json, company) {
 const AGENT_SYSTEM = [
   "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
-  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
+  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from, with the date the figure is as at (not the date you read it). Prefer the most recently dated figure the company or its parent has published. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
   "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
@@ -475,10 +524,41 @@ function mergeBy(list, key, n) {
   return out.slice(0, n);
 }
 
+// One person, however the name is written: "Stan Reynolds" and "Stanley (Stan)
+// Reynolds" are the same key (first initial and surname).
+function personKey(x) {
+  const words = String((x && x.name) || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z\u00c0-\u024f' -]+/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  return words.length === 1 ? words[0] : `${words[0][0]}|${words[words.length - 1]}`;
+}
+// The newer run's entry for a person, with a LinkedIn link or note the older one had and it lacks.
+function mergePeople(now, before, n) {
+  const out = [], at = new Map();
+  for (const x of [...(now || []), ...(before || [])]) {
+    const k = personKey(x);
+    if (!k) continue;
+    if (at.has(k)) { const have = out[at.get(k)]; if (!have.linkedin && x.linkedin) have.linkedin = x.linkedin; if (!have.note && x.note) have.note = x.note; continue; }
+    at.set(k, out.length); out.push({ ...x });
+  }
+  return out.slice(0, n);
+}
+// The site count a refresh keeps: the one whose source is dated later. A run
+// that finds an older figure than the record already has does not replace it.
+function newerCount(f, p) {
+  const d = (s) => String((s && s.date) || "");
+  const found = { storeCount: f.storeCount || null, storeCountBreakdown: f.storeCountBreakdown || "", storeCountSource: f.storeCountSource || null };
+  const had = { storeCount: p.storeCount || null, storeCountBreakdown: p.storeCountBreakdown || "", storeCountSource: p.storeCountSource || null };
+  if (!found.storeCount) return had.storeCount ? had : found;
+  if (had.storeCount && d(had.storeCountSource) && d(found.storeCountSource) && d(had.storeCountSource) > d(found.storeCountSource)) return had;
+  return found;
+}
+
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
-  const was = p.logos && typeof p.logos === "object" ? p.logos : {};
+  // Logos chosen before the current rule (LOGO_RULE) are not carried forward:
+  // the first rule took any image on the page that said "logo".
+  const was = p.logoRule === LOGO_RULE && p.logos && typeof p.logos === "object" ? p.logos : {};
   const got = f.logos && typeof f.logos === "object" ? f.logos : {};
   const hq = [f.hqCity, f.hqCountry].filter(Boolean).join(", ");
   return {
@@ -492,13 +572,12 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     // The full logo for light and for dark backgrounds (checked image files),
     // for the branded walkthrough demo; "" when none was found.
     logos: { light: got.light || was.light || "", dark: got.dark || was.dark || "" },
+    logoRule: LOGO_RULE,
     // Where each stored logo was copied from (the company's own file or Wikimedia Commons).
-    logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
+    logoSources: { ...(p.logoRule === LOGO_RULE && p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
-    storeCount: f.storeCount || p.storeCount || null,
-    storeCountBreakdown: f.storeCount ? f.storeCountBreakdown : keep(f.storeCountBreakdown, p.storeCountBreakdown),
-    storeCountSource: f.storeCount ? f.storeCountSource : (f.storeCountSource || p.storeCountSource || null),
+    ...newerCount(f, p),
     hq: keep(hq, p.hq),
     employees: keep(f.employees, p.employees),
     revenue: keep(f.revenue, p.revenue),
@@ -515,7 +594,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     fit: keep(f.fit, p.fit),
     talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
     // A refresh adds to people and news: one run can miss a person the last one found.
-    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    people: mergePeople(f.people, Array.isArray(p.people) ? p.people : [], 12),
     news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
@@ -531,7 +610,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || str(f.industry, 120));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
   if (countries.length > (lead.company.countries || []).length) { company.countries = countries; changed.push("countries"); }
@@ -551,7 +630,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   set("linkedinUrl", f.linkedinCompany);
   if (!stored("website") && f.website && f.website.length <= 300) { fields.website = f.website; changed.push("website"); }
   const markets = uniq([...p.markets, ...f.countries], 60, 60);
@@ -758,7 +837,10 @@ function createLeadEnrich({
       if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
       // A file that says it is one type and is another (a GIF served as an icon) is read for what it is.
       const real = bytes.slice(0, 3).toString("latin1") === "GIF" ? "gif" : ext;
-      const png = await toPng(bytes, real);
+      // An .ico is a container: the image library reads the PNG inside it, not the file.
+      const inner = real === "ico" ? icoPng(bytes) : null;
+      if (real === "ico" && !inner) return "";
+      const png = await toPng(inner || bytes, inner ? "png" : real);
       if (!png || !png.length || png.length > MAX_LOGO_BYTES) return "";
       const hash = crypto.createHash("sha256").update(png).digest("hex").slice(0, 12);
       const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.png`;
@@ -783,8 +865,9 @@ function createLeadEnrich({
   // copied is left as it is; one that can't be copied keeps its original address.
   async function keepLogos(company, result, prevEnrichment) {
     const prev = prevEnrichment && typeof prevEnrichment === "object" ? prevEnrichment : {};
-    const was = { ...(prev.logos || {}), icon: prev.logoUrl };
-    const wasFrom = prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
+    const current = prev.logoRule === LOGO_RULE;
+    const was = { ...(current ? prev.logos || {} : {}), icon: prev.logoUrl };
+    const wasFrom = current && prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
     const found = { light: result.f.logos.light, dark: result.f.logos.dark, icon: result.logoUrl };
     const out = {}, from = {};
     for (const kind of ["light", "dark", "icon"]) {
@@ -804,7 +887,7 @@ function createLeadEnrich({
   // The company's full logos, each from the first source that answers as an
   // image: the agent's link, the home page's own logo images, then Wikimedia Commons.
   async function logosFor(company, pageSeen, f) {
-    const seen = pageSeen || {};
+    const seen = chooseLogos(pageSeen, company);
     const got = f || {};
     let commons = { light: "", dark: "" };
     const need = { light: !(await firstImage([got.logoLight, seen.light])), dark: !(await firstImage([got.logoDark, seen.dark])) };
@@ -812,13 +895,21 @@ function createLeadEnrich({
       try {
         // Files whose title has the company's name and "logo" first; then a plain
         // search, which also finds names a title search misses (hyphens, "The").
+        // The name as given, then without where it trades ("7-Eleven Australia" -> "7-Eleven"):
+        // a country arm usually has no logo file of its own.
         const clean = String(company).replace(/"/g, "");
-        for (const query of [`intitle:"${clean}" intitle:logo filetype:drawing|bitmap`, `${clean} logo`]) {
-          const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
-          if (!r.ok) continue;
-          const found = commonsLogos(JSON.parse(await r.text()), company);
-          commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
-          if (commons.light) break;
+        const short = String(company).split(/\s+/).filter((w) => !NAME_NOISE.includes(w.toLowerCase().replace(/[^a-z]/g, ""))).join(" ").replace(/"/g, "");
+        const names = uniq([clean, short], 2, 120);
+        const queries = names.flatMap((nm) => [[`intitle:"${nm}" intitle:logo filetype:drawing|bitmap`, nm], [`${nm} logo`, nm]]);
+        for (const [query, nm] of queries) {
+          // One search failing (a timeout, a rate limit) does not stop the others.
+          try {
+            const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
+            if (!r.ok) continue;
+            const found = commonsLogos(JSON.parse(await r.text()), nm);
+            commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
+            if (commons.light) break;
+          } catch { /* next search */ }
         }
       } catch { /* none */ }
     }
@@ -1152,5 +1243,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

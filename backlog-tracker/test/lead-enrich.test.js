@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  pageLogos, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -100,7 +100,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) assert.ok(!isPrivateAddress(ip), ip);
   });
   await test("readPage takes the title, description, LinkedIn page and the apple-touch-icon over the plain icon", () => {
-    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { light: "", dark: "" } });
+    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { declared: { light: "", dark: "" }, images: [] } });
   });
   await test("the agent is told to research without paid providers and to answer with news and financials", () => {
     assert.match(AGENT_SYSTEM, /web search/); assert.match(AGENT_SYSTEM, /news/); assert.match(AGENT_SYSTEM, /financials/); assert.match(AGENT_SYSTEM, /logo/);
@@ -518,8 +518,8 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   // ── Logos for the branded walkthrough demo (12 Nov 2026) ──
   await test("the full logo for light and for dark backgrounds is found, checked as an image and kept", async () => {
     const page = `<header><img class="site-logo" src="/img/gk-logo.svg" alt="Greene King"><img src="/img/hero.jpg" alt="A pub"><img alt="Greene King logo" data-src="/img/gk-logo-white.svg"></header>`;
-    assert.deepEqual(readPage(page, "https://www.greeneking.co.uk/").logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
-    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x), { light: "", dark: "" });
+    assert.deepEqual(chooseLogos(readPage(page, "https://www.greeneking.co.uk/").logos, "Greene King"), { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
+    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x).images, []);
     for (const k of ["logoLight", "logoDark"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
     assert.match(AGENT_SYSTEM, /never build or guess an address/);
     const types = { "https://brand.example/gk-full.svg": "image/svg+xml", "https://brand.example/gk-white.png": "image/png", "https://www.greeneking.co.uk/img/gk-logo.svg": "image/svg+xml", "https://brand.example/not-an-image": "text/html" };
@@ -541,8 +541,8 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   });
   await test("a logo is also taken from the site's structured data and from Wikimedia Commons, only for the right company", async () => {
     const ld = `<script type="application/ld+json">{"@graph":[{"@type":"WebSite"},{"@type":"Organization","logo":{"@type":"ImageObject","url":"/assets/brand.svg"}}]}</script>`;
-    assert.equal(readPage(ld, "https://acme.example/").logos.light, "https://acme.example/assets/brand.svg");
-    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.light, "");
+    assert.equal(readPage(ld, "https://acme.example/").logos.declared.light, "https://acme.example/assets/brand.svg");
+    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.declared.light, "");
     const commons = { query: { pages: {
       1: { index: 2, title: "File:Greene King logo.png", imageinfo: [{ url: "https://upload.wikimedia.org/gk.png", mime: "image/png" }] },
       2: { index: 1, title: "File:Greene King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk.svg", mime: "image/svg+xml" }] },
@@ -635,7 +635,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(isAnimated(Buffer.from("<svg><style>@keyframes spin{}</style></svg>"), "svg"), true);
     assert.equal(isAnimated(Buffer.from("<svg><path d='M0 0'/></svg>"), "svg"), false);
     // The site's only icon is an animated GIF labelled as an icon. Stored: its first frame as a PNG.
-    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><img class="logo" src="/logo.svg"></body></html>`;
+    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><header><img class="logo" src="/logo.svg"></header></body></html>`;
     const files = { "https://seven.example/favicon.ico": ["image/x-icon", gif(10).toString("latin1")], "https://seven.example/logo.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"] };
     const bin = (type, body) => ({ ...resp(200, body, { "content-type": type }), arrayBuffer: async () => { const b = Buffer.from(body, "latin1"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
     const fetchImpl = async (url) => (files[url] ? bin(files[url][0], files[url][1]) : resp(200, page, { "content-type": "text/html" }));
@@ -715,6 +715,74 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     // Test leads and network operator inquiries are left alone.
     const t = make({ seed: { leads: { lt: { ...lead, test: true } }, prospects: { p9: { ...tam, leadId: "lt" } }, prospectCompanies: {} } });
     assert.equal(await t.api.syncLinked("lt", "p9"), null);
+  });
+  // ── What a refresh keeps (from the second live run on one lead, 14 Nov 2026) ──
+  await test("a refresh keeps the most recently dated site count and lists each person once", async () => {
+    const { personKey, mergePeople, newerCount } = require("../functions/lead-enrich");
+    assert.equal(personKey({ name: "Stan Reynolds" }), personKey({ name: "Stanley (Stan) Reynolds" }));
+    assert.notEqual(personKey({ name: "Sam Reynolds-Smith" }), personKey({ name: "Stan Reynolds" }));
+    assert.equal(personKey({ name: "" }), "");
+    const merged = mergePeople([{ name: "Stan Reynolds", title: "President", linkedin: "", note: "" }, { name: "New Person", title: "CMO" }], [{ name: "Stanley (Stan) Reynolds", title: "President", linkedin: "https://www.linkedin.com/in/stan", note: "Was interim co-CEO." }, { name: "Mario Mijares", title: "VP" }], 12);
+    assert.deepEqual(merged.map((x) => x.name), ["Stan Reynolds", "New Person", "Mario Mijares"]);
+    assert.deepEqual([merged[0].linkedin, merged[0].note], ["https://www.linkedin.com/in/stan", "Was interim co-CEO."], "what the earlier entry knew is kept");
+    const june = { storeCount: 12491, storeCountBreakdown: "At 30 June 2026.", storeCountSource: { title: "Q2", url: "https://s.example/q2", date: "2026-10-08" } };
+    const feb = { storeCount: 12712, storeCountBreakdown: "At February 2026.", storeCountSource: { title: "Trade press", url: "https://t.example/a", date: "2026-04-23" } };
+    assert.equal(newerCount(feb, june).storeCount, 12491, "an older figure does not replace a newer one");
+    assert.equal(newerCount(june, feb).storeCount, 12491); assert.equal(newerCount({ storeCount: null }, june).storeCount, 12491);
+    assert.equal(newerCount({ storeCount: 500 }, { storeCount: 400 }).storeCount, 500, "with no dates to compare, the new run's figure stands");
+    // In a run: the record keeps June's count, breakdown and source, on the company field too.
+    const a = make({ agent: { ...AGENT, ...june } });
+    await a.api.onEnrichWrite("leads", created("leads", "l1", a.db.state));
+    const b = make({ agent: { ...AGENT, ...feb, people: [{ name: "Stanley (Stan) Reynolds", title: "President" }] }, seed: a.db.state });
+    b.db.state.leads.l1.enrichment.people = [{ name: "Stan Reynolds", title: "President" }];
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e = b.db.state.leads.l1.enrichment;
+    assert.deepEqual([e.storeCount, e.storeCountBreakdown, e.storeCountSource.date], [12491, "At 30 June 2026.", "2026-10-08"]);
+    assert.equal(b.db.state.leads.l1.company.storeCount, 12491); assert.equal(e.people.length, 1);
+  });
+  // ── The logo must be the company's own (the refresh of 14 Nov 2026 stored a campaign graphic) ──
+  await test("a campaign or partner image that says \"logo\" is never taken for the company's logo", async () => {
+    assert.deepEqual([coreName("7-Eleven Australia").squashed, coreName("Greene King plc").squashed, coreName("The Co-operative Group").squashed], ["7eleven", "greeneking", "cooperative"]);
+    // The page that went wrong: no logo in the header markup, a campaign image further down.
+    const campaign = `<header><nav><a href="/">Home</a></nav></header><main><img src="/content/cup-rescue-logo.png" alt="Cup Rescue logo"><img class="partner-logo" src="/content/velocity-logo.svg" alt="Velocity"></main>`;
+    const info = readPage(campaign, "https://www.7eleven.com.au/").logos;
+    assert.equal(info.images.length, 2);
+    assert.deepEqual(chooseLogos(info, "7-Eleven Australia"), { light: "", dark: "" }, "neither is the company's");
+    // The company's logo is in the header, or its file is named for the company.
+    const header = `<header><a href="/"><img src="/img/brand.svg" alt="logo"></a></header><main><img src="/content/cup-rescue-logo.png" alt="Cup Rescue logo"></main>`;
+    assert.equal(chooseLogos(readPage(header, "https://www.7eleven.com.au/").logos, "7-Eleven Australia").light, "https://www.7eleven.com.au/img/brand.svg");
+    const footer = `<header></header><main><img src="/content/cup-rescue-logo.png" alt="7-Eleven Cup Rescue logo"></main><footer><img src="/img/7-eleven-logo-white.svg" alt=""><img src="/img/7-Eleven_logo.svg" alt=""></footer>`;
+    assert.deepEqual(chooseLogos(readPage(footer, "https://www.7eleven.com.au/").logos, "7-Eleven Australia"), { light: "https://www.7eleven.com.au/img/7-Eleven_logo.svg", dark: "https://www.7eleven.com.au/img/7-eleven-logo-white.svg" }, "an alt text that names the company is not enough outside the header");
+    // The site's structured data wins over anything in the page.
+    const ld = `<script type="application/ld+json">{"@type":"Organization","logo":"/declared.png"}</script>${header}`;
+    assert.equal(chooseLogos(readPage(ld, "https://www.7eleven.com.au/").logos, "7-Eleven Australia").light, "https://www.7eleven.com.au/declared.png");
+    // In a run: nothing on the page qualifies, so Commons is asked for the name without the country.
+    const asked = [];
+    const commons = { query: { pages: { 1: { index: 0, title: "File:7-eleven logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/7.svg", mime: "image/svg+xml" }] } } } };
+    const fetchImpl = async (url) => {
+      if (url.startsWith("https://commons.wikimedia.org/")) { asked.push(decodeURIComponent(url)); return resp(200, decodeURIComponent(url).includes("Australia") ? { query: { pages: {} } } : commons, { "content-type": "application/json" }); }
+      if (url === "https://upload.wikimedia.org/7.svg") return resp(200, "<svg/>", { "content-type": "image/svg+xml" });
+      return resp(200, campaign, { "content-type": "text/html" });
+    };
+    // The record carries the campaign graphic from the old rule: it is dropped, not kept.
+    const seed = { leads: { l1: { ...LEAD, company: { ...LEAD.company, name: "7-Eleven Australia", website: "https://www.7eleven.com.au" }, enrichment: { at: new Date("2026-11-14T06:28:00Z"), logos: { light: "https://old.example/cup-rescue.png", dark: "" }, logoSources: { light: "https://www.7eleven.com.au/content/cup-rescue-logo.png" }, screen: { ok: true } } } }, prospects: {}, prospectCompanies: {} };
+    const a = make({ fetchImpl, seed });
+    await a.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e = a.db.state.leads.l1.enrichment;
+    assert.equal(e.logos.light, "https://upload.wikimedia.org/7.svg"); assert.equal(e.logoRule, 2);
+    assert.ok(asked.some((u) => u.includes('intitle:"7-Eleven"') && !u.includes("Australia")), asked.join(" | "));
+    // With nothing found at all, the old rule's logo still goes.
+    const b = make({ fetchImpl: async (url) => (url.startsWith("https://commons.wikimedia.org/") ? resp(200, { query: { pages: {} } }, { "content-type": "application/json" }) : resp(200, campaign, { "content-type": "text/html" })), seed });
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(b.db.state.leads.l1.enrichment.logos.light, "");
+  });
+  await test("an .ico that holds a PNG is stored as that PNG; one that holds only bitmaps is not copied", async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("PNGDATA-64")]);
+    const bmp = Buffer.from("BMPDATA-16-not-a-png");
+    const ico = (...imgs) => { const head = Buffer.alloc(6 + imgs.length * 16); head.writeUInt16LE(1, 2); head.writeUInt16LE(imgs.length, 4); let off = head.length;
+      imgs.forEach(([w, d], i) => { const o = 6 + i * 16; head[o] = w; head[o + 1] = w; head.writeUInt32LE(d.length, o + 8); head.writeUInt32LE(off, o + 12); off += d.length; }); return Buffer.concat([head, ...imgs.map(([, d]) => d)]); };
+    assert.deepEqual(icoPng(ico([16, bmp], [64, png])), png); assert.equal(icoPng(ico([16, bmp])), null);
+    assert.equal(icoPng(png), null); assert.equal(icoPng(Buffer.alloc(4)), null);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

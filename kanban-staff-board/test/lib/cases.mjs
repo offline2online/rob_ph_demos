@@ -9,7 +9,7 @@
 // A result the spec does not define is never asserted: the case records what the
 // build does under `Expected: confirm` (E.confirm) and the question is raised on
 // the ticket. The run prints every one at the end.
-import { COLS, PLACES, place, where, columnKeys, headers, dragCard, statusMove, showCard, moveBy, allMoves, press, sleep, toastText, makePointer, pickUp } from "./driver.mjs";
+import { COLS, PLACES, place, where, columnKeys, headers, dragCard, statusMove, showCard, moveBy, allMoves, press, sleep, toastText, makePointer, pickUp, eventually } from "./driver.mjs";
 
 export const CONFIRMS = (globalThis.__kbConfirms ||= []);
 
@@ -897,9 +897,11 @@ export function defineNewCases(E) {
     const p = await open(prof, E.hash("kanban"), { height: Math.max(prof.height, 1600) });
     const input = prof.touch ? "touch" : "mouse";
     await press(p, `.kb-person-chip[data-person="${E.pid("huy")}"]`);
+    // The filter redraws on the next frame: read the "before" counts only once it is on and has been applied.
+    await eventually(async () => assert.equal(await p.getAttribute(`.kb-person-chip[data-person="${E.pid("huy")}"]`, "aria-pressed"), "true", "Huy's filter is on"));
+    await eventually(async () => assert.ok(await p.$(card("PH-29")), "Huy's PH-29 is in view"));
     const total0 = +(await p.textContent("#kb-count")).match(/\d+/)[0];
     const hs0 = await headers(p);
-    assert.ok(await p.$(card("PH-29")), "Huy's PH-29 is in view");
     // The mover picks the tester (Rob here), so it no longer matches Huy's filter
     if (prof.kind === "phone") {
       // the ticket form does not reassign: set the tester in the form with the status
@@ -920,12 +922,15 @@ export function defineNewCases(E) {
         await p.click("#kb-tester-ok");
       } // the standalone prototype still hands Ready for Testing to Rob itself
     }
-    await sleep(200);
-    assert.equal(await p.$(card("PH-29")), null, "the card left the view");
-    assert.equal(+(await p.textContent("#kb-count")).match(/\d+/)[0], total0 - 1, "the task count follows");
-    const hs1 = await headers(p);
-    assert.equal(hs1.find((h) => h.title === "Ready for Dev").count, hs0.find((h) => h.title === "Ready for Dev").count - 1, "source count");
-    assert.equal(hs1.find((h) => h.title === "Ready for Testing").count, hs0.find((h) => h.title === "Ready for Testing").count, "target count unchanged: the card is no longer Huy's");
+    // The move is written, then the board redraws on a later frame. A fixed 200 ms sleep lost that race on loaded
+    // runners (three red console runs, 24 Oct-14 Nov 2026), so each assertion is repeated until the board shows it.
+    await eventually(async () => {
+      assert.equal(await p.$(card("PH-29")), null, "the card left the view");
+      assert.equal(+(await p.textContent("#kb-count")).match(/\d+/)[0], total0 - 1, "the task count follows");
+      const hs1 = await headers(p);
+      assert.equal(hs1.find((h) => h.title === "Ready for Dev").count, hs0.find((h) => h.title === "Ready for Dev").count - 1, "source count");
+      assert.equal(hs1.find((h) => h.title === "Ready for Testing").count, hs0.find((h) => h.title === "Ready for Testing").count, "target count unchanged: the card is no longer Huy's");
+    });
     await press(p, "#kb-clear");
     await sleep(150);
     assert.ok(await p.$(card("PH-29")), "visible again with the filter cleared");

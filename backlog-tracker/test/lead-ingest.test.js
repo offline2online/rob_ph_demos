@@ -227,13 +227,30 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
       const d = db.docs.get(r.body.leadId);
       assert.equal(d.leadType, "operator"); assert.equal(d.stage, "applied", "the operator pipeline's first stage");
       assert.equal(d.company.name, "", "no company needed");
-      assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key });
+      assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: b.key, audience: "" });
       assert.equal(d.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(d.source, "website"); assert.equal(d.sourcePage, "/run-your-own-rmn/");
       assert.deepEqual(d.contacts.map((c) => [c.name, c.email, c.linkedin]), [["Alex Rivers", "alex@gmail.example", "https://linkedin.com/in/alexrivers"]]);
       assert.equal(d.prospectId, undefined); assert.equal(db.prospects.size, 1, "no TAM record created");
       const n = core.normaliseLead("x", d);
       assert.equal(core.leadName(n), "Alex Rivers"); assert.equal(core.companyLine(n), `Leeds and West Yorkshire · ${b.label}`);
     }
+  });
+  await test('"I am" is stored as audience (a key) from its label or key in any case; blank or unknown is ""; the two new backgrounds map to their keys', async () => {
+    assert.deepEqual(core.BACKGROUNDS.map((b) => b.key), ["agency", "adtech", "retail-media", "creative-agency", "retail-owner", "marketing", "other"]);
+    assert.deepEqual(core.AUDIENCES, [{ key: "individual", label: "An individual operator" }, { key: "team", label: "Part of an operator team" }, { key: "retailer", label: "A small to medium retailer" }]);
+    const { db, api } = mkApi();
+    const post = async (extra) => { const r = res(); await api.handle(req({ ...GATE, email: `p${db.docs.size}@x.example`, ...extra }), r); assert.equal(r.code, 201); return db.docs.get(r.body.leadId); };
+    const d = await post({ audience: "A small to medium retailer", background: "Creative agency" });
+    assert.equal(d.stage, "applied");
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "creative-agency", audience: "retailer" });
+    const n = core.normaliseLead("x", d);
+    assert.equal(core.companyLine(n), "A small to medium retailer · Leeds and West Yorkshire · Creative agency", "the card's line: I am, then region and background");
+    assert.equal(core.audienceLabel(n.operator.audience), "A small to medium retailer");
+    assert.deepEqual((await post({ audience: "TEAM", background: "retail business owner or manager" })).operator, { region: "Leeds and West Yorkshire", background: "retail-owner", audience: "team" });
+    assert.equal((await post({ audience: "an individual OPERATOR" })).operator.audience, "individual");
+    assert.equal((await post({ audience: "A large enterprise" })).operator.audience, "", "an unknown audience is stored blank");
+    assert.equal((await post({ audience: "" })).operator.audience, "");
+    assert.equal(core.normaliseLead("y", { leadType: "operator", operator: { region: "Leeds", background: "adtech" } }).operator.audience, "", "a lead from before the field has none");
   });
   await test("a blank LinkedIn (or one that isn't an address) still makes the lead; a missing lead_source gets the gate's label", async () => {
     const { db, api } = mkApi();
@@ -253,11 +270,11 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
   await test("the same person again (same email) adds activity to their lead; a company lead is never merged with it", async () => {
     const { db, api } = mkApi();
     await api.handle(req({ ...GATE, operating_region: "" }), res());
-    const r = res(); await api.handle(req({ ...GATE, email: "ALEX@gmail.example", background: "Marketing" }), r);
+    const r = res(); await api.handle(req({ ...GATE, email: "ALEX@gmail.example", background: "Marketing", audience: "Part of an operator team" }), r);
     assert.equal(r.code, 200); assert.equal(r.body.created, false); assert.equal(db.docs.size, 1);
     const d = db.docs.get(r.body.leadId);
     assert.equal(d.inboundCount, 2); assert.equal(d.websiteActivity.length, 2);
-    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "marketing" }, "blanks are filled");
+    assert.deepEqual(d.operator, { region: "Leeds and West Yorkshire", background: "marketing", audience: "team" }, "blanks are filled");
     await api.handle(req({ ...FORM, email: "alex@gmail.example" }), res());
     assert.equal(db.docs.size, 2, "a company lead from the same email is a separate lead");
     await api.handle(req({ ...GATE, test: "1" }), res());
@@ -315,14 +332,22 @@ const FORM = { company: "Acme Telco", website: "acme.example", email: "jo@acme.e
   });
   await test("list_leads and get_lead return the lead type and source, and list_leads filters by type", async () => {
     const db = fakeDb(); const api = createLeadIngest({ db, key: () => "k" });
-    await api.handle(req(FORM), res()); await api.handle(req({ ...GATE, background: "retail media" }), res());
+    await api.handle(req(FORM), res()); await api.handle(req({ ...GATE, background: "retail media", audience: "A small to medium retailer" }), res());
+    await api.handle(req({ ...GATE, full_name: "Sam Team", email: "sam@x.example", audience: "team" }), res());
     stubDb = db;
     const tools = leadsTools({ textResult: (x) => x, toolError: (m) => ({ error: m }), audit: async () => {} });
     const list = tools.find((t) => t.name === "list_leads"), get = tools.find((t) => t.name === "get_lead");
     const all = await list.run({});
-    assert.deepEqual(all.leads.map((l) => [l.name, l.leadType]).sort(), [["Acme Telco", "company"], ["Alex Rivers", "operator"]]);
-    const fr = await list.run({ leadType: "operator" });
-    assert.equal(fr.total, 1); const v = fr.leads[0];
+    assert.deepEqual(all.leads.map((l) => [l.name, l.leadType]).sort(), [["Acme Telco", "company"], ["Alex Rivers", "operator"], ["Sam Team", "operator"]]);
+    assert.equal((await list.run({ leadType: "operator" })).total, 2);
+    const fr = await list.run({ audience: "retailer" });
+    assert.equal(fr.total, 1, "list_leads filters by audience"); const v = fr.leads[0];
+    assert.equal(v.audience, "retailer"); assert.equal(v.audienceLabel, "A small to medium retailer");
+    assert.deepEqual((await list.run({ audience: "team" })).leads.map((l) => l.name), ["Sam Team"]);
+    assert.equal((await list.run({ audience: "individual" })).total, 0);
+    const co = (await list.run({ leadType: "company" })).leads[0];
+    assert.equal(co.audience, null); assert.equal(co.audienceLabel, null);
+    assert.ok(JSON.stringify(list.inputSchema).includes('"audience":{"type":"string","enum":["individual","team","retailer"]'), "list_leads takes an audience filter");
     assert.equal(v.leadTypeLabel, "Network operator inquiry"); assert.equal(v.sourceLabel, "Run Your Own RMN page – product tour"); assert.equal(v.source, "website");
     assert.equal(v.region, "Leeds and West Yorkshire"); assert.equal(v.background, "retail-media"); assert.equal(v.backgroundLabel, "Retail media");
     assert.equal((await list.run({ leadType: "company" })).leads[0].company, "Acme Telco");

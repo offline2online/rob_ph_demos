@@ -30,6 +30,17 @@ export function mockDsps() {
 /* Sunday 20 Sep 2026, mid-morning UTC: the next window that can be sold starts 21 Sep. */
 export const NOW = new Date('2026-09-20T10:00:00.000Z')
 
+/* The suite's clock (ticket QCK6k1IsDKh5HoP8RhK0, 14 Nov 2026). A context built here without its own `clock`
+   used to read the real one, so a test with fixed dates passed only until those dates went by: the Direct deal
+   flight of 1–30 Nov 2026 turned the nightly red from 10 Nov. Every context now starts at NOW and runs on from
+   there (it ticks, so stamps taken in one test still come out in order). A test that needs another moment
+   passes `clock`; one that measures from "now" reads `ctx.clock()`, never `new Date()` or `Date.now()`.
+   test/date-independence.test.ts keeps it that way, and `npm run test:dates` runs the suites on other days. */
+export function suiteClock(epoch: Date = NOW): () => Date {
+  const started = Date.now()
+  return () => new Date(epoch.getTime() + (Date.now() - started))
+}
+
 export const TEST_KEY = randomBytes(32).toString('base64')
 
 export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: boolean; bookings?: boolean; demo?: boolean; dspFetch?: Fetch; clock?: () => Date; byWindow?: boolean } = {}) {
@@ -40,7 +51,7 @@ export async function testContext(opts: { flag?: boolean; role?: Role; seeded?: 
     session: staticSession(opts.role ?? 'hq_admin'),
     secrets: aesGcmSecretsStore(TEST_KEY),
     dspFetch: opts.dspFetch,
-    clock: opts.clock,
+    clock: opts.clock ?? suiteClock(),
   })
   /* The sample bookings and the demo estate are opt-in here: a test wants a
      clean, minimal schedule it can count. */

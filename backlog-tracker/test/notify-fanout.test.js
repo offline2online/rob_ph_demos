@@ -152,8 +152,17 @@ async function click(db, mod, extra = {}) {
       assert.ok(text.includes("has 1 item in Backlog"), "keeps the default-flow prompt shape");
       assert.ok(text.includes("each of the others is being built right now by its own parallel session"));
       assert.ok(text.includes(`PATCH backlogItems/${id} with buildSession.status`), "reports on its own card");
-      assert.ok(text.includes("Before setting patchReady, run your project's full test command") && text.includes("Retail-media-insights && npm run test:ci") && text.includes("/opt/pw-browsers/chromium"),
-        "every build is told to run its project's whole suite, and that a browser is there");
+      assert.ok(text.includes("Before setting patchReady, run the tests for what you changed") && text.includes("npm run test:fast") && text.includes("Retail-media-insights && npm run test:ci") && text.includes("/opt/pw-browsers/chromium"),
+        "every build is told to run the suites for what it changed plus the fast checks, and that a browser is there");
+      assert.ok(text.includes("train-only") && text.includes("what you ran and what you left to the train"), "the long suites are left to the train, and the note says what ran");
+      // Heartbeat and build attempt (14 Nov 2026): the fire names its attempt,
+      // and the card stores the same id as the current one.
+      const attempt = (text.match(/HEARTBEAT — build attempt ([0-9a-f]{16})\./) || [])[1];
+      assert.ok(attempt, "the fire carries a build attempt id and the heartbeat rule");
+      assert.ok(text.includes(`buildSession.attemptId "${attempt}"`) && text.includes("buildSession.heartbeatAt") && text.includes("at least every 10 minutes"), "told what to send and how often");
+      assert.ok(text.includes(`patchAttemptId "${attempt}"`) && text.includes("do NOT set patchReady"), "told to stop if superseded, and to send its id with the patch");
+      assert.strictEqual(db.__state.backlogItems[id].buildAttemptId, attempt, "the card stores the current attempt");
+      assert.strictEqual(db.__state.backlogItems[id].lastFire.buildAttemptId, attempt, "and its fire record marks a session that was told to beat");
       assert.ok(!text.includes("PATCH projects/proj1 with notifyRoutine.status"), "never flips the project's spinner itself");
     }
     const r = db.__state.projects[PID].notifyRoutine;
@@ -321,7 +330,8 @@ async function click(db, mod, extra = {}) {
 
   await test("a 4xx that shouldn't be retried is recorded as failed, with no next attempt", async () => {
     const mod = loadIndex(makeFakeDb(seed()), secrets);
-    const r = mod.__test.lastFireRecord({ result: { error: "Routine fire endpoint responded with status 401", status: 401 }, prior: {}, requestedAt: null });
+    const r = mod.__test.lastFireRecord({ result: { error: "Routine fire endpoint responded with status 401", status: 401, buildAttemptId: "ffffffffffffffff" }, prior: {}, requestedAt: null });
+    assert.ok(!("buildAttemptId" in r), "a fire that started no session does not replace the card's current attempt");
     assert.strictEqual(r.status, "failed");
     assert.strictEqual(r.nextAttemptAt, null);
     assert.match(r.error, /401/);
