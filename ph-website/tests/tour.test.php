@@ -407,6 +407,20 @@ $r = $gasset2( $G2, 'bad' );
 ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf v2 asset: bytes that fail the sha are never stored or served' );
 $r = $gasset2( '/run-your-own-rmn/tour/assets/v2/img/N0-stores.jpg.b64', 'cached' );
 ok( 404 === $r['status'] && 0 === $r['http'], 'golf v2 asset: a name outside the v2 allow-list answers 404' );
+/* v3 (15 Nov 2026, clubs with 1 to 12 screens): its own route, repo folder and cache; v1 and v2 stay served */
+$gasset3 = function ( $uri, $mode ) {
+	return json_decode( (string) shell_exec( 'ASSET_SET=golf3 ASSET_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' GET 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$G3 = '/run-your-own-rmn/tour/assets/v3/img/01-advertiser.jpg';
+$r  = $gasset3( $G3, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'] && 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/v3/img/01-advertiser.jpg.b64' === $r['url'], 'golf v3 asset: fetched once as base64 from tour-assets/rmn-golf/v3, sha-checked, cached and served' );
+ok( 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ), 'golf v3 asset: immutable cache' );
+$r = $gasset3( $G3, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/v3/img/01-advertiser.jpg.b64' ), 'golf v3 asset: the jsDelivr mirror of v3' );
+$r = $gasset3( $G3, 'bad' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf v3 asset: bytes that fail the sha are never stored or served' );
+$r = $gasset3( '/run-your-own-rmn/tour/assets/v3/img/N0-stores.jpg.b64', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'golf v3 asset: a name outside the v3 allow-list answers 404' );
 $r = $gasset( '/run-your-own-rmn/tour/assets/v1/img/N0-stores.jpg', 'cached' );
 ok( 404 === $r['status'] && 0 === $r['http'], 'golf v1 route does not serve a v2-only screenshot' );
 $r = $asset( '/industries/retail-media/tour/assets/v1/img/P5-proshop.jpg', 'cached' );
@@ -416,9 +430,14 @@ $g1map  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN;
 $g1sums = array();
 foreach ( file( dirname( __DIR__ ) . '/tour-assets/rmn-golf/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $g1sums[ $n ] = $h; }
 ok( count( $g1sums ) === count( $g1map ) && ! array_filter( $g1map, function ( $v, $n ) use ( $g1sums ) { return ( $g1sums[ $n ] ?? '' ) !== $v[0]; }, ARRAY_FILTER_USE_BOTH ), 'golf v1 allow-list still has exactly the files in v1 SHA256SUMS (' . count( $g1map ) . ')' );
-/* the v2 golf allow-list (what tour.html loads) is exactly the shipped v2 SHA256SUMS of the decoded files, and covers every screenshot and voiceover line the golf tour asks for */
-$gmap  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V2;
-$gdir  = dirname( __DIR__ ) . '/tour-assets/rmn-golf/v2';
+/* v2 (immutable since v3): its allow-list still matches its SHA256SUMS */
+$g2map  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V2;
+$g2sums = array();
+foreach ( file( dirname( __DIR__ ) . '/tour-assets/rmn-golf/v2/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $g2sums[ $n ] = $h; }
+ok( count( $g2sums ) === count( $g2map ) && ! array_filter( $g2map, function ( $v, $n ) use ( $g2sums ) { return ( $g2sums[ $n ] ?? '' ) !== $v[0]; }, ARRAY_FILTER_USE_BOTH ), 'golf v2 allow-list still has exactly the files in v2 SHA256SUMS (' . count( $g2map ) . ')' );
+/* the v3 golf allow-list (what tour.html loads) is exactly the shipped v3 SHA256SUMS of the decoded files, and covers every screenshot and voiceover line the golf tour asks for */
+$gmap  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V3;
+$gdir  = dirname( __DIR__ ) . '/tour-assets/rmn-golf/v3';
 $gsums = array();
 foreach ( file( $gdir . '/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $gsums[ $n ] = $h; }
 ok( count( $gsums ) === count( $gmap ) && ! array_diff_key( $gsums, $gmap ) && ! array_diff_key( $gmap, $gsums ), 'golf allow-list has exactly the files in SHA256SUMS (' . count( $gmap ) . ')' );

@@ -1,5 +1,5 @@
 {
- "about": "Voiceover for the Run Your Own RMN walkthrough (v2, 15 Nov 2026: the Fairlinks Golf Network of 100 golf clubs sells to Corvane Golf; flow 3 follows a member at Fernhollow Golf Club, one club on the network). Same rules as tools/retail-media-tour/voiceover-script.json: each line one or two sentences and under 10 seconds; a line with a cue plays when the on-screen tip with that title appears. Build with ../retail-media-tour/build_voiceover.py --script voiceover-script.json --out <dir>/vo, then sync_tour_vo.py here.",
+ "about": "Voiceover for the Run Your Own RMN walkthrough (v3, 15 Nov 2026: the Fairlinks Golf Network of 100 golf clubs, each with its own number of screens, sells slot 1 on six display types to Corvane Golf; flow 3 follows a member at Fernhollow Golf Club, one club on the network). Same rules as tools/retail-media-tour/voiceover-script.json: each line one or two sentences and under 10 seconds; a line with a cue plays when the on-screen tip with that title appears. Build with ../retail-media-tour/build_voiceover.py --script voiceover-script.json --out <dir>/vo, then sync_tour_vo.py here.",
  "voice": "af_heart",
  "lang": "en-us",
  "speed": 1.0,
@@ -11,11 +11,11 @@
      "text": "The Fairlinks Golf Network runs the screens at 100 connected golf clubs, from one Personalisation Hub account."
     },
     {
-     "text": "Every club has the same six screen types.",
-     "cue": "Every club on the network"
+     "text": "Clubs differ: some have one screen, some three, some seven or more.",
+     "cue": "Every club is different"
     },
     {
-     "text": "Whatever the network sets up once goes live at every club.",
+     "text": "Display types and playlists are set once, for the whole network.",
      "cue": "Set once for the network"
     }
    ]
@@ -24,10 +24,10 @@
    "id": "f1-02",
    "lines": [
     {
-     "text": "The network has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar."
+     "text": "The network has six display types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar."
     },
     {
-     "text": "They're set once, and every club on the network has them."
+     "text": "Each club's screens are tagged with a type, by where they sit in the club."
     }
    ]
   },
@@ -69,8 +69,8 @@
      "text": "The network decides exactly how much screen time it sells."
     },
     {
-     "text": "Set once, live at all 100 clubs: the same six brand partner slots now exist at every club.",
-     "cue": "Set once, live at all 100 clubs"
+     "text": "Set once: live on every pro shop, first tee and clubhouse bar screen across the network, however many each club has.",
+     "cue": "Set once, live on every screen"
     }
    ]
   },
@@ -78,7 +78,7 @@
    "id": "f1-05",
    "lines": [
     {
-     "text": "Corvane Golf is already set up as a direct advertiser, next to the advertisers synced from DSPs."
+     "text": "Corvane Golf is already set up as a direct advertiser, ready to buy from the network."
     }
    ]
   },
@@ -90,7 +90,7 @@
     },
     {
      "cue": "Create a direct deal",
-     "text": "This direct deal gives Corvane all of December across the whole network at a fixed CPM, and it's never sent to a DSP."
+     "text": "This direct deal gives Corvane all of December across the whole network, at a fixed CPM."
     }
    ]
   },
@@ -106,17 +106,14 @@
     },
     {
      "cue": "Choose the deal",
-     "text": "Each slot's list offers DSPs for open auction, and deals."
+     "text": "Type Corvane, and the slot's list shows the network's deal."
     },
     {
      "text": "The network picks the Corvane deal for all six."
     },
     {
-     "text": "Direct deals and programmatic demand are managed side by side, in one place."
-    },
-    {
      "cue": "All six brand partner slots",
-     "text": "All six slots now carry the deal, at every one of the 100 clubs. Then, save the changes."
+     "text": "All six slots now carry the deal, on every matching screen across the network. Then, save the changes."
     }
    ]
   },
@@ -124,15 +121,15 @@
    "id": "f1-08",
    "lines": [
     {
-     "text": "The forecast plays cover all 100 clubs, for reference only: this is a direct buy at a fixed CPM."
+     "text": "The forecast plays cover every matching screen, for reference only: this is a direct buy at a fixed CPM."
     },
     {
      "cue": "Finalise and go live",
-     "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue."
+     "text": "Finalising puts the deal live. Its revenue is reported in the platform; invoicing happens outside it."
     },
     {
-     "cue": "Live · direct, not sent to a DSP",
-     "text": "Every December window on all six screen types, at all 100 clubs, is now Corvane's."
+     "cue": "Live · direct deal",
+     "text": "Every December window on all six display types, across the network, is now Corvane's."
     }
    ]
   },
@@ -205,7 +202,7 @@
     },
     {
      "cue": "Touchpoints",
-     "text": "Only the deal's six screen types are switched on."
+     "text": "Only the deal's six display types are switched on, each with its own audience."
     }
    ]
   },
@@ -257,7 +254,7 @@
    "id": "f2-08",
    "lines": [
     {
-     "text": "Corvane also wants a second campaign, just for low-handicap members, at every club on the network."
+     "text": "Corvane also wants a second campaign, just for low-handicap members, on every matching screen across the network."
     },
     {
      "cue": "Open the Targeting tab",
@@ -329,7 +326,7 @@
    "id": "f3-01",
    "lines": [
     {
-     "text": "Now one club on the network: Fernhollow Golf Club. Hannah, a low-handicap member, arrives for her morning tee time."
+     "text": "Now one club on the network: Fernhollow Golf Club, with seven screens. Hannah, a low-handicap member, arrives for her tee time."
     },
     {
      "cue": "Welcome to Fernhollow",
@@ -396,7 +393,7 @@
     },
     {
      "cue": "Back at the pro shop",
-     "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one offer sold by the network."
+     "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six display types, one offer sold by the network."
     }
    ]
   },
@@ -404,7 +401,7 @@
    "id": "f3-04",
    "lines": [
     {
-     "text": "Now back to the whole network. Corvane holds slot one on all six screen types at all 100 clubs, every day of December."
+     "text": "Now back to the whole network. Corvane holds slot one on every display type, on every matching screen, every day of December."
     },
     {
      "text": "Each booking carries the default creative and the personalised members version, both approved.",
@@ -416,11 +413,11 @@
    "id": "f3-05",
    "lines": [
     {
-     "text": "Booking revenue is for the whole network: 100 clubs, six screen types, every window sold at Corvane's fixed CPM."
+     "text": "Booking revenue is for the whole network: every matching screen, each position with its own audience, sold at Corvane's fixed CPM."
     },
     {
-     "text": "That's over three and a half million dollars in two weeks, from one slot in three.",
-     "cue": "USD 3,623,124 in two weeks"
+     "text": "That's over one and a quarter million dollars in two weeks, from one slot in three.",
+     "cue": "USD 1,272,096 in two weeks"
     }
    ]
   }

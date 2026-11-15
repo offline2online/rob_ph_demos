@@ -29,7 +29,7 @@ const OPERATOR_HERO_P      = 'AI has changed what one person can achieve (the ri
 const OPERATOR_FAQ_TITLE   = 'Running your own RMN';
 const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers. For retailers, those extra sales in your stores are added to your income.';
 const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
-const OPERATOR_TOUR_P      = 'Watch a venue sell its screens, a brand create a campaign by talking, and one visitor\'s journey from arrival to checkout.';
+const OPERATOR_TOUR_P      = 'Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer\'s journey at a club on the network.';
 const OPERATOR_GATE_P      = 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.';
 /** The "Request further information" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
 const OPERATOR_REQUEST_EB  = 'Request further information';
@@ -75,7 +75,7 @@ function operator_why_items() {
 function operator_ways() {
 	return array(
 		array( '#EF61A6', 'Individual operator', 'Build your own income by running a network across many venues of one kind, such as a portfolio of golf clubs. With AI, one driven person can do the work of a whole department.' ),
-		array( '#FE9226', 'Operator team', 'Team up a retail media expert, an ad sales expert and a creative agency expert. Between you, you cover venues, advertisers and campaigns, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.' ),
+		array( '#FE9226', 'Operator team', 'Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.' ),
 		array( '#60D838', 'Small to medium retailer', 'Run your own omnichannel retail media network, on your own domain, seamlessly connecting experiences across your website, app and stores. Serve hyper-personalised, targeted offers without the upfront investment, all running securely in your own virtual private cloud.' ),
 	);
 }
@@ -94,7 +94,7 @@ function operator_standards() {
 	return array(
 		array( '#179BC2', 'Standardised measurement', 'Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel.' ),
 		array( '#EF61A6', 'One buy across many venues', 'Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands.' ),
-		array( '#FE9226', 'Seamless integrations', 'Connects to the programmatic platforms buyers already use, and to venues\' existing systems through open APIs.' ),
+		array( '#FE9226', 'Seamless integrations', 'Connects to venues\' existing systems through open APIs, and runs on any signage player, including Amazon Signage.' ),
 		array( '#60D838', 'Consistent formats and definitions', 'The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework.' ),
 		array( '#179BC2', 'Closed-loop, incremental results', 'Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen.' ),
 		array( '#EF61A6', 'Your brand, your data, your network', 'Runs under your brand in your own AWS environment. You use your own shopper and venue data, it stays private, and the network and its relationships are yours.' ),
@@ -160,20 +160,22 @@ const OPERATOR_PER_DISPLAY_TIP   = 'Your potential income a year ÷ the displays
 /**
  * "Running your own RMN": [question, answer] or [question, answer, true] when the answer ends with the OPERATOR_FAQ_CTA link. Plain
  * text, in Rob's order and word for word from the 15 Nov 2026 rewrite (ticket B9eyzr7i3Rgkl7EQ5idN): thirteen short answers for
- * operators, covering what an RMN is (first-party data, measured against sales), who can run one, making money, what venues get, costs,
- * hardware (every screen needs a media player), who pays for it, exclusivity, industries, what you get, measurement, the calculator and
- * getting started. Never a setup fee, minimum guarantee, revenue-share percentage, runway length or "no lock-in"; never "DSP",
- * "programmatic" or "MCP" (not live); no client, brand or hardware brand names, no country positioning. The visible accordion, the
+ * operators, covering what an RMN is (first-party data, measured against sales), who can run one, making money (direct advertiser deals
+ * at a fixed CPM: PH is not connected to any DSPs yet, ticket ayzaMouFF6U5CIsAMbSx), what venues get, costs, hardware (every screen
+ * needs a media player; Amazon Signage is the one player named), who pays for it, exclusivity, industries, what you get, measurement,
+ * the calculator and getting started. Never a setup fee, minimum guarantee, revenue-share percentage, runway length or "no lock-in";
+ * never "DSP", "programmatic" or "MCP" (not live); no client or brand names other than Amazon Signage in "What hardware do I need?",
+ * no country positioning. The visible accordion, the
  * FAQPage JSON-LD and the twin's FAQ (so the agent endpoint and llms-full.txt) all print this list, so they always match.
  */
 function operator_faq() {
 	return array(
 		array( 'What is a retail media network?', 'A business selling advertising to brands across the places it reaches its customers: in-store screens and, for retailers, their website and app. What makes it retail media is the data: campaigns are targeted using first-party data about the venue and its customers, and, where sales data is shared, measured against what actually sells. When you run your own, you bring many independent venues together so brands can buy them as one network.' ),
-		array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and a creative agency expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
-		array( 'How do I make money?', 'You sell screen time across your network to brands, by slot, at a CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
+		array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
+		array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
 		array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
 		array( 'What does it cost to get started?', 'You start with a free roll-out runway before platform fees apply, so you can sign up venues and win your first advertisers first. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
-		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
+		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
 		array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
 		array( 'Can I get exclusive rights to an industry?', 'Networks are set up by industry first, then by region, for example golf clubs nationally. Places in each industry are limited and first come, first served, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
 		array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you request further information.' ),

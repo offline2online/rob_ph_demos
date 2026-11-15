@@ -84,7 +84,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - Body paragraph, Body colour, max width 40em, margin bottom 40px: "Pick the path that fits you. Each runs the same white-label platform, under your own brand, in your own AWS account."
 - Grid, columns at least 260px wide (3 on desktop). Each card: no background, a 4px top border in the colour given, padding top 20px; Card title, then Body-colour text:
   1. PH Pink. "Individual operator": "Build your own income by running a network across many venues of one kind, such as a portfolio of golf clubs. With AI, one driven person can do the work of a whole department."
-  2. PH Orange. "Operator team": "Team up a retail media expert, an ad sales expert and a creative agency expert. Between you, you cover venues, advertisers and campaigns, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock."
+  2. PH Orange. "Operator team": "Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock."
   3. PH Green. "Small to medium retailer": "Run your own omnichannel retail media network, on your own domain, seamlessly connecting experiences across your website, app and stores. Serve hyper-personalised, targeted offers without the upfront investment, all running securely in your own virtual private cloud."
 
 ### 4. How it works: CSS ID `how`
@@ -112,7 +112,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - Eight cards in a grid of columns at least 300px wide (3 per row on desktop). Each card: White, 1px Rule border with a 4px top border in the colour given, radius 8px, padding 28px; Card title, then Body-colour text:
   1. PH Blue. "Standardised measurement": "Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel."
   2. PH Pink. "One buy across many venues": "Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands."
-  3. PH Orange. "Seamless integrations": "Connects to the programmatic platforms buyers already use, and to venues' existing systems through open APIs."
+  3. PH Orange. "Seamless integrations": "Connects to venues' existing systems through open APIs, and runs on any signage player, including Amazon Signage."
   4. PH Green. "Consistent formats and definitions": "The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework."
   5. PH Blue. "Closed-loop, incremental results": "Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen."
   6. PH Pink. "Your brand, your data, your network": "Runs under your brand in your own AWS environment. You use your own shopper and venue data, it stays private, and the network and its relationships are yours."

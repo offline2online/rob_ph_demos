@@ -1,8 +1,10 @@
 """Demo data for the Run Your Own RMN (golf club) walkthrough, derived from the DSP Integration prototype's own snapshot
 (dsp-integration/prototype/demo/api-snapshot.json). Six golf club screen types, three slots per playlist, slot 1 owned by
 Advertiser, slots 2 and 3 by Headquarters. Fictional names only: the Fairlinks Golf Network (100 connected golf clubs, one of them
-Fernhollow Golf Club) sells to Corvane Golf. v2 (15 Nov 2026): display types and playlists are set once for the network, so each
-slot's displayCount is the club's screens of that type x CLUBS, and every view, play and revenue figure is for the whole network.
+Fernhollow Golf Club) sells to Corvane Golf. v2 (15 Nov 2026): display types and playlists are set once for the network, and every
+view, play and revenue figure is for the whole network. v3 (15 Nov 2026): clubs differ in how many screens they have (1 to 12) and
+have only the display types they have screens for (network(), written to network.json), so each slot's displayCount is the number
+of screens of that type across the network, and each display type has its own assumed viewers per play (vacdPerPlay).
 
     python3 slots_golf.py <api-snapshot.json> <out dir>
 
@@ -15,27 +17,69 @@ SRC = sys.argv[1] if len(sys.argv) > 1 else 'dsp-integration/prototype/demo/api-
 OUT = sys.argv[2] if len(sys.argv) > 2 else '.'
 FULL = json.load(open(SRC))['routes']
 
-DT = [  # id, name, description, w, h, orientation, playlist id, HQ labels, screens of this type in ONE club
-    ('proshop', 'Pro Shop', 'Pro shop and check-in screens', 1080, 1920, 'portrait', 'pl_proshop', ['Lessons and fittings', 'Member offers'], 3),
-    ('range', 'Driving Range', 'Driving range bay screens', 1920, 1080, 'landscape', 'pl_range', ['Range tokens', 'Coaching'], 12),
-    ('tee', 'First Tee', "First tee and starter's hut screens", 1920, 1080, 'landscape', 'pl_tee', ['Course updates', 'Competitions'], 2),
-    ('halfway', 'Halfway House', 'Halfway house counter screens', 1920, 1080, 'landscape', 'pl_halfway', ['Food and drink', 'Snack deals'], 2),
-    ('locker', 'Locker Room', 'Locker room screens', 1080, 1920, 'portrait', 'pl_locker', ['Club news', 'Events'], 4),
-    ('bar', 'Clubhouse Bar', 'Clubhouse bar screens', 1920, 1080, 'landscape', 'pl_bar', ['Bar menu', 'Functions'], 4),
+DT = [  # id, name, description (where the screen sits and who stands in front of it), w, h, orientation, playlist id, HQ labels,
+        # assumed viewers per play (the display type's VAC-d per play: how many people a play of this position reaches)
+    ('proshop', 'Pro Shop', 'Pro shop counter: members and visitors checking in and buying', 1080, 1920, 'portrait', 'pl_proshop', ['Lessons and fittings', 'Member offers'], 1.2),
+    ('range', 'Driving Range', 'Range bays: players warming up before a round', 1920, 1080, 'landscape', 'pl_range', ['Range tokens', 'Coaching'], 0.8),
+    ('tee', 'First Tee', "First tee and starter's hut: golfers about to tee off", 1920, 1080, 'landscape', 'pl_tee', ['Course updates', 'Competitions'], 2.4),
+    ('halfway', 'Halfway House', 'Halfway house counter: golfers at the turn', 1920, 1080, 'landscape', 'pl_halfway', ['Food and drink', 'Snack deals'], 1.6),
+    ('locker', 'Locker Room', 'Locker room: members changing before and after a round', 1080, 1920, 'portrait', 'pl_locker', ['Club news', 'Events'], 0.6),
+    ('bar', 'Clubhouse Bar', 'Clubhouse bar: members and guests after the round', 1920, 1080, 'landscape', 'pl_bar', ['Bar menu', 'Functions'], 2.8),
 ]
+TYPE_IDS = [d[0] for d in DT]
+# ---------- the network seed (v3, 15 Nov 2026): clubs differ in how many screens they have ----------
+# Each club only has the display types it has screens for. A screen's type is where it sits in the club. Every total in the tour
+# (Stores / Branches, the per-type counts, the deal's reach, views and revenue) is derived from this list; nothing is hand-typed.
+SHAPES = {  # shape -> screens per type, in TYPE_IDS order (proshop, range, tee, halfway, locker, bar), and how many clubs have it
+    'bar':              ((0, 0, 0, 0, 0, 1), 20),  # 1 screen: the clubhouse bar
+    'shop-bar':         ((1, 0, 0, 0, 0, 1), 14),  # 2 screens
+    'shop-tee-bar':     ((1, 0, 1, 0, 0, 1), 12),  # 3
+    'shop-range-bar':   ((1, 1, 0, 0, 0, 1), 10),  # 3
+    'shop-range-tee-bar': ((1, 1, 1, 0, 0, 1), 14),  # 4
+    'shop-tee-half-bar': ((1, 0, 1, 1, 0, 1), 8),  # 4
+    'five':             ((1, 1, 1, 1, 0, 1), 8),   # 5
+    'five-range':       ((1, 2, 1, 0, 0, 1), 6),   # 5
+    'flagship-7':       ((1, 1, 1, 1, 1, 2), 2),   # 7, all six types (Fernhollow is one)
+    'flagship-8':       ((1, 2, 1, 1, 1, 2), 2),   # 8
+    'flagship-9':       ((2, 2, 1, 1, 1, 2), 1),   # 9
+    'flagship-10':      ((2, 3, 1, 1, 1, 2), 2),   # 10
+    'flagship-12':      ((2, 4, 1, 1, 2, 2), 1),   # 12
+}
+STEMS = ['Fern', 'Quill', 'Wrenn', 'Marrow', 'Tansy', 'Corrie', 'Brisk', 'Hazle', 'Pellow', 'Sorrel']
+ENDS = ['hollow', 'mead', 'wick', 'stow', 'combe', 'brae', 'holt', 'lea', 'ford', 'garth']
+SEGMENTS = [["Members' club", 'Parkland'], ["Members' club", 'Heathland'], ['Pay and play', 'Parkland'], ["Members' club", 'Links'], ['Resort', 'Parkland']]
+
+
+def network():
+    """The network's 100 clubs, Fernhollow Golf Club first (a 7-screen club with all six types), the rest in a fixed shuffled order."""
+    import random
+    names = [a + z + ' Golf Club' for a in STEMS for z in ENDS]
+    shapes = [k for k, (_c, n) in SHAPES.items() for _ in range(n)]
+    assert len(names) == 100 and len(shapes) == 100, (len(names), len(shapes))
+    shapes.remove('flagship-7')
+    random.Random(15112026).shuffle(shapes)
+    shapes.insert(0, 'flagship-7')
+    clubs = []
+    for i, (nm, sh) in enumerate(zip(names, shapes)):
+        per = dict(zip(TYPE_IDS, SHAPES[sh][0]))
+        clubs.append({'code': f'FGN-{i + 1:03d}', 'name': nm, 'screens': {k: v for k, v in per.items() if v}, 'total': sum(per.values()),
+                      'staff': 2 + (i * 7) % 9 + sum(per.values()) // 3, 'segments': SEGMENTS[i % len(SEGMENTS)]})
+    return clubs
+
+
+CLUB_LIST = network()
+SCREENS = {t: sum(c['screens'].get(t, 0) for c in CLUB_LIST) for t in TYPE_IDS}   # screens of each type across the network
+CLUBS_WITH = {t: sum(1 for c in CLUB_LIST if c['screens'].get(t)) for t in TYPE_IDS}  # clubs that have that type
 VENUE = 'leisure.recreational_locations.golf_courses'
 ADV_LABEL = 'Brand partner'
 DEAL_FROM, DEAL_TO = '2026-12-01', '2026-12-31'  # the deal covers the whole of December
 CPM = 150
-CLUBS = 100  # the network's connected golf clubs (tools/rmn-golf-tour/stores.html lists them)
+CLUBS = len(CLUB_LIST)  # the network's connected golf clubs (network.json; stores.html lists them)
 CLUB_HOURS = 12  # the club's screens run 12 hours a day
-KEEP_ADV = ('red-bull', 'monster-energy', 'nestle')
+KEEP_ADV = ('red-bull',)  # Corvane only: Run Your Own RMN sells direct deals, so the seed has no DSP-synced advertisers (15 Nov 2026)
 KEEP_CAMPAIGNS = {  # campaignId -> (name, display type, approval status)
     'c_demo_redbull_portrait': ('Corvane Season Ahead | New driver and Tour balls', 'proshop'),
     'c_demo_redbull_edition': ('Low-handicap Members | Free Tour ball sleeve', 'proshop'),
-    'c_demo_nestle_kitkat': ('Northwind Foods — Halfway house snacks', 'halfway'),
-    'c_dsp_nestle': ('Northwind Foods — Winter soups', 'bar'),
-    'c_seed_monster-energy': ('Thunder Energy — Back nine boost', 'range'),
 }
 # Every advertiser in the prototype's seed is a real brand: each gets a fictional name, whether or not it is shown.
 RENAME = [
@@ -48,9 +92,6 @@ RENAME = [
 ]
 NAME = {d[0]: d[1] for d in DT}
 OTHER_BRIEF = {  # the other advertisers' campaigns, given golf club products too
-    'c_demo_nestle_kitkat': {'details': 'Northwind flapjacks and trail mix at the halfway house counter.', 'promotedProducts': ['Northwind flapjacks', 'Northwind trail mix'], 'targetAudiences': ['Golfers at the turn']},
-    'c_dsp_nestle': {'details': 'Northwind winter soups in the clubhouse bar.', 'promotedProducts': ['Northwind winter soups'], 'targetAudiences': ['Members']},
-    'c_seed_monster-energy': {'details': 'Thunder Energy for the back nine, on the driving range.', 'promotedProducts': ['Thunder Energy Tropical'], 'targetAudiences': ['Range users']},
 }
 
 
@@ -108,13 +149,12 @@ def lite(has_deal):
     R['/admin/v1/buyers-lists']['items'] = [b for b in R['/admin/v1/buyers-lists']['items'] if has_deal and b['id'] == 'bl_demo_direct_redbull']
     for key, v in R.items():
         if isinstance(v, dict) and 'dsps' in v:
-            for d in v['dsps']:
-                d['advertisers'] = [a for a in d.get('advertisers', []) if a['advertiserId'] in KEEP_ADV]
+            v['dsps'] = []  # no DSP is connected to the network
         if isinstance(v, dict) and 'directAdvertisers' in v:
             v['directAdvertisers'] = [a for a in v['directAdvertisers'] if a['advertiserId'] in KEEP_ADV]
-    for p in R['/admin/v1/partners']['items']:
-        p['seats'] = [s for s in p.get('seats', []) if s.get('name') == 'Nestlé']
-        p['advertiserWhitelist'] = [s['id'] for s in p['seats']]
+    R['/admin/v1/partners']['items'] = []  # no DSP is connected to the network
+    for k in [k for k in R if 'partnerId=' in k]:
+        del R[k]
     return R
 
 
@@ -153,7 +193,7 @@ def transform(state):
         x = copy.deepcopy(tpl[('portrait', 1)] if orient == 'portrait' else tpl[('landscape', 2)])
         x.update({'displayTypeId': did, 'displayTypeName': name, 'displayTypeDescription': desc, 'displayTypeOrientation': orient,
                   'playlistName': f'{name} Playlist', 'playlistId': plid, 'slot': 1, 'zoneSlot': 1, 'position': ADV_LABEL,
-                  'slotCount': 3, 'inGlobalDeal': False, 'globalDealSuppressedBy': None, 'displayCount': n * CLUBS,
+                  'slotCount': 3, 'inGlobalDeal': False, 'globalDealSuppressedBy': None, 'displayCount': SCREENS[did],
                   'openHoursPerDay': CLUB_HOURS, 'operatingTimes': '06:30–18:30', 'unassigned': False, 'unsellableReason': None, 'salesLocked': False})
         a = x['assignedTo']
         names, ids = (['Corvane direct'], ['bl_demo_direct_redbull']) if deal_on else ([], [])
@@ -163,13 +203,13 @@ def transform(state):
         a['openAuction'] = False
         x['floorCpm'] = 100; x['floorCpmOverride'] = None
         x['playsPerWindow'] = int(86400 * (CLUB_HOURS / 24) // (15 * 3))
-        x['_views'] = round(x['playsPerWindow'] * x['displayCount'] * x['vacdPerPlay'])  # the whole network: every club's screens of this type
+        x['vacdPerPlay'] = n  # this position's assumed viewers per play (the display type's own VAC-d)
+        x['_views'] = round(x['playsPerWindow'] * x['displayCount'] * x['vacdPerPlay'])  # the whole network: every screen of this type, at every club that has one
         items.append(x)
     VIEWS = {x['displayTypeId']: x.pop('_views') for x in items}
     ai['items'] = [] if state == 'pre' else items
     ai['playlistDisplayTypes'] = {plid: [{'id': did, 'name': name, 'description': desc, 'storeZone': None}] for (did, name, desc, _w, _h, _o, plid, _l, _n) in DT}
     # ---------- booking schedules ----------
-    dtn = {d[0]: d[8] for d in DT}
     for key, v in R.items():
         if not (key.startswith('/admin/v1/booking-schedule') and isinstance(v, dict) and 'positions' in v):
             continue
@@ -183,7 +223,7 @@ def transform(state):
         for (did, name, desc, w, h, orient, plid, _l, n) in DT:
             p = copy.deepcopy(fpos['portrait.s3' if orient == 'portrait' else 'landscape.s2'])
             p.update({'positionId': f'{did}.s1', 'displayTypeId': did, 'displayTypeName': name, 'slot': 1, 'zoneSlot': 1, 'slotLabel': ADV_LABEL,
-                      'displayCount': dtn[did] * CLUBS, 'assignment': 'deal', 'realTime': False, 'partnerNames': []})
+                      'displayCount': SCREENS[did], 'assignment': 'deal', 'realTime': False, 'partnerNames': []})
             for k, win in enumerate(p['windows']):
                 win['start'] = shift(win['start'])
                 if win.get('end'): win['end'] = shift(win['end'])
@@ -203,15 +243,14 @@ def transform(state):
         v['positions'] = pos
         v['windows'] = [{**w, 'start': shift(w['start']), 'end': shift(w['end'])} for w in v.get('windows', [])]
         if 'dsps' in v:
-            for d in v['dsps']:
-                d['advertisers'] = []
+            v['dsps'] = []
         if 'directAdvertisers' in v:
             v['directAdvertisers'] = [a for a in v['directAdvertisers'] if a['advertiserId'] == 'red-bull']
         recompute(v)
     # ---------- the deal ----------
     for b in R['/admin/v1/buyers-lists']['items']:
         b['name'] = 'Corvane direct'
-        b['description'] = 'Corvane Golf books the network directly, with no DSP: brand partner slots on all six screen types at all 100 clubs, at a fixed CPM.'
+        b['description'] = 'Corvane Golf books the network directly: brand partner slot 1 on all six display types, on every matching screen across the network, at a fixed CPM.'
         b['activeFrom'] = DEAL_FROM + 'T00:00:00.000Z'; b['activeTo'] = DEAL_TO + 'T23:59:59.999Z'
         b['floorCpm'] = CPM; b['effectiveRateCpm'] = {'min': CPM, 'max': CPM, 'source': 'buyer'}
         t = b['assignedSlots'][0]
@@ -244,12 +283,13 @@ def transform(state):
     for c in R['/admin/v1/campaigns']['items']:
         nm, did = KEEP_CAMPAIGNS[c['campaignId']]
         c['name'] = nm; c['displayTypeId'] = did
+        c['source'] = 'api'  # Corvane's own login, not a DSP (the prototype's sources are hq, api and dsp)
         if not isinstance(c.get('brief'), dict): c['brief'] = {}
         br = c['brief']
         br.update(OTHER_BRIEF.get(c['campaignId'], {}))
         if br.get('landingPageUrl'): br['landingPageUrl'] = 'https://example.com'
         if c['campaignId'] == 'c_demo_redbull_portrait':
-            br.update({'details': "Season-ahead campaign for Corvane Golf on the network's pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens at all 100 clubs. Creative leads with the new Corvane driver and Corvane Tour balls.",
+            br.update({'details': "Season-ahead campaign for Corvane Golf on the network's pro shop, driving range, first tee, halfway house, locker room and clubhouse bar screens, on every matching screen across the network. Creative leads with the new Corvane driver and Corvane Tour balls.",
                        'objective': 'Drive Sales', 'promotedProducts': ['Corvane driver', 'Corvane Tour balls'], 'targetAudiences': ['Members', 'Visiting golfers']})
         if c['campaignId'] == 'c_demo_redbull_edition':
             br.update({'details': 'A free sleeve of Corvane Tour balls with any driver fitting, for low-handicap members who buy golf balls, shown only to them, in real time.',
@@ -297,12 +337,26 @@ if __name__ == '__main__':
         print('deal', b['name'], b['status'], len(b['assignedSlots']), 'forecast', b['_forecastPlays'], 'committed', b['committedPlays'])
     for x in R['/admin/v1/available-inventory']['items']:
         print('  AI', x['playlistName'], x['displayCount'], x['playsPerWindow'], x['vacdPerPlay'])
-    # figures.json (kept beside this script): what the tour's revenue copy is recomputed from by tests/tour.test.mjs
-    fig = {'clubs': CLUBS, 'cpm': CPM, 'from': '2026-12-01', 'to': '2026-12-14', 'types': [
-        {'name': x['displayTypeName'], 'perClub': x['displayCount'] // CLUBS, 'displayCount': x['displayCount'], 'playsPerWindow': x['playsPerWindow'], 'vacdPerPlay': x['vacdPerPlay'],
+    # network.json and figures.json (kept beside this script): the seed, and the figures the tour quotes, which tests/tour.test.mjs
+    # recomputes from the seed (screens per type = the sum over the clubs; views = plays per window x screens x viewers per play; revenue
+    # = views x CPM / 1,000). sync_tour_figures.py copies figures.json into tour.html (const GNET).
+    here = os.path.dirname(os.path.abspath(__file__))
+    json.dump({'about': 'The Fairlinks Golf Network seed (v3): 100 fictional clubs, each with only the display types it has screens for. Written by slots_golf.py; read by stores.html, the tour figures and the tests.',
+               'types': [{'id': d[0], 'name': d[1]} for d in DT], 'clubs': CLUB_LIST}, open(os.path.join(here, 'network.json'), 'w'), indent=1, ensure_ascii=False)
+    open(os.path.join(here, 'network.json'), 'a').write('\n')
+    deal = json.load(open(os.path.join(OUT, 'golf-assigned.json')))['routes']['/admin/v1/buyers-lists']['items'][0]
+    sizes = sorted({c['total'] for c in CLUB_LIST})
+    fig = {'clubs': CLUBS, 'cpm': CPM, 'from': '2026-12-01', 'to': '2026-12-14', 'screens': sum(SCREENS.values()),
+           'clubsBySize': {str(n): sum(1 for c in CLUB_LIST if c['total'] == n) for n in sizes},
+           'fernhollow': next(c for c in CLUB_LIST if c['name'] == 'Fernhollow Golf Club'),
+           'deal': {'screens': sum(s['displayCount'] for s in deal['assignedSlots']), 'clubs': sum(1 for c in CLUB_LIST if c['screens']),
+                    'forecastPlays': deal['_forecastPlays'], 'committedPlays': deal['committedPlays']},
+           'types': [
+        {'id': x['displayTypeId'], 'name': x['displayTypeName'], 'audience': x['displayTypeDescription'], 'clubs': CLUBS_WITH[x['displayTypeId']], 'displayCount': x['displayCount'],
+         'playsPerWindow': x['playsPerWindow'], 'vacdPerPlay': x['vacdPerPlay'],
          'bookedWindows': next(r['bookedWindows'] for r in bs['revenue'] if r['displayTypeName'] == x['displayTypeName']),
          'bookedViews': next(r['bookedViews'] for r in bs['revenue'] if r['displayTypeName'] == x['displayTypeName']),
          'bookedRevenue': next(r['bookedRevenue'] for r in bs['revenue'] if r['displayTypeName'] == x['displayTypeName'])} for x in R['/admin/v1/available-inventory']['items']],
         'totals': {k: bs['totals'][k] for k in ('bookedWindows', 'bookedViews', 'bookedRevenue')}}
-    json.dump(fig, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'figures.json'), 'w'), indent=1)
-    open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'figures.json'), 'a').write('\n')
+    json.dump(fig, open(os.path.join(here, 'figures.json'), 'w'), indent=1, ensure_ascii=False)
+    open(os.path.join(here, 'figures.json'), 'a').write('\n')

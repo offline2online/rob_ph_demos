@@ -1,6 +1,7 @@
 <?php
 /**
- * php ph-website/tests/operator.test.php : the hidden Run Your Own RMN page, /run-your-own-rmn/ (snippet 10063, operator.php), an
+ * php ph-website/tests/operator.test.php : the Run Your Own RMN page (launched 15 Nov 2026: OPERATOR_LIVE ships true, and one pass forces it
+ * hidden through ph_operator_live), /run-your-own-rmn/ (snippet 10063, operator.php), an
  * Elementor page built from ph-website/elementor/run-your-own-rmn.md. POST ph-site/v1/operator-lead validation (400 with the field),
  * optional and normalised LinkedIn, the required "I am" (stored and sent on as `audience`), the background allow-list, honeypot, 429, personal email accepted, one lead per person in both
  * orders, the ph_lead_captured payload and the console ingest body (leadType, source detail "Run Your Own RMN page – product tour"),
@@ -69,6 +70,7 @@ require $dir . '/leads.php';
 require $dir . '/operator.php';
 require $dir . '/redirects.php';
 require $dir . '/ai-surface.php';
+require $dir . '/tour.php'; // TOUR_INDUSTRIES: the golf tour joins llms.txt and the twins only when the page is live (ai_tours())
 }
 
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
@@ -314,15 +316,19 @@ ok( array( '/retail-media-platform' ) === array_keys( redirect_map() ), 'redirec
 ok( ! in_array( '/run-your-own-rmn/', redirect_map(), true ) && '' === redirect_target( '/run-your-own-rmn/' ), 'nothing redirects to or from /run-your-own-rmn/' );
 ok( ! preg_match( '/fr[a]nch/i', (string) file_get_contents( $dir . '/redirects.php' ) ), 'redirects.php never names the retired offer' );
 
-/* noindex state and sitemaps */
+/* Launched 15 Nov 2026: OPERATOR_LIVE ships true, so with no filter the page is live: indexable, in both sitemaps, the header item on
+   every page, and llms.txt, the twin, the agent endpoint, robots.txt and the golf tour name it. One pass then forces it hidden through
+   the ph_operator_live filter, and every one of those goes back to hidden. */
+ok( true === OPERATOR_LIVE, 'OPERATOR_LIVE ships true (launched 15 Nov 2026)' );
+ok( ! array_key_exists( 'ph_operator_live', $GLOBALS['filters'] ) && true === operator_is_live(), 'live by default: operator_is_live() with no filter' );
 $d = $mkpage( 7 );
 operator_sync_state();
-ok( 'yes' === $GLOBALS['meta'][7]['_seopress_robots_index'] && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'hidden: SEOPress noindex set on the page' );
-$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
-ok( array( 7 ) === $args['post__not_in'], 'hidden: left out of the sitemap queries' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live (default): no SEOPress noindex on the page, state live' );
+ok( ! isset( operator_sitemap_args( array( 'post_type' => 'page' ) )['post__not_in'] ), 'live (default): in the WordPress and SEOPress sitemap queries' );
 $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 $r = operator_robots( array( 'index' => true, 'follow' => true ) );
-ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'hidden: wp_robots noindex on /run-your-own-rmn/' );
+ok( empty( $r['noindex'] ) && ! empty( $r['index'] ), 'live (default): wp_robots indexable on /run-your-own-rmn/' );
+ok( false === strpos( $hsrc, "if ( operator_is_live() && ! headers_sent() )" ) && false !== strpos( $hsrc, "if ( ! operator_is_live() && ! headers_sent() ) {\n\t\t\theader( 'X-Robots-Tag: noindex' );" ), 'X-Robots-Tag noindex is sent on the page only while not live' );
 ok( 'Run Your Own Retail Media Network (RMN) - Personalisation Hub' === operator_document_title( 'Old - Personalisation Hub' ), 'document title "Run Your Own Retail Media Network (RMN) - Personalisation Hub" on the page' );
 $other = new \WP_Post(); $other->ID = 99; $other->post_name = 'about-us'; $GLOBALS['qo'] = $other;
 ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ) && 'T' === operator_document_title( 'T' ), 'another page: keyed by the resolved id, so untouched' );
@@ -330,14 +336,39 @@ $GLOBALS['qo'] = $d;
 $GLOBALS['is_page'] = false;
 ok( array( 'index' => true ) === operator_robots( array( 'index' => true ) ), 'other pages: robots unchanged' );
 ok( 'Home | X' === operator_document_title( 'Home | X' ), 'other pages: title unchanged' );
+$hmk = function ( $id, $title, $url, $parent = 0 ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => array( 'menu-item' ), 'current' => false, 'menu_order' => 0 ); };
+$hdr = function () use ( $hmk ) { return array( $hmk( 1, 'Features', '/features/' ), $hmk( 3, 'Industry', '/industries/' ), $hmk( 4, 'Telco', '/industries/telco/', 3 ), $hmk( 5, 'Support', '/support-centre/' ), $hmk( 6, 'Blog', '/blog/' ) ); };
+$top = function ( $items ) { return implode( ',', array_map( function ( $i ) { return $i->title; }, array_filter( $items, function ( $i ) { return '0' === (string) $i->menu_item_parent; } ) ) ); };
+ok( 'Features,Industry,Run Your Own RMN,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'live (default): a non-operator page\'s header gets "Run Your Own RMN" between Industry and Support' );
+$wp_robots0 = "User-agent: *\nDisallow: /wp-admin/\n";
+ok( false !== strpos( operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), '## Run your own RMN' ), 'live (default): llms.txt gets the "Run your own RMN" section' );
+ok( is_array( operator_agent_page( operator_is_live() ) ), 'live (default): the agent endpoint lists the page and its twin' );
+ok( false !== strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'Allow: /run-your-own-rmn/' ), 'live (default): robots.txt allows /run-your-own-rmn/ for AI agents' );
+$tours = ai_tours();
+ok( isset( $tours['rmn'] ) && 5 === count( $tours ) && false !== strpos( ai_tours_llms_md(), '/run-your-own-rmn/' ) && '' !== ai_tour_section( 'rmn' ), 'live (default): the golf tour joins llms.txt and the twins' );
+ok( 1 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'live (default): the head links the markdown twin' );
+
+/* Forced hidden through the ph_operator_live filter: everything back to hidden */
+$GLOBALS['filters']['ph_operator_live'] = false;
+ok( false === operator_is_live(), 'ph_operator_live false: hidden' );
+operator_sync_state();
+ok( 'yes' === ( $GLOBALS['meta'][7]['_seopress_robots_index'] ?? '' ) && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'forced hidden: SEOPress noindex set on the page' );
+$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
+ok( array( 7 ) === ( $args['post__not_in'] ?? null ), 'forced hidden: left out of the sitemap queries' );
+$GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
+$r = operator_robots( array( 'index' => true, 'follow' => true ) );
+ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'forced hidden: wp_robots noindex on /run-your-own-rmn/' );
+$GLOBALS['is_page'] = false;
+ok( 'Features,Industry,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'forced hidden: a non-operator page\'s header is unchanged' );
+ok( "## Pricing and trial\n" === operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), 'forced hidden: llms.txt unchanged' );
+ok( null === operator_agent_page( operator_is_live() ), 'forced hidden: the agent endpoint gets nothing' );
+ok( false === strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'run-your-own-rmn' ), 'forced hidden: robots.txt does not name the page' );
+ok( ! isset( ai_tours()['rmn'] ) && 4 === count( ai_tours() ) && false === strpos( ai_tours_llms_md(), 'run-your-own-rmn' ) && '' === ai_tour_section( 'rmn' ), 'forced hidden: the golf tour is out of llms.txt and the twins' );
+ok( 0 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'forced hidden: no twin link in the head' );
 $GLOBALS['filters']['ph_operator_live'] = true;
 operator_sync_state();
-ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live: SEOPress noindex removed' );
-ok( ! isset( operator_sitemap_args( array() )['post__not_in'] ), 'live: in the sitemaps' );
-$GLOBALS['is_page'] = true;
-ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ), 'live: indexable' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'back to live: SEOPress noindex removed again' );
 unset( $GLOBALS['filters']['ph_operator_live'] ); $GLOBALS['is_page'] = false;
-ok( false === OPERATOR_LIVE, 'OPERATOR_LIVE ships false' );
 
 /* Header menu (the page exists: $d, id 7) */
 $mk = function ( $id, $title, $url, $parent = 0, $cur = false ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => $cur ? array( 'menu-item', 'current-menu-item' ) : array( 'menu-item' ), 'current' => $cur, 'menu_order' => 0 ); };
@@ -503,11 +534,11 @@ ok( 'Running your own RMN' === trim( $px->query( '//section[@id="faq"]//h2' )->i
 // Rob's 15 Nov 2026 rewrite (B9eyzr7i3Rgkl7EQ5idN): thirteen questions and answers, word for word and in this order.
 $faqWant = array(
 	array( 'What is a retail media network?', 'A business selling advertising to brands across the places it reaches its customers: in-store screens and, for retailers, their website and app. What makes it retail media is the data: campaigns are targeted using first-party data about the venue and its customers, and, where sales data is shared, measured against what actually sells. When you run your own, you bring many independent venues together so brands can buy them as one network.' ),
-	array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and a creative agency expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
-	array( 'How do I make money?', 'You sell screen time across your network to brands, by slot, at a CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
+	array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
+	array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
 	array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
 	array( 'What does it cost to get started?', 'You start with a free roll-out runway before platform fees apply, so you can sign up venues and win your first advertisers first. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
-	array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
+	array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
 	array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
 	array( 'Can I get exclusive rights to an industry?', 'Networks are set up by industry first, then by region, for example golf clubs nationally. Places in each industry are limited and first come, first served, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
 	array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you request further information.' ),
@@ -563,8 +594,39 @@ $twFaq = substr( $tw, strpos( $tw, "## FAQ\n" ), strpos( $tw, "## Interactive pr
 ok( 13 === substr_count( $twFaq, "\n### " ) && ! preg_match( '/lock-?in/i', $tw ), 'twin FAQ: thirteen questions, no "no lock-in"' );
 foreach ( array( '/programmatic/i', '/\bDSPs?\b/', '/\bMCP\b/', '/%/', '/\$/', '/lock-?in/i' ) as $re ) { ok( ! preg_match( $re, $twFaq ), "twin FAQ: nothing matching $re" ); }
 foreach ( array( '/programmatic/i', '/\bDSPs?\b/', '/\bMCP\b/', '/%/', '/\$/', '/lock-?in/i' ) as $re ) { ok( ! preg_match( $re, (string) wp_json_encode( operator_faq_ld() ) ) && ! preg_match( $re, implode( ' ', array_merge( ...operator_faq() ) ) ), "operator_faq() and its JSON-LD: nothing matching $re" ); }
-foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/fr[a]nch/i', '/personaliz/i', '/network operator/i', '/world-leading/i' ) as $re ) { ok( ! preg_match( $re, $tw ), "twin: nothing matching $re (no share constant, none of the replaced copy)" ); }
+ok( false !== strpos( $tw, OPERATOR_TOUR_P ) && 0 === strpos( OPERATOR_TOUR_P, 'Watch a network operator sell screens across 100 golf clubs, ' ), 'twin: the tour intro is the network operator\'s' );
+foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/fr[a]nch/i', '/personaliz/i', '/network operator/i', '/world-leading/i' ) as $re ) { ok( ! preg_match( $re, str_replace( OPERATOR_TOUR_P, '', $tw ) ), "twin: nothing matching $re (no share constant, none of the replaced copy)" ); }
 foreach ( $lines as $l ) { if ( '"' !== $l[0] && ! preg_match( '/^\d\. "/', $l ) ) { ok( false !== strpos( $tw, $l ), 'twin publishes the page\'s line: ' . substr( $l, 0, 60 ) ); } }
+// 15 Nov 2026 (ayzaMouFF6U5CIsAMbSx): direct advertiser deals only (PH is not connected to any DSPs yet), Amazon Signage named.
+ok( 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' === operator_faq()[2][1], 'FAQ Q3 "How do I make money?": direct advertiser deals at a fixed CPM, word for word' );
+ok( 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' === operator_faq()[5][1], 'FAQ Q6 "What hardware do I need?": Amazon Signage, word for word' );
+$cardSI = array_values( array_filter( operator_standards(), function ( $c ) { return 'Seamless integrations' === $c[1]; } ) );
+ok( 1 === count( $cardSI ) && 'Connects to venues\' existing systems through open APIs, and runs on any signage player, including Amazon Signage.' === $cardSI[0][2], '"Seamless integrations" card matches the live Elementor card (page 10785, element 4ce4f48f)' );
+ok( false !== strpos( $tw, '- **Seamless integrations:** ' . $cardSI[0][2] . "\n" ), 'twin: the "Seamless integrations" card\'s new copy' );
+// 15 Nov 2026 (bB30Qb10Oz4eYHXfOCFk): the operator team is a retail media, an ad sales and an IT operations expert, matching the live Elementor card (page 10785, element 29becd9b).
+$teamCard = 'Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.';
+$teamQ2   = 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.';
+ok( 'Operator team' === operator_ways()[1][1] && $teamCard === operator_ways()[1][2], '"Operator team" card matches the live Elementor card (page 10785, element 29becd9b), word for word' );
+ok( 'Who can run their own RMN?' === operator_faq()[1][0] && $teamQ2 === operator_faq()[1][1], 'FAQ Q2: the operator team is a retail media, an ad sales and an IT operations expert' );
+ok( false !== strpos( $tw, '- **Operator team:** ' . $teamCard ) || false !== strpos( $tw, $teamCard ), 'twin: the "Operator team" card\'s new copy' );
+ok( false !== strpos( $tw, '### Who can run their own RMN?' . "\n\n" . $teamQ2 ) && false !== strpos( (string) wp_json_encode( operator_faq_ld() ), 'an IT operations expert' ), 'twin and FAQPage JSON-LD: the new Q2' );
+ok( false !== strpos( $brief, '"Operator team": "' . $teamCard . '"' ), 'brief: the "Operator team" card word for word' );
+$cae = array();
+$it  = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( dirname( __DIR__ ), \FilesystemIterator::SKIP_DOTS ) );
+foreach ( $it as $file ) {
+	$path = $file->getPathname();
+	if ( false !== strpos( $path, '/node_modules/' ) || ! preg_match( '/\.(php|js|mjs|md|json|html|css|txt)$/', $path ) || in_array( basename( $path ), array( 'operator.test.php', 'operator.test.mjs' ), true ) ) { continue; }
+	if ( false !== stripos( (string) file_get_contents( $path ), 'creative agency expert' ) ) { $cae[] = substr( $path, strlen( dirname( __DIR__ ) ) + 1 ); }
+}
+ok( array() === $cae && false === stripos( $tw, 'creative agency expert' ) && false === stripos( (string) wp_json_encode( operator_faq_ld() ), 'creative agency expert' ), 'nothing in ph-website/, the twin or the JSON-LD says "creative agency expert"' . ( $cae ? ' (found in ' . implode( ', ', $cae ) . ')' : '' ) );
+$cardsText = implode( ' ', array_map( function ( $c ) { return $c[1] . ' ' . $c[2]; }, operator_standards() ) );
+$ldText    = (string) wp_json_encode( operator_faq_ld(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+foreach ( array( 'cards' => $cardsText, 'FAQ' => implode( ' ', array_merge( ...operator_faq() ) ), 'twin' => $tw, 'FAQ JSON-LD' => $ldText ) as $where => $txt ) {
+	ok( ! preg_match( '/programmatic/i', $txt ) && ! preg_match( '/\bDSPs?\b/', $txt ), "$where: no \"programmatic\" or \"DSP\"" );
+}
+ok( 2 === substr_count( implode( ' ', array_merge( ...operator_faq() ) ) . ' ' . $cardsText, 'Amazon Signage' ) && 1 === substr_count( operator_faq()[5][1], 'Amazon Signage' ) && 1 === substr_count( $cardsText, 'Amazon Signage' ), 'Amazon Signage only in Q6 and the "Seamless integrations" card' );
+ok( 2 === substr_count( $tw, 'Amazon Signage' ) && 1 === substr_count( $ldText, 'Amazon Signage' ), 'twin: Amazon Signage twice (Q6 and the card); FAQ JSON-LD: once (Q6)' );
+ok( 1 === preg_match( "/const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1\.9\.27';/", (string) file_get_contents( $dir . '/main.php' ) ), 'main.php: assets version 1.9.27, so returning browsers fetch the new operator.js and operator.css' );
 $src = (string) file_get_contents( $dir . '/operator.php' );
 ok( false !== strpos( $src, "add_filter( 'ph_llms_txt'" ) && false !== strpos( $src, "add_filter( 'ph_agent_extra_pages'" ) && false !== strpos( $src, "add_filter( 'ph_ai_robots_allow'" ) && false !== strpos( $src, "|| ! operator_is_page() || ! operator_is_live() ) {" ), 'hooks: llms.txt, agent endpoint, robots.txt, and the twin served only on the page when live' );
 
