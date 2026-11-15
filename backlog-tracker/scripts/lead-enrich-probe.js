@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage, chooseLogos } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -117,7 +117,10 @@ async function logosOnly(list) {
     const [name, site = ""] = item.split("|").map((x) => x.trim());
     const web = await api.websiteSource(site);
     const logos = await api.logosFor(name, (web.page || {}).logos, {});
-    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, its own logo images light ${web.page.logos.light ? "yes" : "no"} / dark ${web.page.logos.dark ? "yes" : "no"}` : ""}`);
+    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, ${web.page.logos.images.length} image(s) say "logo", ${web.page.logos.images.filter((x) => x.inHeader).length} in the header, declared ${web.page.logos.declared.light ? "yes" : "no"}` : ""}`);
+    const file = (u) => { try { return decodeURIComponent(new URL(u).pathname.split("/").pop()); } catch { return ""; } };
+    if (logos.light) console.log(`    light file: ${file(logos.light)}`);
+    if (logos.dark) console.log(`    dark file:  ${file(logos.dark)}`);
   }
   process.exit(0);
 }
@@ -268,7 +271,7 @@ async function syncLead(id) {
   console.log(`\nlogoLight: ${await kind(f.logoLight)}\nlogoDark:  ${await kind(f.logoDark)}`);
   try {
     const site = website || f.website;
-    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = readPage(html, site).logos; console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
+    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = chooseLogos(readPage(html, site).logos, company); console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
   } catch (err) { console.log(`home page not read: ${String(err && err.message || err).slice(0, 80)}`); }
   if (publicKey) {
     const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });

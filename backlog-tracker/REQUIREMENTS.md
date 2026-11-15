@@ -4457,6 +4457,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     too; with no dates to compare the new run's figure stands), and people
     are matched on first initial and surname (`personKey`, `mergePeople`),
     keeping a LinkedIn link or note only the earlier entry had.
+  - **Only the company's own logo (14 Nov 2026)**: a refresh stored a
+    campaign graphic as a company's logo, because the first rule took the
+    first image on the home page whose markup said "logo" (a home page also
+    shows partners', campaigns' and awards' logos). `chooseLogos` now takes,
+    in order: the logo the site declares in its structured data; an image in
+    the site's header; an image elsewhere only when its file is named for the
+    company and "logo" (the name without where it trades or how it is
+    incorporated, `coreName`: "7-Eleven Australia" is "7eleven"). An alt text
+    naming the company is not enough outside the header. Wikimedia Commons is
+    then asked for the name as given and again without the country, since a
+    country arm rarely has a logo file of its own. Nothing found means no
+    logo, and the initials show. Logos chosen under the first rule are not
+    carried forward (`enrichment.logoRule`, now 2): the next run replaces or
+    removes them. An `.ico` icon is a container the image library cannot
+    read, so the PNG inside it is used (`icoPng`); one holding only bitmaps
+    is not copied and keeps its address. Tried on ten real sites: a logo for
+    six, the right file for the two that had gone wrong.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
