@@ -146,6 +146,16 @@ async function leadStatus(id) {
     console.log(`  sources: ${JSON.stringify((e.sources || []).map((x) => ({ source: x.source, status: x.status, message: x.message })))}`);
     return d;
   };
+  if (id.startsWith("prospects/")) {
+    const p = await db.collection("prospects").doc(id.slice(10)).get();
+    if (!p.exists) { console.error("no such TAM record"); process.exit(1); }
+    const pd = p.data() || {};
+    show("TAM record", pd);
+    const e = pd.enrichment || {};
+    console.log(`  level ${e.level || "none"}, sites ${e.storeCount == null ? "none" : "set"}, summary ${e.summary ? e.summary.length + " chars" : "none"}, people ${(e.people || []).length}, logos ${JSON.stringify(Object.keys(e.logos || {}).filter((k) => e.logos[k]))}, keys ${JSON.stringify(Object.keys(e).sort())}`);
+    if (pd.leadId) console.log(`  linked lead: yes`);
+    process.exit(0);
+  }
   const lead = await db.collection("leads").doc(id).get();
   if (!lead.exists) { console.error("no such lead"); process.exit(1); }
   const d = show("lead", lead.data() || {});

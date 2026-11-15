@@ -107,4 +107,8 @@ jobs:
           gcloud logging read 'resource.type="cloud_run_revision" AND (resource.labels.service_name="enrichleadonwrite" OR resource.labels.service_name="enrichprospectonwrite" OR resource.labels.service_name="leadenrich" OR resource.labels.service_name="leadingest") AND severity>=WARNING' \
             --project backlog-tracker-e4ed2 --freshness=1d --limit 40 \
             --format='table[no-heading](timestamp, resource.labels.service_name, severity, jsonPayload.status, jsonPayload.error, jsonPayload.message)' || echo "Couldn't read the functions' logs."
+          echo "--- how the TAM-record function's runs ended (6h) ---"
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="enrichprospectonwrite" AND (severity>=WARNING OR textPayload:"terminated" OR textPayload:"exceeded" OR textPayload:"timeout" OR httpRequest.status>=400)' \
+            --project backlog-tracker-e4ed2 --freshness=6h --limit 40 \
+            --format='table[no-heading](timestamp, severity, httpRequest.status, httpRequest.latency, textPayload.slice(0:160), jsonPayload.message.slice(0:160))' || echo "Couldn't read the functions' logs."
           rm -f "$RUNNER_TEMP/firebase-sa.json"

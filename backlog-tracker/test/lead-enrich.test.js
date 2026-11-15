@@ -334,6 +334,54 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
     assert.match(sent[1].messages[0].content, /2,600 pubs/);
   });
+  // ── 15 Nov 2026: a bank's research ran past the function's 540 s limit twice;
+  // the platform killed it and the record said "running" with nothing saved ──
+  await test("a research run still going at its deadline is cut off and what it gathered is written up", async () => {
+    const sent = [];
+    const snapshot = { role: "assistant", content: [
+      { type: "text", text: "NAB runs about 700 branches across Australia." },
+      { type: "server_tool_use", id: "s1", name: "web_search", input: { query: "NAB branches" } },
+      { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", title: "NAB annual report", url: "https://nab.example/annual", page_age: "2026" }] },
+      { type: "web_fetch_tool_result", tool_use_id: "f1", content: { type: "web_fetch_result", url: "https://nab.example/branches", content: { type: "document", title: "Branch network", source: { type: "text", media_type: "text/plain", data: "We run 698 branches." } } } },
+    ] };
+    class Slow {
+      constructor() { this.beta = { messages: { stream: (params) => {
+        sent.push(JSON.parse(JSON.stringify(params)));
+        if (sent.length > 1) return { finalMessage: async () => text("```json\n" + JSON.stringify({ ...AGENT, storeCount: 698 }) + "\n```") };
+        let listener = null, reject = null;
+        return {
+          on: (ev, fn) => { if (ev === "streamEvent") { listener = fn; setTimeout(() => listener({ type: "content_block_stop" }, snapshot), 5); } },
+          abort: () => reject(new Error("Request was aborted.")),
+          finalMessage: () => new Promise((_, rej) => { reject = rej; }),
+        };
+      } } }; }
+    }
+    const t0 = Date.now();
+    const out = await claudeResearch({ apiKey: "k", Anthropic: Slow, company: "NAB", deadline: Date.now() + 60 });
+    assert.ok(Date.now() - t0 < 2000, "the run stops at its deadline");
+    assert.equal(out.storeCount, 698);
+    assert.equal(out.cutShort, true);
+    assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
+    const notes = sent[1].messages[0].content;
+    assert.match(notes, /about 700 branches/); assert.match(notes, /nab\.example\/annual/); assert.match(notes, /We run 698 branches/);
+  });
+  await test("the run gives the research a deadline inside the function's limit, and a cut-short run says so on the record", async () => {
+    let got = null;
+    const research = async (args) => { got = args; const r = { ...AGENT }; Object.defineProperty(r, "cutShort", { value: true, enumerable: false }); return r; };
+    const db = fakeDb({ leads: { l1: { ...LEAD } }, prospects: {}, prospectCompanies: {} });
+    const api = createLeadEnrich({
+      db, verifyIdToken: async () => ({ email: "x" }), resolveConsoleUser: async () => null,
+      anthropicKey: () => "sk-test", research, screen: async () => PASS,
+      lookup: async () => [{ address: "93.184.216.34" }], fetch: async () => resp(200, HOME),
+      logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
+    });
+    const t0 = Date.now();
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.ok(got.deadline > t0 && got.deadline - t0 <= 400000, "well inside 540 s");
+    const e = db.state.leads.l1.enrichment;
+    assert.equal(e.request.status, "done");
+    assert.match(e.request.message, /ran out of time/);
+  });
   await test("a refusal, an empty answer and an unreadable answer each fail with the reason", async () => {
     await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "refusal", content: [] }]), company: "X" }), /declined/);
     await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "max_tokens", content: [] }]), company: "X" }), /no answer \(max_tokens\)/);
