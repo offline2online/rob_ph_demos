@@ -1530,6 +1530,12 @@ and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
      `blocked: {reason: "waiting-on-input", note: "Failed review 3 times:
      <reason>. For Rob to decide. Answer on the card (Answer button)"}`;
      leave `status` alone.
+   A kick-back also counts as a send-back in the ticket's testing rounds
+   (`REQUIREMENTS.md` → "Testing rounds"): the automation records it from
+   `lastFailureReason` (`action: "review-kickback"`), and on the ticket's 3rd
+   counted send-back from any source flags it needs-decision instead of
+   rebuilding. Don't write `testRound`, `sendBacks`, `sendBackCount` or
+   `countedSendBacks` yourself.
    Deploy to Main stays a clean yes/no: it does only the light
    integration/drift check, and a ticket that breaks the combined train is
    ejected by the automation while the rest deploy (`ejectRedCulprits`).

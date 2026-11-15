@@ -642,6 +642,74 @@ const scenarios = [
       assert.strictEqual(w.data.revertRequested, true);
       assert.ok(w.data.lastFailureReason && /settings page/.test(w.data.lastFailureReason.text), "lastFailureReason carries the details");
       assert.ok(w.data.notes && w.data.notes.$arrayUnion && /settings page/.test(JSON.stringify(w.data.notes)), "a note carries the details");
+      // Testing rounds: the same write shape, with who sent it back; the loop
+      // fields are the automation's to record (firestore.rules).
+      assert.strictEqual(w.data.lastFailureReason.who, "editor@personalisationhub.com");
+      for (const f of ["testRound", "sendBacks", "sendBackCount", "countedSendBacks"]) assert.ok(!(f in w.data), `the browser never writes ${f}`);
+    },
+  },
+  {
+    name: "Testing rounds: a round-3 card shows its chip in every column, the last reason in Ready for Testing, and the header filter; a round-1 card none of it",
+    seed: () => {
+      const s = only("b1", "r1", "d1", "l1");
+      const sb = (ms, line, extra = {}) => ({ at: new Date(T0 + ms).toISOString(), by: "person", who: "tester@example.com", category: "Other", line, counted: true, ...extra });
+      const loop = { testRound: 3, sendBackCount: 3, countedSendBacks: 2, sendBacks: [sb(10, "chip missing"), sb(20, "flaky test", { by: "tests", category: "flaky", counted: false }), sb(30, "header count wrong")] };
+      for (const id of ["b1", "d1", "l1"]) Object.assign(s.docs.backlogItems[id], loop);
+      s.docs.backlogItems.r3 = { ...s.docs.backlogItems.r1, title: "Looping ticket", previewUrl: "https://example.test/preview/r3", deployCommit: "abc999", ...loop };
+      Object.assign(s.docs.backlogItems.r1, { testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      for (const id of ["b1", "r3", "d1", "l1"]) {
+        await c.visible(`.card[data-id="${id}"] .round-chip.round-chip-warn`, `${id}: Round chip in warning colour`);
+        assert.match(await c.text(`.card[data-id="${id}"] .round-chip`), /Round 3/);
+      }
+      c.at("a round-1 card shows none of it");
+      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .round-chip').count(), 0);
+      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .resent-line').count(), 0);
+      await c.waitText('.card[data-id="r3"] .resent-line', "Sent back last time: header count wrong", "the last counted reason under the title");
+      assert.strictEqual(await c.page.locator('.card[data-id="b1"] .resent-line').count(), 0, "Ready for Testing only");
+      // Hover lists every send-back; a tap opens the list inline.
+      const title = await c.page.getAttribute('.card[data-id="r3"] .round-chip', "title");
+      assert.match(title, /chip missing/);
+      assert.match(title, /flaky test \(not counted\)/);
+      await c.click('.card[data-id="r3"] .round-chip', "tap the Round chip");
+      await c.visible('.card[data-id="r3"] .round-history', "the send-back list opens");
+      assert.strictEqual(await c.page.locator('.card[data-id="r3"] .round-history li').count(), 3);
+      assert.strictEqual(await c.page.locator('.card[data-id="r3"] .round-history-uncounted').count(), 1, "the uncounted one is greyed");
+      // The Ready for Testing header: count and filter.
+      const head = '.col-head[data-col="ready-for-testing"]';
+      await c.waitText(`${head} .loop-filter-btn`, "1 in a testing loop", "the column header counts the looping ticket");
+      await c.click(`${head} .loop-filter-btn`, "filter to the testing loop");
+      await c.hidden('.column[data-col="ready-for-testing"] .card[data-id="r1"]', "the round-1 card is filtered out");
+      await c.visible('.column[data-col="ready-for-testing"] .card[data-id="r3"]');
+      assert.strictEqual(await c.page.getAttribute(`${head} .loop-filter-btn`, "aria-pressed"), "true");
+      await c.click(`${head} .loop-filter-btn`, "show every ticket again");
+      await c.visible('.column[data-col="ready-for-testing"] .card[data-id="r1"]');
+      c.at("nothing was written");
+      assert.deepStrictEqual(await c.writes(), []);
+    },
+  },
+  {
+    name: "Testing loops: the ⋮ menu opens the read-only report of tickets sent back twice or more",
+    seed: () => {
+      const s = only("r1");
+      const now = Date.now();
+      const sb = (daysAgo, line) => ({ at: new Date(now - daysAgo * 86400000).toISOString(), by: "person", who: "tester@example.com", category: "Other", line, counted: true });
+      Object.assign(s.docs.backlogItems.r1, { testRound: 3, sendBackCount: 2, countedSendBacks: 2, sendBacks: [sb(3, "first miss"), sb(1, "second miss")] });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-loops-btn", "Testing loops");
+      await c.visible("#testing-loops-page");
+      await c.waitText("#testing-loops-count", "1 ticket");
+      await c.waitText("#testing-loops-grid", "Fix the thing");
+      await c.waitText("#testing-loops-grid", "second miss");
+      await c.waitText("#testing-loops-grid", "Not approved yet");
+      assert.deepStrictEqual(await c.writes(), [], "read-only");
     },
   },
   {
@@ -1364,11 +1432,71 @@ const scenarios = [
       const made = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Sam Field") return v; return null; });
       assert.ok(made, "the network operator inquiry was written");
       assert.strictEqual(made.leadType, "operator"); assert.strictEqual(made.company.name, "");
-      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer" });
+      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer", networkIndustry: "", message: "", form: "" });
       assert.strictEqual(made.prospectId, undefined, "never matched to Prospects (TAM)");
       // Back to the company pipeline.
       for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-company", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-company"); await c.page.waitForTimeout(400); }
       await c.visible('.lead-lane[data-stage="demo"] .lead-card', "the company board is back");
+    },
+  },
+  {
+    name: "Promote: Leads - a network operator inquiry shows the industry they want to run and their message; the form saves the industry and an edit keeps the message",
+    seed: () => seed({ leads: {
+      fg: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team", networkIndustry: "Golf clubs", message: "Hello, please send the pack.", form: "request" },
+        contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "" }],
+        stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – request further information", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
+      fo: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "York", background: "marketing", audience: "individual" },
+        contacts: [{ id: "p2", name: "Old Inquiry", jobTitle: "", buyingRole: "", email: "old@example.com", linkedin: "" }],
+        stage: "applied", source: "website", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 - 1000) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-operator", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-operator"); await c.page.waitForTimeout(400); }
+      const golf = '.lead-card[data-lead-id="fg"]';
+      await c.visible(golf, "the inquiry is on the operator board");
+      const line = (await c.text(`${golf} .lead-card-line`)).trim();
+      assert.strictEqual(line, "Part of an operator team · Leeds, UK · Golf clubs · Ad-tech sales or partnerships", "I am · region · industry · background: " + line);
+      assert.strictEqual((await c.text('.lead-card[data-lead-id="fo"] .lead-card-line')).trim(), "An individual operator · York · Marketing", "an older lead skips the blank industry");
+      await c.page.click(`${golf} .lead-card-name`);
+      await c.visible("#lead-sum-operator", "the summary opens");
+      const sec = await c.text("#lead-sum-operator");
+      assert.ok(/Industry they want to run\s*Golf clubs/.test(sec), "the industry row shows: " + sec);
+      assert.ok(/Message\s*Hello, please send the pack\./.test(sec), "the message row shows: " + sec);
+      assert.ok(sec.indexOf("Leeds, UK") < sec.indexOf("Golf clubs"), "the industry follows the region");
+      // Edit: the industry is a field; the message has no input and is kept.
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the form opens");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "Golf clubs");
+      await c.page.fill("#lead-network-industry", "Other: Bowling alleys");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fg").operator.networkIndustry)) === "Other: Bowling alleys", "the edited industry to persist", 5000);
+      const fg = await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fg").operator);
+      assert.strictEqual(fg.message, "Hello, please send the pack.", "an edit keeps the message"); assert.strictEqual(fg.form, "request", "and the form");
+      // An older lead (no industry or message) still opens, edits and saves.
+      await c.page.keyboard.press("Escape").catch(() => {});
+      await c.page.click('.lead-card[data-lead-id="fo"] .lead-card-name');
+      await c.visible("#lead-sum-operator", "the older lead's summary opens");
+      const old = await c.text("#lead-sum-operator");
+      assert.ok(!old.includes("Industry they want to run") && !old.includes("Message"), "blank rows are skipped: " + old);
+      await c.page.click("#lead-sum-edit");
+      await c.visible("#lead-form", "the older lead's form opens");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "");
+      await c.page.fill("#lead-region", "York and Harrogate");
+      await c.page.click("#lead-save");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fo").operator.region)) === "York and Harrogate", "the older lead to save", 5000);
+      assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("fo").operator), { region: "York and Harrogate", background: "marketing", audience: "individual", networkIndustry: "", message: "", form: "" });
+      // A new network operator inquiry saves the industry.
+      await c.page.keyboard.press("Escape").catch(() => {});
+      for (let i = 0; i < 4 && !(await c.page.locator("#lead-form").isVisible()); i++) { await c.page.click("#leads-add-btn"); await c.page.waitForTimeout(600); }
+      await c.visible("#lead-form", "the new form opens");
+      assert.strictEqual((await c.text("#lead-title")).trim(), "New network operator inquiry");
+      assert.strictEqual(await c.page.inputValue("#lead-network-industry"), "", "a new form starts blank");
+      await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Robin Green");
+      await c.page.fill("#lead-network-industry", "Golf clubs");
+      await c.page.click("#lead-save");
+      const made = await until(async () => c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Robin Green") return v; return null; }), "the new inquiry to be written", 5000);
+      assert.strictEqual(made.operator.networkIndustry, "Golf clubs"); assert.strictEqual(made.operator.message, "");
     },
   },
   {

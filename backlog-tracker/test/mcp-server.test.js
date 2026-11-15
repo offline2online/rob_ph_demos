@@ -2562,6 +2562,40 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("backlogItems").get("f2").status, "ready-for-testing", "unnamed tickets stay put");
     const row = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "fail_testing");
     assert.ok(row && row.email === TEAMMATE && row.itemIds.join() === "f1");
+    // Testing rounds: the send-back is recorded on the card, by whom and why.
+    assert.strictEqual(f1.sendBackCount, 1);
+    assert.strictEqual(f1.countedSendBacks, 1);
+    assert.strictEqual(f1.sendBacks.length, 1);
+    assert.strictEqual(f1.sendBacks[0].by, "person");
+    assert.strictEqual(f1.sendBacks[0].who, TEAMMATE);
+    assert.strictEqual(f1.sendBacks[0].category, "Doesn't work as described");
+    assert.strictEqual(f1.sendBacks[0].line, "Button does nothing");
+    assert.strictEqual(f1.sendBacks[0].counted, true);
+    assert.strictEqual(f1.lastFailureReason.who, TEAMMATE);
+  });
+
+  await test("get_ready_for_testing_board returns testRound, sendBackCount and the last send-back, looping tickets first", async () => {
+    env.store.col("projects").set("loopproj", { name: "Loop Playground", deployBranch: "deploy/loopproj" });
+    const sb = (at, line, extra = {}) => ({ at, by: "person", who: "t@example.com", category: "Other", line, counted: true, ...extra });
+    env.store.col("backlogItems").set("loop-new", { projectId: "loopproj", title: "Fresh", desc: "x", status: "ready-for-testing", testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] });
+    env.store.col("backlogItems").set("loop-r3", {
+      projectId: "loopproj", title: "Third round", desc: "x", status: "ready-for-testing", testRound: 3, sendBackCount: 3, countedSendBacks: 2,
+      sendBacks: [sb("2026-11-10T10:00:00Z", "chip missing"), sb("2026-11-11T10:00:00Z", "header count wrong"), sb("2026-11-12T10:00:00Z", "flaky", { by: "tests", counted: false })],
+    });
+    env.store.col("backlogItems").set("loop-r2", { projectId: "loopproj", title: "Second round", desc: "x", status: "ready-for-testing", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb("2026-11-12T10:00:00Z", "typo")] });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "loopproj" } });
+    const { structuredContent, content } = res.body.result;
+    assert.strictEqual(structuredContent.items[0].id, "loop-r3", "the looping ticket first");
+    const r3 = structuredContent.items[0];
+    assert.strictEqual(r3.testRound, 3);
+    assert.strictEqual(r3.sendBackCount, 3);
+    assert.strictEqual(r3.inTestingLoop, true);
+    assert.deepStrictEqual(r3.lastSendBack, { at: "2026-11-11T10:00:00Z", by: "person", who: "t@example.com", category: "Other", line: "header count wrong" }, "the last COUNTED one");
+    const fresh = structuredContent.items.find((i) => i.id === "loop-new");
+    assert.strictEqual(fresh.testRound, 1);
+    assert.strictEqual(fresh.lastSendBack, null);
+    assert.strictEqual(fresh.inTestingLoop, false);
+    assert.match(content[0].text, /1 in a testing loop/);
   });
 
   await test("fail_testing refuses tickets not in Ready for Testing, already reverting or foreign, and writes nothing", async () => {

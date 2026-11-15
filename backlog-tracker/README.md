@@ -418,6 +418,14 @@ What the train changes:
   automatic send-back now opens with a one-line `Why:` (the failing test,
   from the run's log — `lastFailureReason.summary`), and the board shows one
   line per rejection above a ticket's comments (`public/js/rejection-summary.js`).
+  **Testing rounds** (15 Nov 2026): every send-back is stored on the card
+  (`testRound`, `sendBacks`, `sendBackCount`, `countedSendBacks` —
+  `functions/test-rounds.js`, read by `public/js/test-rounds-view.js`), a
+  "Round N" chip shows from round 2 in every column, and the 3rd counted
+  send-back flags the ticket needs-decision instead of rebuilding it; the ⋮
+  menu's **Testing loops** lists the looping tickets.
+  `scripts/backfill-test-rounds.js` stores the fields on older cards.
+  REQUIREMENTS.md → "Testing rounds".
   **A failed train test is re-run once before anyone acts on it** (19 Oct
   2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
   is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
@@ -2642,7 +2650,15 @@ every destination already existed.
   (`individual`, `team`, `retailer`, or "" when not given), shown first on the
   card's line, as "I am" in the summary and as a select on the form, and
   `list_leads` filters by `audience`. Backgrounds gained `creative-agency` and
-  `retail-owner`. See
+  `retail-owner`.
+  **Industry and message (15 Nov 2026)**: the page's Request further information
+  form sends `network_industry`, `message` and `form: "request"`; they are stored
+  as `operator.networkIndustry` (≤120), `operator.message` (≤1,000, longer is cut)
+  and `operator.form` (`request` or `tour`). A repeat submission replaces the
+  industry and adds a new message to the history as a dated note. The card line
+  shows the industry after the region, the summary adds "Industry they want to
+  run" and "Message", the form has an "Industry they want to run" field, and
+  `list_leads` filters by `networkIndustry`. See
   REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules

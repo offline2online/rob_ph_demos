@@ -178,7 +178,7 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run MCP App view test (job `ui-console`) | `test:mcp-app` | mcp-app-view, faq-editor-load |
 | Run console start-up smoke test (job `offline`) | `test:app-boots:unit` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), ui-retry. Locally `test:app-boots` runs these and then `test:ui` |
 | Run console click-through suites (job `ui-console`) | `test:ui:console` | mobile-shell, mobile-theme, console-click, ticket-detail-overflow, apple-redesign, leads-apple, support-inbox |
-| Run touch and small UI suites (job `ui-touch`) | `test:ui:touch` | support-touch, nav-rotation, nav-touch, stale-page, page-load-error, new-item-voice, avatars, whiteboard, whiteboard-tablet, media-keys |
+| Run touch and small UI suites (job `ui-touch`) | `test:ui:touch` | support-touch, webkit-ipad, nav-rotation, nav-touch, stale-page, page-load-error, new-item-voice, avatars, whiteboard, whiteboard-tablet, media-keys |
 | Run Staff Kanban console suite (job `ui-kanban`) | `test:ui:kanban` | staff-kanban, minified |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
