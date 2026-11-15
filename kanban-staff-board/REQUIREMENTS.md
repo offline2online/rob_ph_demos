@@ -164,7 +164,14 @@ labels, linked/unlinked tickets); status moves keep their own line.
 **KB-BOARD-6 Cards.** Show type icon, key (`PH-n`), priority, flag, title,
 parent epic (under the title), time-logged progress, remaining estimate or due
 date, comment and attachment counts, and the assignee's avatar. Epic cards show
-child progress ("2/8 done", withdrawn children excluded).
+child progress ("2/8 done", withdrawn children excluded). A card never
+scrolls left or right: it is `touch-action: pan-y` at every width, so a
+sideways swipe that starts on a card neither pans the card nor the board, and
+a long title or label wraps inside the card. AC: no card is wider than its
+column at 390, 820, 1024, 1180 or 1440 px
+(`backlog-tracker/test/ui/ticket-detail-overflow.test.mjs`); on a tablet the
+board still scrolls sideways from the column headers and the gaps between
+columns.
 
 **KB-BOARD-7 Page scroll and pinned headers.** The board scrolls as one page
 (columns have no inner scrollbars). The console topbar scrolls away; the
