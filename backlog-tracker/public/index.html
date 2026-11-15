@@ -664,6 +664,13 @@
         </select>
         <p class="field-hint">Which Claude model must build and review this ticket. An Advanced ticket is never built on a lesser model: if Claude Opus isn't available it is skipped and flagged instead.</p>
         <p class="field-hint model-log" id="ei-model-log" hidden></p>
+        <label class="field-label" for="ei-deps-search">Builds after</label>
+        <div class="ei-deps-chips" id="ei-deps-chips"></div>
+        <input type="text" id="ei-deps-value" hidden tabindex="-1" aria-hidden="true">
+        <input type="search" id="ei-deps-search" class="ei-deps-search" placeholder="Search open tickets by title" autocomplete="off" aria-controls="ei-deps-results">
+        <div class="ei-deps-results" id="ei-deps-results" role="listbox" aria-label="Open tickets" hidden></div>
+        <p class="field-hint ei-deps-error" id="ei-deps-error" role="alert" hidden></p>
+        <p class="field-hint">Tickets this one needs first. Ready for Dev holds it until they reach Ready for Testing, then starts it by itself.</p>
         <label class="np-interface-toggle">
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required

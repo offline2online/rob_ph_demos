@@ -370,10 +370,27 @@ on the card. So, in a default build fire:
   automation refuses yours (`migrationNumberClashes`) and rebuilds it once
   automatically against the newer branch. Re-read the migrations directory
   at your `patchBaseSha` and don't reuse a number.
+- **The click is already in order (build order, 14 Nov 2026).** Before it
+  fires anything, a Ready for Dev click (and `send_to_build`, and a Groom
+  package batch) works out an order (`functions/build-order.js`): a ticket
+  whose `dependsOnItemIds` names a ticket still in Backlog is not fired but
+  held (`blocked.reason "waiting-on-dependency"`, setBy `build-order`) and
+  started by itself when that ticket reaches Ready for Testing; tickets
+  likely to touch the same files (same `groomAreas`, the same file path, or
+  the same named function or quoted spec section in Outcome / Spec
+  reference) are built one after another (`queuedAfter`, "Queued: builds
+  after …"), each on the train tip after the previous one landed. So your
+  fire's siblings are in different lanes from you, and a ticket listed in
+  your fire under "Already landed and in your base" is a dependency whose
+  commit is in your base: read it (`git log --grep "Backlog item: <id>"`)
+  instead of rediscovering it. `dependsOnItemIds` is filled from the
+  Dependencies section at intake (ids, and exact titles of open tickets),
+  so when you complete that section, name a dependency by its ticket id.
 - **A genuine dependency is a flag, not a parked card.** If this ticket
   cannot be built until another open ticket has landed (it needs code or a
   data model that ticket adds — not merely "related"), PATCH it with
-  `dependsOnItemIds` (array of those ticket ids) and
+  `dependsOnItemIds` (array of those ticket ids, merged with any already
+  there — never drop one), `dependsOnSource: "build"` and
   `blocked: {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"}`
   (plain English, titles not ids; a dependency is never `waiting-on-input` — that
   state is for questions and shows an Answer button),
@@ -1635,7 +1652,17 @@ be stale by the time you run):
    - `groomAreas` — an array of 1-3 short lower-case area names the
      ticket will touch (e.g. `["backlog-tracker/public", "faq"]`). Tickets
      that share an area are always built in the same package, so use the
-     same spelling for the same area across tickets.
+     same spelling for the same area across tickets. Within a click they
+     are also built one at a time (build order: same area, one lane), so
+     an area that is too broad slows builds down and one that is too narrow
+     lets colliding tickets build in parallel.
+   - Dependencies: if the ticket plainly needs another open ticket's code
+     first and its card doesn't already list it (the card's "After: …"
+     chip, or `dependsOnItemIds`), say so in `groomRequiredNotes`, naming
+     that ticket by its exact title, so a person adds it under Edit item →
+     Builds after. Grooming never writes `dependsOnItemIds` or `desc`
+     itself; Ready for Dev holds a ticket whose dependency is still in
+     Backlog by itself.
 3. Bump `updatedAt`. Unlike the default Backlog flow's step 1, this flow
    does **not** require rewriting `title` on every item — grooming isn't
    obligated to touch it — but it's fine to tidy an obviously wrong or

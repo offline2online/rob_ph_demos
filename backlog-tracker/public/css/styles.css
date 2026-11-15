@@ -1712,6 +1712,25 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .blocked-flag-waiting-on-dependency .dependency-link { color: inherit; text-decoration: underline; }
 .card .blocked-flag-waiting-on-dependency .blocked-flag-status { white-space: normal; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+/* Build order (14 Nov 2026): "After: <title>" and "Queued: builds after <title>" */
+.order-chip { display: inline-flex; align-items: center; gap: 3px; box-sizing: border-box; max-width: 100%; font-size: 11px; font-weight: 500; padding: 1px 6px 1px 5px; border-radius: 9999px; border: 1px solid #d9d9d9; color: rgba(0, 0, 0, 0.65); background: #fafafa; cursor: help; }
+.order-chip .material-symbols-outlined { font-size: 14px; }
+.order-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-chip-click { max-width: 360px; margin-right: 6px; }
+.order-chip-queued { color: #531dab; background: #f9f0ff; border-color: #d3adf7; }
+.blocked-flag-stuck { font-weight: 400; }
+.ei-deps-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.ei-deps-chips:empty { display: none; }
+.ei-dep-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; font-size: 12px; padding: 0 0 0 8px; border-radius: 9999px; border: 1px solid #91d5ff; background: #e6f7ff; color: #096dd9; }
+.ei-dep-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ei-dep-chip button { border: 0; background: none; color: inherit; cursor: pointer; min-width: 32px; min-height: 32px; font-size: 14px; line-height: 1; }
+.ei-deps-search { width: 100%; box-sizing: border-box; }
+.ei-deps-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 220px; overflow-y: auto; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; }
+.ei-dep-option { display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-bottom: 1px solid #f0f0f0; background: none; padding: 8px 10px; min-height: 40px; font: inherit; font-size: 13px; cursor: pointer; }
+.ei-dep-option:last-child { border-bottom: 0; }
+.ei-dep-option:hover, .ei-dep-option:focus { background: #f5f5f5; }
+.ei-dep-option-meta { color: rgba(0, 0, 0, 0.45); font-size: 12px; white-space: nowrap; }
+.ei-deps-error { color: #cf1322; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; min-height: 32px; min-width: 32px; }
