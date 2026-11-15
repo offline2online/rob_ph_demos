@@ -7,7 +7,7 @@ export const STATUSES = ["open", "pending", "resolved", "spam"];
 export const STATUS_LABEL = { open: "Open", pending: "Waiting on customer", resolved: "Resolved", spam: "Spam" };
 export const CATEGORY_LABEL = {
   question: "Question", "how-to": "How-to", bug: "Bug", billing: "Billing", account: "Account",
-  sales: "Sales", feedback: "Feedback", automated: "Automated", other: "Other",
+  sales: "Sales", feedback: "Feedback", automated: "Automated", unrelated: "Not about PH", other: "Other",
 };
 
 const open = (t) => t.status === "open";
@@ -16,7 +16,7 @@ const open = (t) => t.status === "open";
 export const QUEUES = [
   { key: "needs-person", label: "Needs a person", icon: "support_agent", test: (t) => open(t) && !!t.needsHuman },
   { key: "ai-drafts", label: "AI drafts to approve", icon: "auto_awesome", test: (t) => open(t) && !t.needsHuman && !!t.aiDraft },
-  { key: "to-sort", label: "Automated & unsorted", icon: "mark_email_unread", test: (t) => open(t) && !t.needsHuman && !t.aiDraft },
+  { key: "to-sort", label: "Automated & not about PH", icon: "mark_email_unread", test: (t) => open(t) && !t.needsHuman && !t.aiDraft },
   { key: "pending", label: "Waiting on customer", icon: "schedule", test: (t) => t.status === "pending" },
   { key: "resolved", label: "Resolved", icon: "task_alt", test: (t) => t.status === "resolved" },
   { key: "spam", label: "Spam", icon: "report", test: (t) => t.status === "spam" },
@@ -48,9 +48,9 @@ export function normaliseTicket(id, d) {
   return {
     id, key: t.key || id, subject: t.subject || "(no subject)", customerEmail: t.customerEmail || "", customerName: t.customerName || "",
     status: STATUSES.includes(t.status) ? t.status : "open", needsHuman: !!t.needsHuman, triagePending: !!t.triagePending,
-    automated: t.automated || "", highValue: !!t.highValue, account: t.account || null, category: t.category || "", summary: t.summary || "",
+    automated: t.automated || "", unrelated: !!t.unrelated || t.category === "unrelated", highValue: !!t.highValue, account: t.account || null, category: t.category || "", summary: t.summary || "",
     triageReason: t.triageReason || "", spamLikely: !!t.spamLikely, snippet: t.snippet || "", assignee: t.assignee || "", kanbanKey: t.kanbanKey || "",
-    aiDraft: t.aiDraft && t.aiDraft.text ? { text: t.aiDraft.text, confidence: Number(t.aiDraft.confidence) || 0, answerable: !!t.aiDraft.answerable, articles: Array.isArray(t.aiDraft.articles) ? t.aiDraft.articles : [] } : null,
+    aiDraft: t.aiDraft && t.aiDraft.text ? { text: t.aiDraft.text, confidence: Number(t.aiDraft.confidence) || 0, confidenceSteps: Array.isArray(t.aiDraft.confidenceSteps) ? t.aiDraft.confidenceSteps : [], answerable: !!t.aiDraft.answerable, articles: Array.isArray(t.aiDraft.articles) ? t.aiDraft.articles : [] } : null,
     messageCount: t.messageCount || 0, humanInvolved: !!t.humanInvolved, autoRepliesSent: t.autoRepliesSent || 0, reopenCount: t.reopenCount || 0,
     resolvedBy: t.resolvedBy || "", escalationError: t.escalationError || "",
     createdAt: toMs(t.createdAt), lastMessageAt: toMs(t.lastMessageAt), firstResponseAt: toMs(t.firstResponseAt), resolvedAt: toMs(t.resolvedAt),
@@ -73,13 +73,14 @@ export function supportRoute(hash) {
   if (path !== "#support" && !path.startsWith("#support/")) return null;
   const rest = path.slice("#support".length).replace(/^\//, "");
   if (rest === "stats") return { view: "stats", queue: "", ticketId: "" };
+  if (rest === "try") return { view: "try", queue: "", ticketId: "" };
   const m = rest.match(/^ticket\/(.+)$/);
   if (m) return { view: "ticket", queue: "", ticketId: decodeURIComponent(m[1]) };
   const queue = new URLSearchParams(qs || "").get("queue");
   return { view: "inbox", queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
 export const supportHash = ({ view = "inbox", queue = "", ticketId = "" } = {}) =>
-  view === "stats" ? "#support/stats" : view === "ticket" ? `#support/ticket/${encodeURIComponent(ticketId)}` : queue && queue !== DEFAULT_QUEUE ? `#support?queue=${queue}` : "#support";
+  view === "stats" ? "#support/stats" : view === "try" ? "#support/try" : view === "ticket" ? `#support/ticket/${encodeURIComponent(ticketId)}` : queue && queue !== DEFAULT_QUEUE ? `#support?queue=${queue}` : "#support";
 
 // ── Stats ─────────────────────────────────────────────────────────────────
 const median = (list) => {
@@ -97,7 +98,8 @@ export function supportStats(tickets, { from = 0, to = Infinity } = {}) {
   const inRange = (tickets || []).filter((t) => t.createdAt >= from && t.createdAt <= to);
   const spam = inRange.filter((t) => t.status === "spam");
   const automated = inRange.filter((t) => t.status !== "spam" && t.automated);
-  const customer = inRange.filter((t) => t.status !== "spam" && !t.automated);
+  const unrelated = inRange.filter((t) => t.status !== "spam" && !t.automated && t.unrelated);
+  const customer = inRange.filter((t) => t.status !== "spam" && !t.automated && !t.unrelated);
   const resolved = customer.filter((t) => t.status === "resolved");
   const byAi = resolved.filter((t) => t.resolvedBy === "ai" && !t.humanInvolved);
   const byPeople = resolved.filter((t) => !(t.resolvedBy === "ai" && !t.humanInvolved));
@@ -113,7 +115,7 @@ export function supportStats(tickets, { from = 0, to = Infinity } = {}) {
   const categories = new Map();
   for (const t of customer) { const k = t.category || "other"; categories.set(k, (categories.get(k) || 0) + 1); }
   return {
-    received: customer.length, spam: spam.length, automated: automated.length,
+    received: customer.length, spam: spam.length, automated: automated.length, unrelated: unrelated.length,
     open: customer.filter((t) => t.status === "open").length, pending: customer.filter((t) => t.status === "pending").length,
     needsPerson: customer.filter((t) => t.status === "open" && t.needsHuman).length,
     resolved: resolved.length, resolvedByAi: byAi.length, resolvedByPeople: byPeople.length,
@@ -174,4 +176,17 @@ export function articleSnippet(a) {
 export function draftSource(text, draft, usedDraft) {
   if (!usedDraft || !draft) return "manual";
   return String(text).trim() === String(draft.text).trim() ? "ai-draft" : "ai-draft-edited";
+}
+
+// ── Confidence in a suggested reply ───────────────────────────────────────
+// High from 80% (the default level for sending by itself), medium from 60%.
+export function confidenceBand(c) { const v = Number(c) || 0; return v >= 0.8 ? "high" : v >= 0.6 ? "medium" : "low"; }
+export const CONFIDENCE_LABEL = { high: "High confidence", medium: "Medium confidence", low: "Low confidence" };
+export const pct = (c) => `${Math.round((Number(c) || 0) * 100)}%`;
+// "55% from 1 article, 82% with 3 combined" when more answers were added; "" otherwise.
+export function confidenceChange(steps) {
+  const list = Array.isArray(steps) ? steps : [];
+  if (list.length < 2) return "";
+  const [a, b] = list;
+  return `${pct(a.confidence)} from ${a.articles} article${a.articles === 1 ? "" : "s"}, ${pct(b.confidence)} with ${b.articles} combined`;
 }

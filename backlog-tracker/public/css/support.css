@@ -140,3 +140,22 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-tab:hover { color: var(--primary-text); }
 .support-tab.active { color: var(--primary); background: var(--primary-tint); border-bottom-color: var(--primary); font-weight: 500; }
 .support-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* Try an email */
+.support-try { max-width: 760px; }
+.support-try .support-set-grid { max-width: none; }
+.support-try textarea { min-height: 160px; }
+.support-try-result { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+.support-try-articles { margin: 0; padding-left: 20px; }
+.support-try-articles li { line-height: 44px; }
+.support-try-articles a { color: var(--primary-text); }
+
+/* Confidence beside a suggested reply: a word and a number, never colour alone. */
+.support-conf { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 9999px; font-size: 12px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.support-conf-high { background: rgba(82, 196, 26, .14); color: #2f7d0e; }
+.support-conf-medium { background: rgba(201, 138, 10, .14); color: #8a5d00; }
+.support-conf-low { background: var(--danger-tint); color: var(--danger); }
+:root[data-theme="dark"] .support-conf-high { color: #8bdc5e; }
+:root[data-theme="dark"] .support-conf-medium { color: #f0c24b; }
+.support-conf-change { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; font-size: 13px; color: var(--text-muted); }
+.support-conf-change .material-symbols-outlined { font-size: 18px; color: var(--success); }
