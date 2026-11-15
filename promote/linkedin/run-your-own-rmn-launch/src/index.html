@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run Your Own RMN launch</title>
+<style>
+@font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:400;font-display:block;src:url(data:font/woff2;base64,{{K400}}) format("woff2")}
+@font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:500;font-display:block;src:url(data:font/woff2;base64,{{K500}}) format("woff2")}
+@font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:600;font-display:block;src:url(data:font/woff2;base64,{{K600}}) format("woff2")}
+@font-face{font-family:"Kantumruy Pro";font-style:normal;font-weight:700;font-display:block;src:url(data:font/woff2;base64,{{K700}}) format("woff2")}
+
+/* ph-brand dark surface tokens */
+:root{
+  --paper:#0F1424; --surface:#171E33; --ink:#E9EDF6; --muted:#A3ACC0; --line:#2A3350;
+  --teal:#169BC2; --pink:#EF60A7; --green:#60D838; --orange:#FE9226;
+  --font:"Kantumruy Pro",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:#070a14;font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+body.render{background:var(--paper)}
+
+/* Fixed 1080 x 1350 (4:5) design size */
+#stage{position:relative;width:1080px;height:1350px;background:var(--paper);overflow:hidden;--a:var(--teal)}
+.bar{position:absolute;left:0;top:0;width:100%;height:12px;background:var(--a)}
+.logo{position:absolute;left:88px;top:92px;height:64px;width:auto}
+.foot{position:absolute;left:88px;bottom:84px;display:flex;align-items:center;gap:20px;font-size:30px;line-height:1;color:var(--muted)}
+.foot .dot{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:var(--a)}
+
+/* Every scene's content starts at the same fixed top */
+.scene{position:absolute;left:88px;top:272px;width:904px;visibility:hidden}
+.eyebrow{margin:0 0 28px;font-size:30px;line-height:1.2;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--sa)}
+.headline{margin:0;font-size:104px;line-height:1.04;font-weight:700;letter-spacing:-.03em;color:var(--ink)}
+.headline.xl{font-size:128px}
+.lede{margin:32px 0 0;font-size:40px;line-height:1.4;color:var(--muted);max-width:860px}
+.vis{position:relative;margin-top:72px}
+[data-in]{will-change:transform,opacity}
+svg.ic{display:block;fill:currentColor;flex:0 0 auto}
+
+/* Scene 1: experience chips */
+.chips{display:flex;flex-wrap:wrap;gap:16px}
+.chip{display:inline-flex;align-items:center;gap:14px;height:80px;padding:0 30px 0 24px;border:1.5px solid var(--line);border-radius:999px;background:var(--surface);font-size:35px;font-weight:500;color:var(--ink);white-space:nowrap}
+.chip svg.ic{width:40px;height:40px;color:var(--sa)}
+
+/* Scene 2: online to in store */
+.shift{display:flex;align-items:center;gap:40px}
+.tile{display:flex;flex-direction:column;align-items:center;gap:20px}
+.tile .box{width:200px;height:200px;border-radius:32px;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center}
+.tile .box svg.ic{width:104px;height:104px}
+.tile.from .box svg.ic{color:var(--muted)}
+.tile.to .box{border:3px solid var(--sa)}
+.tile.to .box svg.ic{color:var(--sa)}
+.tile span{font-size:32px;font-weight:600;line-height:1}
+.tile.from span{color:var(--muted)}
+.shift .arrow svg.ic{width:64px;height:64px;color:var(--muted)}
+
+/* Scene 3: one person, every job */
+.jobs{display:flex;flex-direction:column;gap:20px}
+.job{display:flex;align-items:center;gap:24px;font-size:40px;font-weight:600;line-height:1.2}
+.job > span{display:inline-flex}
+.job svg.ic{width:56px;height:56px;color:var(--sa)}
+
+/* Scene 4: network */
+.net{height:300px}
+.net svg.lines{position:absolute;left:0;top:0;width:904px;height:300px;overflow:visible}
+.net svg.lines path{stroke:var(--sa);stroke-opacity:.5;stroke-width:3;fill:none}
+.anchor{position:absolute;width:0;height:0}
+.hub{position:absolute;left:0;top:0;translate:-50% -50%;display:inline-flex;align-items:center;height:76px;padding:0 34px;border:3px solid var(--sa);border-radius:999px;background:var(--surface);font-size:34px;font-weight:600;white-space:nowrap}
+.node{position:absolute;left:0;top:0;translate:-50% -50%;width:92px;height:92px;border-radius:50%;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center}
+.node svg.ic{width:46px;height:46px;color:var(--sa)}
+
+/* Scene 5: venues */
+.pills{display:flex;flex-wrap:wrap;gap:14px}
+.pill{display:inline-flex;align-items:center;gap:12px;height:64px;padding:0 26px 0 20px;border:1.5px solid var(--line);border-radius:999px;font-size:29px;font-weight:500;white-space:nowrap}
+.pill svg.ic{width:34px;height:34px;color:var(--sa)}
+
+/* Scene 6: a venue screen with content, and the two income lines */
+.earn{display:flex;align-items:center;gap:44px}
+.device{flex:0 0 auto;width:540px;height:318px;padding:14px;border-radius:20px;background:#05070D;border:1.5px solid var(--line)}
+.screen{position:relative;width:100%;height:100%;border-radius:8px;overflow:hidden;background:#F5F7FB}
+.slide{position:absolute;inset:0;display:flex;align-items:center;gap:28px;padding:0 36px}
+.slide .art{flex:0 0 auto;width:150px;height:150px;border-radius:24px;background:var(--sa);display:flex;align-items:center;justify-content:center}
+.slide .art svg.ic{width:92px;height:92px;color:#FFFFFF}
+.slide .tx{display:flex;flex-direction:column;gap:10px;color:#1C2540}
+.slide .k{font-size:17px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:#C43D82;line-height:1}
+.slide .t{font-size:34px;font-weight:700;line-height:1.08;letter-spacing:-.02em}
+.slide .s{font-size:20px;line-height:1.35;color:#5A6479}
+.outs{display:flex;flex-direction:column;gap:32px}
+.out{display:flex;align-items:center;gap:20px;font-size:32px;font-weight:600;line-height:1.2}
+.out .ib{flex:0 0 auto;width:72px;height:72px;border-radius:20px;background:var(--surface);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center}
+.out svg.ic{width:42px;height:42px;color:var(--sa)}
+
+/* Scene 7: the infinity loop (ph-brand build) */
+.loopwrap{position:relative;width:640px;height:338px;margin-left:132px}
+.loopwrap svg.inf{position:absolute;inset:0;width:640px;height:338px;overflow:visible}
+.lobe{position:absolute;top:169px;translate:-50% -50%;font-size:34px;font-weight:600;white-space:nowrap}
+
+/* Scene 8: steps */
+.steps{display:flex;flex-direction:column;gap:36px}
+.step{display:flex;align-items:flex-start;gap:28px}
+.step .n{flex:0 0 auto;width:64px;height:64px;border-radius:50%;background:var(--sa);color:#0F1424;font-size:32px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1}
+.step .st{font-size:40px;font-weight:600;line-height:1.2;padding-top:6px}
+.step .sx{font-size:30px;line-height:1.35;color:var(--muted);margin-top:6px}
+
+/* Scene 9: the only call to action */
+.cta{display:inline-flex;align-items:center;gap:20px;height:120px;padding:0 46px 0 56px;border-radius:999px;background:var(--orange);color:#0F1424;font-size:54px;font-weight:700;white-space:nowrap}
+#ctaArrow{display:inline-flex}
+.cta svg.ic{width:60px;height:60px;color:#0F1424}
+
+/* Preview player (not rendered into the video) */
+.player{display:flex;flex-direction:column;align-items:center;gap:14px;padding:20px 16px 32px}
+.frame{position:relative;overflow:hidden;border-radius:12px;box-shadow:0 30px 70px -40px rgba(0,0,0,.9)}
+.frame #stage{transform-origin:top left}
+.controls{display:flex;align-items:center;gap:12px;width:100%;max-width:540px;color:var(--muted);font-size:14px}
+.controls button{font:inherit;font-weight:600;color:#0F1424;background:var(--ink);border:0;border-radius:999px;padding:8px 16px;cursor:pointer}
+.controls input{flex:1;accent-color:var(--teal)}
+.controls output{min-width:56px;text-align:right;font-variant-numeric:tabular-nums}
+body.render .player{display:block;padding:0}
+body.render .controls{display:none}
+body.render .frame{border-radius:0;box-shadow:none}
+</style>
+</head>
+<body>
+<div class="player">
+<div class="frame" id="frame">
+<div id="stage">
+  <div class="bar"></div>
+  <img class="logo" src="{{LOGO}}" alt="Personalisation Hub">
+
+  <!-- 1 · Hook -->
+  <section class="scene" id="s1" style="--sa:var(--teal)">
+    <p class="eyebrow" data-in="-1">Your next chapter</p>
+    <h1 class="headline xl" data-in="-1">Going out on your own?</h1>
+    <p class="lede" data-in="0.3">Your experience is your head start.</p>
+    <div class="vis chips">
+      <span class="chip" data-in="0.6">{{icon:campaign}}Retail media</span>
+      <span class="chip" data-in="0.72">{{icon:handshake}}Ad sales</span>
+      <span class="chip" data-in="0.84">{{icon:palette}}Creative</span>
+      <span class="chip" data-in="0.96">{{icon:person_pin_circle}}Personalisation</span>
+    </div>
+  </section>
+
+  <!-- 2 · Why now -->
+  <section class="scene" id="s2" style="--sa:var(--pink)">
+    <p class="eyebrow" data-in="0.05">Why now</p>
+    <h2 class="headline" data-in="0.15">The store matters more than ever.</h2>
+    <p class="lede" data-in="0.35">As AI takes over online shopping, brands win or lose customers in store.</p>
+    <div class="vis shift">
+      <div class="tile from" data-in="0.55"><div class="box">{{icon:smart_toy}}</div><span>Online</span></div>
+      <div class="arrow" data-in="0.75" data-k="fade">{{icon:arrow_forward}}</div>
+      <div class="tile to" data-in="0.9" data-k="pop"><div class="box">{{icon:storefront}}</div><span>In store</span></div>
+    </div>
+  </section>
+
+  <!-- 3 · AI makes one person enough -->
+  <section class="scene" id="s3" style="--sa:var(--orange)">
+    <p class="eyebrow" data-in="0.05">The rise of the solopreneur</p>
+    <h2 class="headline" data-in="0.15">You no longer need a team.</h2>
+    <p class="lede" data-in="0.35">Use AI every day? One person can now do the work of an entire organisation.</p>
+    <div class="vis jobs">
+      <div class="job" data-in="0.65"><span data-in="0.85" data-k="pop">{{icon:check_circle}}</span>Sign up venues</div>
+      <div class="job" data-in="0.85"><span data-in="1.05" data-k="pop">{{icon:check_circle}}</span>Sell to brands</div>
+      <div class="job" data-in="1.05"><span data-in="1.25" data-k="pop">{{icon:check_circle}}</span>Launch campaigns</div>
+      <div class="job" data-in="1.25"><span data-in="1.45" data-k="pop">{{icon:check_circle}}</span>Prove the results</div>
+    </div>
+  </section>
+
+  <!-- 4 · The offer -->
+  <section class="scene" id="s4" style="--sa:var(--teal)">
+    <p class="eyebrow" data-in="0.05">Now launching</p>
+    <h2 class="headline" data-in="0.15">Run your own retail media network.</h2>
+    <p class="lede" data-in="0.35">Your network, under your brand, simply powered by Personalisation Hub.</p>
+    <div class="vis net" id="net">
+      <svg class="lines" viewBox="0 0 904 300" aria-hidden="true"></svg>
+    </div>
+  </section>
+
+  <!-- 5 · Venues -->
+  <section class="scene" id="s5" style="--sa:var(--green)">
+    <p class="eyebrow" data-in="0.05">Any business with a physical presence</p>
+    <h2 class="headline" data-in="0.15">In an industry you love.</h2>
+    <p class="lede" data-in="0.35">With or without screens today.</p>
+    <div class="vis pills" id="pills"></div>
+  </section>
+
+  <!-- 6 · How you earn -->
+  <section class="scene" id="s6" style="--sa:var(--pink)">
+    <p class="eyebrow" data-in="0.05">Retail media income</p>
+    <h2 class="headline" data-in="0.15">Earn from every screen.</h2>
+    <p class="lede" data-in="0.35">Sell advertising to brands, and help every venue convert more shoppers.</p>
+    <div class="vis earn">
+      <div class="device" data-in="0.6">
+        <div class="screen">
+          <div class="slide" id="slideA">
+            <div class="art">{{icon:coffee}}</div>
+            <div class="tx"><span class="k">Clubhouse</span><span class="t">Morning round?</span><span class="s">Coffee and a bacon roll before you tee off.</span></div>
+          </div>
+          <div class="slide" id="slideB">
+            <div class="art">{{icon:sports_golf}}</div>
+            <div class="tx"><span class="k">Sponsored</span><span class="t">New season golf balls</span><span class="s">Members save 15% in the pro shop.</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="outs">
+        <div class="out" data-in="0.85"><span class="ib">{{icon:payments}}</span>Ad revenue from brands</div>
+        <div class="out" data-in="1.05"><span class="ib">{{icon:trending_up}}</span>More sales for venues</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · Campaigns that run themselves -->
+  <section class="scene" id="s7" style="--sa:var(--teal)">
+    <p class="eyebrow" data-in="0.05">AI does the heavy lifting</p>
+    <h2 class="headline" data-in="0.15">Campaigns that run themselves.</h2>
+    <p class="lede" data-in="0.35">Built and targeted by AI. Optimised on real in-store sales.</p>
+    <div class="vis">
+      <div class="loopwrap" data-in="0.55" data-k="pop">
+        <svg class="inf" viewBox="-12 -12 424 224" aria-hidden="true" fill="none" stroke-width="22" stroke-linecap="butt" stroke-linejoin="round">
+          <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#169BC2" stroke-dasharray="23 77" data-o="-12.5"/>
+          <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#EF60A7" stroke-dasharray="23 77" data-o="-37.5"/>
+          <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#FE9226" stroke-dasharray="23 77" data-o="-62.5"/>
+          <path class="seg" d="{{LOOP}}" pathLength="100" stroke="#60D838" stroke-dasharray="23 77" data-o="-87.5"/>
+        </svg>
+        <span class="lobe" style="left:152px">Launch</span>
+        <span class="lobe" style="left:488px">Learn</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · Terms, in the page's own words -->
+  <section class="scene" id="s8" style="--sa:var(--green)">
+    <p class="eyebrow" data-in="0.05">How it works</p>
+    <h2 class="headline" data-in="0.15">Without the upfront cost.</h2>
+    <div class="vis steps">
+      <div class="step" data-in="0.45"><span class="n">1</span><div><div class="st">Get set up</div><div class="sx">Playbooks, templates and a sales framework.</div></div></div>
+      <div class="step" data-in="0.7"><span class="n">2</span><div><div class="st">Roll out with a free runway</div><div class="sx">Win venues and advertisers before you pay for the platform.</div></div></div>
+      <div class="step" data-in="0.95"><span class="n">3</span><div><div class="st">Grow on outcomes</div><div class="sx">We only grow when you do.</div></div></div>
+    </div>
+  </section>
+
+  <!-- 9 · Call to action (the only one) -->
+  <section class="scene" id="s9" style="--sa:var(--orange)">
+    <p class="eyebrow" data-in="0.05">Go solo · Team up · Run your own stores</p>
+    <h2 class="headline xl" data-in="0.15">Start your next chapter.</h2>
+    <p class="lede" data-in="0.35">Places are limited in each industry.</p>
+    <div class="vis">
+      <span class="cta" data-in="0.7" data-k="pop">Link in comments<span id="ctaArrow">{{icon:arrow_downward}}</span></span>
+    </div>
+  </section>
+
+  <div class="foot"><span class="dot"></span><span>personalisationhub.com</span></div>
+</div>
+</div>
+<div class="controls">
+  <button type="button" id="play">Pause</button>
+  <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position">
+  <output id="time">0.0s</output>
+</div>
+</div>
+
+<script>
+(function(){
+  var ICON = {
+    golf_course:'{{icon:golf_course}}', directions_car:'{{icon:directions_car}}', local_gas_station:'{{icon:local_gas_station}}',
+    liquor:'{{icon:liquor}}', agriculture:'{{icon:agriculture}}', sailing:'{{icon:sailing}}', grocery:'{{icon:grocery}}',
+    hardware:'{{icon:hardware}}', fitness_center:'{{icon:fitness_center}}', bakery_dining:'{{icon:bakery_dining}}'
+  };
+
+  /* Scene timings in seconds. Each scene's elements leave over its last 0.4s. */
+  var SCENES = [
+    {id:'s1', start:0.0,  a:'#169BC2'},
+    {id:'s2', start:3.0,  a:'#EF60A7'},
+    {id:'s3', start:6.2,  a:'#FE9226'},
+    {id:'s4', start:9.6,  a:'#169BC2'},
+    {id:'s5', start:13.2, a:'#60D838'},
+    {id:'s6', start:16.8, a:'#EF60A7'},
+    {id:'s7', start:20.4, a:'#169BC2'},
+    {id:'s8', start:23.6, a:'#60D838'},
+    {id:'s9', start:27.2, a:'#FE9226'}
+  ];
+  var DURATION = 31.5;
+  SCENES.forEach(function(s,i){ s.end = i < SCENES.length-1 ? SCENES[i+1].start : DURATION; });
+
+  /* Scene 4: hub and six venues on an ellipse */
+  var net = document.getElementById('net'), lines = net.querySelector('svg.lines');
+  var CX = 452, CY = 150, RX = 370, RY = 112;
+  var hubA = document.createElement('div'); hubA.className = 'anchor'; hubA.style.left = CX+'px'; hubA.style.top = CY+'px';
+  hubA.innerHTML = '<div class="hub" data-in="0.55" data-k="pop">Your brand</div>';
+  ['golf_course','directions_car','local_gas_station','liquor','agriculture','sailing'].forEach(function(n,i){
+    var th = i*Math.PI/3, x = CX + RX*Math.cos(th), y = CY + RY*Math.sin(th);
+    var p = document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d','M'+CX+' '+CY+' L'+x.toFixed(1)+' '+y.toFixed(1)); p.setAttribute('pathLength','1');
+    p.setAttribute('stroke-dasharray','1 1'); p.dataset.d = (0.75 + i*0.06).toFixed(2); lines.appendChild(p);
+    var a = document.createElement('div'); a.className = 'anchor'; a.style.left = x.toFixed(1)+'px'; a.style.top = y.toFixed(1)+'px';
+    a.innerHTML = '<div class="node" data-in="'+(1.0 + i*0.08).toFixed(2)+'" data-k="pop">'+ICON[n]+'</div>';
+    net.appendChild(a);
+  });
+  net.appendChild(hubA);
+
+  /* Scene 5: venue pills, copy from the page's venue list */
+  var VENUES = [['golf_course','Golf clubs'],['directions_car','Car dealerships'],['local_gas_station','Fuel and convenience'],
+    ['liquor','Liquor stores'],['agriculture','Rural and farm supplies'],['sailing','Sailing clubs and marinas'],
+    ['grocery','Independent grocery'],['hardware','Hardware'],['fitness_center','Gyms and leisure centres'],['bakery_dining','Cafés and bakeries']];
+  var pills = document.getElementById('pills');
+  VENUES.forEach(function(v,i){
+    var s = document.createElement('span'); s.className = 'pill'; s.dataset.in = (0.55 + i*0.09).toFixed(2);
+    s.innerHTML = ICON[v[0]] + v[1]; pills.appendChild(s);
+  });
+
+  /* Collect animated elements per scene */
+  SCENES.forEach(function(s){
+    s.el = document.getElementById(s.id);
+    s.items = Array.prototype.map.call(s.el.querySelectorAll('[data-in]'), function(e){
+      return {e:e, d:parseFloat(e.dataset.in), k:e.dataset.k || 'rise'};
+    });
+  });
+  var stage = document.getElementById('stage');
+  var segs = Array.prototype.slice.call(document.querySelectorAll('#s7 .seg'));
+  var linePaths = Array.prototype.slice.call(lines.querySelectorAll('path'));
+  var slideA = document.getElementById('slideA'), slideB = document.getElementById('slideB');
+  var arrow = document.getElementById('ctaArrow');
+
+  function clamp(x){ return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function eo(t){ return 1 - Math.pow(1-t,3); }
+  function ei(t){ return t*t*t; }
+  function rgb(h){ return [1,3,5].map(function(i){ return parseInt(h.substr(i,2),16); }); }
+  function mix(a,b,t){ var A=rgb(a),B=rgb(b); return 'rgb('+A.map(function(v,i){ return Math.round(v+(B[i]-v)*t); }).join(',')+')'; }
+
+  function renderAt(t){
+    /* the bar and footer dot follow the scene's single accent, easing across each cut */
+    var acc = SCENES[0].a;
+    SCENES.forEach(function(s){ if (t >= s.start) acc = s.a; });
+    for (var i=1;i<SCENES.length;i++){
+      var b = SCENES[i].start;
+      if (t > b-0.25 && t < b+0.25) acc = mix(SCENES[i-1].a, SCENES[i].a, eo(clamp((t-(b-0.25))/0.5)));
+    }
+    stage.style.setProperty('--a', acc);
+
+    SCENES.forEach(function(s, idx){
+      var last = idx === SCENES.length-1;
+      var on = t >= s.start && (last || t < s.end);
+      s.el.style.visibility = on ? 'visible' : 'hidden';
+      if (!on) return;
+      var local = t - s.start;
+      var out = last ? 0 : ei(clamp((t-(s.end-0.4))/0.4));
+      s.items.forEach(function(it){
+        var p = eo(clamp((local-it.d)/0.6)), y, sc = 1;
+        if (it.k === 'pop'){ y = -out*24; sc = 0.86 + 0.14*p; }
+        else if (it.k === 'fade'){ y = -out*24; }
+        else { y = (1-p)*36 - out*24; }
+        it.e.style.opacity = (p*(1-out)).toFixed(4);
+        it.e.style.transform = 'translateY('+y.toFixed(2)+'px) scale('+sc.toFixed(4)+')';
+      });
+      if (s.id === 's4') linePaths.forEach(function(p){
+        p.setAttribute('stroke-dashoffset', (1 - eo(clamp((local-parseFloat(p.dataset.d))/0.5))).toFixed(4));
+        p.style.opacity = (1-out).toFixed(4);
+      });
+      if (s.id === 's6'){
+        var k = eo(clamp((local-1.9)/0.45));
+        slideA.style.opacity = (1-k).toFixed(4); slideA.style.transform = 'translateY('+(-k*18).toFixed(2)+'px)';
+        slideB.style.opacity = k.toFixed(4);     slideB.style.transform = 'translateY('+((1-k)*18).toFixed(2)+'px)';
+      }
+      if (s.id === 's9'){
+        var bt = local - 1.4;
+        arrow.style.transform = 'translateY('+(bt > 0 ? 7*Math.sin(2*Math.PI*bt/1.1) : 0).toFixed(2)+'px)';
+      }
+    });
+    /* the loop flows gently: one full turn every 14s */
+    segs.forEach(function(p){ p.setAttribute('stroke-dashoffset', (parseFloat(p.dataset.o) - (t/14)*100).toFixed(3)); });
+  }
+
+  window.renderAt = renderAt;
+  window.DURATION = DURATION;
+  window.SCENES = SCENES.map(function(s){ return {id:s.id, start:s.start, end:s.end}; });
+
+  /* Render mode: the capture script drives renderAt frame by frame */
+  if (/[?&]render\b/.test(location.search)){ document.body.classList.add('render'); renderAt(0); return; }
+
+  /* Preview mode: fit the stage to the window and play on a loop */
+  var frame = document.getElementById('frame'), btn = document.getElementById('play'),
+      scrub = document.getElementById('scrub'), out = document.getElementById('time');
+  function fit(){
+    var s = Math.min(1, (window.innerWidth-32)/1080, (window.innerHeight-120)/1350);
+    stage.style.transform = 'scale('+s+')';
+    frame.style.width = (1080*s)+'px'; frame.style.height = (1350*s)+'px';
+  }
+  fit(); window.addEventListener('resize', fit);
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var playing = !reduce, t0 = performance.now(), pos = reduce ? 13.0 : 0;
+  function show(t){ renderAt(t); scrub.value = Math.round(t/DURATION*1000); out.textContent = t.toFixed(1)+'s'; }
+  function tick(now){
+    if (playing){ pos = ((now - t0)/1000) % DURATION; show(pos); }
+    requestAnimationFrame(tick);
+  }
+  btn.textContent = playing ? 'Pause' : 'Play';
+  btn.addEventListener('click', function(){
+    playing = !playing; btn.textContent = playing ? 'Pause' : 'Play';
+    if (playing) t0 = performance.now() - pos*1000;
+  });
+  scrub.addEventListener('input', function(){
+    pos = scrub.value/1000*DURATION; t0 = performance.now() - pos*1000; show(pos);
+  });
+  show(pos);
+  document.fonts.ready.then(function(){ requestAnimationFrame(tick); });
+})();
+</script>
+</body>
+</html>
