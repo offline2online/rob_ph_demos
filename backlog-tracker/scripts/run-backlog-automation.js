@@ -215,7 +215,8 @@ async function patchItem(itemId, fields) {
 // already happened, and the hourly sweep below catches whatever it misses.
 async function dropPatchFiles(itemId) {
   try {
-    const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?updateMask.fieldPaths=patchFiles`, {
+    // (and a patch handed over as a commit: its pointer goes with it)
+    const res = await fetch(`${FIRESTORE_BASE}/backlogItems/${itemId}?updateMask.fieldPaths=patchFiles&updateMask.fieldPaths=patchCommit&updateMask.fieldPaths=patchRef`, {
       method: "PATCH",
       headers: await firestoreHeaders(),
       body: JSON.stringify({ fields: {} }),
@@ -251,7 +252,55 @@ async function patchFilesFor(item) {
   const base = await basePatchFilesFor(item);
   return base.concat(await patchPartFilesFor(item));
 }
+// ── A patch handed over as a commit (14 Nov 2026) ─────────────────────────
+// A build session used to hand its work over only as file contents written
+// to the board (patchFiles). On 14 Nov 2026 a ticket was built and tested and
+// then could not be handed over: the session's environment refused to send
+// repository files that hold the account owner's address to the board, and
+// every ticket touching MCP.md, README.md, REQUIREMENTS.md or mcp-server.js
+// would have stopped the same way. A session can instead commit its change,
+// push it to its own branch, and write only { patchCommit, patchRef,
+// patchBaseSha } on the card: no file content leaves the session except by
+// git. The files are read here from that commit, as the same [{path,
+// content}] list (content null for a deleted path), so everything after this
+// point is unchanged. It also has no size limit, so no patch parts.
+// (SHA_RE, a full 40-character commit id, is declared further down.)
+const REF_RE =/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,200}$/;
+function gitText(args, opts = {}) {
+  return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 256 * 1024 * 1024, ...opts });
+}
+// Pure but for git: the files `commit` changes relative to `base`.
+// Throws with a plain reason when the hand-over can't be used.
+function patchFilesFromCommit(base, commit, opts = {}) {
+  if (!SHA_RE.test(String(commit || ""))) throw new Error(`patchCommit must be a full 40-character commit id, not "${String(commit).slice(0, 60)}"`);
+  if (!SHA_RE.test(String(base || ""))) throw new Error("a patch handed over as a commit needs patchBaseSha, the full commit id it was built on");
+  try { gitText(["merge-base", "--is-ancestor", base, commit], opts); }
+  catch (err) { throw new Error(`patchCommit ${commit.slice(0, 7)} is not built on patchBaseSha ${base.slice(0, 7)}${err && err.status === 1 ? "" : ` (${String(err.message).split("\n")[0]})`}`); }
+  const names = gitText(["diff", "--name-status", "--no-renames", "-z", base, commit], opts).split("\0").filter((s) => s !== "");
+  const binary = new Set(gitText(["diff", "--numstat", "--no-renames", "-z", base, commit], opts).split("\0").filter((l) => /^-\t-\t/.test(l)).map((l) => l.replace(/^-\t-\t/, "")));
+  const files = [];
+  for (let i = 0; i + 1 < names.length; i += 2) {
+    const status = names[i], p = names[i + 1];
+    if (status === "D") { files.push({ path: p, content: null }); continue; }
+    if (binary.has(p)) throw new Error(`${p} is a binary file: a patch can only carry text files`);
+    files.push({ path: p, content: gitText(["show", `${commit}:${p}`], opts) });
+  }
+  return files;
+}
+function fetchPatchCommit(item) {
+  const ref = typeof item.patchRef === "string" && REF_RE.test(item.patchRef) && !item.patchRef.includes("..") ? item.patchRef : "";
+  // The branch the session pushed, else the commit itself.
+  try { run("git", ["fetch", "origin", ref || item.patchCommit, "--quiet"]); }
+  catch (err) { throw new Error(`the commit this patch was handed over as (${String(item.patchCommit).slice(0, 7)}${ref ? ` on ${ref}` : ""}) couldn't be fetched: ${String(err.message).split("\n")[0]}`); }
+}
 async function basePatchFilesFor(item) {
+  if (item.patchCommit) {
+    if (!SHA_RE.test(String(item.patchCommit))) throw new Error(`patchCommit must be a full 40-character commit id, not "${String(item.patchCommit).slice(0, 60)}"`);
+    fetchPatchCommit(item);
+    const files = patchFilesFromCommit(item.patchBaseSha, item.patchCommit);
+    console.log(`[apply-patch] ${item.id}: ${files.length} file(s) read from commit ${item.patchCommit.slice(0, 7)}${item.patchRef ? ` (${item.patchRef})` : ""}`);
+    return files;
+  }
   if (Array.isArray(item.patchFiles) && item.patchFiles.length) return item.patchFiles;
   const res = await fetch(`${FIRESTORE_BASE}/${patchDocPath(item.id)}`, { headers: await firestoreHeaders() });
   if (res.status === 404) return [];
@@ -854,9 +903,13 @@ function escalationBlock(why, used, nowIso = new Date().toISOString()) {
   const reason = String(why || "The automatic rebuilds did not get this ticket through.").trim();
   return {
     reason: "waiting-on-input",
+    // Not a question (14 Nov 2026): the automation takes the best option and
+    // builds it again by itself (autoAnswerPlan). The Answer button is there
+    // for a person who wants to steer it, not because one is being asked.
     note: `${reason.length > 1200 ? `${reason.slice(0, 1200)}…` : reason}\n\n` +
-      `Rebuilt automatically ${used} time${used === 1 ? "" : "s"} and still not through. What should change? Answer on the card (Answer button) and it is rebuilt with your answer.`,
+      `Rebuilt automatically ${used} time${used === 1 ? "" : "s"} and still not through. Nothing to answer: it is built again by itself, taking the best option. No other ticket waits on this one. To steer it, use the Answer button.`,
     setBy: "self-heal",
+    kind: "rebuilds-used",
     setAt: nowIso,
   };
 }
@@ -897,22 +950,53 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
 // unblocked and rebuilt. Twice per ticket at most; a dependency wait
 // (dependsOnItemIds) is never answered this way, it clears itself when the
 // ticket it waits for lands. Pure, for test/self-heal.test.js.
-const AUTO_ANSWER_AFTER_MS = 10 * 60 * 1000;
+//
+// 14 Nov 2026 (Rob: "the tickets are still asking me random questions which
+// block the backlog flow"). Three things were wrong:
+// - A question waited 10 minutes for a person before the answer was taken.
+//   It is taken on the next run: nothing waits on a person.
+// - A build that never RAN (the session hit the account's usage limit, a
+//   container restarted, a fire was refused) was flagged the same way and
+//   then "answered" as if it had asked something, twice, and left for a
+//   person. It asked nothing. It is tried again by itself, with a longer gap
+//   each time (NEVER_RAN_BACKOFF_MS, doubling to NEVER_RAN_MAX_GAP_MS, which
+//   outlasts a 5-hour usage limit), up to MAX_NEVER_RAN_RETRIES.
+// - A flag a PERSON set (set_blocked over MCP, setBy an email address) was
+//   answered for them. It is left alone.
+const AUTO_ANSWER_AFTER_MS = 0;
 const MAX_AUTO_ANSWERS = 2;
+const NEVER_RAN_BACKOFF_MS = 30 * 60 * 1000;
+const NEVER_RAN_MAX_GAP_MS = 6 * 60 * 60 * 1000;
+const MAX_NEVER_RAN_RETRIES = 12;
 const DEFAULT_SENIOR_ANSWER = "Take the best option, state the assumption you made on the card, and do not ask again.";
 function autoAnswerPlan(item, now = Date.now()) {
   const b = item && item.blocked;
   if (!b || b.reason !== "waiting-on-input" || (item.status && item.status !== "backlog") || item.patchReady) return null;
   if (Array.isArray(item.dependsOnItemIds) && item.dependsOnItemIds.length) return null;
-  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
+  if (typeof b.setBy === "string" && b.setBy.includes("@")) return null; // a person's own flag
   const setAt = timeMs(b.setAt);
-  if (Number.isNaN(setAt) || now - setAt < AUTO_ANSWER_AFTER_MS) return null;
+  if (Number.isNaN(setAt)) return null;
+  if (b.kind === "never-ran") {
+    const tries = Number(item.neverRanRetries) || 0;
+    if (tries >= MAX_NEVER_RAN_RETRIES) return null;
+    const gap = Math.min(NEVER_RAN_MAX_GAP_MS, NEVER_RAN_BACKOFF_MS * 2 ** tries);
+    if (now - setAt < gap) return null;
+    return {
+      answer: "",
+      fromRecommendation: false,
+      retry: true,
+      text: `Tried again automatically (try ${tries + 1} of ${MAX_NEVER_RAN_RETRIES}): the build had not run, so there was nothing to answer.`,
+      fields: { neverRanRetries: tries + 1 },
+    };
+  }
+  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
+  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   const recommendation = typeof b.recommendation === "string" ? b.recommendation.trim() : "";
   const answer = recommendation || DEFAULT_SENIOR_ANSWER;
   return {
     answer,
     fromRecommendation: !!recommendation,
-    text: `Answer to the build's question (accepted automatically from the senior agent after ${Math.round(AUTO_ANSWER_AFTER_MS / 60000)} minutes without a reply${recommendation ? "" : ", no recommendation recorded, so the default decision"}): ${answer}`,
+    text: `Answer to the build's question (taken automatically${recommendation ? " from the senior agent's recommendation" : ": no recommendation was recorded, so the default decision"}, without waiting for a person): ${answer}`,
     fields: { autoAnswers: (Number(item.autoAnswers) || 0) + 1 },
   };
 }
@@ -1020,7 +1104,7 @@ function silentBuildSessionAction(item, now = Date.now()) {
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
   return `The automatic rebuild requested at ${new Date(timeMs(item.rebuildRequestedAt)).toISOString()} never started` +
-    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.`;
+    `${err ? ` (${err})` : ""}, after ${REBUILD_START_RETRIES} more requests. It is tried again by itself; nothing to answer.`;
 }
 // The flag a ticket gets when the automation has run out of ways to start
 // its build (a fire that never started, sessions that never reported): on the
@@ -1028,7 +1112,9 @@ function rebuildNeverStartedNote(item) {
 // button that builds it again, instead of a note asking for a click nobody
 // sees. Pure.
 function buildNeverRanBlock(text, nowIso = new Date().toISOString()) {
-  return { reason: "waiting-on-input", note: `${text}\n\nAnswer on the card (Answer button) — anything the build should know, or just "try again" — and it is built again.`, setBy: "self-heal", setAt: nowIso };
+  // Not a question (14 Nov 2026): the build did not run, so it is tried again
+  // by itself with a longer gap each time (autoAnswerPlan, kind "never-ran").
+  return { reason: "waiting-on-input", note: `${text}\n\nNothing to answer: the build did not run, and it is tried again by itself with a longer gap each time (a usage limit or a restart usually clears). No other ticket waits on this one. To start it now, use the Answer button.`, setBy: "self-heal", kind: "never-ran", setAt: nowIso };
 }
 // A fire the function could not make (429 or 5xx) is marked "retrying" with
 // the time to try again; the sweep re-requests it once that time has passed.
@@ -1149,7 +1235,7 @@ async function sweepUnbuiltReports(now = Date.now()) {
         console.log(`[unbuilt] ${item.id}: reply found, train locked — build deferred until it merges`);
       } else {
         const blocked = { ...next.blocked, setAt: new Date().toISOString() };
-        const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. Flagged as waiting on your input: answer with the Answer button on the card and it rebuilds.`);
+        const notes = await appendNote(item, `The build stopped without packaging a patch and without flagging the card, so nothing would have moved it on. It is built again by itself, taking the best option; nothing to answer.`);
         await patchItem(item.id, { blocked, notes, updatedAt: new Date().toISOString() });
         console.log(`[unbuilt] ${item.id}: build stopped without a patch — flagged waiting-on-input`);
       }
@@ -7905,6 +7991,7 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
+  patchFilesFromCommit,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
