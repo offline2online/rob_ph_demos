@@ -4757,7 +4757,19 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     turned into the record by one short call with no tools (`notesOf`, at
     most 70 seconds). The run's message says it ran out of time and that
     Refresh info runs it again. A run left "running" for over 10 minutes
-    still counts as stale and does not block a new one.
+    still counts as stale and does not block a new one. The first run after
+    this (the same bank) finished in 6 min 45 s with a full profile but no
+    site count and one person, so the brief now runs as **two halves at
+    once** (`claudeResearchSplit`, `RESEARCH_HALVES`): the estate (the site
+    count first, the breakdown, where it trades, the people; 10 searches, 5
+    page reads) and the market (summary, size, logos, retail media and
+    competitors, personalisation, in-store digital, loyalty, strategy, news,
+    financials, facts, fit, talking points; 14 searches, 6 page reads).
+    Tried on the same bank from a runner: 344 s, 561 sites, eight news
+    items. Each half's own fields win when they
+    are put together (`mergeHalves`); people are listed once each. When one
+    half fails the other is kept and the record says some fields may be
+    missing.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
