@@ -67,7 +67,13 @@ class Probe {
       return res;
     };
     this.beta = { messages: {
-      stream: (params) => ({ finalMessage: async () => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.stream(params).finalMessage()); } }),
+      stream: (params, opts) => {
+        const inner = real.beta.messages.stream(params, opts);
+        return {
+          on: (...a) => inner.on(...a), abort: () => inner.abort(),
+          finalMessage: async () => { const n = ++calls, s = Date.now(); try { return report(n, s, await inner.finalMessage()); } catch (err) { console.log(`request ${n}: failed after ${secs(Date.now() - s)}: status ${err && err.status}, ${String(err && err.message || err).replace(/\s+/g, " ").slice(0, 300)}`); throw err; } },
+        };
+      },
       create: async (params) => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.create(params)); },
     } };
   }

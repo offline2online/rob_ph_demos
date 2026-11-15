@@ -581,6 +581,7 @@ function mergeHalves(estate, market) {
 async function claudeResearchSplit(args) {
   const runs = await Promise.allSettled(RESEARCH_HALVES.map((h) => claudeResearch({ ...args, focus: h.focus, searches: h.searches, fetches: h.fetches })));
   const [a, b] = runs.map((r) => (r.status === "fulfilled" ? r.value : null));
+  runs.forEach((r, i) => { if (r.status === "rejected" && args.onHalfError) args.onHalfError(RESEARCH_HALVES[i].name, r.reason); });
   if (!a && !b) throw runs[0].reason;
   const out = mergeHalves(a, b);
   const short = (a && a.cutShort) || (b && b.cutShort) || !a || !b;
@@ -999,7 +1000,8 @@ function createLeadEnrich({
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearchSplit)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline });
+      const raw = await (research || claudeResearchSplit)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline,
+        onHalfError: (half, err) => logger.warn("enrichment research half failed", { half, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) }) });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
       if (blank(Object.entries(cleanFindings(raw)).filter(([k, v]) => k !== "websiteConfidence" && !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
