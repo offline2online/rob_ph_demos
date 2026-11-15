@@ -2,11 +2,12 @@
 /**
  * php ph-website/tests/operator-render.php : prints the Run Your Own RMN page's <main> for the Chromium fixture, shaped like the Elementor
  * page built from ph-website/elementor/run-your-own-rmn.md: the Elementor sections as Elementor containers and widgets (headings, text,
- * buttons with the brief's anchors; the copy is the twin's lists, which the brief carries word for word) and the three EMPTY mount
- * containers (CSS IDs ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour) in the brief's order. That HTML is then passed through
+ * buttons with the brief's anchors; the copy is the twin's lists, which the brief carries word for word) and the four EMPTY mount
+ * containers (CSS IDs ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, ph-rmn-request) in the brief's order. That HTML is then passed through
  * operator_mount(), the function hooked on Elementor's frontend content filter, exactly as on the live page, so the blocks in the
  * fixture are the ones the server puts into the first HTML response. With the argument `head`, prints JSON instead: the document title, the header menu item and the SEO head exactly as
- * operator.php produces them on the page itself (hidden), so the fixture's <head> and menu are the real ones.
+ * operator.php produces them on the page itself (live since 15 Nov 2026, so the head links the markdown twin), so the fixture's <head> and menu
+ * are the real ones.
  */
 namespace {
 define( 'ABSPATH', '/' );
@@ -32,12 +33,21 @@ require dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/operator.php';
 
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
 const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = 'test'; // main.php's, for operator_enqueue()
+// `calc <json>`: operator_view( operator_calc() ) for each input set in both modes, for the PHP/JS parity sweep in operator.test.mjs.
+if ( isset( $argv[1], $argv[2] ) && 'calc' === $argv[1] ) {
+	$res = array();
+	foreach ( (array) json_decode( $argv[2], true ) as $set ) {
+		$res[] = array( 'operator' => operator_view( operator_calc( $set ) ), 'retailer' => operator_view( operator_calc( $set, 'retailer' ) ) );
+	}
+	echo json_encode( $res, JSON_UNESCAPED_UNICODE );
+	return;
+}
 if ( isset( $argv[1] ) && 'head' === $argv[1] ) {
 	$item = operator_menu_item( true, 3 );
 	echo json_encode( array(
 		'title' => operator_document_title( 'Untitled - Personalisation Hub' ),
 		'menu'  => array( 'title' => $item->title, 'url' => $item->url, 'classes' => implode( ' ', $item->classes ), 'atts' => operator_menu_link_atts( array(), $item ) ),
-		'seo'   => operator_head_html( operator_og_image(), false ),
+		'seo'   => operator_head_html( operator_og_image(), operator_is_live() ),
 	) );
 	return;
 }
@@ -64,7 +74,7 @@ foreach ( operator_why_items() as $w ) { $why .= $h( 'p', $w[1] ) . $t( $w[2] );
 $steps = '';
 foreach ( operator_steps() as $s ) { $steps .= $h( 'p', $s[0] . ' ' . $s[1] ) . $t( $s[2] ); }
 $out  = '<div data-elementor-type="wp-page" data-elementor-id="10900" class="elementor elementor-10900" data-elementor-post-type="page">';
-$out .= $con( 'top', $h( 'h1', OPERATOR_H1 ) . $h( 'p', OPERATOR_SUBLINE ) . $t( OPERATOR_HERO_P ) . $b( 'See how much you can earn', '#calculator' ) . $b( 'Request further information', '#tour' ) . $h( 'p', 'Why it beats anything out there' ) . $why, '#F9FAFD' );
+$out .= $con( 'top', $h( 'h1', OPERATOR_H1 ) . $h( 'p', OPERATOR_SUBLINE ) . $t( OPERATOR_HERO_P ) . $b( 'See how much you can earn', '#calculator' ) . $b( 'Request further information', '#request-info' ) . $h( 'p', 'Why it beats anything out there' ) . $why, '#F9FAFD' );
 $out .= $con( 'why', $h( 'h2', 'Your head start in a changing industry' ) );
 $out .= $con( 'who', $h( 'h2', 'Three ways to run your own network' ), '#F9FAFD' );
 $out .= $con( 'how', $h( 'h2', 'How it works' ) . $steps );
@@ -74,5 +84,6 @@ $out .= $mc( OPERATOR_MOUNTS['calculator'] );
 $out .= $con( 'independents', $h( 'h2', 'Give independents a fighting chance' ), '#F9FAFD' );
 $out .= $mc( OPERATOR_MOUNTS['faq'] );
 $out .= $mc( OPERATOR_MOUNTS['tour'] );
+$out .= $mc( OPERATOR_MOUNTS['request'] );
 echo operator_mount( $out . '</div>' );
 }

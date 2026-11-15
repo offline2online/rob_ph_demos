@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  pageLogos, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, claudeResearchSplit, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -100,7 +100,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     for (const ip of ["93.184.216.34", "8.8.8.8", "2606:4700::1111"]) assert.ok(!isPrivateAddress(ip), ip);
   });
   await test("readPage takes the title, description, LinkedIn page and the apple-touch-icon over the plain icon", () => {
-    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { light: "", dark: "" } });
+    assert.deepEqual(readPage(HOME, "https://www.greeneking.co.uk/"), { title: "Greene King", description: "Pubs, restaurants and hotels", linkedinCompany: "https://www.linkedin.com/company/greene-king", iconUrl: "https://www.greeneking.co.uk/apple-touch-icon.png", logos: { declared: { light: "", dark: "" }, images: [] } });
   });
   await test("the agent is told to research without paid providers and to answer with news and financials", () => {
     assert.match(AGENT_SYSTEM, /web search/); assert.match(AGENT_SYSTEM, /news/); assert.match(AGENT_SYSTEM, /financials/); assert.match(AGENT_SYSTEM, /logo/);
@@ -288,11 +288,12 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
       logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
     });
     await api.onEnrichWrite("leads", created("leads", "l1", db.state));
-    assert.equal(sent.length, 2, "the paused turn is sent back once");
+    assert.equal(sent.length, 3, "two halves, and the paused turn is sent back once");
     assert.equal(sent[0].model, "claude-opus-5-5");
     assert.deepEqual(sent[0].tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
     assert.match(sent[0].messages[0].content, /Company: Greene King/);
-    assert.equal(sent[1].messages.length, 2); assert.equal(sent[1].messages[1].role, "assistant");
+    const resumed = sent.filter((x) => x.messages.length === 2);
+    assert.equal(resumed.length, 1); assert.equal(resumed[0].messages[1].role, "assistant");
     assert.equal(db.state.leads.l1.company.industry, "Pubs & Hospitality");
     assert.equal(db.state.leads.l1.enrichment.financials.summary, "Revenue rose 5% to £2.4bn.");
   });
@@ -333,6 +334,73 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(out.storeCount, 2600);
     assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
     assert.match(sent[1].messages[0].content, /2,600 pubs/);
+  });
+  // ── 15 Nov 2026: a bank's research ran past the function's 540 s limit twice;
+  // the platform killed it and the record said "running" with nothing saved ──
+  await test("a research run still going at its deadline is cut off and what it gathered is written up", async () => {
+    const sent = [];
+    const snapshot = { role: "assistant", content: [
+      { type: "text", text: "NAB runs about 700 branches across Australia." },
+      { type: "server_tool_use", id: "s1", name: "web_search", input: { query: "NAB branches" } },
+      { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", title: "NAB annual report", url: "https://nab.example/annual", page_age: "2026" }] },
+      { type: "web_fetch_tool_result", tool_use_id: "f1", content: { type: "web_fetch_result", url: "https://nab.example/branches", content: { type: "document", title: "Branch network", source: { type: "text", media_type: "text/plain", data: "We run 698 branches." } } } },
+    ] };
+    class Slow {
+      constructor() { this.beta = { messages: { stream: (params) => {
+        sent.push(JSON.parse(JSON.stringify(params)));
+        if (sent.length > 1) return { finalMessage: async () => text("```json\n" + JSON.stringify({ ...AGENT, storeCount: 698 }) + "\n```") };
+        let listener = null, reject = null;
+        return {
+          on: (ev, fn) => { if (ev === "streamEvent") { listener = fn; setTimeout(() => listener({ type: "content_block_stop" }, snapshot), 5); } },
+          abort: () => reject(new Error("Request was aborted.")),
+          finalMessage: () => new Promise((_, rej) => { reject = rej; }),
+        };
+      } } }; }
+    }
+    const t0 = Date.now();
+    const out = await claudeResearch({ apiKey: "k", Anthropic: Slow, company: "NAB", deadline: Date.now() + 60 });
+    assert.ok(Date.now() - t0 < 2000, "the run stops at its deadline");
+    assert.equal(out.storeCount, 698);
+    assert.equal(out.cutShort, true);
+    assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
+    const notes = sent[1].messages[0].content;
+    assert.match(notes, /about 700 branches/); assert.match(notes, /nab\.example\/annual/); assert.match(notes, /We run 698 branches/);
+  });
+  await test("the run gives the research a deadline inside the function's limit, and a cut-short run says so on the record", async () => {
+    let got = null;
+    const research = async (args) => { got = args; const r = { ...AGENT }; Object.defineProperty(r, "cutShort", { value: true, enumerable: false }); return r; };
+    const db = fakeDb({ leads: { l1: { ...LEAD } }, prospects: {}, prospectCompanies: {} });
+    const api = createLeadEnrich({
+      db, verifyIdToken: async () => ({ email: "x" }), resolveConsoleUser: async () => null,
+      anthropicKey: () => "sk-test", research, screen: async () => PASS,
+      lookup: async () => [{ address: "93.184.216.34" }], fetch: async () => resp(200, HOME),
+      logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
+    });
+    const t0 = Date.now();
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.ok(got.deadline > t0 && got.deadline - t0 <= 400000, "well inside 540 s");
+    const e = db.state.leads.l1.enrichment;
+    assert.equal(e.request.status, "done");
+    assert.match(e.request.message, /did not finish in time/);
+  });
+  await test("the research runs as two halves at once, the estate and the market, and puts them together", async () => {
+    const sent = [];
+    const estate = { name: "NAB", storeCount: 601, storeCountBreakdown: "601 branches.", people: [{ name: "Jane Smith", title: "CDO" }], summary: "", news: [], techStack: ["Salesforce"] };
+    const market = { name: "", storeCount: 450, summary: "A bank.", retailMedia: "None yet.", people: [{ name: "J. Smith", title: "Chief Data Officer" }, { name: "Ann Lee", title: "CMO" }], news: [{ title: "Results", url: "https://x/1" }], techStack: ["Salesforce", "AWS"] };
+    class Two { constructor() { this.beta = { messages: { stream: (params) => { sent.push(params); const est = /and the people\. Leave/.test(params.messages[0].content); return { finalMessage: async () => text("```json\n" + JSON.stringify(est ? estate : market) + "\n```") }; } } }; } }
+    const out = await claudeResearchSplit({ apiKey: "k", Anthropic: Two, company: "NAB" });
+    assert.equal(sent.length, 2, "both halves are asked at once");
+    assert.deepEqual(sent.map((p) => p.tools[0].max_uses).sort(), [10, 14]);
+    assert.equal(out.storeCount, 601, "the estate half owns the site count");
+    assert.equal(out.summary, "A bank."); assert.equal(out.retailMedia, "None yet.");
+    assert.deepEqual(out.people.map((p) => p.name), ["Jane Smith", "Ann Lee"]);
+    assert.deepEqual(out.techStack, ["Salesforce", "AWS"]);
+    assert.equal(out.cutShort, undefined);
+    class Half { constructor() { this.beta = { messages: { stream: (params) => ({ finalMessage: async () => { if (/and the people\. Leave/.test(params.messages[0].content)) throw new Error("overloaded"); return text(JSON.stringify(market)); } }) } }; } }
+    const one = await claudeResearchSplit({ apiKey: "k", Anthropic: Half, company: "NAB" });
+    assert.equal(one.summary, "A bank."); assert.equal(one.cutShort, true, "a missing half is said on the record");
+    class None { constructor() { this.beta = { messages: { stream: () => ({ finalMessage: async () => { throw new Error("overloaded"); } }) } }; } }
+    await assert.rejects(claudeResearchSplit({ apiKey: "k", Anthropic: None, company: "NAB" }), /overloaded/);
   });
   await test("a refusal, an empty answer and an unreadable answer each fail with the reason", async () => {
     await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "refusal", content: [] }]), company: "X" }), /declined/);
@@ -518,8 +586,8 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   // ── Logos for the branded walkthrough demo (12 Nov 2026) ──
   await test("the full logo for light and for dark backgrounds is found, checked as an image and kept", async () => {
     const page = `<header><img class="site-logo" src="/img/gk-logo.svg" alt="Greene King"><img src="/img/hero.jpg" alt="A pub"><img alt="Greene King logo" data-src="/img/gk-logo-white.svg"></header>`;
-    assert.deepEqual(readPage(page, "https://www.greeneking.co.uk/").logos, { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
-    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x), { light: "", dark: "" });
+    assert.deepEqual(chooseLogos(readPage(page, "https://www.greeneking.co.uk/").logos, "Greene King"), { light: "https://www.greeneking.co.uk/img/gk-logo.svg", dark: "https://www.greeneking.co.uk/img/gk-logo-white.svg" });
+    assert.deepEqual(pageLogos(`<img class="logo" src="data:image/png;base64,AAAA">`, (x) => x).images, []);
     for (const k of ["logoLight", "logoDark"]) assert.ok(AGENT_SYSTEM.includes(`"${k}"`), k);
     assert.match(AGENT_SYSTEM, /never build or guess an address/);
     const types = { "https://brand.example/gk-full.svg": "image/svg+xml", "https://brand.example/gk-white.png": "image/png", "https://www.greeneking.co.uk/img/gk-logo.svg": "image/svg+xml", "https://brand.example/not-an-image": "text/html" };
@@ -541,8 +609,8 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
   });
   await test("a logo is also taken from the site's structured data and from Wikimedia Commons, only for the right company", async () => {
     const ld = `<script type="application/ld+json">{"@graph":[{"@type":"WebSite"},{"@type":"Organization","logo":{"@type":"ImageObject","url":"/assets/brand.svg"}}]}</script>`;
-    assert.equal(readPage(ld, "https://acme.example/").logos.light, "https://acme.example/assets/brand.svg");
-    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.light, "");
+    assert.equal(readPage(ld, "https://acme.example/").logos.declared.light, "https://acme.example/assets/brand.svg");
+    assert.equal(readPage(`<script type="application/ld+json">{not json</script>`, "https://acme.example/").logos.declared.light, "");
     const commons = { query: { pages: {
       1: { index: 2, title: "File:Greene King logo.png", imageinfo: [{ url: "https://upload.wikimedia.org/gk.png", mime: "image/png" }] },
       2: { index: 1, title: "File:Greene King logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/gk.svg", mime: "image/svg+xml" }] },
@@ -635,7 +703,7 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(isAnimated(Buffer.from("<svg><style>@keyframes spin{}</style></svg>"), "svg"), true);
     assert.equal(isAnimated(Buffer.from("<svg><path d='M0 0'/></svg>"), "svg"), false);
     // The site's only icon is an animated GIF labelled as an icon. Stored: its first frame as a PNG.
-    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><img class="logo" src="/logo.svg"></body></html>`;
+    const page = `<html><head><title>7</title><link rel="icon" href="/favicon.ico"></head><body><header><img class="logo" src="/logo.svg"></header></body></html>`;
     const files = { "https://seven.example/favicon.ico": ["image/x-icon", gif(10).toString("latin1")], "https://seven.example/logo.svg": ["image/svg+xml", "<svg><path d='M0 0'/></svg>"] };
     const bin = (type, body) => ({ ...resp(200, body, { "content-type": type }), arrayBuffer: async () => { const b = Buffer.from(body, "latin1"); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); } });
     const fetchImpl = async (url) => (files[url] ? bin(files[url][0], files[url][1]) : resp(200, page, { "content-type": "text/html" }));
@@ -739,6 +807,50 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const e = b.db.state.leads.l1.enrichment;
     assert.deepEqual([e.storeCount, e.storeCountBreakdown, e.storeCountSource.date], [12491, "At 30 June 2026.", "2026-10-08"]);
     assert.equal(b.db.state.leads.l1.company.storeCount, 12491); assert.equal(e.people.length, 1);
+  });
+  // ── The logo must be the company's own (the refresh of 14 Nov 2026 stored a campaign graphic) ──
+  await test("a campaign or partner image that says \"logo\" is never taken for the company's logo", async () => {
+    assert.deepEqual([coreName("7-Eleven Australia").squashed, coreName("Greene King plc").squashed, coreName("The Co-operative Group").squashed], ["7eleven", "greeneking", "cooperative"]);
+    // The page that went wrong: no logo in the header markup, a campaign image further down.
+    const campaign = `<header><nav><a href="/">Home</a></nav></header><main><img src="/content/cup-rescue-logo.png" alt="Cup Rescue logo"><img class="partner-logo" src="/content/velocity-logo.svg" alt="Velocity"></main>`;
+    const info = readPage(campaign, "https://www.7eleven.com.au/").logos;
+    assert.equal(info.images.length, 2);
+    assert.deepEqual(chooseLogos(info, "7-Eleven Australia"), { light: "", dark: "" }, "neither is the company's");
+    // The company's logo is in the header, or its file is named for the company.
+    const header = `<header><a href="/"><img src="/img/brand.svg" alt="logo"></a></header><main><img src="/content/cup-rescue-logo.png" alt="Cup Rescue logo"></main>`;
+    assert.equal(chooseLogos(readPage(header, "https://www.7eleven.com.au/").logos, "7-Eleven Australia").light, "https://www.7eleven.com.au/img/brand.svg");
+    const footer = `<header></header><main><img src="/content/cup-rescue-logo.png" alt="7-Eleven Cup Rescue logo"></main><footer><img src="/img/7-eleven-logo-white.svg" alt=""><img src="/img/7-Eleven_logo.svg" alt=""></footer>`;
+    assert.deepEqual(chooseLogos(readPage(footer, "https://www.7eleven.com.au/").logos, "7-Eleven Australia"), { light: "https://www.7eleven.com.au/img/7-Eleven_logo.svg", dark: "https://www.7eleven.com.au/img/7-eleven-logo-white.svg" }, "an alt text that names the company is not enough outside the header");
+    // The site's structured data wins over anything in the page.
+    const ld = `<script type="application/ld+json">{"@type":"Organization","logo":"/declared.png"}</script>${header}`;
+    assert.equal(chooseLogos(readPage(ld, "https://www.7eleven.com.au/").logos, "7-Eleven Australia").light, "https://www.7eleven.com.au/declared.png");
+    // In a run: nothing on the page qualifies, so Commons is asked for the name without the country.
+    const asked = [];
+    const commons = { query: { pages: { 1: { index: 0, title: "File:7-eleven logo.svg", imageinfo: [{ url: "https://upload.wikimedia.org/7.svg", mime: "image/svg+xml" }] } } } };
+    const fetchImpl = async (url) => {
+      if (url.startsWith("https://commons.wikimedia.org/")) { asked.push(decodeURIComponent(url)); return resp(200, decodeURIComponent(url).includes("Australia") ? { query: { pages: {} } } : commons, { "content-type": "application/json" }); }
+      if (url === "https://upload.wikimedia.org/7.svg") return resp(200, "<svg/>", { "content-type": "image/svg+xml" });
+      return resp(200, campaign, { "content-type": "text/html" });
+    };
+    // The record carries the campaign graphic from the old rule: it is dropped, not kept.
+    const seed = { leads: { l1: { ...LEAD, company: { ...LEAD.company, name: "7-Eleven Australia", website: "https://www.7eleven.com.au" }, enrichment: { at: new Date("2026-11-14T06:28:00Z"), logos: { light: "https://old.example/cup-rescue.png", dark: "" }, logoSources: { light: "https://www.7eleven.com.au/content/cup-rescue-logo.png" }, screen: { ok: true } } } }, prospects: {}, prospectCompanies: {} };
+    const a = make({ fetchImpl, seed });
+    await a.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    const e = a.db.state.leads.l1.enrichment;
+    assert.equal(e.logos.light, "https://upload.wikimedia.org/7.svg"); assert.equal(e.logoRule, 2);
+    assert.ok(asked.some((u) => u.includes('intitle:"7-Eleven"') && !u.includes("Australia")), asked.join(" | "));
+    // With nothing found at all, the old rule's logo still goes.
+    const b = make({ fetchImpl: async (url) => (url.startsWith("https://commons.wikimedia.org/") ? resp(200, { query: { pages: {} } }, { "content-type": "application/json" }) : resp(200, campaign, { "content-type": "text/html" })), seed });
+    await b.api.enrichRecord("leads", "l1", "sam@ph.com", "requested");
+    assert.equal(b.db.state.leads.l1.enrichment.logos.light, "");
+  });
+  await test("an .ico that holds a PNG is stored as that PNG; one that holds only bitmaps is not copied", async () => {
+    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("PNGDATA-64")]);
+    const bmp = Buffer.from("BMPDATA-16-not-a-png");
+    const ico = (...imgs) => { const head = Buffer.alloc(6 + imgs.length * 16); head.writeUInt16LE(1, 2); head.writeUInt16LE(imgs.length, 4); let off = head.length;
+      imgs.forEach(([w, d], i) => { const o = 6 + i * 16; head[o] = w; head[o + 1] = w; head.writeUInt32LE(d.length, o + 8); head.writeUInt32LE(off, o + 12); off += d.length; }); return Buffer.concat([head, ...imgs.map(([, d]) => d)]); };
+    assert.deepEqual(icoPng(ico([16, bmp], [64, png])), png); assert.equal(icoPng(ico([16, bmp])), null);
+    assert.equal(icoPng(png), null); assert.equal(icoPng(Buffer.alloc(4)), null);
   });
   console.log(`${n} passed`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -23,6 +23,15 @@ import { where, press, sleep, moveBy, dragCard, toastText, headers } from "../..
 import { defineNewCases } from "../../../kanban-staff-board/test/lib/cases.mjs";
 import { runMatrix } from "../../../kanban-staff-board/test/lib/matrix-run.mjs";
 import { fileURLToPath } from "node:url";
+import { recordFlaky } from "./flaky.mjs";
+
+// A build session that did not touch the Staff Kanban runs the quick profiles
+// (desktop 1440 + phone 390, Chromium) and leaves the full tablet matrix to
+// the train: `npm run test:fast-ui` sets BUILD_SESSION_FAST=1. CI never does.
+if (process.env.BUILD_SESSION_FAST === "1" && !process.env.KB_PROFILES) {
+  process.env.KB_PROFILES = "quick";
+  console.log("staff-kanban: quick profiles only (BUILD_SESSION_FAST=1); the full viewport matrix is train-only for a build session");
+}
 
 // The orchestrator: one worker process per profile, several at a time (KB_JOBS), then one report.
 // A worker (KB_WORKER=1) or KB_SERIAL=1 runs the cases in this process.
@@ -68,7 +77,7 @@ async function withRetry(id, prof, fn) {
   let why = "";
   for (let attempt = 0; ; attempt++) {
     // The FLAKY line carries the first failure, so the run's summary says what to chase (a passing profile's output is not printed).
-    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt} — ${why}`); FLAKY.push({ id, profile: prof.id, why }); } return; }
+    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt} — ${why}`); FLAKY.push({ id, profile: prof.id, why }); recordFlaky({ suite: "staff-kanban-console", id, profile: prof.id, error: why }); } return; }
     catch (e) { await sweep(); if (attempt >= RETRIES) throw e; why = String(e && e.message).split("\n").slice(0, 3).join(" ").slice(0, 300); console.log(`# RETRY ${id} [${prof.id}]: ${why}`); }
   }
 }
@@ -567,10 +576,14 @@ T("TC-18", "modal: pinned action bar, collapsible details column remembered", { 
   }
   const before = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
   await press(p, "#task-side-toggle");
-  // The column closes over a 0.2 s transition that only advances when a frame is drawn. Wait for the transition
-  // itself to end, however long the runner takes over it, then measure the width it ended at.
+  // The column closes over a 0.2 s transition (grid-template-columns in kanban.css) that only advances when a
+  // frame is drawn. A fixed 250 ms wait lost that race on loaded CI runners (PR #584, 14 Nov 2026: desktop-1024
+  // failed twice, then passed alone 9/9). Wait for the transition itself to end, however long the runner takes
+  // over it, then for the width it ended at; the assertion is unchanged.
   await until(() => p.$eval(".kb-task-grid", (g) => g.classList.contains("kb-side-collapsed") && !g.getAnimations().length), "the details column to finish closing");
-  const afterW = await p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
+  const descWidth = () => p.$eval('[data-field="description"]', (e) => e.getBoundingClientRect().width);
+  await until(async () => (await descWidth()) > before + 150, "the description to widen once the details column collapses", 3000).catch(() => {});
+  const afterW = await descWidth();
   assert.ok(afterW > before + 150, `the description is ${Math.round(afterW)} px wide with the details column closed, ${Math.round(before)} px with it open`);
   assert.equal(await p.getAttribute("#task-side-toggle", "aria-expanded"), "false");
   await press(p, "#f-cancel");

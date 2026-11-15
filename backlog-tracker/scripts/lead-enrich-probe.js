@@ -19,7 +19,7 @@
 "use strict";
 const path = require("path");
 const fn = path.join(__dirname, "..", "functions");
-const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage } = require(path.join(fn, "lead-enrich.js"));
+const { claudeResearch, claudeScreen, obviousSpam, cleanFindings, parseAgentJson, agentError, readPage, chooseLogos } = require(path.join(fn, "lead-enrich.js"));
 const sdk = require(path.join(fn, "node_modules", "@anthropic-ai", "sdk"));
 const Real = sdk.default || sdk;
 
@@ -67,7 +67,13 @@ class Probe {
       return res;
     };
     this.beta = { messages: {
-      stream: (params) => ({ finalMessage: async () => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.stream(params).finalMessage()); } }),
+      stream: (params, opts) => {
+        const inner = real.beta.messages.stream(params, opts);
+        return {
+          on: (...a) => inner.on(...a), abort: () => inner.abort(),
+          finalMessage: async () => { const n = ++calls, s = Date.now(); try { return report(n, s, await inner.finalMessage()); } catch (err) { console.log(`request ${n}: failed after ${secs(Date.now() - s)}: status ${err && err.status}, ${String(err && err.message || err).replace(/\s+/g, " ").slice(0, 300)}`); throw err; } },
+        };
+      },
       create: async (params) => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.create(params)); },
     } };
   }
@@ -117,7 +123,10 @@ async function logosOnly(list) {
     const [name, site = ""] = item.split("|").map((x) => x.trim());
     const web = await api.websiteSource(site);
     const logos = await api.logosFor(name, (web.page || {}).logos, {});
-    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, its own logo images light ${web.page.logos.light ? "yes" : "no"} / dark ${web.page.logos.dark ? "yes" : "no"}` : ""}`);
+    console.log(`logos "${name}": light ${logos.light ? `found (${host(logos.light)})` : "none"}, dark ${logos.dark ? `found (${host(logos.dark)})` : "none"}; home page: ${web.status}${web.page ? `, ${web.page.logos.images.length} image(s) say "logo", ${web.page.logos.images.filter((x) => x.inHeader).length} in the header, declared ${web.page.logos.declared.light ? "yes" : "no"}` : ""}`);
+    const file = (u) => { try { return decodeURIComponent(new URL(u).pathname.split("/").pop()); } catch { return ""; } };
+    if (logos.light) console.log(`    light file: ${file(logos.light)}`);
+    if (logos.dark) console.log(`    dark file:  ${file(logos.dark)}`);
   }
   process.exit(0);
 }
@@ -143,6 +152,16 @@ async function leadStatus(id) {
     console.log(`  sources: ${JSON.stringify((e.sources || []).map((x) => ({ source: x.source, status: x.status, message: x.message })))}`);
     return d;
   };
+  if (id.startsWith("prospects/")) {
+    const p = await db.collection("prospects").doc(id.slice(10)).get();
+    if (!p.exists) { console.error("no such TAM record"); process.exit(1); }
+    const pd = p.data() || {};
+    show("TAM record", pd);
+    const e = pd.enrichment || {};
+    console.log(`  level ${e.level || "none"}, sites ${e.storeCount == null ? "none" : "set"}, summary ${e.summary ? e.summary.length + " chars" : "none"}, people ${(e.people || []).length}, logos ${JSON.stringify(Object.keys(e.logos || {}).filter((k) => e.logos[k]))}, keys ${JSON.stringify(Object.keys(e).sort())}`);
+    if (pd.leadId) console.log(`  linked lead: yes`);
+    process.exit(0);
+  }
   const lead = await db.collection("leads").doc(id).get();
   if (!lead.exists) { console.error("no such lead"); process.exit(1); }
   const d = show("lead", lead.data() || {});
@@ -187,9 +206,11 @@ async function refreshLead(id) {
   const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
   const { getFirestore } = fnRequire("firebase-admin/firestore");
   initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
-  const ref = getFirestore().collection("leads").doc(id);
+  // "prospects/<id>" refreshes a TAM record instead of a lead.
+  const tam = id.startsWith("prospects/");
+  const ref = getFirestore().collection(tam ? "prospects" : "leads").doc(tam ? id.slice(10) : id);
   const snap = await ref.get();
-  if (!snap.exists) { console.error("no such lead"); process.exit(1); }
+  if (!snap.exists) { console.error(tam ? "no such TAM record" : "no such lead"); process.exit(1); }
   const d = snap.data() || {};
   if (d.test === true) { console.error("test leads are not researched"); process.exit(1); }
   const cur = (d.enrichment || {}).request;
@@ -198,7 +219,7 @@ async function refreshLead(id) {
   if (cur && (cur.status === "queued" || cur.status === "running") && Date.now() - ms < 10 * 60 * 1000) { console.log(`already ${cur.status}: left alone`); process.exit(0); }
   const request = { id: require("crypto").randomBytes(8).toString("hex"), at: new Date(), by: process.env.REFRESH_BY || "research probe", status: "queued", trigger: "requested" };
   await ref.update({ "enrichment.request": request });
-  console.log(`queued a research run on the lead (request ${request.id})`);
+  console.log(`queued a research run on the ${tam ? "TAM record" : "lead"} (request ${request.id})`);
   process.exit(0);
 }
 
@@ -268,7 +289,7 @@ async function syncLead(id) {
   console.log(`\nlogoLight: ${await kind(f.logoLight)}\nlogoDark:  ${await kind(f.logoDark)}`);
   try {
     const site = website || f.website;
-    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = readPage(html, site).logos; console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
+    if (site) { const html = await (await fetch(site, { headers: { "User-Agent": "PH-Console-LeadEnrich/2.0" } })).text(); const seen = chooseLogos(readPage(html, site).logos, company); console.log(`home page logo images: light ${seen.light ? "found" : "none"}, dark ${seen.dark ? "found" : "none"}`); f.pageLogos = seen; }
   } catch (err) { console.log(`home page not read: ${String(err && err.message || err).slice(0, 80)}`); }
   if (publicKey) {
     const blob = sealed({ at: new Date().toISOString(), seconds: Math.round((Date.now() - t0) / 1000), requests: calls, findings: f });

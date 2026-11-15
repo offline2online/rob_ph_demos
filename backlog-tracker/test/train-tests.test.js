@@ -24,8 +24,8 @@ const cases = [
   // Deploy to Main's version bump on a DSP train (PR #462, 23 Oct 2026)
   ["the version bump alone starts nothing", trainTestsFor(["backlog-tracker/public/js/version.js"]), []],
   ["a DSP train with its version bump starts only e2e-quick", trainTestsFor(["dsp-integration/apps/admin/src/x.tsx", "backlog-tracker/public/js/version.js"]).map((t) => t.workflow), ["e2e-quick.yml"]],
-  ["a console change with its version bump still starts the console suites", trainTestsFor(["backlog-tracker/public/js/app.js", "backlog-tracker/public/js/version.js"]).map((t) => t.workflow), ["firestore-rules-test.yml", "kanban-staff-board-tests.yml"]],
-  ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml", "kanban-staff-board-tests.yml"]],
+  ["a console change with its version bump still starts the console suites", trainTestsFor(["backlog-tracker/public/js/app.js", "backlog-tracker/public/js/version.js"]).map((t) => t.workflow), ["firestore-rules-test.yml"]],
+  ["a change to both projects starts both", trainTestsFor(["backlog-tracker/x.js", "dsp-integration/y.ts"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
   // board-docs.json (any project) is validated by the console tests
   ["a dsp-integration board-docs.json starts the console tests and e2e-quick", trainTestsFor(["dsp-integration/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "e2e-quick.yml"]],
   ["a Retail-media-insights board-docs.json starts the console and RMI suites", trainTestsFor(["Retail-media-insights/board-docs.json"]).map((t) => t.workflow), ["firestore-rules-test.yml", "retail-media-insights-tests.yml"]],

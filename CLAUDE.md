@@ -744,6 +744,9 @@ dead. A reload fixed it, and Chromium tests (always fresh files) never could.
 - **If anything "stops working on the iPad" right after a release, first ask
   whether a reload fixes it.** If it does, it is caching or a start-up error
   (check the console for "app.js failed to load"), not the control itself.
+- **14 Nov 2026, the reverse** (new page, old scripts): a menu item showed
+  and did nothing. `auth-gate.js` now reloads once, then names the item.
+  For any iPad report, first run "Console on WebKit (iPad)".
 
 ### iPad taps — a standing rule for every console change (tap handling; see the cached-page section above first)
 

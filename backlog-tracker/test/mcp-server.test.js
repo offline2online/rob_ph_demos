@@ -2459,6 +2459,62 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 
+  // ── Build order (ZE8h8cfaezOb0eTsRjSH) ───────────────────────────────────
+  await test("create/update take dependsOnItemIds; Dependencies titles are read at intake; a loop is refused", async () => {
+    seedItem("dA00000000000000000a", { title: "Flow 1/9: train tests stop failing" });
+    seedItem("dB00000000000000000b");
+    const call = (name, args) => rpc(tokens.access_token, "tools/call", { name, arguments: args });
+    let res = await call("create_backlog_item", {
+      projectId: "voiceproj", dependsOnItemIds: ["dB00000000000000000b"],
+      desc: '## Outcome\nOrder the builds so dependants never start first.\n\n## Dependencies\nBuild after "Flow 1/9: train tests stop failing".',
+    });
+    assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
+    const created = JSON.parse(res.body.result.content[0].text);
+    assert.deepStrictEqual(created.dependsOn.map((d) => [d.id, d.status]), [["dB00000000000000000b", "backlog"], ["dA00000000000000000a", "backlog"]]);
+    const doc = env.store.col("backlogItems").get(created.itemId);
+    assert.deepStrictEqual(doc.dependsOnItemIds, ["dB00000000000000000b", "dA00000000000000000a"]);
+    assert.strictEqual(doc.dependsOnSource, "manual");
+    // dB waits for the new ticket, which waits for dB: refused, loop named.
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: [created.itemId] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /That would make a loop: Ticket dB00000000000000000b waits for .* waits for Ticket dB00000000000000000b/);
+    assert.ok(!env.store.col("backlogItems").get("dB00000000000000000b").dependsOnItemIds, "nothing written");
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: ["nope"] });
+    assert.match(res.body.result.content[0].text, /No ticket with id nope/);
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: ["dA00000000000000000a"] });
+    assert.strictEqual(res.body.result.isError, undefined);
+    assert.deepStrictEqual(env.store.col("backlogItems").get("dB00000000000000000b").dependsOnItemIds, ["dA00000000000000000a"]);
+    assert.strictEqual(env.store.col("backlogItems").get("dB00000000000000000b").dependsOnSource, "manual");
+    // get_backlog_item returns each dependency with its title and status.
+    env.store.col("backlogItems").set("dA00000000000000000a", Object.assign({}, env.store.col("backlogItems").get("dA00000000000000000a"), { status: "ready-for-testing" }));
+    const detail = JSON.parse((await call("get_backlog_item", { itemId: "dB00000000000000000b" })).body.result.content[0].text);
+    assert.deepStrictEqual(detail.dependsOn, [{ id: "dA00000000000000000a", title: "Flow 1/9: train tests stop failing", status: "ready-for-testing", statusLabel: detail.dependsOn[0].statusLabel }]);
+    assert.ok(detail.dependsOn[0].statusLabel, "with a readable status");
+    const list = JSON.parse((await call("list_backlog_items", { projectId: "voiceproj", search: "Ticket dB" })).body.result.content[0].text);
+    const row = list.items.find((i) => i.id === "dB00000000000000000b");
+    assert.deepStrictEqual(row.dependsOnItemIds, ["dA00000000000000000a"]);
+    assert.strictEqual(row.dependsOn[0].title, "Flow 1/9: train tests stop failing");
+    for (const id of ["dA00000000000000000a", "dB00000000000000000b", created.itemId]) env.store.col("backlogItems").delete(id);
+  });
+
+  await test("send_to_build returns which tickets were fired, queued and held", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+    seedItem("sA", { groomAreas: ["faq"], createdAt: new Date("2026-11-01T00:00:00Z") });
+    seedItem("sB", { groomAreas: ["faq"], createdAt: new Date("2026-11-02T00:00:00Z") });
+    seedItem("sC", { dependsOnItemIds: ["sA"] });
+    seedItem("sD", { dependsOnItemIds: ["sX"] });
+    seedItem("sX", { title: "Not sent" });
+    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sC", "sD"] });
+    assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA"]);
+    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sB", "sA"]]);
+    assert.deepStrictEqual(out.held.map((x) => [x.id, x.waitingFor.map((w) => [w.id, w.notSent])]), [["sC", [["sA", false]]], ["sD", [["sX", true]]]]);
+    assert.match(out.summary, /2 held: .*"Not sent", which was not sent/);
+    for (const id of ["sA", "sB", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+  });
+
   // ── Project freeze (Finalised) ────────────────────────────────────────
   await test("finalise_project / unfreeze_project are admin-only and refused to an editor", async () => {
     for (const name of ["finalise_project", "unfreeze_project"]) {
@@ -2562,6 +2618,40 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("backlogItems").get("f2").status, "ready-for-testing", "unnamed tickets stay put");
     const row = [...env.store.col("mcpAuditLog").values()].find((r) => r.tool === "fail_testing");
     assert.ok(row && row.email === TEAMMATE && row.itemIds.join() === "f1");
+    // Testing rounds: the send-back is recorded on the card, by whom and why.
+    assert.strictEqual(f1.sendBackCount, 1);
+    assert.strictEqual(f1.countedSendBacks, 1);
+    assert.strictEqual(f1.sendBacks.length, 1);
+    assert.strictEqual(f1.sendBacks[0].by, "person");
+    assert.strictEqual(f1.sendBacks[0].who, TEAMMATE);
+    assert.strictEqual(f1.sendBacks[0].category, "Doesn't work as described");
+    assert.strictEqual(f1.sendBacks[0].line, "Button does nothing");
+    assert.strictEqual(f1.sendBacks[0].counted, true);
+    assert.strictEqual(f1.lastFailureReason.who, TEAMMATE);
+  });
+
+  await test("get_ready_for_testing_board returns testRound, sendBackCount and the last send-back, looping tickets first", async () => {
+    env.store.col("projects").set("loopproj", { name: "Loop Playground", deployBranch: "deploy/loopproj" });
+    const sb = (at, line, extra = {}) => ({ at, by: "person", who: "t@example.com", category: "Other", line, counted: true, ...extra });
+    env.store.col("backlogItems").set("loop-new", { projectId: "loopproj", title: "Fresh", desc: "x", status: "ready-for-testing", testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] });
+    env.store.col("backlogItems").set("loop-r3", {
+      projectId: "loopproj", title: "Third round", desc: "x", status: "ready-for-testing", testRound: 3, sendBackCount: 3, countedSendBacks: 2,
+      sendBacks: [sb("2026-11-10T10:00:00Z", "chip missing"), sb("2026-11-11T10:00:00Z", "header count wrong"), sb("2026-11-12T10:00:00Z", "flaky", { by: "tests", counted: false })],
+    });
+    env.store.col("backlogItems").set("loop-r2", { projectId: "loopproj", title: "Second round", desc: "x", status: "ready-for-testing", testRound: 2, sendBackCount: 1, countedSendBacks: 1, sendBacks: [sb("2026-11-12T10:00:00Z", "typo")] });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "loopproj" } });
+    const { structuredContent, content } = res.body.result;
+    assert.strictEqual(structuredContent.items[0].id, "loop-r3", "the looping ticket first");
+    const r3 = structuredContent.items[0];
+    assert.strictEqual(r3.testRound, 3);
+    assert.strictEqual(r3.sendBackCount, 3);
+    assert.strictEqual(r3.inTestingLoop, true);
+    assert.deepStrictEqual(r3.lastSendBack, { at: "2026-11-11T10:00:00Z", by: "person", who: "t@example.com", category: "Other", line: "header count wrong" }, "the last COUNTED one");
+    const fresh = structuredContent.items.find((i) => i.id === "loop-new");
+    assert.strictEqual(fresh.testRound, 1);
+    assert.strictEqual(fresh.lastSendBack, null);
+    assert.strictEqual(fresh.inTestingLoop, false);
+    assert.match(content[0].text, /1 in a testing loop/);
   });
 
   await test("fail_testing refuses tickets not in Ready for Testing, already reverting or foreign, and writes nothing", async () => {

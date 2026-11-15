@@ -1,4 +1,6 @@
-// Captures every real prototype screen for the Run Your Own RMN (golf club) walkthrough: six screen types, Corvane Golf.
+// Captures every real prototype screen for the Run Your Own RMN walkthrough: the Fairlinks Golf Network (100 golf clubs, six screen types) and Corvane Golf.
+// v2 (15 Nov 2026): the network seed; N0-stores is the capture-only Stores / Branches list (stores.html).
+// v3 (15 Nov 2026): clubs differ in how many screens they have (network.json from slots_golf.py); stores.html reads it.
 // Same approach as tools/retail-media-tour/cap5.js, made self-contained:
 //   node cap_golf.js --snap <dir with golf-*.json from slots_golf.py> --fonts <dir with fonts.css + woff2> --out <img dir> [ids...]
 // It serves dsp-integration/prototype and dsp-integration/mockups on localhost:8790, frames them in shell.html (the HQ Admin
@@ -16,15 +18,15 @@ fs.mkdirSync(OUT, { recursive: true });
 const HOT = {};
 const want = id => !ONLY.length || ONLY.some(o => id.startsWith(o));
 const users = { items: [
-  { email: 'claire.whitlock@fernhollow-golf.example', firstName: 'Claire', lastName: 'Whitlock', role: 'Admin', lastLoginAt: '2026-11-04T08:12:00Z' },
-  { email: 'tom.ashby@fernhollow-golf.example', firstName: 'Tom', lastName: 'Ashby', role: 'Marketing', lastLoginAt: '2026-11-04T01:05:00Z' },
-  { email: 'priya.nair@fernhollow-golf.example', firstName: 'Priya', lastName: 'Nair', role: 'Help Desk', lastLoginAt: '2026-11-02T03:30:00Z' },
+  { email: 'claire.whitlock@fairlinks-golf.example', firstName: 'Claire', lastName: 'Whitlock', role: 'Admin', lastLoginAt: '2026-11-04T08:12:00Z' },
+  { email: 'tom.ashby@fairlinks-golf.example', firstName: 'Tom', lastName: 'Ashby', role: 'Marketing', lastLoginAt: '2026-11-04T01:05:00Z' },
+  { email: 'priya.nair@fairlinks-golf.example', firstName: 'Priya', lastName: 'Nair', role: 'Help Desk', lastLoginAt: '2026-11-02T03:30:00Z' },
 ] };
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.png': 'image/png' };
 const server = http.createServer((q, r) => {
   let p = decodeURIComponent(q.url.split('?')[0]);
   let f;
-  if (p === '/shell.html') f = path.join(__dirname, 'shell.html');
+  if (p === '/shell.html' || p === '/stores.html' || p === '/network.json') f = path.join(__dirname, p.slice(1));
   else if (p.startsWith('/mockups/')) f = path.join(MOCK, p.slice(9));
   else if (p.startsWith('/fonts/')) f = path.join(FONTS, p.slice(7));
   else f = path.join(PROTO, p === '/' ? 'index.html' : p);
@@ -64,7 +66,19 @@ async function ubox(locs) {
   return x1 < 1e9 ? [Math.round(x1), Math.round(y1), Math.round(x2 - x1), Math.round(y2 - y1)] : null;
 }
 async function extra(id, name, locs) { HOT[`${id}#${name}`] = await ubox(locs); console.log('extra', id, name, JSON.stringify(HOT[`${id}#${name}`])); }
+// v3 (15 Nov 2026): Run Your Own RMN is direct advertiser deals only, and no DSP is connected, so no DSP or programmatic wording may
+// show. The seed has none; what is left is the prototype's own help text on the deal dialog ("It is never sent to a DSP", "the same
+// terms as programmatic guaranteed"). Each sentence naming a DSP or programmatic buying is left out of the captured screen; nothing
+// else is changed, and no field is added or removed.
+async function noDsp(p) {
+  for (const fr of p.frames()) await fr.evaluate(() => {
+    const re = /\b(DSPs?|programmatic)\b/i, w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    const hits = []; while (w.nextNode()) if (re.test(w.currentNode.nodeValue)) hits.push(w.currentNode);
+    for (const n of hits) n.nodeValue = n.nodeValue.split(/(?<=[.:;])\s+/).filter(x => !re.test(x)).join(' ');
+  }).catch(() => {});
+}
 async function shot(p, id, loc) {
+  await noDsp(p);
   const hot = loc ? await box(loc) : null;
   await p.waitForTimeout(350);
   await p.screenshot({ path: path.join(OUT, `${id}.jpg`), type: 'jpeg', quality: 85 });
@@ -91,6 +105,16 @@ const PLAYLISTS = [
 (async () => {
   const b = await chromium.launch();
   let s;
+  if (want('N0')) {  // the network: Stores / Branches lists the 100 connected golf clubs (capture-only page, stores.html)
+    s = await openShell(b, { nav: 'stores', crumb: 'Stores / Branches', src: '/stores.html', snap: 'pre' });
+    await s.f.waitForSelector('body[data-ready="1"]');
+    await shot(s.p, 'N0-stores', s.f.locator('#count'));
+    await extra('N0-stores', 'meta', [s.f.locator('#meta')]);
+    await extra('N0-stores', 'rows', [s.f.locator('#rows tr').first(), s.f.locator('#rows tr').nth(9)]);
+    await extra('N0-stores', 'club', [s.f.locator('#rows tr[data-club="Fernhollow Golf Club"]')]);
+    { const g = s.f.locator('#rows tr'); await extra('N0-stores', 'displays', [g.first().locator('td').nth(5), g.nth(9).locator('td').nth(5)]); }
+    await s.p.close();
+  }
   if (want('P1-')) {
     s = await openShell(b, { nav: 'platform', crumb: `${PA}|Display Types`, src: '/#/display-types', snap: 'pre' });
     await shot(s.p, 'P1-display-types', s.f.getByText('Playlist Management', { exact: true }).first());
@@ -165,7 +189,7 @@ const PLAYLISTS = [
     await nd.click(); await s.f.waitForTimeout(700);
     const dlg = s.f.locator('[role=dialog]').last();
     await dlg.locator('input[placeholder="e.g. Q4 FMCG private auction"]').fill('Corvane direct');
-    await dlg.locator('textarea').fill('Corvane Golf books the club directly, with no DSP: brand partner slots on all six screen types at a fixed CPM.');
+    await dlg.locator('textarea').fill('Corvane Golf books the network directly: brand partner slot 1 on all six display types, on every matching screen across the network, at a fixed CPM.');
     await antSelect(s.f, dlg, 'Deal type', 'Direct advertiser');
     await antSelect(s.f, dlg, 'Buyers', 'Corvane Golf');
     await dlg.getByText('New deal and buyers list').click();
@@ -190,7 +214,10 @@ const PLAYLISTS = [
     await extra('07a-blank', 'cells', NAMES.map((_, n) => rowN(n).locator('[col-id="assignedTo"]').first()));
     await extra('07a-blank', 'deal', [s.f.locator('.ag-row').filter({ hasText: 'Corvane direct' }).first()]);
     for (let n = 0; n < 6; n++) {
-      await sel(n).click(); await s.f.waitForTimeout(700);
+      await sel(n).click(); await s.f.waitForTimeout(500);
+      // v3, 15 Nov 2026: type the deal's name into the menu's own search, so Assigned to lists the deal alone. The network sells
+      // direct deals only, and the menu's "DSPs (open auction)" group can't be removed from the seed, so it is filtered out of view.
+      await s.p.keyboard.type('Corvane', { delay: 30 }); await s.f.waitForTimeout(600);
       const opt = s.f.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option').filter({ hasText: 'Corvane direct' }).first();
       const did = n === 0 ? '07-assign-slot' : `07d${n + 1}`;
       await shot(s.p, did, opt);
@@ -250,6 +277,7 @@ const PLAYLISTS = [
       await extra('22-booking-revenue', 'rev', [g2.locator('[col-id]').filter({ hasText: /Estimated revenue/ }).first(), g2.locator('.ag-row').last()]); }
     await s.p.close();
   }
+  for (const k in HOT) if (HOT[k]) { const [x, y, w, h] = HOT[k]; HOT[k] = [x, y, Math.min(w, W - x), Math.min(h, H - y)]; }  // clipped to the screen
   const prev = fs.existsSync(HOTF) ? JSON.parse(fs.readFileSync(HOTF, 'utf8')) : {};
   fs.writeFileSync(HOTF, JSON.stringify(Object.assign(prev, HOT), null, 1) + '\n');
   await b.close(); server.close();

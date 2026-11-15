@@ -36,7 +36,7 @@ assert.strictEqual(landingTrainTest(SHA, ["faq/index.html"], [], iso(T0)).state,
 assert.strictEqual(landingTrainTest(SHA, ["backlog-tracker/x.js"], consoleT, iso(T0)).state, "starting");
 assert.strictEqual(landingTrainTest(SHA, ["backlog-tracker/x.js"], [], iso(T0)).state, "not-run");
 const both = landingTrainTest(SHA, ["backlog-tracker/x.js", "dsp-integration/y.ts"], consoleT, iso(T0));
-assert.deepStrictEqual(both.workflows.map((w) => [w.workflow, w.state]), [[CONSOLE, "starting"], [DSP, "not-run"], ["kanban-staff-board-tests.yml", "starting"]]);
+assert.deepStrictEqual(both.workflows.map((w) => [w.workflow, w.state]), [[CONSOLE, "starting"], [DSP, "not-run"]]);
 assert.strictEqual(both.state, "not-run");
 assert.strictEqual(both.sha, SHA);
 
@@ -62,7 +62,7 @@ assert.strictEqual(nextCardTrainTest({ ...card, trainTest: passed }, { [CONSOLE]
 const twoCard = { id: "c2", deployCommit: SHA, trainTest: both };
 const mixed = nextCardTrainTest(twoCard, { [CONSOLE]: [run("completed", "success")], [DSP]: [run("completed", "failure")], [KANBAN]: [run("completed", "success")] }, T0 + 60e3);
 assert.strictEqual(mixed.state, "failed");
-assert.deepStrictEqual(mixed.workflows.map((w) => w.state), ["passed", "failed", "passed"]);
+assert.deepStrictEqual(mixed.workflows.map((w) => w.state), ["passed", "failed"]);
 
 // a new deployCommit gives a fresh record (not the old sha's)
 const NEW = "b".repeat(40);

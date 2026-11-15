@@ -3,6 +3,8 @@
  * Child process for tour.test.php: runs the retail media asset route for one request (the handler exits) and prints what it sent.
  * usage: ASSET_MODE=<mode> [HTTP_RANGE=<header>] php tour-asset-serve.php <uri> [METHOD]
  * The allow-list entry img/01-advertiser.jpg is swapped for a 1000-byte fixture so the test needs no network and no binary files.
+ * ASSET_SET=golf2 runs the v2 set the same way (/run-your-own-rmn/tour/assets/v2/, the first TOUR_ASSETS_RMN_V2 entry swapped; 15 Nov 2026).
+ * ASSET_SET=golf3 runs the v3 set the same way (/run-your-own-rmn/tour/assets/v3/, the first TOUR_ASSETS_RMN_V3 entry swapped; 15 Nov 2026).
  * ASSET_SET=golf runs the Run Your Own RMN set instead (/run-your-own-rmn/tour/assets/v1/, the first TOUR_ASSETS_RMN entry swapped): its sources answer the fixture as base64 text
  * (76-character lines), ASSET_MODE=badb64 answers text that is not base64.
  * ASSET_MODE: mirror (tag answers 404, the jsDelivr mirror has the fixture) | both404 (tag and mirror answer 404) | badboth (both answer other bytes) | miss (empty cache, tag answers with the fixture) | cached (intact file already in uploads) | stale (cached file has the wrong bytes) | bad (tag answers with other bytes) | 404 (tag answers 404) | backoff (back-off transient set, empty cache)
@@ -26,7 +28,10 @@ function is_wp_error( $r ) { return false; }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v, $t = 0 ) { $GLOBALS['tr'][ $k ] = $v; $GLOBALS['trttl'][ $k ] = $t; }
 function wp_mkdir_p( $d ) { return is_dir( $d ) || mkdir( $d, 0777, true ); }
 $mode = getenv( 'ASSET_MODE' ) ?: 'miss';
-$golf = 'golf' === getenv( 'ASSET_SET' );
+$golf3 = 'golf3' === getenv( 'ASSET_SET' );
+$golf2 = 'golf2' === getenv( 'ASSET_SET' );
+$gv    = $golf3 ? 'v3' : ( $golf2 ? 'v2' : '' );
+$golf = $golf2 || $golf3 || 'golf' === getenv( 'ASSET_SET' );
 $tmp  = sys_get_temp_dir() . '/tour-asset-' . getmypid();
 mkdir( $tmp, 0777, true );
 function wp_upload_dir() { global $tmp; return array( 'basedir' => $tmp . '/uploads' ); }
@@ -41,12 +46,12 @@ function wp_remote_get( $u, $a = array() ) {
 function wp_remote_retrieve_response_code( $r ) { return $r['code']; }
 function wp_remote_retrieve_body( $r ) { return $r['body']; }
 $src = (string) file_get_contents( dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/tour.php' );
-$at  = $golf ? strpos( $src, 'const TOUR_ASSETS_RMN = array(' ) : 0;
+$at  = $golf ? strpos( $src, $gv ? 'const TOUR_ASSETS_RMN_' . strtoupper( $gv ) . ' = array(' : 'const TOUR_ASSETS_RMN = array(' ) : 0;
 $new = substr( $src, 0, (int) $at ) . preg_replace( "/'img\/01-advertiser\.jpg' => array\( '[0-9a-f]{64}', \d+ \)/", "'img/01-advertiser.jpg' => array( '" . hash( 'sha256', $fixture ) . "', 1000 )", substr( $src, (int) $at ), 1, $n );
 if ( 1 !== $n ) { fwrite( STDERR, "fixture swap failed\n" ); exit( 2 ); }
 file_put_contents( $tmp . '/tour.php', $new );
-$cache = $tmp . '/uploads/ph-tour/' . ( $golf ? 'rmn-golf' : 'retail-media' ) . '/v1/img/01-advertiser.jpg';
-$bkey  = 'ph_tour_asset_backoff_' . md5( ( $golf ? 'rmn-golf/' : '' ) . 'img/01-advertiser.jpg' );
+$cache = $tmp . '/uploads/ph-tour/' . ( $golf ? 'rmn-golf' : 'retail-media' ) . ( $gv ? '/' . $gv : '/v1' ) . '/img/01-advertiser.jpg';
+$bkey  = 'ph_tour_asset_backoff_' . md5( ( $gv ? 'rmn-golf-' . $gv . '/' : ( $golf ? 'rmn-golf/' : '' ) ) . 'img/01-advertiser.jpg' );
 if ( 'cached' === $mode || 'stale' === $mode ) { mkdir( dirname( $cache ), 0777, true ); file_put_contents( $cache, 'cached' === $mode ? $fixture : 'old bytes' ); }
 if ( 'backoff' === $mode ) { $GLOBALS['tr'][ $bkey ] = 1; }
 require $tmp . '/tour.php';

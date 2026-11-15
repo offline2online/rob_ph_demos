@@ -164,6 +164,17 @@ body {
 .health-dot-ok { background: var(--success); }
 .health-dot-bad { background: var(--danger); }
 .health-dot-pending { background: var(--warning); }
+/* Flaky tests (settings/flakyTests): a text button in the strip that opens a
+   short list on its own full-width row. In the page flow, never fixed. */
+.health-flaky-btn { background: none; border: 0; padding: 0; margin: 0; font: inherit; cursor: pointer; min-height: 24px; }
+.health-flaky-caret { font-size: 16px; line-height: 1; }
+.health-flaky-list { flex-basis: 100%; list-style: none; margin: 2px 0 0; padding: 6px 0 0; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.health-flaky-list[hidden] { display: none; }
+.health-flaky-row { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; min-width: 0; }
+.health-flaky-case { color: var(--text); font-weight: 500; overflow-wrap: anywhere; }
+.health-flaky-count, .health-flaky-when { white-space: nowrap; }
+.health-flaky-link { color: var(--primary); text-decoration: none; white-space: nowrap; }
+.health-flaky-link:hover { text-decoration: underline; }
 @media (max-width: 640px) {
   .health-strip { font-size: 11px; padding: 6px 10px; }
 }
@@ -420,6 +431,10 @@ body {
   background: var(--surface); color: var(--text-muted); border: 1px dashed var(--border); border-radius: 6px;
   padding: 8px 10px; font-size: 11.5px; font-style: italic; font-weight: 600;
 }
+/* The build session's last heartbeat, on its own line under "Sent to Claude —
+   locked": phase and age, in the warning colour after 10 minutes of silence. */
+.build-heartbeat { display: block; margin-top: 3px; font-style: normal; font-weight: 500; }
+.build-heartbeat-warn { color: var(--warning); font-weight: 700; }
 /* .attachment-btn (an .icon-btn) replaced the old, non-interactive,
    zero-hidden .attachment-count-badge span — see cardHTML in app.js — so
    it needs no styling of its own beyond .icon-btn's existing rule. */
@@ -1697,6 +1712,25 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .blocked-flag-waiting-on-dependency .dependency-link { color: inherit; text-decoration: underline; }
 .card .blocked-flag-waiting-on-dependency .blocked-flag-status { white-space: normal; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+/* Build order (14 Nov 2026): "After: <title>" and "Queued: builds after <title>" */
+.order-chip { display: inline-flex; align-items: center; gap: 3px; box-sizing: border-box; max-width: 100%; font-size: 11px; font-weight: 500; padding: 1px 6px 1px 5px; border-radius: 9999px; border: 1px solid #d9d9d9; color: rgba(0, 0, 0, 0.65); background: #fafafa; cursor: help; }
+.order-chip .material-symbols-outlined { font-size: 14px; }
+.order-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-chip-click { max-width: 360px; margin-right: 6px; }
+.order-chip-queued { color: #531dab; background: #f9f0ff; border-color: #d3adf7; }
+.blocked-flag-stuck { font-weight: 400; }
+.ei-deps-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.ei-deps-chips:empty { display: none; }
+.ei-dep-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; font-size: 12px; padding: 0 0 0 8px; border-radius: 9999px; border: 1px solid #91d5ff; background: #e6f7ff; color: #096dd9; }
+.ei-dep-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ei-dep-chip button { border: 0; background: none; color: inherit; cursor: pointer; min-width: 32px; min-height: 32px; font-size: 14px; line-height: 1; }
+.ei-deps-search { width: 100%; box-sizing: border-box; }
+.ei-deps-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 220px; overflow-y: auto; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; }
+.ei-dep-option { display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-bottom: 1px solid #f0f0f0; background: none; padding: 8px 10px; min-height: 40px; font: inherit; font-size: 13px; cursor: pointer; }
+.ei-dep-option:last-child { border-bottom: 0; }
+.ei-dep-option:hover, .ei-dep-option:focus { background: #f5f5f5; }
+.ei-dep-option-meta { color: rgba(0, 0, 0, 0.45); font-size: 12px; white-space: nowrap; }
+.ei-deps-error { color: #cf1322; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; min-height: 32px; min-width: 32px; }
@@ -2779,3 +2813,28 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
   background: radial-gradient(circle, rgba(120, 120, 128, .16) 15.5px, transparent 16px);
 }
 .modal-panel.ap-sheet.lead-detail .modal-header .modal-close:hover, .modal-panel.ap-sheet.lead-panel .modal-header .modal-close:hover { background: radial-gradient(circle, rgba(120, 120, 128, .28) 15.5px, transparent 16px); }
+
+/* Testing rounds (hm84opFjizq3vekk0fC1): the "Round N" chip on a card in every
+   column from round 2 (warning colour from round 3), its tap-open list of
+   earlier send-backs, Ready for Testing's "Sent back last time" line and the
+   column header's "N in a testing loop" filter. Same pill as .review-flag;
+   nothing positioned. */
+.round-chip { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-size: 11px; font-weight: 500; line-height: 1.6; padding: 1px 8px 1px 5px; margin: 0 4px 4px 0; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fafafa; color: #333333; cursor: pointer; }
+.round-chip .material-symbols-outlined { font-size: 14px; }
+.round-chip-warn { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+.round-chip-static { cursor: default; }
+.round-chip:focus-visible { outline: 2px solid var(--accent, #169bc2); outline-offset: 1px; }
+.round-history { margin: 0 0 6px; padding: 6px 8px 6px 24px; font-size: 11.5px; line-height: 1.45; color: #333333; background: #fafafa; border: 1px solid rgba(5, 5, 5, .06); border-radius: 6px; }
+.round-history li { margin: 2px 0; overflow-wrap: anywhere; }
+.round-history-when, .round-history-who, .round-history-cat { color: rgba(0, 0, 0, .45); }
+.round-history-uncounted { color: rgba(0, 0, 0, .45); }
+.round-history-uncounted .round-history-line { text-decoration: line-through; }
+.round-history-flag { font-size: 10.5px; padding: 0 6px; border-radius: 9999px; background: rgba(0, 0, 0, .04); color: rgba(0, 0, 0, .45); }
+.resent-line { margin: 2px 0 6px; padding: 4px 8px; font-size: 12px; line-height: 1.4; color: #ad6800; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 6px; overflow-wrap: anywhere; }
+.loop-filter-btn { display: inline-flex; align-items: center; gap: 3px; font: inherit; font-size: 11px; font-weight: 500; padding: 1px 8px 1px 5px; margin-right: 6px; border-radius: 9999px; border: 1px solid #ffe58f; background: #fffbe6; color: #ad6800; cursor: pointer; white-space: nowrap; }
+.loop-filter-btn .material-symbols-outlined { font-size: 14px; }
+.loop-filter-on { background: #ad6800; border-color: #ad6800; color: #ffffff; }
+.loop-reasons { margin: 0; padding-left: 18px; font-size: 12.5px; }
+.loop-reasons li { margin: 1px 0; }
+.rejection-uncounted { color: rgba(0, 0, 0, .45); }
+.page-header .page-header-info { font-size: 18px; color: rgba(0, 0, 0, .45); cursor: help; vertical-align: middle; }

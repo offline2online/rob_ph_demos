@@ -28,6 +28,7 @@ import { clearFirestoreLocalCache } from "./local-cache.js";
 import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.js";
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
+import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
@@ -447,6 +448,8 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 
 // ── Archive page state ─────────────────────────────────────────────────
 let archiveProjectId = null;
+// The Testing loops page's project (null when closed) — see openTestingLoopsPage.
+let testingLoopsProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
 let archiveFilters = { type: "", category: "", search: "" };
 
@@ -556,6 +559,7 @@ function closeAllSubPages() {
   const deniedPage = document.getElementById("access-denied-page");
   if (deniedPage) deniedPage.hidden = true;
   closeArchivePage();
+  closeTestingLoopsPage();
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
@@ -744,7 +748,9 @@ function cardHTML(item) {
   const routineForCard = projects.find((p) => p.id === pid);
   const cardRoutine = routineForCard && routineForCard.notifyRoutine;
   const cardRoutineFiredMs = cardRoutine ? tsMillis(cardRoutine.firedAt) : 0;
-  const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS;
+  // A card whose own session is still sending heartbeats stays locked past
+  // the stall window: it is building, not crashed.
+  const cardRoutineStale = cardRoutine?.status === "in-progress" && cardRoutineFiredMs && (Date.now() - cardRoutineFiredMs) > NOTIFY_ROUTINE_STALE_MS && !buildBeating(item);
   const isSentToClaude = isBacklog && !isInDevelopment
     && !projectInDeployPhase(routineForCard)
     && cardRoutine?.status === "in-progress" && !cardRoutineStale
@@ -898,7 +904,7 @@ function cardHTML(item) {
   const inDevelopmentHint = isInDevelopment
     ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
     : (isSentToClaude
-        ? `<span class="in-development-hint" title="This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)">Sent to Claude — locked</span>`
+        ? sentToClaudeHintHTML(item)
         : "");
   // Failed testing sends a card back to Backlog AND asks the automation to
   // revert its commits off the project's integration branch (see
@@ -1114,7 +1120,8 @@ function cardHTML(item) {
       ${popText
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
-      ${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${sentBackLastTimeHTML(item)}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1176,7 +1183,59 @@ function dependencyFlagHTML(item) {
     return `<a class="dependency-link" href="#item-${escapeHTML(id)}" data-goto-item="${escapeHTML(id)}">${escapeHTML((dep && dep.title) || "another ticket")}</a>`;
   });
   const label = links.length ? links.join(", ") : escapeHTML(String(item.blocked.note || "other tickets").replace(/^Waiting for:\s*/i, "").split(". ")[0]);
-  return `<span class="blocked-flag blocked-flag-waiting-on-dependency" title="Nothing to answer: this builds by itself once the ticket${ids.length === 1 ? "" : "s"} it waits for ${ids.length === 1 ? "has" : "have"} landed"><span class="blocked-flag-status"><span class="material-symbols-outlined">link</span>Waiting for: ${label}</span></span>`;
+  // Build order: a dependency that is itself blocked on a person is said
+  // here, so the wait doesn't look like it will clear by itself.
+  const stuck = item.blocked.stuckOn && item.blocked.stuckOn.itemId ? item.blocked.stuckOn : null;
+  const hover = stuck ? item.blocked.note || "" : `Nothing to answer: this builds by itself once the ticket${ids.length === 1 ? "" : "s"} it waits for ${ids.length === 1 ? "has" : "have"} landed`;
+  return `<span class="blocked-flag blocked-flag-waiting-on-dependency" title="${escapeHTML(hover)}"><span class="blocked-flag-status"><span class="material-symbols-outlined">link</span>Waiting for: ${label}${stuck ? `<span class="blocked-flag-stuck">, which is blocked</span>` : ""}</span></span>`;
+}
+
+// Build order (ZE8h8cfaezOb0eTsRjSH): a Backlog card that a Ready for Dev
+// click queued behind a same-area ticket says so ("Queued: builds after …",
+// nothing to answer), and one with dependencies still in Backlog shows
+// "After: <title>"; the hover lists every dependency with its status.
+const DEP_STATUS_LABELS = { "backlog": "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", "archived": "Archived" };
+function buildOrderChipHTML(item) {
+  if (item.queuedAfter && item.queuedAfter.itemId && !isBlockedItem(item)) {
+    const ahead = allItems.find((i) => i.id === item.queuedAfter.itemId);
+    const t = (ahead && ahead.title) || item.queuedAfter.title || "another ticket";
+    return `<span class="order-chip order-chip-queued" title="${escapeHTML(`Same area as "${t}": this builds once that one has landed, so the two don't collide. Nothing to do.`)}"><span class="material-symbols-outlined">queue</span><span class="order-chip-label">Queued: builds after ${escapeHTML(t)}</span></span>`;
+  }
+  if (item.blocked && item.blocked.reason === "waiting-on-dependency") return "";
+  const ids = Array.isArray(item.dependsOnItemIds) ? item.dependsOnItemIds : [];
+  if (!ids.length) return "";
+  const deps = ids.map((id) => ({ id, dep: allItems.find((i) => i.id === id) }));
+  const unmet = deps.filter(({ dep }) => dep && (dep.status || "backlog") === "backlog");
+  if (!unmet.length) return "";
+  const hover = `Builds after:\n${deps.map(({ id, dep }) => `• ${dep ? dep.title : id} — ${dep ? (DEP_STATUS_LABELS[dep.status || "backlog"] || dep.status) : "not on this board"}`).join("\n")}`;
+  return `<span class="order-chip" title="${escapeHTML(hover)}"><span class="material-symbols-outlined">link</span><span class="order-chip-label">After: ${escapeHTML(unmet[0].dep.title || "another ticket")}${unmet.length > 1 ? ` +${unmet.length - 1}` : ""}</span></span>`;
+}
+
+// Would `selfId` building after `depIds` close a loop? → "A waits for B waits
+// for A", or null. The same rule the MCP tools and functions/build-order.js
+// apply; checked here so the picker refuses it before Save.
+function dependencyLoopText(selfId, depIds) {
+  const depsOf = (id) => {
+    const it = allItems.find((i) => i.id === id);
+    return it && Array.isArray(it.dependsOnItemIds) ? it.dependsOnItemIds : [];
+  };
+  const titleOf = (id) => (allItems.find((i) => i.id === id) || {}).title || id;
+  const seen = new Set();
+  const walk = (id, path) => {
+    if (id === selfId) return path.concat(id);
+    if (seen.has(id)) return null;
+    seen.add(id);
+    for (const d of depsOf(id)) {
+      const p = walk(d, path.concat(id));
+      if (p) return p;
+    }
+    return null;
+  };
+  for (const d of depIds) {
+    const p = walk(d, [selfId]);
+    if (p) return p.map(titleOf).join(" waits for ");
+  }
+  return null;
 }
 
 function isBlockedItem(i) {
@@ -1193,10 +1252,41 @@ function needsDecisionChipHTML(pid) {
   return n ? `<span class="blocked-flag blocked-flag-needs-decision needs-decision-chip" title="Backlog tickets flagged as needing a decision from you"><span class="material-symbols-outlined">gavel</span>${n} need${n === 1 ? "s" : ""} your decision</span>` : "";
 }
 
+// ── Testing rounds (hm84opFjizq3vekk0fC1) ─────────────────────────────────
+// Per-viewer, in memory: which cards have their Round chip's send-back list
+// open, and which projects' Ready for Testing column shows only the tickets
+// in a testing loop (round 3 or later).
+const expandedRoundChips = new Set();
+const loopFilterProjects = new Set();
+function loopingTestingItems(pid) {
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "ready-for-testing" && isLooping(i));
+}
+// The Ready for Testing header's "N in a testing loop" — a toggle that
+// filters the column to those tickets. Nothing when no ticket is looping.
+function testingLoopChipHTML(pid) {
+  const n = loopingTestingItems(pid).length;
+  if (!n && !loopFilterProjects.has(pid)) return "";
+  const on = loopFilterProjects.has(pid);
+  return `<button type="button" class="loop-filter-btn${on ? " loop-filter-on" : ""}" data-project-id="${escapeHTML(pid)}" aria-pressed="${on}" title="${on ? "Show every ticket in Ready for Testing" : `Show only the tickets in round ${LOOP_ROUND} or later`}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>${n} in a testing loop${on ? " · show all" : ""}</button>`;
+}
+
 async function clearBlocked(id) {
   // blockedClearedAt: the automation's unbuilt-report sweep must not raise
   // the flag again on a card a person has just cleared.
-  await updateDoc(doc(db, "backlogItems", id), { blocked: null, blockedClearedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const item = allItems.find((i) => i.id === id);
+  // A ticket stopped at the testing-loop cap (needs-decision, set by
+  // test-rounds) is built again when the flag is cleared, the same way the
+  // Answer button rebuilds it; the next cap is two send-backs later.
+  const loopCap = !!(item && item.blocked && item.blocked.setBy === "test-rounds" && item.status === "backlog");
+  const pid = item ? item.projectId || GENERAL_PROJECT_ID : null;
+  const project = loopCap ? projects.find((p) => p.id === pid) : null;
+  const locked = loopCap && isTrainLocked(project);
+  await updateDoc(doc(db, "backlogItems", id), { blocked: null, blockedClearedAt: serverTimestamp(), ...(locked ? { buildAfterTrain: true } : {}), updatedAt: serverTimestamp() });
+  if (loopCap && project && !locked) {
+    notifyOptimisticClicks[pid] = Date.now();
+    render();
+    await writeNotifyRequest(pid, [id]);
+  }
 }
 
 // Cards a Ready for Dev click can actually build: not blocked on a question
@@ -1477,6 +1567,9 @@ function optionsMenuHTML(project) {
     <button type="button" class="options-menu-item project-archive-btn" data-project-id="${escapeHTML(pid)}">
       Archived tickets <span class="options-menu-count">${archivedCount}</span>
     </button>
+    <button type="button" class="options-menu-item project-loops-btn" data-project-id="${escapeHTML(pid)}">
+      Testing loops
+    </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
     </button>
@@ -1558,6 +1651,72 @@ function anyMillis(v) {
   const ms = Date.parse(v);
   return Number.isFinite(ms) ? ms : 0;
 }
+// Heartbeats (14 Nov 2026). A build session PATCHes buildSession.heartbeatAt,
+// .phase and .attemptId when it starts, at each phase change and at least
+// every 10 minutes; the card's buildAttemptId names the attempt being waited
+// for, so a superseded session's beats don't count. The automation restarts a
+// session on the same windows (functions/notify-routine.js): no first
+// heartbeat in 10 minutes, or none for 20. A fire from before heartbeats has
+// no attempt id and is judged by the old 75-minute rule alone.
+const BUILD_HEARTBEAT_WARN_MS = 10 * 60 * 1000;
+const BUILD_HEARTBEAT_SILENT_MS = 20 * 60 * 1000;
+const BUILD_FIRST_HEARTBEAT_MS = 10 * 60 * 1000;
+const BUILD_CEILING_MS = 3 * 60 * 60 * 1000;
+// → null, or { ageMs, phase, warn } for the current attempt's last heartbeat.
+function buildHeartbeat(item, now = Date.now()) {
+  const bs = item && item.buildSession;
+  const attempt = item && (item.buildAttemptId || (item.lastFire && item.lastFire.buildAttemptId));
+  if (!bs || !attempt || bs.attemptId !== attempt) return null;
+  const at = Math.min(anyMillis(bs.heartbeatAt), now);
+  if (!at) return null;
+  const phase = typeof bs.phase === "string" && bs.phase.trim() ? bs.phase.trim().slice(0, 40) : "";
+  return { ageMs: now - at, phase, warn: now - at >= BUILD_HEARTBEAT_WARN_MS };
+}
+// "Testing · heard from 3 min ago"
+function buildHeartbeatLabel(hb) {
+  const mins = Math.floor(hb.ageMs / 60000);
+  const phase = hb.phase ? `${hb.phase.charAt(0).toUpperCase()}${hb.phase.slice(1)}` : "Building";
+  return `${phase} · heard from ${mins < 1 ? "just now" : `${mins} min ago`}`;
+}
+// Still beating: building, however long it has run (up to the ceiling).
+function buildBeating(item, now = Date.now()) {
+  const hb = buildHeartbeat(item, now);
+  const fired = item && item.lastFire ? anyMillis(item.lastFire.at) : 0;
+  return !!hb && hb.ageMs < BUILD_HEARTBEAT_SILENT_MS && (!fired || now - fired < BUILD_CEILING_MS);
+}
+// A session that was told to beat and has gone quiet: what the header's
+// "Build didn't report back" chip counts, before the automation restarts it.
+function buildHeartbeatSilent(item, now = Date.now()) {
+  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return false;
+  const fire = item.lastFire;
+  if (!fire || fire.status !== "started" || !fire.buildAttemptId) return false;
+  const fired = anyMillis(fire.at);
+  if (!fired) return false;
+  const bs = item.buildSession;
+  if (bs && (bs.status === "done" || bs.status === "error") && (anyMillis(bs.reportedAt) || anyMillis(bs.finishedAt)) >= fired) return false;
+  const hb = buildHeartbeat(item, now);
+  return hb ? hb.ageMs >= BUILD_HEARTBEAT_SILENT_MS : now - fired >= BUILD_FIRST_HEARTBEAT_MS;
+}
+// An in-progress record older than the stall window is stale — unless one of
+// its sent tickets is still beating, which keeps it open.
+function notifyRoutineStale(routine) {
+  if (!routine || routine.status !== "in-progress") return false;
+  const fired = tsMillis(routine.firedAt);
+  if (!fired || Date.now() - fired <= NOTIFY_ROUTINE_STALE_MS) return false;
+  return !(routine.sentItemIds || []).some((id) => buildBeating(allItems.find((i) => i.id === id)));
+}
+// The "Sent to Claude — locked" line. Once the session has sent a heartbeat it
+// also says which phase it is in and how long ago it was last heard from, in
+// the warning colour after 10 minutes without one.
+function sentToClaudeHintHTML(item) {
+  const hb = buildHeartbeat(item);
+  const base = "This item was sent to Claude via Ready for Dev and is still being investigated — it's locked until a fix is packaged (or the Notify Claude session finishes)";
+  if (!hb) return `<span class="in-development-hint" title="${base}">Sent to Claude — locked</span>`;
+  const title = hb.warn
+    ? `${base}. Its build session has not been heard from for ${Math.floor(hb.ageMs / 60000)} minutes; after 20 it is started again automatically.`
+    : `${base}. Its build session reports in at least every 10 minutes.`;
+  return `<span class="in-development-hint" title="${escapeHTML(title)}">Sent to Claude — locked<span class="build-heartbeat${hb.warn ? " build-heartbeat-warn" : ""}">${escapeHTML(buildHeartbeatLabel(hb))}</span></span>`;
+}
 // Has this one card's session finished (or the card moved on) since the click?
 function perItemBuildFinished(item, routine) {
   if (!item || item.status !== "backlog" || item.patchReady) return true;
@@ -1579,8 +1738,15 @@ function stalledSentIds(routine) {
       return it && it.status === "backlog" && !it.patchReady && !(it.buildSession && perItemBuildFinished(it, { firedAt: routine.firedAt }));
     });
   }
-  if (routine.status === "in-progress" && routine.firedAt && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) {
-    return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
+  if (routine.status === "in-progress") {
+    // Heartbeat-silent sessions count as soon as they go quiet; past the
+    // stall window every unreported ticket does, except one still beating.
+    const pastStall = !!routine.firedAt && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS;
+    return (routine.sentItemIds || []).filter((id) => {
+      const it = allItems.find((i) => i.id === id);
+      if (perItemBuildFinished(it, routine)) return false;
+      return buildHeartbeatSilent(it) || (pastStall && !buildBeating(it));
+    });
   }
   return [];
 }
@@ -1609,7 +1775,7 @@ function sentTicketStateLines(routine) {
 function ticketsStillBuilding(project) {
   const routine = project && project.notifyRoutine;
   if (!routine || routine.status !== "in-progress") return [];
-  if (tsMillis(routine.firedAt) && Date.now() - tsMillis(routine.firedAt) > NOTIFY_ROUTINE_STALE_MS) return [];
+  if (notifyRoutineStale(routine)) return [];
   return (routine.sentItemIds || []).filter((id) => !perItemBuildFinished(allItems.find((i) => i.id === id), routine));
 }
 
@@ -1797,7 +1963,7 @@ function notifyStalledChipHTML(project) {
   if (projectInDeployPhase(project)) return "";
   const ids = stalledSentIds(project.notifyRoutine);
   if (!ids.length) return "";
-  return `<a href="#item-${escapeHTML(ids[0])}" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable notify-claude-stalled" title="${ids.length} ticket(s) sent to Claude never reported back — open the card's notes">
+  return `<a href="#item-${escapeHTML(ids[0])}" class="notify-claude-btn notify-claude-btn-working notify-claude-btn-clickable notify-claude-stalled" title="${ids.length} ticket(s) sent to Claude went quiet or never reported back — a silent build is started again automatically; open the card's notes">
     <span class="material-symbols-outlined notify-claude-icon">warning</span>
     <span class="notify-claude-label">Build didn&rsquo;t report back</span>
     <span class="notify-claude-count-pill">${ids.length}</span>
@@ -1805,14 +1971,26 @@ function notifyStalledChipHTML(project) {
 }
 
 function notifyClaudeButtonHTML(project) {
-  return notifyStalledChipHTML(project) + notifyClaudeButtonCore(project);
+  return notifyStalledChipHTML(project) + buildOrderNoticeHTML(project) + notifyClaudeButtonCore(project);
+}
+
+// Build order: what the last Ready for Dev click held or queued ("1 started.
+// 2 held: they need X, which was not sent."), for two hours after the click,
+// so a person can send X rather than wonder why two cards didn't start.
+function buildOrderNoticeHTML(project) {
+  if (projectInDeployPhase(project)) return "";
+  const bo = project.notifyRoutine && project.notifyRoutine.buildOrder;
+  if (!bo || !bo.summary) return "";
+  const at = tsMillis(bo.at);
+  if (!at || Date.now() - at > 2 * 60 * 60 * 1000) return "";
+  return `<span class="order-chip order-chip-click" title="${escapeHTML(bo.summary)}"><span class="material-symbols-outlined">queue</span><span class="order-chip-label">${escapeHTML(bo.summary)}</span></span>`;
 }
 
 function notifyClaudeButtonCore(project) {
   const pid = project.id;
   const routine = project.notifyRoutine;
   const firedMs = routine ? tsMillis(routine.firedAt) : 0;
-  const isStale = routine?.status === "in-progress" && firedMs && (Date.now() - firedMs) > NOTIFY_ROUTINE_STALE_MS;
+  const isStale = notifyRoutineStale(routine);
   // A build in flight is a Backlog-phase state. Once the project is
   // deploying, this button is gone whatever an old notifyRoutine record says
   // — the Deploy to Main button carries the state from here.
@@ -2389,7 +2567,10 @@ function projectSectionHTML(project) {
   const total = COL_KEYS.reduce((sum, k) => sum + cardsByCol[k].length, 0);
 
   const board = `<div class="board">` + COLUMNS.map((col) => {
-    const listItems = cardsByCol[col.key];
+    // "N in a testing loop" filter (Ready for Testing only, per viewer).
+    const listItems = col.key === "ready-for-testing" && loopFilterProjects.has(project.id)
+      ? cardsByCol[col.key].filter((i) => isLooping(i))
+      : cardsByCol[col.key];
     // "Select all" makes sense in two columns now: Backlog (what "Ready for
     // Dev" acts on) and Ready for Testing (what "Approved for Deployment" acts
     // on, restricted to the noDeploymentRequired-excluded, checkbox-eligible
@@ -2429,7 +2610,7 @@ function projectSectionHTML(project) {
     // 640px media query, so desktop is completely unaffected.
     const colCollapsed = isColumnCollapsed(project.id, col.key);
     return `<section class="column${colCollapsed ? " column-collapsed" : ""}" data-col="${col.key}">
-      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? backlogBulkBarHTML(project.id) + needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? reviewBatchInlineHTML(project) : "")}</div>
+      <div class="col-head col-head-${col.headClass}" data-project-id="${escapeHTML(project.id)}" data-col="${col.key}"><span>${selectAllHTML}${col.label}</span><span class="col-count">${listItems.length}</span>${col.key === "backlog" ? backlogBulkBarHTML(project.id) + needsDecisionChipHTML(project.id) + groomBacklogInlineHTML(project) : (col.key === "ready-for-testing" ? testingLoopChipHTML(project.id) + reviewBatchInlineHTML(project) : "")}</div>
       ${col.key === "backlog" ? groomPackagesHTML(project) : ""}
       <div class="col-list" id="${colListId(project.id, col.key)}" data-col="${col.key}" data-project-id="${escapeHTML(project.id)}">
         ${listItems.length ? columnCardsHTML(listItems) : '<div class="empty-hint">No items yet</div>'}
@@ -2548,6 +2729,43 @@ function healthRunSegmentHTML(label, run) {
     : `<span class="health-seg">${inner}</span>`;
 }
 
+// ── Flaky tests on the health strip (settings/flakyTests) ───────────────────
+// A UI test case that failed and then passed on its automatic retry does not
+// fail a train, but the automation counts it here (scripts/flaky-ledger.js).
+// The strip shows how many there were in the last 7 days; the segment opens a
+// short list of the cases, newest first, each with its last run and, once it
+// has flaked three times in a week, the bug ticket raised for it.
+const FLAKY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+let flakyTests = null;
+let flakyListOpen = false;
+const flakySeenMs = (v) => (v && v.toMillis ? v.toMillis() : Date.parse(v) || 0);
+function flakyCasesThisWeek(nowMs = Date.now()) {
+  return ((flakyTests && Array.isArray(flakyTests.cases) && flakyTests.cases) || [])
+    .map((c) => ({ ...c, week: (Array.isArray(c.seenAt) ? c.seenAt : []).filter((t) => { const d = nowMs - flakySeenMs(t); return d >= 0 && d <= FLAKY_WINDOW_MS; }).length }))
+    .filter((c) => c.week > 0)
+    .sort((a, b) => flakySeenMs(b.lastSeenAt) - flakySeenMs(a.lastSeenAt));
+}
+function flakySegmentHTML() {
+  if (!flakyTests) return "";
+  const cases = flakyCasesThisWeek();
+  const total = cases.reduce((n, c) => n + c.week, 0);
+  if (!total) {
+    return `<span class="health-seg" id="health-flaky" title="No UI test needed its automatic retry in the last 7 days"><span class="health-dot health-dot-ok"></span>Flaky tests: 0 this week</span>`;
+  }
+  const rows = cases.map((c) => {
+    const run = c.lastRunUrl ? `<a class="health-flaky-link" href="${escapeHTML(safeHttpUrl(c.lastRunUrl))}" target="_blank" rel="noopener">Last run</a>` : "";
+    const ticket = c.ticketId ? `<a class="health-flaky-link" href="#item-${escapeHTML(c.ticketId)}">Ticket</a>` : "";
+    return `<li class="health-flaky-row" title="${escapeHTML(c.lastError || "")}">
+      <span class="health-flaky-case">${escapeHTML(c.id)}</span>
+      <span class="health-flaky-count">${c.week} this week</span>
+      <span class="health-flaky-when">${escapeHTML(c.profile ? `${c.profile} · ` : "")}${describeAgo(flakySeenMs(c.lastSeenAt))}</span>
+      ${run}${ticket}
+    </li>`;
+  }).join("");
+  return `<button type="button" class="health-seg health-seg-link health-flaky-btn" id="health-flaky" aria-expanded="${flakyListOpen}" aria-controls="health-flaky-list" title="UI test cases that failed and passed on their automatic retry in the last 7 days. A case that does this three times in a week gets a bug ticket."><span class="health-dot health-dot-pending"></span>Flaky tests: ${total} this week<span class="material-symbols-outlined health-flaky-caret" aria-hidden="true">${flakyListOpen ? "expand_less" : "expand_more"}</span></button>
+    <ul class="health-flaky-list" id="health-flaky-list"${flakyListOpen ? "" : " hidden"}>${rows}</ul>`;
+}
+
 function renderHealthStrip() {
   const el = document.getElementById("health-strip");
   if (!el) return;
@@ -2574,7 +2792,17 @@ function renderHealthStrip() {
     healthRunSegmentHTML("deploy", systemStatus.deployBacklogTracker),
     dispatchSeg,
     versionSeg,
+    flakySegmentHTML(),
   ].join("");
+}
+// One listener for the strip (it is redrawn on every snapshot): the Flaky tests segment opens and closes its list.
+{
+  const strip = typeof document !== "undefined" && document.getElementById("health-strip");
+  if (strip) strip.addEventListener("click", (e) => {
+    if (!e.target.closest || !e.target.closest("#health-flaky.health-flaky-btn")) return;
+    flakyListOpen = !flakyListOpen;
+    renderHealthStrip();
+  });
 }
 function projectLastActivityMs(project) {
   const projectItems = allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === project.id);
@@ -3205,6 +3433,7 @@ function loadArchivedItems() {
     rebuildAllItems();
     render();
     if (archiveProjectId) renderArchivePage();
+    if (testingLoopsProjectId) renderTestingLoopsPage();
     if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
     if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
     renderHealthStrip();
@@ -3339,6 +3568,7 @@ onSnapshot(query(itemsRef, where("status", "!=", "archived")), (snap) => {
   if (!snap.metadata.fromCache || !snap.empty) itemsFirstSnapshot = false;
   render();
   if (archiveProjectId) renderArchivePage();
+  if (testingLoopsProjectId) renderTestingLoopsPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The review page's "goes live when…" hint tracks the source tickets' status.
   if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
@@ -3354,6 +3584,13 @@ onSnapshot(systemStatusRef, (snap) => {
   systemStatus = snap.exists() ? snap.data() : null;
   renderHealthStrip();
 }, onListenerError("systemStatus"));
+
+// The flake ledger is small and changes a few times a day. A refused or failed read only leaves the
+// segment off the strip; it is never worth an "updates interrupted" notice.
+onSnapshot(doc(db, "settings", "flakyTests"), (snap) => {
+  flakyTests = snap.exists() ? snap.data() : { cases: [] };
+  renderHealthStrip();
+}, (err) => { console.warn("backlog-tracker: settings/flakyTests listener", err && err.code); });
 
 onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   markLive("projects", snap);
@@ -3588,7 +3825,7 @@ async function failTestingNow(id, item) {
   if (result.choice === FAILED_TESTING_CHOICES.FOLLOW_UP) return fileFollowUp(item, trimmed);
   const category = result.category || FAILURE_REASON_CATEGORIES[FAILURE_REASON_CATEGORIES.length - 1];
   const at = new Date();
-  const send = sendBackFields({ category, text: trimmed, at });
+  const send = sendBackFields({ category, text: trimmed, at, who: (auth.currentUser && auth.currentUser.email) || "" });
   await updateDoc(doc(db, "backlogItems", id), {
     status: send.status,
     revertRequested: send.revertRequested,
@@ -3671,7 +3908,7 @@ async function ejectFromTrainNow(id, item) {
     // the notes/board history); nothing in the automation branches on it.
     revertRequested: true,
     ejectedFromTrain: true,
-    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date() },
+    lastFailureReason: { category, text: trimmed, action: "ejected-from-train", at: new Date(), ...(auth.currentUser && auth.currentUser.email ? { who: auth.currentUser.email } : {}) },
     notes: arrayUnion({ author: "viewer", text: `Ejected from train [${category}]: ${trimmed}`, at: new Date() }),
     updatedAt: serverTimestamp(),
   });
@@ -3756,6 +3993,9 @@ async function updateItemDetails(id, changed) {
   if ("priority" in changed) patch.priority = changed.priority || null;
   if ("model" in changed) patch.model = changed.model === "advanced" ? "advanced" : "standard";
   if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
+  // Build order: the "Builds after" picker. Who set the list is recorded by
+  // the intake trigger (dependsOnSource), never by a browser.
+  if ("dependsOnItemIds" in changed) patch.dependsOnItemIds = changed.dependsOnItemIds.slice(0, 20);
   if (!Object.keys(patch).length) return;
   patch.updatedAt = serverTimestamp();
   await updateDoc(doc(db, "backlogItems", id), patch);
@@ -4618,6 +4858,20 @@ projectsRoot.addEventListener("click", async (e) => {
   if (blockedResolveBtn) { openResolveModal(blockedResolveBtn.dataset.id, { answer: blockedResolveBtn.dataset.answer === "1" }); return; }
   const blockedClearBtn = e.target.closest(".blocked-clear-btn");
   if (blockedClearBtn) { clearBlocked(blockedClearBtn.dataset.id); return; }
+  const roundChip = e.target.closest(".round-chip");
+  if (roundChip) {
+    const id = roundChip.dataset.id;
+    if (expandedRoundChips.has(id)) expandedRoundChips.delete(id); else expandedRoundChips.add(id);
+    render();
+    return;
+  }
+  const loopFilterBtn = e.target.closest(".loop-filter-btn");
+  if (loopFilterBtn) {
+    const pid = loopFilterBtn.dataset.projectId;
+    if (loopFilterProjects.has(pid)) loopFilterProjects.delete(pid); else loopFilterProjects.add(pid);
+    render();
+    return;
+  }
   const delBtn = e.target.closest(".delete-btn");
   if (delBtn) { removeItem(delBtn.dataset.id); return; }
   const archBtn = e.target.closest(".archive-btn");
@@ -4687,6 +4941,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (e2eRunBtn) { closeAllOptionMenus(); requestE2E(e2eRunBtn.dataset.projectId, e2eRunBtn.dataset.mode); return; }
   const archiveNavBtn = e.target.closest(".project-archive-btn");
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
+  const loopsNavBtn = e.target.closest(".project-loops-btn");
+  if (loopsNavBtn) { closeAllOptionMenus(); openTestingLoopsPage(loopsNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
   const feedBtn = e.target.closest(".feed-requirements-btn");
@@ -4756,6 +5012,73 @@ const eiAttachmentsList = document.getElementById("ei-attachments-list");
 const eiAttachScreenshotInput = document.getElementById("ei-attach-screenshot-input");
 const eiRecordScreenBtn = document.getElementById("ei-record-screen-btn");
 const eiAttachHint = document.getElementById("ei-attach-hint");
+// Build order (ZE8h8cfaezOb0eTsRjSH): the "Builds after" picker — search open
+// tickets (this project first), add with a click, remove with ×; a loop is
+// refused with the loop named.
+const eiDepsChips = document.getElementById("ei-deps-chips");
+const eiDepsSearch = document.getElementById("ei-deps-search");
+const eiDepsResults = document.getElementById("ei-deps-results");
+const eiDepsError = document.getElementById("ei-deps-error");
+let eiDeps = [];
+const EI_DEP_OPEN = new Set(["backlog", "ready-for-testing", "ready-to-publish"]);
+function setEiDepsError(text) {
+  eiDepsError.textContent = text || "";
+  eiDepsError.hidden = !text;
+}
+// The chosen ids, mirrored into a hidden field so the modal's Save button
+// (modal-polish.js enables it once a field differs) sees a picker change.
+const eiDepsValue = document.getElementById("ei-deps-value");
+function renderEiDeps() {
+  const joined = eiDeps.join(",");
+  if (eiDepsValue.value !== joined) {
+    eiDepsValue.value = joined;
+    eiDepsValue.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  eiDepsChips.innerHTML = eiDeps.map((id) => {
+    const dep = allItems.find((i) => i.id === id);
+    const t = (dep && dep.title) || id;
+    const st = dep ? (DEP_STATUS_LABELS[dep.status || "backlog"] || dep.status) : "not on this board";
+    return `<span class="ei-dep-chip" title="${escapeHTML(`${t} — ${st}`)}"><span class="ei-dep-chip-label">${escapeHTML(t)}</span><button type="button" class="ei-dep-remove" data-dep-id="${escapeHTML(id)}" aria-label="${escapeHTML(`Remove ${t}`)}">&times;</button></span>`;
+  }).join("");
+}
+function renderEiDepResults() {
+  const q = eiDepsSearch.value.trim().toLowerCase();
+  if (!q || !editingItemId) { eiDepsResults.hidden = true; eiDepsResults.innerHTML = ""; return; }
+  const self = allItems.find((i) => i.id === editingItemId);
+  const pid = self && (self.projectId || GENERAL_PROJECT_ID);
+  const matches = allItems
+    .filter((i) => i.id !== editingItemId && !eiDeps.includes(i.id) && EI_DEP_OPEN.has(i.status || "backlog") && (i.title || "").toLowerCase().includes(q))
+    .sort((a, b) => (((a.projectId || GENERAL_PROJECT_ID) === pid ? 0 : 1) - ((b.projectId || GENERAL_PROJECT_ID) === pid ? 0 : 1)) || (a.title || "").localeCompare(b.title || ""))
+    .slice(0, 8);
+  eiDepsResults.innerHTML = matches.length
+    ? matches.map((i) => {
+      const other = (i.projectId || GENERAL_PROJECT_ID) !== pid ? ((projects.find((p) => p.id === i.projectId) || {}).name || "another project") : "";
+      return `<button type="button" class="ei-dep-option" role="option" data-dep-id="${escapeHTML(i.id)}"><span>${escapeHTML(i.title || i.id)}</span><span class="ei-dep-option-meta">${escapeHTML([DEP_STATUS_LABELS[i.status || "backlog"], other].filter(Boolean).join(" · "))}</span></button>`;
+    }).join("")
+    : '<p class="interface-row-empty">No open ticket matches.</p>';
+  eiDepsResults.hidden = false;
+}
+eiDepsSearch.addEventListener("input", () => { setEiDepsError(""); renderEiDepResults(); });
+eiDepsResults.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ei-dep-option");
+  if (!btn || !editingItemId) return;
+  const id = btn.dataset.depId;
+  if (eiDeps.length >= 20) { setEiDepsError("At most 20 tickets."); return; }
+  const loop = dependencyLoopText(editingItemId, [id]);
+  if (loop) { setEiDepsError(`That would make a loop: ${loop}.`); return; }
+  setEiDepsError("");
+  eiDeps = eiDeps.concat(id);
+  eiDepsSearch.value = "";
+  renderEiDeps();
+  renderEiDepResults();
+});
+eiDepsChips.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ei-dep-remove");
+  if (!btn) return;
+  eiDeps = eiDeps.filter((x) => x !== btn.dataset.depId);
+  setEiDepsError("");
+  renderEiDeps();
+});
 
 eiCategorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
 
@@ -4865,6 +5188,12 @@ function openEditItemModal(id) {
   eiModelLog.textContent = eiModelLine ? `${eiModelLine}.` : "";
   eiModelLog.hidden = !eiModelLine;
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
+  eiDeps = Array.isArray(item.dependsOnItemIds) ? item.dependsOnItemIds.filter((x) => typeof x === "string") : [];
+  eiLoadedSnapshot.dependsOnItemIds = eiDeps.join(",");
+  eiDepsSearch.value = "";
+  setEiDepsError("");
+  renderEiDeps();
+  renderEiDepResults();
   eiCommentInput.value = "";
   renderEiNotes();
   renderEiAttachments();
@@ -4909,6 +5238,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   for (const [k, v] of Object.entries(current)) {
     if (!eiLoadedSnapshot || eiLoadedSnapshot[k] !== v) changed[k] = v;
   }
+  if (!eiLoadedSnapshot || eiLoadedSnapshot.dependsOnItemIds !== eiDeps.join(",")) changed.dependsOnItemIds = eiDeps.slice();
   eiSaving = true;
   const saveBtn = document.getElementById("ei-save");
   saveBtn.disabled = true;
@@ -6169,6 +6499,59 @@ archiveFilterCategory.addEventListener("change", () => {
   archiveFilters.category = archiveFilterCategory.value;
   renderArchivePage();
 });
+
+// ── Testing loops page (project ⋮ menu; hm84opFjizq3vekk0fC1) ───────────
+// Read-only: tickets with 2 or more counted send-backs in the last 30 days,
+// their round, reasons and time from first build to approval. Same table
+// component and page shell as Archived tickets. Includes archived tickets,
+// so it loads them (ensureArchivedItems) like the archive page does.
+let testingLoopsList = null;
+const STATUS_LABELS = { backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", archived: "Archived" };
+function openTestingLoopsPage(pid) {
+  closeAllSubPages();
+  ensureArchivedItems();
+  testingLoopsProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  document.getElementById("testing-loops-page").hidden = false;
+  renderTestingLoopsPage();
+}
+function closeTestingLoopsPage() {
+  const page = document.getElementById("testing-loops-page");
+  if (!page || page.hidden) { testingLoopsProjectId = null; return; }
+  testingLoopsProjectId = null;
+  page.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+function getTestingLoopsList() {
+  if (!testingLoopsList) {
+    const pad = (n) => String(n == null ? -1 : n).padStart(14, "0");
+    testingLoopsList = createDocsList(document.getElementById("testing-loops-grid"), {
+      id: "testing-loops", searchLabel: "Search title or reasons", emptyText: `No ticket was sent back twice or more in the last ${REPORT_DAYS} days.`,
+      columns: [
+        { key: "title", header: "Ticket", flex: 1, minWidth: 220, text: (r) => r.title,
+          html: (r) => `<a class="archive-row-title" href="#item-${escapeHTML(r.id)}">${escapeHTML(r.title || r.id)}</a><p class="archive-row-desc">${escapeHTML(STATUS_LABELS[r.status] || r.status)}</p>` },
+        { key: "round", header: "Round", width: 100, text: (r) => pad(r.round),
+          html: (r) => `<span class="round-chip round-chip-static${r.round >= LOOP_ROUND ? " round-chip-warn" : ""}"><span class="material-symbols-outlined" aria-hidden="true">replay</span>Round ${r.round}</span>` },
+        { key: "recent", header: "Send-backs", width: 120, text: (r) => pad(r.recent), html: (r) => `${r.recent}${r.counted > r.recent ? ` <span class="archive-row-desc">(${r.counted} ever)</span>` : ""}` },
+        { key: "reasons", header: "Reasons", flex: 1, minWidth: 260, text: (r) => r.reasons.join(" "),
+          html: (r) => `<ol class="loop-reasons">${r.reasons.map((x) => `<li>${escapeHTML(x)}</li>`).join("")}</ol>` },
+        { key: "toApproval", header: "First build → approval", width: 170, text: (r) => pad(r.buildToApprovalMs),
+          html: (r) => (r.buildToApprovalMs != null ? escapeHTML(formatDuration(r.buildToApprovalMs)) : '<span class="archive-row-desc">Not approved yet</span>') },
+        { key: "last", header: "Last sent back", width: 140, text: (r) => (r.lastAt ? r.lastAt.toISOString() : ""), html: (r) => (r.lastAt ? escapeHTML(r.lastAt.toLocaleDateString()) : "—") },
+      ],
+    });
+  }
+  return testingLoopsList;
+}
+function renderTestingLoopsPage() {
+  if (!testingLoopsProjectId) return;
+  document.getElementById("testing-loops-project-name").textContent = projectName(testingLoopsProjectId);
+  const rows = testingLoopRows(allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === testingLoopsProjectId));
+  document.getElementById("testing-loops-count").textContent = `${rows.length} ticket${rows.length === 1 ? "" : "s"}`;
+  getTestingLoopsList().setRows(rows);
+}
 
 // ── Archived projects page (top-level — a whole project, not one ticket) ──
 const archivedProjectsPage = document.getElementById("archived-projects-page");
@@ -12093,6 +12476,7 @@ const ROUTE_TITLES = {
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#support": "Support Inbox",
   "#support/stats": "Support Inbox: Stats",
+  "#support/try": "Support Inbox: Try an email",
   "#settings/support": "Settings: Support inbox",
   "#promote/leads": "Promote: Leads",
   "#promote/prospects": "Promote: Prospects (TAM)",

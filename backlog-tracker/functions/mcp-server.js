@@ -59,6 +59,9 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
 const { inFlightItemIds } = require("./notify-routine");
+// Build order (ZE8h8cfaezOb0eTsRjSH): dependencies as data, cycles refused,
+// and the order a send_to_build click fires in.
+const buildOrder = require("./build-order");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 
 // initializeApp() runs in index.js before this module is required; resolve
@@ -975,6 +978,7 @@ function unauthorized(res, detail) {
 
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
+const testRounds = require("./test-rounds");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -1756,7 +1760,59 @@ function itemSummary(id, d, projects) {
     blocked: d.blocked && d.blocked.reason
       ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
       : null,
+    // Build order: the tickets this one builds after (ids; get/list add
+    // titles and statuses as dependsOn), who set the list, and the lane-mate
+    // it is queued behind after a Ready for Dev click.
+    dependsOnItemIds: Array.isArray(d.dependsOnItemIds) ? d.dependsOnItemIds.filter((x) => typeof x === "string") : [],
+    dependsOnSource: buildOrder.DEPENDENCY_SOURCES.includes(d.dependsOnSource) ? d.dependsOnSource : null,
+    queuedAfter: d.queuedAfter && d.queuedAfter.itemId ? { itemId: d.queuedAfter.itemId, title: d.queuedAfter.title || null } : null,
   };
+}
+
+// [{id, title, status, statusLabel}] for a ticket's dependencies, reading
+// what `known` (id -> data, null = deleted) doesn't already hold.
+async function dependencyRefsFor(ids, known = new Map()) {
+  const list = (Array.isArray(ids) ? ids : []).filter((x) => typeof x === "string" && x);
+  const missing = [...new Set(list.filter((id) => !known.has(id)))];
+  if (missing.length) {
+    const snaps = await db().getAll(...missing.map((id) => db().collection("backlogItems").doc(id)));
+    snaps.forEach((snap, n) => known.set(missing[n], snap.exists ? (snap.data() || {}) : null));
+  }
+  return list.map((id) => {
+    const d = known.get(id);
+    if (!d) return { id, title: null, status: "deleted", statusLabel: "Deleted" };
+    const status = d.status || "backlog";
+    return { id, title: d.title || "", status, statusLabel: STATUS_LABELS[status] || status };
+  });
+}
+
+// Validate a hand-set dependency list: ids that exist, at most 20, and no
+// loop ("A waits for B waits for A"). Reads the graph reachable from the list.
+async function checkDependsOn(selfId, selfTitle, ids) {
+  if (!Array.isArray(ids) || ids.some((x) => typeof x !== "string")) return { error: "dependsOnItemIds must be an array of ticket ids." };
+  const list = [...new Set(ids.map((x) => x.trim()).filter(Boolean))];
+  if (list.length > buildOrder.MAX_DEPENDENCIES) return { error: `At most ${buildOrder.MAX_DEPENDENCIES} dependencies per ticket.` };
+  const known = new Map();
+  let frontier = list.slice();
+  let reads = 0;
+  while (frontier.length && reads < 200) {
+    const need = [...new Set(frontier.filter((id) => !known.has(id) && id !== selfId))];
+    frontier = [];
+    if (!need.length) break;
+    reads += need.length;
+    const snaps = await db().getAll(...need.map((id) => db().collection("backlogItems").doc(id)));
+    snaps.forEach((snap, n) => {
+      const d = snap.exists ? (snap.data() || {}) : null;
+      known.set(need[n], d);
+      if (d && Array.isArray(d.dependsOnItemIds)) frontier.push(...d.dependsOnItemIds);
+    });
+  }
+  const v = buildOrder.validateDependsOn(selfId, list, {
+    exists: (id) => !!known.get(id),
+    depsOf: (id) => ((known.get(id) || {}).dependsOnItemIds) || [],
+    titleOf: (id) => (id === selfId ? selfTitle : ((known.get(id) || {}).title)) || id,
+  });
+  return v.error ? v : { ids: v.ids, known };
 }
 
 // The test link's rebuild state (previewState, written by the automation
@@ -2321,9 +2377,11 @@ const TOOLS = [
       let read = 0;
       let archivedHidden = 0;
       const rows = [];
+      const readById = new Map();
       snap.forEach((doc) => {
         read += 1;
         const d = doc.data() || {};
+        readById.set(doc.id, d);
         const status = d.status || "backlog";
         if (a.status && status !== a.status) return;
         if (a.type && d.type !== a.type) return;
@@ -2347,12 +2405,18 @@ const TOOLS = [
       }
       const page = rows.slice(from, from + limit);
       const last = page[page.length - 1];
+      const depRefs = new Map();
+      for (const r of page) {
+        const depIds = Array.isArray(r.d.dependsOnItemIds) ? r.d.dependsOnItemIds : [];
+        if (depIds.length) depRefs.set(r.id, await dependencyRefsFor(depIds, readById));
+      }
       const out = {
         matched: rows.length,
         returned: page.length,
         nextCursor: from + limit < rows.length && last ? encodeListCursor(last.key, last.id) : null,
         items: page.map((r) => {
           const item = itemSummary(r.id, r.d, projects);
+          if (depRefs.has(r.id)) item.dependsOn = depRefs.get(r.id);
           if (r.hit) { item.matchedIn = r.hit.matchedIn; item.snippet = r.hit.snippet; }
           return item;
         }),
@@ -2378,7 +2442,9 @@ const TOOLS = [
       const snap = await db().collection("backlogItems").doc(String(args.itemId)).get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
       const projects = await loadProjectsById();
-      return textResult(itemDetail(snap.id, snap.data() || {}, projects));
+      const detail = itemDetail(snap.id, snap.data() || {}, projects);
+      detail.dependsOn = await dependencyRefsFor(detail.dependsOnItemIds);
+      return textResult(detail);
     },
   },
   {
@@ -2394,6 +2460,7 @@ const TOOLS = [
         type: { type: "string", enum: ["feature", "bug"], description: "Default feature." },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
+        dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of tickets (any project) this one must build after. Ticket ids and exact open-ticket titles named in the description's Dependencies section are added automatically." },
       },
       required: ["projectId", "desc"], additionalProperties: false,
     },
@@ -2414,10 +2481,37 @@ const TOOLS = [
       if (args.model != null && !MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
       const model = normaliseModelRequirement(args.model);
       const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
+      // Build order: hand-set dependencies, plus whatever the Dependencies
+      // section names (ticket ids, exact titles of open tickets here).
+      let given = [];
+      if (args.dependsOnItemIds != null) {
+        const v = await checkDependsOn(null, title, args.dependsOnItemIds);
+        if (v.error) return toolError(v.error);
+        given = v.ids;
+      }
+      const sameProject = await db().collection("backlogItems").where("projectId", "==", String(args.projectId)).get();
+      const candidates = [];
+      const projectItemIds = new Set();
+      sameProject.forEach((d) => {
+        projectItemIds.add(d.id);
+        const x = d.data() || {};
+        if (buildOrder.OPEN_STATUSES.includes(x.status || "backlog")) candidates.push({ id: d.id, title: x.title || "" });
+      });
+      const refs = buildOrder.findDependencyReferences(intake.desc, candidates);
+      const otherIds = refs.ids.filter((id) => !projectItemIds.has(id));
+      const otherExisting = new Set();
+      if (otherIds.length) {
+        const snaps = await db().getAll(...otherIds.map((id) => db().collection("backlogItems").doc(id)));
+        snaps.forEach((snap, n) => { if (snap.exists) otherExisting.add(otherIds[n]); });
+      }
+      // An id that names no ticket stays prose.
+      const found = [...refs.ids.filter((id) => projectItemIds.has(id) || otherExisting.has(id)), ...refs.titleIds];
+      const deps = buildOrder.mergeDependsOn(given, given.length ? "manual" : null, found);
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
         title, desc: intake.desc, type, category,
         ...(model === "advanced" ? { model } : {}),
+        ...(deps.ids.length ? { dependsOnItemIds: deps.ids, dependsOnSource: deps.source } : {}),
         ...(blocked ? { blocked } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
@@ -2432,6 +2526,7 @@ const TOOLS = [
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
         title, type, category, model, status: "backlog",
+        dependsOn: await dependencyRefsFor(deps.ids),
         intake: intake.blocked
           ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
           : { passed: true, completedAtBuild: intake.pending.map((g) => g.heading) },
@@ -2441,7 +2536,7 @@ const TOOLS = [
   },
   {
     name: "update_backlog_item",
-    description: "Correct a ticket's title, description, type, area or model requirement (standard, or advanced for Claude Opus). Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
+    description: "Correct a ticket's title, description, type, area, model requirement (standard, or advanced for Claude Opus) or the tickets it builds after (dependsOnItemIds; a loop is refused). Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2452,6 +2547,7 @@ const TOOLS = [
         type: { type: "string", enum: ["feature", "bug"] },
         category: { type: "string", enum: CATEGORIES },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
+        dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Replace the tickets this one builds after (any project; [] clears). A loop is refused." },
       },
       required: ["itemId"], additionalProperties: false,
     },
@@ -2483,7 +2579,14 @@ const TOOLS = [
         if (!MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
         fields.model = args.model;
       }
-      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model.");
+      if (args.dependsOnItemIds != null) {
+        const cur = snap.data() || {};
+        const v = await checkDependsOn(ref.id, fields.title || cur.title || ref.id, args.dependsOnItemIds);
+        if (v.error) return toolError(v.error);
+        fields.dependsOnItemIds = v.ids;
+        fields.dependsOnSource = v.ids.length ? "manual" : null;
+      }
+      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model, dependsOnItemIds.");
       fields.updatedAt = FieldValue.serverTimestamp();
       fields.updatedByEmail = session.email;
       await ref.update(fields);
@@ -2681,10 +2784,15 @@ const TOOLS = [
         if ((d.status || "backlog") !== "ready-for-testing") return;
         rows.push({ doc, d });
       });
-      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
+      // Testing rounds: a ticket in its 3rd round or later is in a testing
+      // loop and is listed first (highest round first), the rest newest first.
+      rows.forEach((r) => { r.loop = testRounds.loopState(r.d); });
+      const loopRank = (r) => (r.loop.testRound >= testRounds.FIRST_CAP ? r.loop.testRound : 0);
+      rows.sort((x, y) => (loopRank(y) - loopRank(x)) || ((y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0)));
 
-      const cards = rows.map(({ doc, d }) => {
+      const cards = rows.map(({ doc, d, loop }) => {
         const project = projects.get(d.projectId);
+        const last = loop.sendBacks.filter((s) => s.counted !== false).slice(-1)[0] || null;
         return {
           id: doc.id,
           projectId: d.projectId || null,
@@ -2696,6 +2804,10 @@ const TOOLS = [
           desc: d.desc || "",
           previewUrl: safeHref(d.previewUrl),
           testVersion: d.testVersion || null,
+          testRound: Math.max(1, loop.testRound || 0),
+          sendBackCount: loop.sendBackCount,
+          inTestingLoop: loop.testRound >= testRounds.FIRST_CAP,
+          lastSendBack: last ? { at: last.at, by: last.by, who: last.who, category: last.category, line: last.line } : null,
           deployCommit: d.deployCommit || null,
           ...previewStateFields(d),
           trainTest: trainTestOut(d),
@@ -2708,7 +2820,8 @@ const TOOLS = [
       const headline = `Ready for Testing — ${projectLabel}`;
       const rebuilding = cards.filter((c) => c.previewState === "rebuilding").length;
       const running = cards.filter((c) => c.trainTest && (c.trainTest.state === "running" || c.trainTest.state === "starting")).length;
-      const counts = [rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
+      const looping = cards.filter((c) => c.inTestingLoop).length;
+      const counts = [looping ? `${looping} in a testing loop (round ${testRounds.FIRST_CAP} or later, listed first)` : "", rebuilding ? `${rebuilding} link${rebuilding === 1 ? "" : "s"} rebuilding` : "", running ? `${running} with tests running` : ""].filter(Boolean).join(", ");
       const payload = { kind: "ready-for-testing", projectId: a.projectId || null, projectLabel, count: cards.length, items: cards };
       return boardToolResult(
         `${headline}: ${cards.length} ticket(s) waiting on review${counts ? `; ${counts}` : ""}. Read-only — this view can't change status.`,
@@ -2921,7 +3034,7 @@ const TOOLS = [
   {
     name: "send_to_build",
     role: "admin",
-    description: "ADMIN ONLY. Send named Backlog tickets to be built — exactly the same action as ticking them and clicking the board's 'Ready for Dev'. It writes the project's notifyRequestedAt and notifyItemIds; the existing Cloud Function then starts one build session per ticket and the pipeline moves the cards. Takes explicit ticket ids (never 'everything in Backlog'). Refuses the whole call if the project's train is locked (a release is closing), or a ticket is not in this project's Backlog, is blocked waiting on an answer, is already packaged, or is already being built. Logged to mcpAuditLog under your email.",
+    description: "ADMIN ONLY. Send named Backlog tickets to be built — exactly the same action as ticking them and clicking the board's 'Ready for Dev'. It writes the project's notifyRequestedAt and notifyItemIds; the existing Cloud Function then starts one build session per ticket and the pipeline moves the cards. Takes explicit ticket ids (never 'everything in Backlog'). Returns which tickets fire now, which are queued behind a same-area ticket and which are held for a dependency (and whether that dependency was sent). Refuses the whole call if the project's train is locked (a release is closing), or a ticket is not in this project's Backlog, is blocked waiting on an answer, is already packaged, or is already being built. Logged to mcpAuditLog under your email.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2966,6 +3079,20 @@ const TOOLS = [
       }
       if (problems.length) return toolError(`Nothing was sent. ${problems.join("; ")}.`);
 
+      // The order the build trigger will fire them in (functions/build-order.js):
+      // a ticket whose dependency is still in Backlog is held, and tickets in
+      // the same area are queued one after another.
+      const clickItems = ids.map((id) => byId.get(id));
+      const outside = [...new Set(clickItems.flatMap((i) => (Array.isArray(i.dependsOnItemIds) ? i.dependsOnItemIds : [])))].filter((id) => !ids.includes(id));
+      const depsById = {};
+      const fetchIds = [];
+      for (const id of outside) { if (byId.has(id)) depsById[id] = byId.get(id); else fetchIds.push(id); }
+      if (fetchIds.length) {
+        const snaps = await db().getAll(...fetchIds.map((id) => db().collection("backlogItems").doc(id)));
+        snaps.forEach((s2, n) => { depsById[fetchIds[n]] = s2.exists ? Object.assign({ id: s2.id }, s2.data()) : null; });
+      }
+      const plan = buildOrder.planBuildOrder(clickItems, { depsById, building: [...byId.values()].filter((i) => inFlight.has(i.id)) });
+
       await projectRef.set({
         notifyRequestedAt: FieldValue.serverTimestamp(),
         notifyItemIds: ids,
@@ -2978,7 +3105,11 @@ const TOOLS = [
 
       return textResult({
         sent: true, projectId, count: ids.length, itemIds: ids,
-        note: "This is the same request the board's Ready for Dev button makes: one build session starts per ticket and the pipeline moves each card to Ready for Testing when it lands. This call returns before that — watch the board or list_backlog_items.",
+        fired: plan.fire.map((i) => ({ id: i.id, title: i.title || "" })),
+        queued: plan.queued.map((q) => ({ id: q.item.id, title: q.item.title || "", after: q.after })),
+        held: plan.held.map((h) => ({ id: h.item.id, title: h.item.title || "", waitingFor: h.waitingFor.map((w) => ({ id: w.id, title: w.title, notSent: !w.building })) })),
+        summary: plan.summary,
+        note: "This is the same request the board's Ready for Dev button makes: one build session starts per ticket that can build now (fired); a ticket whose dependency is still in Backlog is held and starts by itself when that dependency reaches Ready for Testing; tickets likely to touch the same files are queued and start one after another. The pipeline moves each card to Ready for Testing when it lands. This call returns before that — watch the board or list_backlog_items.",
       });
     },
   },
@@ -3095,12 +3226,16 @@ const TOOLS = [
       const text = reason || "No reason given.";
       const batch = db().batch();
       ids.forEach((id) => {
+        // Testing rounds: the send-back is recorded here; the automation
+        // applies the loop cap when it takes the ticket off the train.
+        const loop = testRounds.recordSendBack(byId.get(id), { at, by: "person", who: session.email, category, text });
         batch.update(db().collection("backlogItems").doc(id), {
           status: "backlog",
           revertRequested: true,
           // The automation queues the rebuild once the revert has landed.
           rebuildAfterRevert: true,
-          lastFailureReason: { category, text, action: "failed-testing", at },
+          ...(loop || {}),
+          lastFailureReason: { category, text, action: "failed-testing", at, who: session.email },
           notes: FieldValue.arrayUnion({ author: session.email, text: `Failed testing [${category}] (via MCP): ${text}`, at }),
           updatedAt: FieldValue.serverTimestamp(),
         });

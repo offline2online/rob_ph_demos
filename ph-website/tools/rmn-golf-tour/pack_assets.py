@@ -1,16 +1,18 @@
 """Packs the Run Your Own RMN walkthrough's screenshots and voiceover into the repo as base64 text, so a build session can carry them.
 
-    python3 pack_assets.py --src <dir with img/*.jpg and vo/*.mp3> [--out ../../tour-assets/rmn-golf]
+    python3 pack_assets.py --src <dir with img/*.jpg and vo/*.mp3> [--out ../../tour-assets/rmn-golf/v3]
+
+v1 (tour-assets/rmn-golf/, the single golf club) is immutable: the live site caches it as immutable. v2 (15 Nov 2026, the network, 27 screens at every club) is immutable too. v3 (15 Nov 2026, clubs with 1 to 12 screens) is the default.
 
 Writes <out>/<dir>/<file>.b64 (base64, 76-character lines) for every img/*.jpg and vo/*.mp3, removes .b64 files that no longer have a
 source, and writes <out>/SHA256SUMS: the sha256 of every DECODED file (`<sha>  <dir>/<file>`, sorted). tour.php serves only the files in
-that list (allowlist.py copies it into TOUR_ASSETS_RMN). Check a checkout with: python3 pack_assets.py --verify."""
+that list (allowlist.py copies it into TOUR_ASSETS_RMN_V3). Check a checkout with: python3 pack_assets.py --verify."""
 import argparse, base64, hashlib, os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ap = argparse.ArgumentParser()
 ap.add_argument('--src')
-ap.add_argument('--out', default=os.path.join(HERE, '..', '..', 'tour-assets', 'rmn-golf'))
+ap.add_argument('--out', default=os.path.join(HERE, '..', '..', 'tour-assets', 'rmn-golf', 'v3'))
 ap.add_argument('--verify', action='store_true', help='decode every .b64 in --out and check it against SHA256SUMS')
 args = ap.parse_args()
 

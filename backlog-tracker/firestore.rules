@@ -372,7 +372,24 @@ service cloud.firestore {
         // Per-ticket model requirement (13 Nov 2026): which model actually
         // built and reviewed the ticket, written by the build and review
         // sessions (automation user) — never a browser's to claim.
-        "builtByModel", "reviewedByModel"];
+        "builtByModel", "reviewedByModel",
+        // Heartbeats and build attempts (14 Nov 2026): a build session's own
+        // report (status, heartbeatAt, phase, attemptId), the id of the
+        // attempt the card is waiting on, and the id a patch was handed back
+        // under. The automation trusts them to decide whether to start a
+        // build again or land a patch, so a browser never writes them.
+        "buildSession", "buildAttemptId", "patchAttemptId",
+        // Testing rounds (15 Nov 2026): how many times the ticket reached
+        // Ready for Testing and was sent back. The automation and the MCP
+        // server record them; the board's Failed testing keeps writing only
+        // lastFailureReason, which processRevertFromTrain turns into one.
+        "testRound", "sendBacks", "sendBackCount", "countedSendBacks",
+
+        // Build order (14 Nov 2026): who set a ticket's dependency list
+        // (intake / build / manual — the intake trigger decides) and the
+        // lane-mate a Ready for Dev click queued it behind. The list itself,
+        // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
+        "dependsOnSource", "queuedAfter"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -414,7 +431,14 @@ service cloud.firestore {
         (!("previewUrl" in incoming()) || incoming().previewUrl == null
           || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*"))) &&
         // Per-ticket model requirement: unset means "standard".
-        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]);
+        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]) &&
+        // Build order: the tickets this one builds after — a list of at most
+        // 20 ids (a rules list can't be walked, so the strings are checked by
+        // their first and last entry; the picker only ever writes ids).
+        (!("dependsOnItemIds" in incoming()) || incoming().dependsOnItemIds == null
+          || (incoming().dependsOnItemIds is list && incoming().dependsOnItemIds.size() <= 20
+            && (incoming().dependsOnItemIds.size() == 0
+              || (incoming().dependsOnItemIds[0] is string && incoming().dependsOnItemIds[incoming().dependsOnItemIds.size() - 1] is string))));
     }
 
     match /backlogItems/{itemId} {
@@ -613,7 +637,11 @@ service cloud.firestore {
     function isLead(d) {
       // A network operator inquiry (leadType "operator") is a person, not a
       // company: its company name may be blank, it has its own stages, and
-      // `operator` holds where they plan to operate and their background.
+      // `operator` holds where they plan to operate, their background and who
+      // they are ("I am": individual, team or retailer, or "" when not given),
+      // the industry they want to run their network in (free text, up to 120),
+      // their message (up to 1,000) and which website form sent it ("request",
+      // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
           "leadType", "operator", "tam",
@@ -626,7 +654,11 @@ service cloud.firestore {
         && (isNonEmptyBoundedString(d.company.get("name", null), 120)
           || (d.get("leadType", "company") == "operator" && d.company.get("name", "") is string && d.company.get("name", "").size() <= 120))
         && (d.get("operator", null) == null || (d.get("operator", null) is map
-          && d.operator.keys().hasOnly(["region", "background"])
+          && d.operator.keys().hasOnly(["region", "background", "audience", "networkIndustry", "message", "form"])
+          && d.operator.get("networkIndustry", "") is string && d.operator.get("networkIndustry", "").size() <= 120
+          && d.operator.get("message", "") is string && d.operator.get("message", "").size() <= 1000
+          && d.operator.get("form", "") in ["", "request", "tour"]
+          && d.operator.get("audience", "") in ["", "individual", "team", "retailer"]
           && d.operator.get("region", "") is string && d.operator.get("region", "").size() <= 200
           && d.operator.get("background", "") is string && d.operator.get("background", "").size() <= 40))
         && d.company.get("website", "") is string && d.company.get("website", "").size() <= 300

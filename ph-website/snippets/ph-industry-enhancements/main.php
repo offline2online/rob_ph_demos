@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.25';
+const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1.9.27';
 require_once __DIR__ . '/redirects.php';
 require_once __DIR__ . '/telco-lead.php';
 require_once __DIR__ . '/pharmacy-lead.php';
@@ -13,6 +13,7 @@ require_once __DIR__ . '/pubs-lead.php';
 require_once __DIR__ . '/leads.php';
 require_once __DIR__ . '/tour.php';
 require_once __DIR__ . '/operator.php';
+require_once __DIR__ . '/cta.php';
 require_once __DIR__ . '/calculators-wp.php';
 require_once __DIR__ . '/home-industries.php';
 require_once __DIR__ . '/legacy-copy.php';

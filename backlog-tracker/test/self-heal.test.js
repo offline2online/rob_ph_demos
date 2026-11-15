@@ -237,7 +237,13 @@ async function test(name, fn) {
     assert.strictEqual(c1.status, "backlog");
     assert.strictEqual(c1.revertRequested, true);
     assert.strictEqual(c1.rebuildAfterRevert, true);
-    assert.strictEqual(Number(c1.autoRebuilds), 1);
+    // Testing rounds: the send-back is recorded and counted; the loop count,
+    // not autoRebuilds, governs a send-back's rebuild now.
+    assert.ok(!Number(c1.autoRebuilds), "a send-back no longer spends autoRebuilds");
+    assert.strictEqual(Number(c1.sendBackCount), 1);
+    assert.strictEqual(Number(c1.countedSendBacks), 1);
+    assert.strictEqual(c1.sendBacks[0].by, "tests");
+    assert.match(c1.sendBacks[0].line, /tools\/list returns the whole surface/);
     assert.strictEqual(c1.lastFailureReason.summary, "MCP client integration test: tools/list returns the whole surface — Expected values to be strictly deep-equal:");
     const note = notes("c1").pop();
     assert.match(note, /on the same main \(c0's run passed just before it\)/);
@@ -245,16 +251,37 @@ async function test(name, fn) {
     assert.strictEqual(card("c0").status, "ready-for-testing", "the green ticket stays");
   });
 
-  await test("a ticket whose automatic rebuilds are used up is flagged for a person with the reason, not rebuilt", async () => {
-    train({ autoRebuilds: MAX_AUTO_REBUILDS });
+  await test("a ticket on its 3rd counted send-back is flagged for a decision with the reasons, not rebuilt", async () => {
+    const earlier = (n, line) => ({ at: `2026-10-25T0${n}:00:00.000Z`, by: "person", who: "t@example.com", category: "Other", line, counted: true });
+    train({ autoRebuilds: MAX_AUTO_REBUILDS, sendBacks: [earlier(1, "first miss"), earlier(2, "second miss")], sendBackCount: 2, countedSendBacks: 2, testRound: 3 });
     assert.deepStrictEqual(await auto.ejectRedCulprits(runsFrom()), ["c1"]);
     const c1 = card("c1");
     assert.strictEqual(c1.status, "backlog");
     assert.strictEqual(c1.revertRequested, true, "still comes off the train");
     assert.ok(!c1.rebuildAfterRevert);
-    assert.strictEqual(c1.blocked.reason, "waiting-on-input");
-    assert.match(c1.blocked.note, /tools\/list returns the whole surface/);
-    assert.match(notes("c1").pop(), /flagged for you with the reason/);
+    assert.strictEqual(c1.blocked.reason, "needs-decision");
+    assert.strictEqual(c1.blocked.setBy, "test-rounds");
+    assert.match(c1.blocked.note, /^Sent back 3 times\. Decide: rewrite the ticket, split it, or build it on the Advanced model/);
+    assert.strictEqual(Number(c1.countedSendBacks), 3);
+    const note = notes("c1").pop();
+    assert.match(note, /first miss/);
+    assert.match(note, /second miss/);
+    assert.match(note, /tools\/list returns the whole surface/);
+  });
+
+  await test("a flaky red that passes on re-run is recorded as a send-back that does not count", async () => {
+    train();
+    const st = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    st.bySha[WF][B] = [{ ...redTwice(20, B), run_attempt: 2, conclusion: "success", status: "completed" }];
+    fs.writeFileSync(stateFile, JSON.stringify(st));
+    await auto.ejectRedCulprits(runsFrom());
+    const c1 = card("c1");
+    assert.match(notes("c1").pop(), /^Passed on re-run/);
+    assert.strictEqual(c1.status, "ready-for-testing", "nothing sent back");
+    assert.strictEqual(Number(c1.sendBackCount), 1, "recorded");
+    assert.strictEqual(c1.sendBacks.slice(-1)[0].counted, false);
+    assert.strictEqual(c1.sendBacks.slice(-1)[0].category, "flaky");
+    assert.ok(!Number(c1.countedSendBacks), "not counted");
   });
 
   await test("main merged in under the red ticket: main is still checked first", async () => {

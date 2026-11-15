@@ -173,6 +173,12 @@ deleted by hand).
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
+  buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
+  patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
+  dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
+  dependsOnSource?: "intake" | "build" | "manual" | null, // 14 Nov 2026 — who set dependsOnItemIds. Intake replaces only its own list; a "build" or "manual" list is only ever added to. Written by the intake trigger and MCP, never a browser (a pipeline field in firestore.rules)
+  queuedAfter?: { itemId: string, title: string, at: timestamp } | null, // 14 Nov 2026 — a Ready for Dev click queued this ticket behind a same-area lane-mate; the automation starts it when that one lands or fails (sweepBuildQueue) and the card shows "Queued: builds after <title>". Function/automation only
+  buildSession?: { status?: "done" | "error", finishedAt?, reportedAt?: timestamp, errorMessage?, heartbeatAt?: timestamp, phase?: "reading" | "building" | "testing" | "packaging", attemptId?: string }, // the session's own report. heartbeatAt/phase/attemptId (14 Nov 2026) are its heartbeat: written when it starts, at each phase change and at least every 10 minutes; a heartbeat counts only when attemptId equals the card's buildAttemptId. Automation/Routine identity only (a pipeline field in firestore.rules)
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
   previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
@@ -187,7 +193,11 @@ deleted by hand).
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
-  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
+  sendBacks?: [{ at: ISO string, by: "person" | "tests" | "review", who: string, category: string, line: string, counted: boolean }], // newest last, last 10 kept; written by the automation (processRevertFromTrain, ejectRedCulprits) and the MCP server (fail_testing) only
+  sendBackCount?: number, // every send-back ever, not capped
+  countedSendBacks?: number, // the send-backs that count towards the loop cap (counted: true)
+  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train" | "review-kickback", at: timestamp, who?: string }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
@@ -487,7 +497,8 @@ busy. Now:
   flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
   `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
   has no Answer button, and unblocks by itself when its dependencies have left
-  Backlog.
+  Backlog. See "Build order" below for how dependencies are recorded and how
+  a click orders the builds.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while
@@ -630,6 +641,134 @@ which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
 
+### Build order (14 Nov 2026, ticket ZE8h8cfaezOb0eTsRjSH)
+
+A Ready for Dev click used to start one session per ticket, four at a time,
+in array order, all from the same base. Nothing decided order: 104 tickets
+(8%) carry "Not built: since this patch was written … changed … in the same
+places" because siblings built in parallel collided, and dependants were
+sent before their dependency and wasted a session. The rules, all in
+`functions/build-order.js` (pure, shared by the trigger, MCP, the automation
+and `test/build-order.test.js`):
+
+- **Dependencies are data at intake.** On a create or a description edit
+  (board, MCP `create_backlog_item` / `update_backlog_item`, the intake
+  trigger `onBacklogItemDependencies`), the Dependencies section is read:
+  20-character ticket ids (any project; an id that names no ticket stays
+  prose) and the exact titles of open tickets in the same project (quoted,
+  or verbatim for a title of four words or more). They are stored in
+  `dependsOnItemIds` with `dependsOnSource: "intake"`. Intake replaces only
+  its own list; a list a build session (`"build"`) or a person
+  (`"manual"`) set is merged, never overwritten. A reference that would
+  close a loop is left out.
+- **Settable by hand.** Edit item → **Builds after** searches open tickets
+  (this project first) and refuses a loop with the loop named ("A waits for
+  B waits for A"). MCP `create_backlog_item` / `update_backlog_item` take
+  `dependsOnItemIds` with the same check; `get_backlog_item` and
+  `list_backlog_items` return `dependsOn` (id, title, status).
+- **A click builds in order** (`notifyOnProjectReadyForReview`, so the board
+  click, `send_to_build` and a Groom package batch alike): a ticket whose
+  dependency is in the same click, or still in Backlog, is not fired but
+  held (`blocked: {reason: "waiting-on-dependency", note: "Waiting for:
+  <titles>", setBy: "build-order"}`) and released by `releaseDependents` /
+  `sweepDependencyWaits` when the dependency reaches Ready for Testing. A
+  dependency on the train, approved or live (or archived, or deleted) holds
+  nothing. When a held ticket's dependency was not sent and is not
+  building, the click says so: `projects/{id}.notifyRoutine.buildOrder`
+  `{summary, heldItemIds, queuedItemIds, notSent, at}` ("2 held: they need
+  "X", which was not sent"), shown beside the Ready for Dev button for two
+  hours; when nothing could start, `notifyRoutine` is an error saying that.
+- **Same-area tickets go one at a time; different areas stay parallel.**
+  Tickets that share a groom area (`groomAreas`), a file path (by file name;
+  `index.js` and the like keep their folder; Markdown files don't count), a
+  named function (camelCase, eight characters or more) or a quoted spec
+  section (`→ "Section"`) in their Outcome or Spec reference form a lane.
+  A lane fires its first ticket (priority high → medium/unset → low, then
+  oldest first) and queues the rest (`queuedAfter`; the card shows "Queued:
+  builds after <title>", not blocked, no Answer button). A ticket sharing a
+  lane with a build an earlier click is still running queues behind it.
+  `sweepBuildQueue` (every automation run) starts a queued ticket when the
+  one ahead of it lands, fails (its current attempt reports error or done
+  without a patch, its fire failed, or it is blocked), is archived or
+  deleted, or after three hours; it builds on the train tip after that.
+  Lanes are decided without a model call. `FANOUT_CONCURRENCY` (4) still
+  caps how many fire at once.
+- **Deadlock check.** `sweepDependencyWaits` rewrites a waiter's flag when a
+  dependency is itself blocked on a person: "Waiting for <title>, which is
+  blocked: it needs a decision …" (`blocked.stuckOn`), and restores it when
+  that is settled. An archived or deleted dependency releases the waiter
+  with a note. A loop a build session created is flagged on every ticket in
+  it as a question (`waiting-on-input`, setBy `dependency-cycle`, never
+  auto-answered or turned back into a wait).
+- **Fire text.** A fired ticket's prompt lists "Already landed and in your
+  base: …" — each dependency on the train or live, with its commit — so the
+  session reads those commits instead of rediscovering them.
+- **Card.** A Backlog card with dependencies still in Backlog shows "After:
+  <title>" (+N); the hover lists every dependency with its status.
+- **Rules.** Browsers may write `dependsOnItemIds` (a list of at most 20
+  strings); `dependsOnSource` and `queuedAfter` are pipeline fields.
+
+Ticket ZmEWDC40NYOiojehfPjk (owner scoping) builds on this: it adds owner
+permissions and the contract-change flag, not a second link field.
+
+### Flaky tests: retry once, record, ticket at three
+
+**A red train means a real defect (14 Nov 2026).** Between 24 Oct and 14 Nov
+the console suite failed 44 of 352 runs, and 21 of the 23 failures with a
+readable log were Playwright timing, not defects. Each cost a 33-minute
+re-run of everything. The rules now:
+
+- **Only UI tests retry, once, inside the run.** A Playwright-driven case
+  that fails is run once more in the same run: `test/ui/flaky.mjs`
+  (`retryCase`) for the console click-through scenarios, the Staff Kanban
+  suites' own `withRetry` (console and prototype), and `test/ui/run-ui.mjs`
+  for the small UI files, which re-runs the file. A pass on the retry does
+  not fail the run. A failure on the retry fails it as before. Unit, rules,
+  MCP and docs tests never retry (`test/ui-retry.test.mjs` checks both).
+- **Every flake is written down.** The run uploads a `flaky-tests-<job>`
+  artifact (`flaky-tests.json`: suite, case id, viewport, first failure) and
+  its job summary says "Flaky this run: TC-55 desktop-1280, passed on retry".
+- **The board keeps a ledger.** After each train test run the automation
+  (`sweepFlakyTests`, logic in `scripts/flaky-ledger.js`) reads the artifacts
+  of the finished `firestore-rules-test.yml` and `kanban-staff-board-tests.yml`
+  runs it has not read yet and updates `settings/flakyTests`:
+  `{ cases: [{ id, suite, profile, count, seenAt[], lastSeenAt, lastRunUrl,
+  lastError, ticketId }], processedRuns[], updatedAt }`, the 50 most recent
+  cases, keyed by case id so one case's viewports count together. Members
+  read it; only the automation (service account) writes it.
+- **The health strip shows it.** "Flaky tests: N this week" (flakes in the
+  last 7 days) at the end of the pipeline health strip; with any, it is a
+  button that opens the list of cases (count this week, viewport, last seen,
+  last run, ticket). With none it reads 0 and opens nothing.
+- **Three flakes of one case in 7 days file ONE Backlog bug** in Backlog
+  Tracker & FAQs, titled "Flaky test: <case>", with the four intake sections
+  filled. Never a second while one is open (Backlog, Ready for Testing or
+  Approved for Deployment). It is not started automatically.
+- **A wall-clock limit never decides a train.** KB-SCALE times the 2,000 and
+  5,000-ticket boards against the 39-ticket board on the same runner and
+  limits the ratio; cases wait on the condition they assert (`eventually`,
+  `until`), and the harness waits for the console to have started before a
+  case's first selector (`appRendered`).
+- **Each test file runs in exactly one job of one workflow per train.** The
+  console workflow runs as five parallel jobs, each with a time limit:
+  `rules` (emulator), `offline` (unit, MCP, train, docs), `ui-console`,
+  `ui-touch`, `ui-kanban`. The train still reads the workflow's one
+  conclusion. `firestore-rules-test.yml` owns the console's Staff Kanban
+  suite (`test/ui/staff-kanban.test.mjs`); `kanban-staff-board-tests.yml`
+  owns the prototype suite (`kanban-staff-board/test`) and starts only for a
+  `kanban-staff-board/` change, no longer for every `backlog-tracker/` one.
+  `test/ci-coverage.test.js` fails on a file in two jobs or a job with no
+  timeout.
+- **The run the automation dispatches on the train's head commit is the
+  gate.** The `pull_request` runs GitHub creates on a bot-opened train PR are
+  held as `action_required` and may never execute (PR #585). They are neither
+  a pass nor a failure and nothing waits for them; `approveHeldRuns` stays as
+  best effort (`test/train-housekeeping.test.js`).
+- **`train-base/*` branches are deleted** once their run has a conclusion
+  (after 10 minutes, so the base check is read first) and in any case after
+  24 hours (`sweepBaseRefs`; first-seen times in
+  `systemStatus/pipeline.trainBaseRefsSeen`).
+
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
 on attempt 1), `failed` (the same on attempt 2+) or `none`; "once" is
@@ -713,10 +852,11 @@ of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
 sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
 no session started since and no patch handed over is first asked for again
 (up to `REBUILD_START_RETRIES` = 2, counted in `rebuildStartRetries`; 25 Oct
-2026). A started session that never reports back (no `buildSession`, patch or
-blocker 90 minutes after `lastFire.at`) is restarted once
+2026). A started session that goes quiet is restarted once
 (`buildSessionRetries`), then marked `buildSession.status: "error"` with a
-note, which releases the project's hand-off (`sweepSilentBuildSessions`). A
+note, which releases the project's hand-off (`sweepSilentBuildSessions`);
+"quiet" is judged from the session's heartbeat, not its start time — see
+"Heartbeats and build attempts" below. A
 dispatched baseline check on main that is still running after
 `BASE_CHECK_GIVE_UP_MS` is treated as never run and the culprit is sent back.
 Only then does a card get one note — "The
@@ -724,6 +864,76 @@ automatic rebuild requested at <time> never started (<error>). Click Ready
 for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
 posted once. Tests: `test/rebuild-requests.test.js` (which cards are
 noted, the wording), `test/notify-fanout.test.js` (retry policy, `lastFire`).
+
+#### Heartbeats and build attempts (stuck detection, 14 Nov 2026)
+
+A build session that died (container restart, timeout) used to be noticed
+after 75 minutes and restarted after 90, and the restart often overlapped a
+session that was only slow: "hasn't reported back" notes were on 39 tickets
+and "A second build session" notes on 14. The rules, all in
+`functions/notify-routine.js` (pure) and applied by `sweepSilentBuildSessions`:
+
+- **Heartbeat.** Every build session PATCHes `buildSession.heartbeatAt`,
+  `buildSession.phase` (`reading`, `building`, `testing`, `packaging`) and
+  `buildSession.attemptId` on its ticket when it starts, at each phase change
+  and at least every 10 minutes while a long command runs. The fire text
+  carries the rule (`heartbeatHint` in `functions/index.js`) and so does
+  `ROUTINE_INSTRUCTIONS.md` → "Heartbeat and build attempt". Only the
+  automation/Routine identity may write these fields (`firestore.rules`,
+  `itemPipelineFields`).
+- **Silence is measured from the heartbeat.** No first heartbeat within 10
+  minutes of `lastFire.at` (`FIRST_HEARTBEAT_MS`): started again, with one
+  note. A heartbeat and then none for 20 minutes (`HEARTBEAT_SILENT_MS`):
+  one note, "Build session went quiet 20 minutes ago during <phase>; starting
+  it again", then started again. A session that is beating is never
+  restarted, however long it runs, up to 3 hours from its fire
+  (`BUILD_CEILING_MS`); at the ceiling the card is flagged waiting on a
+  person (`blocked.reason: "waiting-on-input"`) and nothing is restarted.
+  The retry cap is unchanged: one restart (`BUILD_SESSION_RETRIES`), then the
+  card is marked errored and flagged.
+- **A fire from before heartbeats** (no `lastFire.buildAttemptId`) was never
+  told to beat and keeps the old rule: restarted after 90 minutes of no report.
+- **No duplicate builds.** Each fire that starts a session gets a
+  `buildAttemptId`; the card stores the current one. A heartbeat from an
+  earlier attempt's session does not count, so a superseded session cannot
+  hide the new one's silence. A session reads its card before packaging and
+  stops with a note if `buildAttemptId` is no longer its own or the card has
+  gained a `deployCommit` since it started; it sends `patchAttemptId` with
+  its patch, and `processApplyPatch` refuses a patch whose `patchAttemptId`
+  differs from the card's `buildAttemptId` (`staleAttemptPatch`): nothing
+  lands, the patch files are dropped, one note is written and no rebuild is
+  started, because the current attempt's session is the one being waited for.
+  A patch with no `patchAttemptId` (hand-made, or from an older session) is
+  not stale. `inFlightItemIds` also treats a beating card as in flight
+  however old its fire is, so a further Ready for Dev click never starts a
+  second session for it.
+- **The project record** (`notifyRoutine`) stays open past the 75-minute
+  stall window while a sent card is still beating (`notifyRoutineOutcome`),
+  up to the same 3-hour ceiling.
+- **The card.** While building, the "Sent to Claude — locked" line adds the
+  phase and the age of the last heartbeat ("Testing · heard from 3 min ago");
+  after 10 minutes without one that line turns to the warning colour
+  (`--warning`). A card whose session is beating stays locked past 75
+  minutes. The project header's "Build didn't report back N" chip counts
+  heartbeat-silent sessions (no first heartbeat in 10 minutes, or none for
+  20) as well as the tickets of a stalled record.
+- **Build sessions run the affected tests; the train runs everything.** A
+  session runs the suites for the paths it changed plus the fast offline
+  checks (`npm run test:fast`, and `npm run test:fast-ui` for a
+  `backlog-tracker/public/` change), not every suite in the repo. The long
+  suites are train-only unless the ticket touches them: the ph-website tour
+  (`ph-website/tests/tour.test.mjs`, 10+ minutes) and the Staff Kanban
+  viewport matrix (`test/ui/staff-kanban.test.mjs`; a session runs its quick
+  profiles). `BUILD_SESSION_FAST=1`, set only by those two commands, is what
+  skips them; CI and the train never set it. The build note lists what was
+  and was not run.
+
+Tests: `test/build-heartbeat.test.js` (the windows, the notes, the ceiling,
+the stale-attempt refusal through the real `processApplyPatch`),
+`test/notify-fanout.test.js` (the fire carries the attempt id and the card
+stores it), `test/ui/console-click.test.mjs` ("Build heartbeat" scenarios),
+`test/firestore-rules.test.js` (a browser cannot write the heartbeat or
+either attempt id).
 
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (on the project
@@ -829,10 +1039,14 @@ Requirements that follow from it:
 ### Staff Kanban E2E on every train (self-healing)
 
 - A train whose diff against main touches `backlog-tracker/` or
-  `kanban-staff-board/` runs the Staff Kanban suites (prototype e2e; console
-  `staff-kanban`, `kanban-mcp`, `kanban-rules`) at each stage: on each landing in
-  Ready for Testing, on each push to the train, and as the gate before Deploy
-  to Main. Any project's train, not only Staff Kanban's.
+  `kanban-staff-board/` runs the console's Staff Kanban suites
+  (`staff-kanban`, `kanban-mcp`, `kanban-rules`, inside the console tests); one
+  that touches `kanban-staff-board/` also runs the prototype e2e suite. Since
+  14 Nov 2026 a `backlog-tracker/`-only change no longer starts the prototype
+  suite: it reads nothing there, and the test plan ran twice per train. They
+  run at each stage: on each landing in Ready for Testing, on each push to the
+  train, and as the gate before Deploy to Main. Any project's train, not only
+  Staff Kanban's.
 - A failing case (after the single automatic re-run) is raised as a bug ticket
   (`e2eAutoFix`: case id, viewport, failure, run, causing ticket; label "E2E
   auto-fix"), approved for development and sent to build automatically, and
@@ -947,6 +1161,66 @@ expected to check whether `notes` shows a later successful pass since
 
 `testPassed` is never written anywhere now. Old cards carrying it are
 simply ignored; there was nothing to migrate.
+
+### Testing rounds (hm84opFjizq3vekk0fC1, 15 Nov 2026)
+
+A ticket that bounced between Backlog and Ready for Testing used to look like
+any other: the number of times it was sent back was worked out from note text
+and shown only inside the Edit and comment modals, the automatic rebuild
+budget (`autoRebuilds`) was never shown, and a person's Failed testing
+rebuilt with no cap at all. The loop is now stored and shown.
+
+- **Stored** (pipeline fields, `firestore.rules` → `itemPipelineFields`; a
+  browser never writes them): `testRound`, `sendBacks` (last 10, newest
+  last, `{at, by, who, category, line, counted}`), `sendBackCount` (every
+  one) and `countedSendBacks`. Logic: `functions/test-rounds.js`, shared by
+  the automation and the MCP server; the board's read side is
+  `public/js/test-rounds-view.js`.
+- **Who records a send-back.** `ejectRedCulprits` (by `tests`) and MCP
+  `fail_testing` (by `person`) write theirs at once. The board's Failed
+  testing and Eject from train keep their existing write (`lastFailureReason`,
+  now with the tester's email as `who`), and a Review Batch kick-back writes
+  `lastFailureReason.action: "review-kickback"`; `processRevertFromTrain`
+  turns each into a `sendBacks` entry when it takes the ticket off the train,
+  skipping one already recorded with the same `at`.
+- **Rounds.** Arriving in Ready for Testing (`processApplyPatch`, the no-diff
+  path) sets `testRound` to `max(testRound, countedSendBacks + 1)`.
+- **Not the ticket's fault, not counted**: category "Blocking a release, not
+  a rebuild", a ticket held because main was broken ("Not sent back: main is
+  broken"), and a red that passed when re-run (flaky). Each is recorded with
+  `counted: false`, adds no round and shows greyed in the list.
+- **On the card, every column**: a "Round N" chip (Material Symbols
+  `replay`) from round 2, warning colour from round 3. Hover lists every
+  send-back (when, who, category, one line); a tap opens the same list on
+  the card. A Ready for Testing card from round 2 shows "Sent back last
+  time: <line>" under its title. The Ready for Testing header shows "N in a
+  testing loop" when a card is at round 3 or later; it toggles a filter to
+  those cards (per viewer, not saved).
+- **The cap.** On the 3rd counted send-back (person, tests and review
+  together) the ticket is not rebuilt: it stays in Backlog with
+  `blocked: {reason: "needs-decision", setBy: "test-rounds", note: "Sent back
+  3 times. Decide: rewrite the ticket, split it, or build it on the Advanced
+  model…"}` and a note listing the three reasons. Answer, clearing the flag
+  (×, which for this flag also requests the build) or Ready for Dev builds it
+  again; the next cap is at 5, then 7. This replaces `autoRebuilds` for
+  send-backs, so there is one number: a test send-back no longer spends
+  `autoRebuilds`, which is left to the other automatic rebuilds (a conflict,
+  a migration number clash). A Review Batch's own third kick-back still
+  blocks as before (`reviewBounceCount`).
+- **Over MCP**, `get_ready_for_testing_board` returns `testRound`,
+  `sendBackCount`, `inTestingLoop` and `lastSendBack` per card and lists
+  looping tickets first.
+- **Report.** The project's ⋮ menu → **Testing loops**: tickets with 2 or
+  more counted send-backs in the last 30 days, with round, reasons, time
+  from first build to approval and the last send-back date. Read-only, the
+  Archived tickets table.
+- **Backfill.** Cards from before this read their loop from notes with
+  `rejectionsOf`'s rules (the same counts; `test/test-rounds.test.js`), and
+  their first recorded send-back stores the lot.
+  `scripts/backfill-test-rounds.js` stores it on every non-archived ticket at
+  once: run it from the deploy session of the train that ships this
+  (`BOARD_API_KEY=… node backlog-tracker/scripts/backfill-test-rounds.js
+  --apply`; without `--apply` it only counts).
 
 ## The single Deploy CTA, and closing the train
 
@@ -4064,6 +4338,39 @@ Rules:
   whether a reload fixes it. If it does, look at caching and start-up
   errors before tap handling.
 
+#### The reverse: a newer page with older scripts (14 Nov 2026)
+
+After the Support Inbox release its menu item showed on the iPad and tapping
+it did nothing: the previous page stayed. The item is plain markup, so it
+shows as soon as the page is new; the handler is in `app.js`. A page from the
+new release with scripts held from the one before gives exactly that, and it
+is reproduced by serving today's page with the previous release's `app.js`.
+The live files themselves were fine: fetched from the live site and run in a
+real WebKit engine as four iPads, the item opened the page.
+
+Rules:
+
+- **Every sidebar item the page has must have been given a click handler by
+  the scripts.** `auth-gate.js` watches the wiring while `app.js` starts
+  (`watchMenuWiring`). An item left without a handler means the page is newer
+  than the scripts: the console reloads once by itself (the same stamped
+  reload as above), and if the item is still unwired it shows "The console
+  has been updated, and this browser is still holding part of the previous
+  version, so <item> can't open yet" with a Reload button, and shows it
+  again whenever that item is tapped. A menu item is never silently dead.
+- A sidebar item is therefore wired with its own `addEventListener("click")`,
+  not by a delegated listener on the sidebar.
+- `test/ui/stale-page.test.mjs` part 4 serves a page with a menu item the
+  scripts don't know, in landscape and portrait: one self-reload, then the
+  notice, the tap, the Reload button, and the rest of the menu working.
+- **Chromium is not the iPad's engine.** `.github/workflows/console-webkit.yml`
+  runs `test/ui/webkit-ipad.test.mjs` in Playwright's WebKit with iPad
+  profiles: every sidebar item opens its page by touch and the page it came
+  from is gone, then the Support Inbox journey. It runs against the sources,
+  the minified build, and the files fetched from the live console. Run it
+  (Actions → "Console on WebKit (iPad)") when something is reported dead on
+  the iPad, before changing any code. It is WebKit, not iPad Safari itself.
+
 ### Modals and drawers: one set of rules (9 Nov 2026)
 
 Every dialog and side drawer (`.modal-panel` in a `.modal-backdrop`) is handled
@@ -4447,6 +4754,45 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     too; with no dates to compare the new run's figure stands), and people
     are matched on first initial and surname (`personKey`, `mergePeople`),
     keeping a LinkedIn link or note only the earlier entry had.
+  - **Only the company's own logo (14 Nov 2026)**: a refresh stored a
+    campaign graphic as a company's logo, because the first rule took the
+    first image on the home page whose markup said "logo" (a home page also
+    shows partners', campaigns' and awards' logos). `chooseLogos` now takes,
+    in order: the logo the site declares in its structured data; an image in
+    the site's header; an image elsewhere only when its file is named for the
+    company and "logo" (the name without where it trades or how it is
+    incorporated, `coreName`: "7-Eleven Australia" is "7eleven"). An alt text
+    naming the company is not enough outside the header. Wikimedia Commons is
+    then asked for the name as given and again without the country, since a
+    country arm rarely has a logo file of its own. Nothing found means no
+    logo, and the initials show. Logos chosen under the first rule are not
+    carried forward (`enrichment.logoRule`, now 2): the next run replaces or
+    removes them. An `.ico` icon is a container the image library cannot
+    read, so the PNG inside it is used (`icoPng`); one holding only bitmaps
+    is not copied and keeps its address. Tried on ten real sites: a logo for
+    six, the right file for the two that had gone wrong.
+  - **A run always finishes** (15 Nov 2026): the triggers are stopped by the
+    platform after 540 seconds, the most a Firestore-triggered function may
+    run. A bank's research ran past that twice; the platform killed it, so
+    nothing was saved and the record said "running". The research now stops
+    gathering 380 seconds after the run starts (`RESEARCH_WINDOW_MS`), and
+    what it had found by then (its notes, the pages it searched and read) is
+    turned into the record by one short call with no tools (`notesOf`, at
+    most 70 seconds). The run's message says it ran out of time and that
+    Refresh info runs it again. A run left "running" for over 10 minutes
+    still counts as stale and does not block a new one. The first run after
+    this (the same bank) finished in 6 min 45 s with a full profile but no
+    site count and one person, so the brief now runs as **two halves at
+    once** (`claudeResearchSplit`, `RESEARCH_HALVES`): the estate (the site
+    count first, the breakdown, where it trades, the people; 10 searches, 5
+    page reads) and the market (summary, size, logos, retail media and
+    competitors, personalisation, in-store digital, loyalty, strategy, news,
+    financials, facts, fit, talking points; 14 searches, 6 page reads).
+    Tried on the same bank from a runner: 344 s, 561 sites, eight news
+    items. Each half's own fields win when they
+    are put together (`mergeHalves`); people are listed once each. When one
+    half fails the other is kept and the record says some fields may be
+    missing.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.
@@ -4529,7 +4875,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     inquiry**, the detail's section **Network operator**, and the default source
     label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
-    {region, background}`, the constants are `OPERATOR_*`, the website intake
+    {region, background, audience, networkIndustry, message, form}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
     `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
     (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
@@ -4539,14 +4885,24 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     default; a lead saved before this has none and reads as company) or
     `"operator"`. A network operator inquiry needs no company name, website or industry
     (`company.name` is ""); the person is its single contact (`name`, `email`,
-    `linkedin`), and `operator {region, background}` holds where they plan to
-    operate (≤200 chars) and their background, one of `agency` (Agency media or
-    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
-    `marketing`, `other` (Something else). Its stages are `OPERATOR_STAGES`:
+    `linkedin`), and `operator {region, background, audience}` holds where they plan to
+    operate (≤200 chars), their background and who they are. The background
+    (`BACKGROUNDS`) is one of, in this order, `agency` (Agency media or
+    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`
+    (Retail media), `creative-agency` (Creative agency), `retail-owner` (Retail
+    business owner or manager), `marketing` (Marketing), `other` (Something
+    else); a value that is none of them is stored as `other`. **"I am"
+    (14 Nov 2026)** is `audience` (`AUDIENCES`): `individual` (An individual
+    operator), `team` (Part of an operator team) or `retailer` (A small to
+    medium retailer). It is stored as the key; a blank or unknown value is
+    stored as "", and a lead saved before the field existed has none and reads
+    as "" (nothing was migrated). Its stages are `OPERATOR_STAGES`:
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
     allows a blank company name only on an `operator` lead, keeps each type to its
-    own stages, and limits `operator` to `region` and `background`.
+    own stages, and limits `operator` to `region`, `background`, `audience`
+    (one of the three keys, or ""), `networkIndustry` (a string ≤120),
+    `message` (a string ≤1,000) and `form` (`request`, `tour` or "").
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
     `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
     operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
@@ -4556,7 +4912,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     person's name, is ignored for an operator lead). Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
-    `location`), `background` (a key above or the form's label), `lead_source`
+    `location`), `background` (a key above or the form's label), `audience`
+    ("I am": a key above or the form's label, any case; the website sends the
+    label), `lead_source`
     (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
@@ -4564,31 +4922,74 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     is never matched to a company lead, and is never enriched (the trigger skips
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
-    region/background are filled. **The website side** posts these fields from
+    region/background/audience are filled. **The website side** posts these fields from
     the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
     one pipeline at a time with its own lanes. A network operator card shows the
-    person, a "Network operator inquiry" chip, region · background and the source;
-    its summary shows the person, Network operator (region, background), Lead
+    person, a "Network operator inquiry" chip, I am · region · industry they want to run · background (each
+    only when given) and the source;
+    its summary shows the person, Network operator (I am, region, industry they want to run, background, message), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
     on that view opens the form as **New network operator inquiry**: the
-    person's full name, email and LinkedIn, where they plan to operate,
+    person's full name, email and LinkedIn, "I am" (a select: Not given or one
+    of the three options), where they plan to operate,
     background and the pipeline; no company fields, research or customer account.
   - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
     `leadType`, `leadTypeLabel`, `name` (the company, or the person),
-    `region`, `background` and `backgroundLabel` alongside `source` /
-    `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
-    `leadType: "operator"` with the person as the only contact plus `region`
-    and `background` (no company needed); `update_lead` edits region and
-    background but refuses a type change; `update_lead_stage` accepts only the
+    `region`, `background`, `backgroundLabel`, `audience` and `audienceLabel`
+    (both null when not given, and on a company lead) alongside `source` /
+    `sourceLabel`; `list_leads` takes a `leadType` filter and an `audience`
+    filter (`individual`, `team` or `retailer`). `create_lead(s)` take
+    `leadType: "operator"` with the person as the only contact plus `region`,
+    `background` and `audience` (no company needed); `update_lead` edits region,
+    background and audience but refuses a type change; `update_lead_stage` accepts only the
     lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
     refuse a network operator inquiry.
+  - **Industry they want to run and their message (15 Nov 2026, ticket
+    hnHZrt9GT1SaGBb6NI1a)**. The Run Your Own RMN page's **Request further
+    information** form asks for "Industry you want to run your network in"
+    (required on the site) and an optional message; the FAQ promises an
+    information pack for that industry and then a 20-minute call. The website
+    sends them as `network_industry` and `message`, with `form: "request"` (the
+    product tour gate sends `form: "tour"`).
+    - **Data**: `operator.networkIndustry` is free text, ≤120 characters (the
+      site sends one of its twelve industries or "Other: <text>");
+      `operator.message` is ≤1,000 characters (longer is cut, not refused);
+      `operator.form` is `request`, `tour` or "" (anything else is stored as "").
+      Older leads have none of the three: nothing is migrated and
+      `normaliseLead` reads each as "".
+    - **Intake** (`operatorFromWebsite`): reads `network_industry` (or
+      `networkIndustry`), `message` and `form`. On a repeat submission from the
+      same email, a new industry replaces the stored one (a blank one is filled;
+      a submission without one leaves it), `form` follows the newest submission
+      that sends one, and a new message never overwrites the first: when the lead
+      already has a different message, the new one is added to its history as a
+      note by `website`, "Website message (YYYY-MM-DD): …". A lead with no
+      message yet takes the new one as its message.
+    - **Board**: the operator card's line reads I am · region · industry they
+      want to run · background, skipping blanks (`companyLine`). The summary's
+      Network operator section adds **Industry they want to run** (after
+      region) and **Message** (last, as a stacked row, only when there is one).
+      The New network operator inquiry form (and its edit) has an **Industry
+      they want to run** text field (≤120); the message and form have no input
+      and an edit keeps them. Built from the existing `ap-row` field and
+      `stackRow`, no new components.
+    - **MCP**: `list_leads` and `get_lead` return `networkIndustry`, `message`
+      and `form` on operator leads (null when blank; absent on company leads);
+      `list_leads` takes an optional `networkIndustry` filter (case-insensitive
+      contains; only operator leads match) and its `q` also searches both;
+      `create_lead(s)` and `update_lead` accept `networkIndustry` and
+      `message`.
+    - Either side can ship first: the console ignores fields it doesn't know,
+      and an older console ignores these.
   - Tests: `test/lead-ingest.test.js` (every background, blank LinkedIn, AWS
-    address, repeat person, company leads unchanged, the MCP views and filter),
+    address, repeat person, industry and message on first and repeat
+    submissions and the 1,000-character cut, company leads unchanged, the MCP
+    views and filters),
     `test/lead-enrich.test.js` (never researched), the network operator cases in
     `test/firestore-rules.test.js`, and the "network operator inquiries" scenario in
     `test/ui/console-click.test.mjs`.
@@ -5020,6 +5421,29 @@ retailers on the Staff Kanban, and track it all on one stats page.
   for another, and search the Help Centre to insert an article's short
   answer and link. Whether the sent reply was the draft, an edited draft or
   their own words is recorded.
+- **SUP-AI-7** (15 Nov 2026) Matching reads the subject and the body
+  together and chooses from the whole published Help Centre, not a keyword
+  shortlist. At most 3 articles are ever used for one reply.
+- **SUP-AI-8** Only email about the Personalisation Hub platform or the
+  retail media network proposition is matched or drafted. Anything else is
+  labelled "Not about PH", gets no article and no draft, is never answered
+  automatically, and is left out of the stats.
+- **SUP-AI-9** Every drafted reply opens "Hi <first name>," then "Thanks
+  for your email.", or "Hi there," when no first name can be trusted (a
+  company, a role or department such as "Legal", a bare handle). Any
+  greeting, thanks or sign-off the model writes is removed.
+- **SUP-AI-10** The reply is first drafted from the best article alone. If
+  its confidence is under 80%, it is drafted again from the best 2 or 3
+  articles combined and the higher-scoring reply is kept. The confidence is
+  shown beside every suggested reply as a word and a number (High ≥ 80%,
+  Medium ≥ 60%, Low), with the change when answers were combined.
+- **SUP-AI-11** An editor can try any email (Support Inbox → Try an email)
+  and see whether it counts as about Personalisation Hub, the articles
+  matched, the confidence, what would happen and the draft, with nothing
+  filed, saved or sent (40 tries an hour each).
+- **SUP-AI-12** `support-eval.yml` checks the matching against the real
+  model with made-up emails whose right answers are known. Its log never
+  shows a real ticket's subject, sender or text.
 
 ### High-value senders
 
