@@ -1121,7 +1121,7 @@ function cardHTML(item) {
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${sentBackLastTimeHTML(item)}
-      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1183,7 +1183,59 @@ function dependencyFlagHTML(item) {
     return `<a class="dependency-link" href="#item-${escapeHTML(id)}" data-goto-item="${escapeHTML(id)}">${escapeHTML((dep && dep.title) || "another ticket")}</a>`;
   });
   const label = links.length ? links.join(", ") : escapeHTML(String(item.blocked.note || "other tickets").replace(/^Waiting for:\s*/i, "").split(". ")[0]);
-  return `<span class="blocked-flag blocked-flag-waiting-on-dependency" title="Nothing to answer: this builds by itself once the ticket${ids.length === 1 ? "" : "s"} it waits for ${ids.length === 1 ? "has" : "have"} landed"><span class="blocked-flag-status"><span class="material-symbols-outlined">link</span>Waiting for: ${label}</span></span>`;
+  // Build order: a dependency that is itself blocked on a person is said
+  // here, so the wait doesn't look like it will clear by itself.
+  const stuck = item.blocked.stuckOn && item.blocked.stuckOn.itemId ? item.blocked.stuckOn : null;
+  const hover = stuck ? item.blocked.note || "" : `Nothing to answer: this builds by itself once the ticket${ids.length === 1 ? "" : "s"} it waits for ${ids.length === 1 ? "has" : "have"} landed`;
+  return `<span class="blocked-flag blocked-flag-waiting-on-dependency" title="${escapeHTML(hover)}"><span class="blocked-flag-status"><span class="material-symbols-outlined">link</span>Waiting for: ${label}${stuck ? `<span class="blocked-flag-stuck">, which is blocked</span>` : ""}</span></span>`;
+}
+
+// Build order (ZE8h8cfaezOb0eTsRjSH): a Backlog card that a Ready for Dev
+// click queued behind a same-area ticket says so ("Queued: builds after …",
+// nothing to answer), and one with dependencies still in Backlog shows
+// "After: <title>"; the hover lists every dependency with its status.
+const DEP_STATUS_LABELS = { "backlog": "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment", "published-live": "Merged to Main (Live)", "archived": "Archived" };
+function buildOrderChipHTML(item) {
+  if (item.queuedAfter && item.queuedAfter.itemId && !isBlockedItem(item)) {
+    const ahead = allItems.find((i) => i.id === item.queuedAfter.itemId);
+    const t = (ahead && ahead.title) || item.queuedAfter.title || "another ticket";
+    return `<span class="order-chip order-chip-queued" title="${escapeHTML(`Same area as "${t}": this builds once that one has landed, so the two don't collide. Nothing to do.`)}"><span class="material-symbols-outlined">queue</span><span class="order-chip-label">Queued: builds after ${escapeHTML(t)}</span></span>`;
+  }
+  if (item.blocked && item.blocked.reason === "waiting-on-dependency") return "";
+  const ids = Array.isArray(item.dependsOnItemIds) ? item.dependsOnItemIds : [];
+  if (!ids.length) return "";
+  const deps = ids.map((id) => ({ id, dep: allItems.find((i) => i.id === id) }));
+  const unmet = deps.filter(({ dep }) => dep && (dep.status || "backlog") === "backlog");
+  if (!unmet.length) return "";
+  const hover = `Builds after:\n${deps.map(({ id, dep }) => `• ${dep ? dep.title : id} — ${dep ? (DEP_STATUS_LABELS[dep.status || "backlog"] || dep.status) : "not on this board"}`).join("\n")}`;
+  return `<span class="order-chip" title="${escapeHTML(hover)}"><span class="material-symbols-outlined">link</span><span class="order-chip-label">After: ${escapeHTML(unmet[0].dep.title || "another ticket")}${unmet.length > 1 ? ` +${unmet.length - 1}` : ""}</span></span>`;
+}
+
+// Would `selfId` building after `depIds` close a loop? → "A waits for B waits
+// for A", or null. The same rule the MCP tools and functions/build-order.js
+// apply; checked here so the picker refuses it before Save.
+function dependencyLoopText(selfId, depIds) {
+  const depsOf = (id) => {
+    const it = allItems.find((i) => i.id === id);
+    return it && Array.isArray(it.dependsOnItemIds) ? it.dependsOnItemIds : [];
+  };
+  const titleOf = (id) => (allItems.find((i) => i.id === id) || {}).title || id;
+  const seen = new Set();
+  const walk = (id, path) => {
+    if (id === selfId) return path.concat(id);
+    if (seen.has(id)) return null;
+    seen.add(id);
+    for (const d of depsOf(id)) {
+      const p = walk(d, path.concat(id));
+      if (p) return p;
+    }
+    return null;
+  };
+  for (const d of depIds) {
+    const p = walk(d, [selfId]);
+    if (p) return p.map(titleOf).join(" waits for ");
+  }
+  return null;
 }
 
 function isBlockedItem(i) {
@@ -1919,7 +1971,19 @@ function notifyStalledChipHTML(project) {
 }
 
 function notifyClaudeButtonHTML(project) {
-  return notifyStalledChipHTML(project) + notifyClaudeButtonCore(project);
+  return notifyStalledChipHTML(project) + buildOrderNoticeHTML(project) + notifyClaudeButtonCore(project);
+}
+
+// Build order: what the last Ready for Dev click held or queued ("1 started.
+// 2 held: they need X, which was not sent."), for two hours after the click,
+// so a person can send X rather than wonder why two cards didn't start.
+function buildOrderNoticeHTML(project) {
+  if (projectInDeployPhase(project)) return "";
+  const bo = project.notifyRoutine && project.notifyRoutine.buildOrder;
+  if (!bo || !bo.summary) return "";
+  const at = tsMillis(bo.at);
+  if (!at || Date.now() - at > 2 * 60 * 60 * 1000) return "";
+  return `<span class="order-chip order-chip-click" title="${escapeHTML(bo.summary)}"><span class="material-symbols-outlined">queue</span><span class="order-chip-label">${escapeHTML(bo.summary)}</span></span>`;
 }
 
 function notifyClaudeButtonCore(project) {
@@ -3929,6 +3993,9 @@ async function updateItemDetails(id, changed) {
   if ("priority" in changed) patch.priority = changed.priority || null;
   if ("model" in changed) patch.model = changed.model === "advanced" ? "advanced" : "standard";
   if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
+  // Build order: the "Builds after" picker. Who set the list is recorded by
+  // the intake trigger (dependsOnSource), never by a browser.
+  if ("dependsOnItemIds" in changed) patch.dependsOnItemIds = changed.dependsOnItemIds.slice(0, 20);
   if (!Object.keys(patch).length) return;
   patch.updatedAt = serverTimestamp();
   await updateDoc(doc(db, "backlogItems", id), patch);
@@ -4945,6 +5012,73 @@ const eiAttachmentsList = document.getElementById("ei-attachments-list");
 const eiAttachScreenshotInput = document.getElementById("ei-attach-screenshot-input");
 const eiRecordScreenBtn = document.getElementById("ei-record-screen-btn");
 const eiAttachHint = document.getElementById("ei-attach-hint");
+// Build order (ZE8h8cfaezOb0eTsRjSH): the "Builds after" picker — search open
+// tickets (this project first), add with a click, remove with ×; a loop is
+// refused with the loop named.
+const eiDepsChips = document.getElementById("ei-deps-chips");
+const eiDepsSearch = document.getElementById("ei-deps-search");
+const eiDepsResults = document.getElementById("ei-deps-results");
+const eiDepsError = document.getElementById("ei-deps-error");
+let eiDeps = [];
+const EI_DEP_OPEN = new Set(["backlog", "ready-for-testing", "ready-to-publish"]);
+function setEiDepsError(text) {
+  eiDepsError.textContent = text || "";
+  eiDepsError.hidden = !text;
+}
+// The chosen ids, mirrored into a hidden field so the modal's Save button
+// (modal-polish.js enables it once a field differs) sees a picker change.
+const eiDepsValue = document.getElementById("ei-deps-value");
+function renderEiDeps() {
+  const joined = eiDeps.join(",");
+  if (eiDepsValue.value !== joined) {
+    eiDepsValue.value = joined;
+    eiDepsValue.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  eiDepsChips.innerHTML = eiDeps.map((id) => {
+    const dep = allItems.find((i) => i.id === id);
+    const t = (dep && dep.title) || id;
+    const st = dep ? (DEP_STATUS_LABELS[dep.status || "backlog"] || dep.status) : "not on this board";
+    return `<span class="ei-dep-chip" title="${escapeHTML(`${t} — ${st}`)}"><span class="ei-dep-chip-label">${escapeHTML(t)}</span><button type="button" class="ei-dep-remove" data-dep-id="${escapeHTML(id)}" aria-label="${escapeHTML(`Remove ${t}`)}">&times;</button></span>`;
+  }).join("");
+}
+function renderEiDepResults() {
+  const q = eiDepsSearch.value.trim().toLowerCase();
+  if (!q || !editingItemId) { eiDepsResults.hidden = true; eiDepsResults.innerHTML = ""; return; }
+  const self = allItems.find((i) => i.id === editingItemId);
+  const pid = self && (self.projectId || GENERAL_PROJECT_ID);
+  const matches = allItems
+    .filter((i) => i.id !== editingItemId && !eiDeps.includes(i.id) && EI_DEP_OPEN.has(i.status || "backlog") && (i.title || "").toLowerCase().includes(q))
+    .sort((a, b) => (((a.projectId || GENERAL_PROJECT_ID) === pid ? 0 : 1) - ((b.projectId || GENERAL_PROJECT_ID) === pid ? 0 : 1)) || (a.title || "").localeCompare(b.title || ""))
+    .slice(0, 8);
+  eiDepsResults.innerHTML = matches.length
+    ? matches.map((i) => {
+      const other = (i.projectId || GENERAL_PROJECT_ID) !== pid ? ((projects.find((p) => p.id === i.projectId) || {}).name || "another project") : "";
+      return `<button type="button" class="ei-dep-option" role="option" data-dep-id="${escapeHTML(i.id)}"><span>${escapeHTML(i.title || i.id)}</span><span class="ei-dep-option-meta">${escapeHTML([DEP_STATUS_LABELS[i.status || "backlog"], other].filter(Boolean).join(" · "))}</span></button>`;
+    }).join("")
+    : '<p class="interface-row-empty">No open ticket matches.</p>';
+  eiDepsResults.hidden = false;
+}
+eiDepsSearch.addEventListener("input", () => { setEiDepsError(""); renderEiDepResults(); });
+eiDepsResults.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ei-dep-option");
+  if (!btn || !editingItemId) return;
+  const id = btn.dataset.depId;
+  if (eiDeps.length >= 20) { setEiDepsError("At most 20 tickets."); return; }
+  const loop = dependencyLoopText(editingItemId, [id]);
+  if (loop) { setEiDepsError(`That would make a loop: ${loop}.`); return; }
+  setEiDepsError("");
+  eiDeps = eiDeps.concat(id);
+  eiDepsSearch.value = "";
+  renderEiDeps();
+  renderEiDepResults();
+});
+eiDepsChips.addEventListener("click", (e) => {
+  const btn = e.target.closest(".ei-dep-remove");
+  if (!btn) return;
+  eiDeps = eiDeps.filter((x) => x !== btn.dataset.depId);
+  setEiDepsError("");
+  renderEiDeps();
+});
 
 eiCategorySelect.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
 
@@ -5054,6 +5188,12 @@ function openEditItemModal(id) {
   eiModelLog.textContent = eiModelLine ? `${eiModelLine}.` : "";
   eiModelLog.hidden = !eiModelLine;
   eiNoDeployCheckbox.checked = !!item.noDeploymentRequired;
+  eiDeps = Array.isArray(item.dependsOnItemIds) ? item.dependsOnItemIds.filter((x) => typeof x === "string") : [];
+  eiLoadedSnapshot.dependsOnItemIds = eiDeps.join(",");
+  eiDepsSearch.value = "";
+  setEiDepsError("");
+  renderEiDeps();
+  renderEiDepResults();
   eiCommentInput.value = "";
   renderEiNotes();
   renderEiAttachments();
@@ -5098,6 +5238,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   for (const [k, v] of Object.entries(current)) {
     if (!eiLoadedSnapshot || eiLoadedSnapshot[k] !== v) changed[k] = v;
   }
+  if (!eiLoadedSnapshot || eiLoadedSnapshot.dependsOnItemIds !== eiDeps.join(",")) changed.dependsOnItemIds = eiDeps.slice();
   eiSaving = true;
   const saveBtn = document.getElementById("ei-save");
   saveBtn.disabled = true;

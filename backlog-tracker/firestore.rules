@@ -380,7 +380,13 @@ service cloud.firestore {
         // Ready for Testing and was sent back. The automation and the MCP
         // server record them; the board's Failed testing keeps writing only
         // lastFailureReason, which processRevertFromTrain turns into one.
-        "testRound", "sendBacks", "sendBackCount", "countedSendBacks"];
+        "testRound", "sendBacks", "sendBackCount", "countedSendBacks",
+
+        // Build order (14 Nov 2026): who set a ticket's dependency list
+        // (intake / build / manual — the intake trigger decides) and the
+        // lane-mate a Ready for Dev click queued it behind. The list itself,
+        // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
+        "dependsOnSource", "queuedAfter"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -422,7 +428,14 @@ service cloud.firestore {
         (!("previewUrl" in incoming()) || incoming().previewUrl == null
           || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*"))) &&
         // Per-ticket model requirement: unset means "standard".
-        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]);
+        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]) &&
+        // Build order: the tickets this one builds after — a list of at most
+        // 20 ids (a rules list can't be walked, so the strings are checked by
+        // their first and last entry; the picker only ever writes ids).
+        (!("dependsOnItemIds" in incoming()) || incoming().dependsOnItemIds == null
+          || (incoming().dependsOnItemIds is list && incoming().dependsOnItemIds.size() <= 20
+            && (incoming().dependsOnItemIds.size() == 0
+              || (incoming().dependsOnItemIds[0] is string && incoming().dependsOnItemIds[incoming().dependsOnItemIds.size() - 1] is string))));
     }
 
     match /backlogItems/{itemId} {

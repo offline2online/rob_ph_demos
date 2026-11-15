@@ -637,6 +637,22 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { lastFailureReason: { category: "Other", text: "broken", action: "failed-testing", at: new Date(), who: "member@example.com" } }, { merge: true }));
   await check("A human editor can still edit a card that carries a testing round", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited in round 2" }, { merge: true }));
+  // Build order (14 Nov 2026): a person sets "Builds after" (dependsOnItemIds);
+  // who set it and the queue marker are the automation's.
+  await check("A human editor can set the tickets a card builds after (dependsOnItemIds)", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { dependsOnItemIds: ["aaaaaaaaaaaaaaaaaaa1", "bbbbbbbbbbbbbbbbbbb2"] }, { merge: true }));
+  await check("A human editor can clear dependsOnItemIds", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { dependsOnItemIds: [] }, { merge: true }));
+  await check("A human editor CANNOT set more than 20 dependencies", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { dependsOnItemIds: Array.from({ length: 21 }, (_, n) => `dep${String(n).padStart(17, "0")}`) }, { merge: true }));
+  await check("A human editor CANNOT write dependsOnItemIds as a string", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { dependsOnItemIds: "aaaaaaaaaaaaaaaaaaa1" }, { merge: true }));
+  await check("A human editor CANNOT write dependsOnSource", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { dependsOnSource: "build" }, { merge: true }));
+  await check("A human editor CANNOT write queuedAfter", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { queuedAfter: { itemId: "x", title: "y" } }, { merge: true }));
+  await check("The automation user can write dependsOnSource and queuedAfter", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { dependsOnSource: "intake", queuedAfter: { itemId: "x", title: "y" } }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
