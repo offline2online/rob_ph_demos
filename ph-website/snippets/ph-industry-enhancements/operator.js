@@ -133,7 +133,7 @@
   }
 
   function tourSrc() { return CFG.tour + "?embed=1" + (testMode() ? "&ph_test=1" : ""); }
-  function showIn(name) { var w = $("phf-in"), h = $("phf-in-h"); if (!w) return; h.textContent = "You’re in" + (first(name) ? ", " + first(name) : ""); w.hidden = false; }
+  function showIn(name) { var w = $("phf-in"), h = $("phf-in-h"); if (!w) return; h.textContent = first(name) ? "Thanks, " + first(name) + ". Your guided tour is ready." : "Thanks. Your guided tour is ready."; w.hidden = false; }
   // Frame the Run Your Own RMN tour (a golf club sells its screens to a golf brand; PH_OPERATOR.tour), mounted the way enhance.js mounts the industry tours: same origin, height and full-screen messages, window.PH_TOUR.
   function mountTour() {
     if (mounted || !box || !mount) return;
