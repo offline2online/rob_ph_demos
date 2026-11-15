@@ -1,5 +1,5 @@
 // node ph-website/tests/cta.test.mjs : the floating CTA (cta.php / cta.js / cta.css) in Chromium, on three fixtures:
-// the Run Your Own RMN page (request: "Request further information" -> #request-info, falling back to its #tour section without the form),
+// the Run Your Own RMN page (request: "Register your interest" -> #request-info, falling back to its #tour section without the form),
 // an industry page with a guided tour (enhance.js + site.js, the band and its iframe: "Take the guided tour" -> the band, focusing the
 // tour's gate), and a plain page (demo: "Arrange a demo" opens the header's pop-up: PH_SITE_DEMO from site.js, else Elementor Pro popup
 // 2658 via a stubbed elementorProFrontend, else the booking link). Checks the label and element (<a> for scrolls, <button> for the
@@ -41,7 +41,7 @@ const pageFor = (kind, opts = {}) => {
   let main = "";
   if (kind === "operator") {
     main = `${filler(900)}<section id="tour" class="phf-sec"><h2>Tour</h2><form><input id="t-fn" name="name"><input id="t-em" name="email"></form></section>${filler(700)}`
-      + (opts.noForm ? "" : `<section id="request-info" style="padding:40px"><h2>Request further information</h2><form><label>Name <input id="ri-n" name="name"></label><label>Email <input id="ri-e" name="email" type="email"></label><button type="submit">Send</button></form></section>`)
+      + (opts.noForm ? "" : `<section id="request-info" style="padding:40px"><h2>Register your interest</h2><form><label>Name <input id="ri-n" name="name"></label><label>Email <input id="ri-e" name="email" type="email"></label><button type="submit">Send</button></form></section>`)
       + filler(600);
   } else if (kind === "tour") {
     main = `<section class="ph-ind-sec" id="calcsec"><div class="ph-ind-calc"></div>${filler(1500)}</section>`
@@ -97,7 +97,7 @@ try {
   // 1. Run Your Own RMN page: request.
   let p = await open("operator");
   let s = await state(p);
-  ok(s && s.tag === "a" && s.text === "Request further information" && s.href === "#request-info" && s.variant === "request", "operator page: <a> Request further information -> #request-info " + JSON.stringify(s));
+  ok(s && s.tag === "a" && s.text === "Register your interest" && s.href === "#request-info" && s.variant === "request", "operator page: <a> Register your interest -> #request-info " + JSON.stringify(s));
   ok(!s.off && s.vis === "visible", "operator page: shown while the form is off screen");
   await p.click("#ph-fcta .ph-fcta-b");
   await p.waitForFunction(() => document.activeElement && document.activeElement.id === "ri-n");
