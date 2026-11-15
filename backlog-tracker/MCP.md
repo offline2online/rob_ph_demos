@@ -394,6 +394,18 @@ Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
 its fire URL must be on `api.anthropic.com` — until 27 Sep 2026 it lived on
 `consoleUsers`, which every member could read, and any `https://` host was
 accepted (see `SECURITY-PERFORMANCE.md`).
+The console's own **Settings → My Claude Routine** page does the same setup
+without an agent (`/mcp/me/routine-binding`, same write, same validation).
+
+**Agent tickets (`ownedByMe`)**: `create_backlog_item` with `ownedByMe: true`
+files a ticket owned by you (`ownerEmail`); `update_backlog_item` with
+`ownedByMe: true` claims a Backlog ticket you filed (an admin may claim any
+unowned one), and `false` releases your own (an admin may release anyone's).
+An agent ticket fires (build, deploy, groom) only on its owner's personal
+Routine and only on the owner's click: `send_to_build` by anyone else is
+refused for it, and an owner with no binding gets nothing fired. See
+`REQUIREMENTS.md` → "Agent tickets fire under their owner's own Claude
+account".
 
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
 "nothing here deploys" (below), not a loosening of it — and since 27 Sep

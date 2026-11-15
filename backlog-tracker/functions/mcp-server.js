@@ -59,6 +59,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
 const { inFlightItemIds } = require("./notify-routine");
+const ownerFiring = require("./owner-firing");
 // Build order (ZE8h8cfaezOb0eTsRjSH): dependencies as data, cycles refused,
 // and the order a send_to_build click fires in.
 const buildOrder = require("./build-order");
@@ -2165,6 +2166,61 @@ const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
 // instructions say it in these words (functions/kanban.js has KANBAN_SCOPE).
 const BACKLOG_SCOPE = "The backlog is for agent work: agent-built product, docs, prototype and tooling changes. A task a human staff member does belongs on the Staff Kanban (kanban_create_task, which can assign it).";
 
+// ── Personal Routine binding: shared by the MCP tools and the console page ──
+// One bootstrap, one validation and one write path for both routes, so the
+// console's Settings → My Claude Routine page (handleMyRoutineBinding) and
+// set_my_routine_binding can never drift apart.
+function routineBootstrapPrompt() {
+  return `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+}
+
+// null when fine, else the reason (shown to the person as is).
+function routineBindingError(fireUrl, token) {
+  if (!fireUrl && !token) return null; // clearing
+  if (!fireUrl || !token) return "Pass both the fire URL and the token, or both empty to clear your binding.";
+  if (!/^https:\/\//.test(fireUrl)) return "The fire URL must be an https:// URL.";
+  if (!routineFireHostAllowed(fireUrl)) return "The fire URL must be a Claude Routine API trigger on api.anthropic.com — the console will only ever send the fire text (which carries board credentials) there.";
+  if (fireUrl.length > 2000 || token.length > 512) return "The fire URL or token is longer than expected.";
+  if (token.length < 8) return "That doesn't look like a real token.";
+  return null;
+}
+
+async function hasRoutineBindingFor(member) {
+  const [bindingSnap, selfSnap] = await Promise.all([
+    db().collection("routineBindings").doc(member).get(),
+    db().collection("consoleUsers").doc(member).get(),
+  ]);
+  const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
+  const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
+  // Legacy location (consoleUsers.routineFire*) is still honoured until
+  // functions/index.js's lazy migration has moved it.
+  const has = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
+  const boundAt = binding.boundAt && typeof binding.boundAt.toDate === "function" ? binding.boundAt.toDate().toISOString() : null;
+  return { has, boundAt };
+}
+
+// Writes (or, with both values empty, clears) the caller's own binding.
+// Returns { error } or { cleared } / { registered }.
+async function writeRoutineBinding(member, rawFireUrl, rawToken) {
+  const fireUrl = String(rawFireUrl || "").trim();
+  const token = String(rawToken || "").trim();
+  const error = routineBindingError(fireUrl, token);
+  if (error) return { error };
+  const clearing = !fireUrl && !token;
+  // routineBindings/{member} is readable and writable by nobody but the
+  // server (firestore.rules `allow read, write: if false`). It used to
+  // live on consoleUsers, which every member could read — so every
+  // member could read every other member's Routine bearer token.
+  const bindingRef = db().collection("routineBindings").doc(member);
+  if (clearing) await bindingRef.delete();
+  else await bindingRef.set({ email: member, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
+  // And make sure no copy lingers in the old, member-readable place.
+  await db().collection("consoleUsers").doc(member).set({
+    routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
+  }, { merge: true });
+  return clearing ? { cleared: true } : { registered: true };
+}
+
 const TOOLS = [
   {
     name: "whoami",
@@ -2177,13 +2233,7 @@ const TOOLS = [
       // set_my_routine_binding's own comment on why). The nudge only shows
       // once: someone who's deliberately chosen to keep using the shared
       // project token doesn't need to be reminded on every whoami call.
-      const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
-      const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
-      const bindingSnap = await db().collection("routineBindings").doc(session.email).get();
-      const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
-      // Legacy location (consoleUsers.routineFire*) is still honoured until
-      // functions/index.js's lazy migration has moved it.
-      const hasRoutineBinding = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
+      const { has: hasRoutineBinding } = await hasRoutineBindingFor(session.email);
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -2194,7 +2244,7 @@ const TOOLS = [
         hasRoutineBinding,
         routineBindingNudge: hasRoutineBinding
           ? null
-          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
+          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token, and agent tickets you own can't be started at all. Set one up in the console (Settings → My Claude Routine) or call get_routine_setup_instructions.",
         note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets), fail_testing (Failed testing for named Ready for Testing tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
@@ -2222,13 +2272,13 @@ const TOOLS = [
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run() {
-      const bootstrapPrompt = `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+      const bootstrapPrompt = routineBootstrapPrompt();
       return textResult({
         steps: [
           "1. Go to claude.ai/code/routines (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.",
           "2. Set its prompt to the exact text in `bootstrapPrompt` below — this is the same bootstrap the shared project Routine uses, so your personal one behaves identically once it fires.",
           "3. In that Routine's settings, add an API trigger. This generates a fire URL (ends in /fire) and a bearer token — copy both; the token is shown once.",
-          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values. Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first.",
+          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values (or paste them into the console's Settings → My Claude Routine page, which does the same). Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first. Agent tickets you own fire ONLY through this binding.",
           "5. To go back to the shared project token, call set_my_routine_binding again with fireUrl and token both set to \"\" (clears the binding).",
         ],
         bootstrapPrompt,
@@ -2249,29 +2299,9 @@ const TOOLS = [
       required: ["fireUrl", "token"], additionalProperties: false,
     },
     async run(args, session) {
-      const fireUrl = String(args.fireUrl || "").trim();
-      const token = String(args.token || "").trim();
-      const clearing = !fireUrl && !token;
-      if (!clearing) {
-        if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
-        if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
-        if (!routineFireHostAllowed(fireUrl)) return toolError("fireUrl must be a Claude Routine API trigger on api.anthropic.com — the console will only ever POST the fire text (which carries board credentials) there.");
-        if (fireUrl.length > 2000 || token.length > 512) return toolError("fireUrl or token is longer than expected.");
-        if (token.length < 8) return toolError("That doesn't look like a real token.");
-      }
-      // routineBindings/{email} is readable and writable by nobody but the
-      // server (firestore.rules `allow read, write: if false`). It used to
-      // live on consoleUsers, which every member could read — so every
-      // member could read every other member's Routine bearer token.
-      const bindingRef = db().collection("routineBindings").doc(session.email);
-      if (clearing) await bindingRef.delete();
-      else await bindingRef.set({ email: session.email, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
-      // And make sure no copy lingers in the old, member-readable place.
-      await db().collection("consoleUsers").doc(session.email).set({
-        routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
-      }, { merge: true });
-      // The token itself is deliberately never written to the audit log —
-      // same "never echoed back" care as the response below.
+      const out = await writeRoutineBinding(session.email, args.fireUrl, args.token);
+      if (out.error) return toolError(out.error);
+      const clearing = !!out.cleared;
       await audit(session, "set_my_routine_binding", { cleared: clearing });
       return textResult(clearing
         ? { cleared: true }
@@ -2467,6 +2497,7 @@ const TOOLS = [
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of tickets (any project) this one must build after. Ticket ids and exact open-ticket titles named in the description's Dependencies section are added automatically." },
+        ownedByMe: { type: "boolean", description: "Agent ticket owned by you: it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding). Default false." },
       },
       required: ["projectId", "desc"], additionalProperties: false,
     },
@@ -2519,6 +2550,8 @@ const TOOLS = [
         ...(model === "advanced" ? { model } : {}),
         ...(deps.ids.length ? { dependsOnItemIds: deps.ids, dependsOnSource: deps.source } : {}),
         ...(blocked ? { blocked } : {}),
+        // Agent ticket owner (functions/owner-firing.js): only ever the caller.
+        ...(args.ownedByMe === true ? { ownerEmail: session.email } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
         // person's agent, on their behalf, not by the board automation.
@@ -2532,6 +2565,7 @@ const TOOLS = [
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
         title, type, category, model, status: "backlog",
+        ownerEmail: args.ownedByMe === true ? session.email : null,
         dependsOn: await dependencyRefsFor(deps.ids),
         intake: intake.blocked
           ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
@@ -2554,6 +2588,7 @@ const TOOLS = [
         category: { type: "string", enum: CATEGORIES },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Replace the tickets this one builds after (any project; [] clears). A loop is refused." },
+        ownedByMe: { type: "boolean", description: "true claims an unowned ticket as your agent ticket (it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding)); false releases your own (an admin may release anyone's). Another member's agent ticket can't be claimed." },
       },
       required: ["itemId"], additionalProperties: false,
     },
@@ -2592,7 +2627,22 @@ const TOOLS = [
         fields.dependsOnItemIds = v.ids;
         fields.dependsOnSource = v.ids.length ? "manual" : null;
       }
-      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model, dependsOnItemIds.");
+      if (args.ownedByMe != null) {
+        const owner = ownerFiring.ticketOwner(snap.data() || {});
+        if (args.ownedByMe === true) {
+          if (owner && owner !== session.email) return toolError(`This is ${owner}'s agent ticket; only they (or an admin) can release it.`);
+          const cur = snap.data() || {};
+          // Claiming decides whose account builds it and who alone may start
+          // it, so it is for the person who filed it (or an admin), in Backlog.
+          if (!owner && (cur.status || "backlog") !== "backlog") return toolError("Only a Backlog ticket can be made an agent ticket.");
+          if (!owner && String(cur.createdByEmail || "").toLowerCase() !== session.email && !atLeast(session.role, "admin")) return toolError("Only the person who filed this ticket (or an admin) can make it their agent ticket.");
+          fields.ownerEmail = session.email;
+        } else if (owner) {
+          if (owner !== session.email && !atLeast(session.role, "admin")) return toolError(`This is ${owner}'s agent ticket; only they (or an admin) can release it.`);
+          fields.ownerEmail = null;
+        }
+      }
+      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model, dependsOnItemIds, ownedByMe.");
       fields.updatedAt = FieldValue.serverTimestamp();
       fields.updatedByEmail = session.email;
       await ref.update(fields);
@@ -5686,6 +5736,33 @@ async function handleMyConnections(req, res) {
   res.status(405).json({ error: "method not allowed" });
 }
 
+// Settings → My Claude Routine (xFzQgynkoMdV33iWJFZq): the console's own
+// self-service setup for a member's personal Routine binding, the same write
+// as set_my_routine_binding. GET says only whether a binding exists (and the
+// bootstrap prompt to paste into the new Routine); the stored URL and token
+// are never sent back. POST {fireUrl, token} saves, both empty clears. Every
+// member writes only their own binding; viewers can't build, so editor+.
+async function handleMyRoutineBinding(req, res) {
+  if (rateLimited(req, "routine-binding", 30)) return tooMany(res);
+  const who = await requireConsoleUser(req, req.method === "GET" ? null : "editor");
+  if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
+  const member = who.user.email;
+  if (req.method === "GET") {
+    const { has, boundAt } = await hasRoutineBindingFor(member);
+    res.status(200).json({ hasRoutineBinding: has, boundAt, bootstrapPrompt: routineBootstrapPrompt(), routinesUrl: "https://claude.ai/code/routines" });
+    return;
+  }
+  if (req.method === "POST") {
+    const body = req.body || {};
+    const out = await writeRoutineBinding(member, body.fireUrl, body.token);
+    if (out.error) { res.status(400).json({ error: out.error }); return; }
+    await audit({ email: member, clientId: "console", role: who.user.role }, "set_my_routine_binding", { cleared: !!out.cleared, via: "console" });
+    res.status(200).json({ ...out, hasRoutineBinding: !out.cleared });
+    return;
+  }
+  res.status(405).json({ error: "method not allowed" });
+}
+
 // Admin: make sure a member can actually sign in.
 //
 // Google sign-in needs nothing here — Firebase creates the account on first
@@ -5757,7 +5834,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin
   // with a Firebase ID token; nothing cross-origin has any business here.
-  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision" || path.startsWith("/kanban/")) {
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/me/routine-binding" || path === "/admin/provision" || path.startsWith("/kanban/")) {
     res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
   }
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
@@ -5779,6 +5856,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
       case "/revoke": return await handleRevoke(req, res);
       case "/claims/sync": return await handleClaimsSync(req, res);
       case "/me/connections": return await handleMyConnections(req, res);
+      case "/me/routine-binding": return await handleMyRoutineBinding(req, res);
       case "/admin/provision": return await handleAdminProvision(req, res);
       // Staff Kanban's browser endpoints (functions/kanban.js).
       case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
@@ -5802,7 +5880,7 @@ exports.resolveConsoleUser = resolveConsoleUser;
 // Exported for the unit tests in test/mcp-server.test.js — none of these
 // touch Firestore or Auth, so they can be checked without an emulator.
 exports.__test = {
-  routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
+  routePath, redirectUriAllowed, routineFireHostAllowed, routineBindingError, routineBootstrapPrompt, handleMyRoutineBinding, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
   TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,

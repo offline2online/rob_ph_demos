@@ -55,6 +55,12 @@ function board(project, cards) {
     getSelectedSet: () => new Set(),
     isBuildableBacklogItem: (i) => i.status === "backlog" && !(i.blocked && i.blocked.reason) && !i.patchReady,
     waitingOnAnswerChipHTML: () => "",
+    // Owner-only firing for agent tickets (public/js/owner-fire.js): none of
+    // these cards is an agent ticket, so the owner gate never applies here.
+    ticketOwner: (i) => (i && i.ownerEmail) || "",
+    deployOwnerBlock: () => null,
+    viewerFireState: () => ({ email: "", hasBinding: null }),
+    ownerFireInfoHTML: () => "",
     Date,
   };
   vm.createContext(ctx);

@@ -164,6 +164,9 @@ service cloud.firestore {
     // populated project, which would have denied a plain rename.
     //   - the train fields (deployBranch, trainReady, trainStatus,
     //     trainPrNumber, trainNote, needsHumanMerge) are automation-only;
+    //   - notifyAutomationAt marks a build request as the pipeline's own,
+    //     which fires an agent ticket under its owner's Routine whoever
+    //     clicked (functions/owner-firing.js), so it is automation-only too;
     //   - trainLocked may only be set true from a browser (app.js's
     //     deployToFeature); only a merged train clears it;
     //   - routinePromptMd is spliced verbatim into a Routine session's
@@ -173,7 +176,7 @@ service cloud.firestore {
     //     ever name themselves.
     function humanProjectUpdateOk() {
       let changed = incoming().diff(resource.data).affectedKeys();
-      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "notifyAutomationAt"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
@@ -233,7 +236,8 @@ service cloud.firestore {
           && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))
           && (!("reviewRequestedByEmail" in incoming()) || requesterIsCaller(incoming().reviewRequestedByEmail))
           && (!("e2eRequestedByEmail" in incoming()) || requesterIsCaller(incoming().e2eRequestedByEmail))
-          && !("e2eStatus" in incoming())));
+          && !("e2eStatus" in incoming())
+          && !("notifyAutomationAt" in incoming())));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && entityTypeValidIfSet() && entityTypeKeptValid()
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
@@ -389,7 +393,12 @@ service cloud.firestore {
         // (intake / build / manual — the intake trigger decides) and the
         // lane-mate a Ready for Dev click queued it behind. The list itself,
         // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
-        "dependsOnSource", "queuedAfter"];
+        "dependsOnSource", "queuedAfter",
+        // Agent tickets (15 Nov 2026): whose own Claude account the ticket
+        // fires under (functions/owner-firing.js). Set by the server (Send to
+        // Agent, MCP ownedByMe) only, so nobody can tag a ticket with someone
+        // else's Routine.
+        "ownerEmail"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());

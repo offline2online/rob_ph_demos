@@ -2860,3 +2860,23 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .loop-reasons li { margin: 1px 0; }
 .rejection-uncounted { color: rgba(0, 0, 0, .45); }
 .page-header .page-header-info { font-size: 18px; color: rgba(0, 0, 0, .45); cursor: help; vertical-align: middle; }
+
+/* Agent tickets: owner-only firing (xFzQgynkoMdV33iWJFZq). The owner chip on
+   a card, the info link beside a control the viewer may not use (it links to
+   Settings → My Claude Routine), and that settings page. */
+.owner-badge { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+.owner-fire-gate { display: inline-flex; align-items: center; gap: 4px; }
+.owner-fire-info { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; color: var(--text-muted); text-decoration: none; border-radius: 9999px; }
+.owner-fire-info .material-symbols-outlined { font-size: 16px; }
+.owner-fire-info:hover, .owner-fire-info:focus-visible { color: var(--primary); }
+.card-select-cb:disabled { cursor: not-allowed; opacity: .45; }
+.routine-binding-status { display: flex; align-items: center; gap: 6px; margin: 4px 0 12px; font-size: 14px; }
+.routine-binding-status .material-symbols-outlined { font-size: 20px; }
+.routine-binding-status[data-state="on"] .material-symbols-outlined { color: var(--success); }
+.routine-binding-status[data-state="error"] { color: var(--danger); }
+.routine-steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; font-size: 14px; line-height: 1.5; }
+.routine-prompt { display: block; width: 100%; box-sizing: border-box; margin: 6px 0; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.routine-binding-form { display: grid; gap: 4px; max-width: 520px; margin-top: 6px; }
+.routine-binding-form input { width: 100%; box-sizing: border-box; }
+.routine-binding-error { min-height: 1em; margin: 4px 0 0; color: var(--danger); font-size: 13px; }
+.routine-steps a { color: var(--primary); }
