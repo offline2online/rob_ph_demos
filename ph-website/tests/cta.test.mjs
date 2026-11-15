@@ -7,12 +7,16 @@
 // (filtered) config is kept, hidden in the Elementor editor and preview and while a tour is full screen, never covering the cookie banner
 // (it sits above it, then drops back), inside the viewport with no horizontal scroll at 390/768/1024/1440, at least 44x44 on touch,
 // keyboard focus with a visible ring, reduced motion (fade, no slide), z-index below the popup and the banner, and the dataLayer event.
+// Support Centre pages (/support-centre/ and everything under it): cta.php enqueues nothing there, so the page has no .ph-fcta, never
+// requests cta.js or cta.css and pushes no ph_floating_cta event (the PHP decision is taken from cta.php itself when php is available);
+// and cta.js given a hidden config renders nothing.
 // Skips (exit 0) when Playwright or Chromium is not available.
 import { createRequire } from "module";
 import fs from "fs";
 import path from "path";
 import assert from "assert";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 const require = createRequire(import.meta.url);
 let chromium;
 try { ({ chromium } = require("playwright")); } catch { console.log("cta: playwright not installed here; skipping"); process.exit(0); }
@@ -170,6 +174,53 @@ try {
   p = await open("plain", { noSite: true });
   await p.click("#ph-fcta .ph-fcta-b");
   ok(JSON.stringify(await p.evaluate(() => window.__open)) === JSON.stringify([CAL]), "no popup on the page: falls back to the header's booking link");
+  await p.context().close();
+
+  // Support Centre: cta.php decides per URL whether anything is enqueued; the page is built from that decision, with cta.js and cta.css
+  // as real requests so a stray load would show.
+  const phpDecides = (uri) => {
+    const code = [
+      'namespace { define("ABSPATH", "/"); define("PH_CTA_TEST", 1); function apply_filters($t, $v) { return $v; } }',
+      'namespace AngieSnippets\\PhIndustryEnhancements_10063 {',
+      'const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = "t"; function page_key() { return ""; } function operator_is_page() { return false; }',
+      `require ${JSON.stringify(path.join(dir, "cta.php"))}; $_SERVER["REQUEST_URI"] = $argv[1]; echo json_encode(cta_page_config()); }`,
+    ].join("\n");
+    try { return JSON.parse(execFileSync("php", ["-r", code, uri], { encoding: "utf8" })); } catch (e) { console.error(String(e.stderr || e.message)); return null; }
+  };
+  const SC = ["/support-centre/", "/support-centre/getting-started/", "/support-centre/platform-installation/aws-deployment-prerequisites/", "/support-centre?x=1"];
+  for (const [w, h] of [[1440, 900], [390, 844]]) {
+    for (const uri of SC.concat(["/"])) {
+      const cfg = phpDecides(uri);
+      const hidden = cfg ? cfg.hidden : uri !== "/";
+      if (!cfg) ok(false, "php not available to decide " + uri);
+      const ctx = await browser.newContext({ viewport: { width: w, height: h } });
+      p = await ctx.newPage();
+      const loaded = [];
+      const sc = `<main class="ph-sc"><h1>Support Centre</h1>${filler(2400)}</main>`;
+      const assets = hidden ? "" : `<link rel="stylesheet" href="/wp-content/snip/cta.css"><script>window.PH_FLOATING_CTA=${JSON.stringify(cfg || CFG.demo)};</script><script src="/wp-content/snip/cta.js"></script>`;
+      await p.route("**/*", (r) => {
+        const u = r.request().url();
+        if (/cta\.js$/.test(u)) { loaded.push("cta.js"); return r.fulfill({ contentType: "text/javascript", body: js }); }
+        if (/cta\.css$/.test(u)) { loaded.push("cta.css"); return r.fulfill({ contentType: "text/css", body: css }); }
+        return r.fulfill({ contentType: "text/html", body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${header}${sc}<script>${site}</script>${assets}</body></html>` });
+      });
+      await p.goto("http://x.test" + uri);
+      await p.waitForLoadState("load");
+      await settle(p);
+      const has = await p.evaluate(() => !!document.querySelector(".ph-fcta, #ph-fcta"));
+      if (uri === "/") ok(has && loaded.includes("cta.js") && (await state(p)).text === "Arrange a demo", `home ${w}: still shows "Arrange a demo"`);
+      else {
+        ok(hidden, `${uri}: cta.php hides the CTA`);
+        ok(!has, `${uri} ${w}: no .ph-fcta element`);
+        ok(!loaded.length, `${uri} ${w}: loads no cta.js or cta.css (${loaded.join(",")})`);
+        ok((await events(p)).length === 0, `${uri} ${w}: no ph_floating_cta event`);
+      }
+      await ctx.close();
+    }
+  }
+  // Belt and braces: cta.js handed a hidden config renders nothing.
+  p = await open("plain", { cfg: { ...CFG.demo, hidden: true } });
+  ok((await state(p)) === null && (await events(p)).length === 0, "cta.js: a hidden config renders nothing and pushes no event");
   await p.context().close();
 
   // Elementor editor and preview: no CTA.
