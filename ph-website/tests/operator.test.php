@@ -151,6 +151,17 @@ ok( ! isset( $body['audience'] ), 'ingest body: no audience, so the console stor
 ok( ! isset( $body['test'] ), 'ingest body: no test flag for a real lead' );
 $other = lead_ingest_body( array( 'company' => 'Nimbus', 'name' => 'Ada', 'email' => 'a@n.test', 'industry' => 'telco', 'source_label' => 'Interactive product tour – Telco' ) );
 ok( ! isset( $other['leadType'] ) && ! isset( $other['region'] ) && ! isset( $other['background'] ) && ! isset( $other['audience'] ), 'other pages\' bodies are unchanged (no leadType, region, background, audience)' );
+ok( 'tour' === ( $body['form'] ?? '' ) && ! isset( $body['network_industry'] ) && ! isset( $body['message'] ), 'ingest body: a tour-gate lead sends form "tour" and no industry or message' );
+ok( ! isset( $other['network_industry'] ) && ! isset( $other['message'] ) && ! isset( $other['form'] ), 'other pages\' bodies carry no network_industry, message or form' );
+// Telco, pharmacy and pubs leads: the body's keys are exactly what they were before network_industry, message and form were forwarded.
+$base_keys = array( 'company', 'website', 'industry', 'countries', 'storeCount', 'contactName', 'jobTitle', 'email', 'linkedin', 'page', 'pageIndustry' );
+foreach ( array(
+	'telco'    => array( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.com', 'industry' => 'telco', 'source' => 'telco-business-model', 'page' => '/industries/telco/' ), array() ),
+	'pharmacy' => array( array( 'name' => 'Cy', 'company' => 'Harbour', 'email' => 'c@h.test', 'source' => 'pharmacy-business-model', 'source_label' => 'Pharmacy business model download', 'consent' => true, 'industry' => 'pharmacy', 'inputs' => array( 'stores' => 40 ), 'estimate_3yr' => 1000, 'test' => false, 'page' => '/industries/pharmacy/', 'post_id' => 3 ), array( 'sourceLabel' ) ),
+	'pubs'     => array( array( 'name' => 'Di', 'company' => 'Taps', 'email' => 'd@t.test', 'source' => 'pubs-business-model', 'source_label' => 'Pubs & Hospitality business model download', 'consent' => true, 'industry' => 'pubs-hospitality', 'inputs' => array( 'sites' => 12 ), 'estimate_3yr' => 2000, 'test' => true, 'page' => '/industries/pubs-hospitality/', 'post_id' => 4 ), array( 'sourceLabel', 'test' ) ),
+) as $pg => $c ) {
+	ok( array_merge( $base_keys, $c[1] ) === array_keys( lead_ingest_body( $c[0] ) ), "$pg body: the same keys as before (no network_industry, message or form)" );
+}
 
 /* One lead per person, both orders */
 $reset();
@@ -744,11 +755,14 @@ $m = $GLOBALS['meta'][1]; $p = $GLOBALS['fired'][0][1];
 ok( 200 === $st && 'Golf clubs' === $m['ph_lead_network_industry'] && 'We run nine clubs in Yorkshire.' === $m['ph_lead_message'] && 'operator' === $m['ph_lead_source'] && 'Network operator inquiry' === $m['ph_lead_source_label'], 'request: a Network operator inquiry, with the industry and the message on the lead' );
 ok( 'Network operator inquiry' === $m['ph_lead_activity'][0]['label'] && 'Run Your Own RMN page – register your interest' === $m['ph_lead_activity'][0]['detail'], 'request: activity "Network operator inquiry", detail "Run Your Own RMN page – register your interest"' );
 ok( 'Run Your Own RMN page – register your interest' === $p['source_detail'] && 'request' === $p['form'] && 'Golf clubs' === $p['network_industry'] && 'We run nine clubs in Yorkshire.' === $p['message'] && 'operator' === $p['lead_type'] && 'Run Your Own RMN page – register your interest' === lead_ingest_body( $p )['sourceDetail'], 'request: the payload and the console body carry the request source detail' );
+$rb = lead_ingest_body( $p );
+ok( 'Golf clubs' === ( $rb['network_industry'] ?? '' ) && 'We run nine clubs in Yorkshire.' === ( $rb['message'] ?? '' ) && 'request' === ( $rb['form'] ?? '' ), 'request: the console body carries network_industry, message and form' );
 ok( 1 === count( $GLOBALS['mails'] ) && 'New network operator inquiry (registered interest): Ada Lovelace' === $GLOBALS['mails'][0][1] && false !== strpos( $GLOBALS['mails'][0][2], "\nIndustry: Golf clubs\n" ) && false !== strpos( $GLOBALS['mails'][0][2], "\nMessage: We run nine clubs in Yorkshire.\n" ) && false !== strpos( $GLOBALS['mails'][0][2], 'Source: Run Your Own RMN page – register your interest' ), 'request: admin email "New network operator inquiry (request)" with the industry and the message' );
 // A repeat submission (and a gate lead first) is activity on the one lead, never a second lead.
 list( $st ) = $call( array_merge( $rgood, array( 'message' => 'A second note.', 'industry' => 'Other (tell us)', 'industry_other' => 'Pubs' ) ) );
 $m = $GLOBALS['meta'][1];
 ok( 200 === $st && 1 === count( $GLOBALS['posts'] ) && 2 === count( $m['ph_lead_activity'] ) && 'Run Your Own RMN page – register your interest' === $m['ph_lead_activity'][1]['detail'], 'request: a repeat is recorded as activity on the same lead' );
+ok( 'Other: Pubs' === ( lead_ingest_body( $GLOBALS['fired'][1][1] )['network_industry'] ?? '' ) && 'A second note.' === ( lead_ingest_body( $GLOBALS['fired'][1][1] )['message'] ?? '' ), 'request: "Other (tell us)" reaches the console body as "Other: <what they named>" with that submission\'s message' );
 ok( "We run nine clubs in Yorkshire.\n\nA second note." === $m['ph_lead_message'] && 'Golf clubs' === $m['ph_lead_network_industry'] && 'Other: Pubs' === $GLOBALS['fired'][1][1]['network_industry'], 'request: a repeat keeps every message; "Other (tell us)" sends the industry they named' );
 $reset();
 $call( array_merge( $good, array( 'email' => 'both@x.test' ) ) ); // the tour gate first

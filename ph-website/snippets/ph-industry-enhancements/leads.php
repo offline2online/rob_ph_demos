@@ -107,6 +107,13 @@ function lead_ingest_body( array $lead ) {
 	if ( '' !== $s( 'audience' ) ) {
 		$body['audience'] = $s( 'audience' );
 	}
+	// The Run Your Own RMN register-your-interest form (16 Nov 2026): the industry they want to run their network in, their
+	// message and which form ("request" or "tour") sent it. The console's operatorFromWebsite reads all three.
+	foreach ( array( 'network_industry', 'message', 'form' ) as $k ) {
+		if ( '' !== $s( $k ) ) {
+			$body[ $k ] = $s( $k );
+		}
+	}
 	if ( ! empty( $lead['test'] ) ) {
 		$body['test'] = true;
 	}
