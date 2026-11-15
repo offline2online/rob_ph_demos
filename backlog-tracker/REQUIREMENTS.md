@@ -2538,6 +2538,29 @@ the title opens the ticket detail, which shows the full description.
   `test/ui/console-click.test.mjs` → "Board cards: title only in every
   column" checks every column and that the popover is unclipped.
 
+### Tickets never scroll left or right on a board (15 Nov 2026)
+
+A ticket on the Agent Board or the Staff Kanban only ever scrolls up and
+down under a finger, never sideways (ticket jcQCHLGeLP50iOeh1ZnJ).
+
+- **Agent Board**: a column's list (`.col-list`) is `overflow-x: hidden`.
+  Its `overflow-y: auto` alone made the x axis scrollable too, so a ticket
+  whose button row (`.card-move`) was a few pixels wider than the column
+  (at 1024 px, the iPad's landscape width) let the whole column pan
+  sideways. The card's footer and button row now wrap instead of widening
+  the ticket (`public/css/styles.css`).
+- **Staff Kanban**: a ticket (`.kb-card`) is `touch-action: pan-y` at every
+  width, not only on a phone, and keeps a long title or label inside its
+  column (`min-width: 0`, `overflow-wrap: anywhere`). A sideways swipe that
+  starts on a ticket does nothing; on a tablet the board itself still
+  scrolls sideways (six columns don't fit) from the column headers and the
+  gaps between columns, and under a card being dragged at the edge
+  (KB-BOARD-4 in `kanban-staff-board/REQUIREMENTS.md`).
+- Tested by `test/ui/ticket-detail-overflow.test.mjs` (part of
+  `test:ui:console`) at 390, 820, 1024, 1180 and 1440 px: no column of
+  tickets scrolls sideways, no ticket is wider than its column, and every
+  Staff Kanban ticket is `pan-y`.
+
 ### A Backlog card locks while a fix is in flight
 
 `cardHTML`'s `isInDevelopment` (`isBacklog && item.patchReady`) covers the
