@@ -1,0 +1,68 @@
+name: Support Inbox matching check
+
+# Runs the Support Inbox's real triage (the model, both steps) on the
+# made-up emails in backlog-tracker/test/fixtures/support-eval.json against
+# the published Help Centre in faq/data, and reports which articles it chose
+# and the drafts (backlog-tracker/scripts/support-eval.js). Each email is two
+# model calls, so a full run costs a little API usage.
+#
+# It also re-runs the newest real tickets and prints ONLY their SUP key and
+# the article titles matched before and now: never a subject, sender or any
+# text, because logs here are public and those are customers' emails.
+#
+# Started by hand (Actions → "Support Inbox matching check"), or by a push
+# to a working branch that changes the triage. Not a pull-request check.
+on:
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: 'Only these case ids, separated by spaces (empty: all)'
+        type: string
+        default: ''
+      replay:
+        description: 'How many of the newest real tickets to re-run (0 for none)'
+        type: string
+        default: '5'
+  push:
+    branches:
+      - 'claude/**'
+    paths:
+      - 'backlog-tracker/functions/support-core.js'
+      - 'backlog-tracker/functions/support-mail.js'
+      - 'backlog-tracker/scripts/support-eval.js'
+      - 'backlog-tracker/test/fixtures/support-eval.json'
+      - '.github/workflows/support-eval.yml'
+
+concurrency:
+  group: support-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install functions dependencies
+        working-directory: backlog-tracker/functions
+        run: npm install --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Match the test emails (and re-run the newest real tickets)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          REPLAY: ${{ inputs.replay || '5' }}
+          CASES: ${{ inputs.cases }}
+        run: |
+          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/support-eval-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/support-eval-sa.json"
+          code=0
+          # shellcheck disable=SC2086
+          node backlog-tracker/scripts/support-eval.js $CASES || code=$?
+          rm -f "$RUNNER_TEMP/support-eval-sa.json"
+          exit $code

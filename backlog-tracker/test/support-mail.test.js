@@ -85,7 +85,7 @@ function fakeGoogle(mail) {
   return { fetch, calls, breakRefresh: () => { refreshOk = false; } };
 }
 
-const ARTICLE = { status: "published", title: "Add a display to a store", summary: "Pair a new screen with a store", keywords: ["display", "store"], bodyMd: "<p>Open Displays and Devices, then Add display.</p>" };
+const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display to a store", summary: "Pair a new screen with a store", keywords: ["display", "store"], bodyMd: "<p>Open Displays and Devices, then Add display.</p>" };
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
 function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true } = {}) {
@@ -93,6 +93,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
   db.state.faqArticles = { a1: ARTICLE, a2: { status: "draft", title: "Unpublished display notes", keywords: ["display"] } };
+  db.state.faqCategories = { c1: { name: "Digital Signage" } };
   db.state.prospects = prospects;
   db.state.leads = {};
   if (Object.keys(settings).length) db.state.supportSettings = { main: settings };
@@ -178,9 +179,10 @@ check("sync files new customer mail as a ticket once, drafts a reply from publis
   assert.deepStrictEqual([r.statusCode, r.body.newTickets, r.body.newMessages, r.body.triaged], [200, 1, 1, 1]);
   const tk = ticketOf(t, "t1");
   assert.deepStrictEqual([tk.key, tk.status, tk.customerEmail, tk.customerName, tk.needsHuman, tk.triagePending], ["SUP-1", "open", "ann@shop.example", "Ann Lee", false, false]);
-  assert.strictEqual(tk.aiDraft.text, GOOD.reply);
+  assert.strictEqual(tk.aiDraft.text, "Hi Ann,\n\nThanks for your email.\n\nOpen Displays and Devices, then Add display.", "the draft opens with the first name and thanks, and the model's own greeting is not doubled");
   assert.deepStrictEqual(tk.aiDraft.articles.map((a) => a.id), ["a1"]);
-  assert.deepStrictEqual(seen.candidates.map((a) => a.id), ["a1"], "only published articles are offered to the model");
+  assert.deepStrictEqual(seen.articles.map((a) => a.id), ["a1"], "only published articles are offered to the model");
+  assert.strictEqual(seen.articles[0].categoryName, "Digital Signage", "each article carries its category for the matching step");
   assert.strictEqual(t.google.calls.sent.length, 0, "nothing is sent while sending by itself is off");
   // Reading the same mail again changes nothing.
   const again = await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
@@ -231,6 +233,32 @@ check("connecting a different mailbox drops the old mailbox's cached access", as
   t.tick(31000);
   const r = await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
   assert.strictEqual(r.statusCode, 502, "the changed sign-in is read again (and here refused), not silently replaced by the old mailbox's access");
+});
+
+check("an email that isn't about Personalisation Hub is filed with no draft, no article and no send, even with sending on", async () => {
+  const t = make({ mail: [gmailMessage({ id: "u1", threadId: "tu", date: 1759990000000, from: "Seo Pro <hello@seo-agency.example>", subject: "Rank #1 on Google", text: "We can get your site to the top of Google." })],
+    settings: { autoReply: true }, triage: async () => ({ relevant: false, category: "other", summary: "SEO services offer", answerable: true, confidence: 0.9, reply: "Thanks!", articleIds: ["a1"], spamLikely: false }) });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  const tk = ticketOf(t, "tu");
+  assert.deepStrictEqual([tk.unrelated, tk.category, tk.aiDraft, tk.needsHuman, tk.status], [true, "unrelated", null, false, "open"]);
+  assert.ok(/Not about Personalisation Hub/.test(tk.triageReason));
+  assert.strictEqual(t.google.calls.sent.length, 0);
+});
+
+check("Try an email: the decision and the draft for an email, with nothing filed, saved or sent; editors only, limited per hour", async () => {
+  const t = make();
+  await connect(t);
+  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "view@ph.example", body: { subject: "x", text: "y" } })).statusCode, 403);
+  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: {} })).statusCode, 400);
+  const r = await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "Adding a screen", text: "How do I add a display to my store?", fromName: "Ann Lee", fromEmail: "ann@shop.example" } });
+  assert.strictEqual(r.statusCode, 200);
+  assert.deepStrictEqual([r.body.relevant, r.body.answerable, r.body.articles.map((a) => a.title), r.body.decision.action], [true, true, ["Add a display to a store"], "review"]);
+  assert.ok(r.body.draft.startsWith("Hi Ann,\n\nThanks for your email.\n\n"));
+  assert.strictEqual(t.db.state.supportTickets, undefined, "nothing was filed");
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing was sent");
+  for (let i = 0; i < 39; i++) await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } });
+  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } })).statusCode, 429);
 });
 
 check("machine-sent mail is never drafted or answered, even with sending switched on", async () => {

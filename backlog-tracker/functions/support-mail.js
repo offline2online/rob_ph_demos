@@ -28,6 +28,7 @@
 //   POST /v1/disconnect                admin
 //   POST /v1/settings                  admin
 //   POST /v1/sync                      editor  read new mail now
+//   POST /v1/preview                   editor  what would happen to an email (nothing saved or sent)
 //   POST /v1/cron                      board key  the same, for the five-minute workflow
 //   POST /v1/tickets/{id}/reply        editor  {text, resolve, draft}
 //   POST /v1/tickets/{id}/draft        editor  write a fresh AI draft
@@ -64,29 +65,73 @@ const TRIAGE_PER_PAGE_SYNC = 2;
 const CACHE_MS = 5 * 60 * 1000;
 const DRAFT_MODEL = "claude-opus-5-5";
 const DRAFT_TIMEOUT_MS = 40000;
+const PREVIEWS_PER_HOUR = 40;
 
-// Asks the model for a triage of one thread. Returns the raw object, or throws.
-async function claudeTriage({ apiKey, workspaceId, Anthropic, ticket, messages, candidates }) {
+// An article as triage uses it.
+function articleView(a, categoryName = "") {
+  return {
+    id: a.id, title: a.title || "", summary: a.summary || "", directAnswer: a.directAnswer || "", keywords: a.keywords || [], questionVariants: a.questionVariants || [],
+    categoryName, bodyMd: a.bodyMd || "", body: core.htmlToText(a.bodyMd || ""), url: `https://personalisationhub.com/support-centre/article.html?id=${encodeURIComponent(a.id)}`,
+  };
+}
+
+// One structured call to the model. Returns the parsed JSON, or throws.
+async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = require("./lead-enrich").workspaceHeaders(workspaceId);
   const client = new Client({ apiKey, timeout: DRAFT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
-  const thread = messages.filter((m) => m.direction === "in" || m.direction === "out").slice(-8).map((m) =>
-    `[${m.direction === "in" ? "customer" : "support"}]\n${core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
-  const articles = candidates.map((a) =>
-    `<article id="${a.id}" url="${a.url}">\nTitle: ${a.title}\n${a.directAnswer ? `Short answer: ${a.directAnswer}\n` : ""}${a.summary ? `Summary: ${a.summary}\n` : ""}${core.clip(a.body, 5000)}\n</article>`).join("\n\n");
   const res = await client.beta.messages.create({
     model: DRAFT_MODEL,
-    max_tokens: 4000,
-    output_config: { effort: "medium", format: { type: "json_schema", schema: core.TRIAGE_SCHEMA } },
+    max_tokens: maxTokens,
+    output_config: { effort, format: { type: "json_schema", schema } },
     fallbacks: "default",
     betas: ["server-side-fallback-2026-07-01"],
-    system: core.TRIAGE_SYSTEM,
-    messages: [{ role: "user", content:
-      `Customer: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail}>\nSubject: ${ticket.subject}\n\n<email_thread>\n${thread}\n</email_thread>\n\n<help_articles>\n${articles || "(no article matched)"}\n</help_articles>` }],
+    system,
+    messages: [{ role: "user", content }],
   });
-  if (!res || res.stop_reason === "refusal") throw new Error("the drafting model declined");
+  if (!res || res.stop_reason === "refusal") throw new Error("the model declined");
   const text = (res.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
   return JSON.parse(text);
+}
+
+// The email as both steps see it: who sent it, the subject, and the thread
+// (quoted history removed, newest last).
+function emailBlock(ticket, messages) {
+  const thread = messages.filter((m) => m.direction === "in" || m.direction === "out").slice(-8).map((m) =>
+    `[${m.direction === "in" ? "customer" : "support"}]\n${core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
+  return `From: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail || ""}>\nSubject: ${ticket.subject || "(no subject)"}\n\n<email_thread>\n${thread}\n</email_thread>`;
+}
+
+// Triage of one thread in two steps. Step 1 sees every published article
+// (one line each) and decides whether the email is about Personalisation Hub
+// and which articles answer it; step 2 writes the reply from the full text of
+// those articles only. Returns the raw combined answer for core.cleanTriage.
+// `articles`: [{id, title, summary, directAnswer, keywords, questionVariants, categoryName, body, url}]
+async function runTriage({ apiKey, workspaceId, Anthropic, ticket, messages, articles }) {
+  const email = emailBlock(ticket, messages);
+  const catalogue = articles.map((a) => core.articleIndexLine(a, a.categoryName)).join("\n");
+  const sel = core.cleanSelection(await callJson({
+    apiKey, workspaceId, Anthropic, system: core.SELECT_SYSTEM, schema: core.SELECT_SCHEMA, effort: "medium", maxTokens: 2000,
+    content: `<catalogue>\n${catalogue}\n</catalogue>\n\n${email}`,
+  }), articles.map((a) => a.id));
+  const base = { relevant: sel.relevant, category: sel.category, summary: sel.question, spamLikely: sel.spamLikely, selectedIds: sel.articleIds };
+  if (!sel.relevant || sel.spamLikely) return Object.assign(base, { answerable: false, confidence: 0, reply: "", articleIds: [] });
+  const byId = new Map(articles.map((a) => [a.id, a]));
+  const chosen = sel.articleIds.map((id) => byId.get(id)).filter(Boolean);
+  const texts = chosen.map((a) =>
+    `<article id="${a.id}" url="${a.url}">\nTitle: ${a.title}\n${a.directAnswer ? `Short answer: ${a.directAnswer}\n` : ""}${a.summary ? `Summary: ${a.summary}\n` : ""}${core.clip(a.body, 8000)}\n</article>`).join("\n\n");
+  const draft = await callJson({
+    apiKey, workspaceId, Anthropic, system: core.TRIAGE_SYSTEM, schema: core.TRIAGE_SCHEMA, effort: "medium",
+    content: `${email}\n\nWhat they need, as understood: ${sel.question || "(not stated)"}\n\n<help_articles>\n${texts || "(no article answers this)"}\n</help_articles>`,
+  });
+  const ids = new Set(chosen.map((a) => a.id));
+  return Object.assign(base, {
+    summary: draft.summary || sel.question,
+    answerable: draft.answerable === true && chosen.length > 0,
+    confidence: draft.confidence,
+    reply: draft.reply,
+    articleIds: (Array.isArray(draft.articleIds) ? draft.articleIds : []).filter((id) => ids.has(id)),
+  });
 }
 
 function createSupportMail({
@@ -95,6 +140,7 @@ function createSupportMail({
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
+  const previewCalls = new Map(); // member -> recent "Try an email" times
   const redirectUri = `${baseUrl}/supportMail/v1/oauth/callback`;
   const tickets = () => db.collection(TICKETS);
   const settingsRef = () => db.collection(SETTINGS).doc("main");
@@ -204,10 +250,11 @@ function createSupportMail({
     return value;
   }
   const rowsOf = async (name) => { const snap = await db.collection(name).get(); const out = []; snap.forEach((d) => out.push(Object.assign({ id: d.id }, d.data() || {}))); return out; };
-  const articles = () => cached("articles", async () => (await rowsOf("faqArticles")).filter((a) => a.status === "published").map((a) => ({
-    id: a.id, title: a.title || "", summary: a.summary || "", directAnswer: a.directAnswer || "", keywords: a.keywords || [], questionVariants: a.questionVariants || [],
-    bodyMd: a.bodyMd || "", body: core.htmlToText(a.bodyMd || ""), url: `https://personalisationhub.com/support-centre/article.html?id=${encodeURIComponent(a.id)}`,
-  })));
+  const articles = () => cached("articles", async () => {
+    const [rows, cats] = await Promise.all([rowsOf("faqArticles"), rowsOf("faqCategories")]);
+    const catName = new Map(cats.map((c) => [c.id, c.name || ""]));
+    return rows.filter((a) => a.status === "published").map((a) => articleView(a, catName.get(a.categoryId) || ""));
+  });
   const accounts = () => cached("accounts", async () => {
     const [prospects, leads] = await Promise.all([rowsOf("prospects"), rowsOf("leads")]);
     return { prospects, leads: leads.filter((l) => !l.archived && !l.test) };
@@ -345,16 +392,15 @@ function createSupportMail({
     if (ticket.status === "spam" && !forceDraft) { await ref.set({ triagePending: false }, { merge: true }); return { ok: true, action: "none" }; }
     const settings = await readSettings();
     const messages = await threadMessages(ticketId);
-    let triage = null, aiError = "", picked = [];
+    let triage = null, aiError = "", all = [];
     if (!ticket.automated) {
       const key = String(anthropicKey() || "");
       if (!triageImpl && (!key || key === "unset")) aiError = "No drafting model is configured (ANTHROPIC_API_KEY).";
       else {
-        const lastIn = [...messages].reverse().find((m) => m.direction === "in");
-        picked = core.rankArticles(await articles(), `${ticket.subject}\n${core.stripQuoted(lastIn ? lastIn.text : "")}`);
+        all = await articles();
         try {
-          const raw = await (triageImpl || claudeTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages, candidates: picked });
-          triage = core.cleanTriage(raw, picked.map((a) => a.id));
+          const raw = await (triageImpl || runTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages, articles: all });
+          triage = core.cleanTriage(raw, all.map((a) => a.id));
         } catch (err) {
           aiError = `The draft couldn't be written: ${core.clip(String(err && err.message ? err.message : err), 200)}`;
           logger.warn("support: triage failed", { ticketId, error: aiError });
@@ -363,16 +409,18 @@ function createSupportMail({
     }
     const decision = core.decideAction({ triage, settings, highValue: ticket.highValue, automated: ticket.automated, autoRepliesSent: ticket.autoRepliesSent || 0, humanInvolved: ticket.humanInvolved,
       replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail) });
-    const cited = triage ? picked.filter((a) => triage.articleIds.includes(a.id)).map((a) => ({ id: a.id, title: a.title, url: a.url })) : [];
+    const cited = triage ? triage.articleIds.map((id) => all.find((a) => a.id === id)).filter(Boolean).map((a) => ({ id: a.id, title: a.title, url: a.url })) : [];
+    // Every draft opens "Hi <first name>, / Thanks for your email." (added here, not by the model).
+    const draftText = triage && triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, ticket.fromEmail || ticket.customerEmail), triage.reply) : "";
     const patch = {
       triagePending: false, updatedAt: now(), needsHuman: decision.needsHuman, triageReason: aiError || decision.reason,
       category: triage ? triage.category : ticket.category || "", summary: triage ? triage.summary : ticket.summary || "",
-      spamLikely: Boolean(triage && triage.spamLikely),
-      aiDraft: triage && triage.reply ? { text: triage.reply, confidence: triage.confidence, answerable: triage.answerable, articles: cited, at: now() } : null,
+      spamLikely: Boolean(triage && triage.spamLikely), unrelated: Boolean(triage && triage.relevant === false),
+      aiDraft: draftText ? { text: draftText, confidence: triage.confidence, answerable: triage.answerable, articles: cited, at: now() } : null,
     };
     if (decision.action === "send") {
       try {
-        await sendReply({ ticketId, ticket, text: triage.reply, auto: true, by: "ai", source: "ai-auto", settings, extra: { confidence: triage.confidence, articles: cited } });
+        await sendReply({ ticketId, ticket, text: draftText, auto: true, by: "ai", source: "ai-auto", settings, extra: { confidence: triage.confidence, articles: cited } });
         Object.assign(patch, {
           aiDraft: null, status: "resolved", resolvedBy: "ai", resolvedAt: now(), autoRepliesSent: (ticket.autoRepliesSent || 0) + 1,
           firstResponseAt: ticket.firstResponseAt || now(), lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1,
@@ -388,6 +436,34 @@ function createSupportMail({
     if (patch.status === "resolved") await logEvent(ticketId, "ai", `Answered automatically from the help centre (${Math.round(triage.confidence * 100)}% confidence) and resolved.`);
     if (decision.escalate) await escalate(ticketId, Object.assign({}, ticket, patch), settings, by);
     return { ok: true, action: patch.status === "resolved" ? "send" : decision.action === "send" ? "human" : decision.action, reason: patch.triageReason };
+  }
+
+  // What triage would do with one email, nothing stored or sent.
+  async function preview({ subject, text, fromName, fromEmail }) {
+    const t = core.clip(String(text || "").trim(), core.TEXT_MAX);
+    const subj = core.clip(String(subject || "").trim(), 500);
+    if (!t && !subj) return { ok: false, error: "Give the email a subject or some text." };
+    const key = String(anthropicKey() || "");
+    if (!triageImpl && (!key || key === "unset")) return { ok: false, error: "No drafting model is configured (ANTHROPIC_API_KEY)." };
+    const settings = await readSettings();
+    const email = core.lower(fromEmail) || "customer@example.com";
+    const ticket = { subject: subj || "(no subject)", customerEmail: email, fromEmail: email, customerName: core.clip(String(fromName || "").trim(), 200) };
+    const all = await articles();
+    const acct = await accounts();
+    const account = core.matchAccount(email, { prospects: acct.prospects, leads: acct.leads, vipDomains: settings.vipDomains, freeDomains });
+    let triage;
+    try {
+      triage = core.cleanTriage(await (triageImpl || runTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages: [{ direction: "in", text: t }], articles: all }), all.map((a) => a.id));
+    } catch (err) { return { ok: false, error: `The draft couldn't be written: ${core.clip(String(err && err.message ? err.message : err), 200)}` }; }
+    const decision = core.decideAction({ triage, settings, highValue: Boolean(account) });
+    const draft = triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, email), triage.reply) : "";
+    const view = (id) => { const a = all.find((x) => x.id === id); return a ? { id, title: a.title, url: a.url } : null; };
+    return {
+      ok: true, relevant: triage.relevant, category: triage.category, summary: triage.summary, spamLikely: triage.spamLikely,
+      answerable: triage.answerable, confidence: triage.confidence, articles: triage.articleIds.map(view).filter(Boolean),
+      highValue: account ? { name: account.name, reason: account.reason } : null,
+      decision: { action: decision.action, reason: decision.reason }, draft,
+    };
   }
 
   // ── Sync ──
@@ -610,6 +686,21 @@ function createSupportMail({
       return send(res, r.ok || /isn't connected/.test(r.error || "") ? 200 : 502, r);
     }
 
+    // "Try an email" (Support Inbox): what the inbox would do with an email,
+    // without filing, saving or sending anything.
+    if (path === "/v1/preview") {
+      const who = await requireRole(req, "editor");
+      if (!who.ok) return send(res, who.status, { error: who.error });
+      if (req.method !== "POST") return send(res, 405, { error: "POST only" });
+      const hit = previewCalls.get(who.user.email) || [];
+      const recent = hit.filter((t) => now().getTime() - t < 3600000);
+      if (recent.length >= PREVIEWS_PER_HOUR) return send(res, 429, { error: `At most ${PREVIEWS_PER_HOUR} tries an hour. Try again later.` });
+      previewCalls.set(who.user.email, [...recent, now().getTime()]);
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const r = await preview({ subject: body.subject, text: body.text, fromName: body.fromName, fromEmail: body.fromEmail });
+      return send(res, r.ok ? 200 : 400, r);
+    }
+
     if (path === "/v1/sync") {
       const who = await requireRole(req, "editor");
       if (!who.ok) return send(res, who.status, { error: who.error });
@@ -670,4 +761,4 @@ function createSupportMail({
   return { handle, sync, status, triageTicket, ingest };
 }
 
-module.exports = { createSupportMail, claudeTriage, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL };
+module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL };
