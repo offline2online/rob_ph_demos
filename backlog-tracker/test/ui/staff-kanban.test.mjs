@@ -110,7 +110,7 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   const p = op.page;
   await until(() => p.locator(hash.includes("report") || hash.includes("settings") ? "#kb-view .page-header" : ".kb-card").count(), "the Staff Kanban page", 20000);
   await p.waitForTimeout(150);
-  p.profile = prof; p.engine = prof.engine; p.ctx = op.context;
+  p.profile = prof; p.engine = prof.engine; p.ctx = op.context; p.agentCalls = op.agentSendCalls;
   // A card opens its ticket in a new tab (KB-LINK-1). The cases written before that drive the ticket in this page, which is
   // what the board does when the browser refuses a new tab; KB-C15 (o.newTab) covers the new tab itself.
   if (!o.newTab) { const block = () => { window.open = () => null; }; await p.addInitScript(block); await p.evaluate(block); }
@@ -954,6 +954,54 @@ T("TC-70", "hierarchy: epic > task > subtask > sub-subtask, no fifth level, and 
   assert.match(await p.textContent('.kb-card[data-key="PH-42"] .kb-epic-count'), /1\/1 done/);
   const acts = await writes(p, /^kanbanTasks\/PH-41\/activity\//);
   assert.ok(acts.some((w) => /all its child tickets are done/.test(w.data.text)), "the move is logged on the parent");
+  await p.done();
+});
+
+T("TC-71", "Send to Agent: only the assignee sees it; the proposed split is edited to three and created; the agent tickets show live status and x of y done; the card counts them", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].assignee = ROB; seed.docs.kanbanCards["PH-20"].assignee = ROB;
+  seed.docs.kanbanTasks["PH-20"].project = "agentProj"; seed.docs.kanbanCards["PH-20"].project = "agentProj";
+  seed.docs.projects.agentProj = { name: "Agent Proj", createdAt: { $ts: 1_760_000_000_000 } };
+  seed.agentSplit = { proposal: [{ title: "Points API", description: "Expose points.", acceptanceCriteria: ["GET returns points"] }, { title: "Loyalty widget", description: "Show points.", acceptanceCriteria: [] }], source: "claude", projectId: "agentProj" };
+  // What the server files (functions/kanban-agent.js), as the Agent Board will hold it.
+  seed.docs.backlogItems = {
+    "agent-1": { projectId: "agentProj", title: "Points API", status: "ready-for-testing", kanbanKey: "PH-20", ownerEmail: ROB },
+    "agent-2": { projectId: "agentProj", title: "Loyalty widget", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
+    "agent-3": { projectId: "agentProj", title: "Help article", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
+  };
+  const p = await open(prof, "#staff-kanban", { seed });
+  // Someone else's ticket: no Send to Agent.
+  await press(p, '.kb-card[data-key="PH-21"]');
+  await until(() => p.$("#f-title"), "PH-21's modal");
+  assert.equal(await p.$("#f-agent-send"), null, "not the assignee: no Send to Agent");
+  await press(p, "#f-cancel");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$("#f-agent-send"), "Send to Agent on the assignee's ticket");
+  await press(p, "#f-agent-send");
+  await until(() => p.$("#f-agent-split"), "the proposed split");
+  assert.equal(await p.$eval("#f-agent-project", (e) => e.value), "agentProj", "the ticket's project is preselected");
+  assert.deepEqual(await p.$$eval("[data-agent-title]", (e) => e.map((x) => x.value)), ["Points API", "Loyalty widget"]);
+  await press(p, "#f-agent-add");
+  await until(async () => (await p.$$("[data-agent-title]")).length === 3, "a third agent ticket");
+  await p.fill('[data-agent-i="2"] [data-agent-title]', "Help article");
+  await p.fill('[data-agent-i="2"] [data-agent-ac]', "Explains points\nLinks from the widget");
+  assert.match(await p.textContent("#f-agent-create"), /Create 3 agent tickets/);
+  await press(p, "#f-agent-create");
+  await eventually(() => assert.equal(p.agentCalls.filter((c) => c.action === "confirm").length, 1, "one confirm"));
+  const sent = p.agentCalls.find((c) => c.action === "confirm");
+  assert.equal(sent.key, "PH-20"); assert.equal(sent.projectId, "agentProj");
+  assert.deepEqual(sent.tickets.map((x) => x.title), ["Points API", "Loyalty widget", "Help article"]);
+  assert.deepEqual(sent.tickets[2].acceptanceCriteria, ["Explains points", "Links from the widget"]);
+  // The linked agent tickets, with their live Agent Board status.
+  await eventually(async () => assert.equal((await p.$$("#f-agents [data-agent-ticket]")).length, 3));
+  await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /1 of 3 done/));
+  assert.equal(await p.getAttribute('#f-agents [data-agent-ticket="agent-1"] a', "href"), "#item-agent-1", "each links to its Agent Board card");
+  await p.evaluate(() => { const b = globalThis.__fbStub; b.col("backlogItems").set("agent-2", { ...b.col("backlogItems").get("agent-2"), status: "published-live" }); b.notify(); });
+  await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /2 of 3 done/, "follows the Agent Board live"));
+  await press(p, "#f-cancel");
+  // The server's counts on the ticket and its card: the card shows them.
+  await p.evaluate(() => { const b = globalThis.__fbStub; for (const c of ["kanbanTasks", "kanbanCards"]) b.col(c).set("PH-20", { ...b.col(c).get("PH-20"), agentTotal: 3, agentDone: 2, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000) }); b.notify(); });
+  await eventually(async () => assert.match(await p.textContent('.kb-card[data-key="PH-20"] .kb-agent-chip'), /2\/3/));
   await p.done();
 });
 

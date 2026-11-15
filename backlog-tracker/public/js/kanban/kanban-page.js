@@ -15,6 +15,7 @@ import {
   statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
+  AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -1022,6 +1023,7 @@ export function mountStaffKanban(ctx) {
           ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
           ${t.commentCount > 0 ? `<span class="kb-meta-ic kb-comment-chip" title="${t.commentCount} comment${t.commentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.commentCount}</span>` : ""}
+          ${t.agentTotal ? `<span class="kb-meta-ic kb-agent-chip${t.agentDone === t.agentTotal ? " done" : ""}" title="${t.agentDone || 0} of ${t.agentTotal} agent tickets built on the Agent Board"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>${t.agentDone || 0}/${t.agentTotal}</span>` : ""}
           ${t.acTotal ? `<span class="kb-meta-ic kb-ac-chip${t.acDone === t.acTotal ? " done" : ""}" title="${t.acDone} of ${t.acTotal} acceptance criteria done"><span class="material-symbols-outlined" aria-hidden="true">checklist</span>AC ${t.acDone}/${t.acTotal}</span>` : ""}
           ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
@@ -1238,9 +1240,10 @@ export function mountStaffKanban(ctx) {
   let returnTo = null;
   // The open ticket's comments and activity arrive from their own listeners.
   let threadUnsubs = [];
-  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; }
+  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; agentItems = new Map(); agentSplit = null; }
   function watchThread(key) {
     unwatchThread();
+    watchAgents(key);
     const redraw = () => redrawComments();
     threadUnsubs.push(store.watchComments(key, (list) => { if (draft && draft.key === key) { draft.comments = list; redraw(); } }));
     threadUnsubs.push(store.watchActivity(key, (list) => { if (draft && draft.key === key) { draft.activity = list; redraw(); } }));
@@ -1470,6 +1473,7 @@ export function mountStaffKanban(ctx) {
           </div></div>`;
       }
       case "interface": return interfaceHTML();
+      case "agents": return agentsHTML();
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
@@ -1614,6 +1618,142 @@ export function mountStaffKanban(ctx) {
     const name = f ? f.name : "";
     return `<div class="kb-field" data-field="interface"><p class="kb-interface" id="f-interface">Interface: ${pid && name ? `<a href="#docs/${encodeURIComponent(pid)}?interface=${encodeURIComponent(id)}" data-interface-link>${esc(name)}</a>` : esc(name || id)}</p></div>`;
   };
+  // ── Send to Agent (KB-AGENT-1) ──────────────────────────────────────────
+  // The ticket's assignee splits it into agent tickets on the Agent Board:
+  // Claude proposes the split (functions/kanban-agent.js), the owner edits it,
+  // and Create files them in the chosen project's Backlog, tagged with the
+  // owner. The list below shows each one's live Agent Board status; when all
+  // are built the server moves this ticket to Ready for Testing.
+  let agentItems = new Map(), agentSplit = null, agentUnsub = null;
+  function watchAgents(key) {
+    if (agentUnsub) { agentUnsub(); agentUnsub = null; }
+    const ids = ((draft && draft.key === key && draft.agentTickets) || []).map((x) => x.id);
+    if (!ids.length || !store.watchAgentTickets) return;
+    const off = store.watchAgentTickets(ids, (m) => { if (draft && draft.key === key) { agentItems = m; redrawAgents(); } });
+    agentUnsub = off;
+    threadUnsubs.push(() => { off(); if (agentUnsub === off) agentUnsub = null; });
+  }
+  const agentStatus = (it) => (it ? AGENT_STATUS_LABEL[it.status] || it.status || "Backlog" : "Removed");
+  function agentsHTML() {
+    const d = draft;
+    if (!d || draftIsNew || !d.key) return "";
+    const linked = d.agentTickets || [];
+    const mine = canWrite() && canSendToAgent(d, me);
+    if (!linked.length && !mine) return "";
+    const loaded = linked.length && linked.every((x) => agentItems.has(x.id));
+    const sum = loaded ? agentRollup(linked.map((x) => agentItems.get(x.id))) : { total: d.agentTotal || linked.length, done: d.agentDone || 0 };
+    const list = linked.map((x) => {
+      const it = agentItems.get(x.id);
+      const built = agentBuilt(it);
+      return `<li data-agent-ticket="${esc(x.id)}"><span class="material-symbols-outlined kb-agent-ic" aria-hidden="true">smart_toy</span><a class="kb-link-title" href="#item-${esc(x.id)}" data-agent-open>${esc(it ? it.title || x.id : agentItems.has(x.id) ? "Removed from the Agent Board" : "Loading…")}</a>${projectName(x.projectId) ? `<span class="kb-none kb-agent-proj">${esc(projectName(x.projectId))}</span>` : ""}<span class="kb-status-pill kb-agent-status${built ? " built" : ""}">${esc(agentItems.has(x.id) ? agentStatus(it) : "…")}</span></li>`;
+    }).join("");
+    return `<div class="kb-field" data-field="agents"><label class="field-label">Agent tickets ${linked.length ? `<span class="kb-none" id="f-agent-count">${sum.done} of ${sum.total} done</span>` : ""}${tip("Work an AI agent builds on the Agent Board. When every agent ticket is built (Ready for Testing or later there), this ticket moves to Ready for Testing by itself. Only the ticket's assignee can send it to an agent.")}</label>
+      ${linked.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${sum.total ? (sum.done / sum.total) * 100 : 0}%"></span></div><ul class="kb-sublist kb-agents" id="f-agents">${list}</ul>` : ""}
+      ${mine ? agentSplitHTML() : ""}</div>`;
+  }
+  function agentSplitHTML() {
+    const sp = agentSplit;
+    if (!sp) return `<div class="kb-child-actions"><button type="button" class="btn-outline kb-icon-label" id="f-agent-send"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Send to Agent</button></div>`;
+    if (sp.loading) return `<p class="kb-none kb-agent-wait" id="f-agent-wait">Claude is proposing agent tickets…</p>`;
+    const projectList = projects(sp.projectId).filter((p) => !(ctx.projects() || []).some((x) => x.id === p.id && x.finalised));
+    return `<div class="kb-agent-split" id="f-agent-split">
+      <div class="kb-field"><label class="field-label" for="f-agent-project">Agent Board project</label><select id="f-agent-project" class="kb-input">${opt("", "Choose a project", sp.projectId)}${projectList.map((p) => opt(p.id, p.name, sp.projectId)).join("")}</select></div>
+      <ol class="kb-agent-drafts">${sp.tickets.map((x, i) => `<li class="kb-agent-draft" data-agent-i="${i}">
+        <div class="kb-agent-draft-head"><span class="kb-none">Agent ticket ${i + 1}</span>${sp.tickets.length > 1 ? `<button type="button" class="icon-btn" data-agent-rm="${i}" aria-label="Remove agent ticket ${i + 1}" title="Remove">&times;</button>` : ""}</div>
+        <input type="text" class="kb-input" data-agent-title maxlength="200" value="${esc(x.title)}" placeholder="Title" aria-label="Agent ticket ${i + 1} title">
+        <textarea class="kb-input kb-agent-text" data-agent-desc rows="3" maxlength="6000" placeholder="What the agent should build" aria-label="Agent ticket ${i + 1} description">${esc(x.description)}</textarea>
+        <textarea class="kb-input kb-agent-text" data-agent-ac rows="3" placeholder="Acceptance criteria, one per line" aria-label="Agent ticket ${i + 1} acceptance criteria">${esc((x.acceptanceCriteria || []).join("\n"))}</textarea>
+      </li>`).join("")}</ol>
+      <p class="tm-error" id="f-agent-error"${sp.error ? "" : " hidden"}>${esc(sp.error || "")}</p>
+      <div class="kb-child-actions kb-agent-actions">
+        ${sp.tickets.length < AGENT_MAX_TICKETS ? '<button type="button" class="btn-ghost kb-icon-label" id="f-agent-add"><span class="material-symbols-outlined" aria-hidden="true">add</span>Add agent ticket</button>' : "<span></span>"}
+        <span class="form-actions"><button type="button" class="btn-outline" id="f-agent-cancel">Cancel</button><button type="button" class="btn-primary" id="f-agent-create"${sp.saving ? " disabled" : ""}>${sp.saving ? "Creating…" : `Create ${sp.tickets.length} agent ticket${sp.tickets.length > 1 ? "s" : ""}`}</button></span>
+      </div></div>`;
+  }
+  function redrawAgents() {
+    const el = $('[data-field="agents"]', $("#task-form"));
+    if (!el) return;
+    readAgentSplit();
+    const html = agentsHTML();
+    if (!html) { el.remove(); return; }
+    const box = document.createElement("div"); box.innerHTML = html;
+    el.replaceWith(box.firstElementChild);
+  }
+  // What the owner typed into the split editor, back into agentSplit.
+  function readAgentSplit() {
+    const sp = agentSplit;
+    if (!sp || !sp.tickets) return;
+    const p = $("#f-agent-project"); if (p) sp.projectId = p.value;
+    $$("[data-agent-i]", $("#task-form")).forEach((li) => {
+      const x = sp.tickets[+li.dataset.agentI]; if (!x) return;
+      x.title = $("[data-agent-title]", li).value;
+      x.description = $("[data-agent-desc]", li).value;
+      x.acceptanceCriteria = $("[data-agent-ac]", li).value.split(/\n/).map((c) => c.trim()).filter(Boolean);
+    });
+  }
+  async function agentCall(body) {
+    const user = ctx.auth && ctx.auth.currentUser;
+    if (!user) throw new Error("Sign in again to send this ticket to an agent.");
+    const res = await fetch("/mcp/kanban/send-to-agent", { method: "POST", headers: { "Content-Type": "application/json", "X-Firebase-ID-Token": await user.getIdToken() }, body: JSON.stringify(body) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Send to Agent answered ${res.status}`);
+    return out;
+  }
+  async function proposeAgentSplit() {
+    const key = draft && draft.key;
+    if (!key) return;
+    agentSplit = { loading: true };
+    redrawAgents();
+    try {
+      const out = await agentCall({ action: "propose", key });
+      if (!draft || draft.key !== key || !agentSplit) return;
+      const tickets = (out.proposal || []).slice(0, AGENT_MAX_TICKETS).map((x) => ({ title: x.title || "", description: x.description || "", acceptanceCriteria: x.acceptanceCriteria || [] }));
+      agentSplit = { projectId: out.projectId || draft.project || "", tickets: tickets.length ? tickets : [{ title: draft.title, description: "", acceptanceCriteria: [] }], source: out.source };
+    } catch (e) {
+      if (!draft || draft.key !== key) return;
+      agentSplit = null;
+      toast(esc(e.message || "Send to Agent failed"));
+    }
+    redrawAgents();
+  }
+  async function createAgentTickets() {
+    readAgentSplit();
+    const sp = agentSplit, key = draft && draft.key;
+    if (!sp || !key || sp.saving) return;
+    const clean = cleanAgentSplit(sp.tickets);
+    sp.error = !sp.projectId ? "Choose the Agent Board project these tickets go to." : clean.error || "";
+    if (sp.error) { redrawAgents(); return; }
+    sp.saving = true; redrawAgents();
+    try {
+      const out = await agentCall({ action: "confirm", key, projectId: sp.projectId, tickets: clean.tickets });
+      if (!draft || draft.key !== key) return;
+      draft.agentTickets = (draft.agentTickets || []).concat((out.created || []).map((x) => ({ id: x.id, projectId: x.projectId })));
+      draft.agentTotal = out.agentTotal; draft.agentDone = out.agentDone;
+      agentSplit = null;
+      watchAgents(key);
+      redrawAgents();
+      toast(`Created <b>${(out.created || []).length}</b> agent ticket${(out.created || []).length === 1 ? "" : "s"} on ${esc(projectName(sp.projectId) || "the Agent Board")}`);
+    } catch (e) {
+      sp.saving = false; sp.error = e.message || "Send to Agent failed";
+      redrawAgents();
+    }
+  }
+  function bindAgents(form) {
+    if (form._agentBound) return;
+    form._agentBound = true;
+    form.addEventListener("click", (e) => {
+      if (!e.target.closest('[data-field="agents"]')) return;
+      if (e.target.closest("#f-agent-send")) { proposeAgentSplit(); return; }
+      if (e.target.closest("#f-agent-cancel")) { agentSplit = null; redrawAgents(); return; }
+      if (e.target.closest("#f-agent-create")) { createAgentTickets(); return; }
+      if (e.target.closest("#f-agent-add")) { readAgentSplit(); agentSplit.tickets.push({ title: "", description: "", acceptanceCriteria: [] }); redrawAgents(); return; }
+      const rm = e.target.closest("[data-agent-rm]");
+      if (rm) { readAgentSplit(); agentSplit.tickets.splice(+rm.dataset.agentRm, 1); redrawAgents(); return; }
+      if (e.target.closest("[data-agent-open]")) { closeTask({ keepAddress: true }); }
+    });
+    // Enter in a title must not submit the ticket's own form.
+    form.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-agent-title]")) e.preventDefault(); });
+  }
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
@@ -1678,9 +1818,9 @@ export function mountStaffKanban(ctx) {
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "links", "attachments", "comments"];
+    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "agents", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || k === "agents" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
@@ -1700,6 +1840,7 @@ export function mountStaffKanban(ctx) {
   }
   function bindForm() {
     const form = $("#task-form");
+    bindAgents(form);
     $$(".kb-type-toggle .type-opt", form).forEach((b) => b.addEventListener("click", () => {
       draft.type = b.dataset.type;
       syncCreateCta();

@@ -286,6 +286,11 @@ exports.kanbanNotifyComment = onDocumentWritten("kanbanTasks/{key}/comments/{com
   if (!before && after) return kanbanNotify.commentCreated({ id: event.id, params: event.params, data: event.data.after });
   return before && after ? kanbanNotify.commentEdited({ id: event.id, params: event.params, data: event.data }) : null;
 });
+// Send to Agent (functions/kanban-agent.js, KB-AGENT-1): a linked agent ticket's
+// move recounts its Kanban ticket's agent tickets, and moves it to Ready for
+// Testing once every one is built. Writes without a kanbanKey return at once.
+const kanbanAgent = require("./kanban-agent");
+exports.kanbanAgentRollup = onDocumentWritten("backlogItems/{itemId}", (event) => kanbanAgent.agentTicketWritten(event));
 // The helpers Staff Kanban's browser endpoints share with the rest of this file.
 const kanbanHelpers = {
   requireConsoleUser: (req, minRole) => requireConsoleUser(req, minRole),
@@ -293,6 +298,8 @@ const kanbanHelpers = {
   tooMany: (res) => tooMany(res),
   anthropicKey: () => { try { return ANTHROPIC_API_KEY.value(); } catch { return ""; } },
   anthropicWorkspace: () => { try { return ANTHROPIC_WORKSPACE_ID.value(); } catch { return ""; } },
+  suggestCategory: (text) => suggestCategory(text),
+  get publicOrigin() { return PUBLIC_ORIGIN; },
 };
 
 exports.syncConsoleUserClaims = onDocumentWritten("consoleUsers/{userEmail}", async (event) => {
@@ -5700,6 +5707,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
       case "/kanban/directory-sync": return await kanban.handleDirectorySync(req, res, kanbanHelpers);
       case "/kanban/backfill": return await kanban.handleBackfill(req, res, kanbanHelpers);
       case "/kanban/backfill-links": return await kanban.handleBackfillLinks(req, res, kanbanHelpers);
+      case "/kanban/send-to-agent": return await kanbanAgent.handleSendToAgent(req, res, kanbanHelpers);
       default:
         res.status(404).json({ error: "not_found", error_description: `no endpoint at ${path}` });
     }

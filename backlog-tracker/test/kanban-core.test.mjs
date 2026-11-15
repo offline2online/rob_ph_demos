@@ -144,6 +144,21 @@ t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed a
   assert.equal(k.cardOf({ key: "PH-1", acTotal: 4, acDone: 3 }).acDone, 3, "a card read back keeps its counts");
   assert.deepEqual([k.cardPatchOf({ acceptanceCriteria: stored }).acTotal, k.cardPatchOf({ acceptanceCriteria: stored }).acDone], [2, 1]);
   assert.ok(k.CARD_FIELDS.includes("acTotal") && k.CARD_FIELDS.includes("acDone"));
+  // Send to Agent (KB-AGENT-1): the agent counts ride on a card only once there are agent tickets
+  assert.ok(!("agentTotal" in k.cardOf({ key: "PH-1" })) && !("agentDone" in k.cardOf({ key: "PH-1", agentDone: 2 })));
+  assert.deepEqual([k.cardOf({ key: "PH-1", agentTotal: 3, agentDone: 1 }).agentTotal, k.cardOf({ key: "PH-1", agentTotal: 3 }).agentDone], [3, 0]);
+  assert.ok(!("agentTotal" in k.cardPatchOf({ title: "x", agentTotal: 3 })), "only the server writes the counts");
+  assert.deepEqual(k.agentRollup([{ status: "backlog" }, { status: "ready-for-testing" }, { status: "archived", mergeCommit: "abc" }, { status: "archived" }, null]), { total: 4, done: 2 });
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "in-progress" }, "A@x.com"), true);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "in-progress" }, "b@x.com"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "", status: "backlog" }, "a@x.com"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "done" }, "a@x.com"), false);
+  assert.deepEqual(k.cleanAgentSplit([{ title: " A  b ", description: " d ", acceptanceCriteria: "- one\n\n* two" }]).tickets, [{ title: "A b", description: "d", acceptanceCriteria: ["one", "two"] }]);
+  assert.match(k.cleanAgentSplit([]).error, /at least one/);
+  assert.match(k.cleanAgentSplit([{ title: "" }]).error, /needs a title/);
+  assert.match(k.cleanAgentSplit(Array.from({ length: 11 }, () => ({ title: "t" }))).error, /At most 10/);
+  const agentDesc = k.agentTicketDesc({ title: "T", description: "Do it.", acceptanceCriteria: ["Works"] }, { key: "PH-7", title: "Parent", url: "https://x/#staff-kanban/ticket/PH-7" });
+  assert.match(agentDesc, /^## Outcome\nDo it\.\n\nAcceptance criteria:\n- Works\n\n## Test steps\n1\. Check: Works\n\n## Dependencies\n\n\n## Spec reference\nStaff Kanban ticket PH-7 "Parent"/);
   // activity lines
   const after = value.map((c) => ({ ...c })); after[0].done = true; after[1].text = "Second, reworded"; after.push({ id: "zzzzzzzz", text: "Third", done: false });
   assert.deepEqual(k.diffCriteria(value, after), ['ticked criterion "First item"', 'edited criterion "Second" → "Second, reworded"', 'added criterion "Third"']);
