@@ -9,6 +9,7 @@ import {
   collection, doc, getDocs, getCountFromServer, onSnapshot, query, where, orderBy, limit, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { avatarHTML, memberLabel, normEmail } from "../avatar.js";
+import { canonicalEmail } from "./kanban-core.js";
 
 export const BELL_LIMIT = 30;
 // Read notifications older than this go when their owner marks all read (no scheduled job).
@@ -44,7 +45,8 @@ export function groupByTicket(list) {
 
 // host: the element to put the bell in. openTicket(key) shows that ticket.
 export function mountNotificationBell({ db, me, host, openTicket, onError = () => {} }) {
-  const mine = normEmail(me);
+  // Notifications are addressed to a person's own address, whichever of their addresses they signed in with.
+  const mine = canonicalEmail(normEmail(me));
   const state = { list: [], unread: 0, open: false, firstNames: {}, error: "", busy: false };
   // The first names the Kanban settings give people ("Huy"), else the first word of their name.
   const firstOf = (e) => state.firstNames[normEmail(e)] || String(memberLabel(e) || "").split(/[\s@]/)[0] || "Someone";

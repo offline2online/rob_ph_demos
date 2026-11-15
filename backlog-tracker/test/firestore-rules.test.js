@@ -566,6 +566,10 @@ async function main() {
     setDoc(doc(as(HUMAN), "backlogItems/i1"), { deployCommit: "deadbeef" }, { merge: true }));
   await check("A human editor CANNOT write patchBaseSha (the base the automation merges from)", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchBaseSha: "a".repeat(40) }, { merge: true }));
+  await check("A human editor CANNOT write patchCommit (the commit the automation reads a patch from)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchCommit: "b".repeat(40) }, { merge: true }));
+  await check("A human editor CANNOT write patchRef either", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchRef: "claude/some-branch" }, { merge: true }));
   await check("A human editor CANNOT create a ticket already carrying patchFiles", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iNew"), Object.assign({}, ITEM, { status: "backlog", patchFiles: [] })));
   await check("A human editor can still edit a ticket's title/desc/category", "allow", () =>
@@ -582,6 +586,8 @@ async function main() {
   });
   await check("The Routine (automation user) can still write patchFiles/patchReady", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { patchReady: true, patchFiles: [{ path: "a", content: "b" }] }, { merge: true }));
+  await check("The Routine (automation user) can hand a patch over as a commit", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { patchReady: true, patchCommit: "b".repeat(40), patchRef: "claude/some-branch", patchBaseSha: "a".repeat(40) }, { merge: true }));
   // Large patches (16 Oct 2026): the overflow lives in patchParts/{n}.
   await check("The Routine (automation user) can write a patch part", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1/patchParts/1"), { patchFiles: [{ path: "a", content: "b" }], patchBaseSha: "s" }));
