@@ -151,6 +151,17 @@ writing a spurious `"general"` project doc (this happened once in
 production on 2026-09-08 before the guard existed; the stray doc was
 deleted by hand).
 
+**Deploy queue and owned paths (wPoSOXfp8Em06Vzp3Cz7):**
+`projects/{id}.ownedPaths` (string[], at most 30 repo-relative prefixes;
+unset = the default in `functions/deploy-queue.js`, else `repoFolder/`) is
+member-editable from the Docs page, like `repoFolder`.
+`projects/{id}.trainHold` gains the value `"queued"` (automation-only, like
+every train field). `settings/deployQueue` is
+`{ entries: [{ projectId, projectName, deployBranch, enqueuedAt, progressKey,
+progressAt, passedOverAt }], updatedAt }`, written by the automation's
+service account only (no browser, an admin included). See "The deployment
+train" → "Deploy queue".
+
 ### `backlogItems/{itemId}`
 ```
 {
@@ -171,6 +182,9 @@ deleted by hand).
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
+  //   15 Nov 2026 (wPoSOXfp8Em06Vzp3Cz7): also set with patchReady when a BUILT patch became ready on a closing train — the patch is held on the card ("Built — joins the next release") and processApplyPatch lands it after the merge.
+  sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
+  foreignPaths?: [{projectId, projectName, paths}], // 15 Nov 2026 — files it changed that another project owns (projects.ownedPaths). A warning, never a refusal. Automation-only.
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
@@ -640,6 +654,98 @@ it (`laterPassFor`). This is the chip's side of "fixed further up the train",
 which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
+
+### Late arrivals (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+On 14 Nov 2026 Backlog Tracker's train was locked at 23:34, its version bump
+committed at 23:57, and a ticket still building landed at 00:05 on top of the
+bump with a red docs test. Deploy to Main refused ("1 ticket still in Ready
+for Testing") until a person sent the newcomer back.
+
+- **Once a project's train is closing** (`trainLocked`, `trainReady`, or
+  `trainStatus` deploying / awaiting-human-merge), a patch that becomes ready
+  is **not landed**. `processApplyPatch` keeps the patch on the card
+  (`patchReady` stays set), sets `buildAfterTrain`, notes it once, and the
+  Backlog card shows **"Built — joins the next release"**.
+- The first automation run after the train merges lands it like any other
+  patch: carried onto the new main by `rebasePatchFilesOnto`, rebuilt once
+  only if that conflicts. `finishTrain` asks for that run straight away.
+- **Never on top of the version bump.** The one exception — a rebuild of a
+  ticket the train's own tests sent back (`lastFailureReason.category
+  "tests"`, with earlier `deployCommits`), or a re-patch of a card on the
+  train — lands as before while the train is only locked, never once the
+  deploy is under way.
+- Rules: `functions/deploy-queue.js` → `lateArrivalAction`;
+  `deferredBuildOutcome` leaves a held patch alone.
+
+### Deploy queue (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+There was no lock between projects, only the workflow's concurrency group.
+On 14 Nov 2026 three trains deployed at once; each bumped `version.js` to
+1.5.398, and every one after the first had to merge main, re-bump and re-run
+a 33-minute suite. The Backlog Tracker train then sat conflicted for 90
+minutes on the `APP_VERSION` line alone (PR #585) and its approved deploy
+was dropped.
+
+- **Deploy to Main enters `settings/deployQueue`** (written by the
+  automation only), in click order. `processDeployTrain` checks it first.
+- **Related trains go one at a time.** Two trains are related when the files
+  they change against main overlap, or both change something under a folder
+  that ships through the same deploy workflow (`backlog-tracker/` and
+  `faq/` → `deploy-backlog-tracker.yml`). `version.js` never counts.
+  Unrelated trains (Display Types and PH Website, say) run in parallel as
+  before.
+- A related train behind another is held with `trainHold: "queued"` and the
+  note "Queued behind <project>'s deploy; starts by itself when that merges".
+  The header shows **Queued…** and the note. It starts by itself:
+  `finishTrain` takes the merged train off the queue and asks for the next
+  run.
+- **Nothing runs while queued**: main is not merged in, no suite is started
+  and no version is bumped. At the head of the queue the order is: merge
+  main (resolvers below), push, the train's tests on that head, then the
+  bump. So the long suites run **once, on the final head**, and the bump
+  (which starts no tests) is computed from main once.
+- **A stalled head is passed over.** A queue head with no progress (its
+  status, hold, PR or branch head unchanged) for 60 minutes, or parked on a
+  conflict, is passed over: related trains behind it go, it keeps its place
+  for a retry, and its note says why. A conflicted entry nobody retries is
+  dropped after a day.
+- **`version.js` never conflicts.** `tryAutoResolveTrainMergeConflict`
+  resolves a conflict confined to the `APP_VERSION` line by taking main's
+  file; the bump is recomputed afterwards. Anything else differing in that
+  file is left for a person.
+
+### Shared files between trains (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+Nobody could see that two trains touched the same files until
+`trainStatus: "conflict"` at deploy time (14 Nov 2026: all three trains
+changed `MCP.md` and `version.js`; 6 of 98 main-into-train merges since
+20 Oct conflicted).
+
+- **When a patch lands**, its files are compared with every other project's
+  live train (`git diff --name-only origin/main...origin/deploy/<other>`).
+  Each overlap is written to the ticket as `sharedWith` and one note names
+  the files. The card shows **"Also changed on <project>'s train"**
+  (Material Symbols `call_split`; hover lists the files) in Ready for
+  Testing and Approved, and the project header shows **"Shares files with
+  <project>'s train"** while any card has it.
+- The two train tips are also merged with `git merge-tree`. If they
+  conflict, the chip is in the warning colour and reads **"Conflicts with
+  <project>'s train: <files>"**, so it is fixed before either is approved.
+- **Owned paths.** `projects/{id}.ownedPaths` lists the repo-relative
+  prefixes a project owns (default: its `repoFolder/`; editable on the Docs
+  page under the repo folder). Defaults: Backlog Tracker & FAQs
+  `backlog-tracker/`, `faq/`, `docs/`, `CLAUDE.md`, `.github/workflows/`;
+  Staff Kanban `kanban-staff-board/`, `backlog-tracker/functions/kanban`,
+  `backlog-tracker/public/js/kanban/`, `backlog-tracker/public/css/kanban.css`;
+  PH Website `ph-website/`. The longest matching prefix owns a file. A
+  landed patch that changes a file another project owns gets
+  `foreignPaths`, a note and the chip **"Changes <project>'s files:
+  <paths>"**, so the tester knows that project's train will need a sync. A
+  warning, never a refusal.
+- Rules: `functions/deploy-queue.js` (`sharedWithEntries`,
+  `foreignOwnedPaths`, `parseMergeTreeConflicts`); view:
+  `public/js/train-overlap.js`.
 
 ### Build order (14 Nov 2026, ticket ZE8h8cfaezOb0eTsRjSH)
 

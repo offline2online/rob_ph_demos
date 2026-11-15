@@ -331,7 +331,7 @@ files **at the repo root**. That is exactly what happened to PR #185 on
 `README.md`, changed none of the real files, and every card still said
 "Deployed / Main Branch (Live)".
 
-So, when a project is added, all four of these get set before any ticket
+So, when a project is added, all of these get set before any ticket
 is worked:
 
 1. **The folder exists in the repo**, with its own `README.md` and
@@ -351,6 +351,12 @@ is worked:
    project"), never created as a board document by hand. The post-merge
    sync creates and refreshes the mirrors, sets the project's start
    document and records unclassified documents.
+6. **`projects/{id}.ownedPaths`** lists the repo-relative prefixes the
+   project owns (Docs page, under the repo folder; default `<folder>/`).
+   Set it whenever the project shares a folder with another one (Staff
+   Kanban's files live inside `backlog-tracker/`): a ticket on another
+   project that changes them is flagged "Changes <project>'s files", so
+   that train knows it needs a sync (`functions/deploy-queue.js`).
 
 A project with no folder of its own is legitimate but is the exception,
 not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
@@ -430,7 +436,23 @@ board:
 - **The first approval locks the Backlog** (`trainLocked`): Ready for Dev
   and Groom Backlog hide until the train merges, so no new ticket joins a
   release that is already closing. Backlog cards stay fully editable; only
-  starting a build is held.
+  starting a build is held. **A build that finishes after the lock is held,
+  not landed** (15 Nov 2026): its card reads "Built — joins the next
+  release" (`buildAfterTrain` with `patchReady`) and it lands by itself
+  right after the train merges. Nothing ever lands on top of the version
+  bump.
+- **Deploys queue among trains that share files** (`settings/deployQueue`,
+  15 Nov 2026): two trains that change the same files, or both ship through
+  `deploy-backlog-tracker.yml`, merge one at a time in click order; the
+  second shows "Queued behind <project>'s deploy" and starts by itself.
+  While queued nothing is merged in, tested or bumped; at the head of the
+  queue it merges main, runs its tests once on that head, then bumps.
+  Unrelated trains deploy in parallel. A conflict on `version.js`'s
+  `APP_VERSION` line alone resolves to main's line. Cards that share files
+  with another project's train say so while testing ("Also changed on …",
+  or "Conflicts with …" when the tips don't merge). See
+  `backlog-tracker/REQUIREMENTS.md` → "Late arrivals", "Deploy queue",
+  "Shared files between trains".
 - **The train is brought up to date with main before any ticket lands**
   (`syncTrainWithMain` in `run-backlog-automation.js`, 1 Oct 2026): an
   empty train is fast-forwarded to main, a loaded one gets main merged in,

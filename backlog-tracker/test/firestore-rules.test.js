@@ -179,6 +179,22 @@ async function main() {
   await check("Editor still cannot set trainReady even when creating the project", "deny", () =>
     setDoc(doc(as(HUMAN), "projects/newWithTrainReady"), { name: "New Project", type: "Platform", deployBranch: "deploy/new-project-2", trainReady: true }));
 
+  // ── The deploy queue and shared files between trains (wPoSOXfp8Em06Vzp3Cz7) ──
+  await check("Admin CANNOT write settings/deployQueue (the automation's queue)", "deny", () =>
+    setDoc(doc(as(HUMAN), "settings/deployQueue"), { entries: [] }));
+  await check("Admin can still write other settings docs", "allow", () =>
+    setDoc(doc(as(HUMAN), "settings/phaseSkillBindings"), { build: [], deploy: [] }));
+  await check("Editor CANNOT set trainHold (\"queued\") by hand", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { trainHold: "queued" }, { merge: true }));
+  await check("Editor CANNOT write a card's sharedWith", "deny", () =>
+    setDoc(doc(as(HUMAN), "backlogItems/i1"), { sharedWith: [] }, { merge: true }));
+  await check("Editor CANNOT write a card's foreignPaths", "deny", () =>
+    setDoc(doc(as(HUMAN), "backlogItems/i1"), { foreignPaths: [] }, { merge: true }));
+  await check("Editor can set ownedPaths like repoFolder", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { ownedPaths: ["backlog-tracker/", "faq/"] }, { merge: true }));
+  await check("Editor CANNOT set an oversized ownedPaths", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { ownedPaths: Array.from({ length: 31 }, (_, i) => `p${i}/`) }, { merge: true }));
+
   // ── The sign-in wall ────────────────────────────────────────────────────
   await check("Stranger cannot read the board", "deny", () => getDoc(doc(as(STRANGER), "projects/p1")));
   await check("Stranger cannot write the board", "deny", () =>

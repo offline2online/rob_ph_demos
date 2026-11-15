@@ -173,7 +173,8 @@ service cloud.firestore {
     //     ever name themselves.
     function humanProjectUpdateOk() {
       let changed = incoming().diff(resource.data).affectedKeys();
-      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
+      // trainHold (incl. "queued", the deploy queue's hold) is the automation's too.
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "trainHold"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
@@ -195,7 +196,10 @@ service cloud.firestore {
       // Firestore's own document limit and can only shrink from here.
       return (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300))
         && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
-        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
+        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")))
+        // Owned paths (wPoSOXfp8Em06Vzp3Cz7): a member edits them on the
+        // Docs page like repoFolder; a short list of repo-relative prefixes.
+        && (!("ownedPaths" in incoming()) || incoming().ownedPaths == null || (incoming().ownedPaths is list && incoming().ownedPaths.size() <= 30));
     }
 
     // The type every concept and project carries (ticket ufOwuueuj1f5vmeN0xi2):
@@ -389,7 +393,11 @@ service cloud.firestore {
         // (intake / build / manual — the intake trigger decides) and the
         // lane-mate a Ready for Dev click queued it behind. The list itself,
         // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
-        "dependsOnSource", "queuedAfter"];
+        "dependsOnSource", "queuedAfter",
+        // Shared files between trains (wPoSOXfp8Em06Vzp3Cz7): what a landed
+        // ticket shares with another project's live train, and the files it
+        // changed that another project owns. Written by the automation only.
+        "sharedWith", "foreignPaths"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -1339,12 +1347,15 @@ service cloud.firestore {
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
     // Admin-only to write: phaseSkillBindings feeds the Routine's prompt.
+    // settings/deployQueue (wPoSOXfp8Em06Vzp3Cz7) is the deploy queue the
+    // automation keeps with its service account: no browser writes it, an
+    // admin included — a queue entry decides which train merges next.
     match /settings/{docId} {
       allow read: if isBoardReader();
-      allow create, update: if isAdmin()
+      allow create, update: if isAdmin() && docId != "deployQueue"
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && docId != "deployQueue";
     }
 
     // ── Whiteboard ─────────────────────────────────────────────────────────

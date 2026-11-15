@@ -30,6 +30,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
+import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
 import { renderMarkdown } from "./docs-markdown.js";
@@ -901,7 +902,12 @@ function cardHTML(item) {
   // control" treatment as mergeBtn above, for the short window between the
   // Routine setting patchReady and backlog-automation.yml actually picking
   // it up (see isInDevelopment above).
-  const inDevelopmentHint = isInDevelopment
+  // A built patch held for the next release (wPoSOXfp8Em06Vzp3Cz7): the
+  // project's train was already closing when it became ready, so it lands by
+  // itself right after that train merges.
+  const inDevelopmentHint = isInDevelopment && item.buildAfterTrain
+    ? `<span class="in-development-hint held-patch-hint" title="This project's train was already closing when this build finished, so it was not landed on it. It lands by itself right after that train merges.">Built — joins the next release</span>`
+    : isInDevelopment
     ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
     : (isSentToClaude
         ? sentToClaudeHintHTML(item)
@@ -1121,7 +1127,7 @@ function cardHTML(item) {
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${sentBackLastTimeHTML(item)}
-      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -2122,6 +2128,14 @@ function deployNotifyButtonHTML(project) {
     // The pipeline holds an approved deploy until the train's own tests pass
     // (trainTestGate in run-backlog-automation.js); say which, not "Deploying".
     const holdNote = escapeHTML(project.trainNote || "");
+    // Held in the deploy queue behind a related train (wPoSOXfp8Em06Vzp3Cz7):
+    // nothing is tested or bumped yet; it starts by itself when that merges.
+    if (project.trainHold === "queued") {
+      return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="${holdNote}">
+      <span class="material-symbols-outlined notify-claude-icon">schedule</span>
+      <span class="notify-claude-label">Queued&hellip;</span>
+    </button>`;
+    }
     if (project.trainHold === "tests-red") {
       return `<button type="button" class="notify-claude-btn" disabled title="${holdNote}">
       <span class="material-symbols-outlined notify-claude-icon">error</span>
@@ -2648,7 +2662,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${kanbanE2eChipHTML(project)}
+      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -6771,6 +6785,10 @@ function renderDocsPage() {
     docsRepoFolderInput.value = (project && project.repoFolder) || "";
     docsRepoFolderInput.disabled = docsRepoFolderNone.checked;
   }
+  const docsOwnedPathsInput = document.getElementById("docs-owned-paths-input");
+  if (docsOwnedPathsInput && document.activeElement !== docsOwnedPathsInput) {
+    docsOwnedPathsInput.value = Array.isArray(project && project.ownedPaths) ? project.ownedPaths.join("\n") : "";
+  }
   // Why the board's Requirements/README may be behind the repo, shown on the
   // page the chip opens. Created here so it needs no markup of its own.
   const nameEl = document.getElementById("docs-page-project-name");
@@ -6968,6 +6986,27 @@ document.getElementById("docs-repo-folder-save").addEventListener("click", async
     await setProjectRepoFolder(docsProjectId, { folder });
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Repo folder", value: folder, max: 80 }]));
+  }
+});
+
+// Owned paths (wPoSOXfp8Em06Vzp3Cz7): which files are this project's, for the
+// "Changes <project>'s files" warning on another project's tickets. Empty
+// means the default (the repo folder).
+document.getElementById("docs-owned-paths-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const input = document.getElementById("docs-owned-paths-input");
+  const parsed = parseOwnedPaths(input.value);
+  if (parsed.error) {
+    await showAlert(parsed.error);
+    input.focus();
+    return;
+  }
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), {
+      ownedPaths: parsed.paths.length ? parsed.paths : deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Owned paths", value: parsed.paths.join("\n"), max: 30 }]));
   }
 });
 

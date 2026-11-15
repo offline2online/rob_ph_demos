@@ -603,6 +603,61 @@ const scenarios = [
     },
   },
   {
+    name: "Deploy queue: a queued train shows Queued… and the note under its header",
+    seed: () => {
+      const s = only("d1");
+      Object.assign(s.docs.projects[PID], { trainReady: true, trainLocked: true, trainStatus: "deploying", trainHold: "queued",
+        trainNote: "Queued behind Staff Kanban's deploy; starts by itself when that merges. (both trains ship through deploy-backlog-tracker.yml, so they merge one at a time.)" });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".train-queued-hint", "the queued line shows under the header");
+      assert.ok((await c.text(".train-queued-hint")).includes("Queued behind Staff Kanban's deploy; starts by itself when that merges"));
+      c.at("the deploy button reads Queued… and is disabled", ".project-header-actions");
+      const btn = await c.page.evaluate(() => {
+        const b = [...document.querySelectorAll(".project-header-actions button.notify-claude-btn")].find((e) => /Queued/.test(e.textContent));
+        return b ? { disabled: b.disabled, title: b.title } : null;
+      });
+      assert.ok(btn, "a Queued… button is shown");
+      assert.strictEqual(btn.disabled, true);
+      assert.match(btn.title, /Queued behind Staff Kanban's deploy/);
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+      assert.deepStrictEqual(await c.writes(), [], "showing the queue writes nothing");
+    },
+  },
+  {
+    name: "Shared files: chips on train cards, the warning variant on a conflict, the header line, and a held patch in Backlog",
+    seed: () => {
+      const s = only("r1", "d1", "b1");
+      s.docs.backlogItems.r1.sharedWith = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/MCP.md"], conflictPaths: [], conflict: false }];
+      s.docs.backlogItems.r1.foreignPaths = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/public/js/kanban/board.js"] }];
+      s.docs.backlogItems.d1.sharedWith = [{ projectId: "pW", projectName: "PH Website", paths: ["backlog-tracker/public/index.html"], conflictPaths: ["backlog-tracker/public/index.html"], conflict: true }];
+      Object.assign(s.docs.backlogItems.b1, { patchReady: true, buildAfterTrain: true });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible('.card[data-id="r1"] .train-overlap-chip, [data-id="r1"] .train-overlap-chip', "the Ready for Testing card shows its shared-files chip");
+      const chips = await c.page.evaluate(() => [...document.querySelectorAll(".train-overlap-chip")].map((e) => ({ text: e.textContent.trim(), title: e.title, warn: e.classList.contains("train-overlap-chip-warn"), icon: (e.querySelector(".material-symbols-outlined") || {}).textContent })));
+      const also = chips.find((x) => x.text.includes("Also changed on Staff Kanban's train"));
+      assert.ok(also, `an "Also changed on" chip (${JSON.stringify(chips)})`);
+      assert.strictEqual(also.icon, "call_split");
+      assert.match(also.title, /backlog-tracker\/MCP\.md/, "hover lists the files");
+      assert.strictEqual(also.warn, false);
+      const conflict = chips.find((x) => x.text.includes("Conflicts with PH Website's train: backlog-tracker/public/index.html"));
+      assert.ok(conflict && conflict.warn, "an approved card whose train conflicts shows the warning variant");
+      assert.ok(chips.some((x) => x.text.includes("Changes Staff Kanban's files: backlog-tracker/public/js/kanban/board.js")), "the owned-paths warning");
+      await c.visible(".train-shared-hint", "the header line shows");
+      const header = await c.text(".train-shared-hint");
+      assert.ok(header.includes("Shares files with ") && header.includes("Staff Kanban's train") && header.includes("PH Website's train"), header);
+      await c.waitText(".held-patch-hint", "Built — joins the next release", "the held Backlog card says it joins the next release");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+    },
+  },
+  {
     name: "Ready for Testing: Test this → links to the seeded previewUrl",
     seed: () => only("r1"),
     async run(c) {

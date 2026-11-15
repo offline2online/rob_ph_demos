@@ -199,7 +199,9 @@ async function test(name, fn) {
     assert.strictEqual(deferredBuildOutcome(held, { trainLocked: true }), "wait");
     assert.strictEqual(deferredBuildOutcome({ ...held, blocked: { reason: "waiting-on-input" } }, {}), "wait");
     assert.strictEqual(deferredBuildOutcome({ ...held, status: "ready-for-testing" }, {}), "clear");
-    assert.strictEqual(deferredBuildOutcome({ ...held, patchReady: true }, {}), "clear");
+    // A built patch held for the next release: processApplyPatch lands it and clears the flag (deploy-queue.js).
+    assert.strictEqual(deferredBuildOutcome({ ...held, patchReady: true }, {}), "wait");
+    assert.strictEqual(deferredBuildOutcome({ ...held, patchReady: true }, null), "clear");
     assert.strictEqual(deferredBuildOutcome(held, null), "clear");
   });
 
