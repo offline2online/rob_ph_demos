@@ -4687,10 +4687,12 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     this (the same bank) finished in 6 min 45 s with a full profile but no
     site count and one person, so the brief now runs as **two halves at
     once** (`claudeResearchSplit`, `RESEARCH_HALVES`): the estate (the site
-    count first, the breakdown, the people, the logos; 12 searches, 6 page
-    reads) and the market (retail media and competitors, personalisation,
-    in-store digital, loyalty, strategy, news, financials, fit, talking
-    points; 14 searches, 6 page reads). Each half's own fields win when they
+    count first, the breakdown, where it trades, the people; 10 searches, 5
+    page reads) and the market (summary, size, logos, retail media and
+    competitors, personalisation, in-store digital, loyalty, strategy, news,
+    financials, facts, fit, talking points; 14 searches, 6 page reads).
+    Tried on the same bank from a runner: 344 s, 561 sites, eight news
+    items. Each half's own fields win when they
     are put together (`mergeHalves`); people are listed once each. When one
     half fails the other is kept and the record says some fields may be
     missing.

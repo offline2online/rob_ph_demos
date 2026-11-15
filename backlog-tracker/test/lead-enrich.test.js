@@ -387,16 +387,16 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     const sent = [];
     const estate = { name: "NAB", storeCount: 601, storeCountBreakdown: "601 branches.", people: [{ name: "Jane Smith", title: "CDO" }], summary: "", news: [], techStack: ["Salesforce"] };
     const market = { name: "", storeCount: 450, summary: "A bank.", retailMedia: "None yet.", people: [{ name: "J. Smith", title: "Chief Data Officer" }, { name: "Ann Lee", title: "CMO" }], news: [{ title: "Results", url: "https://x/1" }], techStack: ["Salesforce", "AWS"] };
-    class Two { constructor() { this.beta = { messages: { stream: (params) => { sent.push(params); const est = /the people; its LinkedIn/.test(params.messages[0].content); return { finalMessage: async () => text("```json\n" + JSON.stringify(est ? estate : market) + "\n```") }; } } }; } }
+    class Two { constructor() { this.beta = { messages: { stream: (params) => { sent.push(params); const est = /and the people\. Leave/.test(params.messages[0].content); return { finalMessage: async () => text("```json\n" + JSON.stringify(est ? estate : market) + "\n```") }; } } }; } }
     const out = await claudeResearchSplit({ apiKey: "k", Anthropic: Two, company: "NAB" });
     assert.equal(sent.length, 2, "both halves are asked at once");
-    assert.deepEqual(sent.map((p) => p.tools[0].max_uses).sort(), [12, 14]);
+    assert.deepEqual(sent.map((p) => p.tools[0].max_uses).sort(), [10, 14]);
     assert.equal(out.storeCount, 601, "the estate half owns the site count");
     assert.equal(out.summary, "A bank."); assert.equal(out.retailMedia, "None yet.");
     assert.deepEqual(out.people.map((p) => p.name), ["Jane Smith", "Ann Lee"]);
     assert.deepEqual(out.techStack, ["Salesforce", "AWS"]);
     assert.equal(out.cutShort, undefined);
-    class Half { constructor() { this.beta = { messages: { stream: (params) => ({ finalMessage: async () => { if (/the people; its LinkedIn/.test(params.messages[0].content)) throw new Error("overloaded"); return text(JSON.stringify(market)); } }) } }; } }
+    class Half { constructor() { this.beta = { messages: { stream: (params) => ({ finalMessage: async () => { if (/and the people\. Leave/.test(params.messages[0].content)) throw new Error("overloaded"); return text(JSON.stringify(market)); } }) } }; } }
     const one = await claudeResearchSplit({ apiKey: "k", Anthropic: Half, company: "NAB" });
     assert.equal(one.summary, "A bank."); assert.equal(one.cutShort, true, "a missing half is said on the record");
     class None { constructor() { this.beta = { messages: { stream: () => ({ finalMessage: async () => { throw new Error("overloaded"); } }) } }; } }

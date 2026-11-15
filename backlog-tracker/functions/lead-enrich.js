@@ -561,10 +561,10 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
 // the function's time: the estate (the site count first) and the people, and
 // the market (retail media, personalisation, news, money). Each half answers
 // in the same JSON shape; its own fields win when the two are put together.
-const ESTATE_KEYS = ["name", "website", "websiteConfidence", "industry", "sector", "countries", "hqCity", "hqCountry", "storeCount", "storeCountBreakdown", "storeCountSource", "estate", "employees", "revenue", "people", "linkedinCompany", "logoUrl", "logoLight", "logoDark", "facts"];
+const ESTATE_KEYS = ["name", "website", "websiteConfidence", "industry", "sector", "countries", "hqCity", "hqCountry", "storeCount", "storeCountBreakdown", "storeCountSource", "estate", "people"];
 const RESEARCH_HALVES = [
-  { name: "estate", searches: 12, fetches: 6, focus: "This run covers only part of the brief, and another run covers the rest at the same time. Find: how many physical sites it trades from (first, and most important) with storeCountBreakdown, storeCountSource and estate; its industry, sector, countries and head office; employees and revenue; the people; its LinkedIn page; its logo files; and facts. Leave every other field empty." },
-  { name: "market", searches: 14, fetches: 6, focus: "This run covers only part of the brief, and another run covers the estate, the site count and the people at the same time. Find: summary, retailMedia (with the competitors' networks), personalisation, inStoreDigital, loyalty, primaryCloud, strategy, techStack, vendors, news, financials, fit and talkingPoints. Leave storeCount null and people empty." },
+  { name: "estate", searches: 10, fetches: 5, focus: "This run covers only part of the brief, and another run covers the rest at the same time. Find: how many physical sites it trades from (first, and most important) with storeCountBreakdown, storeCountSource and estate; its industry, sector, countries and head office; and the people. Leave every other field empty." },
+  { name: "market", searches: 14, fetches: 6, focus: "This run covers only part of the brief, and another run covers the site count, the estate and the people at the same time. Find: summary, employees, revenue, its LinkedIn page, its logo files, retailMedia (with the competitors' networks), personalisation, inStoreDigital, loyalty, primaryCloud, strategy, techStack, vendors, news, financials, facts, fit and talkingPoints. Leave storeCount null and people empty." },
 ];
 function mergeHalves(estate, market) {
   if (!estate) return market; if (!market) return estate;
