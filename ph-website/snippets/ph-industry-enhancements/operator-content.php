@@ -6,7 +6,7 @@
  * ph-rmn-tour, ph-rmn-request), server-side; the shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq] and
  * [ph_operator_request] render the same blocks. Every other section (hero, "Why it beats anything out there", why, who, how, venues,
  * standards, independents) is built in Elementor from ph-website/elementor/run-your-own-rmn.md; no page copy is rendered here. Styles
- * follow the approved design as updated on 14 Nov 2026 (operator.css). A sales pitch only: no setup fee, minimum, revenue split or
+ * follow the approved design as updated on 14 Nov 2026 (operator.css). A sales pitch only: no setup fee amount, minimum, revenue split or
  * share figure is ever printed (the calculator's two shares live in operator.js and operator_calc() only). The calculator outputs are
  * rendered with the defaults, in "Operator or team" mode, so the block reads correctly before JS runs.
  *
@@ -163,7 +163,9 @@ const OPERATOR_PER_DISPLAY_TIP   = 'Your potential income a year ÷ the displays
  * operators, covering what an RMN is (first-party data, measured against sales), who can run one, making money (direct advertiser deals
  * at a fixed CPM: PH is not connected to any DSPs yet, ticket ayzaMouFF6U5CIsAMbSx), what venues get, costs, hardware (every screen
  * needs a media player; Amazon Signage is the one player named), who pays for it, exclusivity, industries, what you get, measurement,
- * the calculator and getting started. Never a setup fee, minimum guarantee, revenue-share percentage, runway length or "no lock-in";
+ * the calculator and getting started. "What does it cost to get started?" opens with the one-off platform setup fee, which keeps places
+ * for serious applicants (Rob, 15 Nov 2026, ticket 6YWM7TMlzJE704UwvIil); it says the fee exists and never its amount. Never a fee
+ * amount, minimum guarantee, revenue-share percentage, runway length or "no lock-in";
  * never "DSP", "programmatic" or "MCP" (not live); no client or brand names other than Amazon Signage in "What hardware do I need?",
  * no country positioning. The visible accordion, the
  * FAQPage JSON-LD and the twin's FAQ (so the agent endpoint and llms-full.txt) all print this list, so they always match.
@@ -174,7 +176,7 @@ function operator_faq() {
 		array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs. Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.' ),
 		array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
 		array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
-		array( 'What does it cost to get started?', 'You start with a free roll-out runway before platform fees apply, so you can sign up venues and win your first advertisers first. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
+		array( 'What does it cost to get started?', 'There\'s a one-off platform setup fee, which keeps places for serious applicants ready to commit. After that you have a free roll-out runway to sign up venues and win your first advertisers before monthly platform fees apply, and those fees are based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
 		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
 		array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
 		array( 'Can I get exclusive rights to an industry?', 'Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
