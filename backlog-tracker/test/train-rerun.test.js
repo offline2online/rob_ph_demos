@@ -57,7 +57,8 @@ test("trainFailureNotes: the owner is told it is theirs, the others whose it is"
   const own = notes.find((n) => n.id === "cardA").text;
   const other = notes.find((n) => n.id === "cardB").text;
   assert.ok(own.includes("FAILED on this ticket's own commit aaaaaaa (it failed again when re-run)"), own);
-  assert.ok(own.includes("use Failed testing"), own);
+  // Flow 6/9: the owner is not asked to act; the automation sends it back.
+  assert.ok(!own.includes("use Failed testing") && own.includes("sends it back by itself"), own);
   assert.ok(other.includes("not this ticket's change") && other.includes("Ticket A (cardA)"), other);
   assert.ok(other.includes("Nothing to do on this ticket"), other);
 });

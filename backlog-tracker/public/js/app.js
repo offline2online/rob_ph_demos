@@ -5116,13 +5116,60 @@ function eiNoteRowHTML(note) {
   </div>`;
 }
 
+// Flow 6/9 (jKM13xJ7PxW9THm3YQ9g): the automation's own notes are pipeline
+// history, kept out of the way under one collapsed "Pipeline history (N)"
+// section; people's and Claude's notes are always open. A keyed automation
+// note (one note per event, scripts/run-backlog-automation.js appendNote)
+// is shown once, newest version only, in case a stale write left two.
+const PIPELINE_NOTE_AUTHOR = "backlog-automation";
+function splitPipelineNotes(notes) {
+  const people = [];
+  const pipeline = [];
+  const seenKeys = new Set();
+  for (const n of (Array.isArray(notes) ? notes : []).slice().reverse()) { // newest first
+    if (!n || typeof n !== "object") continue;
+    if (n.author !== PIPELINE_NOTE_AUTHOR) { people.push(n); continue; }
+    if (n.key) {
+      if (seenKeys.has(n.key)) continue;
+      seenKeys.add(n.key);
+    }
+    pipeline.push(n);
+  }
+  return { people, pipeline };
+}
+let eiPipelineOpen = false;
+let eiPipelineItemId = null;
+
+function eiPipelineHTML(pipeline) {
+  if (!pipeline.length) return "";
+  const open = eiPipelineOpen;
+  return `<section class="ei-pipeline${open ? " is-open" : ""}">
+    <button type="button" class="ei-pipeline-toggle" id="ei-pipeline-toggle" aria-expanded="${open}" aria-controls="ei-pipeline-body">
+      <span class="material-symbols-outlined" aria-hidden="true">${open ? "expand_less" : "expand_more"}</span>
+      <span class="ei-pipeline-title">Pipeline history (${pipeline.length})</span>
+    </button>
+    <div class="ei-pipeline-body" id="ei-pipeline-body"${open ? "" : " hidden"}>${pipeline.map(eiNoteRowHTML).join("")}</div>
+  </section>`;
+}
+
 function renderEiNotes() {
   if (!editingItemId) return;
   const item = allItems.find((i) => i.id === editingItemId);
   const notes = (item && item.notes) || [];
+  if (eiPipelineItemId !== editingItemId) { eiPipelineItemId = editingItemId; eiPipelineOpen = false; }
+  const { people, pipeline } = splitPipelineNotes(notes);
   eiNotesList.innerHTML = notes.length
-    ? notes.slice().reverse().map(eiNoteRowHTML).join("")
+    ? people.map(eiNoteRowHTML).join("") + eiPipelineHTML(pipeline)
     : '<p class="interface-row-empty">No comments yet.</p>';
+  const pipelineToggle = document.getElementById("ei-pipeline-toggle");
+  if (pipelineToggle) {
+    pipelineToggle.addEventListener("click", () => {
+      eiPipelineOpen = !eiPipelineOpen;
+      renderEiNotes();
+      const again = document.getElementById("ei-pipeline-toggle");
+      if (again) again.focus();
+    });
+  }
   // Above the thread, outside its scroll: one line per time this ticket was
   // sent back and why (rejection-summary.js), so nobody reads every comment
   // to find out.

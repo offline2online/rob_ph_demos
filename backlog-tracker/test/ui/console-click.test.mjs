@@ -806,6 +806,46 @@ const scenarios = [
     },
   },
   {
+    // Flow 6/9 (jKM13xJ7PxW9THm3YQ9g): automation notes sit collapsed under "Pipeline history (N)";
+    // people's and Claude's notes stay open. A keyed note shows once (newest).
+    name: "Edit item: automation notes are collapsed under Pipeline history, people's notes stay open; opens on click and by keyboard",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b1.notes = [
+        { author: "tester@personalisationhub.com", text: "Person says the widget is still blue", at: "2026-11-14T00:00:00.000Z" },
+        { author: "backlog-automation", text: "Re-running it once, old version", at: "2026-11-14T00:01:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+        { author: "claude", text: "Claude built the purple widget", at: "2026-11-14T00:02:00.000Z" },
+        { author: "backlog-automation", text: "Committed to the integration branch", at: "2026-11-14T00:03:00.000Z" },
+        { author: "backlog-automation", text: "Sent back automatically, newest version", at: "2026-11-14T00:04:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+      ];
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.waitText("#ei-notes-list", "Person says the widget is still blue", "the person's note, open");
+      await c.waitText("#ei-notes-list", "Claude built the purple widget", "Claude's note, open");
+      c.at("the collapsed section, one entry per key", "#ei-pipeline-toggle");
+      await until(async () => /Pipeline history \(2\)/.test((await c.page.textContent("#ei-pipeline-toggle").catch(() => "")) || ""), "Pipeline history (2) on the toggle");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "false");
+      assert.strictEqual(await c.page.isVisible("#ei-pipeline-body"), false, "collapsed by default");
+      await c.click("#ei-pipeline-toggle", "Pipeline history");
+      await c.visible("#ei-pipeline-body", "the pipeline notes");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "true");
+      const body = await c.page.innerText("#ei-pipeline-body");
+      assert.ok(body.indexOf("Sent back automatically, newest version") < body.indexOf("Committed to the integration branch"), `newest first, got ${JSON.stringify(body)}`);
+      assert.ok(!body.includes("old version"), "the replaced version of a keyed note is not shown");
+      c.at("keyboard: Enter on the focused toggle collapses it again", "#ei-pipeline-toggle");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Enter");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "false", "the section to collapse by keyboard");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Space");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "true", "the section to open by keyboard");
+    },
+  },
+  {
     name: "Model: a card no Opus could build says so, with no Answer button, and clears",
     seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", blocked: { reason: "model-unavailable", note: "Not built: this ticket needs Claude Opus and none was available to this build session. Clear the flag to try again." } }); return s; },
     async run(c) {
