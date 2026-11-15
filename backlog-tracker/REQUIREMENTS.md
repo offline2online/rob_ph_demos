@@ -79,6 +79,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   notifyRequestedByEmail?: string | null, // the signed-in member who clicked — per-member routine binding lookup, see notifyOnProjectReadyForReview below (VNE6dxMu3h6jO3g6FNNB)
   notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
+  notifyAutomationAt?: timestamp, // = notifyRequestedAt on the pipeline's own build requests (run-backlog-automation.js buildRequestFields): an agent ticket in one fires on its owner's Routine whoever clicked last. Automation only (firestore.rules). See "Agent tickets fire under their owner's own Claude account"
   deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy", OR by the approve_deploy_to_main MCP tool — see "team access & the MCP server" below
   deployNotifyRequestedVia?: "mcp" | null, // set alongside deployNotifyRequestedAt only when approve_deploy_to_main wrote it; a console click explicitly clears it back to null, so it's always accurate, never stale from an earlier MCP call
   deployNotifyRequestedByEmail?: string | null, // the signed-in member who triggered this — either the approve_deploy_to_main caller, or (VNE6dxMu3h6jO3g6FNNB) a plain console click; audit trail on the project doc itself, alongside mcpAuditLog, and the per-member routine binding lookup
@@ -106,7 +107,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     sentItemIds: string[],
     finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint; cleared on each new click
     errorMessage?: string,
-    firedVia?: "member" | "shared", // which Routine credentials fired this — see notifyOnProjectReadyForReview / resolveRoutineCredentials below (VNE6dxMu3h6jO3g6FNNB)
+    firedVia?: "member" | "shared" | "owner" | "member+owner" | "shared+owner", // which Routine credentials fired this — see notifyOnProjectReadyForReview / resolveRoutineCredentials below (VNE6dxMu3h6jO3g6FNNB); "owner" = agent tickets on their owner's binding (xFzQgynkoMdV33iWJFZq)
   },
   deployRoutine?: {                // same shape as notifyRoutine (including firedVia), set by notifyOnProjectReadyToDeploy — see README.md
     status: "in-progress" | "done" | "error",
@@ -116,11 +117,12 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     itemCount: number,
     finishedAt?: timestamp,
     errorMessage?: string,
-    firedVia?: "member" | "shared",
+    firedVia?: "member" | "shared" | "owner" | "refused", // "owner"/"refused": a train carrying agent tickets (xFzQgynkoMdV33iWJFZq)
   },
   // groomRoutine has the same shape (including firedVia) again, set by
   // notifyOnProjectReadyForGrooming — omitted here only because it predates
   // this schema block; see that function in functions/index.js directly.
+  // It also carries note?: string — agent tickets left out of that groom.
   readyForTestingNotifyRequestedAt?: timestamp, // stamped by run-backlog-automation.js once per run per project, after it lands ticket(s) in Ready for Testing — see "The Ready for Testing hand-off" below
   readyForTestingNotifyItemIds?: string[],      // the ids that landed in that run
   readyForTestingNotifyRequestedByEmail?: string | null, // the member whose Notify Claude click started the build (per-member routine binding lookup, as above)
@@ -191,6 +193,7 @@ deleted by hand).
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
+  ownerEmail?: string | null,   // xFzQgynkoMdV33iWJFZq — an agent ticket's owner (lowercased email): it fires only on that member's personal Routine, and only they can start it. Set by the server only (MCP ownedByMe; Send to Agent). Pipeline field — no browser writes it. See "Agent tickets fire under their owner's own Claude account"
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
   testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
@@ -4134,6 +4137,74 @@ field.
 - `builtByModel` and `reviewedByModel` are pipeline fields
   (`itemPipelineFields()` in `firestore.rules`): only the automation user
   writes them.
+
+## Agent tickets fire under their owner's own Claude account
+
+Ticket xFzQgynkoMdV33iWJFZq (15 Nov 2026). An agent ticket carries an owner,
+and every Routine session for it runs under that owner's own Claude account:
+never the shared project token, and never on someone else's click.
+
+- **Field**: `backlogItems.ownerEmail` (lowercased). A pipeline field in
+  `firestore.rules` (`itemPipelineFields()`): no browser writes it, so nobody
+  can tag a ticket with another person's account. It is set by the server:
+  MCP `create_backlog_item` / `update_backlog_item` with `ownedByMe: true`
+  (the caller only; claiming an existing ticket needs it to be in Backlog
+  and filed by the caller, or an admin; `ownedByMe: false` releases the
+  caller's own, an admin may release anyone's), and by Send to Agent
+  (VlBatzRVbPt6heAEp5mu) when it creates tickets from a Kanban ticket.
+- **Rule** (`functions/owner-firing.js`, applied in `functions/index.js`):
+  - **Ready for Dev** (`notifyOnProjectReadyForReview`): an agent ticket
+    fires on its owner's binding (`ownerRoutineCredentials`, the
+    `routineBindings/{owner}` lookup with no shared fallback) when the
+    owner clicked (`notifyRequestedByEmail`), or when the request is the
+    pipeline's own automatic rebuild (`notifyAutomationAt` equal to
+    `notifyRequestedAt`, written only by `run-backlog-automation.js`).
+    Anyone else's click, including an admin's `send_to_build`, is refused:
+    a ticket the click named gets `lastFire.status: "refused"`
+    (`reason: "not-owner"`) and the project's `notifyRoutine.errorMessage`
+    says why; one only swept up by a whole-column click is left alone.
+    An owner with no usable binding (none, or not on `api.anthropic.com`)
+    gets nothing fired (`reason: "no-binding"`). Untagged tickets in the
+    same click fire exactly as before (clicker's binding, else shared).
+  - **Deploy to Main** (`notifyOnProjectReadyToDeploy`): a train carrying
+    agent tickets deploys only when the clicker owns every one of them, on
+    their binding. A train mixing two owners' agent tickets, someone else's
+    click, or an owner with no binding is refused: nothing fires and
+    `deployRoutine` is `status: "error"` with the reason.
+  - **Groom Backlog** (`notifyOnProjectReadyForGrooming`): other members'
+    agent tickets are left out of the session; the clicker's own are
+    included only through their binding, and the session then runs on it.
+    What was left out is on `groomRoutine.note`; nothing left fires nothing.
+  - Review Batch, Run E2E, the Ready for Testing presentation and the
+    release audit are unchanged: they build nothing for a ticket.
+- **Board** (`public/js/owner-fire.js`, `app.js`): an agent ticket shows an
+  owner chip (`person`). In Backlog, a viewer who may not start it (someone
+  else's, or their own with no binding) sees its Ready for Dev checkbox
+  disabled, with an info icon whose tooltip says why and links to
+  Settings → My Claude Routine; Ready for Dev counts and sends only what the
+  viewer may start. Deploy to Main and Groom Backlog are disabled the same
+  way when the rule would refuse them. Whether the viewer has a binding
+  comes from `GET /mcp/me/routine-binding`, asked once, only when an agent
+  ticket is on screen. The server refuses anything the board gets wrong.
+- **Settings → My Claude Routine** (`#settings/routine`, every member): the
+  self-service setup that replaces the MCP-only path. Four steps: create a
+  Routine at claude.ai/code/routines, paste the bootstrap prompt (shown, with
+  Copy prompt), add an API trigger, paste its fire URL and token and Save.
+  Status says Connected or Not set up; Disconnect clears it. Served by
+  `/mcp/me/routine-binding` in `functions/mcp-server.js`: `GET` returns only
+  `hasRoutineBinding`, `boundAt` and the bootstrap prompt; `POST {fireUrl,
+  token}` (editor or admin; both empty clears) writes the signed-in member's
+  own `routineBindings/{email}` through the same `writeRoutineBinding` and
+  validation as `set_my_routine_binding`, and is audited in `mcpAuditLog`
+  (`via: "console"`). The URL and token are never sent back.
+- **Known limit**: anyone who may edit a ticket can still edit an agent
+  ticket's text, which its owner's Routine then reads. Limiting edits to the
+  owner is ticket ZmEWDC40NYOiojehfPjk ("Owner scoping").
+- **Tests**: `test/owner-firing.test.js` (the rule, the three fire handlers,
+  the endpoint) and `test/owner-fire.test.mjs` (the board's half), both in
+  `npm run test:routine-binding`; `firestore-rules.test.js` (`ownerEmail` and
+  `notifyAutomationAt` are not a browser's); the console-click scenario
+  "agent tickets: owner-only Ready for Dev, set up My Claude Routine".
 
 ## Blocked tickets: answering from the card
 

@@ -80,6 +80,7 @@ function makeCtx(o, width) {
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
   ctx.enrichCalls = o.enrichCalls;
+  ctx.routineWrites = o.routineWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -100,6 +101,42 @@ function makeCtx(o, width) {
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
+  {
+    // Agent tickets fire under their owner's own Claude account only
+    // (xFzQgynkoMdV33iWJFZq): someone else's can't be ticked, your own needs
+    // your personal Routine, and Settings → My Claude Routine connects one.
+    name: "agent tickets: owner-only Ready for Dev, set up My Claude Routine from the info link",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.own = { projectId: PID, title: "My agent ticket", desc: "Built under my own account", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "editor@personalisationhub.com", createdAt: t(T0 + 7), updatedAt: t(T0 + 7) };
+      s.docs.backlogItems.theirs = { projectId: PID, title: "Their agent ticket", desc: "Someone else's", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "ada@personalisationhub.com", createdAt: t(T0 + 8), updatedAt: t(T0 + 8) };
+      s.routineBinding = { hasRoutineBinding: false };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const box = (id) => `.card[data-id="${id}"] .card-select-cb`;
+      await until(async () => (await c.page.locator(box("own")).isDisabled()) && (await c.page.locator(box("theirs")).isDisabled()), "both agent tickets' boxes disabled");
+      assert.strictEqual(await c.page.locator(box("b1")).isDisabled(), false, "an ordinary ticket can still be ticked");
+      assert.match(await c.page.getAttribute(box("theirs"), "title"), /ada@personalisationhub\.com/, "someone else's says whose it is");
+      assert.match(await c.page.getAttribute(`.card[data-id="own"] .owner-fire-info`, "title"), /My Claude Routine/, "my own says to set up my Routine");
+      await c.click(`.card[data-id="own"] .owner-fire-info`, "the info link on my agent ticket");
+      await c.visible('[data-settings-pane="routine"]', "My Claude Routine opens");
+      await c.waitText("#routine-binding-status", "Not set up", "it says I have none");
+      assert.ok((await c.page.inputValue("#routine-bootstrap-prompt")).includes("ROUTINE_INSTRUCTIONS.md"), "the prompt to paste is there");
+      await c.page.fill("#routine-fire-url", "https://api.anthropic.com/v1/claude_code/routines/trig_1/fire");
+      await c.page.fill("#routine-fire-token", "sk-test-token");
+      await c.click("#routine-binding-save", "Save");
+      await c.waitText("#routine-binding-status", "Connected", "it says connected");
+      assert.deepStrictEqual(c.routineWrites.map((w) => w.fireUrl), ["https://api.anthropic.com/v1/claude_code/routines/trig_1/fire"]);
+      assert.strictEqual(await c.page.inputValue("#routine-fire-token"), "", "the token is not left on the page");
+      assert.strictEqual(await c.page.isVisible("#routine-binding-clear"), true, "Disconnect is offered");
+      await c.page.evaluate(() => document.getElementById("nav-ph-console-btn").click());
+      await c.boardReady();
+      await until(async () => !(await c.page.locator(box("own")).isDisabled()), "my agent ticket can be ticked now");
+      assert.strictEqual(await c.page.locator(box("theirs")).isDisabled(), true, "someone else's still can't");
+    },
+  },
   {
     name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
     seed: () => {
@@ -270,7 +307,7 @@ const scenarios = [
         await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
         await overflow(`settings ${sub}`);
       }
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support"], "User Management first, the rest in their old order");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support", "routine"], "User Management first, the rest in their old order");
       assert.strictEqual(await c.page.locator('#settings-submenu .settings-tab[aria-selected="true"]').count(), 1, "exactly one Settings tab is selected");
       assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"], #nav-drawer #um-users-btn, #nav-drawer #um-roles-btn, #nav-drawer #um-permissions-btn').count(), 0, "no User Management, Roles or Permissions items in the nav");
       assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");

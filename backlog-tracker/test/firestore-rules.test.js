@@ -597,6 +597,14 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1/patchParts/2"), { patchFiles: [{ path: "x.js", content: "evil" }] }));
   await check("A human editor CANNOT change patchPartCount", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchPartCount: 2 }, { merge: true }));
+  // Agent tickets (xFzQgynkoMdV33iWJFZq): whose own Claude account a ticket
+  // fires under is set by the server only, never from a browser.
+  await check("A human editor CANNOT tag a ticket with an owner (ownerEmail)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { ownerEmail: "sam@personalisationhub.com" }, { merge: true }));
+  await check("A human editor CANNOT file a ticket already tagged with an owner", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iOwned"), Object.assign({}, ITEM, { status: "backlog", ownerEmail: "ada@personalisationhub.com" })));
+  await check("The automation user can tag a ticket with an owner", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { ownerEmail: "sam@personalisationhub.com" }, { merge: true }));
   // trainTest (19 Oct 2026): the automation records a card's own test result.
   await check("A human editor CANNOT write trainTest", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));
@@ -694,6 +702,15 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
   await check("An editor naming themselves as the Notify requester is fine", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "Sam@personalisationhub.com" }, { merge: true }));
+  // Agent tickets (xFzQgynkoMdV33iWJFZq): notifyAutomationAt marks a build
+  // request as the pipeline's own, which fires an agent ticket under its
+  // owner's Routine whoever clicked — so no browser may write it.
+  await check("An editor CANNOT stamp a click as the automation's (notifyAutomationAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@personalisationhub.com", notifyAutomationAt: serverTimestamp() }, { merge: true }));
+  await check("A team admin CANNOT stamp notifyAutomationAt either", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { notifyAutomationAt: serverTimestamp() }, { merge: true }));
+  await check("The automation user can stamp notifyAutomationAt", "allow", () =>
+    setDoc(doc(as(BOT), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A rename leaves a stored requester email untouched (unchanged passes)", "allow", async () => {
     await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "projects/p1"), { notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
     await setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed" }, { merge: true });

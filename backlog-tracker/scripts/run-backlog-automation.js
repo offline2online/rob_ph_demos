@@ -879,10 +879,16 @@ function queueBuildRequest(project, itemId, { retry = false } = {}) {
   pendingBuildRequests.set(project.id, entry);
 }
 function buildRequestFields(project, ids) {
+  const at = new Date();
   return {
-    notifyRequestedAt: new Date(),
+    notifyRequestedAt: at,
     notifyItemIds: ids.slice(),
     notifyRequestedByEmail: (project && project.notifyRequestedByEmail) || null,
+    // The same instant marks this as the pipeline's own request, so an
+    // owner-tagged agent ticket in it fires through its owner's personal
+    // binding whoever clicked last (functions/owner-firing.js,
+    // isAutomaticBuildRequest). firestore.rules keeps it out of browsers.
+    notifyAutomationAt: at,
   };
 }
 

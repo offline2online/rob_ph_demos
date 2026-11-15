@@ -29,7 +29,7 @@
     "test:preview-url": "node preview-url-page.test.js",
     "test:preview-url-pin": "node preview-url-pin.test.js",
     "test:auth-gate": "node auth-gate.test.mjs",
-    "test:routine-binding": "node routine-binding-trigger.test.js && npm run test:skill-history"
+    "test:routine-binding": "node routine-binding-trigger.test.js && node owner-firing.test.js && node owner-fire.test.mjs && npm run test:skill-history"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

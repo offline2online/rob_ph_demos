@@ -32,6 +32,7 @@ import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, format
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
 import { supportRoute, supportHash } from "./support-core.js";
@@ -700,6 +701,41 @@ function deployBadgeHTML(item) {
   return '<div class="deploy-badge deploy-badge-' + cls + '" title="' + tip + '">' + commit + '<span>' + label + '</span></div>';
 }
 
+// ── Agent tickets: owner-only firing (xFzQgynkoMdV33iWJFZq) ────────────────
+// A ticket with ownerEmail is an agent ticket: Ready for Dev, Deploy to Main
+// and Groom Backlog fire it only through its owner's personal Routine
+// binding, on the owner's own click (functions/owner-firing.js enforces it;
+// owner-fire.js decides what this viewer's buttons offer). Whether the viewer
+// has a binding comes from /mcp/me/routine-binding, asked once, and only when
+// the board actually shows an agent ticket.
+let myRoutineBinding = null; // null until known, then true / false
+let myRoutineBindingLoading = false;
+let routineSetupInfo = null; // the last /mcp/me/routine-binding answer
+function viewerFireState() {
+  if (myRoutineBinding === null && !myRoutineBindingLoading) loadMyRoutineBindingState();
+  return { email: (auth.currentUser && auth.currentUser.email) || "", hasBinding: myRoutineBinding };
+}
+async function loadMyRoutineBindingState() {
+  myRoutineBindingLoading = true;
+  try {
+    const resp = await fetch("/mcp/me/routine-binding", { method: "GET", headers: await consoleApiHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    routineSetupInfo = data;
+    myRoutineBinding = data.hasRoutineBinding === true;
+  } catch (err) {
+    console.warn("backlog-tracker: couldn't check your personal Claude Routine", err);
+    myRoutineBinding = false;
+  } finally {
+    myRoutineBindingLoading = false;
+  }
+  render();
+}
+// The info icon beside a disabled control: says why, and links to the setup page.
+function ownerFireInfoHTML(block) {
+  return `<a class="owner-fire-info" href="${ROUTINE_SETUP_HASH}" title="${escapeHTML(block.message)}" aria-label="${escapeHTML(block.message)}"><span class="material-symbols-outlined" aria-hidden="true">info</span></a>`;
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   // Moving back is a designed, documented flow from ready-to-publish (send
@@ -793,7 +829,12 @@ function cardHTML(item) {
   // different checkbox classes/selection sets (see getSelectedSet vs.
   // getDeploySelectedSet). No other column gets a checkbox — nothing else
   // in the pipeline acts on a hand-picked subset.
-  const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude)
+  // An agent ticket this viewer may not start (someone else's, or theirs with
+  // no personal Routine yet) gets a disabled box and an info link to setup.
+  const ownerBlock = isBacklog && ticketOwner(item) ? ownerFireBlock(item, viewerFireState()) : null;
+  const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude && ownerBlock)
+    ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" disabled aria-disabled="true" title="${escapeHTML(ownerBlock.message)}">${ownerFireInfoHTML(ownerBlock)}`
+    : (isBacklog && !isInDevelopment && !isSentToClaude)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : (isTesting && !noDeploy
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
@@ -991,6 +1032,10 @@ function cardHTML(item) {
   // default, and badging every card would be noise). The hover says which
   // model actually built and reviewed it, once those sessions have recorded it.
   const modelLog = modelLogLine(item);
+  const ownerOfItem = ticketOwner(item);
+  const ownerBadge = ownerOfItem
+    ? `<span class="review-flag owner-badge" title="${escapeHTML(`Agent ticket owned by ${ownerOfItem}: it is built, deployed and groomed only under their own Claude account, and only they can start it.`)}"><span class="material-symbols-outlined">person</span>${escapeHTML(ownerOfItem.split("@")[0])}</span>`
+    : "";
   const modelBadge = ticketModel(item) === "advanced"
     ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>Advanced · Opus</span>`
     : "";
@@ -1121,7 +1166,7 @@ function cardHTML(item) {
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${sentBackLastTimeHTML(item)}
-      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1292,7 +1337,9 @@ async function clearBlocked(id) {
 // Cards a Ready for Dev click can actually build: not blocked on a question
 // and not already packaged (patchReady).
 function isBuildableBacklogItem(i) {
-  return !!i && i.status === "backlog" && !isBlockedItem(i) && !i.patchReady;
+  return !!i && i.status === "backlog" && !isBlockedItem(i) && !i.patchReady
+    // Agent tickets: only their owner, with a personal Routine, can start them.
+    && !(ticketOwner(i) && ownerFireBlock(i, viewerFireState()));
 }
 
 function backlogCountForProject(pid) {
@@ -2186,6 +2233,17 @@ function deployNotifyButtonHTML(project) {
     // so each click looked unheard and hit the same conflict. Say so, with
     // the pipeline's own reason on hover — the pipeline retries by itself
     // once the branch or main changes, and a click still retries now.
+    // A train carrying agent tickets deploys only under their owner's own
+    // Routine, on the owner's click (functions/owner-firing.js).
+    const deployPool = onTrain.length ? onTrain : legacyDeployItemsForProject(pid);
+    const deployBlock = deployPool.some((i) => ticketOwner(i)) ? deployOwnerBlock(deployPool, viewerFireState()) : null;
+    if (deployBlock) {
+      return `<span class="owner-fire-gate"><button type="button" class="notify-claude-btn deploy-notify-btn" disabled aria-disabled="true" title="${escapeHTML(deployBlock.message)}">
+      <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
+      <span class="notify-claude-label">Deploy to Main</span>
+      <span class="notify-claude-count-pill">${deployCount}</span>
+    </button>${ownerFireInfoHTML(deployBlock)}</span>`;
+    }
     if (project.trainStatus === "conflict") {
       const why = project.trainNote || "The last Deploy to Main stopped on a merge conflict.";
       return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-notify-btn-conflict" data-project-id="${escapeHTML(pid)}" title="${escapeHTML(`${why}\n\nClick to try again.`)}">
@@ -2258,6 +2316,17 @@ function groomNotifyButtonHTML(project) {
     if (!groomableCount) return "";
     // Only worth grooming once the Backlog outgrows the project's threshold.
     if (!groomButtonVisible(groomableCount, project.groomThreshold)) return "";
+    // Other members' agent tickets are left out of a groom; when that leaves
+    // nothing this viewer may groom, the button says why instead.
+    const groomPool = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady);
+    const groomBlock = groomPool.some((i) => ticketOwner(i)) ? groomOwnerBlock(groomPool, viewerFireState()) : null;
+    if (groomBlock) {
+      return `<span class="owner-fire-gate"><button type="button" class="notify-claude-btn groom-notify-btn" disabled aria-disabled="true" title="${escapeHTML(groomBlock.message)}">
+      <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
+      <span class="notify-claude-label">Groom Backlog</span>
+      <span class="notify-claude-count-pill">${groomableCount}</span>
+    </button>${ownerFireInfoHTML(groomBlock)}</span>`;
+    }
     return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
       <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
       <span class="notify-claude-label">Groom Backlog</span>
@@ -4228,8 +4297,12 @@ async function requestNotify(pid) {
   }
   // With a build in flight, an empty selection means "the new ones", named
   // explicitly: an empty list would make the server take the whole column.
-  const toSend = selected.length || !building.size ? selected : [...backlogIds];
-  if (building.size && !toSend.length) return;
+  // Agent tickets this viewer can't start are named out too: "everything"
+  // becomes an explicit list of what they may start (the server refuses the
+  // rest anyway, functions/owner-firing.js).
+  const hasBlockedAgentTickets = items.some((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && ticketOwner(i) && ownerFireBlock(i, viewerFireState()));
+  const toSend = selected.length || (!building.size && !hasBlockedAgentTickets) ? selected : [...backlogIds];
+  if ((building.size || hasBlockedAgentTickets) && !toSend.length) return;
 
   // Show the spinning state immediately, without waiting on the
   // notifyOnProjectReadyForReview round-trip — see notifyOptimisticClicks.
@@ -10433,6 +10506,7 @@ function showSettingsPage(key, sub) {
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
   if (settingsPage === "support") loadSupportSettings();
+  if (settingsPage === "routine") loadRoutineSetupPage();
   if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) { loadMediaKeys(); loadPartnerCentral(); } }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
@@ -11563,6 +11637,87 @@ document.getElementById("mcp-connections")?.addEventListener("click", async (e) 
 
 document.getElementById("mcp-refresh-connections")?.addEventListener("click", loadMyAgentConnections);
 
+// ── Settings → My Claude Routine (xFzQgynkoMdV33iWJFZq) ────────────────────
+// Self-service setup of a member's personal Routine binding: the steps, the
+// bootstrap prompt to paste (one-click copy), and the fire URL + token form.
+// Saved through /mcp/me/routine-binding (functions/mcp-server.js), the same
+// write as the set_my_routine_binding MCP tool. Write-only: the page learns
+// only whether a binding exists, never the saved URL or token.
+async function loadRoutineSetupPage() {
+  const status = document.getElementById("routine-binding-status");
+  const prompt = document.getElementById("routine-bootstrap-prompt");
+  if (!status) return;
+  status.textContent = "Checking…";
+  try {
+    const resp = await fetch("/mcp/me/routine-binding", { method: "GET", headers: await consoleApiHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    routineSetupInfo = data;
+    myRoutineBinding = data.hasRoutineBinding === true;
+    if (prompt && data.bootstrapPrompt) prompt.value = data.bootstrapPrompt;
+    renderRoutineBindingStatus();
+  } catch (err) {
+    status.textContent = `Couldn't check your Claude Routine: ${err && err.message ? err.message : err}`;
+    status.dataset.state = "error";
+  }
+}
+function renderRoutineBindingStatus() {
+  const status = document.getElementById("routine-binding-status");
+  const clearBtn = document.getElementById("routine-binding-clear");
+  if (!status) return;
+  const on = myRoutineBinding === true;
+  const when = routineSetupInfo && routineSetupInfo.boundAt ? new Date(routineSetupInfo.boundAt).toLocaleString() : "";
+  status.dataset.state = on ? "on" : "off";
+  status.innerHTML = on
+    ? `<span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Connected${when ? ` since ${escapeHTML(when)}` : ""}. Your clicks, and your agent tickets, run under your own Claude account.`
+    : `<span class="material-symbols-outlined" aria-hidden="true">radio_button_unchecked</span>Not set up. Your clicks use the shared project Routine, and agent tickets you own can't be started.`;
+  if (clearBtn) clearBtn.hidden = !on;
+}
+async function saveRoutineBinding(fireUrl, token) {
+  const resp = await fetch("/mcp/me/routine-binding", {
+    method: "POST", headers: await consoleApiHeaders(), body: JSON.stringify({ fireUrl, token }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  myRoutineBinding = data.hasRoutineBinding === true;
+  routineSetupInfo = Object.assign({}, routineSetupInfo || {}, { hasRoutineBinding: myRoutineBinding, boundAt: myRoutineBinding ? new Date().toISOString() : null });
+  renderRoutineBindingStatus();
+  render();
+  return data;
+}
+document.getElementById("routine-copy-prompt")?.addEventListener("click", async () => {
+  const prompt = document.getElementById("routine-bootstrap-prompt");
+  const btn = document.getElementById("routine-copy-prompt");
+  if (!prompt || !prompt.value) return;
+  try { await navigator.clipboard.writeText(prompt.value); }
+  catch { prompt.select(); try { document.execCommand("copy"); } catch { /* the text stays selected */ } }
+  if (btn) { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy prompt"; }, 2000); }
+});
+document.getElementById("routine-binding-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const urlEl = document.getElementById("routine-fire-url");
+  const tokenEl = document.getElementById("routine-fire-token");
+  const errEl = document.getElementById("routine-binding-error");
+  const fireUrl = ((urlEl && urlEl.value) || "").trim();
+  const token = ((tokenEl && tokenEl.value) || "").trim();
+  if (errEl) errEl.textContent = "";
+  if (!fireUrl || !token) { if (errEl) errEl.textContent = "Enter both the fire URL and the token."; return; }
+  try {
+    await saveRoutineBinding(fireUrl, token);
+    if (tokenEl) tokenEl.value = "";
+    if (urlEl) urlEl.value = "";
+  } catch (err) {
+    if (errEl) errEl.textContent = err && err.message ? err.message : String(err);
+  }
+});
+document.getElementById("routine-binding-clear")?.addEventListener("click", async () => {
+  const ok = await showConfirmDialog("Disconnect your personal Claude Routine? Your clicks go back to the shared project Routine, and agent tickets you own can't be started until you connect one again.", { title: "Disconnect Routine", okLabel: "Disconnect", danger: true });
+  if (!ok) return;
+  const errEl = document.getElementById("routine-binding-error");
+  try { await saveRoutineBinding("", ""); }
+  catch (err) { if (errEl) errEl.textContent = err && err.message ? err.message : String(err); }
+});
+
 // ── Settings → Media Studio API keys ─────────────────────────────────────
 // Write-only key management for media-studio/ (functions/media-keys.js,
 // served at /mediaKeys/**). The browser sends a key once, over HTTPS, to an
@@ -12486,6 +12641,7 @@ const ROUTE_TITLES = {
   "#settings/skills": "Settings: Skills & phase bindings",
   "#settings/automations": "Settings: Automations",
   "#settings/integrations": "Settings: Integrations & MCP",
+  "#settings/routine": "Settings: My Claude Routine",
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",

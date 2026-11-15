@@ -1830,6 +1830,22 @@ the routines API has no delegated-OAuth "fire on behalf of" flow, so a
 Routine's fire URL/token is per-Routine and hand-generated once. This
 MCP-driven local setup is the closest one-click the API allows.
 
+**Setting it up from the console (15 Nov 2026)**: Settings → **My Claude
+Routine** walks through the same steps without an agent — the bootstrap
+prompt with a Copy button, then a form for the fire URL and token
+(`/mcp/me/routine-binding` in `functions/mcp-server.js`, the same write and
+validation as `set_my_routine_binding`; write-only).
+
+**Agent tickets (xFzQgynkoMdV33iWJFZq)**: a ticket with `ownerEmail` fires
+only on its owner's binding — Ready for Dev, Deploy to Main and Groom
+Backlog alike, never the shared secrets, and never on anyone else's click
+(the pipeline's own automatic rebuilds, stamped `notifyAutomationAt`, also
+use the owner's binding). An owner with no binding gets nothing fired, and
+the board disables the control with an info link to My Claude Routine. Rule
+in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
+full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their
+owner's own Claude account".
+
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
 `backlog-automation.yml` polls every 2 minutes, but GitHub throttles a
