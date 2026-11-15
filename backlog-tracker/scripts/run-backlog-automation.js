@@ -59,7 +59,10 @@ const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 const { modelGuardRefusal } = require("../functions/model-requirement");
 const kanbanHeal = require("./kanban-e2e-heal");
+const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
+// Heartbeats and build attempts (14 Nov 2026) — the rules are in that module.
+const { silentBuildSession, silentBuildNote, staleAttemptPatch, LEGACY_SILENT_MS } = require("../functions/notify-routine");
 const { loadDocsImpactRules, docsImpactCheck, refusalNote: docsImpactRefusalNote, waiverNote: docsImpactWaiverNote } = require("./docs-impact");
 
 const PROJECT_ID = "backlog-tracker-e4ed2";
@@ -993,24 +996,23 @@ function rebuildRequestOutcome(item, now = Date.now()) {
   return !blocked && (Number(item.rebuildStartRetries) || 0) < REBUILD_START_RETRIES ? "retry" : "note";
 }
 
-// ── Build sessions that never report back ─────────────────────────────────
+// ── Build sessions that go quiet ───────────────────────────────────────────
 // A session that started (lastFire.sessionId) but never wrote buildSession,
 // patchReady or a blocker leaves the card in Backlog and holds the project's
-// hand-off. After BUILD_SESSION_SILENT_MS it is started once more; if that one
-// goes quiet too the card is marked errored (which releases the hand-off) with
-// a note, so a person is told instead of finding it later. Pure.
-const BUILD_SESSION_SILENT_MS = 90 * 60 * 1000;
+// hand-off. Silence is measured from the session's heartbeat (14 Nov 2026,
+// silentBuildSession in functions/notify-routine.js): no first heartbeat in
+// 10 minutes, or none for 20, and it is started once more; if that one goes
+// quiet too the card is marked errored (which releases the hand-off) with a
+// note, so a person is told instead of finding it later. A session that is
+// still beating is never restarted; after 3 hours it is flagged for a person.
+// A fire from before heartbeats (no buildAttemptId) keeps the 90-minute rule.
+const BUILD_SESSION_SILENT_MS = LEGACY_SILENT_MS;
 const BUILD_SESSION_RETRIES = 1;
+// "retry" | "escalate" | "ceiling" | null — the action alone, for callers and
+// tests that don't need the reason.
 function silentBuildSessionAction(item, now = Date.now()) {
-  if (!item || item.status !== "backlog" || item.patchReady || (item.blocked && item.blocked.reason)) return null;
-  const fire = item.lastFire;
-  if (!fire || !fire.sessionId) return null;
-  const fired = timeMs(fire.at);
-  if (Number.isNaN(fired) || now - fired < BUILD_SESSION_SILENT_MS) return null;
-  const bs = item.buildSession;
-  const reported = bs ? Math.max(timeMs(bs.reportedAt) || 0, timeMs(bs.finishedAt) || 0) : 0;
-  if (reported >= fired) return null; // it did report (done, or error)
-  return (Number(item.buildSessionRetries) || 0) < BUILD_SESSION_RETRIES ? "retry" : "escalate";
+  const next = silentBuildSession(item, now, BUILD_SESSION_RETRIES);
+  return next ? next.action : null;
 }
 function rebuildNeverStartedNote(item) {
   const err = item.lastFire && item.lastFire.error;
@@ -1163,24 +1165,31 @@ async function sweepSilentBuildSessions(now = Date.now()) {
     ] } },
   });
   for (const item of started) {
-    const next = silentBuildSessionAction(item, now);
+    const next = silentBuildSession(item, now, BUILD_SESSION_RETRIES);
     if (!next) continue;
     try {
       const project = await getProject(item.projectId).catch(() => null);
-      if (next === "retry") {
+      const text = silentBuildNote(item, next);
+      if (next.action === "retry") {
         if (!project || project.trainLocked) continue;
-        const notes = await appendNote(item, `The build session started at ${new Date(timeMs(item.lastFire.at)).toISOString()} never reported back. Starting it again.`);
+        const notes = await appendNote(item, text);
         await patchItem(item.id, { buildSessionRetries: (Number(item.buildSessionRetries) || 0) + 1, notes, updatedAt: new Date().toISOString() });
         queueBuildRequest(project, item.id);
-        console.log(`[silent-build] ${item.id}: session never reported — rebuild requested`);
+        console.log(`[silent-build] ${item.id}: ${next.kind} — rebuild requested`);
+      } else if (next.action === "ceiling") {
+        // Still beating after 3 hours: a person decides. Nothing is started
+        // again, and the session's own record is left as it is so a patch it
+        // still hands back can land.
+        const notes = await appendNote(item, text);
+        await patchItem(item.id, { blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString() });
+        console.log(`[silent-build] ${item.id}: still reporting after the ceiling — flagged for a person, not restarted`);
       } else {
-        const text = `The build session never reported back, and neither did its second attempt (last started ${new Date(timeMs(item.lastFire.at)).toISOString()}${item.lastFire.sessionUrl ? `, ${item.lastFire.sessionUrl}` : ""}). Marked as errored so the project is not left waiting on it.`;
         const notes = await appendNote(item, text);
         await patchItem(item.id, {
           buildSession: { status: "error", errorMessage: "Build session never reported back", finishedAt: new Date(now).toISOString() },
           buildSessionRetries: 0, blocked: buildNeverRanBlock(text, new Date(now).toISOString()), notes, updatedAt: new Date().toISOString(),
         });
-        console.log(`[silent-build] ${item.id}: session never reported after a retry — marked errored`);
+        console.log(`[silent-build] ${item.id}: ${next.kind} after a retry — marked errored`);
       }
     } catch (err) {
       console.error(`[silent-build] ${item.id}: ${err.message}`);
@@ -1410,6 +1419,7 @@ function noDiffPatchFields(item, carrying, { deployBranch, testVersion, previewU
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    patchAttemptId: null,
     ...(testVersion ? { testVersion } : {}),
   };
   const own = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
@@ -2334,9 +2344,14 @@ const TRAIN_TEST_WORKFLOWS = [
   { workflow: "e2e-quick.yml", prefix: "dsp-integration/", label: "DSP tests (e2e-quick)" },
   { workflow: "retail-media-insights-tests.yml", prefix: "Retail-media-insights/", label: "Retail Media Insights tests" },
   { workflow: "media-studio-tests.yml", prefix: "media-studio/", label: "Media Studio tests" },
-  // The prototype suite runs on any train that changes backlog-tracker/ too:
-  // the console and the prototype are tested twice against one plan.
-  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", extraPrefixes: ["backlog-tracker/"], label: "Staff Kanban tests", kanban: "all" },
+  // The prototype suite (kanban-staff-board/test, against the prototype) runs
+  // only when kanban-staff-board/ changes. Until 14 Nov 2026 it also ran for
+  // every backlog-tracker/ change, which changes nothing the prototype suite
+  // reads: the test plan's cases ran twice per console train, in two
+  // workflows, and either could turn the train red. The console's Staff
+  // Kanban suite (test/ui/staff-kanban.test.mjs) belongs to the console
+  // tests above and to no other workflow (test/ci-coverage.test.js).
+  { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", label: "Staff Kanban tests", kanban: "all" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 
@@ -3293,6 +3308,170 @@ function dispatchOnSha(workflow, sha, gh, ref = baseCheckRef(sha)) {
 }
 function dropBaseRef(sha, gh) {
   try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${baseCheckRef(sha)}`]); } catch { /* already gone */ }
+}
+
+// ── train-base/* refs are deleted once they are done with ──────────────────
+// dispatchOnSha() points a throwaway branch at a commit so a workflow can be
+// started on exactly that commit. dropBaseRef() removes it when the base
+// check is read, but a check nobody read again (the ticket was rebuilt, sent
+// back by hand, the train merged) left its branch behind for good: four were
+// on origin on 14 Nov 2026, the oldest from 23 Oct. Each automation run now
+// deletes every train-base branch whose runs have all finished, and any
+// branch older than 24 hours whatever its runs say.
+const BASE_REF_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+// A branch just created may not have its run listed yet, and a base check
+// that has just finished is read by the next sweep: left alone for this long.
+const BASE_REF_SETTLE_MS = 10 * 60 * 1000;
+// Which train-base branches to delete. Pure, for test/train-base-check.test.js.
+// refs: [{ name, runs: [{ status, createdAt }], firstSeenAt }] — firstSeenAt
+// is when this sweep first saw the branch (GitHub records no creation time
+// for a ref), null on that first sighting.
+function baseRefsToPrune(refs, nowMs) {
+  const out = [];
+  for (const ref of refs || []) {
+    const runs = ref.runs || [];
+    const times = [...runs.map((r) => Date.parse(r.createdAt)), Date.parse(ref.firstSeenAt)].filter(Number.isFinite);
+    const age = times.length ? nowMs - Math.min(...times) : 0;
+    if (age > BASE_REF_MAX_AGE_MS) { out.push({ name: ref.name, why: "older than 24 hours" }); continue; }
+    const allDone = runs.length > 0 && runs.every((r) => String(r.status || "").toLowerCase() === "completed");
+    if (allDone && age > BASE_REF_SETTLE_MS) out.push({ name: ref.name, why: "its run has finished" });
+  }
+  return out;
+}
+// Lists the train-base branches with their runs, deletes the finished and the
+// old ones, and returns the first-seen map to store for the next run. `seen`
+// is that map from the last run ({ "train-base/<sha12>": ISO }). Never throws.
+function pruneBaseRefs(gh, seen = {}, nowMs = Date.now()) {
+  let names = [];
+  try {
+    names = JSON.parse(gh(["api", `repos/${REPO}/git/matching-refs/heads/train-base/`, "-q", "[.[].ref]"]) || "[]").map((r) => String(r).replace(/^refs\/heads\//, ""));
+  } catch (err) {
+    console.log(`[train-base] couldn't list train-base branches (${scrubSecrets(err.message)})`);
+    return { deleted: [], seen };
+  }
+  const refs = names.map((name) => {
+    let runs = [];
+    // A branch whose runs can't be listed is never treated as finished.
+    try { runs = JSON.parse(gh(["api", `repos/${REPO}/actions/runs?branch=${encodeURIComponent(name)}&per_page=30`, "-q", "[.workflow_runs[] | {status: .status, createdAt: .created_at}]"]) || "[]"); } catch { runs = [{ status: "unknown", createdAt: null }]; }
+    return { name, runs, firstSeenAt: seen[name] || null };
+  });
+  const deleted = [];
+  for (const { name, why } of baseRefsToPrune(refs, nowMs)) {
+    try { gh(["api", "-X", "DELETE", `repos/${REPO}/git/refs/heads/${name}`]); deleted.push(name); console.log(`[train-base] deleted ${name}: ${why}`); }
+    catch (err) { console.log(`[train-base] couldn't delete ${name} (${scrubSecrets(err.message)})`); }
+  }
+  const nextSeen = {};
+  for (const name of names) if (!deleted.includes(name)) nextSeen[name] = seen[name] || new Date(nowMs).toISOString();
+  return { deleted, seen: nextSeen };
+}
+// One sweep per automation run. The first-seen map is kept on
+// systemStatus/pipeline.trainBaseRefsSeen. Never throws.
+async function sweepBaseRefs(gh = (args) => run("gh", args)) {
+  try {
+    let seen = {};
+    const res = await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline`, { headers: await firestoreHeaders() });
+    if (res.ok) seen = fdoc((await res.json()).fields || {}).trainBaseRefsSeen || {};
+    if (!seen || typeof seen !== "object" || Array.isArray(seen)) seen = {};
+    const out = pruneBaseRefs(gh, seen);
+    if (JSON.stringify(out.seen) !== JSON.stringify(seen)) {
+      await fetch(`${FIRESTORE_BASE}/systemStatus/pipeline?updateMask.fieldPaths=trainBaseRefsSeen`, {
+        method: "PATCH", headers: await firestoreHeaders(),
+        body: JSON.stringify({ fields: { trainBaseRefsSeen: tv(out.seen) } }),
+      });
+    }
+  } catch (err) {
+    console.log(`[train-base] sweep failed: ${scrubSecrets(err.message)}`);
+  }
+}
+
+// ── Flake ledger: settings/flakyTests (scripts/flaky-ledger.js) ────────────
+// A UI case that failed and passed on its retry is in the run's flaky-tests
+// artifact. Each automation run reads the artifacts of the train test runs
+// that finished since the last one, counts each flake on the ledger, and
+// files ONE "Flaky test: <case>" Backlog bug when a case reaches three in
+// seven days (never a second while one is open). Never throws: the ledger
+// is reporting, and a train is never held for it.
+const FLAKY_LEDGER_PROJECT_ID = "oTcLAbnhUUO2S7NkbsuV"; // Backlog Tracker & FAQs
+const FLAKY_ARTIFACT_WORKFLOWS = ["firestore-rules-test.yml", "kanban-staff-board-tests.yml"];
+const FLAKY_LEDGER_AUTHOR = "flaky-ledger";
+// The flakes in one run's flaky-tests artifact(s); [] when it has none.
+function readFlakyArtifact(runId, gh) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "flaky-"));
+  try {
+    try { gh(["run", "download", String(runId), "--repo", REPO, "--pattern", "flaky-tests*", "--dir", dir]); } catch { return []; }
+    const files = [];
+    const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (/^flaky-tests.*\.json$/.test(e.name)) files.push(f); } };
+    walk(dir);
+    return files.flatMap((f) => flakyLedger.flakesFromArtifact(fs.readFileSync(f, "utf8")));
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* a temp folder */ }
+  }
+}
+// io: { getLedger, putLedger, listRuns(workflow), readFlakes(runId), openTickets(), createTicket(fields), now() }.
+// Returns { runs, flakes, filed } for the log and test/flaky-ledger.test.js.
+async function updateFlakyLedger(io) {
+  let ledger = (await io.getLedger()) || flakyLedger.emptyLedger();
+  if (!Array.isArray(ledger.cases)) ledger = { ...ledger, cases: [] };
+  if (!Array.isArray(ledger.processedRuns)) ledger = { ...ledger, processedRuns: [] };
+  const now = io.now();
+  let changed = false, runs = 0, flakes = 0;
+  for (const workflow of FLAKY_ARTIFACT_WORKFLOWS) {
+    for (const r of await io.listRuns(workflow)) {
+      if (ledger.processedRuns.map(String).includes(String(r.id))) continue;
+      const found = await io.readFlakes(r.id);
+      const out = flakyLedger.applyRun(ledger, { runId: r.id, runUrl: r.url, flakes: found, now });
+      ledger = out.ledger; changed = changed || out.changed; runs += 1; flakes += found.length;
+    }
+  }
+  const filed = [];
+  const due = flakyLedger.casesNeedingTicket(ledger, { now, openTickets: await io.openTickets() });
+  for (const c of due) {
+    const id = await io.createTicket({
+      projectId: FLAKY_LEDGER_PROJECT_ID, type: "bug", category: "Backend / Infrastructure", status: "backlog",
+      title: flakyLedger.flakyTicketTitle(c.id), desc: flakyLedger.flakyTicketDesc(c, now),
+      labels: ["Flaky test"], autoRaised: true, flakyCaseId: c.id, createdVia: FLAKY_LEDGER_AUTHOR,
+      notes: [{ author: "backlog-automation", text: `Raised automatically: this case passed only on its retry ${flakyLedger.flakesInWindow(c, now)} times in 7 days. Last run: ${c.lastRunUrl || "not recorded"}`, at: new Date(now).toISOString() }],
+      createdAt: new Date(now), updatedAt: new Date(now),
+    });
+    ledger = { ...ledger, cases: ledger.cases.map((x) => (x.id === c.id ? { ...x, ticketId: id } : x)) };
+    filed.push({ caseId: c.id, ticketId: id });
+    changed = true;
+  }
+  if (changed) await io.putLedger({ ...ledger, updatedAt: new Date(now).toISOString() });
+  return { runs, flakes, filed };
+}
+async function sweepFlakyTests(gh = (args) => run("gh", args)) {
+  try {
+    const out = await updateFlakyLedger({
+      getLedger: async () => {
+        const res = await fetch(`${FIRESTORE_BASE}/settings/flakyTests`, { headers: await firestoreHeaders() });
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error(`GET settings/flakyTests failed: ${res.status} ${await res.text()}`);
+        return fdoc((await res.json()).fields || {});
+      },
+      putLedger: async (ledger) => {
+        const fields = { cases: ledger.cases, processedRuns: ledger.processedRuns, updatedAt: ledger.updatedAt };
+        const mask = Object.keys(fields).map((k) => `updateMask.fieldPaths=${k}`).join("&");
+        const res = await fetch(`${FIRESTORE_BASE}/settings/flakyTests?${mask}`, { method: "PATCH", headers: await firestoreHeaders(), body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }) });
+        if (!res.ok) throw new Error(`PATCH settings/flakyTests failed: ${res.status} ${await res.text()}`);
+      },
+      // Oldest first, so a case's seenAt order follows the runs.
+      listRuns: async (workflow) => {
+        try { return JSON.parse(gh(["run", "list", "--repo", REPO, "--workflow", workflow, "--status", "completed", "--limit", "15", "--json", "databaseId,url"]) || "[]").map((r) => ({ id: r.databaseId, url: r.url })).reverse(); } catch { return []; }
+      },
+      readFlakes: async (runId) => readFlakyArtifact(runId, gh),
+      openTickets: () => runQuery({
+        from: [{ collectionId: "backlogItems" }],
+        where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: FLAKY_LEDGER_PROJECT_ID } } },
+        select: { fields: ["title", "status"].map((fieldPath) => ({ fieldPath })) },
+      }),
+      createTicket: createFixTicket,
+      now: () => Date.now(),
+    });
+    if (out.flakes || out.filed.length) console.log(`[flaky-tests] ${out.flakes} flake(s) from ${out.runs} run(s)${out.filed.length ? `; filed ${out.filed.map((f) => `${f.ticketId} (${f.caseId})`).join(", ")}` : ""}`);
+  } catch (err) {
+    console.log(`[flaky-tests] failed: ${scrubSecrets(err.message)}`);
+  }
 }
 
 const baseCheckingNote = (label, sha7, base7) =>
@@ -4629,6 +4808,22 @@ async function processApplyPatch(item) {
     return;
   }
 
+  // No duplicate builds (14 Nov 2026): each fire carries a buildAttemptId, the
+  // card stores the current one, and a session writes its own as
+  // patchAttemptId with its patch. A patch from an attempt that has since been
+  // superseded (the session was presumed dead and started again, or a second
+  // click) is not landed and not rebuilt: the current attempt's session is the
+  // one being waited for. Its findings stay on the card as the note it wrote.
+  if (staleAttemptPatch(item)) {
+    console.log(`[apply-patch] ${item.id}: refusing — patch from a superseded build attempt (${item.patchAttemptId}, current ${item.buildAttemptId})`);
+    const notes = await appendNote(item,
+      `A build session that had been superseded handed back a patch (attempt ${String(item.patchAttemptId).slice(0, 8)}; the current attempt is ${String(item.buildAttemptId).slice(0, 8)}). ` +
+      `It was not landed, so the ticket is not built twice; the current build session carries on. Anything useful that session found is in its own note above.`);
+    await patchItem(item.id, { patchReady: false, patchAttempts: 0, patchAttemptId: null, updatedAt: new Date().toISOString(), notes });
+    await dropPatchFiles(item.id);
+    return;
+  }
+
   // ph-ticket-intake, enforced before the train: a board ticket may enter
   // Ready for Dev with only its Outcome written, but its build session must
   // fill in Test steps, Dependencies and Spec reference before it hands the
@@ -5018,6 +5213,7 @@ async function processApplyPatch(item) {
     status: "ready-for-testing",
     patchReady: false,
     patchAttempts: 0,
+    patchAttemptId: null, // landed: a later hand-made patch must not look stale
     updatedAt: new Date().toISOString(),
     notes,
     deployBranch,
@@ -7529,6 +7725,9 @@ async function main() {
   } catch (err) {
     console.log(`[ready-for-testing] hand-off sweep failed: ${err.message}`);
   }
+  // Reporting and housekeeping; neither holds a train or fails the run.
+  await sweepFlakyTests();
+  await sweepBaseRefs();
   // A train left waiting on CI starts the next run itself (see followUpDue).
   dispatchFollowUpRun();
 
@@ -7598,6 +7797,10 @@ module.exports = {
   trainRunVerdict, culpritAction, rerunTrainRun, trainFailureNotes, flakyPassKey, flakyNote, ejectRedCulprits,
   // test/train-base-check.test.js — a ticket is never sent back for a failure main already has
   baseCheckAction, failureSummaryFromLog, isMainMergeCommit, BASE_CHECK_GIVE_UP_MS, baseCheckRef, heldForMain,
+  // …and train-base/* branches are deleted once they are done with
+  baseRefsToPrune, pruneBaseRefs, BASE_REF_MAX_AGE_MS, BASE_REF_SETTLE_MS, dispatchOnSha,
+  // test/flaky-ledger.test.js — flakes are counted on the board and ticketed at three in seven days
+  updateFlakyLedger, FLAKY_LEDGER_PROJECT_ID, FLAKY_ARTIFACT_WORKFLOWS,
   // ...and an approved deploy held red by main resumes once main is fixed
   heldDeployMainPlan, heldDeployMainRedNote, decidedMainRun,
   reportTrainTestResults, trainRunOwner, alreadyRerun, rerunRunKey, fdoc,
@@ -7611,7 +7814,7 @@ module.exports = {
   patchBaseFor, dependenciesLanded, buildRequestFields, migrationNumberClashes,
   // test/rebuild-requests.test.js — a requested rebuild either starts or the card says it didn't
   rebuildRequestOutcome, rebuildNeverStartedNote, fireRetryDue, REBUILD_NEVER_STARTED_MS, REBUILD_START_RETRIES,
-  silentBuildSessionAction, BUILD_SESSION_SILENT_MS,
+  silentBuildSessionAction, BUILD_SESSION_SILENT_MS, BUILD_SESSION_RETRIES, sweepSilentBuildSessions, processApplyPatch,
   // test/train-follow-up.test.js — a train waiting on CI starts its own next run
   followUpDue, FOLLOW_UP_MAX_WAIT_MS, dispatchFollowUpRun, followUpReasons,
   // test/preview-build-state.test.js — "Rebuilding test link…" until the bundle includes the ticket

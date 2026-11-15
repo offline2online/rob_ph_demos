@@ -123,13 +123,13 @@ function createLeadIngest({ db, key, logger, now = () => new Date() }) {
       return [201, { ok: true, leadId: ref.id, created: true, leadType: "operator", test: r.test }];
     }
     const cur = core.normaliseLead(existing.id, existing.data());
-    const was = cur.operator || { region: "", background: "" };
+    const was = cur.operator || { region: "", background: "", audience: "" };
     const contacts = cur.contacts.map(({ enrichment, ...c }) => (enrichment ? { ...c, enrichment } : c));
     const i = contacts.findIndex((c) => nameKey(c.email) === email);
     if (i >= 0) for (const k of ["name", "linkedin"]) if (!contacts[i][k] && r.contact[k]) contacts[i][k] = r.contact[k];
     await existing.ref.update({
       contacts, inboundCount: (cur.inboundCount || 0) + 1,
-      operator: { region: was.region || r.fields.operator.region, background: was.background || r.fields.operator.background },
+      operator: { region: was.region || r.fields.operator.region, background: was.background || r.fields.operator.background, audience: was.audience || r.fields.operator.audience },
       ...(cur.sourcePage ? {} : { sourcePage: r.fields.sourcePage }),
       ...(cur.sourceLabel ? {} : { sourceLabel: r.fields.sourceLabel }),
       websiteActivity: [...cur.websiteActivity.map(({ atMs, ...a }) => a), entry].slice(-core.LIMITS.activity),

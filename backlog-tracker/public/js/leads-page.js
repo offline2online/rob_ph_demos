@@ -26,7 +26,7 @@ import {
 import {
   BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStageFor, mergeInbound, inboundLabel,
-  stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel,
+  stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel, AUDIENCES, audienceLabel,
 } from "./leads-core.js";
 import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
@@ -214,7 +214,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   const chipHTML = (l) => `<span class="lead-chip" title="${esc(industryChipText(l))}"><span class="lead-ind-dot" aria-hidden="true"></span>${esc(industryChipText(l))}</span>`;
   const typeChipHTML = (l) => (isOperator(l) ? `<span class="lead-chip lead-type-chip">${esc(leadTypeLabel(l.leadType))}</span>` : "");
   const sourceText = (l) => (l.sourceLabel ? l.sourceLabel + (l.sourceDetail ? " · " + l.sourceDetail : "") : sourceLabel(l));
-  // A network operator inquiry's tile: the person, their lead type, where they plan to operate and their background.
+  // A network operator inquiry's tile: the person, their lead type, who they are ("I am"), where they plan to operate and their background.
   function operatorCardHTML(l) {
     const line = companyLine(l);
     const who = l.assignee ? memberName(l.assignee) : "";
@@ -388,6 +388,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-sum-body").innerHTML = `
       ${contactsHTML(l)}
       ${group("Network operator", [
+        row("I am", esc(audienceLabel(f.audience))),
         row("Where they plan to operate", esc(f.region || "")),
         row("Background", esc(backgroundLabel(f.background))),
       ].join(""), { id: "lead-sum-operator" })}
@@ -515,6 +516,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   function fillStages(type = "company") {
     $("lead-stage").innerHTML = stagesFor(type).map((s) => `<option value="${s.key}">${esc(s.label)}</option>`).join("");
   }
+  $("lead-audience").innerHTML = `<option value="">Not given</option>` + AUDIENCES.map((a) => `<option value="${a.key}">${esc(a.label)}</option>`).join("");
   $("lead-background").innerHTML = `<option value="">Not given</option>` + BACKGROUNDS.map((b) => `<option value="${b.key}">${esc(b.label)}</option>`).join("");
   // The form for a company lead or a network operator inquiry (a person: no company, one contact).
   function setFormType(type) {
@@ -607,6 +609,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     setFormType(l.leadType);
     $("lead-region").value = (l.operator && l.operator.region) || "";
     $("lead-background").value = (l.operator && l.operator.background) || "";
+    $("lead-audience").value = (l.operator && l.operator.audience) || "";
     $("lead-name").value = l.company.name;
     $("lead-website").value = l.company.website;
     $("lead-industry").value = l.company.industry;
@@ -632,7 +635,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     $("lead-delete").hidden = !l;
     if (l) { fill(l); if (type !== "operator") { renderEnrichment(l); renderAccount(l); } }
     else {
-      fill({ leadType: type, operator: { region: "", background: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
+      fill({ leadType: type, operator: { region: "", background: "", audience: "" }, company: { name: "", website: "", industry: "", countries: [], storeCount: null, awsAccountId: "" }, contacts: [], stage: defaultStageFor(type), source: "Manual", assignee: me() });
     }
     backdrop.hidden = false;
     (type === "operator" ? $("lead-contacts").querySelector(".lc-name") : $("lead-name")).focus();
@@ -643,7 +646,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     readContacts();
     const fr = formType === "operator";
     return leadFromForm({
-      leadType: formType, region: fr ? $("lead-region").value : "", background: fr ? $("lead-background").value : "",
+      leadType: formType, region: fr ? $("lead-region").value : "", background: fr ? $("lead-background").value : "", audience: fr ? $("lead-audience").value : "",
       name: fr ? "" : $("lead-name").value, website: $("lead-website").value, industry: $("lead-industry").value,
       countries: $("lead-countries").value, storeCount: $("lead-stores").value, awsAccountId: $("lead-aws-account").value,
       contacts: draft.contacts, stage: $("lead-stage").value, source: $("lead-source").value, assignee: $("lead-assignee").value,

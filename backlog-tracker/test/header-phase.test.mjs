@@ -37,7 +37,9 @@ function constant(name) {
 const code = [
   "NOTIFY_ROUTINE_STALE_MS", "NOTIFY_STILL_BUILDING_MS", "DEPLOY_ROUTINE_STALE_MS", "DEPLOY_HANDOVER_STALE_MS",
   "NOTIFY_OPTIMISTIC_STALE_MS", "DEPLOY_OPTIMISTIC_STALE_MS",
+  "BUILD_HEARTBEAT_WARN_MS", "BUILD_HEARTBEAT_SILENT_MS", "BUILD_FIRST_HEARTBEAT_MS", "BUILD_CEILING_MS",
 ].map(constant).join("\n") + "\n" + [
+  "buildHeartbeat", "buildHeartbeatLabel", "buildBeating", "buildHeartbeatSilent", "notifyRoutineStale",
   "tsMillis", "anyMillis", "perItemBuildFinished", "perItemRoutineFinished", "isTrainLocked", "isProjectFinalised",
   "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
   "trainItemsForProject", "pendingTrainRevertsForProject", "legacyDeployItemsForProject", "deployNotifyButtonHTML",
@@ -107,6 +109,42 @@ test("a spinner marks the board for the stale-clearing tick", () => {
   const b = board(project, cards);
   b.html();
   assert.strictEqual(vm.runInContext("timedSpinnerShown", b.ctx), true);
+});
+
+// 14 Nov 2026: build sessions send heartbeats. A beating session is building,
+// however long it has run; a silent one is counted on the chip at once.
+const ATTEMPT = "aaaaaaaaaaaaaaaa";
+const beatingCard = (firedMinAgo, beatMinAgo) => ({
+  id: "a", projectId: P, status: "backlog", buildAttemptId: ATTEMPT,
+  lastFire: { status: "started", sessionId: "s", at: ts(now - firedMinAgo * 60e3), buildAttemptId: ATTEMPT },
+  ...(beatMinAgo == null ? {} : { buildSession: { heartbeatAt: new Date(now - beatMinAgo * 60e3).toISOString(), phase: "testing", attemptId: ATTEMPT } }),
+});
+const record = (firedMinAgo) => ({ id: P, notifyRoutine: { status: "in-progress", mode: "per-item", firedAt: ts(now - firedMinAgo * 60e3), sessionUrl: "https://claude.ai/code/s", sentItemIds: ["a"] } });
+
+test("a session still beating after 80 minutes keeps Deving… and is not counted as silent", () => {
+  const html = board(record(80), [beatingCard(80, 3)]).html();
+  assert.match(html, /Deving/);
+  assert.doesNotMatch(html, /report back/);
+});
+
+test("a session silent for 20 minutes is counted on the Build didn't report back chip", () => {
+  const html = board(record(40), [beatingCard(40, 21)]).html();
+  assert.match(html, /report back/);
+  assert.match(html, /notify-claude-count-pill">1</);
+  assert.doesNotMatch(board(record(40), [beatingCard(40, 19)]).html(), /report back/, "19 minutes is not silent yet");
+});
+
+test("no first heartbeat 10 minutes after the fire counts; 9 minutes does not; a fire from before heartbeats never does", () => {
+  assert.match(board(record(11), [beatingCard(11, null)]).html(), /report back/);
+  assert.doesNotMatch(board(record(9), [beatingCard(9, null)]).html(), /report back/);
+  const legacy = { id: "a", projectId: P, status: "backlog", lastFire: { status: "started", sessionId: "s", at: ts(now - 40 * 60e3) } };
+  assert.doesNotMatch(board(record(40), [legacy]).html(), /report back/);
+});
+
+test("a heartbeat from a superseded attempt does not count as this session's", () => {
+  const card = beatingCard(15, 1);
+  card.buildSession.attemptId = "bbbbbbbbbbbbbbbb";
+  assert.match(board(record(15), [card]).html(), /report back/);
 });
 
 // 20 Oct 2026: Deploy to Main stopped on a merge conflict and the button came

@@ -384,6 +384,9 @@ async function main() {
   await check("A blank company name is refused on a company lead", "deny", () => setDoc(doc(as(MEMBER), "leads/f6"), { ...OPERATOR, leadType: "company", operator: null, stage: "lead" }));
   await check("The details live under operator only", "deny", () => setDoc(doc(as(MEMBER), "leads/f7"), { ...OPERATOR, [RETIRED_KEY]: { region: "x", background: "" } }));
   await check("A network operator inquiry's details take no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "leads/f4"), { ...OPERATOR, operator: { region: "x", salary: 1 } }));
+  await check('A network operator inquiry carries "I am" as audience', "allow", () => setDoc(doc(as(MEMBER), "leads/f8"), { ...OPERATOR, operator: { region: "Leeds, UK", background: "creative-agency", audience: "retailer" } }));
+  await check("A blank audience is allowed", "allow", () => setDoc(doc(as(MEMBER), "leads/f9"), { ...OPERATOR, operator: { region: "x", background: "retail-owner", audience: "" } }));
+  await check("An audience outside the list is refused", "deny", () => setDoc(doc(as(MEMBER), "leads/f10"), { ...OPERATOR, operator: { region: "x", background: "", audience: "enterprise" } }));
   await check("An editor can delete a lead", "allow", () => deleteDoc(doc(as(MEMBER), "leads/l1")));
   // Promote › Prospects (TAM)
   const PROSPECT = { name: "Acme Grocer", country: "United Kingdom", priority: "high", storePresence: "400 stores", ownership: "Private", insights: "Good fit", decisionMakers: "CMO", linkedinUrl: "https://www.linkedin.com/company/acme/", linkedinOrgId: "1234", linkedinVerified: true, contacts: [{ name: "Jo", role: "CMO", lastContact: "May" }], website: "https://acme.example", industry: "Grocery", subIndustry: "Supermarkets", hqCountry: "United Kingdom", markets: ["United Kingdom"], awsRegion: "eu-west-2", storeCount: 400, sizeBand: "large", vendors: [], campaigns: ["Spring"], status: "new", leadId: "", source: "Manual", notes: "" };
@@ -601,6 +604,18 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { reviewedByModel: "claude-opus-5-5" }, { merge: true }));
   await check("The Routine (automation user) can record builtByModel", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }, { merge: true }));
+  // Heartbeats and build attempts (14 Nov 2026): the automation decides from
+  // these whether to start a build again or land a patch.
+  await check("A human editor CANNOT write a build heartbeat (buildSession.heartbeatAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing" } }, { merge: true }));
+  await check("A human editor CANNOT change the current build attempt (buildAttemptId)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { buildAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("A human editor CANNOT claim a patch's attempt (patchAttemptId)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("The Routine (automation user) can send a heartbeat and its attempt id", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing", attemptId: "0123456789abcdef" }, patchAttemptId: "0123456789abcdef" }, { merge: true }));
+  await check("A human editor can still edit a card that carries a heartbeat", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited while building" }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));

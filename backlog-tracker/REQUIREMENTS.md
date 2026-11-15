@@ -173,6 +173,9 @@ deleted by hand).
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
+  buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
+  patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
+  buildSession?: { status?: "done" | "error", finishedAt?, reportedAt?: timestamp, errorMessage?, heartbeatAt?: timestamp, phase?: "reading" | "building" | "testing" | "packaging", attemptId?: string }, // the session's own report. heartbeatAt/phase/attemptId (14 Nov 2026) are its heartbeat: written when it starts, at each phase change and at least every 10 minutes; a heartbeat counts only when attemptId equals the card's buildAttemptId. Automation/Routine identity only (a pipeline field in firestore.rules)
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
   previewBuiltFrom?: string | null,     // build-info.json "commit" once ready: the source commit the bundle was built from
@@ -607,6 +610,64 @@ which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
 
+### Flaky tests: retry once, record, ticket at three
+
+**A red train means a real defect (14 Nov 2026).** Between 24 Oct and 14 Nov
+the console suite failed 44 of 352 runs, and 21 of the 23 failures with a
+readable log were Playwright timing, not defects. Each cost a 33-minute
+re-run of everything. The rules now:
+
+- **Only UI tests retry, once, inside the run.** A Playwright-driven case
+  that fails is run once more in the same run: `test/ui/flaky.mjs`
+  (`retryCase`) for the console click-through scenarios, the Staff Kanban
+  suites' own `withRetry` (console and prototype), and `test/ui/run-ui.mjs`
+  for the small UI files, which re-runs the file. A pass on the retry does
+  not fail the run. A failure on the retry fails it as before. Unit, rules,
+  MCP and docs tests never retry (`test/ui-retry.test.mjs` checks both).
+- **Every flake is written down.** The run uploads a `flaky-tests-<job>`
+  artifact (`flaky-tests.json`: suite, case id, viewport, first failure) and
+  its job summary says "Flaky this run: TC-55 desktop-1280, passed on retry".
+- **The board keeps a ledger.** After each train test run the automation
+  (`sweepFlakyTests`, logic in `scripts/flaky-ledger.js`) reads the artifacts
+  of the finished `firestore-rules-test.yml` and `kanban-staff-board-tests.yml`
+  runs it has not read yet and updates `settings/flakyTests`:
+  `{ cases: [{ id, suite, profile, count, seenAt[], lastSeenAt, lastRunUrl,
+  lastError, ticketId }], processedRuns[], updatedAt }`, the 50 most recent
+  cases, keyed by case id so one case's viewports count together. Members
+  read it; only the automation (service account) writes it.
+- **The health strip shows it.** "Flaky tests: N this week" (flakes in the
+  last 7 days) at the end of the pipeline health strip; with any, it is a
+  button that opens the list of cases (count this week, viewport, last seen,
+  last run, ticket). With none it reads 0 and opens nothing.
+- **Three flakes of one case in 7 days file ONE Backlog bug** in Backlog
+  Tracker & FAQs, titled "Flaky test: <case>", with the four intake sections
+  filled. Never a second while one is open (Backlog, Ready for Testing or
+  Approved for Deployment). It is not started automatically.
+- **A wall-clock limit never decides a train.** KB-SCALE times the 2,000 and
+  5,000-ticket boards against the 39-ticket board on the same runner and
+  limits the ratio; cases wait on the condition they assert (`eventually`,
+  `until`), and the harness waits for the console to have started before a
+  case's first selector (`appRendered`).
+- **Each test file runs in exactly one job of one workflow per train.** The
+  console workflow runs as five parallel jobs, each with a time limit:
+  `rules` (emulator), `offline` (unit, MCP, train, docs), `ui-console`,
+  `ui-touch`, `ui-kanban`. The train still reads the workflow's one
+  conclusion. `firestore-rules-test.yml` owns the console's Staff Kanban
+  suite (`test/ui/staff-kanban.test.mjs`); `kanban-staff-board-tests.yml`
+  owns the prototype suite (`kanban-staff-board/test`) and starts only for a
+  `kanban-staff-board/` change, no longer for every `backlog-tracker/` one.
+  `test/ci-coverage.test.js` fails on a file in two jobs or a job with no
+  timeout.
+- **The run the automation dispatches on the train's head commit is the
+  gate.** The `pull_request` runs GitHub creates on a bot-opened train PR are
+  held as `action_required` and may never execute (PR #585). They are neither
+  a pass nor a failure and nothing waits for them; `approveHeldRuns` stays as
+  best effort (`test/train-housekeeping.test.js`).
+- **`train-base/*` branches are deleted** once their run has a conclusion
+  (after 10 minutes, so the base check is read first) and in any case after
+  24 hours (`sweepBaseRefs`; first-seen times in
+  `systemStatus/pipeline.trainBaseRefsSeen`).
+
 **A failed train test is re-run once (19 Oct 2026).** `trainRunVerdict(run)`
 returns `running`, `passed`, `rerun` (failure / timed_out / startup_failure
 on attempt 1), `failed` (the same on attempt 2+) or `none`; "once" is
@@ -690,10 +751,11 @@ of the batch is deferred (up to 6 deferrals) rather than fired into it. Each
 sweep, a Backlog card whose `rebuildRequestedAt` is over 30 minutes old with
 no session started since and no patch handed over is first asked for again
 (up to `REBUILD_START_RETRIES` = 2, counted in `rebuildStartRetries`; 25 Oct
-2026). A started session that never reports back (no `buildSession`, patch or
-blocker 90 minutes after `lastFire.at`) is restarted once
+2026). A started session that goes quiet is restarted once
 (`buildSessionRetries`), then marked `buildSession.status: "error"` with a
-note, which releases the project's hand-off (`sweepSilentBuildSessions`). A
+note, which releases the project's hand-off (`sweepSilentBuildSessions`);
+"quiet" is judged from the session's heartbeat, not its start time — see
+"Heartbeats and build attempts" below. A
 dispatched baseline check on main that is still running after
 `BASE_CHECK_GIVE_UP_MS` is treated as never run and the culprit is sent back.
 Only then does a card get one note — "The
@@ -701,6 +763,76 @@ automatic rebuild requested at <time> never started (<error>). Click Ready
 for Dev to build it again." — and `rebuildRequestedAt` is cleared, so it is
 posted once. Tests: `test/rebuild-requests.test.js` (which cards are
 noted, the wording), `test/notify-fanout.test.js` (retry policy, `lastFire`).
+
+#### Heartbeats and build attempts (stuck detection, 14 Nov 2026)
+
+A build session that died (container restart, timeout) used to be noticed
+after 75 minutes and restarted after 90, and the restart often overlapped a
+session that was only slow: "hasn't reported back" notes were on 39 tickets
+and "A second build session" notes on 14. The rules, all in
+`functions/notify-routine.js` (pure) and applied by `sweepSilentBuildSessions`:
+
+- **Heartbeat.** Every build session PATCHes `buildSession.heartbeatAt`,
+  `buildSession.phase` (`reading`, `building`, `testing`, `packaging`) and
+  `buildSession.attemptId` on its ticket when it starts, at each phase change
+  and at least every 10 minutes while a long command runs. The fire text
+  carries the rule (`heartbeatHint` in `functions/index.js`) and so does
+  `ROUTINE_INSTRUCTIONS.md` → "Heartbeat and build attempt". Only the
+  automation/Routine identity may write these fields (`firestore.rules`,
+  `itemPipelineFields`).
+- **Silence is measured from the heartbeat.** No first heartbeat within 10
+  minutes of `lastFire.at` (`FIRST_HEARTBEAT_MS`): started again, with one
+  note. A heartbeat and then none for 20 minutes (`HEARTBEAT_SILENT_MS`):
+  one note, "Build session went quiet 20 minutes ago during <phase>; starting
+  it again", then started again. A session that is beating is never
+  restarted, however long it runs, up to 3 hours from its fire
+  (`BUILD_CEILING_MS`); at the ceiling the card is flagged waiting on a
+  person (`blocked.reason: "waiting-on-input"`) and nothing is restarted.
+  The retry cap is unchanged: one restart (`BUILD_SESSION_RETRIES`), then the
+  card is marked errored and flagged.
+- **A fire from before heartbeats** (no `lastFire.buildAttemptId`) was never
+  told to beat and keeps the old rule: restarted after 90 minutes of no report.
+- **No duplicate builds.** Each fire that starts a session gets a
+  `buildAttemptId`; the card stores the current one. A heartbeat from an
+  earlier attempt's session does not count, so a superseded session cannot
+  hide the new one's silence. A session reads its card before packaging and
+  stops with a note if `buildAttemptId` is no longer its own or the card has
+  gained a `deployCommit` since it started; it sends `patchAttemptId` with
+  its patch, and `processApplyPatch` refuses a patch whose `patchAttemptId`
+  differs from the card's `buildAttemptId` (`staleAttemptPatch`): nothing
+  lands, the patch files are dropped, one note is written and no rebuild is
+  started, because the current attempt's session is the one being waited for.
+  A patch with no `patchAttemptId` (hand-made, or from an older session) is
+  not stale. `inFlightItemIds` also treats a beating card as in flight
+  however old its fire is, so a further Ready for Dev click never starts a
+  second session for it.
+- **The project record** (`notifyRoutine`) stays open past the 75-minute
+  stall window while a sent card is still beating (`notifyRoutineOutcome`),
+  up to the same 3-hour ceiling.
+- **The card.** While building, the "Sent to Claude — locked" line adds the
+  phase and the age of the last heartbeat ("Testing · heard from 3 min ago");
+  after 10 minutes without one that line turns to the warning colour
+  (`--warning`). A card whose session is beating stays locked past 75
+  minutes. The project header's "Build didn't report back N" chip counts
+  heartbeat-silent sessions (no first heartbeat in 10 minutes, or none for
+  20) as well as the tickets of a stalled record.
+- **Build sessions run the affected tests; the train runs everything.** A
+  session runs the suites for the paths it changed plus the fast offline
+  checks (`npm run test:fast`, and `npm run test:fast-ui` for a
+  `backlog-tracker/public/` change), not every suite in the repo. The long
+  suites are train-only unless the ticket touches them: the ph-website tour
+  (`ph-website/tests/tour.test.mjs`, 10+ minutes) and the Staff Kanban
+  viewport matrix (`test/ui/staff-kanban.test.mjs`; a session runs its quick
+  profiles). `BUILD_SESSION_FAST=1`, set only by those two commands, is what
+  skips them; CI and the train never set it. The build note lists what was
+  and was not run.
+
+Tests: `test/build-heartbeat.test.js` (the windows, the notes, the ceiling,
+the stale-attempt refusal through the real `processApplyPatch`),
+`test/notify-fanout.test.js` (the fire carries the attempt id and the card
+stores it), `test/ui/console-click.test.mjs` ("Build heartbeat" scenarios),
+`test/firestore-rules.test.js` (a browser cannot write the heartbeat or
+either attempt id).
 
 **Every ticket a project builds is one commit on that project's single
 long-lived integration branch, `deploy/<project-slug>`** (on the project
@@ -806,10 +938,14 @@ Requirements that follow from it:
 ### Staff Kanban E2E on every train (self-healing)
 
 - A train whose diff against main touches `backlog-tracker/` or
-  `kanban-staff-board/` runs the Staff Kanban suites (prototype e2e; console
-  `staff-kanban`, `kanban-mcp`, `kanban-rules`) at each stage: on each landing in
-  Ready for Testing, on each push to the train, and as the gate before Deploy
-  to Main. Any project's train, not only Staff Kanban's.
+  `kanban-staff-board/` runs the console's Staff Kanban suites
+  (`staff-kanban`, `kanban-mcp`, `kanban-rules`, inside the console tests); one
+  that touches `kanban-staff-board/` also runs the prototype e2e suite. Since
+  14 Nov 2026 a `backlog-tracker/`-only change no longer starts the prototype
+  suite: it reads nothing there, and the test plan ran twice per train. They
+  run at each stage: on each landing in Ready for Testing, on each push to the
+  train, and as the gate before Deploy to Main. Any project's train, not only
+  Staff Kanban's.
 - A failing case (after the single automatic re-run) is raised as a bug ticket
   (`e2eAutoFix`: case id, viewport, failure, run, causing ticket; label "E2E
   auto-fix"), approved for development and sent to build automatically, and
@@ -4556,7 +4692,7 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     inquiry**, the detail's section **Network operator**, and the default source
     label **Run Your Own RMN page – product tour**. The internal names follow:
     the `leadType` key is `"operator"`, the Firestore field is `operator
-    {region, background}`, the constants are `OPERATOR_*`, the website intake
+    {region, background, audience}`, the constants are `OPERATOR_*`, the website intake
     function is `operatorFromWebsite`, and the DOM ids and CSS classes use
     `operator`. The offer's retired name appears nowhere in `backlog-tracker/`
     (code, rules, tests, MCP text or docs). No data was migrated: no live lead of
@@ -4566,14 +4702,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     default; a lead saved before this has none and reads as company) or
     `"operator"`. A network operator inquiry needs no company name, website or industry
     (`company.name` is ""); the person is its single contact (`name`, `email`,
-    `linkedin`), and `operator {region, background}` holds where they plan to
-    operate (≤200 chars) and their background, one of `agency` (Agency media or
-    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`,
-    `marketing`, `other` (Something else). Its stages are `OPERATOR_STAGES`:
+    `linkedin`), and `operator {region, background, audience}` holds where they plan to
+    operate (≤200 chars), their background and who they are. The background
+    (`BACKGROUNDS`) is one of, in this order, `agency` (Agency media or
+    account management), `adtech` (Ad-tech sales or partnerships), `retail-media`
+    (Retail media), `creative-agency` (Creative agency), `retail-owner` (Retail
+    business owner or manager), `marketing` (Marketing), `other` (Something
+    else); a value that is none of them is stored as `other`. **"I am"
+    (14 Nov 2026)** is `audience` (`AUDIENCES`): `individual` (An individual
+    operator), `team` (Part of an operator team) or `retailer` (A small to
+    medium retailer). It is stored as the key; a blank or unknown value is
+    stored as "", and a lead saved before the field existed has none and reads
+    as "" (nothing was migrated). Its stages are `OPERATOR_STAGES`:
     **Applied** (`applied`, where it starts), **Screening**, **Intro call**,
     **Approved**, **Not a fit**. `firestore.rules` → `isLead` checks the type,
     allows a blank company name only on an `operator` lead, keeps each type to its
-    own stages, and limits `operator` to `region` and `background`.
+    own stages, and limits `operator` to `region`, `background` and `audience`
+    (one of the three keys, or "").
   - **Website intake** (`POST /leadIngest/v1/submit`, same key): a body with
     `lead_type` (or `leadType`) of `operator`, `network operator` or "Network
     operator inquiry" (any case; `leadTypeOf` matches the word "operator") is a
@@ -4583,7 +4728,9 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     person's name, is ignored for an operator lead). Fields: `full_name` (or `fullName`/`contactName`/`name`), `email`,
     `linkedin` (optional; a value that isn't an address is dropped, not
     refused), `operating_region` (or `operatingRegion`/`region`/`where_operate`/
-    `location`), `background` (a key above or the form's label), `lead_source`
+    `location`), `background` (a key above or the form's label), `audience`
+    ("I am": a key above or the form's label, any case; the website sends the
+    label), `lead_source`
     (stored as `sourceLabel`; "Run Your Own RMN page – product tour" when not sent),
     `page` and `test`. `source` is `website`; each submission adds to
     `websiteActivity`. A name or an email is required and a bad email is a 400.
@@ -4591,26 +4738,30 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     is never matched to a company lead, and is never enriched (the trigger skips
     it; the Enrich route refuses it). The same email again (same test flag) is
     the same person: their lead's inbound count and activity grow and blank
-    region/background are filled. **The website side** posts these fields from
+    region/background/audience are filled. **The website side** posts these fields from
     the Run Your Own RMN page's gate (PH Website project, `ph-website/`); the console
     accepts them as named above.
   - **Board**: a **Companies / Network operators** switch above the board
     (with counts; remembered per browser in `localStorage` `bt-leads-type`) shows
     one pipeline at a time with its own lanes. A network operator card shows the
-    person, a "Network operator inquiry" chip, region · background and the source;
-    its summary shows the person, Network operator (region, background), Lead
+    person, a "Network operator inquiry" chip, I am · region · background (each
+    only when given) and the source;
+    its summary shows the person, Network operator (I am, region, background), Lead
     (type, stage, assignee, source, source page, dates), website activity and
     history, with no company, AWS team or research, and no Enrich button. New lead
     on that view opens the form as **New network operator inquiry**: the
-    person's full name, email and LinkedIn, where they plan to operate,
+    person's full name, email and LinkedIn, "I am" (a select: Not given or one
+    of the three options), where they plan to operate,
     background and the pipeline; no company fields, research or customer account.
   - **MCP** (`functions/leads.js`): `list_leads` and `get_lead` return
     `leadType`, `leadTypeLabel`, `name` (the company, or the person),
-    `region`, `background` and `backgroundLabel` alongside `source` /
-    `sourceLabel`; `list_leads` takes a `leadType` filter. `create_lead(s)` take
-    `leadType: "operator"` with the person as the only contact plus `region`
-    and `background` (no company needed); `update_lead` edits region and
-    background but refuses a type change; `update_lead_stage` accepts only the
+    `region`, `background`, `backgroundLabel`, `audience` and `audienceLabel`
+    (both null when not given, and on a company lead) alongside `source` /
+    `sourceLabel`; `list_leads` takes a `leadType` filter and an `audience`
+    filter (`individual`, `team` or `retailer`). `create_lead(s)` take
+    `leadType: "operator"` with the person as the only contact plus `region`,
+    `background` and `audience` (no company needed); `update_lead` edits region,
+    background and audience but refuses a type change; `update_lead_stage` accepts only the
     lead's own pipeline's stages; `get_lead`/the others find a network operator inquiry by
     the person's name; `link_lead_customer_account` and `link_lead_prospect`
     refuse a network operator inquiry.

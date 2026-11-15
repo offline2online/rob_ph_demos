@@ -15,6 +15,7 @@ import path from "node:path";
 import { startHarness, until, outDir, SDK_MODULES } from "./harness.mjs";
 import * as stub from "./firebase-stub.mjs";
 import { publicDir } from "./harness.mjs";
+import { retryCase } from "./flaky.mjs";
 
 // 1440 and 1280 desktop, 1180 tablet landscape, 820 tablet portrait, 390 phone.
 const WIDTHS = [1440, 1280, 1180, 820, 390];
@@ -99,6 +100,52 @@ function makeCtx(o, width) {
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
+  {
+    name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
+    seed: () => {
+      const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      return seed({
+        systemStatus: { pipeline: { dispatchTokenPresent: true, deployedAppVersion: "1.0.1" } },
+        settings: { flakyTests: { cases: [
+          { id: "TC-55", suite: "staff-kanban-console", profile: "desktop-1280", count: 4, seenAt: [ago(9), ago(3), ago(2), ago(1)], lastSeenAt: ago(1), lastRunUrl: "https://github.com/example/repo/actions/runs/101", lastError: "the card left the view", ticketId: "b1" },
+          { id: "mobile-shell.test.mjs", suite: "console-ui", profile: "", count: 1, seenAt: [ago(4)], lastSeenAt: ago(4), lastRunUrl: "", lastError: "FAIL mobile-shell board actions @820px", ticketId: null },
+          { id: "KB-C13", suite: "staff-kanban-console", profile: "phone-390", count: 2, seenAt: [ago(20), ago(12)], lastSeenAt: ago(12), lastRunUrl: "https://github.com/example/repo/actions/runs/77", lastError: "tap timed out", ticketId: null },
+        ], processedRuns: ["101"] } },
+      });
+    },
+    async run(c) {
+      await c.boardReady();
+      // 3 of TC-55's 4 flakes and mobile-shell's one are inside the week; KB-C13's are older and are not listed.
+      await c.waitText("#health-flaky", "Flaky tests: 4 this week", "the strip counts this week's flakes");
+      assert.equal(await c.page.getAttribute("#health-flaky", "aria-expanded"), "false");
+      assert.ok(await c.page.isHidden("#health-flaky-list"), "the list starts closed");
+      await c.click("#health-flaky", "open the flaky tests list");
+      await c.visible("#health-flaky-list", "the list opens");
+      assert.equal(await c.page.getAttribute("#health-flaky", "aria-expanded"), "true");
+      const rows = await c.page.$$eval("#health-flaky-list .health-flaky-row", (els) => els.map((e) => e.innerText.replace(/\s+/g, " ").trim()));
+      assert.equal(rows.length, 2, `two cases flaked this week, got ${JSON.stringify(rows)}`);
+      assert.ok(rows[0].startsWith("TC-55 3 this week desktop-1280"), `newest first with its count: ${rows[0]}`);
+      assert.ok(rows[0].includes("Last run") && rows[0].includes("Ticket"), "the case links to its last run and its ticket");
+      assert.ok(rows[1].startsWith("mobile-shell.test.mjs 1 this week") && !rows[1].includes("Ticket") && !rows[1].includes("Last run"), `a case with no ticket or run shows neither: ${rows[1]}`);
+      assert.equal(await c.page.getAttribute("#health-flaky-list .health-flaky-row a[href^='https://github.com']", "target"), "_blank");
+      assert.equal(await c.page.getAttribute("#health-flaky-list .health-flaky-row a[href^='#item-']", "href"), "#item-b1");
+      // The list sits in the strip, inside the page width, at every viewport.
+      const fit = await c.page.evaluate(() => { const l = document.getElementById("health-flaky-list").getBoundingClientRect(), s = document.getElementById("health-strip").getBoundingClientRect(); return l.left >= s.left - 1 && l.right <= s.right + 1 && s.right <= document.documentElement.clientWidth + 1 && getComputedStyle(document.getElementById("health-flaky-list")).position !== "fixed"; });
+      assert.ok(fit, "the list stays inside the strip and the page");
+      await c.click("#health-flaky", "close the list");
+      await c.hidden("#health-flaky-list", "the list closes");
+    },
+  },
+  {
+    name: "Health strip: no flaky tests this week reads 0 and offers no list",
+    seed: () => seed({ systemStatus: { pipeline: { dispatchTokenPresent: true, deployedAppVersion: "1.0.1" } }, settings: { flakyTests: { cases: [], processedRuns: [] } } }),
+    async run(c) {
+      await c.boardReady();
+      await c.waitText("#health-flaky", "Flaky tests: 0 this week", "the strip says none");
+      assert.equal(await c.page.$("#health-flaky-list"), null, "no list to open");
+      assert.equal(await c.page.$eval("#health-flaky", (e) => e.tagName), "SPAN", "and nothing to press");
+    },
+  },
   {
     name: "⋮ menu: View Artifact shows the latest signed-off version",
     seed: () => {
@@ -769,6 +816,72 @@ const scenarios = [
     },
   },
   {
+    // 14 Nov 2026: a build session sends a heartbeat; the locked card says
+    // which phase it is in and how long ago it was last heard from.
+    name: "Build heartbeat: a building card shows the phase and the age of the last heartbeat",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 30 * 60_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 30 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 3 * 60_000 - 5_000).toISOString(), phase: "testing", attemptId: "aaaaaaaaaaaaaaaa" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".in-development-hint", "Sent to Claude", "the card is locked as building");
+      await c.waitText(".in-development-hint .build-heartbeat", "Testing · heard from 3 min ago", "phase and age of the last heartbeat");
+      assert.strictEqual(await c.page.locator(".build-heartbeat-warn").count(), 0, "a 3-minute-old heartbeat is not a warning");
+      assert.strictEqual(await c.page.locator(".notify-claude-stalled").count(), 0, "a beating session is not counted as silent");
+      const fits = await c.page.locator(".in-development-hint").first().evaluate((el) => el.scrollWidth <= el.clientWidth + 1);
+      assert.ok(fits, "the heartbeat line fits inside the card's hint");
+    },
+  },
+  {
+    name: "Build heartbeat: a 12-minute-old heartbeat turns to the warning style",
+    seed: () => {
+      const s = only("b1");
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 30 * 60_000), sentItemIds: ["b1"], itemCount: 1, sessionUrl: "https://claude.ai/code/cse_x" };
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 30 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 12 * 60_000 - 5_000).toISOString(), phase: "building", attemptId: "aaaaaaaaaaaaaaaa" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".in-development-hint .build-heartbeat-warn", "Building · heard from 12 min ago", "the warning line");
+      const colours = await c.page.evaluate(() => {
+        const probe = document.createElement("span"); probe.style.color = "var(--warning)"; document.body.appendChild(probe);
+        const want = getComputedStyle(probe).color; probe.remove();
+        return { want, got: getComputedStyle(document.querySelector(".build-heartbeat-warn")).color };
+      });
+      assert.strictEqual(colours.got, colours.want, "the warning token's colour");
+      assert.strictEqual(await c.page.locator(".notify-claude-stalled").count(), 0, "not yet silent: that is 20 minutes");
+    },
+  },
+  {
+    name: "Build heartbeat: the header chip counts a session that has gone quiet, and a beating one keeps the card locked past 75 minutes",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Slow but alive", createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      s.docs.projects[PID].notifyRoutine = { status: "in-progress", mode: "per-item", firedAt: t(Date.now() - 80 * 60_000), sentItemIds: ["b1", "b2"], itemCount: 2, sessionUrl: "https://claude.ai/code/cse_x" };
+      // b1 went quiet 25 minutes ago; b2 is still beating after 80 minutes.
+      s.docs.backlogItems.b1.buildAttemptId = "aaaaaaaaaaaaaaaa";
+      s.docs.backlogItems.b1.lastFire = { status: "started", sessionId: "cse_x", at: t(Date.now() - 80 * 60_000), buildAttemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b1.buildSession = { heartbeatAt: new Date(Date.now() - 25 * 60_000).toISOString(), phase: "testing", attemptId: "aaaaaaaaaaaaaaaa" };
+      s.docs.backlogItems.b2.buildAttemptId = "bbbbbbbbbbbbbbbb";
+      s.docs.backlogItems.b2.lastFire = { status: "started", sessionId: "cse_y", at: t(Date.now() - 80 * 60_000), buildAttemptId: "bbbbbbbbbbbbbbbb" };
+      s.docs.backlogItems.b2.buildSession = { heartbeatAt: new Date(Date.now() - 2 * 60_000 - 5_000).toISOString(), phase: "testing", attemptId: "bbbbbbbbbbbbbbbb" };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText(".notify-claude-stalled", "report back", "the chip");
+      assert.strictEqual((await c.text(".notify-claude-stalled .notify-claude-count-pill")).trim(), "1", "only the silent session is counted");
+      await c.waitText('.card[data-id="b2"] .build-heartbeat', "heard from 2 min ago", "the beating card is still locked and reporting");
+    },
+  },
+  {
     // 20 Oct 2026: this button sent no ids, so the server built the whole
     // column again and every ticket still building got a second session.
     name: "Ready for Dev — N new: while a build is running, the click sends only the new tickets",
@@ -1190,7 +1303,7 @@ const scenarios = [
     name: "Promote: Leads - network operator inquiries are their own pipeline: filter by type, add a person with no company, move them",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
-      fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech" },
+      fx: { leadType: "operator", company: { name: "", website: "", industry: "", countries: [], storeCount: null }, operator: { region: "Leeds, UK", background: "adtech", audience: "team" },
         contacts: [{ id: "p1", name: "Alex Rivers", jobTitle: "", buyingRole: "", email: "alex@example.com", linkedin: "https://linkedin.com/in/alex" }],
         stage: "applied", source: "website", sourceLabel: "Run Your Own RMN page – product tour", sourcePage: "/run-your-own-rmn/", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
     } }),
@@ -1211,6 +1324,7 @@ const scenarios = [
       assert.deepStrictEqual(lanes, ["Applied", "Screening", "Intro call", "Approved", "Not a fit"]);
       const card = await c.text('.lead-lane[data-stage="applied"] .lead-card');
       assert.ok(card.includes("Alex Rivers") && card.includes("Network operator inquiry") && card.includes("Leeds, UK") && card.includes("Ad-tech sales or partnerships"), card);
+      assert.ok(card.indexOf("Part of an operator team") >= 0 && card.indexOf("Part of an operator team") < card.indexOf("Leeds, UK"), '"I am" shows on the card, before the region: ' + card);
       assert.ok(!(await c.text("#leads-board")).includes("Existing Co"), "company leads are not on the operator board");
       // The summary: the person, region, background, source; no company research.
       await c.page.click('.lead-lane[data-stage="applied"] .lead-card .lead-card-name');
@@ -1222,6 +1336,7 @@ const scenarios = [
       assert.ok(!/fr[a]nchis/i.test(sum), "the summary never shows the old word: " + sum);
       assert.ok(!/fr[a]nchis/i.test(await c.text("#leads-page")), "the board never shows the old word");
       assert.ok(sum.includes("Leeds, UK") && sum.includes("Ad-tech sales or partnerships") && sum.includes("Alex Rivers"), "region, background and the person show");
+      assert.ok(/I am\s*Part of an operator team/.test(sum), 'the summary shows "I am": ' + sum);
       assert.ok(await c.page.locator("#lead-sum-enrich").isHidden(), "a person is not researched");
       assert.strictEqual(await c.page.locator("#lead-sum-company").count(), 0, "no company section");
       await c.page.selectOption("#lead-sum-stage", "intro-call");
@@ -1240,13 +1355,16 @@ const scenarios = [
       await c.page.fill('.lead-contact[data-index="0"] .lc-name', "Sam Field");
       await c.page.fill('.lead-contact[data-index="0"] .lc-email', "sam@example.com");
       await c.page.fill("#lead-region", "Bristol");
-      await c.page.selectOption("#lead-background", "marketing");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#lead-audience option")].map((o) => o.textContent)), ["Not given", "An individual operator", "Part of an operator team", "A small to medium retailer"]);
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#lead-background option")].map((o) => o.value)), ["", "agency", "adtech", "retail-media", "creative-agency", "retail-owner", "marketing", "other"]);
+      await c.page.selectOption("#lead-audience", "retailer");
+      await c.page.selectOption("#lead-background", "retail-owner");
       await c.page.click("#lead-save");
       await c.visible('.lead-lane[data-stage="applied"] .lead-card', "the new person is in Applied");
       const made = await c.page.evaluate(() => { for (const [, v] of globalThis.__fbStub.col("leads").entries()) if (v.contacts && v.contacts[0] && v.contacts[0].name === "Sam Field") return v; return null; });
       assert.ok(made, "the network operator inquiry was written");
       assert.strictEqual(made.leadType, "operator"); assert.strictEqual(made.company.name, "");
-      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "marketing" });
+      assert.deepStrictEqual(made.operator, { region: "Bristol", background: "retail-owner", audience: "retailer" });
       assert.strictEqual(made.prospectId, undefined, "never matched to Prospects (TAM)");
       // Back to the company pipeline.
       for (let i = 0; i < 4 && (await c.page.getAttribute("#leads-type-company", "aria-selected")) !== "true"; i++) { await c.page.click("#leads-type-company"); await c.page.waitForTimeout(400); }
@@ -2343,27 +2461,34 @@ async function main() {
       for (const s of scenarios) {
         if (process.env.SCENARIO && !s.name.includes(process.env.SCENARIO)) continue; // SCENARIO=<part of a name> runs just those
         const label = `${s.name} @${width}px`;
-        const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
-        const ctx = makeCtx(o, width);
-        let error = null;
-        try {
-          await s.run(ctx);
-          // The run also fails on anything the page reported along the way.
-          if (o.problems.length) throw new Error(`the page reported ${o.problems.length} problem(s):\n        ${o.problems.join("\n        ")}`);
-        } catch (err) { error = err; }
-        if (!error) { console.log(`PASS  ${label}`); await o.close(); continue; }
-        failed += 1;
-        const shot = path.join(outDir, `${s.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${width}.png`);
-        await o.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
-        const writes = await ctx.writes().catch(() => []);
-        console.log(`FAIL  ${label}`);
-        console.log(`      step:     ${ctx.step}`);
-        if (ctx.selector) console.log(`      selector: ${ctx.selector}`);
-        console.log(`      error:    ${String(error && error.message).split("\n").join("\n      ")}`);
-        if (o.problems.length && !String(error.message).includes("the page reported")) console.log(`      page:     ${o.problems.join("\n                ")}`);
-        console.log(`      writes:   ${JSON.stringify(writes)}`);
-        console.log(`      screenshot: ${path.relative(process.cwd(), shot)}`);
-        await o.close();
+        // One attempt: a fresh page, the scenario, and what the page reported.
+        const attempt = async () => {
+          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
+          const ctx = makeCtx(o, width);
+          try {
+            await s.run(ctx);
+            // The run also fails on anything the page reported along the way.
+            if (o.problems.length) throw new Error(`the page reported ${o.problems.length} problem(s):\n        ${o.problems.join("\n        ")}`);
+            await o.close();
+          } catch (error) {
+            const shot = path.join(outDir, `${s.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-${width}.png`);
+            await o.page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+            const writes = await ctx.writes().catch(() => []);
+            error.detail = [
+              `      step:     ${ctx.step}`,
+              ...(ctx.selector ? [`      selector: ${ctx.selector}`] : []),
+              `      error:    ${String(error && error.message).split("\n").join("\n      ")}`,
+              ...(o.problems.length && !String(error.message).includes("the page reported") ? [`      page:     ${o.problems.join("\n                ")}`] : []),
+              `      writes:   ${JSON.stringify(writes)}`,
+              `      screenshot: ${path.relative(process.cwd(), shot)}`,
+            ].join("\n");
+            await o.close();
+            throw error;
+          }
+        };
+        // A failed scenario is run once more on a fresh page; a pass then is recorded as a flake (ui/flaky.mjs).
+        try { await retryCase({ suite: "console-click", id: s.name, profile: `${width}px` }, attempt); console.log(`PASS  ${label}`); }
+        catch (error) { failed += 1; console.log(`FAIL  ${label}`); console.log(error.detail || `      error:    ${error && error.message}`); }
       }
     }
   } finally {
