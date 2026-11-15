@@ -81,4 +81,13 @@ for (const bad of [
 const app = fs.readFileSync(path.join(here, "..", "public", "js", "app.js"), "utf8");
 assert.match(app, /import\s*\{[^}]*\bsendBackFields\b[^}]*\bfollowUpWrites\b[^}]*\}\s*from\s*"\.\/follow-up\.js"/);
 assert.ok(!app.includes("Failed testing ["), "app.js must not build the send-back note inline");
+// Testing rounds (hm84opFjizq3vekk0fC1): Failed testing still writes only
+// its existing shape — the tester's email rides on lastFailureReason, and
+// processRevertFromTrain turns it into a sendBacks entry (a browser can't
+// write testRound / sendBacks / sendBackCount / countedSendBacks).
+const withWho = sendBackFields({ category: "Other", text: "broken", at, who: "tester@example.com" });
+assert.equal(withWho.lastFailureReason.who, "tester@example.com");
+for (const f of ["testRound", "sendBacks", "sendBackCount", "countedSendBacks"]) assert.ok(!(f in withWho), `${f} is never a browser write`);
+assert.ok(!("who" in sb.lastFailureReason), "no who when none given");
+assert.match(app, /sendBackFields\(\{ category, text: trimmed, at, who:/, "the board passes the tester's email");
 console.log("follow-up.test.mjs: ok");

@@ -30,7 +30,7 @@ const RULES = [
     kind: "sent-back", who: "automation",
     line: (rest) => (/^Why: /.test(rest) ? clip(rest.slice(5).split("\n")[0].replace(/[.]$/, "")) : legacyAutoLine(rest)),
   },
-  { re: /^Failed testing \[([^\]]+)\]:\s*/, kind: "sent-back", who: "person", line: (rest, cat) => `${cat}: ${firstSentence(rest)}` },
+  { re: /^Failed testing \[([^\]]+)\](?: \(via MCP\))?:\s*/, kind: "sent-back", who: "person", line: (rest, cat) => `${cat}: ${firstSentence(rest)}` },
   { re: /^Ejected from train \[([^\]]+)\]:\s*/, kind: "ejected", who: "person", line: (rest, cat) => `${cat}: ${firstSentence(rest)}` },
   {
     re: /^Not sent back: main is broken, not this ticket\.\s*/,
@@ -67,21 +67,36 @@ export function rejectionsOf(notes) {
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const when = (d) => (d ? d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "");
-const VERB = { "sent-back": "Sent back", ejected: "Ejected", held: "Held" };
+const VERB = { "sent-back": "Sent back", ejected: "Ejected", held: "Held", uncounted: "Not counted" };
+
+// Testing rounds (15 Nov 2026): a card now carries its send-backs as stored
+// fields (sendBacks, written by the automation and the MCP server — see
+// functions/test-rounds.js). Read those first, newest first, in the same
+// shape as rejectionsOf; a card without them falls back to its notes.
+export function storedRejections(item) {
+  if (!item || !Array.isArray(item.sendBacks) || !item.sendBacks.length) return null;
+  return item.sendBacks.map((s) => {
+    const held = s.category === "main is broken";
+    const counted = s.counted !== false;
+    const kind = held ? "held" : (counted ? "sent-back" : "uncounted");
+    const line = s.by === "person" && s.category && !String(s.line || "").startsWith(`${s.category}:`) ? `${s.category}: ${s.line || ""}` : String(s.line || "");
+    return { kind, who: s.by === "tests" ? "automation" : (s.who || "a tester"), at: toDate(s.at), line: clip(line) };
+  }).sort((a, b) => (b.at ? b.at.getTime() : 0) - (a.at ? a.at.getTime() : 0));
+}
 
 // The block above a ticket's comments: one headline ("Sent back 2×: <why>")
 // and one line per earlier rejection. "" when the ticket was never sent back.
 export function rejectionSummaryHTML(item) {
-  const list = rejectionsOf(item && item.notes);
+  const list = storedRejections(item) || rejectionsOf(item && item.notes);
   if (!list.length) return "";
-  const backs = list.filter((r) => r.kind !== "held").length;
+  const backs = list.filter((r) => r.kind !== "held" && r.kind !== "uncounted").length;
   const latest = list[0];
-  const head = latest.kind === "held"
-    ? `Held, not sent back${backs ? ` (sent back ${backs}× before)` : ""}`
+  const head = latest.kind === "held" || latest.kind === "uncounted"
+    ? `${latest.kind === "held" ? "Held, not sent back" : "Sent back, not counted"}${backs ? ` (sent back ${backs}× before)` : ""}`
     : `${VERB[latest.kind]} ${backs}×`;
-  const rows = list.slice(1).map((r) => `<li><span class="rejection-when">${esc(when(r.at))}</span><span class="rejection-kind">${VERB[r.kind]}</span><span class="rejection-why">${esc(r.line)}</span></li>`).join("");
+  const rows = list.slice(1).map((r) => `<li${r.kind === "uncounted" || r.kind === "held" ? ' class="rejection-uncounted"' : ""}><span class="rejection-when">${esc(when(r.at))}</span><span class="rejection-kind">${VERB[r.kind]}</span><span class="rejection-why">${esc(r.line)}</span></li>`).join("");
   return `<div class="rejection-summary" role="note">
-    <p class="rejection-summary-head"><span class="material-symbols-outlined" aria-hidden="true">${latest.kind === "held" ? "pan_tool" : "undo"}</span><b>${esc(head)}</b>${latest.at ? ` <span class="rejection-when">${esc(when(latest.at))}</span>` : ""}<br>${esc(latest.line)}</p>
+    <p class="rejection-summary-head"><span class="material-symbols-outlined" aria-hidden="true">${latest.kind === "held" || latest.kind === "uncounted" ? "pan_tool" : "undo"}</span><b>${esc(head)}</b>${latest.at ? ` <span class="rejection-when">${esc(when(latest.at))}</span>` : ""}<br>${esc(latest.line)}</p>
     ${rows ? `<p class="rejection-summary-earlier">Earlier</p><ol class="rejection-summary-list">${rows}</ol>` : ""}
   </div>`;
 }
@@ -90,6 +105,6 @@ export function rejectionSummaryHTML(item) {
 export function lastRejectionLine(item) {
   const r = item && item.lastFailureReason;
   if (r && r.summary) return r.summary;
-  const list = rejectionsOf(item && item.notes).filter((x) => x.kind !== "held");
+  const list = (storedRejections(item) || rejectionsOf(item && item.notes)).filter((x) => x.kind !== "held" && x.kind !== "uncounted");
   return list.length ? list[0].line : (r && r.text ? firstSentence(r.text) : "");
 }

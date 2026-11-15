@@ -418,6 +418,14 @@ What the train changes:
   automatic send-back now opens with a one-line `Why:` (the failing test,
   from the run's log — `lastFailureReason.summary`), and the board shows one
   line per rejection above a ticket's comments (`public/js/rejection-summary.js`).
+  **Testing rounds** (15 Nov 2026): every send-back is stored on the card
+  (`testRound`, `sendBacks`, `sendBackCount`, `countedSendBacks` —
+  `functions/test-rounds.js`, read by `public/js/test-rounds-view.js`), a
+  "Round N" chip shows from round 2 in every column, and the 3rd counted
+  send-back flags the ticket needs-decision instead of rebuilding it; the ⋮
+  menu's **Testing loops** lists the looping tickets.
+  `scripts/backfill-test-rounds.js` stores the fields on older cards.
+  REQUIREMENTS.md → "Testing rounds".
   **A failed train test is re-run once before anyone acts on it** (19 Oct
   2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
   is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends

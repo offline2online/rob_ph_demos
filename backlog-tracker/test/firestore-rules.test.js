@@ -616,6 +616,20 @@ async function main() {
     setDoc(doc(as(BOT), "backlogItems/i1"), { buildSession: { heartbeatAt: new Date().toISOString(), phase: "testing", attemptId: "0123456789abcdef" }, patchAttemptId: "0123456789abcdef" }, { merge: true }));
   await check("A human editor can still edit a card that carries a heartbeat", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited while building" }, { merge: true }));
+  // Testing rounds (15 Nov 2026): the loop is the automation's and the MCP
+  // server's record. A browser's Failed testing keeps its existing write
+  // (lastFailureReason, now with the tester's email as `who`), which
+  // processRevertFromTrain turns into a sendBacks entry.
+  for (const [field, value] of [["testRound", 1], ["sendBacks", [{ at: new Date().toISOString(), by: "person", line: "x", counted: true }]], ["sendBackCount", 0], ["countedSendBacks", 0]]) {
+    await check(`A human editor CANNOT write ${field}`, "deny", () =>
+      setDoc(doc(as(MEMBER), "backlogItems/i1"), { [field]: value }, { merge: true }));
+  }
+  await check("The automation user can record a send-back and a testing round", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { testRound: 2, sendBacks: [{ at: new Date().toISOString(), by: "tests", who: "automation", category: "tests", line: "x", counted: true }], sendBackCount: 1, countedSendBacks: 1 }, { merge: true }));
+  await check("A human editor's Failed testing reason (with who) still saves", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { lastFailureReason: { category: "Other", text: "broken", action: "failed-testing", at: new Date(), who: "member@example.com" } }, { merge: true }));
+  await check("A human editor can still edit a card that carries a testing round", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { title: "Edited in round 2" }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));

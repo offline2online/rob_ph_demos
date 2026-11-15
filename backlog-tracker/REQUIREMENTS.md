@@ -190,7 +190,11 @@ deleted by hand).
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
-  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train", at: timestamp }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
+  testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
+  sendBacks?: [{ at: ISO string, by: "person" | "tests" | "review", who: string, category: string, line: string, counted: boolean }], // newest last, last 10 kept; written by the automation (processRevertFromTrain, ejectRedCulprits) and the MCP server (fail_testing) only
+  sendBackCount?: number, // every send-back ever, not capped
+  countedSendBacks?: number, // the send-backs that count towards the loop cap (counted: true)
+  lastFailureReason?: { category: string, summary?: string, text: string, action: "failed-testing" | "ejected-from-train" | "review-kickback", at: timestamp, who?: string }, // XJoASicLGefL5c9fronl — structured reason from the most recent Failed testing/Eject from train; see "The deployment train" below. Never cleared automatically — only meaningful while status is "backlog"
   followUpOf?: string,          // id of the Ready for Testing ticket whose tester asked for "something more" (Failed testing → "It works, but I want something more"); the original stays on its train, this new ticket waits in Backlog. Not a pipeline field
   ejectedFromTrain?: boolean,   // FVrOIVAAp46NdcgGovMW — set by ejectFromTrain(), distinguishing an explicit release-unblocking eject from an ordinary Failed testing reject in the card's history; see "The deployment train" below
 
@@ -1060,6 +1064,66 @@ expected to check whether `notes` shows a later successful pass since
 
 `testPassed` is never written anywhere now. Old cards carrying it are
 simply ignored; there was nothing to migrate.
+
+### Testing rounds (hm84opFjizq3vekk0fC1, 15 Nov 2026)
+
+A ticket that bounced between Backlog and Ready for Testing used to look like
+any other: the number of times it was sent back was worked out from note text
+and shown only inside the Edit and comment modals, the automatic rebuild
+budget (`autoRebuilds`) was never shown, and a person's Failed testing
+rebuilt with no cap at all. The loop is now stored and shown.
+
+- **Stored** (pipeline fields, `firestore.rules` → `itemPipelineFields`; a
+  browser never writes them): `testRound`, `sendBacks` (last 10, newest
+  last, `{at, by, who, category, line, counted}`), `sendBackCount` (every
+  one) and `countedSendBacks`. Logic: `functions/test-rounds.js`, shared by
+  the automation and the MCP server; the board's read side is
+  `public/js/test-rounds-view.js`.
+- **Who records a send-back.** `ejectRedCulprits` (by `tests`) and MCP
+  `fail_testing` (by `person`) write theirs at once. The board's Failed
+  testing and Eject from train keep their existing write (`lastFailureReason`,
+  now with the tester's email as `who`), and a Review Batch kick-back writes
+  `lastFailureReason.action: "review-kickback"`; `processRevertFromTrain`
+  turns each into a `sendBacks` entry when it takes the ticket off the train,
+  skipping one already recorded with the same `at`.
+- **Rounds.** Arriving in Ready for Testing (`processApplyPatch`, the no-diff
+  path) sets `testRound` to `max(testRound, countedSendBacks + 1)`.
+- **Not the ticket's fault, not counted**: category "Blocking a release, not
+  a rebuild", a ticket held because main was broken ("Not sent back: main is
+  broken"), and a red that passed when re-run (flaky). Each is recorded with
+  `counted: false`, adds no round and shows greyed in the list.
+- **On the card, every column**: a "Round N" chip (Material Symbols
+  `replay`) from round 2, warning colour from round 3. Hover lists every
+  send-back (when, who, category, one line); a tap opens the same list on
+  the card. A Ready for Testing card from round 2 shows "Sent back last
+  time: <line>" under its title. The Ready for Testing header shows "N in a
+  testing loop" when a card is at round 3 or later; it toggles a filter to
+  those cards (per viewer, not saved).
+- **The cap.** On the 3rd counted send-back (person, tests and review
+  together) the ticket is not rebuilt: it stays in Backlog with
+  `blocked: {reason: "needs-decision", setBy: "test-rounds", note: "Sent back
+  3 times. Decide: rewrite the ticket, split it, or build it on the Advanced
+  model…"}` and a note listing the three reasons. Answer, clearing the flag
+  (×, which for this flag also requests the build) or Ready for Dev builds it
+  again; the next cap is at 5, then 7. This replaces `autoRebuilds` for
+  send-backs, so there is one number: a test send-back no longer spends
+  `autoRebuilds`, which is left to the other automatic rebuilds (a conflict,
+  a migration number clash). A Review Batch's own third kick-back still
+  blocks as before (`reviewBounceCount`).
+- **Over MCP**, `get_ready_for_testing_board` returns `testRound`,
+  `sendBackCount`, `inTestingLoop` and `lastSendBack` per card and lists
+  looping tickets first.
+- **Report.** The project's ⋮ menu → **Testing loops**: tickets with 2 or
+  more counted send-backs in the last 30 days, with round, reasons, time
+  from first build to approval and the last send-back date. Read-only, the
+  Archived tickets table.
+- **Backfill.** Cards from before this read their loop from notes with
+  `rejectionsOf`'s rules (the same counts; `test/test-rounds.test.js`), and
+  their first recorded send-back stores the lot.
+  `scripts/backfill-test-rounds.js` stores it on every non-archived ticket at
+  once: run it from the deploy session of the train that ships this
+  (`BOARD_API_KEY=… node backlog-tracker/scripts/backfill-test-rounds.js
+  --apply`; without `--apply` it only counts).
 
 ## The single Deploy CTA, and closing the train
 

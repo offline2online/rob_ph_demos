@@ -642,6 +642,74 @@ const scenarios = [
       assert.strictEqual(w.data.revertRequested, true);
       assert.ok(w.data.lastFailureReason && /settings page/.test(w.data.lastFailureReason.text), "lastFailureReason carries the details");
       assert.ok(w.data.notes && w.data.notes.$arrayUnion && /settings page/.test(JSON.stringify(w.data.notes)), "a note carries the details");
+      // Testing rounds: the same write shape, with who sent it back; the loop
+      // fields are the automation's to record (firestore.rules).
+      assert.strictEqual(w.data.lastFailureReason.who, "editor@personalisationhub.com");
+      for (const f of ["testRound", "sendBacks", "sendBackCount", "countedSendBacks"]) assert.ok(!(f in w.data), `the browser never writes ${f}`);
+    },
+  },
+  {
+    name: "Testing rounds: a round-3 card shows its chip in every column, the last reason in Ready for Testing, and the header filter; a round-1 card none of it",
+    seed: () => {
+      const s = only("b1", "r1", "d1", "l1");
+      const sb = (ms, line, extra = {}) => ({ at: new Date(T0 + ms).toISOString(), by: "person", who: "tester@example.com", category: "Other", line, counted: true, ...extra });
+      const loop = { testRound: 3, sendBackCount: 3, countedSendBacks: 2, sendBacks: [sb(10, "chip missing"), sb(20, "flaky test", { by: "tests", category: "flaky", counted: false }), sb(30, "header count wrong")] };
+      for (const id of ["b1", "d1", "l1"]) Object.assign(s.docs.backlogItems[id], loop);
+      s.docs.backlogItems.r3 = { ...s.docs.backlogItems.r1, title: "Looping ticket", previewUrl: "https://example.test/preview/r3", deployCommit: "abc999", ...loop };
+      Object.assign(s.docs.backlogItems.r1, { testRound: 1, sendBackCount: 0, countedSendBacks: 0, sendBacks: [] });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      for (const id of ["b1", "r3", "d1", "l1"]) {
+        await c.visible(`.card[data-id="${id}"] .round-chip.round-chip-warn`, `${id}: Round chip in warning colour`);
+        assert.match(await c.text(`.card[data-id="${id}"] .round-chip`), /Round 3/);
+      }
+      c.at("a round-1 card shows none of it");
+      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .round-chip').count(), 0);
+      assert.strictEqual(await c.page.locator('.card[data-id="r1"] .resent-line').count(), 0);
+      await c.waitText('.card[data-id="r3"] .resent-line', "Sent back last time: header count wrong", "the last counted reason under the title");
+      assert.strictEqual(await c.page.locator('.card[data-id="b1"] .resent-line').count(), 0, "Ready for Testing only");
+      // Hover lists every send-back; a tap opens the list inline.
+      const title = await c.page.getAttribute('.card[data-id="r3"] .round-chip', "title");
+      assert.match(title, /chip missing/);
+      assert.match(title, /flaky test \(not counted\)/);
+      await c.click('.card[data-id="r3"] .round-chip', "tap the Round chip");
+      await c.visible('.card[data-id="r3"] .round-history', "the send-back list opens");
+      assert.strictEqual(await c.page.locator('.card[data-id="r3"] .round-history li').count(), 3);
+      assert.strictEqual(await c.page.locator('.card[data-id="r3"] .round-history-uncounted').count(), 1, "the uncounted one is greyed");
+      // The Ready for Testing header: count and filter.
+      const head = '.col-head[data-col="ready-for-testing"]';
+      await c.waitText(`${head} .loop-filter-btn`, "1 in a testing loop", "the column header counts the looping ticket");
+      await c.click(`${head} .loop-filter-btn`, "filter to the testing loop");
+      await c.hidden('.column[data-col="ready-for-testing"] .card[data-id="r1"]', "the round-1 card is filtered out");
+      await c.visible('.column[data-col="ready-for-testing"] .card[data-id="r3"]');
+      assert.strictEqual(await c.page.getAttribute(`${head} .loop-filter-btn`, "aria-pressed"), "true");
+      await c.click(`${head} .loop-filter-btn`, "show every ticket again");
+      await c.visible('.column[data-col="ready-for-testing"] .card[data-id="r1"]');
+      c.at("nothing was written");
+      assert.deepStrictEqual(await c.writes(), []);
+    },
+  },
+  {
+    name: "Testing loops: the ⋮ menu opens the read-only report of tickets sent back twice or more",
+    seed: () => {
+      const s = only("r1");
+      const now = Date.now();
+      const sb = (daysAgo, line) => ({ at: new Date(now - daysAgo * 86400000).toISOString(), by: "person", who: "tester@example.com", category: "Other", line, counted: true });
+      Object.assign(s.docs.backlogItems.r1, { testRound: 3, sendBackCount: 2, countedSendBacks: 2, sendBacks: [sb(3, "first miss"), sb(1, "second miss")] });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-loops-btn", "Testing loops");
+      await c.visible("#testing-loops-page");
+      await c.waitText("#testing-loops-count", "1 ticket");
+      await c.waitText("#testing-loops-grid", "Fix the thing");
+      await c.waitText("#testing-loops-grid", "second miss");
+      await c.waitText("#testing-loops-grid", "Not approved yet");
+      assert.deepStrictEqual(await c.writes(), [], "read-only");
     },
   },
   {

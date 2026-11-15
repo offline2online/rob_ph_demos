@@ -375,7 +375,12 @@ service cloud.firestore {
         // attempt the card is waiting on, and the id a patch was handed back
         // under. The automation trusts them to decide whether to start a
         // build again or land a patch, so a browser never writes them.
-        "buildSession", "buildAttemptId", "patchAttemptId"];
+        "buildSession", "buildAttemptId", "patchAttemptId",
+        // Testing rounds (15 Nov 2026): how many times the ticket reached
+        // Ready for Testing and was sent back. The automation and the MCP
+        // server record them; the board's Failed testing keeps writing only
+        // lastFailureReason, which processRevertFromTrain turns into one.
+        "testRound", "sendBacks", "sendBackCount", "countedSendBacks"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());

@@ -218,6 +218,7 @@ function boardViewHTML(kind) {
   }
   .card h2 { font-size: 14px; font-weight: 700; margin: 0 0 4px; line-height: 1.35; }
   .card .meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .card .resent { font-size: 13px; line-height: 1.4; margin: 0 0 8px; padding: 6px 8px; border-radius: 4px; background: var(--wait-bg); border: 1px solid var(--wait-border); color: var(--wait-text); }
   .card .body { font-size: 13px; line-height: 1.45; white-space: pre-wrap; margin-bottom: 8px; color: var(--text); }
   .card details { margin-bottom: 8px; }
   .card summary { cursor: pointer; font-size: 12px; color: var(--ph-primary); }
@@ -404,6 +405,10 @@ function boardViewHTML(kind) {
     var meta = el("div", "meta");
     meta.textContent = (item.project ? item.project + " · " : "") + (item.id || "");
     c.appendChild(meta);
+    // Testing rounds: from round 2 the tester is told what failed last time.
+    if (Number(item.testRound) >= 2 && item.lastSendBack && item.lastSendBack.line) {
+      c.appendChild(el("p", "resent", "Sent back last time: " + item.lastSendBack.line));
+    }
     var summary = item.testSummary || item.desc || "";
     c.appendChild(el("div", "body", summary));
     if (item.testSummary && item.desc && item.testSummary !== item.desc) {
@@ -413,6 +418,7 @@ function boardViewHTML(kind) {
       c.appendChild(d);
     }
     var pills = el("div", "pills");
+    if (Number(item.testRound) >= 2) pills.appendChild(pill("Round " + Number(item.testRound), Number(item.testRound) >= 3 ? "warn" : "neutral"));
     if (item.type) pills.appendChild(pill(item.type === "bug" ? "Bug" : "Feature", "neutral"));
     if (item.category) pills.appendChild(pill(item.category, "neutral"));
     if (item.testVersion) pills.appendChild(pill("Test version: v" + item.testVersion, "accent"));
