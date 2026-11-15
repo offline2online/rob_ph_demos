@@ -11,7 +11,7 @@
      "text": "The Fairlinks Golf Network runs the screens at 100 connected golf clubs, from one Personalisation Hub account."
     },
     {
-     "text": "Clubs differ: some have one screen, some three, some seven or more.",
+     "text": "Clubs differ: the smallest have two screens, most have five to nine, and the flagships up to sixteen.",
      "cue": "Every club is different"
     },
     {
@@ -326,7 +326,7 @@
    "id": "f3-01",
    "lines": [
     {
-     "text": "Now one club on the network: Fernhollow Golf Club, with seven screens. Hannah, a low-handicap member, arrives for her tee time."
+     "text": "Now one club on the network: Fernhollow Golf Club, with nine screens. Hannah, a low-handicap member, arrives for her tee time."
     },
     {
      "cue": "Welcome to Fernhollow",
@@ -416,8 +416,8 @@
      "text": "Booking revenue is for the whole network: every matching screen, each position with its own audience, sold at Corvane's fixed CPM."
     },
     {
-     "text": "That's over one and a quarter million dollars in two weeks, from one slot in three.",
-     "cue": "USD 1,272,096 in two weeks"
+     "text": "That's over two and a half million dollars in two weeks, from one slot in three.",
+     "cue": "USD 2,570,400 in two weeks"
     }
    ]
   }

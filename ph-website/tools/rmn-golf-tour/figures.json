@@ -3,120 +3,125 @@
  "cpm": 150,
  "from": "2026-12-01",
  "to": "2026-12-14",
- "screens": 343,
+ "screens": 722,
  "clubsBySize": {
-  "1": 20,
-  "2": 14,
-  "3": 22,
-  "4": 22,
-  "5": 14,
-  "7": 2,
-  "8": 2,
-  "9": 1,
-  "10": 2,
-  "12": 1
+  "2": 7,
+  "3": 9,
+  "4": 9,
+  "5": 11,
+  "6": 11,
+  "7": 10,
+  "8": 9,
+  "9": 9,
+  "10": 6,
+  "11": 5,
+  "12": 5,
+  "13": 4,
+  "14": 2,
+  "15": 2,
+  "16": 1
  },
  "fernhollow": {
   "code": "FGN-001",
   "name": "Fernhollow Golf Club",
   "screens": {
-   "proshop": 1,
-   "range": 1,
+   "proshop": 2,
+   "range": 2,
    "tee": 1,
    "halfway": 1,
    "locker": 1,
    "bar": 2
   },
-  "total": 7,
-  "staff": 4,
+  "total": 9,
+  "staff": 5,
   "segments": [
    "Members' club",
    "Parkland"
   ]
  },
  "deal": {
-  "screens": 343,
+  "screens": 722,
   "clubs": 100,
-  "forecastPlays": 10207680,
-  "committedPlays": 9186912
+  "forecastPlays": 21486720,
+  "committedPlays": 19338048
  },
  "types": [
   {
    "id": "proshop",
    "name": "Pro Shop",
    "audience": "Pro shop counter: members and visitors checking in and buying",
-   "clubs": 80,
-   "displayCount": 84,
+   "clubs": 75,
+   "displayCount": 141,
    "playsPerWindow": 960,
    "vacdPerPlay": 1.2,
    "bookedWindows": 14,
-   "bookedViews": 1354752,
-   "bookedRevenue": 203212.8
+   "bookedViews": 2274048,
+   "bookedRevenue": 341107.2
   },
   {
    "id": "range",
    "name": "Driving Range",
    "audience": "Range bays: players warming up before a round",
-   "clubs": 46,
-   "displayCount": 62,
+   "clubs": 77,
+   "displayCount": 160,
    "playsPerWindow": 960,
    "vacdPerPlay": 0.8,
    "bookedWindows": 14,
-   "bookedViews": 666624,
-   "bookedRevenue": 99993.6
+   "bookedViews": 1720320,
+   "bookedRevenue": 258048.0
   },
   {
    "id": "tee",
    "name": "First Tee",
    "audience": "First tee and starter's hut: golfers about to tee off",
-   "clubs": 56,
-   "displayCount": 56,
+   "clubs": 59,
+   "displayCount": 92,
    "playsPerWindow": 960,
    "vacdPerPlay": 2.4,
    "bookedWindows": 14,
-   "bookedViews": 1806336,
-   "bookedRevenue": 270950.4
+   "bookedViews": 2967552,
+   "bookedRevenue": 445132.8
   },
   {
    "id": "halfway",
    "name": "Halfway House",
    "audience": "Halfway house counter: golfers at the turn",
-   "clubs": 24,
-   "displayCount": 24,
+   "clubs": 45,
+   "displayCount": 58,
    "playsPerWindow": 960,
    "vacdPerPlay": 1.6,
    "bookedWindows": 14,
-   "bookedViews": 516096,
-   "bookedRevenue": 77414.4
+   "bookedViews": 1247232,
+   "bookedRevenue": 187084.8
   },
   {
    "id": "locker",
    "name": "Locker Room",
    "audience": "Locker room: members changing before and after a round",
-   "clubs": 8,
-   "displayCount": 9,
+   "clubs": 37,
+   "displayCount": 43,
    "playsPerWindow": 960,
    "vacdPerPlay": 0.6,
    "bookedWindows": 14,
-   "bookedViews": 72576,
-   "bookedRevenue": 10886.4
+   "bookedViews": 346752,
+   "bookedRevenue": 52012.8
   },
   {
    "id": "bar",
    "name": "Clubhouse Bar",
    "audience": "Clubhouse bar: members and guests after the round",
    "clubs": 100,
-   "displayCount": 108,
+   "displayCount": 228,
    "playsPerWindow": 960,
    "vacdPerPlay": 2.8,
    "bookedWindows": 14,
-   "bookedViews": 4064256,
-   "bookedRevenue": 609638.4
+   "bookedViews": 8580096,
+   "bookedRevenue": 1287014.4
   }
  ],
  "totals": {
   "bookedWindows": 84,
-  "bookedViews": 8480640,
-  "bookedRevenue": 1272096.0
+  "bookedViews": 17136000,
+  "bookedRevenue": 2570400.0
  }
 }

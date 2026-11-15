@@ -5,6 +5,7 @@
  * The allow-list entry img/01-advertiser.jpg is swapped for a 1000-byte fixture so the test needs no network and no binary files.
  * ASSET_SET=golf2 runs the v2 set the same way (/run-your-own-rmn/tour/assets/v2/, the first TOUR_ASSETS_RMN_V2 entry swapped; 15 Nov 2026).
  * ASSET_SET=golf3 runs the v3 set the same way (/run-your-own-rmn/tour/assets/v3/, the first TOUR_ASSETS_RMN_V3 entry swapped; 15 Nov 2026).
+ * ASSET_SET=golf4 runs the v4 set the same way (/run-your-own-rmn/tour/assets/v4/, the first TOUR_ASSETS_RMN_V4 entry swapped; 15 Nov 2026).
  * ASSET_SET=golf runs the Run Your Own RMN set instead (/run-your-own-rmn/tour/assets/v1/, the first TOUR_ASSETS_RMN entry swapped): its sources answer the fixture as base64 text
  * (76-character lines), ASSET_MODE=badb64 answers text that is not base64.
  * ASSET_MODE: mirror (tag answers 404, the jsDelivr mirror has the fixture) | both404 (tag and mirror answer 404) | badboth (both answer other bytes) | miss (empty cache, tag answers with the fixture) | cached (intact file already in uploads) | stale (cached file has the wrong bytes) | bad (tag answers with other bytes) | 404 (tag answers 404) | backoff (back-off transient set, empty cache)
@@ -28,10 +29,11 @@ function is_wp_error( $r ) { return false; }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v, $t = 0 ) { $GLOBALS['tr'][ $k ] = $v; $GLOBALS['trttl'][ $k ] = $t; }
 function wp_mkdir_p( $d ) { return is_dir( $d ) || mkdir( $d, 0777, true ); }
 $mode = getenv( 'ASSET_MODE' ) ?: 'miss';
+$golf4 = 'golf4' === getenv( 'ASSET_SET' );
 $golf3 = 'golf3' === getenv( 'ASSET_SET' );
 $golf2 = 'golf2' === getenv( 'ASSET_SET' );
-$gv    = $golf3 ? 'v3' : ( $golf2 ? 'v2' : '' );
-$golf = $golf2 || $golf3 || 'golf' === getenv( 'ASSET_SET' );
+$gv    = $golf4 ? 'v4' : ( $golf3 ? 'v3' : ( $golf2 ? 'v2' : '' ) );
+$golf = $golf2 || $golf3 || $golf4 || 'golf' === getenv( 'ASSET_SET' );
 $tmp  = sys_get_temp_dir() . '/tour-asset-' . getmypid();
 mkdir( $tmp, 0777, true );
 function wp_upload_dir() { global $tmp; return array( 'basedir' => $tmp . '/uploads' ); }
