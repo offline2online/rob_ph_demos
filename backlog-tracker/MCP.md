@@ -346,7 +346,7 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
+| `create_backlog_item` (always into the Backlog column; optional `dependsOnItemIds`, plus ids and exact titles from the Dependencies section, added automatically) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area, model, `dependsOnItemIds`); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
@@ -355,6 +355,22 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
 | | `upsert_prospects`, leads | `list_prospects`, `list_leads`, `get_lead` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
+
+**Build order: what a ticket builds after.** `create_backlog_item` takes an
+optional `dependsOnItemIds`: up to 20 ticket ids, from any project, that
+this ticket must build after. An id that names no ticket, or a list that
+would close a loop, is refused. Ticket ids and the exact titles of open
+tickets named in the description's Dependencies section are added to the
+list automatically. `update_backlog_item` takes the same argument and
+replaces the list (`[]` clears it). Every ticket that `list_backlog_items`
+and `get_backlog_item` return carries `dependsOnItemIds`,
+`dependsOnSource` (`"intake"`, `"build"`, `"manual"` or `null`) and
+`queuedAfter` (`{itemId, title}` or `null`). The results of
+`create_backlog_item` and `get_backlog_item` also carry `dependsOn`:
+one `{id, title, status, statusLabel}` per dependency (`status` is
+`"deleted"` for a ticket that no longer exists). `list_backlog_items` adds
+`dependsOn` only to a ticket that has dependencies. How the order is used is in
+[`REQUIREMENTS.md` → "Build order"](REQUIREMENTS.md#build-order-14-nov-2026-ticket-ze8h8cfaezob0etsrjsh).
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -441,6 +457,8 @@ logged to `mcpAuditLog` under the caller's email.**
 
 No MCP tool moves a card any other way, and `update_backlog_item` still has
 no `status`.
+
+### Write tools: skills library, help centre, copied documents and limits
 
 **The skills library is organisation-wide, not per-project** — a shared
 place to publish packaged instructions (like this repo's own `ph-designer`
