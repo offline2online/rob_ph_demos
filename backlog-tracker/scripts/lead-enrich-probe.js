@@ -67,7 +67,13 @@ class Probe {
       return res;
     };
     this.beta = { messages: {
-      stream: (params) => ({ finalMessage: async () => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.stream(params).finalMessage()); } }),
+      stream: (params, opts) => {
+        const inner = real.beta.messages.stream(params, opts);
+        return {
+          on: (...a) => inner.on(...a), abort: () => inner.abort(),
+          finalMessage: async () => { const n = ++calls, s = Date.now(); try { return report(n, s, await inner.finalMessage()); } catch (err) { console.log(`request ${n}: failed after ${secs(Date.now() - s)}: status ${err && err.status}, ${String(err && err.message || err).replace(/\s+/g, " ").slice(0, 300)}`); throw err; } },
+        };
+      },
       create: async (params) => { const n = ++calls, s = Date.now(); return report(n, s, await real.beta.messages.create(params)); },
     } };
   }
@@ -200,9 +206,11 @@ async function refreshLead(id) {
   const { initializeApp, applicationDefault } = fnRequire("firebase-admin/app");
   const { getFirestore } = fnRequire("firebase-admin/firestore");
   initializeApp({ credential: applicationDefault(), projectId: "backlog-tracker-e4ed2" });
-  const ref = getFirestore().collection("leads").doc(id);
+  // "prospects/<id>" refreshes a TAM record instead of a lead.
+  const tam = id.startsWith("prospects/");
+  const ref = getFirestore().collection(tam ? "prospects" : "leads").doc(tam ? id.slice(10) : id);
   const snap = await ref.get();
-  if (!snap.exists) { console.error("no such lead"); process.exit(1); }
+  if (!snap.exists) { console.error(tam ? "no such TAM record" : "no such lead"); process.exit(1); }
   const d = snap.data() || {};
   if (d.test === true) { console.error("test leads are not researched"); process.exit(1); }
   const cur = (d.enrichment || {}).request;
@@ -211,7 +219,7 @@ async function refreshLead(id) {
   if (cur && (cur.status === "queued" || cur.status === "running") && Date.now() - ms < 10 * 60 * 1000) { console.log(`already ${cur.status}: left alone`); process.exit(0); }
   const request = { id: require("crypto").randomBytes(8).toString("hex"), at: new Date(), by: process.env.REFRESH_BY || "research probe", status: "queued", trigger: "requested" };
   await ref.update({ "enrichment.request": request });
-  console.log(`queued a research run on the lead (request ${request.id})`);
+  console.log(`queued a research run on the ${tam ? "TAM record" : "lead"} (request ${request.id})`);
   process.exit(0);
 }
 

@@ -8,33 +8,33 @@
    "cue": null
   },
   {
-   "file": "f1-01-2-59dce8459f.mp3",
-   "hash": "59dce8459f",
-   "text": "Every club has the same six screen types.",
-   "duration": 2.43,
-   "cue": "Every club on the network"
+   "file": "f1-01-2-246dbb3133.mp3",
+   "hash": "246dbb3133",
+   "text": "Clubs differ: the smallest have two screens, most have five to nine, and the flagships up to sixteen.",
+   "duration": 6.06,
+   "cue": "Every club is different"
   },
   {
-   "file": "f1-01-3-9eb568ebf6.mp3",
-   "hash": "9eb568ebf6",
-   "text": "Whatever the network sets up once goes live at every club.",
-   "duration": 3.18,
+   "file": "f1-01-3-9c383f6d9a.mp3",
+   "hash": "9c383f6d9a",
+   "text": "Display types and playlists are set once, for the whole network.",
+   "duration": 3.35,
    "cue": "Set once for the network"
   }
  ],
  "f1-02": [
   {
-   "file": "f1-02-1-a690bb7e0c.mp3",
-   "hash": "a690bb7e0c",
-   "text": "The network has six screen types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar.",
-   "duration": 7.94,
+   "file": "f1-02-1-221346bfd1.mp3",
+   "hash": "221346bfd1",
+   "text": "The network has six display types: the pro shop, the driving range, the first tee, the halfway house, the locker room and the clubhouse bar.",
+   "duration": 8.09,
    "cue": null
   },
   {
-   "file": "f1-02-2-fab857ce43.mp3",
-   "hash": "fab857ce43",
-   "text": "They're set once, and every club on the network has them.",
-   "duration": 3.05,
+   "file": "f1-02-2-180af5891f.mp3",
+   "hash": "180af5891f",
+   "text": "Each club's screens are tagged with a type, by where they sit in the club.",
+   "duration": 3.71,
    "cue": null
   }
  ],
@@ -98,19 +98,19 @@
    "cue": null
   },
   {
-   "file": "f1-04-3-3a10ae0a9e.mp3",
-   "hash": "3a10ae0a9e",
-   "text": "Set once, live at all 100 clubs: the same six brand partner slots now exist at every club.",
-   "duration": 6.59,
-   "cue": "Set once, live at all 100 clubs"
+   "file": "f1-04-3-2663b2fc06.mp3",
+   "hash": "2663b2fc06",
+   "text": "Set once: live on every pro shop, first tee and clubhouse bar screen across the network, however many each club has.",
+   "duration": 7.47,
+   "cue": "Set once, live on every screen"
   }
  ],
  "f1-05": [
   {
-   "file": "f1-04-1-a88a9779d9.mp3",
-   "hash": "a88a9779d9",
-   "text": "Corvane Golf is already set up as a direct advertiser, next to the advertisers synced from DSPs.",
-   "duration": 6.59,
+   "file": "f1-05-1-30a14d7532.mp3",
+   "hash": "30a14d7532",
+   "text": "Corvane Golf is already set up as a direct advertiser, ready to buy from the network.",
+   "duration": 5.21,
    "cue": null
   }
  ],
@@ -123,10 +123,10 @@
    "cue": null
   },
   {
-   "file": "f1-06-2-bf19e63694.mp3",
-   "hash": "bf19e63694",
-   "text": "This direct deal gives Corvane all of December across the whole network at a fixed CPM, and it's never sent to a DSP.",
-   "duration": 7.79,
+   "file": "f1-06-2-640f60c26e.mp3",
+   "hash": "640f60c26e",
+   "text": "This direct deal gives Corvane all of December across the whole network, at a fixed CPM.",
+   "duration": 5.46,
    "cue": "Create a direct deal"
   }
  ],
@@ -146,10 +146,10 @@
    "cue": "The new deal, not on a slot yet"
   },
   {
-   "file": "f1-06-3-920ae8dfd8.mp3",
-   "hash": "920ae8dfd8",
-   "text": "Each slot's list offers DSPs for open auction, and deals.",
-   "duration": 3.99,
+   "file": "f1-07-3-2253be85b7.mp3",
+   "hash": "2253be85b7",
+   "text": "Type Corvane, and the slot's list shows the network's deal.",
+   "duration": 3.18,
    "cue": "Choose the deal"
   },
   {
@@ -160,41 +160,34 @@
    "cue": null
   },
   {
-   "file": "f1-06-5-9d85756903.mp3",
-   "hash": "9d85756903",
-   "text": "Direct deals and programmatic demand are managed side by side, in one place.",
-   "duration": 5.08,
-   "cue": null
-  },
-  {
-   "file": "f1-07-6-6a1c6ced4a.mp3",
-   "hash": "6a1c6ced4a",
-   "text": "All six slots now carry the deal, at every one of the 100 clubs. Then, save the changes.",
-   "duration": 6.02,
+   "file": "f1-07-6-c3e916080f.mp3",
+   "hash": "c3e916080f",
+   "text": "All six slots now carry the deal, on every matching screen across the network. Then, save the changes.",
+   "duration": 6.63,
    "cue": "All six brand partner slots"
   }
  ],
  "f1-08": [
   {
-   "file": "f1-08-1-d1731e813f.mp3",
-   "hash": "d1731e813f",
-   "text": "The forecast plays cover all 100 clubs, for reference only: this is a direct buy at a fixed CPM.",
-   "duration": 6.93,
+   "file": "f1-08-1-8992769528.mp3",
+   "hash": "8992769528",
+   "text": "The forecast plays cover every matching screen, for reference only: this is a direct buy at a fixed CPM.",
+   "duration": 6.74,
    "cue": null
   },
   {
-   "file": "f1-07-2-810f46105a.mp3",
-   "hash": "810f46105a",
-   "text": "Finalising puts the deal live, and its revenue is reported just like DSP revenue.",
-   "duration": 5.55,
+   "file": "f1-08-2-3acee6a3d0.mp3",
+   "hash": "3acee6a3d0",
+   "text": "Finalising puts the deal live. Its revenue is reported in the platform; invoicing happens outside it.",
+   "duration": 6.63,
    "cue": "Finalise and go live"
   },
   {
-   "file": "f1-08-3-2efc235f9c.mp3",
-   "hash": "2efc235f9c",
-   "text": "Every December window on all six screen types, at all 100 clubs, is now Corvane's.",
-   "duration": 5.61,
-   "cue": "Live · direct, not sent to a DSP"
+   "file": "f1-08-3-28d3a1cad3.mp3",
+   "hash": "28d3a1cad3",
+   "text": "Every December window on all six display types, across the network, is now Corvane's.",
+   "duration": 5.48,
+   "cue": "Live · direct deal"
   }
  ],
  "f1-09": [
@@ -298,10 +291,10 @@
    "cue": "Campaign brief"
   },
   {
-   "file": "f2-04-5-3082a3daf1.mp3",
-   "hash": "3082a3daf1",
-   "text": "Only the deal's six screen types are switched on.",
-   "duration": 2.75,
+   "file": "f2-04-5-3fef2f564a.mp3",
+   "hash": "3fef2f564a",
+   "text": "Only the deal's six display types are switched on, each with its own audience.",
+   "duration": 4.39,
    "cue": "Touchpoints"
   }
  ],
@@ -369,10 +362,10 @@
  ],
  "f2-08": [
   {
-   "file": "f2-08-1-c8ecfc3996.mp3",
-   "hash": "c8ecfc3996",
-   "text": "Corvane also wants a second campaign, just for low-handicap members, at every club on the network.",
-   "duration": 6.17,
+   "file": "f2-08-1-5f00d19707.mp3",
+   "hash": "5f00d19707",
+   "text": "Corvane also wants a second campaign, just for low-handicap members, on every matching screen across the network.",
+   "duration": 7.0,
    "cue": null
   },
   {
@@ -487,10 +480,10 @@
  ],
  "f3-01": [
   {
-   "file": "f3-01-1-37065610ec.mp3",
-   "hash": "37065610ec",
-   "text": "Now one club on the network: Fernhollow Golf Club. Hannah, a low-handicap member, arrives for her morning tee time.",
-   "duration": 7.23,
+   "file": "f3-01-1-1107b8367e.mp3",
+   "hash": "1107b8367e",
+   "text": "Now one club on the network: Fernhollow Golf Club, with nine screens. Hannah, a low-handicap member, arrives for her tee time.",
+   "duration": 8.11,
    "cue": null
   },
   {
@@ -596,19 +589,19 @@
    "cue": "At the clubhouse bar"
   },
   {
-   "file": "f3-03-10-606602f200.mp3",
-   "hash": "606602f200",
-   "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six screens, one offer sold by the network.",
-   "duration": 7.64,
+   "file": "f3-03-10-524f9be195.mp3",
+   "hash": "524f9be195",
+   "text": "Back at the pro shop, the fitting is booked and her free sleeve is applied. One member, six display types, one offer sold by the network.",
+   "duration": 8.21,
    "cue": "Back at the pro shop"
   }
  ],
  "f3-04": [
   {
-   "file": "f3-04-1-2be56ae48b.mp3",
-   "hash": "2be56ae48b",
-   "text": "Now back to the whole network. Corvane holds slot one on all six screen types at all 100 clubs, every day of December.",
-   "duration": 7.98,
+   "file": "f3-04-1-4165dd272b.mp3",
+   "hash": "4165dd272b",
+   "text": "Now back to the whole network. Corvane holds slot one on every display type, on every matching screen, every day of December.",
+   "duration": 7.85,
    "cue": null
   },
   {
@@ -621,18 +614,18 @@
  ],
  "f3-05": [
   {
-   "file": "f3-05-1-b8371cd8d9.mp3",
-   "hash": "b8371cd8d9",
-   "text": "Booking revenue is for the whole network: 100 clubs, six screen types, every window sold at Corvane's fixed CPM.",
-   "duration": 7.87,
+   "file": "f3-05-1-407ce7910e.mp3",
+   "hash": "407ce7910e",
+   "text": "Booking revenue is for the whole network: every matching screen, each position with its own audience, sold at Corvane's fixed CPM.",
+   "duration": 8.36,
    "cue": null
   },
   {
-   "file": "f3-05-2-4414f7c85a.mp3",
-   "hash": "4414f7c85a",
-   "text": "That's over three and a half million dollars in two weeks, from one slot in three.",
-   "duration": 4.33,
-   "cue": "USD 3,623,124 in two weeks"
+   "file": "f3-05-2-35ad457186.mp3",
+   "hash": "35ad457186",
+   "text": "That's over two and a half million dollars in two weeks, from one slot in three.",
+   "duration": 4.29,
+   "cue": "USD 2,570,400 in two weeks"
   }
  ]
 }

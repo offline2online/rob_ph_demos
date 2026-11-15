@@ -6,7 +6,8 @@
  * containers (CSS IDs ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, ph-rmn-request) in the brief's order. That HTML is then passed through
  * operator_mount(), the function hooked on Elementor's frontend content filter, exactly as on the live page, so the blocks in the
  * fixture are the ones the server puts into the first HTML response. With the argument `head`, prints JSON instead: the document title, the header menu item and the SEO head exactly as
- * operator.php produces them on the page itself (hidden), so the fixture's <head> and menu are the real ones.
+ * operator.php produces them on the page itself (live since 15 Nov 2026, so the head links the markdown twin), so the fixture's <head> and menu
+ * are the real ones.
  */
 namespace {
 define( 'ABSPATH', '/' );
@@ -46,7 +47,7 @@ if ( isset( $argv[1] ) && 'head' === $argv[1] ) {
 	echo json_encode( array(
 		'title' => operator_document_title( 'Untitled - Personalisation Hub' ),
 		'menu'  => array( 'title' => $item->title, 'url' => $item->url, 'classes' => implode( ' ', $item->classes ), 'atts' => operator_menu_link_atts( array(), $item ) ),
-		'seo'   => operator_head_html( operator_og_image(), false ),
+		'seo'   => operator_head_html( operator_og_image(), operator_is_live() ),
 	) );
 	return;
 }

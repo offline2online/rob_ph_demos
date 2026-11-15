@@ -462,10 +462,33 @@ busy. Now:
   Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
   setBy: "self-heal" }` with the reason, so the board shows it under
   "waiting on your answer" with an Answer button that rebuilds it.
+- **Nothing waits on a person's answer (14 Nov 2026, Rob: "the tickets are
+  still asking me random questions which block the backlog flow")**. Build
+  sessions are told to decide and not ask: where a ticket leaves a choice
+  open they take the best option, build it and state the assumption on the
+  card ("Assumed:"), and they flag a card only for something only a person
+  can supply (`ROUTINE_INSTRUCTIONS.md`, the build prompt in
+  `functions/index.js`). A flagged question is answered on the automation's
+  next run, not after 10 minutes. A build that never ran (usage limit,
+  restart, refused fire: `blocked.kind` `never-ran`) asked nothing, so it is
+  not "answered": it is tried again by itself after 30 minutes, then 1, 2, 4
+  and every 6 hours, up to 12 times (`neverRanRetries`), and its flag says
+  "Nothing to answer". A flag a person set (`setBy` an address) is never
+  answered for them. Tests: `test/self-heal.test.js`.
+- **A patch can be handed over as a commit (14 Nov 2026)**: a build session
+  commits on its own branch, pushes, and writes only `patchCommit` (full id),
+  `patchRef` and `patchBaseSha` on the card. `basePatchFilesFor` fetches the
+  commit and `patchFilesFromCommit` reads every file it changes relative to
+  the base into the same `[{path, content}]` list (null for a deleted path),
+  so landing is unchanged. No file content goes through the board: no size
+  limit, no patch parts, and no upload for a session's environment to
+  refuse. Text files only; `patchFiles` remains the fallback. Only the
+  automation account may write the two fields (`firestore.rules`). Tests:
+  `test/patch-commit.test.js`.
 - **A question never strands a ticket (30 Oct 2026)**: a card flagged
-  `waiting-on-input` for 10 minutes without a reply takes the senior agent's
+  `waiting-on-input` takes the senior agent's
   answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
-  the build's question (accepted automatically from the senior agent…)" using
+  the build's question (taken automatically…)" using
   `blocked.recommendation` (recorded by the build after consulting a
   higher-ranking agent) or, without one, the default "take the best option,
   state the assumption, do not ask again"; it clears the flag and requests a
@@ -4757,7 +4780,19 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     turned into the record by one short call with no tools (`notesOf`, at
     most 70 seconds). The run's message says it ran out of time and that
     Refresh info runs it again. A run left "running" for over 10 minutes
-    still counts as stale and does not block a new one.
+    still counts as stale and does not block a new one. The first run after
+    this (the same bank) finished in 6 min 45 s with a full profile but no
+    site count and one person, so the brief now runs as **two halves at
+    once** (`claudeResearchSplit`, `RESEARCH_HALVES`): the estate (the site
+    count first, the breakdown, where it trades, the people; 10 searches, 5
+    page reads) and the market (summary, size, logos, retail media and
+    competitors, personalisation, in-store digital, loyalty, strategy, news,
+    financials, facts, fit, talking points; 14 searches, 6 page reads).
+    Tried on the same bank from a runner: 344 s, 561 sites, eight news
+    items. Each half's own fields win when they
+    are put together (`mergeHalves`); people are listed once each. When one
+    half fails the other is kept and the record says some fields may be
+    missing.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

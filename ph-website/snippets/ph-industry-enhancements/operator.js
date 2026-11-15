@@ -12,7 +12,6 @@
   // The calculator's shares of ad revenue, "Operator or team" and "Retailer": code only, never shown anywhere.
   var SHARE = 0.5, RETAILER_SHARE = 0.7;
   var BACKGROUNDS = ["Agency media or account management", "Ad-tech sales or partnerships", "Retail media", "Creative agency", "Retail business owner or manager", "Marketing", "Something else"];
-  var AUDIENCES = ["An individual operator", "Part of an operator team", "A small to medium retailer"]; // the gate's "I am"
   // The request form's "Industry you want to run your network in": the page's twelve industries, then "Other (tell us)".
   var OTHER = "Other (tell us)";
   var INDUSTRIES = ["Car dealerships", "Golf clubs", "Sailing clubs and marinas", "Fuel and convenience", "Trade suppliers", "Rural and farm supplies", "Independent grocery", "Liquor stores", "Hardware", "Utility shopfronts", "Gyms and leisure centres", "Cafés and bakeries", OTHER];
@@ -44,7 +43,7 @@
   function view(c) {
     return { yours: money(c.income), venues: count(c.venues), displays: count(c.displays), visitors: count(Math.round(c.visitorsMonth)), views: count(Math.round(c.viewsMonth)), extraSales: money(c.extraSales), perDisplay: perDisplay(c.perDisplay) };
   }
-  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS, AUDIENCES: AUDIENCES, INDUSTRIES: INDUSTRIES, LABELS: LABELS }; return; }
+  if (typeof module !== "undefined" && module.exports) { module.exports = { calc: calc, money: money, view: view, BACKGROUNDS: BACKGROUNDS, INDUSTRIES: INDUSTRIES, LABELS: LABELS }; return; }
 
   if (!document.querySelector(".phf")) return;
   var $ = function (id) { return document.getElementById(id); };
@@ -117,13 +116,13 @@
   /* ---------- Tour band ---------- */
   var form = $("phf-form"), box = $("phf-tbox"), btn = $("phf-unlock"), msg = $("phf-msg"), mount = $("phf-mount");
   var busy = false, mounted = false;
-  function fields() { return form ? [form.elements.name, form.elements.email, form.elements.linkedin, form.elements.region, form.elements.audience, form.elements.background] : []; }
+  function fields() { return form ? [form.elements.name, form.elements.email, form.elements.linkedin, form.elements.region, form.elements.background] : []; }
   function okEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v); }
   function okLinkedin(v) { return v === "" || (v.length <= 300 && !/\s/.test(v) && /^(https?:\/\/)?([a-z0-9-]+\.)*linkedin\.com(\/|$|\?|#)/i.test(v)); }
   function valid() {
     if (!form) return false;
     var f = form.elements, n = f.name.value.trim(), e = f.email.value.trim(), r = f.region.value.trim();
-    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && AUDIENCES.indexOf(f.audience.value) > -1 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.consent.checked);
+    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.consent.checked);
   }
   function sync() { if (btn) btn.disabled = busy || !valid(); }
   function focusFirstEmpty() {
@@ -183,7 +182,7 @@
     form.addEventListener("submit", function (e) {
       e.preventDefault(); if (busy || !valid()) { sync(); return; }
       var f = form.elements;
-      var body = { name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), audience: f.audience.value, background: f.background.value, consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
+      var body = { name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), background: f.background.value, consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
       busy = true; sync(); btn.textContent = "Unlocking…"; msg.className = "phf-msg"; msg.textContent = "";
       fields().forEach(function (x) { if (x) x.removeAttribute("aria-invalid"); });
       var done = function () { busy = false; btn.textContent = "Unlock the tour"; sync(); };
@@ -215,12 +214,12 @@
 
   /* ---------- Request further information (#request-info): the gate's fields and checks, plus the industry and a message ---------- */
   var rform = $("phf-rform"), rbtn = $("phf-rsubmit"), rmsg = $("phf-rmsg"), rdone = $("phf-rdone"), rbusy = false;
-  function rfields() { var f = rform.elements; return [f.name, f.email, f.linkedin, f.region, f.industry, f.industry_other, f.audience, f.background, f.message]; }
+  function rfields() { var f = rform.elements; return [f.name, f.email, f.linkedin, f.region, f.industry, f.industry_other, f.background, f.message]; }
   function otherOn() { return !!rform && rform.elements.industry.value === OTHER; }
   function rvalid() {
     if (!rform) return false;
     var f = rform.elements, n = f.name.value.trim(), e = f.email.value.trim(), r = f.region.value.trim(), o = f.industry_other.value.trim();
-    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && INDUSTRIES.indexOf(f.industry.value) > -1 && (!otherOn() || (o && o.length <= 120)) && AUDIENCES.indexOf(f.audience.value) > -1 && BACKGROUNDS.indexOf(f.background.value) > -1 && f.message.value.trim().length <= MESSAGE_MAX && f.consent.checked);
+    return !!(n && n.length <= 120 && okEmail(e) && e.length <= 120 && okLinkedin(f.linkedin.value.trim()) && r && r.length <= 120 && INDUSTRIES.indexOf(f.industry.value) > -1 && (!otherOn() || (o && o.length <= 120)) && BACKGROUNDS.indexOf(f.background.value) > -1 && f.message.value.trim().length <= MESSAGE_MAX && f.consent.checked);
   }
   function rsync() {
     if (!rform) return;
@@ -238,7 +237,7 @@
     rform.addEventListener("submit", function (e) {
       e.preventDefault(); if (rbusy || !rvalid()) { rsync(); return; }
       var f = rform.elements;
-      var body = { form: "request", name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), industry: f.industry.value, industry_other: otherOn() ? f.industry_other.value.trim() : "", audience: f.audience.value, background: f.background.value, message: f.message.value.trim(), consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
+      var body = { form: "request", name: f.name.value.trim(), email: f.email.value.trim(), linkedin: f.linkedin.value.trim(), region: f.region.value.trim(), industry: f.industry.value, industry_other: otherOn() ? f.industry_other.value.trim() : "", background: f.background.value, message: f.message.value.trim(), consent: f.consent.checked, page: location.pathname, test: testMode(), website: f.website.value };
       rbusy = true; rsync(); rbtn.textContent = "Sending…"; rmsg.className = "phf-msg"; rmsg.textContent = "";
       rfields().forEach(function (x) { if (x) x.removeAttribute("aria-invalid"); });
       var done = function () { rbusy = false; rbtn.textContent = "Request further information"; rsync(); };
@@ -322,16 +321,15 @@
     var fig = figures(), data = { audience: mode, inputs: inputs(), figures: fig };
     if (mode === "operator") data.earningsPerDisplayMonth = fig.perDisplay; // operator mode only, as on the page
     var base = "Calculator filled in on the page (" + (mode === "retailer" ? "Retailer" : "Operator or team") + "). " + Object.keys(LABELS[mode]).map(function (k) { return LABELS[mode][k] + ": " + fig[k]; }).join("; ") + ".";
-    var wants = ["name", "email", "linkedin", "region", "i_am", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
-    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, which describes them (an individual operator, part of an operator team or a small to medium retailer), their background and whether they agree to be contacted, then call again with name, email, region, i_am, background and consent. Or they can use the \"Request further information\" form at the bottom of the page (#request-info: the same details, the industry they want to run their network in and an optional message; we send an information pack) or the form in the tour section.", data));
+    var wants = ["name", "email", "linkedin", "region", "background", "consent"].some(function (k) { return args[k] !== undefined && args[k] !== "" && args[k] !== false; });
+    if (!wants) return Promise.resolve(toolText(base + " To request further information and unlock the product tour, ask the person for their full name, email, where they plan to operate, their background and whether they agree to be contacted, then call again with name, email, region, background and consent. Or they can use the \"Request further information\" form at the bottom of the page (#request-info: the same details, the industry they want to run their network in and an optional message; we send an information pack) or the form in the tour section.", data));
     if (args.consent !== true) return Promise.resolve(toolText(base + " Requesting information needs the person's agreement to be contacted (consent=true). Ask them first; nothing was submitted.", data));
     if (!form || mounted) return Promise.resolve(toolText(base + (mounted ? " The product tour is already unlocked on the page." : ""), data));
     var f = form.elements;
     ["name", "email", "linkedin", "region"].forEach(function (k) { if (typeof args[k] === "string") { f[k].value = args[k]; fire(f[k], "input"); } });
-    if (typeof args.i_am === "string") { f.audience.value = args.i_am; fire(f.audience, "change"); }
     if (typeof args.background === "string") { f.background.value = args.background; fire(f.background, "change"); }
     f.consent.checked = true; fire(f.consent, "change");
-    if (!valid() || btn.disabled) return Promise.resolve(toolText(base + " The details were not accepted (check the full name, a valid email, where they plan to operate, which describes them and a background, both from the lists, and an optional LinkedIn address), so nothing was submitted.", data));
+    if (!valid() || btn.disabled) return Promise.resolve(toolText(base + " The details were not accepted (check the full name, a valid email, where they plan to operate, a background from the list and an optional LinkedIn address), so nothing was submitted.", data));
     btn.click();
     return new Promise(function (resolve) {
       var n = 0, t = setInterval(function () {
@@ -353,13 +351,12 @@
     props.email = { type: "string", maxLength: 120, description: "The person's email, only if they gave it to you" };
     props.linkedin = { type: "string", maxLength: 300, description: "Optional: their LinkedIn profile address" };
     props.region = { type: "string", maxLength: 120, description: "Where they plan to operate, only if they told you" };
-    props.i_am = { type: "string", enum: AUDIENCES, description: "Which describes them, only if they told you" };
     props.background = { type: "string", enum: BACKGROUNDS, description: "Their background, only if they told you" };
     props.consent = { type: "boolean", description: "true only if the person has said they agree to be contacted (see the privacy policy). Never assume it." };
     try {
       mc.registerTool({
         name: "estimate_rmn_earnings",
-        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, extra sales for the venues and, for an operator, the earnings per display per month (earningsPerDisplayMonth). For a retailer the page counts stores, the extra sales in those stores are added to the income, and the income is the retailer's potential incremental income a year. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, which describes them (i_am), their background and consent=true, only when they have given them to you and agreed to be contacted.",
+        description: "Estimate what running your own retail media network (RMN) on Personalisation Hub's white-label platform could earn. Fills in this page's benefits calculator (who it is for: an operator or team, or a retailer; venues, displays per venue, visitors per venue per day, average CPM, average transaction value, the visitors who view the ads and the uplift from personalised offers) and returns the figures the page shows: potential income a year, venues, displays, visitors and ad views a month, extra sales for the venues and, for an operator, the earnings per display per month (earningsPerDisplayMonth). For a retailer the page counts stores, the extra sales in those stores are added to the income, and the income is the retailer's potential incremental income a year. Give any figures you know; the rest keep the page's values. To also request further information and unlock the product tour, pass the person's own full name, email, where they plan to operate, their background and consent=true, only when they have given them to you and agreed to be contacted.",
         inputSchema: { type: "object", properties: props, additionalProperties: false },
         annotations: { readOnlyHint: false },
         execute: estimate

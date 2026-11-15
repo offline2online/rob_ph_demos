@@ -84,7 +84,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - Body paragraph, Body colour, max width 40em, margin bottom 40px: "Pick the path that fits you. Each runs the same white-label platform, under your own brand, in your own AWS account."
 - Grid, columns at least 260px wide (3 on desktop). Each card: no background, a 4px top border in the colour given, padding top 20px; Card title, then Body-colour text:
   1. PH Pink. "Individual operator": "Build your own income by running a network across many venues of one kind, such as a portfolio of golf clubs. With AI, one driven person can do the work of a whole department."
-  2. PH Orange. "Operator team": "Team up a retail media expert, an ad sales expert and a creative agency expert. Between you, you cover venues, advertisers and campaigns, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock."
+  2. PH Orange. "Operator team": "Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock."
   3. PH Green. "Small to medium retailer": "Run your own omnichannel retail media network, on your own domain, seamlessly connecting experiences across your website, app and stores. Serve hyper-personalised, targeted offers without the upfront investment, all running securely in your own virtual private cloud."
 
 ### 4. How it works: CSS ID `how`
@@ -112,7 +112,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 - Eight cards in a grid of columns at least 300px wide (3 per row on desktop). Each card: White, 1px Rule border with a 4px top border in the colour given, radius 8px, padding 28px; Card title, then Body-colour text:
   1. PH Blue. "Standardised measurement": "Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel."
   2. PH Pink. "One buy across many venues": "Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands."
-  3. PH Orange. "Seamless integrations": "Connects to the programmatic platforms buyers already use, and to venues' existing systems through open APIs."
+  3. PH Orange. "Seamless integrations": "Connects to venues' existing systems through open APIs, and runs on any signage player, including Amazon Signage."
   4. PH Green. "Consistent formats and definitions": "The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework."
   5. PH Blue. "Closed-loop, incremental results": "Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen."
   6. PH Pink. "Your brand, your data, your network": "Runs under your brand in your own AWS environment. You use your own shopper and venue data, it stays private, and the network and its relationships are yours."
@@ -149,7 +149,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 ### 10. Product tour: mount container, CSS ID `ph-rmn-tour`
 
 - One full-width e-flexbox, padding 0, **empty**, with the CSS ID `ph-rmn-tour` (`_cssid`).
-- The snippet puts the tour block inside it, server-side. The block carries anchor `#tour`, the heading "See a retail media network run end to end", the gate "Unlock the product tour" (its "I am" select and the background list; it posts to `ph-site/v1/operator-lead`) and, once unlocked, the golf club tour framed in place (`/run-your-own-rmn/tour/`). The floating CTA (cta.js) links here only when the page has no `#request-info`.
+- The snippet puts the tour block inside it, server-side. The block carries anchor `#tour`, the heading "See a retail media network run end to end", the gate "Unlock the product tour" (its background list; it posts to `ph-site/v1/operator-lead`) and, once unlocked, the golf club tour framed in place (`/run-your-own-rmn/tour/`). The floating CTA (cta.js) links here only when the page has no `#request-info`.
 
 ### 11. Request further information: mount container, CSS ID `ph-rmn-request`
 
@@ -164,5 +164,5 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 2. The page has exactly one H1. No section repeats a heading the blocks already carry.
 3. Compare with the approved design at 1440, 768 and 390 wide: no horizontal scroll, the hero copy and the "why" card side by side at 1440 and stacked at 390, the card grids at 4/3 → 2 → 1 columns. View source (not the inspector): the calculator, the FAQ, the tour gate and the request form are in the HTML the server sent, each once, inside its container.
 4. View source: the title, description, canonical and Open Graph tags once each, one head JSON-LD graph and the FAQPage JSON-LD once, `noindex` while hidden.
-5. On `?ph_test=1`: the calculator shows $591K, 90, 270, 2,190,000, 3,942,000 and $59.1M, and $60.0M with "Stores in your network" and "Extra sales in your stores a year" once "Retailer" is chosen, under the label "Retailer's potential incremental income a year"; "Earnings per display per month" shows $183 below the CTA row in "Operator or team" mode and is hidden in "Retailer" mode; the tooltips open by hover, focus and tap; the FAQ opens by tap and keyboard; the gate (with "I am" chosen) unlocks the tour and it plays. Delete the test lead afterwards.
+5. On `?ph_test=1`: the calculator shows $591K, 90, 270, 2,190,000, 3,942,000 and $59.1M, and $60.0M with "Stores in your network" and "Extra sales in your stores a year" once "Retailer" is chosen, under the label "Retailer's potential incremental income a year"; "Earnings per display per month" shows $183 below the CTA row in "Operator or team" mode and is hidden in "Retailer" mode; the tooltips open by hover, focus and tap; the FAQ opens by tap and keyboard; the gate (no "I am" select) unlocks the tour and it plays. Delete the test lead afterwards.
 6. On `?ph_test=1`: the calculator's "Request further information" scrolls to the form at the bottom of the page (and so does the hero button once repointed to `#request-info`). Fill it in (an industry, and optionally a message) and submit: "Thanks, [first name]. We'll send your information pack shortly." replaces the form without a reload, and the tour above is unlocked. Check the test lead has source detail "Run Your Own RMN page – request further information", the industry and the message, then delete it.

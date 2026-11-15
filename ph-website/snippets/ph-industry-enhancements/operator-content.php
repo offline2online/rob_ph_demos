@@ -6,7 +6,7 @@
  * ph-rmn-tour, ph-rmn-request), server-side; the shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq] and
  * [ph_operator_request] render the same blocks. Every other section (hero, "Why it beats anything out there", why, who, how, venues,
  * standards, independents) is built in Elementor from ph-website/elementor/run-your-own-rmn.md; no page copy is rendered here. Styles
- * follow the approved design as updated on 14 Nov 2026 (operator.css). A sales pitch only: no setup fee, minimum, revenue split or
+ * follow the approved design as updated on 14 Nov 2026 (operator.css). A sales pitch only: no setup fee amount, minimum, revenue split or
  * share figure is ever printed (the calculator's two shares live in operator.js and operator_calc() only). The calculator outputs are
  * rendered with the defaults, in "Operator or team" mode, so the block reads correctly before JS runs.
  *
@@ -29,7 +29,7 @@ const OPERATOR_HERO_P      = 'AI has changed what one person can achieve (the ri
 const OPERATOR_FAQ_TITLE   = 'Running your own RMN';
 const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view the ads × displays per venue gives your monthly ad views. Ad views ÷ 1,000 × CPM gives ad revenue, and your income is your share of it, before costs. Extra venue sales = visitors who view the ads × average transaction value × uplift from personalised offers. For retailers, those extra sales in your stores are added to your income.';
 const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
-const OPERATOR_TOUR_P      = 'Watch a venue sell its screens, a brand create a campaign by talking, and one visitor\'s journey from arrival to checkout.';
+const OPERATOR_TOUR_P      = 'Watch a network operator sell screens across 100 golf clubs, a brand create a campaign by talking, and one golfer\'s journey at a club on the network.';
 const OPERATOR_GATE_P      = 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.';
 /** The "Request further information" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
 const OPERATOR_REQUEST_EB  = 'Request further information';
@@ -75,7 +75,7 @@ function operator_why_items() {
 function operator_ways() {
 	return array(
 		array( '#EF61A6', 'Individual operator', 'Build your own income by running a network across many venues of one kind, such as a portfolio of golf clubs. With AI, one driven person can do the work of a whole department.' ),
-		array( '#FE9226', 'Operator team', 'Team up a retail media expert, an ad sales expert and a creative agency expert. Between you, you cover venues, advertisers and campaigns, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.' ),
+		array( '#FE9226', 'Operator team', 'Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.' ),
 		array( '#60D838', 'Small to medium retailer', 'Run your own omnichannel retail media network, on your own domain, seamlessly connecting experiences across your website, app and stores. Serve hyper-personalised, targeted offers without the upfront investment, all running securely in your own virtual private cloud.' ),
 	);
 }
@@ -94,7 +94,7 @@ function operator_standards() {
 	return array(
 		array( '#179BC2', 'Standardised measurement', 'Impressions, audiences and outcomes measured in line with the IAB and MRC in-store retail media standards, so results stand up next to every other channel.' ),
 		array( '#EF61A6', 'One buy across many venues', 'Hundreds of independent venues become one network, with one buy, one set of formats and one report for brands.' ),
-		array( '#FE9226', 'Seamless integrations', 'Connects to the programmatic platforms buyers already use, and to venues\' existing systems through open APIs.' ),
+		array( '#FE9226', 'Seamless integrations', 'Connects to venues\' existing systems through open APIs, and runs on any signage player, including Amazon Signage.' ),
 		array( '#60D838', 'Consistent formats and definitions', 'The same screen formats, slot definitions and audience scoring in every venue, so creative runs anywhere without rework.' ),
 		array( '#179BC2', 'Closed-loop, incremental results', 'Campaigns measured from screen to sale, showing what was truly incremental, not just what was seen.' ),
 		array( '#EF61A6', 'Your brand, your data, your network', 'Runs under your brand in your own AWS environment. You use your own shopper and venue data, it stays private, and the network and its relationships are yours.' ),
@@ -160,27 +160,31 @@ const OPERATOR_PER_DISPLAY_TIP   = 'Your potential income a year ÷ the displays
 /**
  * "Running your own RMN": [question, answer] or [question, answer, true] when the answer ends with the OPERATOR_FAQ_CTA link. Plain
  * text, in Rob's order and word for word from the 15 Nov 2026 rewrite (ticket B9eyzr7i3Rgkl7EQ5idN): thirteen short answers for
- * operators, covering what an RMN is (first-party data, measured against sales), who can run one, making money, what venues get, costs,
- * hardware (every screen needs a media player), who pays for it, exclusivity, industries, what you get, measurement, the calculator and
- * getting started. Never a setup fee, minimum guarantee, revenue-share percentage, runway length or "no lock-in"; never "DSP",
- * "programmatic" or "MCP" (not live); no client, brand or hardware brand names, no country positioning. The visible accordion, the
+ * operators, covering what an RMN is (first-party data, measured against sales), who can run one, making money (direct advertiser deals
+ * at a fixed CPM: PH is not connected to any DSPs yet, ticket ayzaMouFF6U5CIsAMbSx), what venues get, costs, hardware (every screen
+ * needs a media player; Amazon Signage is the one player named), who pays for it, exclusivity, industries, what you get, measurement,
+ * the calculator and getting started. "What does it cost to get started?" opens with the one-off platform setup fee, which keeps places
+ * for serious applicants (Rob, 15 Nov 2026, ticket 6YWM7TMlzJE704UwvIil); it says the fee exists and never its amount. Never a fee
+ * amount, minimum guarantee, revenue-share percentage, runway length or "no lock-in";
+ * never "DSP", "programmatic" or "MCP" (not live); no client or brand names other than Amazon Signage in "What hardware do I need?",
+ * no country positioning. The visible accordion, the
  * FAQPage JSON-LD and the twin's FAQ (so the agent endpoint and llms-full.txt) all print this list, so they always match.
  */
 function operator_faq() {
 	return array(
 		array( 'What is a retail media network?', 'A business selling advertising to brands across the places it reaches its customers: in-store screens and, for retailers, their website and app. What makes it retail media is the data: campaigns are targeted using first-party data about the venue and its customers, and, where sales data is shared, measured against what actually sells. When you run your own, you bring many independent venues together so brands can buy them as one network.' ),
-		array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and a creative agency expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs.' ),
-		array( 'How do I make money?', 'You sell screen time across your network to brands, by slot, at a CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
+		array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs. Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.' ),
+		array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
 		array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
-		array( 'What does it cost to get started?', 'You start with a free roll-out runway before platform fees apply, so you can sign up venues and win your first advertisers first. After that, our model is based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
-		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
+		array( 'What does it cost to get started?', 'There\'s a one-off platform setup fee, which keeps places for serious applicants ready to commit. After that you have a free roll-out runway to sign up venues and win your first advertisers before monthly platform fees apply, and those fees are based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
+		array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
 		array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
-		array( 'Can I get exclusive rights to an industry?', 'Networks are set up by industry first, then by region, for example golf clubs nationally. Places in each industry are limited and first come, first served, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
+		array( 'Can I get exclusive rights to an industry?', 'Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
 		array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you request further information.' ),
 		array( 'What do I get?', 'The white-label platform, under your brand and in your own AWS account, with the playbooks, templates and sales framework to launch. Campaigns are created by talking a brief to the AI campaign agent, which builds the creative for every screen type, and they can adapt to context such as time, weather and local stock. Venue and customer data stays in your account, and the network and its advertiser relationships are yours.' ),
 		array( 'How do advertisers know it works?', 'Every campaign reports plays and views by screen and venue. Where a venue shares its sales data, results are matched to sales of the advertised products, which is what brands pay a premium for.' ),
 		array( 'How does the earnings estimate work?', 'The calculator multiplies venues, visitors per venue per day, the share who view the ads and displays per venue to get monthly ad views, then applies the CPM to get ad revenue. Your potential income is your share of that, before costs. It also estimates extra sales from personalised offers, which Retailer mode adds to the retailer\'s potential incremental income. It\'s an estimate to explore the opportunity, not a forecast.' ),
-		array( 'How do I get started?', 'Request further information and tell us your industry. We\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so request your pack now.', true ),
+		array( 'How do I get started?', 'Request further information and tell us your industry and the relationships you have in it. We\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so request your pack now.', true ),
 	);
 }
 
@@ -321,12 +325,7 @@ function operator_tour_html() {
 		. '<div class="phf-f"><label for="t-em">Email</label><input id="t-em" name="email" type="email" autocomplete="email" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="t-li">LinkedIn profile (optional)</label><input id="t-li" name="linkedin" type="url" inputmode="url" autocomplete="url" maxlength="300"></div>'
 		. '<div class="phf-f"><label for="t-rg">Where you plan to operate</label><input id="t-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
-		. '<div class="phf-f"><label for="t-ia">I am</label><select id="t-ia" name="audience" required><option value="" selected disabled>Select one</option>';
-	foreach ( OPERATOR_AUDIENCES as $a ) {
-		$h .= '<option>' . esc_html( $a ) . '</option>';
-	}
-	$h .= '</select></div>'
-		. '<div class="phf-f"><label for="t-bg">Your background</label><select id="t-bg" name="background" required><option value="" selected disabled>Select your background</option>';
+		. '<div class="phf-f phf-f-wide"><label for="t-bg">Your background</label><select id="t-bg" name="background" required><option value="" selected disabled>Select your background</option>';
 	foreach ( OPERATOR_BACKGROUNDS as $b ) {
 		$h .= '<option>' . esc_html( $b ) . '</option>';
 	}
@@ -368,7 +367,6 @@ function operator_request_html() {
 		. '<div class="phf-f"><label for="r-rg">Where you plan to operate</label><input id="r-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
 		. '<div class="phf-f"><label for="r-in">Industry you want to run your network in</label><select id="r-in" name="industry" required>' . operator_options( 'Select an industry', operator_industries() ) . '</select></div>'
 		. '<div class="phf-f" id="r-io-f" hidden><label for="r-io">Your industry</label><input id="r-io" name="industry_other" type="text" maxlength="120" autocomplete="off"></div>'
-		. '<div class="phf-f"><label for="r-ia">I am</label><select id="r-ia" name="audience" required>' . operator_options( 'Select one', OPERATOR_AUDIENCES ) . '</select></div>'
 		. '<div class="phf-f"><label for="r-bg">Your background</label><select id="r-bg" name="background" required>' . operator_options( 'Select your background', OPERATOR_BACKGROUNDS ) . '</select></div>'
 		. '<div class="phf-f phf-f-wide"><label for="r-ms">Anything you&#39;d like us to know (optional)</label><textarea id="r-ms" name="message" rows="4" maxlength="' . (int) OPERATOR_MESSAGE_MAX . '" aria-describedby="r-ms-n"></textarea><span class="phf-count" id="r-ms-n">Up to 1,000 characters</span></div>'
 		. '</div>'
