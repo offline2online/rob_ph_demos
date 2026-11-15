@@ -1058,7 +1058,10 @@ service cloud.firestore {
         && isNonEmptyBoundedString(incoming().icon, 40)
         && incoming().order is number
         && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 300)
-        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100))
+        // Hidden from the website, with every folder and article under it
+        // (functions/faq-feed.js hiddenCategoryIds); Support Inbox only.
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool);
       allow delete: if isFaqEditor();
     }
 
@@ -1128,7 +1131,11 @@ service cloud.firestore {
       // freshness check GETs one published doc anonymously; nothing public
       // lists or queries the collection (the export runs as the service
       // account). An article with no status is a legacy import, published.
-      allow get: if isBoardReader() || resource.data.get("status", "published") == "published";
+      // A published article hidden from the website (hiddenFromWebsite —
+      // used by the Support Inbox before a feature launches) is not public
+      // either. Its category being hidden is enforced where the public reads
+      // (the export and the help API), as rules can't follow the parent chain.
+      allow get: if isBoardReader() || (resource.data.get("status", "published") == "published" && resource.data.get("hiddenFromWebsite", false) != true);
       allow list: if isBoardReader();
       allow create, update: if isFaqEditor()
         && incoming().size() <= 40
@@ -1152,6 +1159,7 @@ service cloud.firestore {
         && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
         && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
         && incoming().status in ["draft", "published"]
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool)
         && incoming().order is number;
       allow delete: if isFaqEditor();
     }

@@ -1754,12 +1754,13 @@ comment thread is this collection's own running record instead.
 
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
-faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
+faqCategories/{id}: { name, icon, description, order, parentId?, hiddenFromWebsite?: boolean, createdAt, updatedAt }
 faqArticles/{id}: {
   categoryId, programId (nullable), projectId (nullable), title, slug, summary, bodyMd,
   introducedInReleaseId (nullable), removedInReleaseId (nullable),   // see `releases` above
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
+  hiddenFromWebsite?: boolean,   // see "Hidden from the website" below; a live field, never in pendingRevision
   seoTitle?: string (≤60), metaDescription?: string (≤155), directAnswer?: string (≤300),
   questionVariants?: string[] (≤20), articleType?: "guide" | "faq" | "reference",   // SEO & agent fields — see "FAQ revision review" → SEO & agent fields
   order, createdAt, updatedAt, publishedAt,
@@ -1792,6 +1793,55 @@ existed; treated as `"faq"` client-side in that case, same default).
 Rendered as a small type badge on the public article page and in
 category article-listing rows (`faq/js/faq-data.js`'s `docTypeLabel()`)
 so the distinction is visible to readers, not just an internal tag.
+
+### Hidden from the website (15 Nov 2026, ticket `3HabqHlC4WwL137CYTv1`)
+
+Articles for a feature that hasn't launched yet are written in advance and
+used to answer support email, but must not appear on the website until the
+feature launches. `hiddenFromWebsite: true` can be set on:
+
+- **a category** — hides it, every folder under it and every article in either;
+- **a folder** (a category with a `parentId`) — hides it and its articles;
+- **an article** — hides that article only.
+
+The rule is in one place, `functions/faq-feed.js` (`hiddenCategoryIds`,
+`isHiddenFromWebsite`; the console mirrors it in `faqCategoryHiddenFromWebsite`
+/ `faqArticleHiddenFromWebsite`). Hidden content keeps its `status`; a hidden
+article can be published. What each reader sees:
+
+| Reader | Hidden content |
+|---|---|
+| Support Centre on personalisationhub.com (`/help-api/data/*` feed, and the `faq/data` export it falls back to) | Left out entirely, categories and folders included. The Support Centre drafts any page it had published for it. |
+| Public help search, article and MCP (`/help-api/search`, `/help-api/article`, personalisationhub.com/mcp) | Left out. |
+| Anonymous Firestore `get` of the article (`firestore.rules`) | Refused for an article hidden by its own flag. |
+| Support Inbox (`functions/support-mail.js`) | **Used**: a hidden published article is in the catalogue the reply is written from, with an empty `url`, and the drafting prompt says not to name or link it. The console shows it as "(not on the website)" under the draft. |
+| FAQ Management (console) | Shown, with a "Hidden from website" badge on the article row and the category heading, and a `visibility_off` icon in the folder tree. No "View live" link and no WordPress status badge. |
+| Board MCP (`search_faq`, `get_faq_article`, `list_faq_categories`) | Shown, with `hiddenFromWebsite` (effective) on each. |
+
+**Setting it.** In FAQ Management: the article editor's Status & publishing
+group ("Hide from website"), and the category edit form (pencil beside a
+category or folder heading). Over MCP: `create_faq_article` takes
+`hiddenFromWebsite`, and `set_faq_visibility` sets it on an article, folder or
+category (`list_faq_categories` gives the ids). Hiding is always allowed over
+MCP. Showing is launching, so over MCP it is refused for a published article
+and for a category or folder; a person does that in FAQ Management. A draft
+article can be un-hidden over MCP because a person still has to publish it.
+Changing the flag on published content pings the Support Centre to re-read
+the feed (`articleChangesPublished` / `categoryChangesPublished`).
+
+### FAQ category icons draw on the website and in the console (15 Nov 2026)
+
+The website draws category icons as inline SVG from a fixed set
+(`faq/js/icons.js`, mirrored in `ph-website/snippets/ph-support-centre/main.php`);
+any other name draws as "?". The console draws them with the Material Symbols
+font, loaded as an `icon_names` subset. The category icon picker used to offer
+24 names, 18 of which the website drew as "?", and four icons the live
+categories use (`install_desktop`, `manage_accounts`, `smartphone`,
+`integration_instructions`) were missing from the console's subset, so FAQ
+Management showed the bare word. The picker (`FAQ_CATEGORY_ICONS`) now offers
+exactly the website's category icons, all of them are in the font subset, and
+`test/icon-font.test.mjs` fails if the picker, a `faq/data` category, the
+website set or the font subset drift apart.
 
 ### Rich formatting in article bodies
 

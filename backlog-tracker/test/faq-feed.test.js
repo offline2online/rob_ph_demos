@@ -157,6 +157,51 @@ function call(a, path, headers = {}) {
     assert.ok(signal.aborted && Date.now() - started < 6000);
   });
 
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ──────────────────────
+  await test("hiddenCategoryIds: a hidden category hides its folders; isHiddenFromWebsite follows it", async () => {
+    const cats = [
+      { id: "top", hiddenFromWebsite: true }, { id: "sub", parentId: "top" }, { id: "open" }, { id: "own", parentId: "open", hiddenFromWebsite: true },
+      { id: "loopA", parentId: "loopB" }, { id: "loopB", parentId: "loopA" },
+    ];
+    const h = feed.hiddenCategoryIds(cats);
+    assert.deepStrictEqual([...h].sort(), ["own", "sub", "top"]);
+    assert.deepStrictEqual([...feed.hiddenCategoryIds({ x: { hiddenFromWebsite: true }, y: { parentId: "x" } })].sort(), ["x", "y"], "an object keyed by id works too");
+    assert.strictEqual(feed.isHiddenFromWebsite({ categoryId: "sub" }, h), true);
+    assert.strictEqual(feed.isHiddenFromWebsite({ categoryId: "open" }, h), false);
+    assert.strictEqual(feed.isHiddenFromWebsite({ categoryId: "open", hiddenFromWebsite: true }, h), true);
+    assert.strictEqual(feed.isHiddenFromWebsite({ categoryId: "open", hiddenFromWebsite: "yes" }, h), false, "only a real true hides");
+  });
+
+  await test("hiding or showing an article or category pings the Support Centre", async () => {
+    const a = { title: "T", status: "published", bodyMd: "b" };
+    assert.strictEqual(feed.articleChangesPublished("x", a, { ...a, hiddenFromWebsite: true }), true, "hiding a live article");
+    assert.strictEqual(feed.articleChangesPublished("x", { ...a, hiddenFromWebsite: true }, a), true, "launching it");
+    assert.strictEqual(feed.articleChangesPublished("x", { ...a, hiddenFromWebsite: true }, { ...a, hiddenFromWebsite: true, title: "T2" }), false, "editing a hidden article changes nothing public");
+    const c = { name: "C", icon: "help", order: 0 };
+    assert.strictEqual(feed.categoryChangesPublished("c", c, { ...c, hiddenFromWebsite: true }), true);
+    assert.strictEqual(feed.categoryChangesPublished("c", c, { ...c }), false);
+  });
+
+  await test("the live feed and public search leave hidden articles and categories out", async () => {
+    const hd = {
+      faqArticles: {
+        v1: { title: "Visible retail article", categoryId: "open", status: "published", slug: "v1", bodyMd: "retail" },
+        h1: { title: "Own flag retail article", categoryId: "open", status: "published", hiddenFromWebsite: true, slug: "h1", bodyMd: "retail" },
+        h2: { title: "Folder hidden retail article", categoryId: "rmFolder", status: "published", slug: "h2", bodyMd: "retail" },
+      },
+      faqCategories: { open: { name: "Open", order: 0 }, rm: { name: "Run your own retail media", order: 1, hiddenFromWebsite: true }, rmFolder: { name: "Set up", parentId: "rm", order: 0 } },
+      releases: {},
+    };
+    const hsnap = (name, f = () => true) => { const rows = Object.entries(hd[name]).filter(([, v]) => f(v)); return { forEach: (fn) => rows.forEach(([id, v]) => fn({ id, data: () => v })) }; };
+    const hdb = { collection: (name) => ({ where: () => ({ get: async () => hsnap(name, (a) => a.status === "published") }), get: async () => hsnap(name), add: async () => {} }) };
+    const h = createHelpApi({ db: hdb, now: () => 9e6, fetchImpl: null, rateMax: 50 });
+    const idx = JSON.parse((await call(h, "/data/index.json")).body);
+    assert.deepStrictEqual(idx.articles.map((x) => x.id), ["v1"]);
+    assert.deepStrictEqual(idx.categories.map((x) => x.id), ["open"], "a hidden category and its folder are not listed");
+    assert.strictEqual((await call(h, "/data/articles/h1.json")).code, 404);
+    assert.strictEqual((await call(h, "/data/articles/h2.json")).code, 404);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   process.exit(failures.length ? 1 : 0);
 })();

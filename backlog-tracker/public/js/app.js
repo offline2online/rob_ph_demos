@@ -181,18 +181,22 @@ const FAILURE_REASON_CATEGORIES = [
   "Other",
 ];
 
-// Curated Material Symbols names for FAQ category icons — a starting set
-// covering common Help Center topics, not an exhaustive icon-library pick.
-// A category's current icon is always included in its own dropdown (see
+// Material Symbols names for FAQ category icons: exactly the category
+// icons the website can draw. The Support Centre (and faq/js/icons.js)
+// renders icons as inline SVG from a fixed set, and any other name shows
+// as a "?" there (3HabqHlC4WwL137CYTv1: 18 of the 24 names this picker used
+// to offer — payments, settings, campaign… — drew as "?"). Every name here
+// is also in the console's icon_names font subset (index.html), or the
+// heading and picker showed the bare word ("install_desktop") instead.
+// test/icon-font.test.mjs keeps the three lists in step. A category's
+// current icon is still included in its own dropdown (see
 // faqCategoryIconOptionsHTML) even if it falls outside this list, so
-// nothing silently changes on save just because someone typed a valid but
-// uncurated icon name before this picker existed.
+// nothing silently changes on save.
 const FAQ_CATEGORY_ICONS = [
-  "help", "rocket_launch", "storefront", "payments", "local_offer",
-  "inventory_2", "storage", "settings", "tune", "group",
-  "security", "campaign", "dashboard", "description", "build",
-  "support_agent", "info", "warning", "category", "list_alt",
-  "devices", "cloud", "lock", "notifications",
+  "help", "rocket_launch", "install_desktop", "manage_accounts", "storefront",
+  "devices", "tv", "psychology", "smartphone", "groups",
+  "event", "integration_instructions", "build", "menu_book", "table_chart",
+  "description", "folder",
 ];
 
 function escapeHTML(s) {
@@ -10076,6 +10080,27 @@ function faqCategoryName(id) {
   return c ? c.name : "Uncategorised";
 }
 
+// Hidden from the website (3HabqHlC4WwL137CYTv1): a category, folder or
+// article with hiddenFromWebsite stays out of the Support Centre, the export
+// and the public help search, but the Support Inbox still answers from it.
+// A category hides every folder and article under it. Same rule as
+// functions/faq-feed.js hiddenCategoryIds / isHiddenFromWebsite.
+function faqCategoryHiddenFromWebsite(id) {
+  const seen = new Set();
+  let c = faqCategories.find((x) => x.id === id);
+  while (c && !seen.has(c.id)) {
+    if (c.hiddenFromWebsite === true) return true;
+    seen.add(c.id);
+    const parentId = c.parentId;
+    c = parentId ? faqCategories.find((x) => x.id === parentId) : null;
+  }
+  return false;
+}
+function faqArticleHiddenFromWebsite(a) {
+  return !!a && (a.hiddenFromWebsite === true || faqCategoryHiddenFromWebsite(a.categoryId));
+}
+const FAQ_HIDDEN_ICON_HTML = '<span class="material-symbols-outlined faq-hidden-icon" title="Hidden from the website" aria-label="Hidden from the website">visibility_off</span>';
+
 // The current icon is always included even if it falls outside
 // FAQ_CATEGORY_ICONS — see that constant's own comment for why.
 function faqCategoryIconOptionsHTML(selectedIcon) {
@@ -10211,10 +10236,11 @@ async function addFaqCategory(name, icon) {
   });
 }
 
-async function saveFaqCategory(id, name, icon, description) {
+async function saveFaqCategory(id, name, icon, description, hiddenFromWebsite) {
   if (!(await requireFaqEditor())) return;
   await setDoc(doc(db, "faqCategories", id), {
     name: name.trim(), icon: (icon || "help").trim(), description: (description || "").trim(),
+    ...(typeof hiddenFromWebsite === "boolean" ? { hiddenFromWebsite } : {}),
     updatedAt: serverTimestamp(),
   }, { merge: true });
 }
@@ -11802,7 +11828,7 @@ function faqCategoriesForProgram(programKey) {
     faqArticlesUnder(c.id).some((a) => (a.programId || "") === programKey));
 }
 
-function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dragId, nodeAttrs, addLabel }) {
+function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dragId, nodeAttrs, addLabel, hidden }) {
   const caret = open === undefined ? ""
     : `<span class="material-symbols-outlined faq-tree-caret">${open ? "expand_less" : "expand_more"}</span>`;
   const add = addLabel
@@ -11812,7 +11838,7 @@ function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dr
     (dragKind ? ` draggable="true" data-drag-kind="${dragKind}" data-drag-id="${escapeHTML(dragId)}"` : "") +
     ` ${nodeAttrs}>` +
     `<span class="material-symbols-outlined faq-tree-icon">${escapeHTML(icon)}</span>` +
-    `<span class="faq-tree-name">${escapeHTML(name)}</span>` +
+    `<span class="faq-tree-name">${escapeHTML(name)}</span>${hidden ? FAQ_HIDDEN_ICON_HTML : ""}` +
     `<span class="faq-tree-count">${count}</span>${add}${caret}</button>`;
 }
 
@@ -11843,6 +11869,7 @@ function renderFaqTree() {
           selected: !!faqTreeSelection && faqTreeSelection.categoryId === cat.id && faqTreeSelection.programKey === programKey,
           dragKind: "category", dragId: cat.id,
           addLabel: "Add a sub-category here",
+          hidden: faqCategoryHiddenFromWebsite(cat.id),
           nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(cat.id)}"`,
         }));
         if (catOpen) {
@@ -11852,6 +11879,7 @@ function renderFaqTree() {
               depth: 2, icon: "folder", name: sub.name || "(untitled)", count: `${sn}`,
               selected: !!faqTreeSelection && faqTreeSelection.categoryId === sub.id && faqTreeSelection.programKey === programKey,
               dragKind: "subcategory", dragId: sub.id,
+              hidden: faqCategoryHiddenFromWebsite(sub.id),
               nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(sub.id)}"`,
             }));
           }
@@ -11932,7 +11960,12 @@ function renderFaqCategoryHeader(cat) {
   const editBtn = document.getElementById("faq-cat-edit-toggle");
   const descEl = document.getElementById("faq-cat-heading-desc");
   const formEl = document.getElementById("faq-cat-edit-form");
+  const hiddenEl = document.getElementById("faq-cat-heading-hidden");
   if (!iconEl || !editBtn || !descEl || !formEl) return;
+  if (hiddenEl) {
+    hiddenEl.hidden = !(cat && faqCategoryHiddenFromWebsite(cat.id));
+    hiddenEl.textContent = cat && cat.hiddenFromWebsite !== true ? "Hidden from website (parent category)" : "Hidden from website";
+  }
 
   if (!cat) {
     iconEl.hidden = true;
@@ -11963,6 +11996,7 @@ document.getElementById("faq-cat-edit-toggle").addEventListener("click", () => {
   document.getElementById("faq-cat-edit-icon-select").innerHTML = faqCategoryIconOptionsHTML(cat.icon || "help");
   document.getElementById("faq-cat-edit-icon-preview").textContent = cat.icon || "help";
   document.getElementById("faq-cat-edit-desc-input").value = cat.description || "";
+  document.getElementById("faq-cat-edit-hidden-input").checked = cat.hiddenFromWebsite === true;
   formEl.dataset.categoryId = cat.id;
   formEl.hidden = false;
   document.getElementById("faq-cat-heading-desc").hidden = true;
@@ -11989,6 +12023,7 @@ document.getElementById("faq-cat-edit-save-btn").addEventListener("click", async
     name,
     document.getElementById("faq-cat-edit-icon-select").value,
     document.getElementById("faq-cat-edit-desc-input").value,
+    document.getElementById("faq-cat-edit-hidden-input").checked,
   );
   if (!faqUser) return; // sign-in was declined — keep the form open so nothing typed is lost
   formEl.hidden = true;
@@ -12262,6 +12297,8 @@ function wpStatusOf(a) {
   return articleStatus({ article: a, inRange: wpArticleInRange(a), hash: cached && cached.body === body ? cached.hash : null, published: wpPublished });
 }
 function wpBadgeHTML(a) {
+  // A hidden article is never on the website, so "Waiting for website" would never clear.
+  if (faqArticleHiddenFromWebsite(a)) return "";
   const st = wpStatusOf(a);
   return st ? wpStatusBadgeHTML(st, escapeHTML) : "";
 }
@@ -12326,6 +12363,7 @@ function faqArticleRowHTML(a, orderable) {
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${wpBadgeHTML(a)}
           ${faqRevisionBadgeHTML(a)}
+          ${faqArticleHiddenFromWebsite(a) ? '<span class="badge badge-faq-hidden" title="Not on the website. The Support Inbox still answers from it.">Hidden from website</span>' : ""}
           <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
           <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
         </div>
@@ -12338,7 +12376,7 @@ function faqArticleRowHTML(a, orderable) {
               ${a.pendingRevision ? '<button type="button" class="options-menu-item faq-article-review-revision">Review proposed update</button>' : ""}
               ${a.previousRevision ? '<button type="button" class="options-menu-item faq-article-revert-revision">Revert last auto-update</button>' : ""}
               <button type="button" class="options-menu-item faq-article-toggle-review">${a.needsReview ? "Clear flag" : "Flag"}</button>
-              ${a.status === "published" ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
+              ${a.status === "published" && !faqArticleHiddenFromWebsite(a) ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
             </div>
           </div>
           <button type="button" class="icon-btn faq-article-delete" title="Delete">&#128465;</button>
@@ -12681,6 +12719,7 @@ const faKeywordsInput = document.getElementById("fa-keywords-input");
 const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 const faSectionPickerToggle = document.getElementById("fa-section-picker-toggle");
+const faHiddenFromWebsiteToggle = document.getElementById("fa-hidden-from-website-toggle");
 const faSectionPickerLabelInput = document.getElementById("fa-section-picker-label-input");
 // SEO & agent fields (rri7DngI2ccd7q4uYdk6): the single source for the
 // WordPress Support Centre's SEO and agent output. Empty means "default to
@@ -13354,6 +13393,7 @@ function faSnapshotState() {
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
     sectionPickerLabel: faSectionPickerLabelInput.value,
+    hiddenFromWebsite: faHiddenFromWebsiteToggle.checked,
     seo: [faSeoTitleInput.value, faMetaDescriptionInput.value, faDirectAnswerInput.value, faQuestionVariantsInput.value, faArticleTypeSelect.value],
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
@@ -13419,6 +13459,9 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faSectionPickerToggle.checked = source ? !!source.sectionPicker : false;
   faSectionPickerLabelInput.value = source && source.sectionPickerLabel ? source.sectionPickerLabel : "";
+  // A live-only field (not part of a proposed revision): the article's own flag.
+  faHiddenFromWebsiteToggle.checked = !!(article && article.hiddenFromWebsite === true);
+  faHiddenFromWebsiteToggle.disabled = faEditingPendingRevision;
   loadFaSeoFields(source);
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
@@ -13495,7 +13538,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
 [faSeoTitleInput, faMetaDescriptionInput, faDirectAnswerInput, faQuestionVariantsInput].forEach((el) => el.addEventListener("input", () => { updateFaSeoIndicators(); updateFaDirtyState(); }));
 faArticleTypeSelect.addEventListener("change", () => { updateFaSeoIndicators(); updateFaDirtyState(); });
-[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faHiddenFromWebsiteToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 // (faQuill's own listeners are attached in ensureFaQuill.)
 
 // Save draft and Publish share the same field-gathering logic, differing
@@ -13573,6 +13616,7 @@ async function submitFaqArticleFromEditor(publish) {
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
     sectionPickerLabel: faSectionPickerLabelInput.value.trim() || null,
+    hiddenFromWebsite: faHiddenFromWebsiteToggle.checked,
     ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
   const savedId = await saveFaqArticle(editingFaqArticleId, data);

@@ -212,8 +212,13 @@ function createHelpApi({ db, now = () => Date.now(), logger = null, rateMax = RA
       db.collection("releases").get(),
     ]);
     const articles = []; const cats = {}; const releases = []; const catRows = []; const releaseRows = [];
-    artSnap.forEach((d) => { const v = d.data() || {}; if (v.status === "published") articles.push({ ...v, id: d.id }); });
-    catSnap.forEach((d) => { const v = d.data() || {}; cats[d.id] = { name: v.name || "", parentId: v.parentId || null }; catRows.push(feed.categoryRecord(d.id, v)); });
+    // Hidden from the website (an article's own hiddenFromWebsite, or its
+    // category/folder's): never in the public search, article, MCP or feed.
+    const catDocs = [];
+    catSnap.forEach((d) => catDocs.push({ ...(d.data() || {}), id: d.id }));
+    const hiddenCats = feed.hiddenCategoryIds(catDocs);
+    artSnap.forEach((d) => { const v = d.data() || {}; if (v.status === "published" && !feed.isHiddenFromWebsite(v, hiddenCats)) articles.push({ ...v, id: d.id }); });
+    catDocs.forEach((v) => { if (hiddenCats.has(v.id)) return; cats[v.id] = { name: v.name || "", parentId: v.parentId || null }; catRows.push(feed.categoryRecord(v.id, v)); });
     relSnap.forEach((d) => { const v = d.data() || {}; releases.push({ id: d.id, name: v.name || "", version: v.version || null, status: v.status || "draft", order: Number(v.order) || 0 }); releaseRows.push(feed.releaseRecord(d.id, v)); });
     data = { at: t, articles, cats, releases, catRows, releaseRows };
     return data;

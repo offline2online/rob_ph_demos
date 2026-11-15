@@ -1416,6 +1416,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-article-title:hover, .faq-article-title:focus-visible { color: var(--primary); outline: none; }
 .faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 .badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
+/* Hidden from the website (3HabqHlC4WwL137CYTv1): a neutral, outlined chip
+   so it reads as a visibility state, not an error or a publishing status. */
+.badge-faq-hidden { background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--border); }
+.faq-hidden-icon { font-size: 16px; color: var(--text-muted); flex-shrink: 0; }
+.faq-cat-edit-hidden { white-space: nowrap; }
 .badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
 .badge-wp { margin-left: 6px; }
 .badge-wp-live { background: rgba(82, 196, 26, .12); color: var(--success); }

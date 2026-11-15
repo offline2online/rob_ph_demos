@@ -204,7 +204,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           ${draft.answerable ? "" : `<span class="badge badge-wp-waiting">Holding reply: the Help Centre doesn't answer this</span>`}</div>
         ${confidenceChangeHtml(draft.confidenceSteps)}
         <div class="support-draft-text">${esc(draft.text)}</div>
-        ${draft.articles.length ? `<div class="support-draft-sources">From: ${draft.articles.map((a) => `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`).join(", ")}</div>` : ""}
+        ${draft.articles.length ? `<div class="support-draft-sources">From: ${draft.articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>` : ""}
         <div class="support-draft-actions"><button type="button" class="btn-ghost" data-support-act="use-draft">Use this reply</button><button type="button" class="btn-ghost" data-support-act="redraft">Write another</button></div></div>`
       : edit && t.status !== "spam" && !t.automated ? `<div class="support-draft support-draft-none">${icon("auto_awesome")}<span>${esc(t.triagePending ? "A reply is being drafted…" : t.triageReason || "No suggested reply.")}</span><button type="button" class="btn-ghost" data-support-act="redraft">Draft a reply</button></div>` : "";
     const composerHtml = !edit || t.status === "spam" ? "" : `<div class="support-composer">
@@ -314,7 +314,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         </div>
         ${r.summary ? `<p class="support-summary">${icon("auto_awesome")}${esc(r.summary)}</p>` : ""}
         <h3 class="support-stats-h">Help Centre articles matched</h3>
-        ${r.articles.length ? `<ol class="support-try-articles">${r.articles.map((a) => `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></li>`).join("")}</ol>` : `<p class="interface-row-empty">None${r.relevant ? ": a person would answer this" : ""}.</p>`}
+        ${r.articles.length ? `<ol class="support-try-articles">${r.articles.map((a) => (a.url ? `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></li>` : `<li>${esc(a.title)} (not on the website)</li>`)).join("")}</ol>` : `<p class="interface-row-empty">None${r.relevant ? ": a person would answer this" : ""}.</p>`}
         <h3 class="support-stats-h">What would happen</h3>
         <p><b>${esc(DECISION_LABEL[r.decision.action] || r.decision.action)}</b>: ${esc(r.decision.reason)}</p>
         ${r.draft ? `<h3 class="support-stats-h">The draft</h3><div class="support-draft"><div class="support-draft-head">${icon("auto_awesome")}<b>Suggested reply</b>${confidenceHtml(r.confidence)}</div>${confidenceChangeHtml(r.confidenceSteps)}<div class="support-draft-text">${esc(r.draft)}</div></div>` : ""}

@@ -1579,6 +1579,48 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
   });
 
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ──────────────────────
+  await test("create_faq_article can create a hidden-from-website draft", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Run your own retail media: getting set up", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: true },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.hiddenFromWebsite, true);
+    assert.strictEqual(env.store.col("faqArticles").get(payload.articleId).hiddenFromWebsite, true);
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_faq_article", arguments: { title: "Bad flag", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: "yes" } });
+    assert.strictEqual(bad.body.result.isError, true);
+  });
+
+  await test("set_faq_visibility hides articles and categories; showing a live article or a category is a person's job", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_faq_visibility", arguments: args });
+    env.store.col("faqCategories").set("catHid", { name: "Run your own retail media", icon: "storefront", order: 9 });
+    env.store.col("faqCategories").set("catHidSub", { name: "Set up", icon: "folder", order: 0, parentId: "catHid" });
+    const live = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Live one", slug: "live-vis", bodyMd: "<p>x</p>", status: "published" });
+    const draft = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Draft one", slug: "draft-vis", bodyMd: "<p>x</p>", status: "draft", hiddenFromWebsite: true });
+    const hideLive = JSON.parse((await call({ articleId: live.id, hiddenFromWebsite: true })).body.result.content[0].text);
+    assert.strictEqual(hideLive.updated, true);
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    const showLive = await call({ articleId: live.id, hiddenFromWebsite: false });
+    assert.strictEqual(showLive.body.result.isError, true, "showing a live article launches it");
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    JSON.parse((await call({ articleId: draft.id, hiddenFromWebsite: false })).body.result.content[0].text);
+    assert.strictEqual(env.store.col("faqArticles").get(draft.id).hiddenFromWebsite, false, "a draft can be un-hidden");
+    await call({ categoryId: "catHid", hiddenFromWebsite: true });
+    assert.strictEqual(env.store.col("faqCategories").get("catHid").hiddenFromWebsite, true);
+    assert.strictEqual((await call({ categoryId: "catHid", hiddenFromWebsite: false })).body.result.isError, true);
+    assert.strictEqual((await call({ hiddenFromWebsite: true })).body.result.isError, true, "needs an id");
+    assert.strictEqual((await call({ articleId: live.id, categoryId: "catHid", hiddenFromWebsite: true })).body.result.isError, true, "only one id");
+    assert.strictEqual((await call({ categoryId: "nope", hiddenFromWebsite: true })).body.result.isError, true);
+    const cats = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_faq_categories", arguments: {} })).body.result.content[0].text);
+    const sub = cats.categories.find((c) => c.id === "catHidSub");
+    assert.deepStrictEqual([sub.hiddenFromWebsite, sub.hiddenFromWebsiteOwnFlag], [true, false], "a folder inherits its category's flag");
+    const got = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { articleId: live.id } })).body.result.content[0].text);
+    assert.strictEqual(got.hiddenFromWebsite, true);
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_faq_visibility").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "list_faq_categories").scope, "board.read");
+  });
+
   let liveArticleId = null;
   await test("proposes an update to a live article as a pendingRevision, leaving the live fields untouched", async () => {
     const ref = await env.db.collection("faqArticles").add({

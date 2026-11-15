@@ -11,7 +11,9 @@
 //
 // Draft articles ARE exported (with status "draft") so that flipping one to
 // published in the console shows up on the next export; the public site only
-// ever renders status "published".
+// ever renders status "published". Articles and categories hidden from the
+// website (hiddenFromWebsite, on the article or its category/folder) are NOT
+// exported: they stay in Firestore for the Support Inbox only.
 const path = require("path");
 const fs = require("fs");
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
@@ -19,7 +21,7 @@ const { getFirestore } = require("firebase-admin/firestore");
 const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeIndex } = require("./faq-index-lib");
 // The field allow-list is shared with the live feed (GET /help-api/data/*), so
 // the two can never disagree about what a published article looks like.
-const { categoryRecord, articleRecord, releaseRecord, serializeArticle, serializeReleases } = require("../functions/faq-feed");
+const { categoryRecord, articleRecord, releaseRecord, serializeArticle, serializeReleases, hiddenCategoryIds, isHiddenFromWebsite } = require("../functions/faq-feed");
 
 const DATA_DIR = path.resolve(__dirname, "../../faq/data");
 initializeApp({ credential: applicationDefault() });
@@ -27,7 +29,11 @@ const db = getFirestore();
 
 async function main() {
   const catsSnap = await db.collection("faqCategories").orderBy("order", "asc").get();
-  const categories = catsSnap.docs.map((d) => categoryRecord(d.id, d.data()));
+  // Hidden from the website (a category/folder's own flag or its parent's):
+  // left out of the snapshot entirely, with every article inside, so the
+  // Support Centre never lists them and drafts anything it had published.
+  const hiddenCats = hiddenCategoryIds(catsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+  const categories = catsSnap.docs.filter((d) => !hiddenCats.has(d.id)).map((d) => categoryRecord(d.id, d.data()));
 
   const artsSnap = await db.collection("faqArticles").get();
   const articlesDir = path.join(DATA_DIR, "articles");
@@ -36,6 +42,7 @@ async function main() {
   for (const d of artsSnap.docs) {
     const a = d.data();
     if (a.retiredAt && a.status !== "published") continue; // retired: not part of the snapshot
+    if (isHiddenFromWebsite(a, hiddenCats)) continue; // hidden from the website: Support Inbox only
     const record = articleRecord(d.id, a);
     keep.add(d.id);
     fs.writeFileSync(path.join(articlesDir, `${d.id}.json`), serializeArticle(record));

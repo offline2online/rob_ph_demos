@@ -979,6 +979,9 @@ function unauthorized(res, detail) {
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
 const testRounds = require("./test-rounds");
+// Hidden-from-website rule shared with the export, the live feed and the
+// Support Inbox (3HabqHlC4WwL137CYTv1).
+const faqFeed = require("./faq-feed");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -4494,7 +4497,11 @@ const TOOLS = [
       const target = await resolveFaqRelease(args.release);
       if (target.error) return toolError(target.error);
       const cats = new Map();
-      (await db().collection("faqCategories").get()).forEach((d) => cats.set(d.id, (d.data() || {}).name || ""));
+      const catRows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => { cats.set(d.id, (d.data() || {}).name || ""); catRows.push({ ...(d.data() || {}), id: d.id }); });
+      // Members see hidden-from-website articles too (the Support Inbox
+      // answers from them); each hit says whether it is on the website.
+      const hiddenCats = faqFeed.hiddenCategoryIds(catRows);
       const hits = [];
       (await db().collection("faqArticles").limit(MAX_READ_DOCS).get()).forEach((doc) => {
         const a = doc.data() || {};
@@ -4509,7 +4516,7 @@ const TOOLS = [
           if ((a.keywords || []).some((k) => String(k).toLowerCase().includes(t))) score += 3;
           if (hay.includes(t)) score += 1;
         }
-        if (score > 0) hits.push({ score, id: doc.id, title, summary: a.summary || "", docType: a.docType || null, category: cats.get(a.categoryId) || null, slug: a.slug || null, status: a.status });
+        if (score > 0) hits.push({ score, id: doc.id, title, summary: a.summary || "", docType: a.docType || null, category: cats.get(a.categoryId) || null, slug: a.slug || null, status: a.status, hiddenFromWebsite: faqFeed.isHiddenFromWebsite(a, hiddenCats) });
       });
       hits.sort((x, y) => y.score - x.score);
       const limit = Math.min(Math.max(parseInt(args.limit, 10) || 8, 1), 25);
@@ -4548,7 +4555,12 @@ const TOOLS = [
         return toolError(`Article ${snap.id} doesn't apply to release ${target.release.version || target.release.name || target.release.id} (it was introduced later or removed earlier). Use search_faq with the same release to find what does.`);
       }
       const cat = a.categoryId ? await db().collection("faqCategories").doc(a.categoryId).get() : null;
+      const catRows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => catRows.push({ ...(d.data() || {}), id: d.id }));
+      const hiddenCats = faqFeed.hiddenCategoryIds(catRows);
       return textResult({
+        hiddenFromWebsite: faqFeed.isHiddenFromWebsite(a, hiddenCats),
+        hiddenFromWebsiteOwnFlag: a.hiddenFromWebsite === true,
         id: snap.id, title: a.title || "", slug: a.slug || "", docType: a.docType || null,
         category: cat && cat.exists ? (cat.data() || {}).name : null,
         status: a.status || null, summary: a.summary || "", keywords: a.keywords || [],
@@ -4593,6 +4605,7 @@ const TOOLS = [
         bodyMd: { type: "string", description: `The article body — the same HTML shape the console's rich-text editor saves (paragraphs, headings, lists, callouts; see REQUIREMENTS.md -> "Rich formatting in article bodies"). Up to ${FAQ_BODY_MAX} characters.` },
         programId: { type: "string", description: "An existing programs doc id. Required unless projectId is given and that project itself has a programId set (used as the default) — every article needs to resolve to a program so FAQ impact review on a deploy can find it." },
         projectId: { type: "string", description: "Optional — an existing project id, from list_projects. Also supplies the default programId (see above) when programId is omitted." },
+        hiddenFromWebsite: { type: "boolean", description: "true keeps the article off the website and public help search even once a person publishes it; the Support Inbox still answers customer emails from it. Use it for a feature that hasn't launched yet. Default false (a category or folder hidden with set_faq_visibility hides its articles either way)." },
         ...FAQ_SEO_PROPERTIES,
       },
       required: ["title", "categoryId", "bodyMd"], additionalProperties: false,
@@ -4618,6 +4631,8 @@ const TOOLS = [
       }
       const docType = args.docType != null ? String(args.docType) : "faq";
       if (!FAQ_DOC_TYPES.includes(docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
+      if (args.hiddenFromWebsite != null && typeof args.hiddenFromWebsite !== "boolean") return toolError("hiddenFromWebsite must be true or false.");
+      const hiddenFromWebsite = args.hiddenFromWebsite === true;
       const seo = parseFaqSeoArgs(args);
       if (seo.error) return toolError(seo.error);
       // A new article stores only the SEO fields that have a value.
@@ -4664,6 +4679,7 @@ const TOOLS = [
         categoryId, projectId, programId,
         title, slug, summary, bodyMd, docType, keywords,
         ...seoFields,
+        ...(hiddenFromWebsite ? { hiddenFromWebsite: true } : {}),
         status: "draft",
         needsReview: false,
         order: maxOrder + 1,
@@ -4672,9 +4688,9 @@ const TOOLS = [
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId });
+      await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId, hiddenFromWebsite });
       return textResult({
-        created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft",
+        created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft", hiddenFromWebsite,
         missingSeoFields: faqMissingSeoFields(seoFields),
         note: "Created as a draft. Nothing is published until a person reviews and publishes it from FAQ Management.",
       });
@@ -4779,6 +4795,72 @@ const TOOLS = [
       return textResult({
         proposed: true, articleId: ref.id, needsReview: true, reviewStatus: "awaiting-review",
         note: "The live article is unchanged. A person reviews this in FAQ Management (Review proposed update); approving it publishes on the next hourly FAQ export — no ticket or deploy train needed, since no sourceItemIds are attached.",
+      });
+    },
+  },
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ───────────────────────
+  // A category, folder or article can be kept off the website (the Support
+  // Centre, the faq/data export, public help search) while the Support Inbox
+  // still answers emails from it — how articles for a not-yet-launched
+  // feature are written. Agents writing those articles hide them here.
+  // Hiding is always allowed. Showing something on the website is a launch,
+  // so over MCP it is refused for a live article and for a category or
+  // folder; a person does that in FAQ Management. A draft article can be
+  // un-hidden, as nothing reaches the website until a person publishes it.
+  {
+    name: "list_faq_categories",
+    description: "Every help-centre category and folder (a folder is a category with a parentId), with its icon and whether it is hidden from the website. Use the ids with create_faq_article and set_faq_visibility.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const rows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => rows.push({ ...(d.data() || {}), id: d.id }));
+      const hiddenCats = faqFeed.hiddenCategoryIds(rows);
+      const out = rows.map((c) => ({
+        id: c.id, name: c.name || "", parentId: c.parentId || null, icon: c.icon || "help", order: typeof c.order === "number" ? c.order : 0,
+        hiddenFromWebsite: hiddenCats.has(c.id), hiddenFromWebsiteOwnFlag: c.hiddenFromWebsite === true,
+      }));
+      out.sort((x, y) => x.order - y.order || x.id.localeCompare(y.id));
+      return textResult({ matched: out.length, categories: out });
+    },
+  },
+  {
+    name: "set_faq_visibility",
+    description: "Hide a help-centre article, folder or category from the website, or show a draft article again. Hidden content is left out of the website and public help search, but the Support Inbox still answers customer emails from it; hiding a category or folder hides everything in it. Pass exactly one of articleId or categoryId. Showing a live article, a folder or a category on the website launches it, so that is done by a person in FAQ Management, not here.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        articleId: { type: "string", description: "From search_faq or get_faq_article." },
+        categoryId: { type: "string", description: "A category or folder id, from list_faq_categories." },
+        hiddenFromWebsite: { type: "boolean", description: "true hides it from the website; false shows it (draft articles only over MCP)." },
+      },
+      required: ["hiddenFromWebsite"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (typeof args.hiddenFromWebsite !== "boolean") return toolError("hiddenFromWebsite must be true or false.");
+      const articleId = args.articleId != null ? String(args.articleId).trim() : "";
+      const categoryId = args.categoryId != null ? String(args.categoryId).trim() : "";
+      if (!!articleId === !!categoryId) return toolError("Pass exactly one of articleId or categoryId.");
+      const hide = args.hiddenFromWebsite;
+      const collection = articleId ? "faqArticles" : "faqCategories";
+      const id = articleId || categoryId;
+      const ref = db().collection(collection).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(articleId ? `No FAQ article with id ${id}. Use search_faq to find one.` : `No FAQ category with id ${id}. Use list_faq_categories.`);
+      const cur = snap.data() || {};
+      if (!hide) {
+        if (categoryId) return toolError("Showing a category or folder on the website launches every article in it, so a person does that in FAQ Management (edit the category, untick Hide from website).");
+        if (cur.status === "published") return toolError("This article is live, so showing it on the website launches it. A person does that in FAQ Management (open the article, untick Hide from website).");
+      }
+      const was = cur.hiddenFromWebsite === true;
+      if (was !== hide) await ref.set({ hiddenFromWebsite: hide, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit(session, "set_faq_visibility", { [articleId ? "articleId" : "categoryId"]: id, hiddenFromWebsite: hide, changed: was !== hide });
+      return textResult({
+        updated: was !== hide, [articleId ? "articleId" : "categoryId"]: id, hiddenFromWebsite: hide,
+        note: hide
+          ? "Hidden from the website and public help search; the Support Inbox still answers from it. A person shows it again in FAQ Management when the feature launches."
+          : "No longer hidden. It still reaches the website only once a person publishes it.",
       });
     },
   },
@@ -5343,7 +5425,7 @@ const SERVER_INSTRUCTIONS = [
   "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it (max 20,000 characters). list_doc_revisions / get_doc_revision recover old versions.",
   REPO_WINS + " Board-only documents are edited on the board.",
   "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact, demote_project.",
-  "Help centre: search_faq, get_faq_article; create_faq_article and update_faq_article only propose drafts for a person to approve (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision).",
+  "Help centre: search_faq, get_faq_article; create_faq_article/update_faq_article only draft (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision); set_faq_visibility hides from website.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Leads: list_leads, get_lead; writes create_lead, create_leads, update_lead, update_lead_stage, add_lead_contact, update_lead_contact, remove_lead_contact, add_lead_note, link_lead_customer_account, unlink_lead_customer_account, link_lead_prospect, unlink_lead_prospect, archive_lead, restore_lead; delete_lead is admin only. Prospects: list_prospects, upsert_prospects.",
   "Skills: list_skills, get_skill; upload_skill, update_skill, delete_skill, mark_skill_reviewed, report_skill_miss.",

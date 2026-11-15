@@ -833,6 +833,18 @@ prototype changes later.
 and `articleType` (`guide` | `faq` | `reference`); update still only parks a
 pending revision. `get_faq_article` reports `missingSeoFields`.
 
+## Hidden from the website
+
+`create_faq_article` takes `hiddenFromWebsite` (default false).
+`set_faq_visibility` (`articleId` or `categoryId`, `hiddenFromWebsite`) hides an
+article, folder or category from the website and public help search; the
+Support Inbox still answers email from hidden articles. It refuses to show a
+published article, a folder or a category (that launches it, so a person does
+it in FAQ Management); a draft can be un-hidden. `list_faq_categories` lists
+categories and folders with their ids and flags; `search_faq` and
+`get_faq_article` report `hiddenFromWebsite`. See REQUIREMENTS.md → "Hidden from
+the website".
+
 ## Public help search (no sign-in)
 
 Separate from this authenticated server: **`https://personalisationhub.com/mcp`** is a public, stateless, read-only remote MCP server (no sign-in) with the eight tools the personalisationhub.com WebMCP defines (describe platform, list industries, get industry, get feature, search help, get help article, start free trial, book demo), read live from the site and cached 5 minutes (`X-Cache`), plus `https://personalisationhub.com/help-api/search` and `/help-api/article`. Those personalisationhub.com addresses are the only public ones: the site forwards them server side to this console's `/help-api/*` (PH Agent Endpoint 1.8.0, `ph-website/snippets/ph-agent-endpoint/proxy.php`), and nothing public links to or names the console's own host. The console routes still answer for existing clients, but are never advertised. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".

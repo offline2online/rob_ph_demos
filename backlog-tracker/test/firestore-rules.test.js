@@ -72,6 +72,9 @@ async function reset() {
     await setDoc(doc(db, "faqArticles/aDraft"), {
       categoryId: "c1", title: "D", slug: "d", bodyMd: "<p>unpublished</p>", status: "draft", order: 2,
     });
+    await setDoc(doc(db, "faqArticles/aHidden"), {
+      categoryId: "c1", title: "H", slug: "h", bodyMd: "<p>not launched</p>", status: "published", order: 3, hiddenFromWebsite: true,
+    });
     await setDoc(doc(db, "faqCategories/c1"), { name: "Getting started", icon: "help", order: 1 });
     await setDoc(doc(db, "backlogItems/iBacklog"), Object.assign({}, ITEM, { status: "backlog" }));
     await setDoc(doc(db, "backlogItems/iLive"), Object.assign({}, ITEM, { status: "published-live", mergeCommit: "abc1234", deployCommit: "abc1234" }));
@@ -340,6 +343,15 @@ async function main() {
     setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: "rLive", removedInReleaseId: "rDraft" }, { merge: true }));
   await check("An article's release binding must be a string id", "deny", () =>
     setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: 1 }, { merge: true }));
+  // Hidden from the website (3HabqHlC4WwL137CYTv1).
+  await check("An editor can hide an article from the website", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { hiddenFromWebsite: false }, { merge: true }));
+  await check("An article's hiddenFromWebsite must be a boolean", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { hiddenFromWebsite: "yes" }, { merge: true }));
+  await check("An editor can hide a category from the website", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqCategories/c1"), { hiddenFromWebsite: true }, { merge: true }));
+  await check("A category's hiddenFromWebsite must be a boolean", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqCategories/c1"), { hiddenFromWebsite: 1 }, { merge: true }));
 
   // ── Concept Incubator ──────────────────────────────────────────────────
   // An early-stage idea, held separately from projects/backlogItems until
@@ -547,6 +559,10 @@ async function main() {
     getDoc(doc(as(null), "faqArticles/a1")));
   await check("Anonymous CANNOT GET a draft FAQ article", "deny", () =>
     getDoc(doc(as(null), "faqArticles/aDraft")));
+  await check("Anonymous CANNOT GET a published article hidden from the website", "deny", () =>
+    getDoc(doc(as(null), "faqArticles/aHidden")));
+  await check("A viewer can GET an article hidden from the website", "allow", () =>
+    getDoc(doc(as(VIEWER), "faqArticles/aHidden")));
   await check("Anonymous CANNOT list faqArticles", "deny", () =>
     getDocs(collection(as(null), "faqArticles")));
   await check("Anonymous CANNOT list faqCategories", "deny", () =>

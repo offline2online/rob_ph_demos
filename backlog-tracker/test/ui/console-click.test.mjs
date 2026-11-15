@@ -2291,6 +2291,36 @@ const scenarios = [
     },
   },
   {
+    // 3HabqHlC4WwL137CYTv1: a category/folder or article can be hidden from
+    // the website; the article list says so and the editor carries the flag.
+    name: "FAQ Management: hidden-from-website badge (own flag and via category) and the editor toggle",
+    seed: () => seed({
+      faqCategories: {
+        fc0: { name: "Run your own retail media", icon: "storefront", order: 0, hiddenFromWebsite: true, createdAt: t(T0), updatedAt: t(T0) },
+        fc1: { name: "Getting started", icon: "rocket_launch", order: 1, createdAt: t(T0), updatedAt: t(T0) },
+      },
+      faqArticles: {
+        h1: { title: "Hidden by category one", categoryId: "fc0", order: 0, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        h2: { title: "Hidden itself one", categoryId: "fc1", order: 1, status: "published", hiddenFromWebsite: true, bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        v1: { title: "Visible one", categoryId: "fc1", order: 2, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      await c.page.fill("#fa-tree-search", "one");
+      await c.visible('.faq-article-row[data-id="v1"] .faq-article-title', "search lists all three");
+      const hidden = (id) => c.page.locator(`.faq-article-row[data-id="${id}"] .badge-faq-hidden`).count();
+      assert.strictEqual(await hidden("h1"), 1, "hidden through its category");
+      assert.strictEqual(await hidden("h2"), 1, "hidden by its own flag");
+      assert.strictEqual(await hidden("v1"), 0, "a visible article has no badge");
+      await c.click('.faq-article-row[data-id="h2"] .faq-article-title', "open the hidden article");
+      await c.click("#fa-group-status-toggle", "open Status & publishing");
+      await c.visible("#fa-hidden-from-website-toggle", "the toggle shows");
+      assert.strictEqual(await c.page.isChecked("#fa-hidden-from-website-toggle"), true, "loads the article's own flag");
+    },
+  },
+  {
     name: "concepts: the short description shows on the tile and on the concept page",
     seed: () => relSeed(),
     async run(c) {
