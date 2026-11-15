@@ -1,9 +1,10 @@
 <?php
 /**
- * The Run Your Own RMN page's three interactive blocks (an Elementor page from 14 Nov 2026): operator_calculator_html(),
- * operator_tour_html() and operator_faq_html(). operator.php puts each inside its empty Elementor mount container (CSS IDs
- * ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour), server-side; the shortcodes [ph_operator_calculator], [ph_operator_tour] and
- * [ph_operator_faq] render the same blocks. Every other section (hero, "Why it beats anything out there", why, who, how, venues,
+ * The Run Your Own RMN page's four interactive blocks (an Elementor page from 14 Nov 2026): operator_calculator_html(),
+ * operator_tour_html(), operator_faq_html() and (15 Nov 2026) operator_request_html(), the "Request further information" form at the
+ * bottom of the page. operator.php puts each inside its empty Elementor mount container (CSS IDs ph-rmn-calculator, ph-rmn-faq,
+ * ph-rmn-tour, ph-rmn-request), server-side; the shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq] and
+ * [ph_operator_request] render the same blocks. Every other section (hero, "Why it beats anything out there", why, who, how, venues,
  * standards, independents) is built in Elementor from ph-website/elementor/run-your-own-rmn.md; no page copy is rendered here. Styles
  * follow the approved design as updated on 14 Nov 2026 (operator.css). A sales pitch only: no setup fee, minimum, revenue split or
  * share figure is ever printed (the calculator's two shares live in operator.js and operator_calc() only). The calculator outputs are
@@ -30,6 +31,12 @@ const OPERATOR_HOW_CALC    = 'Venues × visitors per day × visitors who view th
 const OPERATOR_TOUR_H      = 'See a retail media network run end to end';
 const OPERATOR_TOUR_P      = 'Watch a venue sell its screens, a brand create a campaign by talking, and one visitor\'s journey from arrival to checkout.';
 const OPERATOR_GATE_P      = 'Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.';
+/** The "Request further information" block (15 Nov 2026): eyebrow, H2, intro, button and the success line after the first name. */
+const OPERATOR_REQUEST_EB  = 'Request further information';
+const OPERATOR_REQUEST_H   = 'Talk to us about running your own RMN';
+const OPERATOR_REQUEST_P   = 'Tell us which industry you want to run your network in and we\'ll send you an information pack with the full detail, then book a 20-minute call to go through it. Places are limited in each industry.';
+const OPERATOR_REQUEST_BTN = 'Request further information';
+const OPERATOR_REQUEST_OK  = 'We\'ll send your information pack shortly.';
 /** The calculator's "I am" toggle: mode => button label. "operator" is the default. */
 const OPERATOR_MODES       = array( 'operator' => 'Operator or team', 'retailer' => 'Retailer' );
 /** "Your head start in a changing industry": its two paragraphs. */
@@ -123,23 +130,32 @@ function operator_calc_fields() {
 }
 
 /**
- * The calculator's outputs, in page order: data-out key => label, for the toggle's mode. "Retailer" renames the venues and extra
- * sales rows (and adds those extra sales to the income: operator_calc()).
+ * The calculator's outputs, in page order: data-out key => label, for the toggle's mode. "Retailer" renames the income, venues and
+ * extra sales rows (and adds those extra sales to the income: operator_calc()). "Earnings per display per month" is an operator output
+ * only: it sits below the CTA row and is hidden in Retailer mode.
  */
 function operator_calc_outputs( $mode = 'operator' ) {
 	$retailer = 'retailer' === $mode;
-	return array(
-		'yours'      => 'Your potential income a year',
+	$out      = array(
+		'yours'      => $retailer ? 'Retailer\'s potential incremental income a year' : 'Your potential income a year',
 		'venues'     => $retailer ? 'Stores in your network' : 'Venues in your network',
 		'displays'   => 'Displays in your network',
 		'visitors'   => 'Visitors a month across your network',
 		'views'      => 'Ad views a month',
 		'extraSales' => $retailer ? 'Extra sales in your stores a year' : 'Extra sales for your venues a year',
 	);
+	if ( ! $retailer ) {
+		$out['perDisplay'] = OPERATOR_PER_DISPLAY_LABEL;
+	}
+	return $out;
 }
 
 /** "How do I get started?" ends with this link to the "Request further information" form (#request-info, the request block): [label, anchor]. */
 const OPERATOR_FAQ_CTA = array( 'Request further information', '#request-info' );
+
+/** The per-display row's label and its tooltip (no share, no figure: it is worked out from the income). */
+const OPERATOR_PER_DISPLAY_LABEL = 'Earnings per display per month';
+const OPERATOR_PER_DISPLAY_TIP   = 'Your potential income a year ÷ the displays in your network ÷ 12. Each display you add earns about this much a month.';
 
 /**
  * "Running your own RMN": [question, answer] or [question, answer, true] when the answer ends with the OPERATOR_FAQ_CTA link. Plain
@@ -159,7 +175,7 @@ function operator_faq() {
 		array( 'Which industries can I choose?', 'Any business with a physical location can be part of your network, with or without screens today. That includes car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. The industry you choose shapes how your network runs: venues, hardware, advertisers and roll-out. That\'s why we ask for it when you request further information.' ),
 		array( 'What support do I get?', 'We set you up on the white-label platform in your own AWS account, with the playbooks, templates and sales framework you need to launch. Brands can bring their own creative, or AI can build, target and launch campaigns for them, and you can run the network from the AI tools you already use through MCP. Our dedicated engineering team keeps the platform up to date as retail media evolves.' ),
 		array( 'Where does my retail media network run?', 'On a white-label platform, under your own brand and in your own AWS account. You use your own shopper and venue data, it stays private, and the network and its relationships are yours.' ),
-		array( 'How does the earnings estimate work?', 'The benefits calculator on this page multiplies your venues, visitors per venue per day, the visitors who view the ads and the displays per venue to give your monthly ad views. Ad views ÷ 1,000 × the average CPM gives ad revenue, and your potential income is your share of it, before costs. It also estimates the extra sales from personalised offers. Choose "Operator or team" to see the extra sales for your venues, or "Retailer" to see the extra sales in your stores, which are then added to your income. Change any figure to see your own estimate.' ),
+		array( 'How does the earnings estimate work?', 'The benefits calculator on this page multiplies your venues, visitors per venue per day, the visitors who view the ads and the displays per venue to give your monthly ad views. Ad views ÷ 1,000 × the average CPM gives ad revenue, and your potential income is your share of it, before costs. It also estimates the extra sales from personalised offers. Choose "Operator or team" to see the extra sales for your venues, or "Retailer" to see the extra sales in your stores, which are then added to your income: the result is the retailer\'s potential incremental income a year. Change any figure to see your own estimate.' ),
 		array( 'How do I get started?', 'Request further information and tell us which industry you want to run your network in. We\'ll send you an information pack covering the commercial model, exclusivity, hardware options and the roll-out plan for that industry, then book a 20-minute call to go through it with you. Places are limited in each industry and allocated on a first-come, first-served basis, so if you have an industry in mind, request your pack now.', true ),
 	);
 }
@@ -198,11 +214,11 @@ function operator_calc_rows( array $d, $type ) {
 	return $h;
 }
 
-/** The output rows under the headline figure (every output but "yours"). */
+/** The output rows under the headline figure (every output but "yours" and the per-display row, which sits below the CTAs). */
 function operator_out_rows( array $out ) {
 	$h = '';
 	foreach ( operator_calc_outputs() as $k => $label ) {
-		if ( 'yours' !== $k ) {
+		if ( 'yours' !== $k && 'perDisplay' !== $k ) {
 			$h .= operator_out_row( $k, $label, $out[ $k ] );
 		}
 	}
@@ -259,7 +275,8 @@ function operator_mode_toggle() {
 
 /**
  * The calculator block: "What could it be worth to you?", the "I am" toggle, inputs and tooltips, the result panel at the defaults
- * (Operator or team), its two CTAs.
+ * (Operator or team), its two CTAs ("Request further information" goes to #request-info) and, below them, "Earnings per display per
+ * month" with its tooltip (operator mode only: operator.js sets `hidden` on it in Retailer mode).
  */
 function operator_calculator_html() {
 	$d   = operator_defaults();
@@ -270,10 +287,12 @@ function operator_calculator_html() {
 		. operator_calc_rows( $d, 'number' )
 		. '<p class="phf-cgrp phf-cgrp-a">Assumptions</p>'
 		. operator_calc_rows( $d, 'range' )
-		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l">' . esc_html( operator_calc_outputs()['yours'] ) . '</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
+		. '</div><div class="phf-cout" aria-live="polite"><p class="phf-cout-l" data-lab="yours">' . esc_html( operator_calc_outputs()['yours'] ) . '</p><p class="phf-cout-v" data-out="yours">' . esc_html( $out['yours'] ) . '</p>'
 		. operator_out_rows( $out )
 		. '<div class="phf-how"><span class="phf-tip"><button type="button" class="phf-how-b" aria-describedby="c-how-tip" aria-expanded="false"><span class="phf-how-i" aria-hidden="true">i</span>How it&#39;s calculated</button><span class="phf-tipbox" role="tooltip" id="c-how-tip">' . esc_html( OPERATOR_HOW_CALC ) . '</span></span></div>'
-		. '<div class="phf-cctas"><a class="phf-pill" href="#tour">Request further information</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
+		. '<div class="phf-cctas"><a class="phf-pill" href="#request-info">Request further information</a><a class="phf-pill phf-pill-o" href="#how">See how it works</a></div>'
+		. '<div class="phf-perd" data-mode="operator"><span class="phf-clab"><span class="phf-perd-l" data-lab="perDisplay">' . esc_html( OPERATOR_PER_DISPLAY_LABEL ) . '</span>'
+		. operator_tip( 'c-perd-tip', 'About ' . strtolower( OPERATOR_PER_DISPLAY_LABEL ), OPERATOR_PER_DISPLAY_TIP ) . '</span><span class="phf-perd-v" data-out="perDisplay">' . esc_html( $out['perDisplay'] ) . '</span></div>'
 		. '</div></div></div></section>';
 	return operator_block( 'calculator', $h );
 }
@@ -314,4 +333,46 @@ function operator_tour_html() {
 		. '<p class="phf-msg" id="phf-msg" role="status" aria-live="polite"></p>'
 		. '</form></div></div><div class="phf-mount" id="phf-mount"></div></div></div></section>';
 	return operator_block( 'tour', $h );
+}
+
+/** A select's options: a disabled placeholder, then each label as its own value. */
+function operator_options( $placeholder, array $labels ) {
+	$h = '<option value="" selected disabled>' . esc_html( $placeholder ) . '</option>';
+	foreach ( $labels as $l ) {
+		$h .= '<option>' . esc_html( $l ) . '</option>';
+	}
+	return $h;
+}
+
+/**
+ * The request block (15 Nov 2026), anchor #request-info, at the bottom of the page: "Request further information", for visitors who
+ * want to give their details without going through the tour gate. The gate's card, fonts, colours, inputs and tablet layout in a
+ * full-width section like the tour's. The gate's fields, validated the same way, plus "Industry you want to run your network in" (the
+ * page's twelve industries and "Other (tell us)", which shows a short text input) and an optional "Anything you'd like us to know"
+ * (at most 1,000 characters). It posts to ph-site/v1/operator-lead with form "request" (operator.js); the success line replaces the
+ * form without a reload.
+ */
+function operator_request_html() {
+	$h = '<section id="request-info" class="phf-sec phf-tint" aria-labelledby="req-h"><div class="phf-wrap phf-wrap-req">'
+		. '<p class="phf-eb">' . esc_html( OPERATOR_REQUEST_EB ) . '</p><h2 id="req-h" class="phf-h2b phf-h2-req">' . esc_html( OPERATOR_REQUEST_H ) . '</h2>'
+		. '<p class="phf-req-p">' . esc_html( OPERATOR_REQUEST_P ) . '</p>'
+		. '<div class="phf-gate-card phf-req-card">'
+		. '<form class="phf-form" id="phf-rform" novalidate><div class="phf-fgrid">'
+		. '<div class="phf-f"><label for="r-fn">Full name</label><input id="r-fn" name="name" type="text" autocomplete="name" maxlength="120" required></div>'
+		. '<div class="phf-f"><label for="r-em">Email</label><input id="r-em" name="email" type="email" autocomplete="email" maxlength="120" required></div>'
+		. '<div class="phf-f"><label for="r-li">LinkedIn profile (optional)</label><input id="r-li" name="linkedin" type="url" inputmode="url" autocomplete="url" maxlength="300"></div>'
+		. '<div class="phf-f"><label for="r-rg">Where you plan to operate</label><input id="r-rg" name="region" type="text" autocomplete="address-level1" maxlength="120" required></div>'
+		. '<div class="phf-f"><label for="r-in">Industry you want to run your network in</label><select id="r-in" name="industry" required>' . operator_options( 'Select an industry', operator_industries() ) . '</select></div>'
+		. '<div class="phf-f" id="r-io-f" hidden><label for="r-io">Your industry</label><input id="r-io" name="industry_other" type="text" maxlength="120" autocomplete="off"></div>'
+		. '<div class="phf-f"><label for="r-ia">I am</label><select id="r-ia" name="audience" required>' . operator_options( 'Select one', OPERATOR_AUDIENCES ) . '</select></div>'
+		. '<div class="phf-f"><label for="r-bg">Your background</label><select id="r-bg" name="background" required>' . operator_options( 'Select your background', OPERATOR_BACKGROUNDS ) . '</select></div>'
+		. '<div class="phf-f phf-f-wide"><label for="r-ms">Anything you&#39;d like us to know (optional)</label><textarea id="r-ms" name="message" rows="4" maxlength="' . (int) OPERATOR_MESSAGE_MAX . '" aria-describedby="r-ms-n"></textarea><span class="phf-count" id="r-ms-n">Up to 1,000 characters</span></div>'
+		. '</div>'
+		. '<input class="phf-hp" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">'
+		. '<label class="phf-cons"><input type="checkbox" name="consent" id="r-cs"><span>I agree to be contacted. See the <a href="/privacy-policy/">privacy policy</a>.</span></label>'
+		. '<button type="submit" class="phf-unlock phf-rsubmit" id="phf-rsubmit" disabled>' . esc_html( OPERATOR_REQUEST_BTN ) . '</button>'
+		. '<p class="phf-msg" id="phf-rmsg" role="status" aria-live="polite"></p>'
+		. '</form><div class="phf-rdone" id="phf-rdone" hidden><p class="phf-rdone-h" id="phf-rdone-h" tabindex="-1" data-ok="' . esc_attr( OPERATOR_REQUEST_OK ) . '">Thanks. ' . esc_html( OPERATOR_REQUEST_OK ) . '</p></div>'
+		. '</div></div></section>';
+	return operator_block( 'request', $h );
 }

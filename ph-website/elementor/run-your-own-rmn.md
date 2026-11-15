@@ -7,7 +7,7 @@ Source of the copy: the board document "Run Your Own RMN page copy (14 Nov, upda
 ## Page settings
 
 - **Create**: `elementor-create-page`, title "Run Your Own RMN", slug `run-your-own-rmn`, top level (no parent), template **Elementor Header & Footer** (`elementor_header_footer`: the site header and footer, no title bar). Status: publish. Comments off.
-- **Build**: with `elementor-build-composition` (atomic elements). The Elementor MCP refuses the V3 Shortcode widget, and atomic widgets don't run shortcodes, so the page has **no Shortcode widget**: sections 7, 9 and 10 are empty mount containers that the snippet fills. No manual editor step is needed.
+- **Build**: with `elementor-build-composition` (atomic elements). The Elementor MCP refuses the V3 Shortcode widget, and atomic widgets don't run shortcodes, so the page has **no Shortcode widget**: sections 7, 9, 10 and 11 are empty mount containers that the snippet fills. No manual editor step is needed.
 - The page must open with "Edit with Elementor", and `elementor-get-page-structure` must return its tree. The snippet only recognises a published top-level page on this slug whose `_elementor_edit_mode` is `builder`.
 - **SEO**: leave SEOPress's title, description and social fields empty. Snippet 10063 prints the title, description, canonical, Open Graph, Twitter card and JSON-LD on this page and switches SEOPress's own copies off. It also sets the noindex while the page is hidden.
 - **Header item**: don't add the page to any menu. While hidden, the snippet adds "Run Your Own RMN" to the header on this page only.
@@ -61,7 +61,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
   - Heading widget, **H1**: "Run your own retail media network" (max width 16ch, margin bottom 12px). This is the page's only H1.
   - Heading widget, `p`, Sub-line font, PH Blue: "Without the upfront cost" (margin bottom 24px).
   - Text Editor, Lead font, Body colour, max width 34em, margin bottom 36px: "AI has changed what one person can achieve (the rise of the solopreneur). If you’re self-driven and you use AI tools every day rather than just talk about them, you no longer need a large team to deliver real value. One focused operator can now do the work of an entire organisation. Use those skills to launch your own retail media network, in an industry that you know and love. Enable independent businesses nationwide to support real-time personalisation in-store and in other physical venues and help them leverage AI to continually optimise their bottom line."
-  - Two Buttons in a row, gap 14px: primary "See how much you can earn" → link `#calculator`; outline "Request further information" → link `#tour`.
+  - Two Buttons in a row, gap 14px: primary "See how much you can earn" → link `#calculator`; outline "Request further information" → link `#request-info` (the request form at the bottom of the page, section 11; it was `#tour` until 15 Nov 2026 and the deploy session repoints it).
 - Right column: a card, White background, 1px Rule border, radius 20px, padding 32px (mobile 22px).
   - Heading, `p`, 22px weight 600, margin bottom 24px: "Why it beats anything out there"
   - Four items, gap 20px. Each item is a row: a 10×44px bar (radius 4px) in the colour given, gap 16px, then a title (Body font, weight 600) and its text (Small font, Muted):
@@ -122,7 +122,7 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 ### 7. Benefits calculator: mount container, CSS ID `ph-rmn-calculator`
 
 - One full-width e-flexbox, padding 0, no background, **empty**, with the CSS ID `ph-rmn-calculator` (`_cssid` in `elementor-build-composition`). Put nothing inside it.
-- The snippet puts the calculator block inside this container, server-side. The block carries its own section, anchor `#calculator`, heading "What could it be worth to you?", the "Your network" panel with the "I am" toggle ("Operator or team" / "Retailer") and every tooltip, the dark result panel and its two links. Don't rebuild any of it in Elementor.
+- The snippet puts the calculator block inside this container, server-side. The block carries its own section, anchor `#calculator`, heading "What could it be worth to you?", the "Your network" panel with the "I am" toggle ("Operator or team" / "Retailer") and every tooltip, the dark result panel (in Retailer mode its income label reads "Retailer's potential incremental income a year"), its two links ("Request further information" goes to `#request-info`) and, below them, "Earnings per display per month" with its tooltip (Operator or team mode only). Don't rebuild any of it in Elementor.
 
 ### 8. Independents: CSS ID `independents`
 
@@ -149,14 +149,20 @@ Each section's **CSS ID** goes on its outer Container (Advanced → CSS ID). `op
 ### 10. Product tour: mount container, CSS ID `ph-rmn-tour`
 
 - One full-width e-flexbox, padding 0, **empty**, with the CSS ID `ph-rmn-tour` (`_cssid`).
-- The snippet puts the tour block inside it, server-side. The block carries anchor `#tour`, the heading "See a retail media network run end to end", the gate "Unlock the product tour" (its "I am" select and the background list; it posts to `ph-site/v1/operator-lead`) and, once unlocked, the golf club tour framed in place (`/run-your-own-rmn/tour/`). The hero's "Request further information" button and the header's "Arrange A Demo" go here.
+- The snippet puts the tour block inside it, server-side. The block carries anchor `#tour`, the heading "See a retail media network run end to end", the gate "Unlock the product tour" (its "I am" select and the background list; it posts to `ph-site/v1/operator-lead`) and, once unlocked, the golf club tour framed in place (`/run-your-own-rmn/tour/`). The floating CTA (cta.js) links here only when the page has no `#request-info`.
 
-**The mount containers, in short**: each is filled once, only on this page, and only when it is there (a missing one is skipped). The anchors `#calculator`, `#faq` and `#tour` are inside the blocks, so never give a container one of those as its CSS ID. The shortcodes `[ph_operator_calculator]`, `[ph_operator_faq]` and `[ph_operator_tour]` still exist; a block that is already on the page through one is not added a second time.
+### 11. Request further information: mount container, CSS ID `ph-rmn-request`
+
+- One full-width e-flexbox, padding 0, **empty**, with the CSS ID `ph-rmn-request` (`_cssid`), the last section on the page, after the tour.
+- The snippet puts the request block inside it, server-side. The block carries anchor `#request-info`, the eyebrow "Request further information", the heading "Talk to us about running your own RMN", its intro, and the form (the gate's fields, "Industry you want to run your network in" and an optional message; it posts to `ph-site/v1/operator-lead` with form `request`). The hero's "Request further information" button and the calculator's link go here.
+
+**The mount containers, in short**: each is filled once, only on this page, and only when it is there (a missing one is skipped). The anchors `#calculator`, `#faq`, `#tour` and `#request-info` are inside the blocks, so never give a container one of those as its CSS ID. The shortcodes `[ph_operator_calculator]`, `[ph_operator_faq]`, `[ph_operator_tour]` and `[ph_operator_request]` still exist; a block that is already on the page through one is not added a second time.
 
 ## Checks after building
 
-1. "Edit with Elementor" opens the page; `elementor-get-page-structure` returns the 10 sections above in this order, with the three empty mount containers (`ph-rmn-calculator`, `ph-rmn-faq`, `ph-rmn-tour`).
+1. "Edit with Elementor" opens the page; `elementor-get-page-structure` returns the 11 sections above in this order, with the four empty mount containers (`ph-rmn-calculator`, `ph-rmn-faq`, `ph-rmn-tour`, `ph-rmn-request`).
 2. The page has exactly one H1. No section repeats a heading the blocks already carry.
-3. Compare with the approved design at 1440, 768 and 390 wide: no horizontal scroll, the hero copy and the "why" card side by side at 1440 and stacked at 390, the card grids at 4/3 → 2 → 1 columns. View source (not the inspector): the calculator, the FAQ and the tour gate are in the HTML the server sent, each once, inside its container.
+3. Compare with the approved design at 1440, 768 and 390 wide: no horizontal scroll, the hero copy and the "why" card side by side at 1440 and stacked at 390, the card grids at 4/3 → 2 → 1 columns. View source (not the inspector): the calculator, the FAQ, the tour gate and the request form are in the HTML the server sent, each once, inside its container.
 4. View source: the title, description, canonical and Open Graph tags once each, one head JSON-LD graph and the FAQPage JSON-LD once, `noindex` while hidden.
-5. On `?ph_test=1`: the calculator shows $591K, 90, 270, 2,190,000, 3,942,000 and $59.1M, and $60.0M with "Stores in your network" and "Extra sales in your stores a year" once "Retailer" is chosen; the tooltips open by hover, focus and tap; the FAQ opens by tap and keyboard; the gate (with "I am" chosen) unlocks the tour and it plays. Delete the test lead afterwards.
+5. On `?ph_test=1`: the calculator shows $591K, 90, 270, 2,190,000, 3,942,000 and $59.1M, and $60.0M with "Stores in your network" and "Extra sales in your stores a year" once "Retailer" is chosen, under the label "Retailer's potential incremental income a year"; "Earnings per display per month" shows $183 below the CTA row in "Operator or team" mode and is hidden in "Retailer" mode; the tooltips open by hover, focus and tap; the FAQ opens by tap and keyboard; the gate (with "I am" chosen) unlocks the tour and it plays. Delete the test lead afterwards.
+6. On `?ph_test=1`: the calculator's "Request further information" scrolls to the form at the bottom of the page (and so does the hero button once repointed to `#request-info`). Fill it in (an industry, and optionally a message) and submit: "Thanks, [first name]. We'll send your information pack shortly." replaces the form without a reload, and the tour above is unlocked. Check the test lead has source detail "Run Your Own RMN page – request further information", the industry and the message, then delete it.
