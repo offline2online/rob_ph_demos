@@ -27,6 +27,11 @@
 // Untagged tickets keep the behaviour they always had: the clicker's own
 // binding if they have one, else the shared project Routine.
 //
+// Review Batch and the Ready for Testing presentation follow the owner too
+// (planOwnedSessions below, rFNYoDzDdDtQJpupDNpN): one session per owner on
+// that owner's binding, whoever pressed. Run E2E and the release audit name
+// no ticket and are exempt (REQUIREMENTS.md says why).
+//
 // Pure functions only, so test/owner-firing.test.js drives them directly.
 
 const ROUTINE_SETUP_HASH = "#settings/routine";
@@ -144,6 +149,34 @@ function planOwnedGroom(items, { requesterEmail = null } = {}) {
   return { keep, excluded, ownOwned: keep.filter((i) => !!ticketOwner(i)) };
 }
 
+// Review Batch and the Ready for Testing presentation (rFNYoDzDdDtQJpupDNpN,
+// 16 Nov 2026): sessions about tickets that are already built. They are
+// pipeline steps rather than a request for new work, so whoever pressed
+// Review Batch (or the automation, for the presentation) an agent ticket in
+// the batch goes to its OWNER's binding — one session per owner, the way the
+// pipeline's own rebuilds fire — and never to the clicker's or the shared
+// token. Untagged tickets are one session on the clicker's binding, else the
+// shared Routine, as before. Feed the result to refuseUnboundOwners: an owner
+// with no usable binding has their tickets refused with the same no-binding
+// message the build uses.
+function planOwnedSessions(items) {
+  const out = { shared: [], byOwner: {}, refused: [], skipped: [] };
+  for (const item of items || []) {
+    const owner = ticketOwner(item);
+    if (!owner) out.shared.push(item);
+    else (out.byOwner[owner] = out.byOwner[owner] || []).push(item);
+  }
+  return out;
+}
+
+// Which credentials fired a set of sessions, for the *.firedVia record:
+// "member"/"shared" for the untagged session alone, "owner" when only agent
+// tickets were sent, "<shared via>+owner" for both.
+function firedViaOf(sharedVia, { shared = 0, owned = 0 } = {}) {
+  if (!owned) return sharedVia;
+  return shared ? `${sharedVia}+owner` : "owner";
+}
+
 // Owner scoping over MCP (ZmEWDC40NYOiojehfPjk, 16 Nov 2026): every member's
 // agent reads the whole project (every ticket, its docs and interface
 // contracts) so it understands cross-cutting impact, but changes only the
@@ -163,5 +196,5 @@ function ownerEditRefusal(item, email, verb = "change") {
 module.exports = {
   ownerEditRefusal,
   ROUTINE_SETUP_HASH, normEmail, ticketOwner, millisOf, isAutomaticBuildRequest, ownerRefusalMessage,
-  planOwnedBuild, refuseUnboundOwners, refusedFireRecord, planOwnedDeploy, planOwnedGroom,
+  planOwnedBuild, planOwnedSessions, firedViaOf, refuseUnboundOwners, refusedFireRecord, planOwnedDeploy, planOwnedGroom,
 };

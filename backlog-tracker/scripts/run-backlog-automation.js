@@ -59,12 +59,14 @@ const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
 // Build order (ZE8h8cfaezOb0eTsRjSH): dependency waits, deadlocks and lanes.
 const buildOrder = require("../functions/build-order");
-const { modelGuardRefusal } = require("../functions/model-requirement");
+const { modelGuardRefusal, modelEscalation } = require("../functions/model-requirement");
+const modelSuggest = require("../functions/model-suggest");
 const testRounds = require("../functions/test-rounds");
 // Contract-change review flags (ZmEWDC40NYOiojehfPjk).
 const contractReview = require("../functions/contract-review");
 // Late arrivals, the deploy queue, shared files between trains (wPoSOXfp8Em06Vzp3Cz7).
 const deployQueue = require("../functions/deploy-queue");
+const cardState = require("../functions/card-state");
 const kanbanHeal = require("./kanban-e2e-heal");
 const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
@@ -693,6 +695,48 @@ function noteReadyForTesting(project, itemId) {
   if (!entry.ids.includes(itemId)) entry.ids.push(itemId);
   readyForTestingLanded.set(project.id, entry);
 }
+// ── Review without a click (CCPnRjXOH4YMsfy3C49r, "Flow 8/9") ─────────────
+// An Advanced ticket, or one the classifier scored for security or pipeline
+// reasons (model-suggest.js → needsAutoReview), is reviewed as soon as it
+// lands: the card records autoReview {commit, requestedAt} (one automatic
+// review per landed commit), and at the end of the run each project gets one
+// Review Batch request scoped to those tickets (reviewScope, same timestamp as
+// reviewRequestedAt; functions/index.js → notifyOnProjectReviewBatch). The
+// Ready for Testing hand-off waits for that review (handOffWaitingOn →
+// "review") up to its usual limit. A kick-back is a send-back like any other.
+// Standard tickets keep the manual Review Batch button.
+const autoReviewLanded = new Map(); // projectId -> ids
+function autoReviewFields(item, sha) {
+  if (!sha || !modelSuggest.needsAutoReview(item)) return {};
+  if (item.autoReview && item.autoReview.commit === sha) return {};
+  return { autoReview: { commit: sha, requestedAt: new Date() } };
+}
+function noteAutoReview(project, itemId) {
+  if (!project || !project.id || !itemId) return;
+  const ids = autoReviewLanded.get(project.id) || [];
+  if (!ids.includes(itemId)) ids.push(itemId);
+  autoReviewLanded.set(project.id, ids);
+}
+function autoReviewRequestFields(ids, at = new Date()) {
+  return { reviewRequestedAt: at, reviewRequestedByEmail: null, reviewScope: { itemIds: [...ids], requestedAt: at } };
+}
+async function requestAutoReviews() {
+  for (const [projectId, ids] of autoReviewLanded) {
+    try {
+      await patchProject(projectId, autoReviewRequestFields(ids));
+      console.log(`[auto-review] ${projectId}: review requested for ${ids.join(", ")}`);
+    } catch (err) {
+      console.error(`[auto-review] ${projectId}: couldn't request the review: ${err.message}`);
+    }
+  }
+  autoReviewLanded.clear();
+}
+// Pure: the card is waiting for its automatic review of this commit.
+function autoReviewPending(card) {
+  if (!card || !card.deployCommit || !card.autoReview || card.autoReview.commit !== card.deployCommit) return false;
+  return !modelSuggest.reviewedForCommit(card);
+}
+
 function readyForTestingNotifyFields(project, ids) {
   return {
     // A Date, so it lands as a Firestore timestamp (see tv()).
@@ -777,6 +821,7 @@ function handOffWaitingOn(card, nowMs = Date.now(), shas) {
     if (testsWaiting) waiting.push("tests");
   }
   if (card && card.previewState === "rebuilding") waiting.push("link");
+  if (autoReviewPending(card)) waiting.push("review");
   return waiting;
 }
 
@@ -816,7 +861,7 @@ async function requestReadyForTestingNotify(nowMs = Date.now()) {
   readyForTestingLanded.clear();
 }
 
-const HAND_OFF_CARD_FIELDS = ["status", "deployBranch", "deployCommit", "deployCommits", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession", "patchReady"];
+const HAND_OFF_CARD_FIELDS = ["status", "deployBranch", "deployCommit", "deployCommits", "trainTest", "trainTestReruns", "previewState", "blocked", "buildSession", "patchReady", "autoReview", "reviewStatus", "reviewedCommit", "reviewedByModel", "model"];
 const HAND_OFF_PROJECT_FIELDS = ["readyForTestingPendingItemIds", "readyForTestingPendingSince", "readyForTestingWaitingOn", "notifyRoutine", "notifyRequestedByEmail"];
 
 // For cards whose failed run may still be re-run: every commit the train
@@ -1017,17 +1062,22 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
       sentence: `It has been rebuilt automatically ${used} time${used === 1 ? "" : "s"} already, so it is flagged for you with the reason: answer on the card (Answer button) and it is rebuilt with your answer.`,
     };
   }
+  // Escalate after failed rounds (Flow 8/9): a Standard ticket whose patch
+  // was refused twice is raised to Advanced before this rebuild fires.
+  const esc = modelEscalation(item, { autoRebuilds: used + 1 });
+  const escFields = esc ? esc.fields : {};
+  const escSentence = esc ? ` ${esc.note}` : "";
   if (project.trainLocked && !ignoreLock) {
     return {
       action: "defer",
-      fields: { autoRebuilds: used + 1, buildAfterTrain: true },
-      sentence: "This project's release is closing (a ticket on its train was approved), so the rebuild starts by itself as soon as that train has merged.",
+      fields: { autoRebuilds: used + 1, buildAfterTrain: true, ...escFields },
+      sentence: `This project's release is closing (a ticket on its train was approved), so the rebuild starts by itself as soon as that train has merged.${escSentence}`,
     };
   }
   return {
     action: "rebuild",
-    fields: { autoRebuilds: used + 1 },
-    sentence: "A rebuild was requested automatically; this card will say when it starts.",
+    fields: { autoRebuilds: used + 1, ...escFields },
+    sentence: `A rebuild was requested automatically; this card will say when it starts.${escSentence}`,
   };
 }
 // ── A question never strands a ticket (30 Oct 2026) ───────────────────────
@@ -1117,6 +1167,79 @@ async function sweepAutoAnswers(now = Date.now()) {
     }
   }
 }
+// Required tools (Flow 8/9): a build that found its session without a
+// connector the project needs flags the card tools-unavailable. That is never
+// answered automatically on the same Routine: it would fail the same way.
+// Once, and only once, it is tried again by itself when the project has been
+// given its own Routine (projects/{id}.routineBoundAt) since the flag was set;
+// otherwise a person adds the connector and clears the flag. Pure.
+const TOOLS_UNAVAILABLE_REASON = "tools-unavailable";
+const MAX_TOOLS_RETRIES = 1;
+function toolsRetryPlan(item, project) {
+  const b = item && item.blocked;
+  if (!b || b.reason !== TOOLS_UNAVAILABLE_REASON || (item.status && item.status !== "backlog") || item.patchReady) return null;
+  if ((Number(item.toolsRetries) || 0) >= MAX_TOOLS_RETRIES) return null;
+  const boundAt = timeMs(project && project.routineBoundAt);
+  const setAt = timeMs(b.setAt);
+  if (Number.isNaN(boundAt) || Number.isNaN(setAt) || boundAt <= setAt) return null;
+  return {
+    text: "Tried again automatically, once: this project was given its own Routine after the build reported a missing tool.",
+    fields: { toolsRetries: (Number(item.toolsRetries) || 0) + 1 },
+  };
+}
+async function sweepToolsRetries(now = Date.now()) {
+  const flagged = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { compositeFilter: { op: "AND", filters: [
+      { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+      { fieldFilter: { field: { fieldPath: "blocked.reason" }, op: "EQUAL", value: { stringValue: TOOLS_UNAVAILABLE_REASON } } },
+    ] } },
+  });
+  for (const item of flagged) {
+    try {
+      const project = await getProject(item.projectId).catch(() => null);
+      const plan = toolsRetryPlan(item, project);
+      if (!plan || !project) continue;
+      const notes = await appendNote(item, plan.text);
+      const stamp = new Date(now).toISOString();
+      await patchItem(item.id, { ...plan.fields, blocked: null, blockedClearedAt: stamp, notes, updatedAt: stamp, ...(project.trainLocked ? { buildAfterTrain: true } : {}) });
+      if (!project.trainLocked) queueBuildRequest(project, item.id);
+      console.log(`[tools] ${item.id}: retried once on the project's own Routine`);
+    } catch (err) {
+      console.error(`[tools] ${item.id}: ${err.message}`);
+    }
+  }
+}
+
+// The model suggested at intake (Flow 8/9), applied once over the open
+// Backlog: a card with no modelSuggested (filed before this existed), or one
+// scored by an older classifier, is scored now. The Cloud Function trigger
+// (functions/index.js → runModelSuggest) does the same on every create and
+// description save, so after the first run this finds nothing to do.
+async function sweepModelSuggestions() {
+  const open = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
+    select: selectFields(["title", "desc", "category", "effort", "model", "modelAuto", "modelSuggested", "status"]),
+  });
+  const stale = open.filter((i) => !i.modelSuggested || (Number(i.modelSuggested.version) || 0) < modelSuggest.MODEL_SUGGEST_VERSION);
+  if (!stale.length) return 0;
+  const projects = await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(["ownedPaths", "repoFolder"]) });
+  let n = 0;
+  for (const item of stale) {
+    const fields = modelSuggest.autoModelFields(item, modelSuggest.suggestModel(item, { projects }));
+    if (!Object.keys(fields).length) continue;
+    try {
+      await patchItem(item.id, fields);
+      n += 1;
+    } catch (err) {
+      console.error(`[model-suggest] ${item.id}: ${err.message}`);
+    }
+  }
+  if (n) console.log(`[model-suggest] scored ${n} Backlog ticket(s)`);
+  return n;
+}
+
 async function flushBuildRequests() {
   for (const [projectId, { project, ids, fresh }] of pendingBuildRequests) {
     // Stamped before the project write that makes the function fire, so the
@@ -5917,9 +6040,12 @@ async function processApplyPatch(item) {
     ...(item.contractReview ? { contractReview: null } : {}),
     ...(testVersion ? { testVersion } : {}),
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
+    // Reviewed without a click (Flow 8/9) when it needs one.
+    ...autoReviewFields(item, sha),
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
   noteReadyForTesting(project, item.id);
+  if (autoReviewFields(item, sha).autoReview) noteAutoReview(project, item.id);
   // An interface contract changed: flag the tickets that build after this one
   // for review by their own sessions (never edited from here). A failure here
   // never undoes the landing.
@@ -6071,6 +6197,20 @@ async function processRevertFromTrain(item) {
       Object.assign(item, loopPlan.fields);
     } catch (err) {
       console.log(`[train-revert] ${item.id}: couldn't record the send-back (${scrubSecrets(err.message)})`);
+    }
+  }
+  // Escalate after failed rounds (Flow 8/9): a Standard ticket sent back
+  // twice is raised to Advanced here, before the rebuild that follows the
+  // revert fires (every send-back reaches this function).
+  const escalation = modelEscalation(item);
+  if (escalation) {
+    try {
+      const notes = await appendNote(item, escalation.note);
+      await patchItem(item.id, { ...escalation.fields, notes, updatedAt: new Date().toISOString() });
+      Object.assign(item, escalation.fields);
+      console.log(`[train-revert] ${item.id}: raised to Advanced after ${item.countedSendBacks} counted send-backs`);
+    } catch (err) {
+      console.log(`[train-revert] ${item.id}: couldn't raise the model (${scrubSecrets(err.message)})`);
     }
   }
   const commits = Array.isArray(item.deployCommits) ? item.deployCommits.filter(Boolean) : [];
@@ -7640,6 +7780,47 @@ function trainSweepPlan(items, liveCommits) {
 //     that would catch it if one appears)
 // trainLockShouldClear (train-lock.js) is the exact same predicate the
 // Cloud Function uses, so "empty" means the same thing in both places.
+// Stuck trains get a clock and one escalation (RC6wVNJJcPjNTR5hov9W, "Flow
+// 7/9"). A train in a merge conflict, waiting for a person to merge its PR,
+// red with no ticket pinned as the cause, locked with a ticket still not
+// approved, or holding a revert another ticket blocks used to sit with no
+// clock and no alert (29 Oct 2026: red from 05:10 to 20:25). Every pass
+// stamps projects/{id}.trainStuckSince/trainStuckReason when one starts,
+// trainStuckEscalatedAt once it passes its threshold (2 h; 12 h for a locked
+// train with an unapproved ticket) — which makes onTrainStuckEscalated post
+// one message — and clears all three when it ends. card-state.js →
+// trainStuckPatch decides; this only reads and writes.
+const TRAIN_STUCK_PROJECT_FIELDS = ["name", "trainStatus", "trainHold", "trainLocked", "trainReady", "trainTestsRed", "trainStuckSince", "trainStuckReason", "trainStuckEscalatedAt"];
+const TRAIN_STUCK_ITEM_FIELDS = ["status", "deployCommit", "revertRequested", "revertBlockedBy", "trainTest", "title", "projectId"];
+async function sweepStuckTrains(now = Date.now()) {
+  const projects = await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(TRAIN_STUCK_PROJECT_FIELDS) });
+  for (const project of projects) {
+    const watched = project.trainLocked || project.trainStatus === "conflict" || project.trainStatus === "awaiting-human-merge"
+      || project.trainHold === "tests-red" || Object.keys(project.trainTestsRed || {}).length || project.trainStuckSince || project.trainStuckReason;
+    // A project with no train state at all is never stuck, except by a
+    // blocked revert, which needs its cards: read them only for projects
+    // that could be stuck, plus any with a pending revert (below).
+    let items = null;
+    if (watched) items = await itemsForProject(project.id, TRAIN_STUCK_ITEM_FIELDS);
+    else {
+      const reverting = await runQuery({
+        from: [{ collectionId: "backlogItems" }],
+        select: selectFields(TRAIN_STUCK_ITEM_FIELDS),
+        where: { compositeFilter: { op: "AND", filters: [
+          { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: project.id } } },
+          { fieldFilter: { field: { fieldPath: "revertRequested" }, op: "EQUAL", value: { booleanValue: true } } },
+        ] } },
+      });
+      if (!reverting.length) continue;
+      items = reverting;
+    }
+    const patch = cardState.trainStuckPatch(project, items, now);
+    if (!patch) continue;
+    console.log(`[train-stuck] ${project.id}: ${patch.trainStuckEscalatedAt ? `escalated (${project.trainStuckReason})` : patch.trainStuckReason ? `stuck: ${patch.trainStuckReason}` : "no longer stuck"}`);
+    await patchProject(project.id, patch);
+  }
+}
+
 async function reconcileLockedTrains() {
   const locked = await runQuery({
     from: [{ collectionId: "projects" }],
@@ -8328,6 +8509,11 @@ async function main() {
     console.error(`[build-queue] sweep failed: ${err.message}`);
   }
   try {
+    await sweepStuckTrains();
+  } catch (err) {
+    console.error(`[train-stuck] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepRebuildRequests();
   } catch (err) {
     console.error(`[rebuild] sweep failed: ${err.message}`);
@@ -8343,6 +8529,11 @@ async function main() {
     console.error(`[auto-answer] sweep failed: ${err.message}`);
   }
   try {
+    await sweepToolsRetries();
+  } catch (err) {
+    console.error(`[tools] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepSilentBuildSessions();
   } catch (err) {
     console.error(`[silent-build] sweep failed: ${err.message}`);
@@ -8352,7 +8543,13 @@ async function main() {
   } catch (err) {
     console.error(`[deferred-build] sweep failed: ${err.message}`);
   }
+  try {
+    await sweepModelSuggestions();
+  } catch (err) {
+    console.error(`[model-suggest] sweep failed: ${err.message}`);
+  }
   await flushBuildRequests();
+  await requestAutoReviews();
   await requestReadyForTestingNotify();
   try {
     await closeNotifyRoutines();
@@ -8523,6 +8720,8 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
+  toolsRetryPlan, autoReviewFields, autoReviewPending, autoReviewRequestFields, sweepModelSuggestions,
+  sweepStuckTrains,
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   // test/contract-review.test.js — contract-change review flags

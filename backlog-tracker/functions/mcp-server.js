@@ -64,6 +64,7 @@ const ownerFiring = require("./owner-firing");
 // Build order (ZE8h8cfaezOb0eTsRjSH): dependencies as data, cycles refused,
 // and the order a send_to_build click fires in.
 const buildOrder = require("./build-order");
+const cardState = require("./card-state");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 
 // initializeApp() runs in index.js before this module is required; resolve
@@ -1015,6 +1016,15 @@ function unauthorized(res, detail) {
 
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
+const skillBindings = require("./skill-bindings");
+// "auto" (Flow 8/9): take the classifier's suggestion (model-suggest.js),
+// recomputed on every description save; standard/advanced are a choice that
+// is never overridden.
+const MODEL_CHOICES = [...MODEL_REQUIREMENTS, "auto"];
+function modelChoiceFields(choice) {
+  if (choice === "auto") return { modelAuto: true };
+  return { model: normaliseModelRequirement(choice), modelAuto: false };
+}
 const testRounds = require("./test-rounds");
 // Hidden-from-website rule shared with the export, the live feed and the
 // Support Inbox (3HabqHlC4WwL137CYTv1).
@@ -1781,6 +1791,14 @@ function matchTicketText(d, needle, fields) {
   return matchedIn.length ? { matchedIn, snippet } : null;
 }
 
+// The card's status line (card-state.js, shared with the board): state,
+// waitingOn and how long it has waited, in hours.
+function itemStateFields(id, d, project, itemsById, now = Date.now()) {
+  const projectItems = [...itemsById.values()].filter((x) => x && x.projectId === d.projectId);
+  const st = cardState.cardState({ id, ...d }, project || { id: d.projectId }, now, { itemsById: Object.fromEntries(itemsById), projectItems });
+  return { state: st.state, stateLine: st.line, waitingOn: st.waitingOn, ageHours: Math.round((st.ageMs / 3600000) * 10) / 10, overdue: st.warn };
+}
+
 function itemSummary(id, d, projects) {
   const project = projects && projects.get(d.projectId);
   return {
@@ -1797,6 +1815,13 @@ function itemSummary(id, d, projects) {
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
     // Which model the build and review must run on (unset = "standard").
     model: normaliseModelRequirement(d.model),
+    // How the model was chosen (Flow 8/9): the classifier's suggestion and
+    // reasons, whether model follows it, and when failed rounds raised it.
+    modelAuto: d.modelAuto === true,
+    modelSuggested: d.modelSuggested && d.modelSuggested.model
+      ? { model: d.modelSuggested.model, reasons: (Array.isArray(d.modelSuggested.reasons) ? d.modelSuggested.reasons : []).map((r) => (r && r.text) || "").filter(Boolean) }
+      : null,
+    modelEscalatedAt: tsToISO(d.modelEscalatedAt),
     blocked: d.blocked && d.blocked.reason
       ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
       : null,
@@ -2316,6 +2341,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token, and agent tickets you own can't be started at all. Set one up in the console (Settings → My Claude Routine) or call get_routine_setup_instructions.",
+        pipelineHealth: "Sweeping the board? Call get_pipeline_health first: each project's train in one line with its age, and everything waiting on a person or stuck past its threshold, oldest first, with ids.",
         note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets), fail_testing (Failed testing for named Ready for Testing tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
@@ -2530,6 +2556,7 @@ const TOOLS = [
       }
       const page = rows.slice(from, from + limit);
       const last = page[page.length - 1];
+      const stateItems = new Map([...readById].map(([id, d]) => [id, { id, ...d }]));
       const depRefs = new Map();
       for (const r of page) {
         const depIds = Array.isArray(r.d.dependsOnItemIds) ? r.d.dependsOnItemIds : [];
@@ -2541,6 +2568,7 @@ const TOOLS = [
         nextCursor: from + limit < rows.length && last ? encodeListCursor(last.key, last.id) : null,
         items: page.map((r) => {
           const item = itemSummary(r.id, r.d, projects);
+          Object.assign(item, itemStateFields(r.id, r.d, projects.get(r.d.projectId), stateItems));
           if (depRefs.has(r.id)) item.dependsOn = depRefs.get(r.id);
           if (r.hit) { item.matchedIn = r.hit.matchedIn; item.snippet = r.hit.snippet; }
           return item;
@@ -2551,6 +2579,52 @@ const TOOLS = [
         out.truncated = true;
         out.note = `Only the first ${MAX_READ_DOCS} tickets were read, so results may be incomplete. Pass projectId to narrow the read.`;
       }
+      return textResult(out);
+    },
+  },
+  {
+    name: "get_pipeline_health",
+    description: "Call this first when sweeping the board. Read-only. Per project: its train in one line (what it is waiting for, on whom, and since when — e.g. \"Deploy to Main appears when <title> is approved or sent back\", \"Deploy blocked · merge conflict · 3 h\") with trainStuckSince when it is stuck; plus Needs attention: every ticket or train waiting on a person (tester, approver, decision) or stuck past its threshold, oldest first, each with its id, status line, waitingOn and age in hours. The same lines the board shows (card-state.js).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Restrict to one project (from list_projects)." } },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      if (a.projectId !== undefined && typeof a.projectId !== "string") return toolError("projectId must be a string.");
+      const now = Date.now();
+      const projects = await loadProjectsById();
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", a.projectId);
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const items = [];
+      let read = 0;
+      snap.forEach((doc) => {
+        read += 1;
+        const d = doc.data() || {};
+        if ((d.status || "backlog") === "archived") return;
+        items.push({ id: doc.id, ...d });
+      });
+      const projectList = [...projects.values()].filter((p) => !a.projectId || p.id === a.projectId);
+      const itemsById = Object.fromEntries(items.map((i) => [i.id, i]));
+      const hours = (ms) => Math.round((ms / 3600000) * 10) / 10;
+      const trains = projectList.map((p) => {
+        const mine = items.filter((i) => i.projectId === p.id);
+        const t = cardState.trainState(p, mine, now, { itemsById });
+        return {
+          projectId: p.id, project: p.name || "", state: t.state, line: t.line, waitingOn: t.waitingOn,
+          stuckReason: t.stuckReason || null, trainStuckSince: tsToISO(p.trainStuckSince), ageHours: hours(t.ageMs), overdue: t.warn, escalated: t.escalated,
+          onTrain: mine.filter(cardState.onTrain).length,
+        };
+      }).filter((t) => t.onTrain || t.stuckReason || t.state !== "idle");
+      const needsAttention = cardState.needsAttention(items, projectList, now).map((e) => ({
+        kind: e.kind, id: e.id, projectId: e.projectId, project: e.projectName, title: e.title, line: e.line,
+        waitingOn: e.waitingOn, since: e.since, ageHours: hours(e.ageMs), overdue: e.warn, nextAction: e.action,
+      }));
+      const out = { generatedAt: new Date(now).toISOString(), trains, needsAttention, thresholdsHours: Object.fromEntries(Object.entries(cardState.AGE_THRESHOLDS).map(([k, v]) => [k, v / 3600000])) };
+      if (read >= MAX_READ_DOCS) { out.truncated = true; out.note = `Only the first ${MAX_READ_DOCS} tickets were read. Pass projectId to narrow the read.`; }
       return textResult(out);
     },
   },
@@ -2574,7 +2648,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. model (standard by default, or advanced for Claude Opus) says which model must build and review it. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. model says which model must build and review it: auto (the default — the board suggests standard or advanced from the description and records why), standard, or advanced (Claude Opus); a model you give is never overridden. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2584,7 +2658,7 @@ const TOOLS = [
         title: { type: "string", description: "Optional short title; derived from desc when omitted." },
         type: { type: "string", enum: ["feature", "bug"], description: "Default feature." },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
-        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
+        model: { type: "string", enum: MODEL_CHOICES, description: "Which Claude model must build and review it: auto (the default: the board's classifier suggests one from the description and records why), standard, or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model). standard/advanced are your choice and are never overridden." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of tickets (any project) this one must build after. Ticket ids and exact open-ticket titles named in the description's Dependencies section are added automatically." },
         ownedByMe: { type: "boolean", description: "Agent ticket owned by you: it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding). Default false." },
       },
@@ -2604,8 +2678,9 @@ const TOOLS = [
       const title = String(args.title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
       const type = args.type === "bug" || args.type === "feature" ? args.type : intake.type;
       const category = CATEGORIES.includes(args.category) ? args.category : suggestCategory(desc);
-      if (args.model != null && !MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
-      const model = normaliseModelRequirement(args.model);
+      if (args.model != null && !MODEL_CHOICES.includes(args.model)) return toolError(`model must be one of: ${MODEL_CHOICES.join(", ")}.`);
+      // No model, or "auto": the onBacklogItemModelSuggest trigger fills it.
+      const modelFields = args.model != null && args.model !== "auto" ? modelChoiceFields(args.model) : {};
       const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
       // Build order: hand-set dependencies, plus whatever the Dependencies
       // section names (ticket ids, exact titles of open tickets here).
@@ -2636,7 +2711,7 @@ const TOOLS = [
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
         title, desc: intake.desc, type, category,
-        ...(model === "advanced" ? { model } : {}),
+        ...modelFields,
         ...(deps.ids.length ? { dependsOnItemIds: deps.ids, dependsOnSource: deps.source } : {}),
         ...(blocked ? { blocked } : {}),
         // Agent ticket owner (functions/owner-firing.js): only ever the caller.
@@ -2653,7 +2728,10 @@ const TOOLS = [
       await audit(session, "create_backlog_item", { itemId: ref.id, projectId: String(args.projectId), title });
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
-        title, type, category, model, status: "backlog",
+        title, type, category,
+        // "auto" until the intake trigger has scored it (get_backlog_item then
+        // shows the model and modelSuggested with its reasons).
+        model: modelFields.model || "auto", status: "backlog",
         ownerEmail: args.ownedByMe === true ? session.email : null,
         dependsOn: await dependencyRefsFor(deps.ids),
         intake: intake.blocked
@@ -2675,7 +2753,7 @@ const TOOLS = [
         desc: { type: "string" },
         type: { type: "string", enum: ["feature", "bug"] },
         category: { type: "string", enum: CATEGORIES },
-        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
+        model: { type: "string", enum: MODEL_CHOICES, description: "auto (follow the board's suggestion), standard, or advanced (Claude Opus only). standard/advanced are kept over any suggestion." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Replace the tickets this one builds after (any project; [] clears). A loop is refused." },
         ownedByMe: { type: "boolean", description: "true claims an unowned ticket as your agent ticket (it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding)); false releases your own (an admin may release anyone's). Another member's agent ticket can't be claimed." },
       },
@@ -2715,8 +2793,8 @@ const TOOLS = [
         fields.category = args.category;
       }
       if (args.model != null) {
-        if (!MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
-        fields.model = args.model;
+        if (!MODEL_CHOICES.includes(args.model)) return toolError(`model must be one of: ${MODEL_CHOICES.join(", ")}.`);
+        Object.assign(fields, modelChoiceFields(args.model));
       }
       if (args.dependsOnItemIds != null) {
         const cur = snap.data() || {};
@@ -2827,7 +2905,7 @@ const TOOLS = [
   },
   {
     name: "set_phase_skill_bindings",
-    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. This feeds the Routine's prompt, hence admin-only.",
+    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Without projectId or area this edits the global list every run gets; with projectId it edits that project's own list, with area (a ticket category such as \"PH Website\") that area's list — both are added to the global one for the tickets they match. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. A ticket that changes rendered UI always gets ph-designer whatever is bound. This feeds the Routine's prompt, hence admin-only.",
     scope: "board.write",
     role: "admin",
     inputSchema: {
@@ -2836,11 +2914,20 @@ const TOOLS = [
         phase: { type: "string", enum: ["build", "deploy"] },
         add: { type: "array", items: { type: "string" } },
         remove: { type: "array", items: { type: "string" } },
+        projectId: { type: "string", description: "Edit this project's own list (byProject) instead of the global one." },
+        area: { type: "string", enum: CATEGORIES, description: "Edit this ticket area's own list (byArea) instead of the global one." },
       },
       required: ["phase"], additionalProperties: false,
     },
     async run(args, session) {
       if (!["build", "deploy"].includes(args.phase)) return toolError("phase must be build or deploy.");
+      if (args.projectId != null && args.area != null) return toolError("Pass projectId or area, not both.");
+      if (args.area != null && !CATEGORIES.includes(args.area)) return toolError(`area must be one of: ${CATEGORIES.join(", ")}`);
+      if (args.projectId != null) {
+        const p = await db().collection("projects").doc(String(args.projectId)).get();
+        if (!p.exists) return toolError(`No project with id ${args.projectId}.`);
+      }
+      const target = { phase: args.phase, projectId: args.projectId != null ? String(args.projectId) : null, area: args.area != null ? args.area : null };
       const add = (Array.isArray(args.add) ? args.add : []).map((x) => String(x).trim()).filter(Boolean);
       const remove = new Set((Array.isArray(args.remove) ? args.remove : []).map((x) => String(x).trim()));
       if (!add.length && !remove.size) return toolError("Pass at least one slug in add or remove.");
@@ -2851,13 +2938,12 @@ const TOOLS = [
       }
       const ref = db().collection("settings").doc("phaseSkillBindings");
       const snap = await ref.get();
-      const cur = snap.exists && Array.isArray((snap.data() || {})[args.phase]) ? snap.data()[args.phase].map(String) : [];
-      const next = cur.filter((x) => !remove.has(x));
-      for (const slug of add) if (!next.includes(slug)) next.push(slug);
-      if (next.length > 20) return toolError("At most 20 skills can be bound to a phase.");
-      await ref.set({ [args.phase]: next, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
-      await audit(session, "set_phase_skill_bindings", { phase: args.phase, added: add, removed: [...remove] });
-      return textResult({ phase: args.phase, bound: next });
+      const current = snap.exists ? (snap.data() || {}) : {};
+      const next = skillBindings.nextBindingList(current, target, add, [...remove]);
+      if (next.length > skillBindings.MAX_PER_LIST) return toolError("At most 20 skills can be bound to a phase.");
+      await ref.set({ ...skillBindings.bindingWrite(current, target, next), updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
+      await audit(session, "set_phase_skill_bindings", { phase: args.phase, ...(target.projectId ? { projectId: target.projectId } : {}), ...(target.area ? { area: target.area } : {}), added: add, removed: [...remove] });
+      return textResult({ phase: args.phase, ...(target.projectId ? { projectId: target.projectId } : {}), ...(target.area ? { area: target.area } : {}), bound: next });
     },
   },
   {

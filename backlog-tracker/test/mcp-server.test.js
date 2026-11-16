@@ -490,8 +490,9 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("backlogItems").get(created.itemId).model, "advanced");
     r = await call("create_backlog_item", { projectId: "proj1", desc: "Outcome: a plain ticket on the default model." });
     const plain = JSON.parse(r.content[0].text);
-    assert.strictEqual(plain.model, "standard");
+    assert.strictEqual(plain.model, "auto", "no model given: the intake trigger suggests one (Flow 8/9)");
     assert.ok(!("model" in env.store.col("backlogItems").get(plain.itemId)), "the default is left unset on the card");
+    assert.strictEqual(env.store.col("backlogItems").get(created.itemId).modelAuto, false, "a model given is a choice no suggestion overrides");
     r = await call("create_backlog_item", { projectId: "proj1", desc: "Outcome: x", model: "opus-please" });
     assert.strictEqual(r.isError, true);
 
@@ -1089,6 +1090,49 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(env.store.col("projects/proj1/artifactVersions").size, before, "nothing written");
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "snapshot_project_artifact").scope, "board.write");
     for (const n of ["list_artifact_versions", "get_artifact_version"]) assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === n).scope, "board.read");
+  });
+
+  await test("get_pipeline_health: train lines and Needs attention, viewers may call it, it writes nothing", async () => {
+    const items = env.store.col("backlogItems");
+    const H = 3600 * 1000;
+    items.set("ph-stale", { projectId: "proj1", title: "Stale test", status: "ready-for-testing", deployCommit: "c1", statusEnteredAt: new Date(Date.now() - 30 * H).toISOString(), type: "feature" });
+    items.set("ph-asked", { projectId: "proj1", title: "Asked", status: "backlog", blocked: { reason: "needs-decision", note: "A or B", setAt: new Date(Date.now() - 2 * H).toISOString() }, type: "feature" });
+    const VIEWER4 = "healthviewer@ph.example";
+    const idToken = signIn(VIEWER4);
+    addConsoleUser(VIEWER4, { role: "viewer" });
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const auth = await call({ method: "POST", path: "/mcp/authorize/complete", body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read" } });
+    const tok = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "authorization_code", code: new URL(auth.body.redirect).searchParams.get("code"), code_verifier: v, client_id: clientId, redirect_uri: REDIRECT } });
+    const snapshot = () => JSON.stringify([[...items.keys()].sort().map((k) => [k, items.get(k)]), [...env.store.col("projects").keys()].sort().map((k) => [k, env.store.col("projects").get(k)])]);
+    const before = snapshot();
+    const res = await rpc(tok.body.access_token, "tools/call", { name: "get_pipeline_health", arguments: { projectId: "proj1" } });
+    assert.ok(!res.body.error && !res.body.result.isError, JSON.stringify(res.body));
+    const out = JSON.parse(res.body.result.content[0].text);
+    const stale = out.needsAttention.find((e) => e.id === "ph-stale");
+    assert.ok(stale, "the stale Ready for Testing card is listed");
+    assert.strictEqual(stale.waitingOn, "tester");
+    assert.strictEqual(stale.overdue, true);
+    assert.strictEqual(stale.nextAction, "test");
+    assert.ok(stale.ageHours >= 29.9);
+    const asked = out.needsAttention.find((e) => e.id === "ph-asked");
+    assert.strictEqual(asked.waitingOn, "decision");
+    assert.ok(out.needsAttention.indexOf(stale) < out.needsAttention.indexOf(asked), "oldest first");
+    assert.ok(Array.isArray(out.trains));
+    assert.strictEqual(out.thresholdsHours["ready-for-testing"], 24);
+    assert.strictEqual(snapshot(), before, "it changes nothing");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_pipeline_health").scope, "board.read");
+    // list_backlog_items summaries carry the same state.
+    const listed = JSON.parse((await rpc(tok.body.access_token, "tools/call", { name: "list_backlog_items", arguments: { projectId: "proj1", status: "ready-for-testing" } })).body.result.content[0].text);
+    const row = listed.items.find((i) => i.id === "ph-stale");
+    assert.strictEqual(row.state, "testing");
+    assert.strictEqual(row.waitingOn, "tester");
+    assert.ok(row.ageHours >= 29.9);
+    assert.match(row.stateLine, /^Ready to test · 30 h$/);
+    // whoami points at it.
+    const who = JSON.parse((await rpc(tok.body.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.match(who.pipelineHealth, /get_pipeline_health/);
+    items.delete("ph-stale"); items.delete("ph-asked");
   });
 
   await test("snapshots add no writable project field", async () => {
@@ -2510,6 +2554,41 @@ async function rpc(token, method, params, id = 1) {
     projectId: "voiceproj", title: `Ticket ${id}`, desc: "x", type: "feature", category: "HQ Admin", status: "backlog",
   }, over));
   env.store.col("projects").set("voiceproj", { name: "Voice Project", deployBranch: "deploy/voiceproj" });
+
+  // Skills per project and per kind of work (CCPnRjXOH4YMsfy3C49r, "Flow 8/9").
+  await test("set_phase_skill_bindings: global, per project and per area lists, admin only, old shape kept", async () => {
+    env.store.col("skills").set("skBind1", { name: "Build agent", slug: "ph-build-agent", files: [] });
+    env.store.col("skills").set("skBind2", { name: "Docs", slug: "ph-docs", files: [] });
+    env.store.col("settings").set("phaseSkillBindings", { build: ["ph-build-agent"], deploy: [] });
+    const editor = await rpc(tokens.access_token, "tools/call", { name: "set_phase_skill_bindings", arguments: { phase: "build", projectId: "voiceproj", add: ["ph-docs"] } });
+    assert.strictEqual(editor.body.result.isError, true, "admin only");
+    let r = (await adminCall("set_phase_skill_bindings", { phase: "build", projectId: "voiceproj", add: ["ph-docs"] })).body.result;
+    assert.ok(!r.isError, JSON.stringify(r));
+    assert.deepStrictEqual(JSON.parse(r.content[0].text), { phase: "build", projectId: "voiceproj", bound: ["ph-docs"] });
+    r = (await adminCall("set_phase_skill_bindings", { phase: "deploy", area: "PH Website", add: ["ph-build-agent"] })).body.result;
+    assert.ok(!r.isError, JSON.stringify(r));
+    const doc = env.store.col("settings").get("phaseSkillBindings");
+    assert.deepStrictEqual(doc.build, ["ph-build-agent"], "the global list is untouched");
+    assert.deepStrictEqual(doc.byProject.voiceproj.build, ["ph-docs"]);
+    assert.deepStrictEqual(doc.byArea["PH Website"].deploy, ["ph-build-agent"]);
+    assert.strictEqual((await adminCall("set_phase_skill_bindings", { phase: "build", projectId: "voiceproj", area: "PH Website", add: ["ph-docs"] })).body.result.isError, true, "one target at a time");
+    assert.strictEqual((await adminCall("set_phase_skill_bindings", { phase: "build", projectId: "no-such-project", add: ["ph-docs"] })).body.result.isError, true);
+    assert.strictEqual((await adminCall("set_phase_skill_bindings", { phase: "build", area: "Not an area", add: ["ph-docs"] })).body.result.isError, true);
+  });
+
+  await test("model: auto hands the choice back to the suggestion; standard/advanced are a choice", async () => {
+    seedItem("mAuto", { model: "standard", modelAuto: false });
+    let r = (await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "mAuto", model: "auto" } })).body.result;
+    assert.ok(!r.isError, JSON.stringify(r));
+    assert.strictEqual(env.store.col("backlogItems").get("mAuto").modelAuto, true);
+    r = (await rpc(tokens.access_token, "tools/call", { name: "update_backlog_item", arguments: { itemId: "mAuto", model: "advanced" } })).body.result;
+    assert.strictEqual(env.store.col("backlogItems").get("mAuto").model, "advanced");
+    assert.strictEqual(env.store.col("backlogItems").get("mAuto").modelAuto, false);
+    Object.assign(env.store.col("backlogItems").get("mAuto"), { modelSuggested: { model: "advanced", reasons: [{ key: "security", text: "touches security rules" }], version: 1 } });
+    const detail = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_backlog_item", arguments: { itemId: "mAuto" } })).body.result.content[0].text);
+    assert.deepStrictEqual(detail.modelSuggested, { model: "advanced", reasons: ["touches security rules"] });
+    assert.strictEqual(detail.modelAuto, false);
+  });
 
   await test("send_to_build and approve_for_deployment are refused to an editor", async () => {
     for (const name of ["send_to_build", "approve_for_deployment", "fail_testing"]) {

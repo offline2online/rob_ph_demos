@@ -182,7 +182,7 @@ await test("tools/list returns the whole surface", async () => {
     "add_concept_comment", "add_concept_critique", "add_item_comment", "add_lead_contact", "add_lead_note", "approve_deploy_to_main", "approve_for_deployment", "archive_backlog_items", "archive_lead", "clear_blocked", "comment_on_faq_revision", "create_backlog_item", "create_concept",
     "create_faq_article", "create_interface", "create_lead", "create_leads", "create_project_document", "delete_backlog_items", "delete_interface", "delete_lead",
     "delete_project_document", "delete_skill", "demote_project", "fail_testing", "finalise_project", "get_approved_for_deployment_board", "get_artifact_version", "get_backlog_item",
-    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_lead", "get_project_docs", "get_project_document",
+    "get_concept", "get_doc_revision", "get_faq_article", "get_faq_revision", "get_lead", "get_pipeline_health", "get_project_docs", "get_project_document",
     "get_ready_for_testing_board", "get_routine_setup_instructions", "get_skill",
     // Staff Kanban (functions/kanban.js, 21 Oct 2026).
     "kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",

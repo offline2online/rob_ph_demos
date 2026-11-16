@@ -648,7 +648,14 @@ the ticket and in `mcpAuditLog`.
   optional `model`, `standard` | `advanced`), `update_backlog_item` (title,
   desc, type, category, model — **no status**),
   `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only),
-  `add_item_comment`.
+  `add_item_comment`. **Owner scoping**: reads return `ownerEmail` and
+  `contractReview`, but `update_backlog_item`, `archive_backlog_items` and
+  `delete_backlog_items` refuse another member's agent ticket, naming its
+  owner (`backlog-tracker/MCP.md` → "Owner scoping"). **Help-centre
+  visibility**: `list_faq_categories` (read) lists categories and folders
+  with their ids and hidden flags; `set_faq_visibility` (write) hides an
+  article, folder or category from the website (`backlog-tracker/MCP.md` →
+  "Hidden from the website").
 - **`get_ready_for_testing_board` / `get_approved_for_deployment_board`
   are MCP Apps (SEP-1865), not embedded HTML.** The tool's
   `_meta.ui.resourceUri` binds a `ui://backlog-tracker/…` view served via

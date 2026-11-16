@@ -309,6 +309,18 @@ safe and moving:
   item; `run-backlog-automation.js` refuses an Advanced patch whose
   `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
   requirement".
+- **Model, skills and tools chosen per ticket** (16 Nov 2026, "Flow 8/9") —
+  `public/js/model-suggest.js` (generated CommonJS copy
+  `functions/model-suggest.js`, `scripts/gen-model-suggest-cjs.sh`) suggests
+  the model from the ticket at intake and records why (`modelSuggested`);
+  `model` follows it unless a person chose one. Two failed rounds raise a
+  Standard ticket to Advanced; an Advanced ticket reviewed on a non-Opus is
+  not reviewed; Advanced and security/pipeline tickets are reviewed without a
+  click when they land. Skills come per project and per area
+  (`functions/skill-bindings.js`), `ph-designer` for every UI ticket;
+  `projects/{id}.requiredConnectors` and a project's own Routine
+  (`projectRoutineBindings`, write-only) are on the Docs page; ⋮ → Builds by
+  model. See `REQUIREMENTS.md` → "Chosen per ticket automatically".
 
 Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 `ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.
@@ -805,6 +817,31 @@ unlocks on its own the moment the automation flips `status` to
 "Self-healing Staff Kanban E2E loop"). A red case raises an auto-approved
 "E2E auto-fix" bug onto the same train, the suite re-runs, and Deploy to Main
 waits only for green.
+
+### Every card and train says what it waits for (16 Nov 2026)
+
+Each card's first row under its title is one status line from
+`public/js/card-state.js` ("Ready to test · round 2 · 5 h", "Waiting for your
+answer · 2 d", "Approved · waits for <title> to be approved"), with its time
+in column beside the type badge (warning colour past `AGE_THRESHOLDS`). A
+project header says why Deploy to Main is missing, and **Needs attention**
+at the top of the board lists everything waiting on a person or stuck, oldest
+first, with one action button and a "Waiting on me" filter. Over MCP the same
+answer is `get_pipeline_health`.
+
+- `functions/card-state.js` is a generated CommonJS copy: edit
+  `public/js/card-state.js`, then run `scripts/gen-card-state-cjs.sh`
+  (`test/card-state.test.mjs` fails if they drift).
+- `statusEnteredAt` is stamped by the `onBacklogItemStatusEntered` trigger;
+  run `scripts/backfill-status-entered.js --apply` once after the release
+  (with `BOARD_API_KEY`) to fill older cards. Before that, cards fall back to
+  `updatedAt`.
+- A stuck train (conflict, waiting for a human merge, red with no culprit,
+  locked with an unapproved ticket, revert blocked) is clocked by
+  `sweepStuckTrains` in the automation and escalated once, after 2 h (12 h
+  for the locked case), through `NOTIFY_WEBHOOK_URL`
+  (`onTrainStuckEscalated`). See `REQUIREMENTS.md` → "Card state line",
+  "Needs attention", "Stuck trains".
 
 ### Cards that ship together are grouped on the board
 
@@ -1930,7 +1967,10 @@ validation as `set_my_routine_binding`; write-only).
 only on its owner's binding — Ready for Dev, Deploy to Main and Groom
 Backlog alike, never the shared secrets, and never on anyone else's click
 (the pipeline's own automatic rebuilds, stamped `notifyAutomationAt`, also
-use the owner's binding). An owner with no binding gets nothing fired, and
+use the owner's binding). Review Batch and the Ready for Testing
+presentation follow the owner too (rFNYoDzDdDtQJpupDNpN): one session per
+owner on that owner's binding, whoever pressed, and untagged tickets as
+before; Run E2E and the release audit name no ticket and are exempt. An owner with no binding gets nothing fired, and
 the board disables the control with an info link to My Claude Routine. Rule
 in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
 full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their

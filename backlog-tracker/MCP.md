@@ -121,7 +121,7 @@ mis-edited collection can never lock everyone out.
 
 ## What the agent can and can't do
 
-**Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
+**Can — read:** `whoami`, `get_pipeline_health`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_project_documents`, `get_project_document`,
@@ -225,6 +225,21 @@ carries `matchedIn` and a `snippet`. `truncated: true` means the 1,500-ticket
 read limit was hit, so pass `projectId`. `get_backlog_item` includes
 `lastFailureReason` (why it last failed testing or was ejected). Example:
 `list_backlog_items({projectId: "mIPdOCAWevhrgD8g2tCZ", search: "Failed testing", searchIn: ["notes"]})`.
+
+**Pipeline health — call it first when sweeping the board** (RC6wVNJJcPjNTR5hov9W,
+16 Nov 2026). `get_pipeline_health` (read-only, viewers too; optional
+`projectId`) returns, per project with anything on its train or stuck, the
+train's state line (what it waits for, on whom), `stuckReason`,
+`trainStuckSince`, `ageHours`, `overdue` and `escalated`; and `needsAttention`:
+every ticket or train waiting on a person (`waitingOn` tester, approver or
+decision) or stuck past its threshold, oldest first, each with `id`, `line`,
+`waitingOn`, `ageHours` and `nextAction` (open, answer, test, deploy). Every
+`list_backlog_items` summary also carries `state`, `stateLine`, `waitingOn`
+(`nobody`, `tester`, `approver`, `decision`, `automation`, `another ticket`,
+`another project`), `ageHours` (time in that state) and `overdue`. The lines
+come from `public/js/card-state.js` (its CommonJS copy is
+`functions/card-state.js`), the same module the board draws, so an agent and
+the board say the same thing. `whoami` points to it (`pipelineHealth`).
 
 **What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
 in `functions/mcp-server.js`) are the first text a connected agent reads. They
@@ -370,6 +385,17 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
 | | `upsert_prospects`, leads | `list_prospects`, `list_leads`, `get_lead` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
+
+**Model: chosen for you unless you choose.** `create_backlog_item` and
+`update_backlog_item` take `model`: `auto` (the default on create — the
+board's classifier suggests `standard` or `advanced` from the description and
+records why, and works it out again whenever the description is saved),
+`standard` or `advanced` (Claude Opus). A model you give is never overridden
+by a suggestion; `auto` hands it back. `list_backlog_items` and
+`get_backlog_item` return `model`, `modelAuto`, `modelSuggested`
+(`{model, reasons}`, the reasons in words) and `modelEscalatedAt` (set when
+two failed rounds raised a Standard ticket to Advanced). See
+`REQUIREMENTS.md` → "Chosen per ticket automatically".
 
 **Build order: what a ticket builds after.** `create_backlog_item` takes an
 optional `dependsOnItemIds`: up to 20 ticket ids, from any project, that
@@ -832,7 +858,7 @@ sign-in on `/mcp/authorize`.
 ## Blocked flag and phase skill bindings
 
 - `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
-- `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).
+- `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt). With `projectId` it edits that project's own list (`byProject`), with `area` (a ticket category) that area's (`byArea`); both are added to the global list for the tickets they match, and a UI ticket always gets `ph-designer` (16 Nov 2026, "Flow 8/9").
 
 ## Project freeze: `finalise_project` and `unfreeze_project`
 

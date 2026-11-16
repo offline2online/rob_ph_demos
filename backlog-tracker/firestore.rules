@@ -181,7 +181,10 @@ service cloud.firestore {
     function humanProjectUpdateOk() {
       let changed = incoming().diff(resource.data).affectedKeys();
       // trainHold (incl. "queued", the deploy queue's hold) is the automation's too.
-      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "notifyAutomationAt", "trainHold"])
+      // reviewScope (Flow 8/9) is the automation's automatic-review request.
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "notifyAutomationAt", "trainHold", "reviewScope"])
+        // The project's own Routine (Flow 8/9): only an admin says one is set.
+        && (!changed.hasAny(["routineBoundAt"]) || isAdmin())
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
@@ -212,7 +215,10 @@ service cloud.firestore {
         && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")))
         // Owned paths (wPoSOXfp8Em06Vzp3Cz7): a member edits them on the
         // Docs page like repoFolder; a short list of repo-relative prefixes.
-        && (!("ownedPaths" in incoming()) || incoming().ownedPaths == null || (incoming().ownedPaths is list && incoming().ownedPaths.size() <= 30));
+        && (!("ownedPaths" in incoming()) || incoming().ownedPaths == null || (incoming().ownedPaths is list && incoming().ownedPaths.size() <= 30))
+        // Required tools (Flow 8/9): connector names a build of this project
+        // needs, edited on the Docs page.
+        && (!("requiredConnectors" in incoming()) || incoming().requiredConnectors == null || (incoming().requiredConnectors is list && incoming().requiredConnectors.size() <= 10));
     }
 
     // The type every concept and project carries (ticket ufOwuueuj1f5vmeN0xi2):
@@ -425,7 +431,14 @@ service cloud.firestore {
         // dependent when its upstream ticket's build changed an interface
         // contract, cleared when the dependent's own patch lands. The
         // automation's alone, so nobody can dismiss or fake it from a tab.
-        "contractReview"];
+        "contractReview",
+        // Model chosen per ticket (16 Nov 2026, CCPnRjXOH4YMsfy3C49r): the
+        // classifier's verdict, when the ticket was raised to Advanced after
+        // failed rounds, the commit an automatic review was requested for, and
+        // the one automatic retry of a tools-unavailable ticket. The trigger
+        // and the automation write them; a person's own choice is `model`
+        // (with modelAuto false), which stays theirs.
+        "modelSuggested", "modelEscalatedAt", "autoReview", "toolsRetries"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -468,6 +481,9 @@ service cloud.firestore {
           || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*"))) &&
         // Per-ticket model requirement: unset means "standard".
         (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]) &&
+        // Flow 8/9: true while model follows the classifier's suggestion; a
+        // person's own choice writes false.
+        (!("modelAuto" in incoming()) || incoming().modelAuto is bool) &&
         // Build order: the tickets this one builds after — a list of at most
         // 20 ids (a rules list can't be walked, so the strings are checked by
         // their first and last entry; the picker only ever writes ids).
@@ -951,6 +967,20 @@ service cloud.firestore {
     // member could read — see backlog-tracker/SECURITY-PERFORMANCE.md.)
     match /routineBindings/{email} {
       allow read, write: if false;
+    }
+    // projectRoutineBindings/{projectId} = { fireUrl, token, boundAt,
+    // boundByEmail } — a project's OWN Routine (16 Nov 2026, Flow 8/9), so a
+    // project that needs special tools can have a Routine that has them.
+    // Write-only: an admin sets or clears it from the project's Docs page,
+    // and nobody, an admin included, can read it back; functions/index.js
+    // reads it with the service account when it fires for that project.
+    match /projectRoutineBindings/{projectId} {
+      allow read: if false;
+      allow create, update: if isAdmin()
+        && incoming().keys().hasOnly(["fireUrl", "token", "boundAt", "boundByEmail"])
+        && incoming().fireUrl is string && incoming().fireUrl.matches("^https://api[.]anthropic[.]com/.*") && incoming().fireUrl.size() <= 2000
+        && incoming().token is string && incoming().token.size() > 0 && incoming().token.size() <= 4000;
+      allow delete: if isAdmin();
     }
 
     // ── Media Studio provider keys (functions/media-keys.js) ───────────────
