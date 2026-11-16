@@ -10,6 +10,8 @@ export const SETTINGS_PAGES = [
   { key: "automations", label: "Automations", icon: "bolt" },
   { key: "integrations", label: "Integrations & MCP", icon: "api" },
   { key: "support", label: "Support inbox", icon: "inbox" },
+  // Each member's own personal Claude Routine binding (xFzQgynkoMdV33iWJFZq).
+  { key: "routine", label: "My Claude Routine", icon: "smart_toy" },
 ];
 export const DEFAULT_SETTINGS_PAGE = "user-management";
 // Non-admins never see User Management, so they open on the next tab.

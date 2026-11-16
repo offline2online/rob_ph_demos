@@ -372,6 +372,50 @@ async function rpc(token, method, params, id = 1) {
     assert.match(payload.bootstrapPrompt, /raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/backlog-tracker\/ROUTINE_INSTRUCTIONS\.md/);
   });
 
+  // ── guided Routine setup on connect (BXkUvoayo98j744RUCy8) ─────────────
+  await test("initialize walks an unbound member through Routine setup, and stops once they are bound", async () => {
+    env.store.col("routineBindings").delete(TEAMMATE);
+    const init = async () => (await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} })).body.result.instructions;
+    const unbound = await init();
+    assert.ok(unbound.startsWith(mcp.__test.ROUTINE_SETUP_INSTRUCTIONS), "the setup walkthrough comes first, before other work");
+    assert.ok(unbound.endsWith(mcp.__test.SERVER_INSTRUCTIONS), "the normal instructions still follow");
+    for (const w of ["Before other work", "get_routine_setup_instructions", "agentGuidance", "hasRoutineBinding", "Never repeat the token"]) {
+      assert.ok(unbound.includes(w), `setup instructions mention ${w}`);
+    }
+    assert.ok(unbound.length <= 3700, `an unbound member's instructions are ${unbound.length} characters`);
+    const setup = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_routine_setup_instructions", arguments: {} })).body.result.content[0].text);
+    const guide = setup.agentGuidance.join(" ");
+    for (const w of ["one step at a time", "wait for the person", "fenced code block", "set_my_routine_binding once", "whoami", "Never ask for the token again", "remind them once"]) {
+      assert.ok(guide.includes(w), `agentGuidance mentions ${w}`);
+    }
+    assert.strictEqual(setup.routinesUrl, "https://claude.ai/code/routines");
+    assert.deepStrictEqual(setup.walkthrough.map((s) => s.step), [1, 2, 3, 4]);
+    assert.strictEqual(setup.walkthrough[0].link, "https://claude.ai/code/routines");
+    assert.strictEqual(setup.walkthrough[1].copy, "bootstrapPrompt");
+    assert.match(setup.walkthrough[2].say, /\/fire/);
+    assert.match(setup.walkthrough[3].say, /set_my_routine_binding/);
+
+    await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_setup/fire", token: "sk-ant-setup-walkthrough" },
+    });
+    const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(who.hasRoutineBinding, true);
+    const bound = await init();
+    assert.strictEqual(bound, mcp.__test.SERVER_INSTRUCTIONS, "a bound member's reconnect shows no setup prompt");
+    assert.ok(!bound.includes("sk-ant-setup-walkthrough"));
+    env.store.col("routineBindings").delete(TEAMMATE);
+  });
+
+  await test("a legacy consoleUsers binding also counts as bound at initialize", async () => {
+    const row = env.store.col("consoleUsers").get(TEAMMATE);
+    env.store.col("consoleUsers").set(TEAMMATE, Object.assign({}, row, { routineFireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_old/fire", routineFireToken: "sk-ant-legacy-token" }));
+    try {
+      const res = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      assert.strictEqual(res.body.result.instructions, mcp.__test.SERVER_INSTRUCTIONS);
+    } finally { env.store.col("consoleUsers").set(TEAMMATE, row); }
+  });
+
   await test("set_my_routine_binding is board.write; a viewer is refused", async () => {
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_my_routine_binding").scope, "board.write");
     assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_routine_setup_instructions").scope, "board.read");
@@ -761,7 +805,12 @@ async function rpc(token, method, params, id = 1) {
     }
     for (const t of tools.filter((x) => x.scope === "board.write" || x.role)) assert.ok(text.includes(t.name), `instructions never name ${t.name}`);
     for (const t of tools.filter((x) => x.scope === "board.write" && /deploy|merge/.test(x.name))) assert.ok(who.includes(t.name), `whoami note never names ${t.name}`);
-    assert.ok(text.length <= 3700, `instructions are ${text.length} characters`);
+    // The Routine setup walkthrough is prepended only for an unbound member
+    // (BXkUvoayo98j744RUCy8), so the standing instructions keep their own cap.
+    const base = mcp.__test.SERVER_INSTRUCTIONS;
+    assert.ok(base.length <= 3700, `instructions are ${base.length} characters`);
+    const withSetup = base.length + 1 + mcp.__test.ROUTINE_SETUP_INSTRUCTIONS.length;
+    assert.ok(withSetup <= 3700, `instructions with the Routine setup block are ${withSetup} characters`);
     assert.match(text, /get_ready_for_testing_board/);
     assert.match(text, /startHereDocId/);
     assert.match(text, /project_handover/);
@@ -1583,6 +1632,48 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
   });
 
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ──────────────────────
+  await test("create_faq_article can create a hidden-from-website draft", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Run your own retail media: getting set up", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: true },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.hiddenFromWebsite, true);
+    assert.strictEqual(env.store.col("faqArticles").get(payload.articleId).hiddenFromWebsite, true);
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_faq_article", arguments: { title: "Bad flag", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: "yes" } });
+    assert.strictEqual(bad.body.result.isError, true);
+  });
+
+  await test("set_faq_visibility hides articles and categories; showing a live article or a category is a person's job", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_faq_visibility", arguments: args });
+    env.store.col("faqCategories").set("catHid", { name: "Run your own retail media", icon: "storefront", order: 9 });
+    env.store.col("faqCategories").set("catHidSub", { name: "Set up", icon: "folder", order: 0, parentId: "catHid" });
+    const live = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Live one", slug: "live-vis", bodyMd: "<p>x</p>", status: "published" });
+    const draft = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Draft one", slug: "draft-vis", bodyMd: "<p>x</p>", status: "draft", hiddenFromWebsite: true });
+    const hideLive = JSON.parse((await call({ articleId: live.id, hiddenFromWebsite: true })).body.result.content[0].text);
+    assert.strictEqual(hideLive.updated, true);
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    const showLive = await call({ articleId: live.id, hiddenFromWebsite: false });
+    assert.strictEqual(showLive.body.result.isError, true, "showing a live article launches it");
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    JSON.parse((await call({ articleId: draft.id, hiddenFromWebsite: false })).body.result.content[0].text);
+    assert.strictEqual(env.store.col("faqArticles").get(draft.id).hiddenFromWebsite, false, "a draft can be un-hidden");
+    await call({ categoryId: "catHid", hiddenFromWebsite: true });
+    assert.strictEqual(env.store.col("faqCategories").get("catHid").hiddenFromWebsite, true);
+    assert.strictEqual((await call({ categoryId: "catHid", hiddenFromWebsite: false })).body.result.isError, true);
+    assert.strictEqual((await call({ hiddenFromWebsite: true })).body.result.isError, true, "needs an id");
+    assert.strictEqual((await call({ articleId: live.id, categoryId: "catHid", hiddenFromWebsite: true })).body.result.isError, true, "only one id");
+    assert.strictEqual((await call({ categoryId: "nope", hiddenFromWebsite: true })).body.result.isError, true);
+    const cats = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_faq_categories", arguments: {} })).body.result.content[0].text);
+    const sub = cats.categories.find((c) => c.id === "catHidSub");
+    assert.deepStrictEqual([sub.hiddenFromWebsite, sub.hiddenFromWebsiteOwnFlag], [true, false], "a folder inherits its category's flag");
+    const got = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { articleId: live.id } })).body.result.content[0].text);
+    assert.strictEqual(got.hiddenFromWebsite, true);
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_faq_visibility").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "list_faq_categories").scope, "board.read");
+  });
+
   let liveArticleId = null;
   await test("proposes an update to a live article as a pendingRevision, leaving the live fields untouched", async () => {
     const ref = await env.db.collection("faqArticles").add({
@@ -2132,6 +2223,10 @@ async function rpc(token, method, params, id = 1) {
       const search = await callDocs(tok.body.access_token, "list_project_documents", { projectId: "docsproj", query: "text" });
       assert.strictEqual(search.isError, false);
       assert.strictEqual(env.store.col("mcpAuditLog").size, rowsBefore, "reads write no audit row");
+      // A viewer can't call set_my_routine_binding, so it is never walked
+      // through Routine setup (BXkUvoayo98j744RUCy8).
+      const init = await rpc(tok.body.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      assert.strictEqual(init.body.result.instructions, mcp.__test.SERVER_INSTRUCTIONS);
     } finally { clearDocs(); }
   });
 

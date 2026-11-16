@@ -37,6 +37,7 @@ global.fetch = async (url, o = {}) => {
       if (w.update) for (const k of w.updateMask.fieldPaths) doc[k] = w.update.fields[k];
       for (const ft of (w.updateTransforms || w.transform.fieldTransforms || [])) {
         const have = (doc[ft.fieldPath] && doc[ft.fieldPath].arrayValue.values) || [];
+        if (ft.removeAllFromArray) { doc[ft.fieldPath] = { arrayValue: { values: have.filter((h) => !ft.removeAllFromArray.values.some((v) => JSON.stringify(v) === JSON.stringify(h))) } }; continue; }
         const add = ft.appendMissingElements.values.filter((v) => !have.some((h) => JSON.stringify(h) === JSON.stringify(v)));
         doc[ft.fieldPath] = { arrayValue: { values: [...have, ...add] } };
       }

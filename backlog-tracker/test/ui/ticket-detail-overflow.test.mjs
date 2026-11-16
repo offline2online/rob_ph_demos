@@ -5,11 +5,19 @@
 // the page or inside the modal panel, and that nothing pokes past the
 // viewport's right edge.
 //
+// The tickets on the boards themselves (jcQCHLGeLP50iOeh1ZnJ) are checked
+// too: on the Agent board no column of tickets scrolls sideways and no ticket
+// is wider than its column, in every column; on the Staff Kanban no ticket is
+// wider than its column and a ticket only pans vertically under a finger
+// (touch-action: pan-y), so a sideways swipe on a ticket never moves it or
+// the board.
+//
 // Run with:  cd backlog-tracker/test && node ui/ticket-detail-overflow.test.mjs
 import assert from "node:assert";
 import { startHarness, until } from "./harness.mjs";
+import { kanbanSeed, cardOfTask, KB } from "./kanban-seed.mjs";
 
-const WIDTHS = [390, 820, 1180, 1440];
+const WIDTHS = [390, 820, 1024, 1180, 1440];
 const T0 = 1_760_000_000_000;
 const t = (ms) => ({ $ts: ms });
 const PID = "p1";
@@ -103,6 +111,54 @@ try {
       await o.close();
     }
   }
+  // ── The boards: tickets never scroll left or right (jcQCHLGeLP50iOeh1ZnJ) ──
+  const boardScan = (sel) => {
+    const out = [];
+    for (const box of document.querySelectorAll(sel.lists)) {
+      if (!box.getClientRects().length) continue;
+      if (box.scrollWidth > box.clientWidth + 1) out.push(`${box.id || box.className} scrolls sideways (${box.scrollWidth} > ${box.clientWidth})`);
+      const br = box.getBoundingClientRect();
+      for (const card of box.querySelectorAll(sel.card)) {
+        const cr = card.getBoundingClientRect();
+        if (cr.right > br.right + 1) out.push(`a ticket in ${box.id || box.className} is wider than its column by ${Math.round(cr.right - br.right)}px`);
+        if (card.scrollWidth > card.clientWidth + 1) out.push(`a ticket in ${box.id || box.className} overflows sideways (${card.scrollWidth} > ${card.clientWidth})`);
+        const ta = getComputedStyle(card).touchAction;
+        if (sel.panY && ta !== "pan-y") out.push(`a ticket's touch-action is ${ta}, not pan-y`);
+      }
+    }
+    return [...new Set(out)];
+  };
+  const BOARD_STATUSES = ["backlog", "ready-for-testing", "ready-to-publish", "published-live"];
+  for (const width of WIDTHS) {
+    const label = `agent board tickets @${width}px`;
+    const o = await harness.open({ seed: { user: { email: "editor@ph.example", role: "editor" }, docs: {
+      projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
+      backlogItems: Object.fromEntries(BOARD_STATUSES.map((status, i) => [`s${i}`, { projectId: PID, title: `Title ${LONG_URL}`, desc: longDesc, type: "bug", category: "HQ Admin", status, notes: notes.slice(0, 2), createdAt: t(T0 + i), updatedAt: t(T0 + i) }])),
+    } }, width, height: 900 });
+    try {
+      await o.page.waitForSelector(".col-list .card", { timeout: 15000 });
+      await until(() => o.page.evaluate(() => document.querySelectorAll(".col-list .card").length >= 4), "every column's ticket rendered");
+      const bad = await o.page.evaluate(boardScan, { lists: ".col-list", card: ".card", panY: false });
+      assert.deepStrictEqual(bad, [], bad.join("; "));
+      console.log(`PASS  ${label}`);
+    } catch (err) { failed += 1; console.log(`FAIL  ${label}\n      ${String(err.message).split("\n").join("\n      ")}`); }
+    await o.close();
+  }
+  const k0 = Object.keys(KB.kanbanTasks)[0];
+  const longTask = { ...KB.kanbanTasks[k0], title: `Title ${LONG_URL}`, description: `<p>${LONG_URL}</p>`, descriptionText: LONG_URL, labels: ["a-long-label-" + "z".repeat(60)] };
+  for (const width of WIDTHS) {
+    const label = `staff kanban tickets @${width}px`;
+    const o = await harness.open({ seed: kanbanSeed({ user: { email: "editor@ph.example", role: "admin" }, extra: { kanbanTasks: { [k0]: longTask }, kanbanCards: { [k0]: cardOfTask({ ...longTask, key: k0 }) } } }), width, height: 900, hash: "#staff-kanban" });
+    try {
+      await o.page.waitForSelector(".kb-card", { timeout: 20000 });
+      const bad = await o.page.evaluate(boardScan, { lists: ".kb-list", card: ".kb-card", panY: true });
+      assert.deepStrictEqual(bad, [], bad.join("; "));
+      const pageW = await o.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(pageW <= 0, `the page scrolls sideways by ${pageW}px`);
+      console.log(`PASS  ${label}`);
+    } catch (err) { failed += 1; console.log(`FAIL  ${label}\n      ${String(err.message).split("\n").join("\n      ")}`); }
+    await o.close();
+  }
 } finally { await harness.close(); }
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
-console.log(`\nticket detail never scrolls sideways at ${WIDTHS.join(", ")} px`);
+console.log(`\nticket detail, and the tickets on both boards, never scroll sideways at ${WIDTHS.join(", ")} px`);
