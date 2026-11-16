@@ -19,6 +19,14 @@ export const place = (id) => PLACES.find((x) => x.id === id);
 export const isTouch = (profile) => !!profile.touch;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A finger held on a card: the board starts a touch drag from a long-press timer (260 ms), and a
+// finger that moves more than 8 px before that timer has fired is a scroll, which drops the drag.
+// A busy runner can fire the timer late, so the hold lasts until the drag has started, not a fixed time.
+export async function heldDown(p, o = {}) {
+  if (o.holdMs) await sleep(o.holdMs);
+  await p.waitForFunction(() => document.body.classList.contains("kb-drag-active"), null, { timeout: 8000 });
+}
+
 // A tap on touch profiles, a click elsewhere.
 export const press = (p, sel, o) => (p.profile && p.profile.touch ? p.tap(sel, o) : p.click(sel, o));
 
@@ -170,7 +178,7 @@ export async function dragCard(p, key, target, o = {}) {
   // On a phone the carousel scrolls sideways: bring the card's column to the middle.
   let b = await (await p.$(card)).boundingBox();
   await P.down(b.x + Math.min(30, b.width / 2), b.y + Math.min(20, b.height / 2));
-  if (input === "touch") await sleep(o.holdMs || 420);
+  if (input === "touch") await heldDown(p, o);
   const cx = b.x + Math.min(30, b.width / 2), cy = b.y + Math.min(20, b.height / 2);
   await P.move(cx + 14, cy + 10, 3);
   const sel = target.zone ? `.kb-close-zone[data-resolution="${target.zone}"]` : target.sel || (target.lane ? `.kb-lane-cell[data-lane="${target.lane}"][data-status="${target.status}"] .kb-list, .kb-lane-cell[data-lane="${target.lane}"][data-status="${target.status}"]` : `.kb-col[data-status="${target.status}"] .kb-list`);
@@ -286,7 +294,7 @@ export async function pickUp(p, key, input, o = {}) {
   const b = await (await p.$(sel)).boundingBox();
   const x = b.x + Math.min(30, b.width / 2), y = b.y + Math.min(20, b.height / 2);
   await P.down(x, y);
-  if (input === "touch") await sleep(o.holdMs || 420);
+  if (input === "touch") await heldDown(p, o);
   await P.move(x + 14, y + 10, 3);
   P.at = { x: x + 14, y: y + 10 };
   return P;
