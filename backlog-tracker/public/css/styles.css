@@ -603,6 +603,22 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 }
 .train-locked-icon { font-size: 15px; flex-shrink: 0; }
 
+/* Deploy queue and shared files between trains (wPoSOXfp8Em06Vzp3Cz7) — see
+   public/js/train-overlap.js. The queued line is informational (muted, same
+   dashed status-line shape as the train-locked hint); the shared-files line
+   and the card chips are neutral unless the two train tips conflict, which
+   uses the warning colour so it is fixed before either train is approved. */
+.project.collapsed .train-queued-hint, .project.collapsed .train-shared-hint { display: none; }
+.train-queued-hint, .train-shared-hint {
+  display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; box-sizing: border-box;
+  background: #fafafa; color: #595959; border: 1px dashed #d9d9d9; border-radius: 6px;
+  padding: 6px 10px; font-size: 12px;
+}
+.train-shared-hint-warn { background: rgba(201, 138, 10, .1); color: var(--warning); border-color: var(--warning); }
+.train-overlap-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-size: 11px; font-weight: 500; line-height: 1.6; padding: 1px 8px 1px 5px; margin: 0 4px 4px 0; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fafafa; color: #333333; cursor: default; overflow-wrap: anywhere; }
+.train-overlap-chip .material-symbols-outlined { font-size: 14px; flex-shrink: 0; }
+.train-overlap-chip-warn, .train-overlap-chip-owned { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+
 /* "Docs behind main" — see docsBehindChipHTML() in js/app.js. Amber, same
    warning family as the train-locked hint; a button, since it opens the Docs
    page where the reason is spelled out. */

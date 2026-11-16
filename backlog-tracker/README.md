@@ -315,6 +315,25 @@ Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 
 ### The deployment train — one branch and one PR per project
 
+**Late arrivals, the deploy queue and shared files (15 Nov 2026,
+wPoSOXfp8Em06Vzp3Cz7).** A patch that becomes ready while its project's
+train is closing (locked, or deploying) is held on the card ("Built — joins
+the next release") and lands by itself after the merge, never on top of the
+version bump. Deploy to Main enters `settings/deployQueue`: trains that share
+files or a deploy workflow merge one at a time in click order ("Queued
+behind <project>'s deploy"), and a queued train is not synced, tested or
+bumped until it reaches the head; then it merges main, tests that head once
+and bumps. A stalled head (60 minutes without progress) is passed over and
+keeps its place. `version.js` conflicts on the `APP_VERSION` line resolve to
+main's line. A landed ticket records what it shares with other trains
+(`sharedWith`, chip "Also changed on <project>'s train", or "Conflicts with
+…" in the warning colour when `git merge-tree` of the tips conflicts) and
+files another project owns (`foreignPaths`, `projects.ownedPaths`, chip
+"Changes <project>'s files"). Pure rules: `functions/deploy-queue.js`
+(`test/deploy-queue.test.js`); view: `public/js/train-overlap.js`
+(`test/train-overlap-view.test.mjs`). REQUIREMENTS.md → "Late arrivals",
+"Deploy queue", "Shared files between trains".
+
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
 with no ticket of its own is fast-forwarded to main; a train carrying

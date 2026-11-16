@@ -74,6 +74,11 @@ nominally every 2 minutes, in practice up to ~12. Either way the wait is
 not something this run can shorten. The one
 thing that *would* make it worse is setting `status` early yourself — see
 the explicit "Do NOT set `status`" rule in step 4 below for why.
+If the project's train is already closing when your patch is ready (a
+ticket on it approved, or its deploy running), the automation does not land
+it: the card reads "Built — joins the next release" and the patch lands by
+itself right after that train merges (`buildAfterTrain`, 15 Nov 2026). That
+is expected too; do not re-patch or set anything to hurry it.
 
 **First, check which flow this fire actually is — `text` starts differently
 for each.** This file covers three differently-shaped fires from the same

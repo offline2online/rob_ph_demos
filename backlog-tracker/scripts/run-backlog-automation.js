@@ -61,6 +61,8 @@ const { hasIntakePlaceholder } = require("../functions/intake");
 const buildOrder = require("../functions/build-order");
 const { modelGuardRefusal } = require("../functions/model-requirement");
 const testRounds = require("../functions/test-rounds");
+// Late arrivals, the deploy queue, shared files between trains (wPoSOXfp8Em06Vzp3Cz7).
+const deployQueue = require("../functions/deploy-queue");
 const kanbanHeal = require("./kanban-e2e-heal");
 const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
@@ -1260,6 +1262,10 @@ async function sweepRebuildRequests() {
 // "build", "wait" (still locked, or waiting on an answer) or "clear" (it no
 // longer needs one: it left Backlog, has a patch, or its project is gone).
 function deferredBuildOutcome(item, project) {
+  // A built patch held for the next release (deployQueue.lateArrivalAction):
+  // processApplyPatch lands it once the train has merged and clears the flag
+  // itself, so the sweep leaves it alone rather than clearing the hold.
+  if (item && item.status === "backlog" && item.patchReady && project) return "wait";
   if (!item || item.status !== "backlog" || item.patchReady || !project) return "clear";
   if (item.blocked && item.blocked.reason) return "wait";
   return project.trainLocked ? "wait" : "build";
@@ -4592,8 +4598,38 @@ function tryAutoResolvePackageJsonConflict(conflicted) {
 // (syncTrainWithMain before a ticket lands, processDeployTrain at Deploy to
 // Main): package.json first, then the FAQ index, then generated build
 // output. A merge resolves only if every conflicted path was handled.
+// version.js (wPoSOXfp8Em06Vzp3Cz7): every train's deploy bumps the same
+// APP_VERSION line, so a train holding a stale bump conflicts with main on it
+// (PR #585, 14 Nov 2026: held 90 minutes, approved deploy dropped). A
+// conflict confined to that line takes main's file — processDeployTrain
+// recomputes the bump from main afterwards — and the merge carries on. Any
+// other difference in the file is left for a person.
+function tryAutoResolveVersionJsConflict() {
+  const show = (stage) => {
+    try { return execFileSync("git", ["show", `:${stage}:${VERSION_JS}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }); }
+    catch { return null; }
+  };
+  const resolved = deployQueue.resolveVersionJsConflict(show(2), show(3));
+  if (resolved === null) {
+    return { resolved: false, detail: `conflicted on ${VERSION_JS} beyond its APP_VERSION line, which needs a person to decide` };
+  }
+  fs.writeFileSync(path.join(process.cwd(), VERSION_JS), resolved);
+  run("git", ["add", "--", VERSION_JS]);
+  return { resolved: true, detail: `conflicted on ${VERSION_JS}'s APP_VERSION line only — took main's (the deploy recomputes the bump from main)` };
+}
+
 function tryAutoResolveTrainMergeConflict(conflicted) {
   const notes = [];
+  if (conflicted.includes(VERSION_JS)) {
+    const v = tryAutoResolveVersionJsConflict();
+    if (!v.resolved) {
+      const others = conflicted.filter((p) => p !== VERSION_JS);
+      return { resolved: false, detail: others.length ? `${v.detail}; also conflicted on ${others.join(", ")}` : v.detail };
+    }
+    notes.push(v.detail);
+    conflicted = conflicted.filter((p) => p !== VERSION_JS);
+    if (!conflicted.length) return { resolved: true, detail: v.detail };
+  }
   const pkg = conflicted.filter(isPackageJsonPath);
   if (pkg.length) {
     const r = tryAutoResolvePackageJsonConflict(pkg);
@@ -5177,6 +5213,141 @@ function tryAutoResolveFaqIndexConflict(conflicted) {
   };
 }
 
+// ── Trains side by side (wPoSOXfp8Em06Vzp3Cz7) ──────────────────────────
+// The files a train changes against main (`git diff --name-only
+// origin/main...origin/<branch>`), [] when the branch is missing or level
+// with main. Fetches the branch; never throws.
+function trainFilesVsMain(branch) {
+  if (!branch || !REF_RE.test(branch)) return [];
+  try {
+    run("git", ["fetch", "origin", "main", branch, "--quiet"]);
+    return run("git", ["diff", "--name-only", `origin/main...origin/${branch}`]).split("\n").map((l) => l.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// Paths that conflict when the two train tips are merged, from `git
+// merge-tree --write-tree --name-only` (git 2.38+; exit 1 means conflicts).
+// null when it could not be run, so a missing answer is never shown as
+// "conflicts".
+function trainTipsConflict(branchA, branchB) {
+  try {
+    execFileSync("git", ["merge-tree", "--write-tree", "--name-only", `origin/${branchA}`, `origin/${branchB}`], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    return [];
+  } catch (err) {
+    if (err && err.status === 1 && typeof err.stdout === "string") return deployQueue.parseMergeTreeConflicts(err.stdout);
+    return null;
+  }
+}
+
+async function allProjectsForOverlap() {
+  return runQuery({ from: [{ collectionId: "projects" }], select: selectFields(["name", "deployBranch", "repoFolder", "ownedPaths", "archived"]) });
+}
+
+// What a landed patch shares with every other project's live train, and
+// which of its files another project owns. Best-effort: anything that can't
+// be read leaves the fields empty rather than stopping a landing.
+async function trainOverlapFor(project, deployBranch, changedPaths) {
+  try {
+    const projects = (await allProjectsForOverlap()).filter((p) => p && p.archived !== true);
+    const others = [];
+    for (const other of projects) {
+      if (!other.id || other.id === project.id || !other.deployBranch || other.deployBranch === deployBranch) continue;
+      const files = trainFilesVsMain(other.deployBranch);
+      if (!files.length) continue;
+      const sharesAny = deployQueue.sharedWithEntries(changedPaths, [{ projectId: other.id, files }]).length > 0;
+      others.push({
+        projectId: other.id, projectName: other.name || other.id, files,
+        conflictPaths: sharesAny ? (trainTipsConflict(deployBranch, other.deployBranch) || []) : [],
+      });
+    }
+    return {
+      sharedWith: deployQueue.sharedWithEntries(changedPaths, others),
+      foreignPaths: deployQueue.foreignOwnedPaths(changedPaths, project, projects),
+    };
+  } catch (err) {
+    console.log(`[apply-patch] couldn't compare ${deployBranch} with the other trains (${scrubSecrets(err.message)}) — no shared-files warning this time`);
+    return { sharedWith: [], foreignPaths: [] };
+  }
+}
+
+// settings/deployQueue — written by this script only (firestore.rules lets
+// no browser write it). One document: { entries: [...], updatedAt }.
+async function getDeployQueue() {
+  const res = await fetch(`${FIRESTORE_BASE}/settings/deployQueue`, { headers: await firestoreHeaders() });
+  if (res.status === 404) return deployQueue.emptyQueue();
+  if (!res.ok) throw new Error(`GET settings/deployQueue failed: ${res.status} ${await res.text()}`);
+  const json = await res.json();
+  const doc = fdoc(json.fields || {});
+  return { entries: Array.isArray(doc.entries) ? doc.entries : [] };
+}
+async function putDeployQueue(queue) {
+  const fields = { entries: queue.entries || [], updatedAt: new Date().toISOString() };
+  const res = await fetch(`${FIRESTORE_BASE}/settings/deployQueue?updateMask.fieldPaths=entries&updateMask.fieldPaths=updatedAt`, {
+    method: "PATCH",
+    headers: await firestoreHeaders(),
+    body: JSON.stringify({ fields: Object.fromEntries(Object.entries(fields).map(([k, v]) => [k, tv(v)])) }),
+  });
+  if (!res.ok) throw new Error(`PATCH settings/deployQueue failed: ${res.status} ${await res.text()}`);
+}
+
+// The deploy queue's gate for one project's Deploy to Main. Enqueues it
+// (first click first), records its progress, drops finished entries, and
+// says whether it may go now or is held behind a related train. A queue
+// that can't be read never blocks a deploy: it goes, as before the queue.
+async function deployQueueGate(project, deployBranch) {
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  try { run("git", ["fetch", "origin", "main", deployBranch, "--quiet"]); } catch { /* read as unknown below */ }
+  let queue;
+  try { queue = await getDeployQueue(); } catch (err) {
+    console.log(`[deploy-queue] couldn't read settings/deployQueue (${scrubSecrets(err.message)}) — deploying without the queue`);
+    return { action: "go", passedOver: [] };
+  }
+  const states = await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(["name", "deployBranch", "trainReady", "trainStatus", "trainHold", "trainPrNumber", "trainNote"]) });
+  const stateById = Object.fromEntries(states.map((p) => [p.id, p]));
+  stateById[project.id] = { ...stateById[project.id], ...project, trainReady: true };
+  let head = "";
+  try { head = run("git", ["rev-parse", `origin/${deployBranch}`]); } catch { /* not fetched yet */ }
+  queue = deployQueue.pruneQueue(queue, stateById, nowMs);
+  queue = deployQueue.enqueue(queue, { projectId: project.id, projectName: project.name, deployBranch, progressKey: deployQueue.deploySignature(project, head) }, nowIso);
+  queue = deployQueue.refreshProgress(queue, project.id, deployQueue.deploySignature(project, head), nowIso);
+  const filesById = {};
+  for (const e of queue.entries) {
+    filesById[e.projectId] = e.projectId === project.id ? trainFilesVsMain(deployBranch) : trainFilesVsMain(e.deployBranch || (stateById[e.projectId] || {}).deployBranch);
+  }
+  const decision = deployQueue.queueDecision(queue, project.id, { filesById, stateById, nowMs });
+  // A stalled head that is passed over says so on its own project, once.
+  for (const e of decision.passedOver) {
+    if (e.passedOverAt) continue;
+    queue = { ...queue, entries: queue.entries.map((x) => (x.projectId === e.projectId ? { ...x, passedOverAt: nowIso } : x)) };
+    const st = stateById[e.projectId] || {};
+    const note = deployQueue.passedOverNote(e, project.name || project.id);
+    try {
+      await patchProject(e.projectId, { trainNote: st.trainNote ? `${st.trainNote}\n\n${note}` : note, updatedAt: nowIso });
+    } catch (err) {
+      console.log(`[deploy-queue] couldn't note ${e.projectId} as passed over (${scrubSecrets(err.message)})`);
+    }
+  }
+  try { await putDeployQueue(queue); } catch (err) {
+    console.log(`[deploy-queue] couldn't write settings/deployQueue (${scrubSecrets(err.message)})`);
+  }
+  return decision;
+}
+
+async function leaveDeployQueue(projectId) {
+  try {
+    const queue = await getDeployQueue();
+    const next = deployQueue.removeFromQueue(queue, projectId);
+    if (next.entries.length !== queue.entries.length) await putDeployQueue(next);
+    return next;
+  } catch (err) {
+    console.log(`[deploy-queue] couldn't take ${projectId} off settings/deployQueue (${scrubSecrets(err.message)}) — the next deploy prunes it`);
+    return null;
+  }
+}
+
 async function processApplyPatch(item) {
   console.log(`[apply-patch] ${item.id}: ${item.title || item.desc}`);
   item = { ...item, patchFiles: await patchFilesFor(item) };
@@ -5336,6 +5507,32 @@ async function processApplyPatch(item) {
     );
     await patchItem(item.id, { patchReady: false, patchAttempts: 0, updatedAt: new Date().toISOString(), notes });
     return;
+  }
+
+  // Late arrivals wait for the next train (wPoSOXfp8Em06Vzp3Cz7). Once the
+  // first ticket on a train is approved it is closing: a patch that becomes
+  // ready now is not landed on it (BXkUvoayo98j744RUCy8 landed at 00:05 on
+  // 14 Nov 2026 on top of the version bump, and Deploy to Main refused). The
+  // patch stays on the card with patchReady set, the card shows "Built —
+  // joins the next release", and this same function lands it on the first
+  // run after the train has merged, carried onto the new main by
+  // rebasePatchFilesOnto. The one exception, a rebuild of a ticket the
+  // train's own tests sent back, lands as before unless the deploy is
+  // already running (deployQueue.lateArrivalAction).
+  if (deployQueue.lateArrivalAction(item, project) === "hold") {
+    console.log(`[apply-patch] ${item.id}: ${project.name || projectId}'s train is closing — holding the patch for the next release`);
+    if (!item.buildAfterTrain) {
+      const notes = await appendNote(item, deployQueue.heldPatchNote(project));
+      await patchItem(item.id, { buildAfterTrain: true, notes, updatedAt: new Date().toISOString() });
+    }
+    return;
+  }
+  if (item.buildAfterTrain) {
+    // A held patch landing now: from here it is an ordinary patch, so a
+    // conflict below rebuilds it once (selfHealPlan) instead of the deferred
+    // build sweep starting a second build.
+    await patchItem(item.id, { buildAfterTrain: false });
+    item.buildAfterTrain = false;
   }
 
   const deployBranch = await ensureDeployBranch(project);
@@ -5579,6 +5776,12 @@ async function processApplyPatch(item) {
     ? item.previewUrl
     : guessPreviewUrl(patchedFiles, sha, trainTreeUrl(deployBranch));
 
+  // Overlap is visible while testing, not at deploy (wPoSOXfp8Em06Vzp3Cz7):
+  // the files this ticket changed that another project's live train also
+  // changes (sharedWith, with a merge-tree conflict check of the two tips),
+  // and files another project owns (foreignPaths). Warnings only.
+  const overlap = await trainOverlapFor(project, deployBranch, changedPaths);
+
   const syncNote = (sync.kind === "current" ? "" :
     ` The branch was first brought up to date with main (${sync.kind === "fast-forwarded" ? "fast-forwarded" : "main merged in"}, ${sync.behind} commit(s)).`) +
     (rebasedPaths.length ? ` This patch's edits were merged onto the branch's newer ${rebasedPaths.join(", ")} (changed since the patch was written), so nothing that landed meanwhile was overwritten.` : "") +
@@ -5599,6 +5802,8 @@ async function processApplyPatch(item) {
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
       : "")
   );
+  const overlapText = [deployQueue.sharedWithNote(overlap.sharedWith), deployQueue.foreignPathsNote(overlap.foreignPaths)].filter(Boolean).join(" ");
+  if (overlapText) await appendNote(item, overlapText);
 
   await patchItem(item.id, {
     status: "ready-for-testing",
@@ -5631,6 +5836,9 @@ async function processApplyPatch(item) {
     // (and any block it was stuck behind) from that round is spent.
     revertRequested: false,
     revertBlockedBy: [],
+    sharedWith: overlap.sharedWith,
+    foreignPaths: overlap.foreignPaths,
+    buildAfterTrain: false,
     ...(testVersion ? { testVersion } : {}),
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
@@ -6767,6 +6975,20 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
     updatedAt: new Date().toISOString(),
   });
   console.log(`[deploy-train] ${project.id}: PR #${prNumber} merged — ${trainItems.length} ticket(s) live, ${deployBranch} reset`);
+
+  // The train has merged: it leaves the deploy queue, so a related train
+  // queued behind it starts on the next run, and patches held for the next
+  // release (deployQueue.lateArrivalAction) land on it. Ask for that run now
+  // rather than waiting for the schedule (wPoSOXfp8Em06Vzp3Cz7).
+  const queueAfter = await leaveDeployQueue(project.id);
+  let held = [];
+  try {
+    held = (await itemsForProject(project.id)).filter((i) => i.status === "backlog" && i.patchReady && i.buildAfterTrain);
+  } catch (err) {
+    console.log(`[deploy-train] ${project.id}: couldn't look for held patches (${scrubSecrets(err.message)})`);
+  }
+  if (held.length) followUpReasons.push(`${project.id}: ${held.length} patch(es) held for the next release can land now`);
+  if (queueAfter && queueAfter.entries.length) followUpReasons.push(`${project.id}: merged — the deploy queue moves on`);
 }
 
 // The single Deploy CTA's automation half. The Routine sets
@@ -6825,7 +7047,29 @@ async function processDeployTrain(project) {
     return;
   }
 
-  await patchProject(project.id, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
+  // One deploy at a time among trains that share files (wPoSOXfp8Em06Vzp3Cz7).
+  // Deploy to Main enters settings/deployQueue; a train related to one ahead
+  // of it (shared files, or the same deploy workflow) is held here — before
+  // main is merged in, before any test is started and before the version
+  // bump — and starts by itself when that one merges. Unrelated trains go in
+  // parallel exactly as before. 14 Nov 2026: three trains deployed at once,
+  // each bumped version.js to 1.5.398, and every one after the first had to
+  // merge main, re-bump and re-run a 33-minute suite.
+  const queued = await deployQueueGate(project, deployBranch);
+  if (queued.action === "hold") {
+    console.log(`[deploy-train] ${project.id}: queued behind ${queued.behind.projectName || queued.behind.projectId}'s deploy`);
+    await patchProject(project.id, {
+      trainStatus: "deploying",
+      trainHold: "queued",
+      trainNote: deployQueue.queuedNote(queued.behind),
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  if (queued.passedOver.length) console.log(`[deploy-train] ${project.id}: passed over ${queued.passedOver.map((e) => e.projectName || e.projectId).join(", ")} in the deploy queue (no progress for 60 minutes)`);
+
+  await patchProject(project.id, { trainStatus: "deploying", trainNote: null, ...(project.trainHold === "queued" ? { trainHold: null } : {}), updatedAt: new Date().toISOString() });
+  if (project.trainHold === "queued") project.trainHold = null;
 
   // 0. The Deploy Routine's step 1, done here as well so the pipeline can
   //    hand a train over without it (trainHandoverReason): every ticket's
@@ -6848,6 +7092,48 @@ async function processDeployTrain(project) {
     });
     return;
   }
+
+  // 1. Bring main in. This used to be the only remaining conflict path, and
+  //    still is for anything other than the files
+  //    tryAutoResolveTrainMergeConflict knows how to combine (package.json
+  //    script lists, faq/data/index.json, generated build output) — it needs
+  //    someone to have pushed to main, in this project's files, outside the
+  //    pipeline, and a conflict in real source is deliberately never
+  //    resolved automatically.
+  checkoutTrain(deployBranch);
+  let mergeNote = null;
+  try {
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "merge", "origin/main", "--no-edit", "--quiet"]);
+  } catch (err) {
+    const conflicted = conflictedPaths();
+    // package.json script lists, faq/data/index.json and generated build
+    // output are combined automatically (see tryAutoResolveTrainMergeConflict).
+    const resolution = tryAutoResolveTrainMergeConflict(conflicted);
+    if (!resolution.resolved) {
+      try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
+      discardWorkingTree();
+      console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
+      await patchProject(project.id, {
+        trainReady: false,
+        trainStatus: "conflict",
+        trainConflictAt: trainConflictKey(deployBranch),
+        trainNote: `Merging main into ${deployBranch} ${resolution.detail}, so nothing was merged and no card was moved. ` +
+          `Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
+        updatedAt: new Date().toISOString(),
+      });
+      return;
+    }
+    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
+      "commit", "--no-edit", "--quiet"]);
+    console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
+    mergeNote = resolution.detail;
+  }
+  // Tests run once, on the final head (wPoSOXfp8Em06Vzp3Cz7): main is merged
+  // in at the head of the queue, before the train's own tests are read, so
+  // the suites below run on what will actually ship and never on a head that
+  // is about to be re-synced. The bump that follows starts no tests.
+  if (run("git", ["rev-parse", "HEAD"]) !== run("git", ["rev-parse", `origin/${deployBranch}`])) pushTrain(deployBranch);
 
   // 0b. The train's own tests must have passed on what ships (see
   //     trainTestGate). Held, not refused: trainReady stays set, so the
@@ -6904,43 +7190,7 @@ async function processDeployTrain(project) {
   }
   if (project.trainHold) await patchProject(project.id, { trainHold: null, updatedAt: new Date().toISOString() });
 
-  // 1. Bring main in. This used to be the only remaining conflict path, and
-  //    still is for anything other than the files
-  //    tryAutoResolveTrainMergeConflict knows how to combine (package.json
-  //    script lists, faq/data/index.json, generated build output) — it needs
-  //    someone to have pushed to main, in this project's files, outside the
-  //    pipeline, and a conflict in real source is deliberately never
-  //    resolved automatically.
   checkoutTrain(deployBranch);
-  let mergeNote = null;
-  try {
-    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
-      "merge", "origin/main", "--no-edit", "--quiet"]);
-  } catch (err) {
-    const conflicted = conflictedPaths();
-    // package.json script lists, faq/data/index.json and generated build
-    // output are combined automatically (see tryAutoResolveTrainMergeConflict).
-    const resolution = tryAutoResolveTrainMergeConflict(conflicted);
-    if (!resolution.resolved) {
-      try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
-      discardWorkingTree();
-      console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
-      await patchProject(project.id, {
-        trainReady: false,
-        trainStatus: "conflict",
-        trainConflictAt: trainConflictKey(deployBranch),
-        trainNote: `Merging main into ${deployBranch} ${resolution.detail}, so nothing was merged and no card was moved. ` +
-          `Resolve it by merging main into ${deployBranch} by hand, then click Deploy to Main again.\n\n${scrubSecrets(err.message)}`,
-        updatedAt: new Date().toISOString(),
-      });
-      return;
-    }
-    run("git", ["-c", "user.name=backlog-automation", "-c", "user.email=backlog-automation@users.noreply.github.com",
-      "commit", "--no-edit", "--quiet"]);
-    console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
-    mergeNote = resolution.detail;
-  }
-
   // 2. One version bump for the whole train, computed from main — so the
   //    number always lands exactly one patch ahead of what is actually live,
   //    however long the branch has been open. Individual patchFiles no
