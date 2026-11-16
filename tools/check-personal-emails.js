@@ -91,7 +91,8 @@ function mask(addr) {
 function scanText(text, allow) {
   const hits = [];
   // A URL-encoded address (an at-sign written as percent-40) is still one.
-  const lines = text.replace(/%40/gi, "@").split("\n");
+  // A regex form (name@domain\\.com) and a URL-encoded at-sign are still addresses.
+  const lines = text.replace(/%40/gi, "@").replace(/\\\./g, ".").split("\n");
   for (let i = 0; i < lines.length; i++) {
     for (const m of lines[i].matchAll(EMAIL_RE)) {
       // URL user-info (https://user:pw@host, https://name@host) is not an address.

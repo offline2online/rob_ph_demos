@@ -118,7 +118,7 @@ const scenarios = [
       const box = (id) => `.card[data-id="${id}"] .card-select-cb`;
       await until(async () => (await c.page.locator(box("own")).isDisabled()) && (await c.page.locator(box("theirs")).isDisabled()), "both agent tickets' boxes disabled");
       assert.strictEqual(await c.page.locator(box("b1")).isDisabled(), false, "an ordinary ticket can still be ticked");
-      assert.match(await c.page.getAttribute(box("theirs"), "title"), /ada@personalisationhub\.com/, "someone else's says whose it is");
+      assert.match(await c.page.getAttribute(box("theirs"), "title"), /ada@ph\.example/, "someone else's says whose it is");
       assert.match(await c.page.getAttribute(`.card[data-id="own"] .owner-fire-info`, "title"), /My Claude Routine/, "my own says to set up my Routine");
       await c.click(`.card[data-id="own"] .owner-fire-info`, "the info link on my agent ticket");
       await c.visible('[data-settings-pane="routine"]', "My Claude Routine opens");
