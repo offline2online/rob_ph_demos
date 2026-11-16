@@ -199,7 +199,7 @@ await test("tools/list returns the whole surface", async () => {
 
 await test("whoami names the signed-in person, not a shared key", async () => {
   const me = text(await client.callTool({ name: "whoami", arguments: {} }));
-  assert.strictEqual(me.email, "sam@personalisationhub.com");
+  assert.strictEqual(me.email, "sam@ph.example");
   assert.strictEqual(me.role, "editor");
   assert.strictEqual(me.canWrite, true);
 });
@@ -226,12 +226,12 @@ await test("create_backlog_item files a ticket into Backlog with a guessed area"
 await test("the filed ticket reads back with the person's email on it", async () => {
   const item = text(await client.callTool({ name: "get_backlog_item", arguments: { itemId: filedId } }));
   assert.strictEqual(item.project, "Live Visitor Profile");
-  assert.strictEqual(item.notes[0].author, "sam@personalisationhub.com");
+  assert.strictEqual(item.notes[0].author, "sam@ph.example");
 });
 
 await test("add_item_comment is attributed to the person", async () => {
   const out = text(await client.callTool({ name: "add_item_comment", arguments: { itemId: "tick-1", text: "Reproduced on the preview link." } }));
-  assert.strictEqual(out.author, "sam@personalisationhub.com");
+  assert.strictEqual(out.author, "sam@ph.example");
 });
 
 await test("search_faq finds a published help-centre article", async () => {

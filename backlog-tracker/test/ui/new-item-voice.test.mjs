@@ -14,7 +14,7 @@ const WIDTHS = [1280, 390];
 const T0 = 1_760_000_000_000;
 const t = (ms) => ({ $ts: ms });
 const seed = {
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { p1: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {

@@ -68,7 +68,7 @@ class Backend {
     for (const [path, docs] of Object.entries(s.docs || {})) {
       for (const [id, data] of Object.entries(docs)) this.col(path).set(id, revive(clone(data)));
     }
-    this.user = s.user || { email: "editor@personalisationhub.com", role: "editor" };
+    this.user = s.user || { email: "editor@ph.example", role: "editor" };
   }
   resolve(value, existing, key) {
     if (isObj(value) && value.$sentinel === "serverTimestamp") return new Timestamp(this.now += 1000);
@@ -275,7 +275,7 @@ function auth() {
   const user = {
     email: u.email, emailVerified: true, photoURL: u.photoURL || null, displayName: u.displayName || null,
     getIdToken: async () => "stub-id-token",
-    getIdTokenResult: async () => ({ claims: { consoleRole: u.role } }),
+    getIdTokenResult: async () => ({ claims: { consoleRole: u.role, ...(u.claims || {}) } }),
     reload: async () => {},
   };
   authObj = { currentUser: user };

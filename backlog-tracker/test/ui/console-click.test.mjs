@@ -25,7 +25,7 @@ const T0 = 1_760_000_000_000;
 // ── Seed: one project with a card in every column, an archived card and a doc
 const PID = "p1";
 const seed = (extra = {}) => ({
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {
@@ -296,8 +296,8 @@ const scenarios = [
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
       s.docs.consoleUsers = {
         "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin", lastLoginAt: t(T0) },
-        "sam@personalisationhub.com": { email: "sam@personalisationhub.com", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
-        "kim@personalisationhub.com": { email: "kim@personalisationhub.com", role: "viewer", displayName: "Kim Lee" },
+        "sam@ph.example": { email: "sam@ph.example", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
+        "kim@ph.example": { email: "kim@ph.example", role: "viewer", displayName: "Kim Lee" },
       };
       return s;
     },
@@ -324,47 +324,47 @@ const scenarios = [
       // add from the side panel
       await c.click("#team-add-open", "Add User");
       await c.visible("#team-add-email", "side panel opens");
-      await c.page.fill("#team-add-email", "new@personalisationhub.com");
+      await c.page.fill("#team-add-email", "new@ph.example");
       await c.page.fill("#team-add-first", "Nina");
       await c.page.fill("#team-add-last", "New");
       await c.page.selectOption("#team-add-role", "viewer");
       await c.click("#team-add-btn", "Add");
       await c.click("#dialog-ok", "dismiss the added confirmation");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
-      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@ph.example"));
       assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
       assert.strictEqual(stored.displayName, "Nina New", "display name is first + last");
       assert.strictEqual(stored.firstName, "Nina"); assert.strictEqual(stored.lastName, "New");
-      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
+      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@ph.example"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
       // clicking the name opens the panel; edit the name there
-      await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .um-name-btn').first().click();
+      await c.page.locator('#um-grid .ag-row[row-id="new@ph.example"] .um-name-btn').first().click();
       await c.visible("#um-manage-first", "name click opens the manage panel");
       await c.page.fill("#um-manage-last", "Newman");
       await c.click("#um-manage-name-save", "Save name");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com").displayName)) === "Nina Newman", "name edit to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@ph.example").displayName)) === "Nina Newman", "name edit to persist", 5000);
       await c.click("#tm-close", "close panel");
       // inline role change
-      await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
+      await c.page.selectOption('select[aria-label="Role for kim@ph.example"]', "editor");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@ph.example").role)) === "editor", "inline role change to persist", 5000);
       // bulk role change
-      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@personalisationhub.com"] .ag-selection-checkbox input').check();
-      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@ph.example"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@ph.example"] .ag-selection-checkbox input').check();
       await c.visible("#um-bulk", "bulk bar shows");
       await c.page.selectOption("#um-bulk-role", "admin");
       await c.click("#um-bulk-apply", "Apply");
-      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@personalisationhub.com`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@ph.example`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
       // deactivate one from Manage
-      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@personalisationhub.com"]').click());
+      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@ph.example"]').click());
       await c.visible("#um-manage", "Manage panel opens");
       await c.click("#um-manage-active", "Deactivate");
       await c.click("#dialog-ok", "confirm deactivation");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@personalisationhub.com").disabled)) === true, "deactivation to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@ph.example").disabled)) === true, "deactivation to persist", 5000);
       // assign a role on Users, then manage roles
-      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@personalisationhub.com"] option').count()) === 6, "default roles to seed and list", 8000);
+      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@ph.example"] option').count()) === 6, "default roles to seed and list", 8000);
       const engineerId = await c.page.evaluate(() => { const m = globalThis.__fbStub.col("roles"); for (const [id, d] of m.entries()) if (d.name === "Engineer") return id; });
       assert.ok(engineerId, "Engineer role seeded");
-      await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
+      await c.page.selectOption('select[aria-label="Assigned role for kim@ph.example"]', engineerId);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@ph.example").roleId)) === engineerId, "assigned role to persist", 5000);
       await c.click("#um-tab-roles", "Roles sub-tab");
       await c.visible('[data-um-panel="roles"]', "Roles page shows");
       await c.visible("#roles-grid .ag-row", "roles listed");
@@ -644,7 +644,7 @@ const scenarios = [
       assert.ok(w.data.notes && w.data.notes.$arrayUnion && /settings page/.test(JSON.stringify(w.data.notes)), "a note carries the details");
       // Testing rounds: the same write shape, with who sent it back; the loop
       // fields are the automation's to record (firestore.rules).
-      assert.strictEqual(w.data.lastFailureReason.who, "editor@personalisationhub.com");
+      assert.strictEqual(w.data.lastFailureReason.who, "editor@ph.example");
       for (const f of ["testRound", "sendBacks", "sendBackCount", "countedSendBacks"]) assert.ok(!(f in w.data), `the browser never writes ${f}`);
     },
   },
@@ -786,7 +786,7 @@ const scenarios = [
   },
   {
     name: "Send to Agent: an agent ticket made from a Staff Kanban ticket links back to it",
-    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { kanbanKey: "PH-12", ownerEmail: "editor@personalisationhub.com" }); return s; },
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { kanbanKey: "PH-12", ownerEmail: "editor@ph.example" }); return s; },
     async run(c) {
       await c.boardReady();
       await c.waitText('.card[data-id="b1"] .kanban-link-badge', "PH-12", "the link back to the Kanban ticket");
@@ -1247,12 +1247,12 @@ const scenarios = [
     name: "permissions: an admin sets the matrix; an engineer loses Concepts (nav and URL) and gets view-only where granted",
     seed: () => {
       const s = seed();
-      s.user = { email: "eng@personalisationhub.com", role: "editor" };
+      s.user = { email: "eng@ph.example", role: "editor" };
       s.docs.roles = {
         rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
         rEng: { name: "Engineer", description: "", createdAt: t(T0), permissions: { concepts: "none", skills: "view" } },
       };
-      s.docs.consoleUsers = { "eng@personalisationhub.com": { email: "eng@personalisationhub.com", role: "editor", roleId: "rEng" } };
+      s.docs.consoleUsers = { "eng@ph.example": { email: "eng@ph.example", role: "editor", roleId: "rEng" } };
       return s;
     },
     async run(c) {
@@ -1395,7 +1395,7 @@ const scenarios = [
       assert.ok(stored, "the lead was written");
       assert.strictEqual(stored.stage, "hot-lead", "the stage was written");
       assert.strictEqual(stored.contacts[0].buyingRole, "decision-maker");
-      assert.strictEqual(stored.createdByEmail, "editor@personalisationhub.com");
+      assert.strictEqual(stored.createdByEmail, "editor@ph.example");
       // Drag the other card between lanes.
       // Pointer drag on a wide layout where both lanes are on screen; narrower, the summary drawer's stage select is the way to move.
       if (c.page.viewportSize().width > 1000) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');

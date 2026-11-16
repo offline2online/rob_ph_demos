@@ -11,7 +11,7 @@ const { FieldValue } = require("firebase-admin/firestore");
 const { migrateProject } = require("../scripts/migrate-project-docs.js");
 
 (async () => {
-  store.col("projects").set("p1", { name: "P1", requirementsMd: "# req", readmeMd: "# readme", requirementsUpdatedByEmail: "a@x.com", docsSync: { requirementsCommit: "abc" }, trainLocked: true });
+  store.col("projects").set("p1", { name: "P1", requirementsMd: "# req", readmeMd: "# readme", requirementsUpdatedByEmail: "a@x.example", docsSync: { requirementsCommit: "abc" }, trainLocked: true });
   store.col("projects").set("p2", { name: "P2" });
   const lines = [];
   const fakeDoc = (id) => ({ id, data: () => store.col("projects").get(id), ref: db.collection("projects").doc(id) });
@@ -23,7 +23,7 @@ const { migrateProject } = require("../scripts/migrate-project-docs.js");
   assert.strictEqual(await migrateProject(FieldValue, fakeDoc("p1"), true, () => {}), 2);
   const sub = store.col("projects/p1/docs").get("requirements");
   assert.strictEqual(sub.contentMd, "# req");
-  assert.strictEqual(sub.updatedByEmail, "a@x.com");
+  assert.strictEqual(sub.updatedByEmail, "a@x.example");
   assert.strictEqual(sub.sourceCommit, "abc");
   assert.strictEqual(sub.chars, 5);
   assert.strictEqual(store.col("projects/p1/docs").get("readme").contentMd, "# readme");

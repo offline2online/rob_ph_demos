@@ -58,7 +58,7 @@ assert.strictEqual(applyIntake(long).desc, long.trim());
 
 // 7. Only intake's own flag is its to manage.
 assert.ok(isIntakeFlag({ reason: "needs-decision", setBy: INTAKE_SETTER }));
-assert.ok(!isIntakeFlag({ reason: "needs-decision", setBy: "rob@offline2online.com" }));
+assert.ok(!isIntakeFlag({ reason: "needs-decision", setBy: "owner@example.com" }));
 assert.ok(!isIntakeFlag(null));
 
 console.log("intake.test.js: all passed");

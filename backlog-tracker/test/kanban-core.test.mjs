@@ -92,23 +92,30 @@ t("local agent fill reads people, priority, estimate, release and type", () => {
   assert.deepEqual([out.type, out.priority, out.assignee, out.estimate, out.release], ["bug", "highest", "huy@x", 4, "r2"]);
   assert.match(out.title, /^Preview shows the wrong price/);
 });
-t("an alias address is its owner", () => {
-  assert.equal(k.canonicalEmail(" Rob@PersonalisationHub.com "), "rob@offline2online.com");
+t("an alias address is its owner (the map is config, handed in at run time)", () => {
+  assert.equal(k.isAliasEmail("owner.alias@example.com"), false, "no address is built into the code");
+  k.setPersonAliases({ " Owner.Alias@Example.com ": "owner@example.com", "bad": "x", "a@b.example": "a@b.example" });
+  assert.deepEqual({ ...k.PERSON_ALIASES }, { "owner.alias@example.com": "owner@example.com" }, "trimmed, lowercased; junk and self-maps dropped");
+  assert.equal(k.canonicalEmail(" owner.alias@example.com "), "owner@example.com");
   assert.equal(k.canonicalEmail("huy@x"), "huy@x");
   assert.equal(k.canonicalEmail(""), "");
-  assert.equal(k.isAliasEmail("rob@personalisationhub.com"), true);
-  assert.equal(k.isAliasEmail("rob@offline2online.com"), false);
+  assert.equal(k.isAliasEmail("owner.alias@example.com"), true);
+  assert.equal(k.isAliasEmail("owner@example.com"), false);
+  k.setPersonAliases({});
+  assert.equal(k.canonicalEmail("owner.alias@example.com"), "owner.alias@example.com");
 });
 t("local agent fill gives a note the speaker means for themselves to the speaker", () => {
-  const users = [{ id: "rob@offline2online.com", first: "Rob" }, { id: "huy@x", first: "Huy" }];
+  const users = [{ id: "owner@example.com", first: "Rob" }, { id: "huy@x", first: "Huy" }];
   const today = new Date("2026-10-21T12:00:00");
   for (const note of ["I need to send the release notes to the client", "remind me to chase the DSP contract", "add a task for myself to review the FAQ", "assign it to me: review the pricing page"]) {
-    assert.equal(k.agentDraft(note, { users, me: "rob@offline2online.com", today }).assignee, "rob@offline2online.com", note);
+    assert.equal(k.agentDraft(note, { users, me: "owner@example.com", today }).assignee, "owner@example.com", note);
   }
   // signed in as the alias, it is still the owner
-  assert.equal(k.agentDraft("I need to call the printer", { users, me: "rob@personalisationhub.com", today }).assignee, "rob@offline2online.com");
+  k.setPersonAliases({ "owner.alias@example.com": "owner@example.com" });
+  assert.equal(k.agentDraft("I need to call the printer", { users, me: "owner.alias@example.com", today }).assignee, "owner@example.com");
+  k.setPersonAliases({});
   // someone named wins, and without a speaker nothing is guessed
-  assert.equal(k.agentDraft("I need Huy to look at this, assign it to Huy", { users, me: "rob@offline2online.com", today }).assignee, "huy@x");
+  assert.equal(k.agentDraft("I need Huy to look at this, assign it to Huy", { users, me: "owner@example.com", today }).assignee, "huy@x");
   assert.equal(k.agentDraft("I need to call the printer", { users, today }).assignee, undefined);
 });
 t("field validation names what's wrong", () => {
@@ -149,10 +156,10 @@ t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed a
   assert.deepEqual([k.cardOf({ key: "PH-1", agentTotal: 3, agentDone: 1 }).agentTotal, k.cardOf({ key: "PH-1", agentTotal: 3 }).agentDone], [3, 0]);
   assert.ok(!("agentTotal" in k.cardPatchOf({ title: "x", agentTotal: 3 })), "only the server writes the counts");
   assert.deepEqual(k.agentRollup([{ status: "backlog" }, { status: "ready-for-testing" }, { status: "archived", mergeCommit: "abc" }, { status: "archived" }, null]), { total: 4, done: 2 });
-  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "in-progress" }, "A@x.com"), true);
-  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "in-progress" }, "b@x.com"), false);
-  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "", status: "backlog" }, "a@x.com"), false);
-  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.com", status: "done" }, "a@x.com"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "A@x.example"), true);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "b@x.example"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "", status: "backlog" }, "a@x.example"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "done" }, "a@x.example"), false);
   assert.deepEqual(k.cleanAgentSplit([{ title: " A  b ", description: " d ", acceptanceCriteria: "- one\n\n* two" }]).tickets, [{ title: "A b", description: "d", acceptanceCriteria: ["one", "two"] }]);
   assert.match(k.cleanAgentSplit([]).error, /at least one/);
   assert.match(k.cleanAgentSplit([{ title: "" }]).error, /needs a title/);

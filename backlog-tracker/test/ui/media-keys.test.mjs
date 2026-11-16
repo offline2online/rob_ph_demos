@@ -10,12 +10,12 @@ import { startHarness, until, outDir } from "./harness.mjs";
 const STATUS = {
   encryptionReady: true,
   providers: [
-    { id: "gemini", label: "Google Gemini — Nano Banana Pro and Veo 3.1", env: "GEMINI_API_KEY", set: true, hint: "…WXYZ", updatedBy: "rob@offline2online.com", updatedAt: "2026-11-04T09:00:00Z", lastTest: { ok: true, message: "Key works; Nano Banana Pro and Veo 3.1 are available", at: "2026-11-04T09:00:05Z" }, lastUsedAt: null, readable: true },
+    { id: "gemini", label: "Google Gemini — Nano Banana Pro and Veo 3.1", env: "GEMINI_API_KEY", set: true, hint: "…WXYZ", updatedBy: "owner@example.com", updatedAt: "2026-11-04T09:00:00Z", lastTest: { ok: true, message: "Key works; Nano Banana Pro and Veo 3.1 are available", at: "2026-11-04T09:00:05Z" }, lastUsedAt: null, readable: true },
     { id: "ltx", label: "LTX 2.5 (Lightricks)", env: "LTX_API_KEY", set: false, hint: null, updatedBy: null, updatedAt: null, lastTest: null, lastUsedAt: null, readable: false },
     { id: "wordpress", label: "WordPress media library (application password)", env: "WP_AUTH", set: false, hint: null, siteUrl: null, updatedBy: null, updatedAt: null, lastTest: null, lastUsedAt: null, readable: false },
   ],
 };
-const seed = (role) => ({ user: { email: `${role}@personalisationhub.com`, role }, docs: { projects: {} }, mediaKeys: STATUS });
+const seed = (role) => ({ user: { email: `${role}@ph.example`, role }, docs: { projects: {} }, mediaKeys: STATUS });
 
 const h = await startHarness();
 let failed = 0;

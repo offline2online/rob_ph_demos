@@ -1,0 +1,27 @@
+name: Personal email check
+
+# Fails when a personal email address appears in any tracked file. This repo
+# is public, and a Routine's patchFiles hand-back is refused by the privacy
+# plugin when a file holds one — see root CLAUDE.md → "Never hard-code a
+# person's address" and tools/check-personal-emails.js. The same check runs
+# locally as a pre-commit hook (git config core.hooksPath tools/hooks).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: No personal email addresses in tracked files
+        run: node tools/check-personal-emails.js
+      - name: Checker self-test
+        run: node tools/check-personal-emails.test.js

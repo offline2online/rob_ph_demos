@@ -7,12 +7,12 @@ window.KB_SEED = (function () {
   // Platform users, as listed under Settings → Team & agent access. The board
   // shows each by first name only.
   const users = [
-    { id: "rob", first: "Rob", full: "Rob", email: "rob@offline2online.com", location: "London", color: "#169bc2", photo: "img/rob.jpg" },
-    { id: "minh", first: "Minh", full: "Nguyễn Văn Minh", email: "minh.nguyen@personalisationhub.com", location: "Hà Nội", color: "#9747ff" },
-    { id: "linh", first: "Linh", full: "Trần Thị Linh", email: "linh.tran@personalisationhub.com", location: "Hà Nội", color: "#d4433f" },
-    { id: "huy", first: "Huy", full: "Lê Quang Huy", email: "huy.le@personalisationhub.com", location: "Hồ Chí Minh City", color: "#2f8f4e" },
-    { id: "thao", first: "Thảo", full: "Phạm Thu Thảo", email: "thao.pham@personalisationhub.com", location: "Đà Nẵng", color: "#c98a0a" },
-    { id: "duc", first: "Đức", full: "Đỗ Minh Đức", email: "duc.do@personalisationhub.com", location: "Hồ Chí Minh City", color: "#5b6b7a" },
+    { id: "rob", first: "Rob", full: "Rob", email: "owner@example.com", location: "London", color: "#169bc2", photo: "img/rob.jpg" },
+    { id: "minh", first: "Minh", full: "Nguyễn Văn Minh", email: "minh.nguyen@ph.example", location: "Hà Nội", color: "#9747ff" },
+    { id: "linh", first: "Linh", full: "Trần Thị Linh", email: "linh.tran@ph.example", location: "Hà Nội", color: "#d4433f" },
+    { id: "huy", first: "Huy", full: "Lê Quang Huy", email: "huy.le@ph.example", location: "Hồ Chí Minh City", color: "#2f8f4e" },
+    { id: "thao", first: "Thảo", full: "Phạm Thu Thảo", email: "thao.pham@ph.example", location: "Đà Nẵng", color: "#c98a0a" },
+    { id: "duc", first: "Đức", full: "Đỗ Minh Đức", email: "duc.do@ph.example", location: "Hồ Chí Minh City", color: "#5b6b7a" },
   ];
 
   const releases = [

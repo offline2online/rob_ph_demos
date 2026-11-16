@@ -213,9 +213,22 @@ export function rankBetween(prev, next) {
 // An alias is a second address the same person signs in with. The board
 // never lists it as a person of its own: anything that names it (assignee,
 // reporter, a mention, the signed-in agent) means the canonical address.
-// rob@personalisationhub.com is still an owner account in firestore.rules,
-// so it can sign in, but on the Staff Kanban it is Rob.
-export const PERSON_ALIASES = { "rob@personalisationhub.com": "rob@offline2online.com" };
+// No address is written here: the map is configuration, loaded at run time
+// from consoleConfig/identity.personAliases (written only by
+// scripts/set-owner-claim.js) and handed in through setPersonAliases().
+// Never hard-code a person's address in this repo (root CLAUDE.md).
+export const PERSON_ALIASES = {};
+export function setPersonAliases(map) {
+  for (const k of Object.keys(PERSON_ALIASES)) delete PERSON_ALIASES[k];
+  if (map && typeof map === "object") {
+    for (const [k, v] of Object.entries(map)) {
+      const from = String(k || "").trim().toLowerCase();
+      const to = String(v || "").trim().toLowerCase();
+      if (from && to && from !== to && from.includes("@") && to.includes("@")) PERSON_ALIASES[from] = to;
+    }
+  }
+  return PERSON_ALIASES;
+}
 export function canonicalEmail(e) {
   const v = String(e == null ? "" : e).trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(PERSON_ALIASES, v) ? PERSON_ALIASES[v] : v;

@@ -21,7 +21,7 @@ const handler = env.captured.requestHandler;
 
 // The world the console would have: one member on the user list, two
 // projects, a ticket in testing, one published help-centre article.
-const TEAMMATE = "sam@personalisationhub.com";
+const TEAMMATE = "sam@ph.example";
 const ID_TOKEN = "firebase-id-token-sam";
 function seed() {
   env.authState.idTokens.set(ID_TOKEN, { uid: "uid-sam", email: TEAMMATE, email_verified: true });

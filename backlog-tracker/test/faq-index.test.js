@@ -46,7 +46,7 @@ function makeConflictedRepo() {
   const run = (cmd, args) => execFileSync(cmd, args, { cwd: dir, encoding: "utf8" }).trim();
   run("git", ["init", "-q"]);
   run("git", ["checkout", "-q", "-b", "main"]); // don't rely on the environment's init.defaultBranch
-  run("git", ["config", "user.email", "test@test.com"]);
+  run("git", ["config", "user.email", "test@test.example"]);
   run("git", ["config", "user.name", "test"]);
 
   const articlesDir = path.join(dir, "faq/data/articles");

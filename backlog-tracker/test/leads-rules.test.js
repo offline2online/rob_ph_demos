@@ -8,8 +8,8 @@ const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@fir
 const { doc, setDoc, updateDoc, writeBatch, deleteField } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
-const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", email_verified: true } };
-const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
+const MEMBER = { uid: "member", claims: { email: "sam@ph.example", email_verified: true } };
+const VIEWER = { uid: "viewer", claims: { email: "kit@ph.example", email_verified: true } };
 const LEAD = { company: { name: "Acme Retail", website: "https://acme.example", industry: "Grocery", countries: ["UK"], storeCount: 120 }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null };
 
 let env;
@@ -20,8 +20,8 @@ async function reset() {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
-    await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
+    await setDoc(doc(db, "consoleUsers/sam@ph.example"), { email: "sam@ph.example", role: "editor" });
+    await setDoc(doc(db, "consoleUsers/kit@ph.example"), { email: "kit@ph.example", role: "viewer" });
     await setDoc(doc(db, "leads/l1"), LEAD);
     await setDoc(doc(db, "leads/l2"), { ...LEAD, rank: 1024 });
   });

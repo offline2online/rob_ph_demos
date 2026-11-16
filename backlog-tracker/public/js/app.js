@@ -10534,10 +10534,16 @@ function watchAvatarMember(email) {
 }
 setUnknownMemberHandler(watchAvatarMember);
 
-// The two owner accounts are admitted by firestore.rules without a consoleUsers
-// row (mirrors isOwnerAccount there and OWNER_ACCOUNTS in auth-gate.js), and
-// updateDoc() cannot write a row that does not exist.
-const PHOTO_OWNER_ACCOUNTS = ["rob@offline2online.com", "rob@personalisationhub.com"];
+// The account owner is admitted by firestore.rules without a consoleUsers row
+// (the `owner` custom claim — isOwnerAccount there, isOwnerUser in
+// auth-gate.js), and updateDoc() cannot write a row that does not exist.
+// No address is named here: ownership is the claim on the signed-in token.
+async function signedInAsOwner() {
+  try {
+    const r = auth.currentUser ? await auth.currentUser.getIdTokenResult() : null;
+    return !!(r && r.claims && r.claims.owner === true);
+  } catch { return false; }
+}
 
 // Saves photoUrl/photoUpdatedAt on consoleUsers/{e}. Looks for the row FIRST
 // rather than inferring "missing" from an update's error code and the
@@ -10553,7 +10559,7 @@ async function saveMemberPhotoFields(e, fields) {
   try { exists = (await getDoc(ref)).exists(); } catch (err) { console.warn("backlog-tracker: couldn't read own consoleUsers row", err); }
   const me = normEmail(auth.currentUser && auth.currentUser.email);
   if (exists === false) {
-    if (!(e === me && PHOTO_OWNER_ACCOUNTS.includes(e))) {
+    if (!(e === me && await signedInAsOwner())) {
       throw Object.assign(new Error("no consoleUsers row"), { code: "no-member-row" });
     }
     await setDoc(ref, { email: e, role: "admin", mcpEnabled: true, createdAt: serverTimestamp(), createdBy: e, ...fields });

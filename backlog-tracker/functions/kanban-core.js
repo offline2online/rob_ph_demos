@@ -216,9 +216,22 @@ function rankBetween(prev, next) {
 // An alias is a second address the same person signs in with. The board
 // never lists it as a person of its own: anything that names it (assignee,
 // reporter, a mention, the signed-in agent) means the canonical address.
-// rob@personalisationhub.com is still an owner account in firestore.rules,
-// so it can sign in, but on the Staff Kanban it is Rob.
-const PERSON_ALIASES = { "rob@personalisationhub.com": "rob@offline2online.com" };
+// No address is written here: the map is configuration, loaded at run time
+// from consoleConfig/identity.personAliases (written only by
+// scripts/set-owner-claim.js) and handed in through setPersonAliases().
+// Never hard-code a person's address in this repo (root CLAUDE.md).
+const PERSON_ALIASES = {};
+function setPersonAliases(map) {
+  for (const k of Object.keys(PERSON_ALIASES)) delete PERSON_ALIASES[k];
+  if (map && typeof map === "object") {
+    for (const [k, v] of Object.entries(map)) {
+      const from = String(k || "").trim().toLowerCase();
+      const to = String(v || "").trim().toLowerCase();
+      if (from && to && from !== to && from.includes("@") && to.includes("@")) PERSON_ALIASES[from] = to;
+    }
+  }
+  return PERSON_ALIASES;
+}
 function canonicalEmail(e) {
   const v = String(e == null ? "" : e).trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(PERSON_ALIASES, v) ? PERSON_ALIASES[v] : v;
@@ -896,4 +909,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, canonicalEmail, isAliasEmail, statusChange, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, statusChange, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

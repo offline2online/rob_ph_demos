@@ -113,9 +113,9 @@ they can reconnect by signing in again. **Remove** takes away both halves.
 
 All of this is one Firestore doc per person, `consoleUsers/<lowercased
 email>`, which is what `firestore.rules` and the MCP server both resolve
-against. Two owner accounts (`rob@offline2online.com`,
-`rob@personalisationhub.com`) are hard-coded as admins in the rules so an
-empty or mis-edited collection can never lock everyone out.
+against. The account owner is an admin by the `owner: true` custom claim
+(`scripts/set-owner-claim.js`; no address is in the repo), so an empty or
+mis-edited collection can never lock everyone out.
 
 ---
 
@@ -210,7 +210,7 @@ Example prompt, for an agent that has just finished a page of the project artifa
 
 The board reads a light card per ticket (`kanbanCards/{PH-n}`, the fields a card shows); every write above puts the ticket and its card in the same batch or transaction. `kanban_list_tasks` and `kanban_release_report` read cards (a `search` reads tickets, since cards hold no description), `kanban_get_task` and `kanban_search_tickets` read the full ticket. Reads are bounded however large the board grows: `kanban_list_tasks` pushes its filters into the query and reads at most 500 tickets a call (`truncated` and `nextCursor`, passed back as `cursor`); `kanban_get_task` returns the newest 100 comments and 100 activity lines (`commentsOmitted`, `activityOmitted`); the next rank is one `status`+`rank` query; the directory, settings and releases are cached 60 s per function instance; and every `kanban_*` call writes an `mcpAuditLog` row with `ms`. `kanban_mark_notifications_read` also deletes the caller's own read notifications older than 30 days (200 at a time; there is no scheduled job). While the cards are behind the tickets (before `POST /mcp/kanban/backfill` has run) the tools read the tickets.
 
-Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES` in `public/js/kanban/kanban-core.js`: `rob@personalisationhub.com` is Rob, `rob@offline2online.com`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
+Every member is on the board, the owner included. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES`, loaded from `consoleConfig/identity`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
 
 **Reading ticket history.** `list_backlog_items` pages: it returns at most
 100 tickets per call (default 25), newest-updated first and then by id, plus

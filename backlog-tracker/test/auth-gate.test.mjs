@@ -50,7 +50,7 @@ export const signOut = async () => { ctl().signedOut = true; ctl().auth.currentU
 const APP_STUB = `globalThis.__gate.appLoaded = true; globalThis.__gate.appLoadedAt = Date.now();`;
 
 let scenarioCount = 0;
-function makeUser({ email = "sam@personalisationhub.com", emailVerified = true, claims = {} } = {}) {
+function makeUser({ email = "sam@ph.example", emailVerified = true, claims = {} } = {}) {
   return {
     email, emailVerified,
     getIdToken: async () => "id-token",
@@ -154,7 +154,7 @@ await test("a remembered session shows the console shell straight away — never
   assert.strictEqual(st.appLoaded, true, "app.js loads from the cached claim alone");
   assert.strictEqual(st.role, "viewer");
   assert.strictEqual(st.booting, false, "the boot line goes once app.js is in");
-  assert.strictEqual(st.topbarUser, "sam@personalisationhub.com");
+  assert.strictEqual(st.topbarUser, "sam@ph.example");
 });
 
 await test("with a role claim on the token, the board starts without waiting on any network call", async () => {
@@ -193,11 +193,18 @@ await test("a disabled row is a refusal, not an empty board", async () => {
   assert.match(st.status, /isn't on the PH Agent Console user list/);
 });
 
-await test("an owner with no row is an admin, whatever the network says", async () => {
-  const s = await boot({ initialUser: makeUser({ email: "rob@offline2online.com" }), claimsSync: "hang", ownRow: { status: 404, body: {} } });
+await test("an owner (owner claim) with no row is an admin, whatever the network says", async () => {
+  const s = await boot({ initialUser: makeUser({ email: "owner@example.com", claims: { owner: true } }), claimsSync: "hang", ownRow: { status: 404, body: {} } });
   const st = s.state();
   assert.strictEqual(st.appLoaded, true);
   assert.strictEqual(st.role, "admin");
+});
+
+await test("an address alone is never an owner: no claim and no row is refused", async () => {
+  const s = await boot({ initialUser: makeUser({ email: "owner@example.com" }), claimsSync: { status: 403, body: {} }, ownRow: { status: 404, body: {} } });
+  const st = s.state();
+  assert.strictEqual(st.appLoaded, false);
+  assert.match(st.status, /isn't on the PH Agent Console user list/);
 });
 
 await test("both membership sources down: a retry, not a blank page", async () => {
@@ -209,7 +216,7 @@ await test("both membership sources down: a retry, not a blank page", async () =
 });
 
 await test("the function's role wins over a stale cached claim, live", async () => {
-  const s = await boot({ initialUser: makeUser({ claims: { consoleRole: "viewer" } }), claimsSync: { status: 200, body: { role: "editor", email: "sam@personalisationhub.com", claimUpdated: true } } });
+  const s = await boot({ initialUser: makeUser({ claims: { consoleRole: "viewer" } }), claimsSync: { status: 200, body: { role: "editor", email: "sam@ph.example", claimUpdated: true } } });
   const st = s.state();
   assert.strictEqual(st.appLoaded, true);
   assert.strictEqual(st.role, "editor", "the background sync corrected the role on <html>");

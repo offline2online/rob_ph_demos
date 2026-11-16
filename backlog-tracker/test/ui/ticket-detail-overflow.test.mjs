@@ -38,7 +38,7 @@ const attachments = [
 ];
 
 const seed = () => ({
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {

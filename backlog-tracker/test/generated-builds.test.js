@@ -64,7 +64,7 @@ function repo() {
   };
   git("init", "-q");
   git("checkout", "-q", "-b", "main");
-  git("config", "user.email", "test@test.com");
+  git("config", "user.email", "test@test.example");
   git("config", "user.name", "test");
   write("dsp-integration/prototype/index.html", "<script src=./assets/index-base.js>");
   write("dsp-integration/prototype/assets/index-base.js", "base");
