@@ -181,6 +181,17 @@ async function main() {
   await check("A ticket's project must be a string", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: ["x"], updatedBy: SAM }));
   await check("A ticket's project is at most 100 characters", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "p".repeat(101), updatedBy: SAM }));
   await check("A ticket can name a project", "allow", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { project: "New5VKTF2QBqT3T4YEla", updatedBy: SAM }));
+  // ── Send to Agent (KB-AGENT-1): agent links and counts are the server's ──
+  const withAgents = () => env.withSecurityRulesDisabled(async (ctx) => {
+    const db = ctx.firestore();
+    await updateDoc(doc(db, "kanbanTasks/PH-7"), { agentTickets: [{ id: "a1", projectId: "p1" }], agentTotal: 1, agentDone: 0 });
+    await updateDoc(doc(db, "kanbanCards/PH-7"), { agentTotal: 1, agentDone: 0 });
+  });
+  await check("A page can't link agent tickets to a ticket", "deny", () => updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { agentTickets: [{ id: "x", projectId: "p" }], updatedBy: SAM }));
+  await check("A page can't mark a ticket's agent work built", "deny", async () => { await withAgents(); return updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { agentDone: 1, updatedBy: SAM }); });
+  await check("A page edits a ticket that has agent tickets, keeping them", "allow", async () => { await withAgents(); return updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { title: "Renamed", updatedBy: SAM }); });
+  await check("A page can't change a card's agent counts", "deny", async () => { await withAgents(); return setDoc(doc(as(MEMBER), "kanbanCards/PH-7"), { agentDone: 1, updatedBy: SAM }, { merge: true }); });
+  await check("A page updates a card that carries agent counts, keeping them", "allow", async () => { await withAgents(); return setDoc(doc(as(MEMBER), "kanbanCards/PH-7"), { title: "Renamed", updatedAt: serverTimestamp(), updatedBy: SAM }, { merge: true }); });
   // ── Acceptance criteria (KB-TASK-12): stored as "<id>\t<0|1>\t<text>" lines ──
   const line = (i, done = 0, text = `Criterion ${i}`) => `${String(i).padStart(8, "a")}\t${done}\t${text}`;
   const crit = (n, done = 0, text) => Array.from({ length: n }, (_, i) => line(i, done, text));

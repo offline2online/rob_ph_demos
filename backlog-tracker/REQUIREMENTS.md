@@ -201,6 +201,7 @@ train" → "Deploy queue".
   previewSha?: string | null,   // the commit the pipeline's link is pinned to
   previewUpdatedAt?: string,    // ISO — when the pipeline last changed the link
   testSummary?: string,         // Ready for Testing card's primary text — see below
+  kanbanKey?: string,           // VlBatzRVbPt6heAEp5mu — Send to Agent: the Staff Kanban ticket (PH-n) this agent ticket was made from (createdVia "send-to-agent", with ownerEmail = that ticket's assignee). The card shows a chip that opens it; a status change recounts that ticket (kanbanAgentRollup, functions/kanban-agent.js). Server-written; informational only (the roll-up reads kanbanTasks/{PH-n}.agentTickets). See kanban-staff-board/REQUIREMENTS.md → KB-AGENT-1
   noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
@@ -4922,7 +4923,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   editors write (`firestore.rules` → `isLead`, with the cases in
   `test/firestore-rules.test.js`).
 - **Moving a card**: drag it to another lane, or use its "Move to" select
-  (touch). The write is live for every open tab. Over MCP an agent manages
+  (touch). The write is live for every open tab.
+- **Priority within a lane (15 Nov 2026)**: a lane reads top to bottom as the
+  order to deal with its leads, so the top card is the one to work next. An
+  editor drags a card up or down its own lane (a line shows where it will land),
+  or drops it at a chosen place in another lane; the lead summary's **Priority**
+  row says "N of M in <stage>" with **Move to top / Move up / Move down**
+  (44px buttons, the touch and keyboard route), and Alt+Arrow Up/Down on a
+  focused card does the same. The order is `leads/{id}.rank`, a number, lower
+  is higher (`firestore.rules` → `isLead` allows it, number or absent).
+  `leads-core.js` → `compareInLane` sorts ranked leads first by rank, then
+  unranked ones newest change first (the order every lane had before);
+  `planLaneOrder` writes one midpoint rank when both neighbours are ranked and
+  otherwise renumbers that lane in steps of 1024, in one batch, writing only
+  the leads whose rank changes. A lead moved to another stage with the Stage
+  select (or no drop position) goes to the top of that lane (`topRank`). An
+  agent's `update_lead_stage` leaves `rank` alone. Tests: `test/leads.test.mjs`
+  and the "drag a lead up its lane" scenario in `test/ui/console-click.test.mjs`, and the `rank` rule in `test/leads-rules.test.js` (emulator, `npm run test:rules`). Over MCP an agent manages
   the whole pipeline with the board's permissions (editor writes, viewer reads),
   each write attributed to the member's email: `list_leads` (filters stage,
   company, assignee, source, industry, free text `q`; `limit`/`offset`; archived

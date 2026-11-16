@@ -768,7 +768,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
   await test("a card holds the 20 board fields and nothing of the description, and equals the ticket's", async () => {
     const c = env.store.col("kanbanCards").get("PH-1"), t = task("PH-1");
-    assert.deepStrictEqual(Object.keys(c).sort(), [...core.CARD_FIELDS, "updatedAt", "updatedBy"].sort());
+    // agentTotal / agentDone ride on a card only once its ticket has agent tickets (Send to Agent).
+    assert.deepStrictEqual(Object.keys(c).sort(), [...core.CARD_FIELDS.filter((f) => !["agentTotal", "agentDone"].includes(f)), "updatedAt", "updatedBy"].sort());
     for (const f of ["description", "descriptionText", "searchTokens", "links", "attachments", "mentions"]) assert.ok(!(f in c), f);
     assert.strictEqual(c.attachmentCount, (t.attachments || []).length);
     assert.strictEqual(c.commentCount, t.commentCount);
@@ -1741,6 +1742,105 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const v = await tool(kit, "kanban_my_work", {});
     assert.ok(!v.isError); assert.strictEqual(v.json.open, 0);
   });
+
+  // ── Send to Agent (KB-AGENT-1, functions/kanban-agent.js) ────────────────
+  {
+    const kanbanAgent = require("../functions/kanban-agent.js");
+    const send = (email, body) => call({ method: "POST", path: "/mcp/kanban/send-to-agent", headers: { "X-Firebase-ID-Token": signIn(email) }, body });
+    env.store.col("projects").set("agentProj", { name: "Agent Proj" });
+    env.store.col("projects").set("frozenProj", { name: "Frozen", finalised: true });
+    env.authState.secrets.ANTHROPIC_API_KEY = "unset";
+    let key = "", ids = [];
+    await test("send to agent: only the assignee may, and without a key the proposal is the ticket itself", async () => {
+      key = (await tool(sam, "kanban_create_task", { title: "Ship the loyalty widget", description: "Customers see their points.", assignee: "me", project: "agentProj", acceptanceCriteria: ["Points show", "Zero shows as 0"] })).json.key;
+      const huy = await send(HUY, { action: "propose", key });
+      assert.strictEqual(huy.statusCode, 403); assert.match(huy.body.error, /assignee/);
+      assert.strictEqual((await send(KIT, { action: "propose", key })).statusCode, 403);
+      const r = await send(SAM, { action: "propose", key });
+      assert.strictEqual(r.statusCode, 200);
+      assert.strictEqual(r.body.source, "ticket"); assert.strictEqual(r.body.projectId, "agentProj");
+      assert.deepStrictEqual(r.body.proposal, [{ title: "Ship the loyalty widget", description: "Customers see their points.", acceptanceCriteria: ["Points show", "Zero shows as 0"] }]);
+    });
+    await test("send to agent: Claude's split is cleaned, and a refusal gives none", async () => {
+      let sent = null;
+      class Fake { constructor() { this.beta = { messages: { create: async (req) => { sent = req; return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ tickets: [{ title: "  Points API ", description: "Expose points.", acceptanceCriteria: ["- returns points"] }, { title: "Widget", description: "Show it.", acceptanceCriteria: [] }] }) }] }; } } }; } }
+      const out = await kanbanAgent.claudeSplit("k", task(key) && Object.assign({ key }, task(key)), { Anthropic: Fake });
+      assert.strictEqual(sent.model, kanbanAgent.AGENT_SPLIT_MODEL); assert.strictEqual(sent.output_config.format.type, "json_schema");
+      assert.deepStrictEqual(out, [{ title: "Points API", description: "Expose points.", acceptanceCriteria: ["returns points"] }, { title: "Widget", description: "Show it.", acceptanceCriteria: [] }]);
+      const refusal = class { constructor() { this.beta = { messages: { create: async () => ({ stop_reason: "refusal", content: [] }) } }; } };
+      assert.strictEqual(await kanbanAgent.claudeSplit("k", { key, title: "x" }, { Anthropic: refusal }), null);
+    });
+    await test("send to agent: confirm files owner-tagged agent tickets in Backlog, linked both ways", async () => {
+      const tickets = [
+        { title: "Points API", description: "Expose a customer's points.", acceptanceCriteria: ["GET returns points"] },
+        { title: "Loyalty widget", description: "Show the points.", acceptanceCriteria: ["Widget shows points", "Zero shows as 0"] },
+        { title: "Help article", description: "Explain points.", acceptanceCriteria: [] },
+      ];
+      assert.strictEqual((await send(HUY, { action: "confirm", key, projectId: "agentProj", tickets })).statusCode, 403);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "nope", tickets })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "frozenProj", tickets })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets: [{ title: " ", description: "x" }] })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets: Array.from({ length: 11 }, (_, i) => ({ title: `T${i}` })) })).statusCode, 400);
+      const r = await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets });
+      assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+      assert.strictEqual(r.body.created.length, 3); assert.strictEqual(r.body.agentTotal, 3); assert.strictEqual(r.body.agentDone, 0);
+      ids = r.body.created.map((x) => x.id);
+      for (const [i, id] of ids.entries()) {
+        const it = env.store.col("backlogItems").get(id);
+        assert.strictEqual(it.projectId, "agentProj"); assert.strictEqual(it.status, "backlog");
+        assert.strictEqual(it.ownerEmail, SAM); assert.strictEqual(it.kanbanKey, key); assert.strictEqual(it.createdVia, "send-to-agent");
+        assert.strictEqual(it.title, tickets[i].title);
+        assert.match(it.desc, /^## Outcome\n/); assert.match(it.desc, new RegExp(`## Spec reference\\nStaff Kanban ticket ${key} `));
+        if (tickets[i].acceptanceCriteria.length) assert.match(it.desc, /## Test steps\n1\. Check: /);
+      }
+      const t = task(key);
+      assert.deepStrictEqual(t.agentTickets, ids.map((id) => ({ id, projectId: "agentProj" })));
+      assert.strictEqual(t.agentTotal, 3); assert.strictEqual(t.agentDone, 0);
+      const c = env.store.col("kanbanCards").get(key);
+      assert.strictEqual(c.agentTotal, 3); assert.strictEqual(c.agentDone, 0);
+      assert.deepStrictEqual(cardDrift(), []);
+      assert.ok(activity(key).some((a) => /^sent to agent: 3 agent tickets on Agent Proj/.test(a)));
+    });
+    const written = (id, before, after) => kanbanAgent.agentTicketWritten({ data: { before: { exists: !!before, data: () => before }, after: { exists: !!after, data: () => after } }, params: { itemId: id } });
+    await test("send to agent: built agent tickets are counted, and all built moves the Kanban ticket to Ready for Testing", async () => {
+      assert.strictEqual(kanbanAgent.rollupChanged({ status: "backlog" }, { status: "ready-for-testing" }), null);
+      assert.strictEqual(kanbanAgent.rollupChanged({ kanbanKey: key, status: "backlog", title: "a" }, { kanbanKey: key, status: "backlog", title: "b" }), null);
+      const items = env.store.col("backlogItems");
+      // The pipeline stamps what it moves (deployCommit / mergeCommit); a status alone is not "built".
+      const STAMP = { "ready-for-testing": { deployCommit: "d" }, "ready-to-publish": { deployCommit: "d" }, "published-live": { mergeCommit: "m" } };
+      const move = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status }, STAMP[status] || {})); return written(id, before, items.get(id)); };
+      const bare = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status })); return written(id, before, items.get(id)); };
+      kanban.clearCaches();
+      // A browser-written status with no pipeline stamp is not built.
+      let r = await bare(ids[0], "ready-for-testing");
+      assert.strictEqual(r.done, 0, "status alone is not proof");
+      r = await move(ids[0], "ready-for-testing");
+      assert.strictEqual(r.done, 1); assert.strictEqual(r.moved, false);
+      assert.strictEqual(task(key).agentDone, 1); assert.strictEqual(env.store.col("kanbanCards").get(key).agentDone, 1);
+      assert.strictEqual(task(key).status, "backlog");
+      r = await move(ids[1], "published-live");
+      assert.strictEqual(r.done, 2);
+      kanban.clearCaches();
+      r = await move(ids[2], "ready-to-publish");
+      assert.strictEqual(r.done, 3); assert.strictEqual(r.moved, true);
+      assert.strictEqual(task(key).status, "ready-for-testing");
+      assert.strictEqual(env.store.col("kanbanCards").get(key).status, "ready-for-testing");
+      assert.ok(activity(key).some((a) => a === "all 3 agent tickets are built on the Agent Board"));
+      assert.deepStrictEqual(cardDrift(), []);
+      // Sent back on the Agent Board: the count drops, the Kanban ticket stays where it is.
+      r = await move(ids[2], "backlog");
+      assert.strictEqual(task(key).agentDone, 2); assert.strictEqual(task(key).status, "ready-for-testing");
+      // A deleted agent ticket leaves the count.
+      const gone = Object.assign({}, items.get(ids[2])); items.delete(ids[2]);
+      await written(ids[2], gone, null);
+      assert.strictEqual(task(key).agentTotal, 2); assert.strictEqual(task(key).agentDone, 2);
+    });
+    await test("send to agent: a closed ticket can't be sent, and an agent ticket with no Kanban link changes nothing", async () => {
+      await tool(sam, "kanban_move_task", { key, status: "done", resolution: "completed" });
+      assert.strictEqual((await send(SAM, { action: "propose", key })).statusCode, 403);
+      assert.strictEqual(await written("x", { status: "backlog" }, { status: "ready-for-testing" }), null);
+    });
+  }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) { for (const [n, e] of failures) console.log(`\n--- ${n}\n${e && e.stack}`); process.exit(1); }
