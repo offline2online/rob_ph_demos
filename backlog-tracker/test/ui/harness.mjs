@@ -75,6 +75,7 @@ export async function startHarness() {
     const aceWrites = [];
     const enrichCalls = [];
     const supportCalls = [];
+    const agentSendCalls = [];
     // Settings → My Claude Routine (/mcp/me/routine-binding): seed.routineBinding
     // is { hasRoutineBinding }; a POST is recorded in routineWrites and flips it.
     const routineWrites = [];
@@ -107,6 +108,16 @@ export async function startHarness() {
         // The cards are seeded in step with the tickets; a case that seeds them behind answers { done: true } here after the page's own fill.
         if (url.pathname === "/mcp/kanban/backfill-links") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0, links: 0 }) });
         if (url.pathname === "/mcp/kanban/backfill") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ done: true, after: "", tickets: 0 }) });
+        // Send to Agent (functions/kanban-agent.js): propose answers seed.agentSplit (else
+        // the ticket as one), confirm answers ids agent-1… ; every call is returned as agentSendCalls.
+        if (url.pathname === "/mcp/kanban/send-to-agent") {
+          const body = JSON.parse(route.request().postData() || "{}");
+          agentSendCalls.push(body);
+          const answer = body.action === "propose"
+            ? (seed.agentSplit || { proposal: [{ title: "The whole ticket", description: "", acceptanceCriteria: [] }], source: "ticket", projectId: "" })
+            : { created: (body.tickets || []).map((x, i) => ({ id: `agent-${i + 1}`, title: x.title, projectId: body.projectId })), agentTotal: (body.tickets || []).length, agentDone: 0 };
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer) });
+        }
         if (url.pathname === "/mcp/kanban/agent-fill") {
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
         }
@@ -207,7 +218,7 @@ export async function startHarness() {
     // a case's own 8 s wait, and the case failed on a page that was still
     // starting (Modals @820px, Promote Leads, mobile-shell; 24 Oct-14 Nov 2026).
     if (waitForApp) await appRendered(page).catch(() => {});
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, routineWrites, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, routineWrites, origin, close: () => context.close() };
   }
 
   return {

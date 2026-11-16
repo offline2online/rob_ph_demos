@@ -2724,8 +2724,10 @@ every destination already existed.
   `leads/{id}` holds `company {name, website, industry, countries[],
   storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
   linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
-  {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
-  select (the way on a tablet). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
+  {id, name}`, `enrichment`, `rank`. Cards drag between lanes or use their "Move to"
+  select (the way on a tablet), and drag up or down their own lane to set
+  priority (`rank`, top = deal with next; the summary's Move to top / up / down
+  and Alt+Arrow do the same — REQUIREMENTS.md → "Priority within a lane"). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
   2026) is agent-led and uses no paid data provider: Claude with web search and web
   fetch (the `ANTHROPIC_API_KEY` secret Staff Kanban already uses) researches the
   company by name (website optional, no email needed) for industry, countries, HQ,
@@ -2970,6 +2972,7 @@ The code is here:
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
 | `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
+| `functions/kanban-agent.js` | Send to Agent (`kanban-staff-board/REQUIREMENTS.md` → KB-AGENT-1): `/mcp/kanban/send-to-agent` (`propose`: Claude's split of a ticket into agent tickets, or the ticket itself without a key; `confirm`: files them in an Agent Board project's Backlog with `ownerEmail` and `kanbanKey`, and lists them on the ticket), assignee only; and the `kanbanAgentRollup` trigger on `backlogItems`, which recounts a ticket's built agent tickets and moves it to Ready for Testing through `kanban_move_task` when all are built |
 | `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
 | `scripts/set-owner-claim.js` | Run on every deploy, before any rules deploy: fails the deploy if nobody can administer the console (no owner claim and no enabled admin row). Only if the optional `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` secrets are set does it apply the `owner: true` claim (+ `aliasOf`), an owner row and `consoleConfig/identity.personAliases`. Never prints an address. See "The account owner" |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |

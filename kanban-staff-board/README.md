@@ -116,6 +116,14 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   and shows n/m done on its card; a fifth level is refused; and when all of a parent's children are done
   it moves to Ready for Testing by itself, and its parent in turn. REQUIREMENTS.md → KB-TASK-14 (the
   prototype still has epics only).
+- **Send to Agent** (console build, 15 Nov 2026; not in the prototype). On a ticket assigned to you,
+  the modal's **Agent tickets** section has **Send to Agent**: Claude proposes a split into agent
+  tickets (title, description, acceptance criteria), you pick the Agent Board project, edit, add or
+  remove them, and **Create** files them in that project's Backlog, owned by you. The ticket then
+  lists them with their live Agent Board status and "x of y done", its card shows "x/y", and each
+  agent ticket's card links back. When all are built (Ready for Testing or later on the Agent
+  Board) the ticket moves to Ready for Testing by itself. Server: `backlog-tracker/functions/kanban-agent.js`.
+  REQUIREMENTS.md → KB-AGENT-1.
 - **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
   comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a

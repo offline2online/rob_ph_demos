@@ -1068,9 +1068,14 @@ function cardHTML(item) {
   const e2eFixBadge = item.e2eAutoFix
     ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
     : "";
-  const testVersionBadge = item.testVersion
-    ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
+  // Send to Agent (kanban-staff-board KB-AGENT-1): an agent ticket made from a
+  // Staff Kanban ticket links back to it; that ticket shows this one's status.
+  const kanbanLinkBadge = typeof item.kanbanKey === "string" && /^PH-\d+$/.test(item.kanbanKey)
+    ? `<a class="kanban-link-badge" href="#staff-kanban/ticket/${item.kanbanKey}" title="Sent to Agent from Staff Kanban ticket ${item.kanbanKey}: open it"><span class="material-symbols-outlined" aria-hidden="true">view_kanban</span>${item.kanbanKey}</a>`
     : "";
+  const testVersionBadge = kanbanLinkBadge + (item.testVersion
+    ? `<span class="test-version-badge" title="backlog-tracker's own version when this was marked Ready for Testing — check the live footer shows at least this version">Test version: v${escapeHTML(item.testVersion)}</span>`
+    : "");
   // The pull request this card's work actually landed in, recorded by
   // run-backlog-automation.js when it opens the PR and again when it
   // merges. Before this, a card's PR number existed only as free text

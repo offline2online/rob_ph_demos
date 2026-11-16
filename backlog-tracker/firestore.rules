@@ -372,6 +372,9 @@ service cloud.firestore {
       return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
         "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
         "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion",
+        // Send to Agent (kanban-agent.js): the link back to the Kanban ticket
+        // and where a ticket came from, written by the server only.
+        "kanbanKey", "createdVia",
         "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit", "reviewBounceCount",
         // Parallel builds (4 Oct 2026): the commit a patch was written
         // against (the automation merges from it) and its rebuild counter.
@@ -677,8 +680,10 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam",
+          "leadType", "operator", "tam", "rank",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
+        && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by
         // the function that keeps the two in step (lead-enrich.js); an editor's save keeps it.
         && (d.get("tam", null) == null || d.get("tam", null) is map)
@@ -1282,12 +1287,14 @@ service cloud.firestore {
         && key == "PH-" + string(incoming().number)
         && incoming().createdBy == callerEmail()
         && incoming().commentCount == 0
+        && !("agentTickets" in incoming()) && !("agentTotal" in incoming()) && !("agentDone" in incoming())
         && getAfter(kanbanCounterPath()).data.nextNumber == incoming().number + 1;
       allow update: if isEditor() && isKanbanTask(incoming())
         && incoming().key == resource.data.key
         && incoming().number == resource.data.number
         && incoming().createdBy == resource.data.createdBy
-        && incoming().createdAt == resource.data.createdAt;
+        && incoming().createdAt == resource.data.createdAt
+        && kanbanAgentFieldsKept(incoming(), resource.data);
       allow delete: if isEditor();
 
       match /comments/{commentId} {
@@ -1320,7 +1327,7 @@ service cloud.firestore {
     function isKanbanCard(d) {
       return d.keys().hasOnly(["key", "type", "title", "status", "resolution", "open", "closedAt", "rank", "assignee", "previousAssignee",
           "release", "sprint", "project", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount", "acTotal", "acDone",
-          "updatedAt", "updatedBy"])
+          "agentTotal", "agentDone", "updatedAt", "updatedBy"])
         && d.key is string && isNonEmptyBoundedString(d.title, 200)
         && d.type in ["task", "bug", "epic"]
         && d.status in ["backlog", "ready-for-dev", "in-progress", "ready-for-testing", "approved", "done"]
@@ -1330,12 +1337,25 @@ service cloud.firestore {
         && d.labels is list && d.labels.size() <= 30
         && d.commentCount is int && d.attachmentCount is int
         && d.get("acTotal", 0) is int && d.get("acDone", 0) is int && d.get("acDone", 0) <= d.get("acTotal", 0) && d.get("acTotal", 0) <= 50
+        && d.get("agentTotal", 0) is int && d.get("agentDone", 0) is int && d.get("agentDone", 0) <= d.get("agentTotal", 0) && d.get("agentTotal", 0) <= 50
         && d.get("project", "") is string && d.get("project", "").size() <= 100
         && d.updatedBy == callerEmail();
     }
+    // Send to Agent (KB-AGENT-1): a ticket's agent tickets and their counts are
+    // written only by the server (functions/kanban-agent.js), so a page can
+    // neither forge a link to an agent ticket nor mark agent work built. A
+    // card's counts a page writes must be the ones its ticket already carries.
+    function kanbanAgentFieldsKept(d, prev) {
+      return d.get("agentTickets", null) == prev.get("agentTickets", null)
+        && d.get("agentTotal", null) == prev.get("agentTotal", null)
+        && d.get("agentDone", null) == prev.get("agentDone", null);
+    }
     match /kanbanCards/{key} {
       allow read: if isBoardReader();
-      allow create, update: if isEditor() && isKanbanCard(incoming()) && incoming().key == key;
+      allow create: if isEditor() && isKanbanCard(incoming()) && incoming().key == key;
+      allow update: if isEditor() && isKanbanCard(incoming()) && incoming().key == key
+        && incoming().get("agentTotal", null) == resource.data.get("agentTotal", null)
+        && incoming().get("agentDone", null) == resource.data.get("agentDone", null);
       allow delete: if isEditor();
     }
     match /kanbanCounters/{counterId} {

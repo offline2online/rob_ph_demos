@@ -82,6 +82,9 @@ export function taskFromDoc(id, d) {
     acDone: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).done : Number.isInteger(d.acDone) ? d.acDone : 0,
     attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : typeof d.attachmentCount === "number" ? d.attachmentCount : 0,
     commentCount: typeof d.commentCount === "number" ? d.commentCount : 0,
+    // Send to Agent (KB-AGENT-1): written by the server only.
+    ...(Array.isArray(d.agentTickets) ? { agentTickets: d.agentTickets.filter((x) => x && typeof x.id === "string") } : {}),
+    ...(Number.isInteger(d.agentTotal) && d.agentTotal > 0 ? { agentTotal: d.agentTotal, agentDone: Number.isInteger(d.agentDone) ? d.agentDone : 0 } : {}),
     created: isoOf(d.createdAt),
     createdBy: d.createdBy || "",
     updated: isoOf(d.updatedAt),
@@ -544,6 +547,17 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     });
   }
 
+  // Send to Agent (KB-AGENT-1): a ticket's agent tickets on the Agent Board,
+  // live, one listener each (a ticket links at most 50). cb(Map id → item|null).
+  function watchAgentTickets(ids, cb) {
+    const found = new Map();
+    const unsubs = [...new Set(ids || [])].slice(0, 50).map((id) => onSnapshot(doc(db, "backlogItems", id), (snap) => {
+      found.set(id, snap.exists() ? { id, ...snap.data() } : null);
+      cb(new Map(found));
+    }, () => { found.set(id, null); cb(new Map(found)); }));
+    return () => unsubs.forEach((u) => { try { u(); } catch (e) { /* already gone */ } });
+  }
+
   async function saveSettings(patch) {
     const b = writeBatch(db);
     b.set(doc(db, "kanbanSettings", "main"), { ...patch, updatedAt: serverTimestamp(), updatedBy: me }, { merge: true });
@@ -557,6 +571,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   return {
     state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
+    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, watchAgentTickets, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }
