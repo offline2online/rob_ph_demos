@@ -1386,11 +1386,61 @@ const scenarios = [
   },
   {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
-    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C", setBy: "owner@example.com" }; return s; },
     async run(c) {
       await c.boardReady();
       await c.waitText(".waiting-answer-chip", "1 waiting on your answer", "the waiting chip");
       assert.strictEqual(await c.page.locator(".project-notify-btn").count(), 0, "no Ready for Dev button");
+    },
+  },
+  {
+    name: "Blocked: a flag the pipeline raised and answers itself is not a question for a person",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "The build stopped without packaging a patch.\n\nNothing to answer.", setBy: "build-report" }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 1; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-status', "Handled automatically", "the chip says it is handled");
+      assert.strictEqual(await c.page.locator(".waiting-answer-chip").count(), 0, "not counted as waiting on your answer");
+      await c.waitText('.card[data-id="b1"] .blocked-answer-btn', "Steer", "the button is for steering, not answering");
+    },
+  },
+  {
+    name: "Blocked: once the senior model's tries are used up, the question is one sentence with options to click",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Two export formats fit the ticket.", setBy: "claude", question: "Ship the export as CSV or as XLSX?", options: [{ label: "XLSX" }, { label: "CSV", recommended: true }] }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 2; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-status', "Needs your pick", "the chip asks for a pick");
+      await c.waitText(".waiting-answer-chip", "1 waiting on your answer", "counted as waiting on a person");
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.visible("#rs-backdrop");
+      await c.waitText("#rs-chat", "Ship the export as CSV or as XLSX?", "the question is shown");
+      const labels = await c.page.locator("#rs-chat .rs-option").allTextContents();
+      assert.deepStrictEqual(labels, ["CSV (recommended)", "XLSX"], "the recommended option is first");
+      await c.click("#rs-chat .rs-option.btn-primary", "the recommended option");
+      const writes = await c.waitWrites(2);
+      c.at("one click answers");
+      const card = writes.filter((x) => x.path === "backlogItems/b1");
+      assert.strictEqual(card.length, 1, JSON.stringify(writes));
+      assert.strictEqual(card[0].data.blocked, null);
+      assert.ok(JSON.stringify(card[0].data.notes).includes("Answer to the build's question: CSV"));
+      assert.deepStrictEqual(writes.find((x) => x.path === `projects/${PID}`).data.notifyItemIds, ["b1"]);
+    },
+  },
+  {
+    name: "Blocked: with no question from the build, the standard choice is offered and Park it builds nothing",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "The build stopped without packaging a patch.\n\nNothing to answer.", setBy: "build-report" }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 2; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.waitText("#rs-chat", "This ticket was built 4 times, the last on the senior model, and did not get through: The build stopped without packaging a patch. What should happen to it?", "the standard question");
+      assert.deepStrictEqual(await c.page.locator("#rs-chat .rs-option").allTextContents(), ["Try again on the senior model (recommended)", "Park it: leave it in Backlog and stop trying"]);
+      await c.click("#rs-chat .rs-option.btn-ghost", "Park it");
+      await c.waitText("#rs-chat", "Parked.", "parked");
+      const writes = await c.writes();
+      c.at("parked without a build");
+      assert.strictEqual(writes.filter((x) => x.path === `projects/${PID}`).length, 0, JSON.stringify(writes));
+      const card = writes.find((x) => x.path === "backlogItems/b1");
+      assert.strictEqual(card.data.blocked, null);
+      assert.ok(JSON.stringify(card.data.notes).includes("Not rebuilt"));
     },
   },
   {

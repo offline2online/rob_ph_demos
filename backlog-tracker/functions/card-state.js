@@ -28,6 +28,68 @@
 // is its generated CommonJS copy (strip `export `, keep the module.exports
 // line); test/card-state.test.mjs fails if the two drift.
 
+// How often the automation answers or retries a waiting-on-input flag by
+// itself (scripts/run-backlog-automation.js → autoAnswerPlan reads these):
+// the first AUTO_ANSWERS straight away, then AUTO_RETRIES more with a growing
+// gap; a build that never ran gets NEVER_RAN_RETRIES.
+// `retries` are the senior model's tries (Advanced, Claude Opus): after two
+// automatic answers the ticket goes to it to make the call, and only when it
+// could not does a question reach a person (Rob, 16 Nov 2026).
+const AUTO_ANSWER_LIMITS = { answers: 2, retries: 2, neverRan: 12 };
+// "retrying": the automation will act on this flag itself. "used-up": it was
+// the automation's to act on and its tries are spent. null: a person's flag
+// (set by an email address) or one the automation does not answer.
+function selfAnswering(it) {
+  const b = it && it.blocked;
+  if (!b || b.reason !== "waiting-on-input") return null;
+  if (typeof b.setBy === "string" && b.setBy.includes("@")) return null;
+  if (Array.isArray(it.dependsOnItemIds) && it.dependsOnItemIds.length) return null;
+  if (b.kind === "never-ran") return (Number(it.neverRanRetries) || 0) < AUTO_ANSWER_LIMITS.neverRan ? "retrying" : "used-up";
+  if ((Number(it.autoAnswers) || 0) < AUTO_ANSWER_LIMITS.answers) return "retrying";
+  return (Number(it.autoRetries) || 0) < AUTO_ANSWER_LIMITS.retries ? "retrying" : "used-up";
+}
+function autoTriesUsed(it) {
+  const b = (it && it.blocked) || {};
+  return b.kind === "never-ran" ? (Number(it.neverRanRetries) || 0) : (Number(it.autoAnswers) || 0) + (Number(it.autoRetries) || 0);
+}
+
+// The one question a person is asked once the automatic tries are used up:
+// a sentence and two to four choices to click, the recommended one first.
+// The senior model's own question (blocked.question / blocked.options) when
+// it left a usable one; otherwise the standard choice. Each option:
+// { label, recommended, noBuild } — `noBuild` leaves the ticket in Backlog unbuilt.
+const PARK_OPTION = "Park it: leave it in Backlog and stop trying";
+function personQuestion(it) {
+  const b = (it && it.blocked) || {};
+  const clean = (s, max) => String(s || "").replace(/\s+/g, " ").trim().slice(0, max);
+  const raw = Array.isArray(b.options) ? b.options : [];
+  const labels = [];
+  let recommended = -1;
+  for (const o of raw) {
+    const label = clean(o && typeof o === "object" ? o.label : o, 120);
+    if (!label || labels.includes(label)) continue;
+    if (o && typeof o === "object" && o.recommended && recommended < 0) recommended = labels.length;
+    labels.push(label);
+    if (labels.length === 4) break;
+  }
+  const question = clean(b.question, 240);
+  if (question && labels.length >= 2) {
+    const rec = recommended < 0 ? 0 : recommended;
+    const ordered = [labels[rec], ...labels.filter((_, i) => i !== rec)];
+    return { question, options: ordered.map((label, i) => ({ label, recommended: i === 0, noBuild: false })), fromBuild: true };
+  }
+  const used = autoTriesUsed(it);
+  const why = clean(String(b.note || "").split("\n")[0], 200);
+  return {
+    question: `This ticket was built ${used} time${used === 1 ? "" : "s"}, the last on the senior model, and did not get through${why ? `: ${why}` : "."} What should happen to it?`,
+    options: [
+      { label: "Try again on the senior model", recommended: true, noBuild: false },
+      { label: PARK_OPTION, recommended: false, noBuild: true },
+    ],
+    fromBuild: false,
+  };
+}
+
 const WAITING_ON = ["nobody", "tester", "approver", "decision", "automation", "another ticket", "another project"];
 
 const HOUR = 60 * 60 * 1000;
@@ -204,6 +266,17 @@ function cardState(item, project, now = Date.now(), ctx = {}) {
       const missing = Array.isArray(blocked.missing) && blocked.missing.length ? blocked.missing.join(", ") : "";
       return result("tools-unavailable", `${missing ? `Not built: this session has no ${missing}` : "Not built: a tool this project needs is missing"}${age(since)}`, "decision", since, now, { threshold: "backlog-blocked" });
     }
+    // A flag the pipeline raised and answers itself is not a question for a
+    // person (16 Nov 2026: "Waiting for your answer" on a card whose note
+    // said "Nothing to answer"). It waits on the automation, with no Answer
+    // prompt, until the automatic tries are used up; then it says so plainly.
+    const self = selfAnswering(it);
+    if (self === "retrying") {
+      const senior = (Number(it.autoAnswers) || 0) >= AUTO_ANSWER_LIMITS.answers;
+      const line = blocked.kind === "never-ran" ? "Build did not start · tried again by itself" : senior ? "With the senior model to make the call · nothing to answer" : "Being rebuilt by itself · nothing to answer";
+      return result("auto-retry", line, "automation", since, now);
+    }
+    if (self === "used-up") return result("auto-stopped", `Needs your pick: one question, options to click${age(since)}`, "decision", since, now, { threshold: "backlog-blocked", action: "answer" });
     return result("waiting-input", `Waiting for your answer${age(since)}`, "decision", since, now, { threshold: "backlog-blocked", action: "answer" });
   }
   if (it.patchReady && it.buildAfterTrain) return result("held-patch", "Built · joins the next release", "automation", entered, now);
@@ -419,4 +492,4 @@ function statusEnteredPatch(before, after, nowIso) {
   return { statusEnteredAt: nowIso };
 }
 
-module.exports = { WAITING_ON, AGE_THRESHOLDS, TRAIN_STUCK_THRESHOLDS, TRAIN_STUCK_LABELS, toMillis, ageLabel, statusEnteredMs, onTrain, cardState, deployGate, trainStuckReason, trainStuckPatch, trainState, needsAttention, waitingOnMe, statusEnteredPatch };
+module.exports = { AUTO_ANSWER_LIMITS, selfAnswering, autoTriesUsed, personQuestion, PARK_OPTION, WAITING_ON, AGE_THRESHOLDS, TRAIN_STUCK_THRESHOLDS, TRAIN_STUCK_LABELS, toMillis, ageLabel, statusEnteredMs, onTrain, cardState, deployGate, trainStuckReason, trainStuckPatch, trainState, needsAttention, waitingOnMe, statusEnteredPatch };

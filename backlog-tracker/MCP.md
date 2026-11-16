@@ -223,7 +223,9 @@ otherwise; `status` still decides when given, and `archivedHidden` says how
 many were left out) and, with `searchIn: ["notes"]`, comments; each hit then
 carries `matchedIn` and a `snippet`. `truncated: true` means the 1,500-ticket
 read limit was hit, so pass `projectId`. `get_backlog_item` includes
-`lastFailureReason` (why it last failed testing or was ejected). Example:
+`lastFailureReason` (why it last failed testing or was ejected), and a
+`blocked` flag carries `question` and `options` when a person is being asked
+to pick. Example:
 `list_backlog_items({projectId: "mIPdOCAWevhrgD8g2tCZ", search: "Failed testing", searchIn: ["notes"]})`.
 
 **Pipeline health — call it first when sweeping the board** (RC6wVNJJcPjNTR5hov9W,
