@@ -1515,6 +1515,23 @@
               </div>
               <div id="settings-projects-grid"></div>
             </div>
+            <div class="docs-block" id="settings-release-groups-block">
+              <div class="docs-block-header">
+                <h3>Release groups <span class="page-header-count" id="settings-release-groups-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About release groups" data-tip="Projects that ship in one deployable share one train: one branch, one lock, one Deploy to Main and one PR. Each project keeps its own Backlog, columns, docs and archive. Only admins change a group, and only while the trains involved are empty."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="release-group-new-btn" hidden>New release group</button>
+              </div>
+              <form id="release-group-new-form" class="release-group-form" hidden>
+                <label>Name <input type="text" id="release-group-name" maxlength="80" required></label>
+                <label>Branch <input type="text" id="release-group-branch" maxlength="100" placeholder="deploy/name" required></label>
+                <label>First project <select id="release-group-first-project" required></select></label>
+                <button type="submit" class="btn-primary">Create</button>
+                <button type="button" class="btn-ghost" id="release-group-new-cancel">Cancel</button>
+              </form>
+              <p class="release-group-status" id="release-group-status" role="status" hidden></p>
+              <div id="settings-release-groups"></div>
+            </div>
           </div>
 
           <div class="settings-pane" data-settings-pane="releases" hidden>

@@ -315,6 +315,19 @@ Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 
 ### The deployment train — one branch and one PR per project
 
+**Release groups: one deployable, one train (16 Nov 2026).** Projects that
+ship in one deployable share one train: `releaseGroups/{id}` `{name,
+deployBranch, projectIds}` plus `projects/{id}.releaseGroupId`. The group's
+branch, lock, tests, Deploy to Main, PR and version bump are shared; each
+project keeps its own Backlog, columns, docs and archive. The logic is
+`functions/release-groups.js` (browser copy `public/js/release-groups.js`),
+managed from Settings → Projects → Release groups (admin), tested by
+`test/release-groups.test.js`. The console's two projects (Backlog Tracker &
+FAQs and Staff Kanban) are to join the group "PH Agent Console" on
+`deploy/ph-agent-console`; their old branches `deploy/backlog-tracker-faqs`
+and `deploy/kanban-staff-board` are then left in place, unused. See
+REQUIREMENTS.md → "Release groups — one deployable, one train".
+
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
 with no ticket of its own is fast-forwarded to main; a train carrying
