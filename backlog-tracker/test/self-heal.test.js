@@ -146,7 +146,18 @@ async function test(name, fn) {
     assert.ok(autoAnswerPlan(q({ blocked: { setBy: "claude" } }), now), "a build session's question is");
     assert.ok(autoAnswerPlan(q({ blocked: { setBy: "build-report" } }), now), "and a build that stopped without a patch");
     assert.ok(autoAnswerPlan(q({ autoAnswers: 1 }), now));
-    assert.strictEqual(autoAnswerPlan(q({ autoAnswers: 2 }), now), null, "after 2 it stays flagged for a person");
+    // After two answers it goes to the senior model (16 Nov 2026), not to a person.
+    const senior = autoAnswerPlan(q({ autoAnswers: 2 }), now);
+    assert.ok(senior && senior.senior, "the third try is the senior model's, straight away");
+    assert.strictEqual(senior.fields.autoRetries, 1);
+    assert.deepStrictEqual([senior.fields.model, senior.fields.modelAuto, typeof senior.fields.modelEscalatedAt], ["advanced", false, "string"]);
+    assert.match(senior.text, /^Passed to the senior model \(Advanced, Claude Opus\) to make the call, try 1 of 2/);
+    assert.match(senior.answer, /`options` is 2 to 4 short choices/);
+    assert.deepStrictEqual(Object.keys(autoAnswerPlan(q({ autoAnswers: 2, model: "advanced" }), now).fields), ["autoRetries"], "an Advanced ticket is not raised again");
+    const setAt = Date.parse(q({}).blocked.setAt);
+    assert.strictEqual(autoAnswerPlan(q({ autoAnswers: 2, autoRetries: 1 }), setAt + 10 * 60 * 1000), null, "its second try waits 30 minutes");
+    assert.ok(autoAnswerPlan(q({ autoAnswers: 2, autoRetries: 1 }), setAt + 31 * 60 * 1000));
+    assert.strictEqual(autoAnswerPlan(q({ autoAnswers: 2, autoRetries: 2 }), setAt + 24 * 3600 * 1000), null, "then, and only then, a person is asked");
     assert.strictEqual(autoAnswerPlan(q({ dependsOnItemIds: ["x"] }), now), null, "a dependency wait is never auto-answered");
     assert.strictEqual(autoAnswerPlan(q({ blocked: { reason: "needs-decision" } }), now), null);
     assert.strictEqual(autoAnswerPlan({ status: "backlog" }, now), null);
