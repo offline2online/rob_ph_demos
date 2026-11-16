@@ -729,7 +729,14 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     await dragCard(p, "PH-34", { status: "in-progress" }, { input: prof.touch ? "touch" : "mouse" }).catch((e) => { if (!e.unreachable) throw e; });
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
-  await press(p, '.kb-card[data-key="PH-20"]');
+  // A viewer's touch drag above never starts a card drag, so Chromium treats it as a pan and flings; the next tap
+  // only stops the fling and produces no click. Tap until the modal opens (it opens on the first tap when nothing
+  // was flung), then wait for it properly.
+  for (let i = 0; i < 4; i++) {
+    await press(p, '.kb-card[data-key="PH-20"]');
+    if (await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 1500 }).then(() => true, () => false)) break;
+  }
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 5000 });
   assert.equal(await p.$("#f-save"), null, "no Save");
   assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
   assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");
