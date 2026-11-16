@@ -22,7 +22,11 @@ const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+// Contract-change review flags (ZmEWDC40NYOiojehfPjk): a flagged ticket's
+// build fire carries what its upstream changed.
+const { contractReviewBlock } = require("./contract-review");
 const buildOrder = require("./build-order");
+const ownerFiring = require("./owner-firing");
 
 initializeApp();
 
@@ -123,6 +127,15 @@ async function resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sh
     }
   }
   return { fireUrl: sharedFireUrl, token: sharedToken, via: "shared" };
+}
+
+// An owner-tagged agent ticket (functions/owner-firing.js) fires through its
+// owner's personal binding and nothing else: the same lookup as above with no
+// shared fallback, so null means "this owner has no usable binding".
+async function ownerRoutineCredentials(db, ownerEmail) {
+  if (!ownerEmail) return null;
+  const c = await resolveRoutineCredentials(db, ownerEmail, null, null);
+  return c.via === "member" && c.fireUrl && c.token ? { fireUrl: c.fireUrl, token: c.token, via: "owner" } : null;
 }
 
 // The GitHub token onBacklogItemReadyForAutomation (bottom of this file)
@@ -236,7 +249,7 @@ function perItemFireText({ item, siblings, projectId, projectName, prefix = "", 
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${contractReviewBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
@@ -319,7 +332,7 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
   };
 }
 
-async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, builtOnById = {}, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
+async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor = null, projectId, projectName, prefix, suffix, builtOnById = {}, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
   const results = new Array(items.length);
   let next = 0;
   let throttled = false;
@@ -336,8 +349,11 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, proj
       if (throttled) { deferNow(); continue; }
       const buildAttemptId = newBuildAttemptId();
       const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix, buildAttemptId, builtOn: builtOnById[item.id] || [] });
+      // An owner-tagged ticket fires through its owner's own binding
+      // (functions/owner-firing.js); everything else through fireUrl/token.
+      const creds = (credentialsFor && credentialsFor(item)) || { fireUrl, token };
       try {
-        const r = await fireRoutine(fireUrl, token, text, fetchImpl);
+        const r = await fireRoutine(creds.fireUrl, creds.token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
         if (r.status === 429) throttled = true;
         results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId } : {}) };
@@ -415,6 +431,45 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       const skipped = items.filter((i) => skip.has(i.id)).map((i) => i.id);
       items = items.filter((i) => !skip.has(i.id));
       if (skipped.length) logger.info("Skipped tickets an earlier click is still building", { projectId: event.params.projectId, skipped });
+    }
+
+    // Agent tickets fire under their owner's own Claude account only
+    // (functions/owner-firing.js). Someone else's agent ticket is refused (and
+    // says so on the card when the click named it); an owner with no personal
+    // Routine gets nothing fired rather than the shared token. Worked out
+    // before the build order, so a refused ticket is never queued or held.
+    const namedIds = Array.isArray(after.notifyItemIds) && after.notifyItemIds.length ? new Set(after.notifyItemIds) : null;
+    let ownerPlan = ownerFiring.planOwnedBuild(items, {
+      requesterEmail: after.notifyRequestedByEmail,
+      automatic: ownerFiring.isAutomaticBuildRequest(after),
+      named: (id) => !!namedIds && namedIds.has(id),
+    });
+    const credsByOwner = {};
+    for (const owner of Object.keys(ownerPlan.byOwner)) credsByOwner[owner] = await ownerRoutineCredentials(db, owner);
+    ownerPlan = ownerFiring.refuseUnboundOwners(ownerPlan, (owner) => !!credsByOwner[owner]);
+    if (ownerPlan.refused.length) {
+      for (const r of ownerPlan.refused) {
+        try {
+          const lastFire = ownerFiring.refusedFireRecord({ reason: r.reason, message: r.message, prior: r.item.lastFire || {}, requestedAt: after.notifyRequestedAt, requestedByEmail: after.notifyRequestedByEmail });
+          // Named in the click: say so on the card's comment thread too, so the
+          // refusal is read where people look (ZmEWDC40NYOiojehfPjk).
+          const note = { author: "backlog-automation", text: `Not built: ${r.message}`, at: new Date() };
+          await db.collection("backlogItems").doc(r.item.id).set({ lastFire, notes: FieldValue.arrayUnion(note) }, { merge: true });
+        } catch (err) {
+          logger.error("Couldn't record a refused owner fire on the card", { projectId: event.params.projectId, itemId: r.item.id, error: err instanceof Error ? err.message : String(err) });
+        }
+      }
+      logger.info("Agent tickets not fired: owner-only firing", { projectId: event.params.projectId, refused: ownerPlan.refused.map((r) => ({ itemId: r.item.id, reason: r.reason })) });
+    }
+    if (ownerPlan.skipped.length) logger.info("Left other members' agent tickets out of a whole-column click", { projectId: event.params.projectId, skipped: ownerPlan.skipped.map((i) => i.id) });
+    const ownerFireable = new Set([...ownerPlan.shared, ...Object.values(ownerPlan.byOwner).flat()].map((i) => i.id));
+    const ownerRefusedNote = ownerPlan.refused.length ? ownerPlan.refused.map((r) => r.message).filter((m, n, a) => a.indexOf(m) === n).join(" ") : "";
+    items = items.filter((i) => ownerFireable.has(i.id));
+    if (!items.length && ownerPlan.refused.length) {
+      await db.collection("projects").doc(event.params.projectId).set({
+        notifyRoutine: { status: "error", errorMessage: ownerRefusedNote, firedAt: new Date() },
+      }, { merge: true });
+      return;
     }
 
     // Build order (ZE8h8cfaezOb0eTsRjSH, 14 Nov 2026): a click used to fire
@@ -497,7 +552,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     }
 
     const projectName = after.name || "A project";
-    const sentItemIds = [...new Set([...inFlight, ...items.map((i) => i.id)])];
+    let sentItemIds = [...new Set([...inFlight, ...items.map((i) => i.id)])];
 
     // Fire the Routine BEFORE posting to Slack (reversed from the original
     // order) so a resolved session id/url can ride along in the Slack
@@ -505,14 +560,28 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // Notify Claude button reads to show a spinner, then itself becomes the
     // session link once a session id resolves — reflects the real outcome
     // of this specific click.
-    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+    const { fireUrl, token, via: sharedCredVia } = await resolveRoutineCredentials(
       db, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
+    // Owner-tagged tickets use their owner's binding (looked up above), never
+    // fireUrl/token; a ticket with no usable credentials is not sent.
+    const credentialsFor = (item) => {
+      const owner = ownerFiring.ticketOwner(item);
+      return owner ? credsByOwner[owner] : (fireUrl && token ? { fireUrl, token } : null);
+    };
+    const withoutCreds = items.filter((i) => !credentialsFor(i));
+    if (withoutCreds.length && withoutCreds.length < items.length) {
+      logger.warn("No shared Routine configured — firing only the owner-tagged tickets", { projectId: event.params.projectId, notFired: withoutCreds.map((i) => i.id) });
+      items = items.filter((i) => credentialsFor(i));
+      sentItemIds = [...new Set([...inFlight, ...items.map((i) => i.id)])];
+    }
+    const ownedCount = items.filter((i) => ownerFiring.ticketOwner(i)).length;
+    const routineCredVia = ownedCount ? (ownedCount === items.length ? "owner" : `${sharedCredVia}+owner`) : sharedCredVia;
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
 
-    if (fireUrl && token) {
+    if (items.length && items.every((i) => credentialsFor(i))) {
       // Per-project override/addendum to the Routine's own fixed prompt (see
       // the Docs page's "Routine instructions" block, projects/{id}
       // .routinePromptMd) — lets one project hand the Routine extra
@@ -535,7 +604,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       // patchBaseSha (run-backlog-automation.js) keeps parallel builds that
       // touch the same file from overwriting each other.
       const fired = await fireBuildSessionsPerItem({
-        items, fireUrl, token, projectId: event.params.projectId, projectName,
+        items, fireUrl, token, credentialsFor, projectId: event.params.projectId, projectName,
         prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(), builtOnById,
       });
       const carried = ((previous && previous.sessions) || []).filter((x) => x && inFlight.includes(x.itemId));
@@ -584,7 +653,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sessions,
           itemCount: sentItemIds.length,
           sentItemIds,
-          errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
+          errorMessage: [fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null), ownerRefusedNote || null].filter(Boolean).join(" ") || null,
           firedVia: routineCredVia,
           // What the click held or queued (null when it fired everything).
           buildOrder: buildOrderRecord,
@@ -732,7 +801,23 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     // meant sessionUrl was always null by the time the message was built —
     // a "Notify Claude — Deploy clicked" line with no session link and no
     // indication of which items, ever (FWHlgviqZxearPMvE9G2).
-    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+    // A train carrying agent tickets deploys only under their owner's own
+    // binding, and only when the owner clicked (functions/owner-firing.js).
+    // Refused or unbound: nothing fires, and the button says why.
+    const deployOwner = ownerFiring.planOwnedDeploy(items, { requesterEmail: after.deployNotifyRequestedByEmail });
+    let ownerDeployCreds = null;
+    if (deployOwner.mode === "owner") {
+      ownerDeployCreds = await ownerRoutineCredentials(db, deployOwner.owner);
+      if (!ownerDeployCreds) deployOwner.message = ownerFiring.ownerRefusalMessage("no-binding", deployOwner.owner);
+    }
+    if (deployOwner.mode === "refused" || (deployOwner.mode === "owner" && !ownerDeployCreds)) {
+      logger.info("Deploy to Main not fired: owner-only firing", { projectId: event.params.projectId, owners: deployOwner.owners || [deployOwner.owner] });
+      await db.collection("projects").doc(event.params.projectId).set({
+        deployRoutine: { status: "error", firedAt: new Date(), sessionId: null, sessionUrl: null, itemCount: items.length, errorMessage: deployOwner.message, firedVia: "refused" },
+      }, { merge: true });
+      return;
+    }
+    const { fireUrl, token, via: routineCredVia } = ownerDeployCreds || await resolveRoutineCredentials(
       db, after.deployNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
     let sessionId = null;
@@ -943,7 +1028,7 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
       .where("projectId", "==", event.params.projectId)
       .where("status", "==", "backlog")
       .get();
-    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    let items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
       logger.info("Groom requested but Backlog is empty — nothing to groom or fire the Routine for", {
@@ -954,7 +1039,30 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
 
     const projectName = after.name || "A project";
 
-    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
+    // Other members' agent tickets stay out of this session, and the
+    // clicker's own come along only through their personal binding
+    // (functions/owner-firing.js); with any of theirs included the session
+    // runs under that binding, never the shared token.
+    const groomPlan = ownerFiring.planOwnedGroom(items, { requesterEmail: after.groomRequestedByEmail });
+    let groomOwnerCreds = null;
+    let groomNote = groomPlan.excluded.length ? `${groomPlan.excluded.length} agent ticket${groomPlan.excluded.length === 1 ? "" : "s"} owned by someone else left out.` : "";
+    items = groomPlan.keep;
+    if (groomPlan.ownOwned.length) {
+      groomOwnerCreds = await ownerRoutineCredentials(db, ownerFiring.normEmail(after.groomRequestedByEmail));
+      if (!groomOwnerCreds) {
+        const own = new Set(groomPlan.ownOwned.map((i) => i.id));
+        items = items.filter((i) => !own.has(i.id));
+        groomNote = [groomNote, `Your ${own.size} agent ticket${own.size === 1 ? " was" : "s were"} left out: set up your personal Claude Routine in Settings → My Claude Routine.`].filter(Boolean).join(" ");
+      }
+    }
+    if (items.length === 0) {
+      await db.collection("projects").doc(event.params.projectId).set({
+        groomRoutine: { status: "error", firedAt: new Date(), sessionId: null, sessionUrl: null, itemCount: 0, errorMessage: `Nothing groomed. ${groomNote}`.trim(), firedVia: "refused" },
+      }, { merge: true });
+      return;
+    }
+
+    const { fireUrl, token, via: routineCredVia } = groomOwnerCreds || await resolveRoutineCredentials(
       db, after.groomRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
     let sessionId = null;
@@ -1034,6 +1142,8 @@ exports.notifyOnProjectReadyForGrooming = onDocumentUpdated(
           sessionUrl,
           itemCount: items.length,
           errorMessage: fireError,
+          // Agent tickets left out of this groom (owner-only firing), shown on hover.
+          note: groomNote || null,
           firedVia: routineCredVia,
         },
       }, { merge: true });
@@ -2562,4 +2672,4 @@ exports.kanbanAgentRollup = mcp.kanbanAgentRollup;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };
+exports.__test = { ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };

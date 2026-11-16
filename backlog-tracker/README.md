@@ -315,6 +315,25 @@ Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 
 ### The deployment train — one branch and one PR per project
 
+**Late arrivals, the deploy queue and shared files (15 Nov 2026,
+wPoSOXfp8Em06Vzp3Cz7).** A patch that becomes ready while its project's
+train is closing (locked, or deploying) is held on the card ("Built — joins
+the next release") and lands by itself after the merge, never on top of the
+version bump. Deploy to Main enters `settings/deployQueue`: trains that share
+files or a deploy workflow merge one at a time in click order ("Queued
+behind <project>'s deploy"), and a queued train is not synced, tested or
+bumped until it reaches the head; then it merges main, tests that head once
+and bumps. A stalled head (60 minutes without progress) is passed over and
+keeps its place. `version.js` conflicts on the `APP_VERSION` line resolve to
+main's line. A landed ticket records what it shares with other trains
+(`sharedWith`, chip "Also changed on <project>'s train", or "Conflicts with
+…" in the warning colour when `git merge-tree` of the tips conflicts) and
+files another project owns (`foreignPaths`, `projects.ownedPaths`, chip
+"Changes <project>'s files"). Pure rules: `functions/deploy-queue.js`
+(`test/deploy-queue.test.js`); view: `public/js/train-overlap.js`
+(`test/train-overlap-view.test.mjs`). REQUIREMENTS.md → "Late arrivals",
+"Deploy queue", "Shared files between trains".
+
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
 with no ticket of its own is fast-forwarded to main; a train carrying
@@ -411,11 +430,24 @@ What the train changes:
   from a clean train) with the failing run on its notes. A red ticket
   is not sent back when a later ticket on the train, which carries it, has
   passed (23 Oct 2026: the next ticket had fixed the test it broke). An approved
-  culprit is held by the deploy gate until Deploy to Main has actually been
-  clicked and parked red on it (`trainStatus: "conflict"` with
-  `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest
-  of the approved train ships with no second click (18 Oct 2026, PR #412).
-  It is only ejected with a green commit before it.
+  culprit is sent back the same way (15 Nov 2026, Flow 6/9: on 14 Nov an
+  approved ticket's own commit d49d456 failed twice and the train sat held
+  behind a note asking for Failed testing); main is still proven green first
+  (`provenGreenMain`, or the base check below), so a check that is red on
+  main never sends the train's first ticket back. Before that (18 Oct 2026,
+  PR #412) it was only ejected once Deploy to Main had been parked red on it.
+  **One note per event** (15 Nov 2026, Flow 6/9): an automation note can carry
+  a `key` (`train-test:<sha>:<workflow>`, `train-red:<branch>:<spell start>`,
+  `build-silent:<attempt>`, `revert:<sha>`), and `appendNote` with a key the
+  card already holds replaces that note (text and time, `firstAt` kept) in
+  the same `:commit` (`removeAllFromArray` then `appendMissingElements`). A
+  train-test failure is one note that moves from "failed, re-running" to
+  "sent back" or "passed on re-run (flaky: <test>)", naming the failing test;
+  a card on a red train it did not cause gets one note per red spell
+  (`projects/{id}.trainRedSpell`), closed with "Train was red for 2 h 10 min
+  because of <ticket>; green again". People's and Claude's notes never carry
+  a key. The Edit item modal shows the automation's notes collapsed under
+  **Pipeline history (N)**. Tests: `test/note-keys.test.js`.
   **Nothing is sent back for a failure main already has** (20 Oct 2026,
   NBQ1scD9GFEr6YbQxSYX): before a send-back the same workflow runs on the
   main commit the failing run contained (`baseCheckAction`, via a throwaway
@@ -1868,6 +1900,11 @@ usage. An engineer can instead register their own Routine, so board clicks
    whether one is set. The fire URL must be on `api.anthropic.com`. Pass
    both as `""` to clear it and go back to the shared secrets.
 
+A member who can write and connects over MCP with no binding is walked
+through these steps by their own agent, one at a time, at the start of the
+conversation (the server instructions ask for it; see `MCP.md` →
+"Guided Routine setup on connect").
+
 `functions/index.js`'s `resolveRoutineCredentials` — shared by all three
 fire functions — checks the clicking member's binding
 (`projects/{id}.notifyRequestedByEmail` /
@@ -1882,6 +1919,34 @@ There's no way to automate the `claude.ai/code/routines` step itself —
 the routines API has no delegated-OAuth "fire on behalf of" flow, so a
 Routine's fire URL/token is per-Routine and hand-generated once. This
 MCP-driven local setup is the closest one-click the API allows.
+
+**Setting it up from the console (15 Nov 2026)**: Settings → **My Claude
+Routine** walks through the same steps without an agent — the bootstrap
+prompt with a Copy button, then a form for the fire URL and token
+(`/mcp/me/routine-binding` in `functions/mcp-server.js`, the same write and
+validation as `set_my_routine_binding`; write-only).
+
+**Agent tickets (xFzQgynkoMdV33iWJFZq)**: a ticket with `ownerEmail` fires
+only on its owner's binding — Ready for Dev, Deploy to Main and Groom
+Backlog alike, never the shared secrets, and never on anyone else's click
+(the pipeline's own automatic rebuilds, stamped `notifyAutomationAt`, also
+use the owner's binding). An owner with no binding gets nothing fired, and
+the board disables the control with an info link to My Claude Routine. Rule
+in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
+full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their
+owner's own Claude account".
+
+**Owner scoping and contract-change review (ZmEWDC40NYOiojehfPjk)**: every
+member's agent reads every ticket, but over MCP changes (update, archive,
+delete, flag) only its own member's agent tickets (`ownerEditRefusal` in
+`functions/owner-firing.js`); comments stay open. When a ticket's landed
+commit changes an interface contract (`shared/interface-contract.md`,
+`shared/board-interfaces.json` or a file it lists), the tickets that build
+after it get `contractReview` and a **Needs review: upstream contract
+changed** chip; their own next build reviews it, and the flag clears when
+that build lands (`functions/contract-review.js`, `flagContractDependents`
+in `scripts/run-backlog-automation.js`). See `REQUIREMENTS.md` → "Owner
+scoping and contract-change review".
 
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 

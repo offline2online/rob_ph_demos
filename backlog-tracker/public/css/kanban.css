@@ -139,7 +139,12 @@ html[data-page="staff-kanban"] .topbar { position: relative; }
 .kb-cell-head { display: none; }
 
 /* Cards */
-.kb-card { background: var(--ap-card); padding: 10px 11px; cursor: grab; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: box-shadow var(--ap-fast); }
+/* touch-action: pan-y — a ticket never scrolls left or right under a finger:
+   a sideways swipe that starts on a ticket no longer pans the board on a tablet
+   (the board still scrolls sideways from its column headers and gaps, and
+   under a dragged card held at the edge, KB-BOARD-4). min-width / overflow-wrap
+   keep a long title or label inside the card (jcQCHLGeLP50iOeh1ZnJ). */
+.kb-card { background: var(--ap-card); padding: 10px 11px; cursor: grab; touch-action: pan-y; min-width: 0; max-width: 100%; overflow-wrap: anywhere; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: box-shadow var(--ap-fast); }
 .kb-card:hover { box-shadow: 0 0 0 .5px var(--ap-divider), 0 3px 10px rgba(0, 0, 0, .08); }
 .kb-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .kb-card .card-title { font-size: 13.5px; line-height: 1.35; margin: 0 0 6px; }

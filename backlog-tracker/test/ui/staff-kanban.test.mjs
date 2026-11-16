@@ -677,15 +677,26 @@ T("TC-23", "Agent Board and Staff Kanban are separate pages in the navigation", 
 T("TC-24", "completed vs withdrawn via the Status menu; epic progress ignores withdrawn", async (prof) => {
   const p = await open(prof);
   await press(p, '.kb-card[data-key="PH-26"]');
+  // The modal opens once the full ticket has been read: wait for PH-26's own form and its editor (Save's
+  // change tracking starts when the editor arrives), not for whatever #f-status happens to be in the page.
+  await until(async () => /PH-26/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-26 to open");
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-description .ql-editor");
   const opts = await p.$$eval("#f-status option", (o) => o.map((x) => x.textContent));
   assert.ok(opts.includes("Completed") && opts.includes("Withdrawn") && !opts.some((t) => /Completed \//.test(t)));
-  await p.selectOption("#f-status", "done:withdrawn"); await press(p, "#f-save"); await p.waitForTimeout(150);
-  assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" });
-  assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn")));
+  // Choose Withdrawn and wait for Save to switch on. A form redrawn meanwhile (the ticket re-read) shows the
+  // ticket's status again, so the choice is made again on the form that is there.
+  await eventually(async () => {
+    if ((await p.inputValue("#f-status")) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn");
+    assert.ok(await p.isEnabled("#f-save"), "Save is on: the status changed");
+  });
+  await press(p, "#f-save");
+  await eventually(async () => assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" }));
+  await eventually(async () => assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn"))));
   const t = await stored(p, "PH-26");
   assert.equal(t.open, false); assert.equal(t.resolution, "withdrawn"); assert.ok(t.closedAt);
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the saved ticket to close");
   await press(p, '.kb-card[data-key="PH-1"]');
-  assert.match(await p.textContent('[data-field="children"] .field-label'), /withdrawn/);
+  await eventually(async () => assert.match(await p.textContent('#task-backdrop:not([hidden]) [data-field="children"] .field-label', { timeout: 2000 }), /withdrawn/));
   await p.done();
 });
 
@@ -718,7 +729,14 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     await dragCard(p, "PH-34", { status: "in-progress" }, { input: prof.touch ? "touch" : "mouse" }).catch((e) => { if (!e.unreachable) throw e; });
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
-  await press(p, '.kb-card[data-key="PH-20"]');
+  // A viewer's touch drag above never starts a card drag, so Chromium treats it as a pan and flings; the next tap
+  // only stops the fling and produces no click. Tap until the modal opens (it opens on the first tap when nothing
+  // was flung), then wait for it properly.
+  for (let i = 0; i < 4; i++) {
+    await press(p, '.kb-card[data-key="PH-20"]');
+    if (await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 1500 }).then(() => true, () => false)) break;
+  }
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 5000 });
   assert.equal(await p.$("#f-save"), null, "no Save");
   assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
   assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");

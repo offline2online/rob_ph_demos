@@ -168,6 +168,9 @@ service cloud.firestore {
     // populated project, which would have denied a plain rename.
     //   - the train fields (deployBranch, trainReady, trainStatus,
     //     trainPrNumber, trainNote, needsHumanMerge) are automation-only;
+    //   - notifyAutomationAt marks a build request as the pipeline's own,
+    //     which fires an agent ticket under its owner's Routine whoever
+    //     clicked (functions/owner-firing.js), so it is automation-only too;
     //   - trainLocked may only be set true from a browser (app.js's
     //     deployToFeature); only a merged train clears it;
     //   - routinePromptMd is spliced verbatim into a Routine session's
@@ -177,11 +180,18 @@ service cloud.firestore {
     //     ever name themselves.
     function humanProjectUpdateOk() {
       let changed = incoming().diff(resource.data).affectedKeys();
-      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
+      // trainHold (incl. "queued", the deploy queue's hold) is the automation's too.
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "notifyAutomationAt", "trainHold"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
+        // A person's click is stamped with the server's clock (app.js writes
+        // serverTimestamp()). Without this, a member could write back the
+        // automation's own notifyAutomationAt value and have their click
+        // treated as the pipeline's, firing another member's agent ticket on
+        // that member's Routine (owner-firing.js isAutomaticBuildRequest).
+        && (!changed.hasAny(["notifyRequestedAt"]) || incoming().notifyRequestedAt == request.time)
         && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
         && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail))
         && (!changed.hasAny(["reviewRequestedByEmail"]) || requesterIsCaller(incoming().reviewRequestedByEmail))
@@ -199,7 +209,10 @@ service cloud.firestore {
       // Firestore's own document limit and can only shrink from here.
       return (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300))
         && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
-        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
+        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")))
+        // Owned paths (wPoSOXfp8Em06Vzp3Cz7): a member edits them on the
+        // Docs page like repoFolder; a short list of repo-relative prefixes.
+        && (!("ownedPaths" in incoming()) || incoming().ownedPaths == null || (incoming().ownedPaths is list && incoming().ownedPaths.size() <= 30));
     }
 
     // The type every concept and project carries (ticket ufOwuueuj1f5vmeN0xi2):
@@ -237,7 +250,9 @@ service cloud.firestore {
           && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))
           && (!("reviewRequestedByEmail" in incoming()) || requesterIsCaller(incoming().reviewRequestedByEmail))
           && (!("e2eRequestedByEmail" in incoming()) || requesterIsCaller(incoming().e2eRequestedByEmail))
-          && !("e2eStatus" in incoming())));
+          && !("e2eStatus" in incoming())
+          && (!("notifyRequestedAt" in incoming()) || incoming().notifyRequestedAt == request.time)
+          && !("notifyAutomationAt" in incoming())));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && entityTypeValidIfSet() && entityTypeKeptValid()
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
@@ -396,7 +411,21 @@ service cloud.firestore {
         // (intake / build / manual — the intake trigger decides) and the
         // lane-mate a Ready for Dev click queued it behind. The list itself,
         // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
-        "dependsOnSource", "queuedAfter"];
+        "dependsOnSource", "queuedAfter",
+        // Agent tickets (15 Nov 2026): whose own Claude account the ticket
+        // fires under (functions/owner-firing.js). Set by the server (Send to
+        // Agent, MCP ownedByMe) only, so nobody can tag a ticket with someone
+        // else's Routine.
+        "ownerEmail",
+        // Shared files between trains (wPoSOXfp8Em06Vzp3Cz7): what a landed
+        // ticket shares with another project's live train, and the files it
+        // changed that another project owns. Written by the automation only.
+        "sharedWith", "foreignPaths",
+        // Contract-change review (16 Nov 2026, ZmEWDC40NYOiojehfPjk): set on a
+        // dependent when its upstream ticket's build changed an interface
+        // contract, cleared when the dependent's own patch lands. The
+        // automation's alone, so nobody can dismiss or fake it from a tab.
+        "contractReview"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -1076,7 +1105,10 @@ service cloud.firestore {
         && isNonEmptyBoundedString(incoming().icon, 40)
         && incoming().order is number
         && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 300)
-        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100))
+        // Hidden from the website, with every folder and article under it
+        // (functions/faq-feed.js hiddenCategoryIds); Support Inbox only.
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool);
       allow delete: if isFaqEditor();
     }
 
@@ -1146,7 +1178,11 @@ service cloud.firestore {
       // freshness check GETs one published doc anonymously; nothing public
       // lists or queries the collection (the export runs as the service
       // account). An article with no status is a legacy import, published.
-      allow get: if isBoardReader() || resource.data.get("status", "published") == "published";
+      // A published article hidden from the website (hiddenFromWebsite —
+      // used by the Support Inbox before a feature launches) is not public
+      // either. Its category being hidden is enforced where the public reads
+      // (the export and the help API), as rules can't follow the parent chain.
+      allow get: if isBoardReader() || (resource.data.get("status", "published") == "published" && resource.data.get("hiddenFromWebsite", false) != true);
       allow list: if isBoardReader();
       allow create, update: if isFaqEditor()
         && incoming().size() <= 40
@@ -1170,6 +1206,7 @@ service cloud.firestore {
         && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
         && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
         && incoming().status in ["draft", "published"]
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool)
         && incoming().order is number;
       allow delete: if isFaqEditor();
     }
@@ -1376,12 +1413,15 @@ service cloud.firestore {
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
     // Admin-only to write: phaseSkillBindings feeds the Routine's prompt.
+    // settings/deployQueue (wPoSOXfp8Em06Vzp3Cz7) is the deploy queue the
+    // automation keeps with its service account: no browser writes it, an
+    // admin included — a queue entry decides which train merges next.
     match /settings/{docId} {
       allow read: if isBoardReader();
-      allow create, update: if isAdmin()
+      allow create, update: if isAdmin() && docId != "deployQueue"
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && docId != "deployQueue";
     }
 
     // ── Whiteboard ─────────────────────────────────────────────────────────

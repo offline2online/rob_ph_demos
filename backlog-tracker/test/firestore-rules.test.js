@@ -74,6 +74,9 @@ async function reset() {
     await setDoc(doc(db, "faqArticles/aDraft"), {
       categoryId: "c1", title: "D", slug: "d", bodyMd: "<p>unpublished</p>", status: "draft", order: 2,
     });
+    await setDoc(doc(db, "faqArticles/aHidden"), {
+      categoryId: "c1", title: "H", slug: "h", bodyMd: "<p>not launched</p>", status: "published", order: 3, hiddenFromWebsite: true,
+    });
     await setDoc(doc(db, "faqCategories/c1"), { name: "Getting started", icon: "help", order: 1 });
     await setDoc(doc(db, "backlogItems/iBacklog"), Object.assign({}, ITEM, { status: "backlog" }));
     await setDoc(doc(db, "backlogItems/iLive"), Object.assign({}, ITEM, { status: "published-live", mergeCommit: "abc1234", deployCommit: "abc1234" }));
@@ -188,6 +191,22 @@ async function main() {
     setDoc(doc(as(HUMAN), "projects/newBadBranch"), { name: "New Project", type: "Platform", deployBranch: "not-a-branch" }));
   await check("Editor still cannot set trainReady even when creating the project", "deny", () =>
     setDoc(doc(as(HUMAN), "projects/newWithTrainReady"), { name: "New Project", type: "Platform", deployBranch: "deploy/new-project-2", trainReady: true }));
+
+  // ── The deploy queue and shared files between trains (wPoSOXfp8Em06Vzp3Cz7) ──
+  await check("Admin CANNOT write settings/deployQueue (the automation's queue)", "deny", () =>
+    setDoc(doc(as(HUMAN), "settings/deployQueue"), { entries: [] }));
+  await check("Admin can still write other settings docs", "allow", () =>
+    setDoc(doc(as(HUMAN), "settings/phaseSkillBindings"), { build: [], deploy: [] }));
+  await check("Editor CANNOT set trainHold (\"queued\") by hand", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { trainHold: "queued" }, { merge: true }));
+  await check("Editor CANNOT write a card's sharedWith", "deny", () =>
+    setDoc(doc(as(HUMAN), "backlogItems/i1"), { sharedWith: [] }, { merge: true }));
+  await check("Editor CANNOT write a card's foreignPaths", "deny", () =>
+    setDoc(doc(as(HUMAN), "backlogItems/i1"), { foreignPaths: [] }, { merge: true }));
+  await check("Editor can set ownedPaths like repoFolder", "allow", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { ownedPaths: ["backlog-tracker/", "faq/"] }, { merge: true }));
+  await check("Editor CANNOT set an oversized ownedPaths", "deny", () =>
+    setDoc(doc(as(HUMAN), "projects/p1"), { ownedPaths: Array.from({ length: 31 }, (_, i) => `p${i}/`) }, { merge: true }));
 
   // ── The sign-in wall ────────────────────────────────────────────────────
   await check("Stranger cannot read the board", "deny", () => getDoc(doc(as(STRANGER), "projects/p1")));
@@ -350,6 +369,15 @@ async function main() {
     setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: "rLive", removedInReleaseId: "rDraft" }, { merge: true }));
   await check("An article's release binding must be a string id", "deny", () =>
     setDoc(doc(as(MEMBER), "faqArticles/a1"), { introducedInReleaseId: 1 }, { merge: true }));
+  // Hidden from the website (3HabqHlC4WwL137CYTv1).
+  await check("An editor can hide an article from the website", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { hiddenFromWebsite: false }, { merge: true }));
+  await check("An article's hiddenFromWebsite must be a boolean", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqArticles/a1"), { hiddenFromWebsite: "yes" }, { merge: true }));
+  await check("An editor can hide a category from the website", "allow", () =>
+    setDoc(doc(as(MEMBER), "faqCategories/c1"), { hiddenFromWebsite: true }, { merge: true }));
+  await check("A category's hiddenFromWebsite must be a boolean", "deny", () =>
+    setDoc(doc(as(MEMBER), "faqCategories/c1"), { hiddenFromWebsite: 1 }, { merge: true }));
 
   // ── Concept Incubator ──────────────────────────────────────────────────
   // An early-stage idea, held separately from projects/backlogItems until
@@ -557,6 +585,10 @@ async function main() {
     getDoc(doc(as(null), "faqArticles/a1")));
   await check("Anonymous CANNOT GET a draft FAQ article", "deny", () =>
     getDoc(doc(as(null), "faqArticles/aDraft")));
+  await check("Anonymous CANNOT GET a published article hidden from the website", "deny", () =>
+    getDoc(doc(as(null), "faqArticles/aHidden")));
+  await check("A viewer can GET an article hidden from the website", "allow", () =>
+    getDoc(doc(as(VIEWER), "faqArticles/aHidden")));
   await check("Anonymous CANNOT list faqArticles", "deny", () =>
     getDocs(collection(as(null), "faqArticles")));
   await check("Anonymous CANNOT list faqCategories", "deny", () =>
@@ -607,6 +639,24 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1/patchParts/2"), { patchFiles: [{ path: "x.js", content: "evil" }] }));
   await check("A human editor CANNOT change patchPartCount", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { patchPartCount: 2 }, { merge: true }));
+  // Agent tickets (xFzQgynkoMdV33iWJFZq): whose own Claude account a ticket
+  // fires under is set by the server only, never from a browser.
+  await check("A human editor CANNOT tag a ticket with an owner (ownerEmail)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { ownerEmail: "sam@ph.example" }, { merge: true }));
+  await check("A human editor CANNOT file a ticket already tagged with an owner", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iOwned"), Object.assign({}, ITEM, { status: "backlog", ownerEmail: "ada@ph.example" })));
+  await check("The automation user can tag a ticket with an owner", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { ownerEmail: "sam@ph.example" }, { merge: true }));
+  // Contract-change review (ZmEWDC40NYOiojehfPjk): the automation flags a
+  // dependent; no browser can set, fake or dismiss the flag.
+  await check("A human editor CANNOT set contractReview", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { contractReview: { status: "needs-review", summary: "x" } }, { merge: true }));
+  await check("A human editor CANNOT file a ticket already carrying contractReview", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iFlagged"), Object.assign({}, ITEM, { status: "backlog", contractReview: { status: "needs-review" } })));
+  await check("The automation user can flag a dependent (contractReview)", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { contractReview: { status: "needs-review", upstreamItemId: "up1", summary: "shared/interface-contract.md (+1 −0)" } }, { merge: true }));
+  await check("A human editor CANNOT clear contractReview once set", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { contractReview: null }, { merge: true }));
   // trainTest (19 Oct 2026): the automation records a card's own test result.
   await check("A human editor CANNOT write trainTest", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));
@@ -704,6 +754,21 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "ada@ph.example" }, { merge: true }));
   await check("An editor naming themselves as the Notify requester is fine", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "Sam@ph.example" }, { merge: true }));
+  // Agent tickets (xFzQgynkoMdV33iWJFZq): notifyAutomationAt marks a build
+  // request as the pipeline's own, which fires an agent ticket under its
+  // owner's Routine whoever clicked — so no browser may write it.
+  await check("An editor CANNOT stamp a click as the automation's (notifyAutomationAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@ph.example", notifyAutomationAt: serverTimestamp() }, { merge: true }));
+  await check("A team admin CANNOT stamp notifyAutomationAt either", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { notifyAutomationAt: serverTimestamp() }, { merge: true }));
+  // Replaying the automation's timestamp would make a click look like the
+  // pipeline's own and fire another member's agent ticket on their Routine.
+  await check("An editor CANNOT backdate notifyRequestedAt (replaying notifyAutomationAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: new Date(0), notifyRequestedByEmail: "sam@ph.example" }, { merge: true }));
+  await check("An editor CANNOT set notifyRequestedAt to any client-chosen time", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: new Date(Date.now() + 60000) }, { merge: true }));
+  await check("The automation user can stamp notifyAutomationAt", "allow", () =>
+    setDoc(doc(as(BOT), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A rename leaves a stored requester email untouched (unchanged passes)", "allow", async () => {
     await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "projects/p1"), { notifyRequestedByEmail: "ada@ph.example" }, { merge: true }));
     await setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed" }, { merge: true });

@@ -76,6 +76,10 @@ export async function startHarness() {
     const enrichCalls = [];
     const supportCalls = [];
     const agentSendCalls = [];
+    // Settings → My Claude Routine (/mcp/me/routine-binding): seed.routineBinding
+    // is { hasRoutineBinding }; a POST is recorded in routineWrites and flips it.
+    const routineWrites = [];
+    let routineBound = !!(seed.routineBinding && seed.routineBinding.hasRoutineBinding);
     const aceStore = (seed.aceOpportunities || []).map((o) => ({ ...o }));
     const addProblem = (p) => problems.push(p);
     await context.addInitScript((s) => { window.__FB_SEED = s; }, seed);
@@ -83,6 +87,16 @@ export async function startHarness() {
     await context.route("**/*", async (route) => {
       const url = new URL(route.request().url());
       if (url.origin === origin) {
+        if (url.pathname === "/mcp/me/routine-binding") {
+          const req = route.request();
+          if (req.method() === "POST") {
+            const body = JSON.parse(req.postData() || "{}");
+            routineWrites.push(body);
+            routineBound = !!(body.fireUrl && body.token);
+            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(routineBound ? { registered: true, hasRoutineBinding: true } : { cleared: true, hasRoutineBinding: false }) });
+          }
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ hasRoutineBinding: routineBound, boundAt: null, bootstrapPrompt: "Fetch backlog-tracker/ROUTINE_INSTRUCTIONS.md and follow it.", routinesUrl: "https://claude.ai/code/routines" }) });
+        }
         if (url.pathname.startsWith("/mcp/") && !url.pathname.startsWith("/mcp/kanban/")) {
           // /mcp/claims/sync is the background membership check.
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: (seed.user && seed.user.role) || "editor", email: (seed.user && seed.user.email) || "editor@ph.example", claimUpdated: false }) });
@@ -204,7 +218,7 @@ export async function startHarness() {
     // a case's own 8 s wait, and the case failed on a page that was still
     // starting (Modals @820px, Promote Leads, mobile-shell; 24 Oct-14 Nov 2026).
     if (waitForApp) await appRendered(page).catch(() => {});
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, routineWrites, origin, close: () => context.close() };
   }
 
   return {

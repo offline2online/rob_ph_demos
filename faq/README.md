@@ -111,6 +111,16 @@ admin console (backlog-tracker → FAQ Management)  ──edits──▶  Firest
   `backlog-tracker/REQUIREMENTS.md` → "FAQ revision review". Neither
   `faq-export.js` nor this site ever reads `pendingRevision`.
 
+## Hidden from the website (`hiddenFromWebsite`)
+
+A category, folder or article with `hiddenFromWebsite: true` (set in FAQ
+Management or over MCP) is **not exported** into `data/` and not served by the
+live feed or the public help search, so the Support Centre never lists it. Hiding
+a category hides its folders and their articles. The article stays in Firestore
+(published or draft) and the Support Inbox still answers email from it. Untick
+"Hide from website" to launch it. See `backlog-tracker/REQUIREMENTS.md` →
+"Hidden from the website".
+
 ## SEO & agent fields
 
 Each article can carry `seoTitle`, `metaDescription`, `directAnswer`,

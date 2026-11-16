@@ -30,8 +30,10 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
+import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
 import { supportRoute, supportHash } from "./support-core.js";
@@ -181,18 +183,22 @@ const FAILURE_REASON_CATEGORIES = [
   "Other",
 ];
 
-// Curated Material Symbols names for FAQ category icons — a starting set
-// covering common Help Center topics, not an exhaustive icon-library pick.
-// A category's current icon is always included in its own dropdown (see
+// Material Symbols names for FAQ category icons: exactly the category
+// icons the website can draw. The Support Centre (and faq/js/icons.js)
+// renders icons as inline SVG from a fixed set, and any other name shows
+// as a "?" there (3HabqHlC4WwL137CYTv1: 18 of the 24 names this picker used
+// to offer — payments, settings, campaign… — drew as "?"). Every name here
+// is also in the console's icon_names font subset (index.html), or the
+// heading and picker showed the bare word ("install_desktop") instead.
+// test/icon-font.test.mjs keeps the three lists in step. A category's
+// current icon is still included in its own dropdown (see
 // faqCategoryIconOptionsHTML) even if it falls outside this list, so
-// nothing silently changes on save just because someone typed a valid but
-// uncurated icon name before this picker existed.
+// nothing silently changes on save.
 const FAQ_CATEGORY_ICONS = [
-  "help", "rocket_launch", "storefront", "payments", "local_offer",
-  "inventory_2", "storage", "settings", "tune", "group",
-  "security", "campaign", "dashboard", "description", "build",
-  "support_agent", "info", "warning", "category", "list_alt",
-  "devices", "cloud", "lock", "notifications",
+  "help", "rocket_launch", "install_desktop", "manage_accounts", "storefront",
+  "devices", "tv", "psychology", "smartphone", "groups",
+  "event", "integration_instructions", "build", "menu_book", "table_chart",
+  "description", "folder",
 ];
 
 function escapeHTML(s) {
@@ -700,6 +706,41 @@ function deployBadgeHTML(item) {
   return '<div class="deploy-badge deploy-badge-' + cls + '" title="' + tip + '">' + commit + '<span>' + label + '</span></div>';
 }
 
+// ── Agent tickets: owner-only firing (xFzQgynkoMdV33iWJFZq) ────────────────
+// A ticket with ownerEmail is an agent ticket: Ready for Dev, Deploy to Main
+// and Groom Backlog fire it only through its owner's personal Routine
+// binding, on the owner's own click (functions/owner-firing.js enforces it;
+// owner-fire.js decides what this viewer's buttons offer). Whether the viewer
+// has a binding comes from /mcp/me/routine-binding, asked once, and only when
+// the board actually shows an agent ticket.
+let myRoutineBinding = null; // null until known, then true / false
+let myRoutineBindingLoading = false;
+let routineSetupInfo = null; // the last /mcp/me/routine-binding answer
+function viewerFireState() {
+  if (myRoutineBinding === null && !myRoutineBindingLoading) loadMyRoutineBindingState();
+  return { email: (auth.currentUser && auth.currentUser.email) || "", hasBinding: myRoutineBinding };
+}
+async function loadMyRoutineBindingState() {
+  myRoutineBindingLoading = true;
+  try {
+    const resp = await fetch("/mcp/me/routine-binding", { method: "GET", headers: await consoleApiHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    routineSetupInfo = data;
+    myRoutineBinding = data.hasRoutineBinding === true;
+  } catch (err) {
+    console.warn("backlog-tracker: couldn't check your personal Claude Routine", err);
+    myRoutineBinding = false;
+  } finally {
+    myRoutineBindingLoading = false;
+  }
+  render();
+}
+// The info icon beside a disabled control: says why, and links to the setup page.
+function ownerFireInfoHTML(block) {
+  return `<a class="owner-fire-info" href="${ROUTINE_SETUP_HASH}" title="${escapeHTML(block.message)}" aria-label="${escapeHTML(block.message)}"><span class="material-symbols-outlined" aria-hidden="true">info</span></a>`;
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
   // Moving back is a designed, documented flow from ready-to-publish (send
@@ -793,7 +834,12 @@ function cardHTML(item) {
   // different checkbox classes/selection sets (see getSelectedSet vs.
   // getDeploySelectedSet). No other column gets a checkbox — nothing else
   // in the pipeline acts on a hand-picked subset.
-  const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude)
+  // An agent ticket this viewer may not start (someone else's, or theirs with
+  // no personal Routine yet) gets a disabled box and an info link to setup.
+  const ownerBlock = isBacklog && ticketOwner(item) ? ownerFireBlock(item, viewerFireState()) : null;
+  const selectCb = (isBacklog && !isInDevelopment && !isSentToClaude && ownerBlock)
+    ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" disabled aria-disabled="true" title="${escapeHTML(ownerBlock.message)}">${ownerFireInfoHTML(ownerBlock)}`
+    : (isBacklog && !isInDevelopment && !isSentToClaude)
     ? `<input type="checkbox" class="card-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Ready for Dev" ${getSelectedSet(pid).has(item.id) ? "checked" : ""}>`
     : (isTesting && !noDeploy
         ? `<input type="checkbox" class="card-deploy-select-cb" data-id="${item.id}" data-project-id="${escapeHTML(pid)}" title="Select for Approved for Deployment" ${getDeploySelectedSet(pid).has(item.id) ? "checked" : ""}>`
@@ -901,7 +947,12 @@ function cardHTML(item) {
   // control" treatment as mergeBtn above, for the short window between the
   // Routine setting patchReady and backlog-automation.yml actually picking
   // it up (see isInDevelopment above).
-  const inDevelopmentHint = isInDevelopment
+  // A built patch held for the next release (wPoSOXfp8Em06Vzp3Cz7): the
+  // project's train was already closing when it became ready, so it lands by
+  // itself right after that train merges.
+  const inDevelopmentHint = isInDevelopment && item.buildAfterTrain
+    ? `<span class="in-development-hint held-patch-hint" title="This project's train was already closing when this build finished, so it was not landed on it. It lands by itself right after that train merges.">Built — joins the next release</span>`
+    : isInDevelopment
     ? `<span class="in-development-hint" title="Claude has already packaged a fix for this — it's locked until backlog-automation.yml opens the PR and moves it to Ready for Testing">In development — locked</span>`
     : (isSentToClaude
         ? sentToClaudeHintHTML(item)
@@ -991,6 +1042,17 @@ function cardHTML(item) {
   // default, and badging every card would be noise). The hover says which
   // model actually built and reviewed it, once those sessions have recorded it.
   const modelLog = modelLogLine(item);
+  const ownerOfItem = ticketOwner(item);
+  const ownerBadge = ownerOfItem
+    ? `<span class="review-flag owner-badge" title="${escapeHTML(`Agent ticket owned by ${ownerOfItem}: it is built, deployed and groomed only under their own Claude account, and only they can start it.`)}"><span class="material-symbols-outlined">person</span>${escapeHTML(ownerOfItem.split("@")[0])}</span>`
+    : "";
+  // Contract-change review (ZmEWDC40NYOiojehfPjk): a ticket this one builds
+  // after changed an interface contract when it landed. Set and cleared by the
+  // automation only; this ticket's own next build reviews it. Hover = what changed.
+  const cr = item.contractReview;
+  const contractReviewChip = cr && cr.status === "needs-review" && item.status !== "published-live" && item.status !== "archived"
+    ? `<span class="review-flag contract-review-flag" title="${escapeHTML(`Upstream contract changed: "${cr.upstreamTitle || cr.upstreamItemId || "a ticket this builds after"}" changed ${cr.summary || "an interface contract"}. This ticket's own next build reviews it; the flag clears when that build lands.`)}"><span class="material-symbols-outlined">sync_problem</span>Needs review: upstream contract changed</span>`
+    : "";
   const modelBadge = ticketModel(item) === "advanced"
     ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>Advanced · Opus</span>`
     : "";
@@ -1126,7 +1188,7 @@ function cardHTML(item) {
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${sentBackLastTimeHTML(item)}
-      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
@@ -1297,7 +1359,9 @@ async function clearBlocked(id) {
 // Cards a Ready for Dev click can actually build: not blocked on a question
 // and not already packaged (patchReady).
 function isBuildableBacklogItem(i) {
-  return !!i && i.status === "backlog" && !isBlockedItem(i) && !i.patchReady;
+  return !!i && i.status === "backlog" && !isBlockedItem(i) && !i.patchReady
+    // Agent tickets: only their owner, with a personal Routine, can start them.
+    && !(ticketOwner(i) && ownerFireBlock(i, viewerFireState()));
 }
 
 function backlogCountForProject(pid) {
@@ -2127,6 +2191,14 @@ function deployNotifyButtonHTML(project) {
     // The pipeline holds an approved deploy until the train's own tests pass
     // (trainTestGate in run-backlog-automation.js); say which, not "Deploying".
     const holdNote = escapeHTML(project.trainNote || "");
+    // Held in the deploy queue behind a related train (wPoSOXfp8Em06Vzp3Cz7):
+    // nothing is tested or bumped yet; it starts by itself when that merges.
+    if (project.trainHold === "queued") {
+      return `<button type="button" class="notify-claude-btn notify-claude-btn-working" disabled title="${holdNote}">
+      <span class="material-symbols-outlined notify-claude-icon">schedule</span>
+      <span class="notify-claude-label">Queued&hellip;</span>
+    </button>`;
+    }
     if (project.trainHold === "tests-red") {
       return `<button type="button" class="notify-claude-btn" disabled title="${holdNote}">
       <span class="material-symbols-outlined notify-claude-icon">error</span>
@@ -2191,6 +2263,17 @@ function deployNotifyButtonHTML(project) {
     // so each click looked unheard and hit the same conflict. Say so, with
     // the pipeline's own reason on hover — the pipeline retries by itself
     // once the branch or main changes, and a click still retries now.
+    // A train carrying agent tickets deploys only under their owner's own
+    // Routine, on the owner's click (functions/owner-firing.js).
+    const deployPool = onTrain.length ? onTrain : legacyDeployItemsForProject(pid);
+    const deployBlock = deployPool.some((i) => ticketOwner(i)) ? deployOwnerBlock(deployPool, viewerFireState()) : null;
+    if (deployBlock) {
+      return `<span class="owner-fire-gate"><button type="button" class="notify-claude-btn deploy-notify-btn" disabled aria-disabled="true" title="${escapeHTML(deployBlock.message)}">
+      <span class="material-symbols-outlined notify-claude-icon">rocket_launch</span>
+      <span class="notify-claude-label">Deploy to Main</span>
+      <span class="notify-claude-count-pill">${deployCount}</span>
+    </button>${ownerFireInfoHTML(deployBlock)}</span>`;
+    }
     if (project.trainStatus === "conflict") {
       const why = project.trainNote || "The last Deploy to Main stopped on a merge conflict.";
       return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-notify-btn-conflict" data-project-id="${escapeHTML(pid)}" title="${escapeHTML(`${why}\n\nClick to try again.`)}">
@@ -2263,6 +2346,17 @@ function groomNotifyButtonHTML(project) {
     if (!groomableCount) return "";
     // Only worth grooming once the Backlog outgrows the project's threshold.
     if (!groomButtonVisible(groomableCount, project.groomThreshold)) return "";
+    // Other members' agent tickets are left out of a groom; when that leaves
+    // nothing this viewer may groom, the button says why instead.
+    const groomPool = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && !i.patchReady);
+    const groomBlock = groomPool.some((i) => ticketOwner(i)) ? groomOwnerBlock(groomPool, viewerFireState()) : null;
+    if (groomBlock) {
+      return `<span class="owner-fire-gate"><button type="button" class="notify-claude-btn groom-notify-btn" disabled aria-disabled="true" title="${escapeHTML(groomBlock.message)}">
+      <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
+      <span class="notify-claude-label">Groom Backlog</span>
+      <span class="notify-claude-count-pill">${groomableCount}</span>
+    </button>${ownerFireInfoHTML(groomBlock)}</span>`;
+    }
     return `<button type="button" class="notify-claude-btn groom-notify-btn" data-project-id="${escapeHTML(pid)}" title="Classify and summarize every item currently in Backlog — doesn't implement anything">
       <span class="material-symbols-outlined notify-claude-icon">content_cut</span>
       <span class="notify-claude-label">Groom Backlog</span>
@@ -2653,7 +2747,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${kanbanE2eChipHTML(project)}
+      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -4233,8 +4327,12 @@ async function requestNotify(pid) {
   }
   // With a build in flight, an empty selection means "the new ones", named
   // explicitly: an empty list would make the server take the whole column.
-  const toSend = selected.length || !building.size ? selected : [...backlogIds];
-  if (building.size && !toSend.length) return;
+  // Agent tickets this viewer can't start are named out too: "everything"
+  // becomes an explicit list of what they may start (the server refuses the
+  // rest anyway, functions/owner-firing.js).
+  const hasBlockedAgentTickets = items.some((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && ticketOwner(i) && ownerFireBlock(i, viewerFireState()));
+  const toSend = selected.length || (!building.size && !hasBlockedAgentTickets) ? selected : [...backlogIds];
+  if ((building.size || hasBlockedAgentTickets) && !toSend.length) return;
 
   // Show the spinning state immediately, without waiting on the
   // notifyOnProjectReadyForReview round-trip — see notifyOptimisticClicks.
@@ -5117,13 +5215,60 @@ function eiNoteRowHTML(note) {
   </div>`;
 }
 
+// Flow 6/9 (jKM13xJ7PxW9THm3YQ9g): the automation's own notes are pipeline
+// history, kept out of the way under one collapsed "Pipeline history (N)"
+// section; people's and Claude's notes are always open. A keyed automation
+// note (one note per event, scripts/run-backlog-automation.js appendNote)
+// is shown once, newest version only, in case a stale write left two.
+const PIPELINE_NOTE_AUTHOR = "backlog-automation";
+function splitPipelineNotes(notes) {
+  const people = [];
+  const pipeline = [];
+  const seenKeys = new Set();
+  for (const n of (Array.isArray(notes) ? notes : []).slice().reverse()) { // newest first
+    if (!n || typeof n !== "object") continue;
+    if (n.author !== PIPELINE_NOTE_AUTHOR) { people.push(n); continue; }
+    if (n.key) {
+      if (seenKeys.has(n.key)) continue;
+      seenKeys.add(n.key);
+    }
+    pipeline.push(n);
+  }
+  return { people, pipeline };
+}
+let eiPipelineOpen = false;
+let eiPipelineItemId = null;
+
+function eiPipelineHTML(pipeline) {
+  if (!pipeline.length) return "";
+  const open = eiPipelineOpen;
+  return `<section class="ei-pipeline${open ? " is-open" : ""}">
+    <button type="button" class="ei-pipeline-toggle" id="ei-pipeline-toggle" aria-expanded="${open}" aria-controls="ei-pipeline-body">
+      <span class="material-symbols-outlined" aria-hidden="true">${open ? "expand_less" : "expand_more"}</span>
+      <span class="ei-pipeline-title">Pipeline history (${pipeline.length})</span>
+    </button>
+    <div class="ei-pipeline-body" id="ei-pipeline-body"${open ? "" : " hidden"}>${pipeline.map(eiNoteRowHTML).join("")}</div>
+  </section>`;
+}
+
 function renderEiNotes() {
   if (!editingItemId) return;
   const item = allItems.find((i) => i.id === editingItemId);
   const notes = (item && item.notes) || [];
+  if (eiPipelineItemId !== editingItemId) { eiPipelineItemId = editingItemId; eiPipelineOpen = false; }
+  const { people, pipeline } = splitPipelineNotes(notes);
   eiNotesList.innerHTML = notes.length
-    ? notes.slice().reverse().map(eiNoteRowHTML).join("")
+    ? people.map(eiNoteRowHTML).join("") + eiPipelineHTML(pipeline)
     : '<p class="interface-row-empty">No comments yet.</p>';
+  const pipelineToggle = document.getElementById("ei-pipeline-toggle");
+  if (pipelineToggle) {
+    pipelineToggle.addEventListener("click", () => {
+      eiPipelineOpen = !eiPipelineOpen;
+      renderEiNotes();
+      const again = document.getElementById("ei-pipeline-toggle");
+      if (again) again.focus();
+    });
+  }
   // Above the thread, outside its scroll: one line per time this ticket was
   // sent back and why (rejection-summary.js), so nobody reads every comment
   // to find out.
@@ -6776,6 +6921,10 @@ function renderDocsPage() {
     docsRepoFolderInput.value = (project && project.repoFolder) || "";
     docsRepoFolderInput.disabled = docsRepoFolderNone.checked;
   }
+  const docsOwnedPathsInput = document.getElementById("docs-owned-paths-input");
+  if (docsOwnedPathsInput && document.activeElement !== docsOwnedPathsInput) {
+    docsOwnedPathsInput.value = Array.isArray(project && project.ownedPaths) ? project.ownedPaths.join("\n") : "";
+  }
   // Why the board's Requirements/README may be behind the repo, shown on the
   // page the chip opens. Created here so it needs no markup of its own.
   const nameEl = document.getElementById("docs-page-project-name");
@@ -6973,6 +7122,27 @@ document.getElementById("docs-repo-folder-save").addEventListener("click", async
     await setProjectRepoFolder(docsProjectId, { folder });
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Repo folder", value: folder, max: 80 }]));
+  }
+});
+
+// Owned paths (wPoSOXfp8Em06Vzp3Cz7): which files are this project's, for the
+// "Changes <project>'s files" warning on another project's tickets. Empty
+// means the default (the repo folder).
+document.getElementById("docs-owned-paths-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const input = document.getElementById("docs-owned-paths-input");
+  const parsed = parseOwnedPaths(input.value);
+  if (parsed.error) {
+    await showAlert(parsed.error);
+    input.focus();
+    return;
+  }
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), {
+      ownedPaths: parsed.paths.length ? parsed.paths : deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Owned paths", value: parsed.paths.join("\n"), max: 30 }]));
   }
 });
 
@@ -10081,6 +10251,27 @@ function faqCategoryName(id) {
   return c ? c.name : "Uncategorised";
 }
 
+// Hidden from the website (3HabqHlC4WwL137CYTv1): a category, folder or
+// article with hiddenFromWebsite stays out of the Support Centre, the export
+// and the public help search, but the Support Inbox still answers from it.
+// A category hides every folder and article under it. Same rule as
+// functions/faq-feed.js hiddenCategoryIds / isHiddenFromWebsite.
+function faqCategoryHiddenFromWebsite(id) {
+  const seen = new Set();
+  let c = faqCategories.find((x) => x.id === id);
+  while (c && !seen.has(c.id)) {
+    if (c.hiddenFromWebsite === true) return true;
+    seen.add(c.id);
+    const parentId = c.parentId;
+    c = parentId ? faqCategories.find((x) => x.id === parentId) : null;
+  }
+  return false;
+}
+function faqArticleHiddenFromWebsite(a) {
+  return !!a && (a.hiddenFromWebsite === true || faqCategoryHiddenFromWebsite(a.categoryId));
+}
+const FAQ_HIDDEN_ICON_HTML = '<span class="material-symbols-outlined faq-hidden-icon" title="Hidden from the website" aria-label="Hidden from the website">visibility_off</span>';
+
 // The current icon is always included even if it falls outside
 // FAQ_CATEGORY_ICONS — see that constant's own comment for why.
 function faqCategoryIconOptionsHTML(selectedIcon) {
@@ -10216,10 +10407,11 @@ async function addFaqCategory(name, icon) {
   });
 }
 
-async function saveFaqCategory(id, name, icon, description) {
+async function saveFaqCategory(id, name, icon, description, hiddenFromWebsite) {
   if (!(await requireFaqEditor())) return;
   await setDoc(doc(db, "faqCategories", id), {
     name: name.trim(), icon: (icon || "help").trim(), description: (description || "").trim(),
+    ...(typeof hiddenFromWebsite === "boolean" ? { hiddenFromWebsite } : {}),
     updatedAt: serverTimestamp(),
   }, { merge: true });
 }
@@ -10438,6 +10630,7 @@ function showSettingsPage(key, sub) {
   }
   if (settingsPage === "skills" || settingsPage === "automations") { ensureLazy("skills"); loadPhaseBindings(); }
   if (settingsPage === "support") loadSupportSettings();
+  if (settingsPage === "routine") loadRoutineSetupPage();
   if (settingsPage === "integrations") { loadMyAgentConnections(); if (isConsoleAdmin()) { loadMediaKeys(); loadPartnerCentral(); } }
   setRouteHash(settingsHash(settingsPage));
   updateTopbarTitle();
@@ -11574,6 +11767,87 @@ document.getElementById("mcp-connections")?.addEventListener("click", async (e) 
 
 document.getElementById("mcp-refresh-connections")?.addEventListener("click", loadMyAgentConnections);
 
+// ── Settings → My Claude Routine (xFzQgynkoMdV33iWJFZq) ────────────────────
+// Self-service setup of a member's personal Routine binding: the steps, the
+// bootstrap prompt to paste (one-click copy), and the fire URL + token form.
+// Saved through /mcp/me/routine-binding (functions/mcp-server.js), the same
+// write as the set_my_routine_binding MCP tool. Write-only: the page learns
+// only whether a binding exists, never the saved URL or token.
+async function loadRoutineSetupPage() {
+  const status = document.getElementById("routine-binding-status");
+  const prompt = document.getElementById("routine-bootstrap-prompt");
+  if (!status) return;
+  status.textContent = "Checking…";
+  try {
+    const resp = await fetch("/mcp/me/routine-binding", { method: "GET", headers: await consoleApiHeaders() });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    routineSetupInfo = data;
+    myRoutineBinding = data.hasRoutineBinding === true;
+    if (prompt && data.bootstrapPrompt) prompt.value = data.bootstrapPrompt;
+    renderRoutineBindingStatus();
+  } catch (err) {
+    status.textContent = `Couldn't check your Claude Routine: ${err && err.message ? err.message : err}`;
+    status.dataset.state = "error";
+  }
+}
+function renderRoutineBindingStatus() {
+  const status = document.getElementById("routine-binding-status");
+  const clearBtn = document.getElementById("routine-binding-clear");
+  if (!status) return;
+  const on = myRoutineBinding === true;
+  const when = routineSetupInfo && routineSetupInfo.boundAt ? new Date(routineSetupInfo.boundAt).toLocaleString() : "";
+  status.dataset.state = on ? "on" : "off";
+  status.innerHTML = on
+    ? `<span class="material-symbols-outlined" aria-hidden="true">check_circle</span>Connected${when ? ` since ${escapeHTML(when)}` : ""}. Your clicks, and your agent tickets, run under your own Claude account.`
+    : `<span class="material-symbols-outlined" aria-hidden="true">radio_button_unchecked</span>Not set up. Your clicks use the shared project Routine, and agent tickets you own can't be started.`;
+  if (clearBtn) clearBtn.hidden = !on;
+}
+async function saveRoutineBinding(fireUrl, token) {
+  const resp = await fetch("/mcp/me/routine-binding", {
+    method: "POST", headers: await consoleApiHeaders(), body: JSON.stringify({ fireUrl, token }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+  myRoutineBinding = data.hasRoutineBinding === true;
+  routineSetupInfo = Object.assign({}, routineSetupInfo || {}, { hasRoutineBinding: myRoutineBinding, boundAt: myRoutineBinding ? new Date().toISOString() : null });
+  renderRoutineBindingStatus();
+  render();
+  return data;
+}
+document.getElementById("routine-copy-prompt")?.addEventListener("click", async () => {
+  const prompt = document.getElementById("routine-bootstrap-prompt");
+  const btn = document.getElementById("routine-copy-prompt");
+  if (!prompt || !prompt.value) return;
+  try { await navigator.clipboard.writeText(prompt.value); }
+  catch { prompt.select(); try { document.execCommand("copy"); } catch { /* the text stays selected */ } }
+  if (btn) { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy prompt"; }, 2000); }
+});
+document.getElementById("routine-binding-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const urlEl = document.getElementById("routine-fire-url");
+  const tokenEl = document.getElementById("routine-fire-token");
+  const errEl = document.getElementById("routine-binding-error");
+  const fireUrl = ((urlEl && urlEl.value) || "").trim();
+  const token = ((tokenEl && tokenEl.value) || "").trim();
+  if (errEl) errEl.textContent = "";
+  if (!fireUrl || !token) { if (errEl) errEl.textContent = "Enter both the fire URL and the token."; return; }
+  try {
+    await saveRoutineBinding(fireUrl, token);
+    if (tokenEl) tokenEl.value = "";
+    if (urlEl) urlEl.value = "";
+  } catch (err) {
+    if (errEl) errEl.textContent = err && err.message ? err.message : String(err);
+  }
+});
+document.getElementById("routine-binding-clear")?.addEventListener("click", async () => {
+  const ok = await showConfirmDialog("Disconnect your personal Claude Routine? Your clicks go back to the shared project Routine, and agent tickets you own can't be started until you connect one again.", { title: "Disconnect Routine", okLabel: "Disconnect", danger: true });
+  if (!ok) return;
+  const errEl = document.getElementById("routine-binding-error");
+  try { await saveRoutineBinding("", ""); }
+  catch (err) { if (errEl) errEl.textContent = err && err.message ? err.message : String(err); }
+});
+
 // ── Settings → Media Studio API keys ─────────────────────────────────────
 // Write-only key management for media-studio/ (functions/media-keys.js,
 // served at /mediaKeys/**). The browser sends a key once, over HTTPS, to an
@@ -11813,7 +12087,7 @@ function faqCategoriesForProgram(programKey) {
     faqArticlesUnder(c.id).some((a) => (a.programId || "") === programKey));
 }
 
-function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dragId, nodeAttrs, addLabel }) {
+function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dragId, nodeAttrs, addLabel, hidden }) {
   const caret = open === undefined ? ""
     : `<span class="material-symbols-outlined faq-tree-caret">${open ? "expand_less" : "expand_more"}</span>`;
   const add = addLabel
@@ -11823,7 +12097,7 @@ function faqTreeRowHTML({ depth, icon, name, count, selected, open, dragKind, dr
     (dragKind ? ` draggable="true" data-drag-kind="${dragKind}" data-drag-id="${escapeHTML(dragId)}"` : "") +
     ` ${nodeAttrs}>` +
     `<span class="material-symbols-outlined faq-tree-icon">${escapeHTML(icon)}</span>` +
-    `<span class="faq-tree-name">${escapeHTML(name)}</span>` +
+    `<span class="faq-tree-name">${escapeHTML(name)}</span>${hidden ? FAQ_HIDDEN_ICON_HTML : ""}` +
     `<span class="faq-tree-count">${count}</span>${add}${caret}</button>`;
 }
 
@@ -11854,6 +12128,7 @@ function renderFaqTree() {
           selected: !!faqTreeSelection && faqTreeSelection.categoryId === cat.id && faqTreeSelection.programKey === programKey,
           dragKind: "category", dragId: cat.id,
           addLabel: "Add a sub-category here",
+          hidden: faqCategoryHiddenFromWebsite(cat.id),
           nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(cat.id)}"`,
         }));
         if (catOpen) {
@@ -11863,6 +12138,7 @@ function renderFaqTree() {
               depth: 2, icon: "folder", name: sub.name || "(untitled)", count: `${sn}`,
               selected: !!faqTreeSelection && faqTreeSelection.categoryId === sub.id && faqTreeSelection.programKey === programKey,
               dragKind: "subcategory", dragId: sub.id,
+              hidden: faqCategoryHiddenFromWebsite(sub.id),
               nodeAttrs: `data-node="category" data-program="${escapeHTML(programKey)}" data-category="${escapeHTML(sub.id)}"`,
             }));
           }
@@ -11943,7 +12219,12 @@ function renderFaqCategoryHeader(cat) {
   const editBtn = document.getElementById("faq-cat-edit-toggle");
   const descEl = document.getElementById("faq-cat-heading-desc");
   const formEl = document.getElementById("faq-cat-edit-form");
+  const hiddenEl = document.getElementById("faq-cat-heading-hidden");
   if (!iconEl || !editBtn || !descEl || !formEl) return;
+  if (hiddenEl) {
+    hiddenEl.hidden = !(cat && faqCategoryHiddenFromWebsite(cat.id));
+    hiddenEl.textContent = cat && cat.hiddenFromWebsite !== true ? "Hidden from website (parent category)" : "Hidden from website";
+  }
 
   if (!cat) {
     iconEl.hidden = true;
@@ -11974,6 +12255,7 @@ document.getElementById("faq-cat-edit-toggle").addEventListener("click", () => {
   document.getElementById("faq-cat-edit-icon-select").innerHTML = faqCategoryIconOptionsHTML(cat.icon || "help");
   document.getElementById("faq-cat-edit-icon-preview").textContent = cat.icon || "help";
   document.getElementById("faq-cat-edit-desc-input").value = cat.description || "";
+  document.getElementById("faq-cat-edit-hidden-input").checked = cat.hiddenFromWebsite === true;
   formEl.dataset.categoryId = cat.id;
   formEl.hidden = false;
   document.getElementById("faq-cat-heading-desc").hidden = true;
@@ -12000,6 +12282,7 @@ document.getElementById("faq-cat-edit-save-btn").addEventListener("click", async
     name,
     document.getElementById("faq-cat-edit-icon-select").value,
     document.getElementById("faq-cat-edit-desc-input").value,
+    document.getElementById("faq-cat-edit-hidden-input").checked,
   );
   if (!faqUser) return; // sign-in was declined — keep the form open so nothing typed is lost
   formEl.hidden = true;
@@ -12273,6 +12556,8 @@ function wpStatusOf(a) {
   return articleStatus({ article: a, inRange: wpArticleInRange(a), hash: cached && cached.body === body ? cached.hash : null, published: wpPublished });
 }
 function wpBadgeHTML(a) {
+  // A hidden article is never on the website, so "Waiting for website" would never clear.
+  if (faqArticleHiddenFromWebsite(a)) return "";
   const st = wpStatusOf(a);
   return st ? wpStatusBadgeHTML(st, escapeHTML) : "";
 }
@@ -12337,6 +12622,7 @@ function faqArticleRowHTML(a, orderable) {
           <span class="badge badge-status-${a.status}">${a.status === "published" ? "Published" : "Draft"}</span>
           ${wpBadgeHTML(a)}
           ${faqRevisionBadgeHTML(a)}
+          ${faqArticleHiddenFromWebsite(a) ? '<span class="badge badge-faq-hidden" title="Not on the website. The Support Inbox still answers from it.">Hidden from website</span>' : ""}
           <h4 class="faq-article-title" role="button" tabindex="0" title="Edit article">${escapeHTML(a.title)}</h4>
           <p class="faq-article-row-meta">${escapeHTML(faqCategoryName(a.categoryId))}${a.programId && programName(a.programId) ? " &middot; " + escapeHTML(programName(a.programId)) : ""}${a.projectId ? " &middot; " + escapeHTML(projectName(a.projectId)) : ""}</p>
         </div>
@@ -12349,7 +12635,7 @@ function faqArticleRowHTML(a, orderable) {
               ${a.pendingRevision ? '<button type="button" class="options-menu-item faq-article-review-revision">Review proposed update</button>' : ""}
               ${a.previousRevision ? '<button type="button" class="options-menu-item faq-article-revert-revision">Revert last auto-update</button>' : ""}
               <button type="button" class="options-menu-item faq-article-toggle-review">${a.needsReview ? "Clear flag" : "Flag"}</button>
-              ${a.status === "published" ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
+              ${a.status === "published" && !faqArticleHiddenFromWebsite(a) ? `<a class="options-menu-item" href="${liveUrl}" target="_blank" rel="noopener">View live &#8599;</a>` : ""}
             </div>
           </div>
           <button type="button" class="icon-btn faq-article-delete" title="Delete">&#128465;</button>
@@ -12497,6 +12783,7 @@ const ROUTE_TITLES = {
   "#settings/skills": "Settings: Skills & phase bindings",
   "#settings/automations": "Settings: Automations",
   "#settings/integrations": "Settings: Integrations & MCP",
+  "#settings/routine": "Settings: My Claude Routine",
   "#skills": "Skills",
   "#releases": "Releases",
   "#concept-incubator": "Concept Incubator",
@@ -12692,6 +12979,7 @@ const faKeywordsInput = document.getElementById("fa-keywords-input");
 const faBodyViewer = document.getElementById("fa-body-viewer");
 const faNeedsReview = document.getElementById("fa-needs-review");
 const faSectionPickerToggle = document.getElementById("fa-section-picker-toggle");
+const faHiddenFromWebsiteToggle = document.getElementById("fa-hidden-from-website-toggle");
 const faSectionPickerLabelInput = document.getElementById("fa-section-picker-label-input");
 // SEO & agent fields (rri7DngI2ccd7q4uYdk6): the single source for the
 // WordPress Support Centre's SEO and agent output. Empty means "default to
@@ -13365,6 +13653,7 @@ function faSnapshotState() {
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
     sectionPickerLabel: faSectionPickerLabelInput.value,
+    hiddenFromWebsite: faHiddenFromWebsiteToggle.checked,
     seo: [faSeoTitleInput.value, faMetaDescriptionInput.value, faDirectAnswerInput.value, faQuestionVariantsInput.value, faArticleTypeSelect.value],
     categoryId: faCategorySelect.value,
     projectId: faProjectSelect.value,
@@ -13430,6 +13719,9 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   faNeedsReview.checked = article ? !!article.needsReview : false;
   faSectionPickerToggle.checked = source ? !!source.sectionPicker : false;
   faSectionPickerLabelInput.value = source && source.sectionPickerLabel ? source.sectionPickerLabel : "";
+  // A live-only field (not part of a proposed revision): the article's own flag.
+  faHiddenFromWebsiteToggle.checked = !!(article && article.hiddenFromWebsite === true);
+  faHiddenFromWebsiteToggle.disabled = faEditingPendingRevision;
   loadFaSeoFields(source);
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
@@ -13506,7 +13798,7 @@ faSlugInput.addEventListener("input", () => { faqSlugManuallyEdited = true; });
 [faTitleInput, faSlugInput, faSummaryInput, faKeywordsInput, faSectionPickerLabelInput].forEach((el) => el.addEventListener("input", updateFaDirtyState));
 [faSeoTitleInput, faMetaDescriptionInput, faDirectAnswerInput, faQuestionVariantsInput].forEach((el) => el.addEventListener("input", () => { updateFaSeoIndicators(); updateFaDirtyState(); }));
 faArticleTypeSelect.addEventListener("change", () => { updateFaSeoIndicators(); updateFaDirtyState(); });
-[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
+[faDocTypeSelect, faNeedsReview, faSectionPickerToggle, faHiddenFromWebsiteToggle, faCategorySelect, faProjectSelect, faProgramSelect, faIntroducedReleaseSelect, faRemovedReleaseSelect].forEach((el) => el.addEventListener("change", updateFaDirtyState));
 // (faQuill's own listeners are attached in ensureFaQuill.)
 
 // Save draft and Publish share the same field-gathering logic, differing
@@ -13584,6 +13876,7 @@ async function submitFaqArticleFromEditor(publish) {
     needsReview: faNeedsReview.checked,
     sectionPicker: faSectionPickerToggle.checked,
     sectionPickerLabel: faSectionPickerLabelInput.value.trim() || null,
+    hiddenFromWebsite: faHiddenFromWebsiteToggle.checked,
     ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
   const savedId = await saveFaqArticle(editingFaqArticleId, data);

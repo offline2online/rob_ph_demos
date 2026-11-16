@@ -63,4 +63,34 @@ for (const page of ["index.html", "whiteboard.html"]) {
 }
 assert.deepEqual(listOf("index.html").names, listOf("whiteboard.html").names, "index.html and whiteboard.html must list the same icons");
 
+// ── FAQ category icons (3HabqHlC4WwL137CYTv1) ──────────────────────────────
+// A category's icon is data (faqCategories.icon), so the scan above can't see
+// it. It is drawn twice: in the console (this font, by name) and on the
+// website as inline SVG from a fixed set (faq/js/icons.js, mirrored in the
+// Support Centre's main.php), where any other name shows as "?". The picker
+// (FAQ_CATEGORY_ICONS in app.js) may only offer names both can draw, and
+// every category in the faq/data snapshot must use one.
+const repo = path.join(root, "..");
+const iconsJs = fs.readFileSync(path.join(repo, "faq/js/icons.js"), "utf8");
+const sitePaths = new Set([...iconsJs.slice(iconsJs.indexOf("export const ICON_PATHS"), iconsJs.indexOf("export const ICON_ALIASES")).matchAll(/^\s{2}([a-z0-9_]+):\s*"/gm)].map((m) => m[1]));
+const siteAliases = Object.fromEntries([...(iconsJs.match(/ICON_ALIASES\s*=\s*\{([^}]*)\}/) || [, ""])[1].matchAll(/([a-z0-9_]+):\s*"([a-z0-9_]+)"/g)].map((m) => [m[1], m[2]]));
+const siteDraws = (n) => sitePaths.has(n) || sitePaths.has(siteAliases[n]);
+assert.ok(sitePaths.size > 10 && sitePaths.has("help"), "faq/js/icons.js ICON_PATHS parsed");
+const php = fs.readFileSync(path.join(repo, "ph-website/snippets/ph-support-centre/main.php"), "utf8");
+const phpStart = php.indexOf("const ICONS");
+const phpBlock = php.slice(phpStart, php.indexOf("];", phpStart));
+const phpPaths = new Set([...phpBlock.matchAll(/'([a-z0-9_]+)'\s*=>/g)].map((m) => m[1]));
+assert.deepEqual([...sitePaths].filter((n) => !phpPaths.has(n)), [], "faq/js/icons.js names an icon the Support Centre's main.php can't draw");
+const appJs = fs.readFileSync(path.join(root, "public/js/app.js"), "utf8");
+const pickerBlock = (appJs.match(/const FAQ_CATEGORY_ICONS = \[([\s\S]*?)\];/) || [])[1];
+assert.ok(pickerBlock, "FAQ_CATEGORY_ICONS not found in app.js");
+const picker = [...pickerBlock.matchAll(/"([a-z0-9_]+)"/g)].map((m) => m[1]);
+const fontNames = listOf("index.html").names;
+assert.deepEqual(picker.filter((n) => !siteDraws(n)), [], "the FAQ category icon picker offers icons the website draws as ?");
+assert.deepEqual(picker.filter((n) => !fontNames.includes(n)), [], "the FAQ category icon picker offers icons missing from icon_names");
+const faqIndex = JSON.parse(fs.readFileSync(path.join(repo, "faq/data/index.json"), "utf8"));
+const catIcons = [...new Set(faqIndex.categories.map((c) => c.icon || "help"))];
+assert.deepEqual(catIcons.filter((n) => !siteDraws(n)), [], "a help-centre category uses an icon the website can't draw");
+assert.deepEqual(catIcons.filter((n) => !fontNames.includes(n)), [], "a help-centre category uses an icon missing from icon_names (FAQ Management shows the bare word)");
+
 console.log(`icon font: ${used.size} icon names used across ${files.length} files, all in icon_names`);

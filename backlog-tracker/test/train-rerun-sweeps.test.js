@@ -55,7 +55,7 @@ global.fetch = async (url, o = {}) => {
       if (w.update) for (const k of w.updateMask.fieldPaths) doc[k] = w.update.fields[k];
       for (const ft of (w.updateTransforms || w.transform.fieldTransforms || [])) {
         const have = (doc[ft.fieldPath] && doc[ft.fieldPath].arrayValue.values) || [];
-        doc[ft.fieldPath] = { arrayValue: { values: [...have, ...ft.appendMissingElements.values] } };
+        doc[ft.fieldPath] = { arrayValue: { values: (ft.removeAllFromArray ? have.filter((h) => !ft.removeAllFromArray.values.some((v) => JSON.stringify(v) === JSON.stringify(h))) : [...have, ...ft.appendMissingElements.values]) } };
       }
     }
     return reply(200, { writeResults: [{}] });
@@ -123,8 +123,10 @@ const flakyNotes = (id) => noteTexts(id).filter((t) => t.startsWith("Passed on r
     await sweep();
     await sweep();
     assert.deepStrictEqual(reruns(), ["100"]);
-    assert.strictEqual(rerunNotes("c1").length, 1);
+    // One note per run (Flow 6/9): the re-run note became the flaky note.
+    assert.strictEqual(rerunNotes("c1").length, 0, noteTexts("c1").join("\n"));
     assert.strictEqual(flakyNotes("c1").length, 1, noteTexts("c1").join("\n"));
+    assert.strictEqual(noteTexts("c1").length, 1, noteTexts("c1").join("\n"));
     assert.ok(flakyNotes("c1")[0].includes(LABEL));
     assert.ok(card("c1").trainTestReruns.includes(`${WF}@${A}:flaky:100`));
     assert.strictEqual(card("c1").status, "ready-to-publish");
@@ -182,7 +184,9 @@ const flakyNotes = (id) => noteTexts(id).filter((t) => t.startsWith("Passed on r
     await sweep();
     await sweep(); // lag: GitHub still shows attempt 1 — not re-run twice
     assert.deepStrictEqual(reruns(), ["500", "501"]);
-    assert.strictEqual(rerunNotes("c1").length, 2);
+    // One note per run (Flow 6/9): run 500's is now its flaky note, 501's is re-running.
+    assert.strictEqual(rerunNotes("c1").length, 1, noteTexts("c1").join("\n"));
+    assert.strictEqual(flakyNotes("c1").length, 1, noteTexts("c1").join("\n"));
     runs(mkRun(501, A, 2, "completed", "success"));
     await sweep();
     assert.strictEqual(flakyNotes("c1").length, 2, noteTexts("c1").join("\n"));

@@ -171,6 +171,20 @@ check("connecting: secrets are stored encrypted, never returned, and the callbac
   assert.ok((await call(t.api, "GET", "/v1/oauth/callback", { query: { code: "good-code", state: new URL(again.body.url).searchParams.get("state") } })).location.includes("error=expired"), "ten minutes at most");
 });
 
+check("hidden-from-website articles (own flag or hidden category) are still offered to the model, with no website link", async () => {
+  let seen = null;
+  const t = make({ mail: [gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000 })], triage: async (input) => { seen = input; return GOOD; } });
+  t.db.state.faqArticles.h1 = { categoryId: "c1", status: "published", hiddenFromWebsite: true, title: "Run your own retail media: set up", keywords: ["retail media"], bodyMd: "<p>Steps.</p>" };
+  t.db.state.faqArticles.h2 = { categoryId: "rm", status: "published", title: "Retail media pricing", keywords: ["retail media"], bodyMd: "<p>Prices.</p>" };
+  t.db.state.faqCategories.rm = { name: "Run your own retail media", hiddenFromWebsite: true };
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  const byId = Object.fromEntries(seen.articles.map((a) => [a.id, a]));
+  assert.deepStrictEqual(Object.keys(byId).sort(), ["a1", "h1", "h2"], "hidden published articles are answered from; drafts still aren't");
+  assert.ok(/^https:\/\//.test(byId.a1.url), "a website article keeps its link");
+  assert.deepStrictEqual([byId.h1.url, byId.h1.hiddenFromWebsite, byId.h2.url, byId.h2.hiddenFromWebsite], ["", true, "", true], "a hidden one has no page to link to");
+});
+
 check("sync files new customer mail as a ticket once, drafts a reply from published articles, and waits for approval by default", async () => {
   let seen = null;
   const t = make({ mail: [gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000 })], triage: async (input) => { seen = input; return GOOD; } });

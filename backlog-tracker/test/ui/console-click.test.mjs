@@ -80,6 +80,7 @@ function makeCtx(o, width) {
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
   ctx.enrichCalls = o.enrichCalls;
+  ctx.routineWrites = o.routineWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -100,6 +101,62 @@ function makeCtx(o, width) {
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
+  {
+    // Agent tickets fire under their owner's own Claude account only
+    // (xFzQgynkoMdV33iWJFZq): someone else's can't be ticked, your own needs
+    // your personal Routine, and Settings → My Claude Routine connects one.
+    name: "agent tickets: owner-only Ready for Dev, set up My Claude Routine from the info link",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.own = { projectId: PID, title: "My agent ticket", desc: "Built under my own account", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "editor@ph.example", createdAt: t(T0 + 7), updatedAt: t(T0 + 7) };
+      s.docs.backlogItems.theirs = { projectId: PID, title: "Their agent ticket", desc: "Someone else's", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "ada@ph.example", createdAt: t(T0 + 8), updatedAt: t(T0 + 8) };
+      s.routineBinding = { hasRoutineBinding: false };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const box = (id) => `.card[data-id="${id}"] .card-select-cb`;
+      await until(async () => (await c.page.locator(box("own")).isDisabled()) && (await c.page.locator(box("theirs")).isDisabled()), "both agent tickets' boxes disabled");
+      assert.strictEqual(await c.page.locator(box("b1")).isDisabled(), false, "an ordinary ticket can still be ticked");
+      assert.match(await c.page.getAttribute(box("theirs"), "title"), /ada@ph\.example/, "someone else's says whose it is");
+      assert.match(await c.page.getAttribute(`.card[data-id="own"] .owner-fire-info`, "title"), /My Claude Routine/, "my own says to set up my Routine");
+      await c.click(`.card[data-id="own"] .owner-fire-info`, "the info link on my agent ticket");
+      await c.visible('[data-settings-pane="routine"]', "My Claude Routine opens");
+      await c.waitText("#routine-binding-status", "Not set up", "it says I have none");
+      assert.ok((await c.page.inputValue("#routine-bootstrap-prompt")).includes("ROUTINE_INSTRUCTIONS.md"), "the prompt to paste is there");
+      await c.page.fill("#routine-fire-url", "https://api.anthropic.com/v1/claude_code/routines/trig_1/fire");
+      await c.page.fill("#routine-fire-token", "sk-test-token");
+      await c.click("#routine-binding-save", "Save");
+      await c.waitText("#routine-binding-status", "Connected", "it says connected");
+      assert.deepStrictEqual(c.routineWrites.map((w) => w.fireUrl), ["https://api.anthropic.com/v1/claude_code/routines/trig_1/fire"]);
+      assert.strictEqual(await c.page.inputValue("#routine-fire-token"), "", "the token is not left on the page");
+      assert.strictEqual(await c.page.isVisible("#routine-binding-clear"), true, "Disconnect is offered");
+      await c.page.evaluate(() => document.getElementById("nav-ph-console-btn").click());
+      await c.boardReady();
+      await until(async () => !(await c.page.locator(box("own")).isDisabled()), "my agent ticket can be ticked now");
+      assert.strictEqual(await c.page.locator(box("theirs")).isDisabled(), true, "someone else's still can't");
+    },
+  },
+  {
+    // Contract-change review (ZmEWDC40NYOiojehfPjk): a ticket whose upstream
+    // changed an interface contract shows a warning chip, the summary on hover.
+    name: "contract-change review: a flagged dependent shows Needs review, with what changed",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.dep = { projectId: PID, title: "Front end for the attribute envelope", desc: "Builds after the back end", type: "feature", category: "HQ Admin", status: "backlog", dependsOnItemIds: ["b1"],
+        contractReview: { status: "needs-review", upstreamItemId: "b1", upstreamTitle: "Back end for the attribute envelope", commit: "c".repeat(40), files: ["shared/interface-contract.md"], summary: "shared/interface-contract.md (+4 −1; sections: Attribute envelope)", flaggedAt: "2026-11-16T05:00:00.000Z" },
+        createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const chip = `.card[data-id="dep"] .contract-review-flag`;
+      await c.visible(chip, "the Needs review chip");
+      assert.match(await c.page.textContent(chip), /Needs review: upstream contract changed/);
+      assert.match(await c.page.getAttribute(chip, "title"), /Back end for the attribute envelope.*Attribute envelope/, "the hover says which ticket changed what");
+      assert.strictEqual(await c.page.locator(`.card[data-id="b1"] .contract-review-flag`).count(), 0, "an unflagged ticket has no chip");
+    },
+  },
   {
     name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
     seed: () => {
@@ -270,7 +327,7 @@ const scenarios = [
         await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
         await overflow(`settings ${sub}`);
       }
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support"], "User Management first, the rest in their old order");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support", "routine"], "User Management first, the rest in their old order");
       assert.strictEqual(await c.page.locator('#settings-submenu .settings-tab[aria-selected="true"]').count(), 1, "exactly one Settings tab is selected");
       assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"], #nav-drawer #um-users-btn, #nav-drawer #um-roles-btn, #nav-drawer #um-permissions-btn').count(), 0, "no User Management, Roles or Permissions items in the nav");
       assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
@@ -603,6 +660,61 @@ const scenarios = [
     },
   },
   {
+    name: "Deploy queue: a queued train shows Queued… and the note under its header",
+    seed: () => {
+      const s = only("d1");
+      Object.assign(s.docs.projects[PID], { trainReady: true, trainLocked: true, trainStatus: "deploying", trainHold: "queued",
+        trainNote: "Queued behind Staff Kanban's deploy; starts by itself when that merges. (both trains ship through deploy-backlog-tracker.yml, so they merge one at a time.)" });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".train-queued-hint", "the queued line shows under the header");
+      assert.ok((await c.text(".train-queued-hint")).includes("Queued behind Staff Kanban's deploy; starts by itself when that merges"));
+      c.at("the deploy button reads Queued… and is disabled", ".project-header-actions");
+      const btn = await c.page.evaluate(() => {
+        const b = [...document.querySelectorAll(".project-header-actions button.notify-claude-btn")].find((e) => /Queued/.test(e.textContent));
+        return b ? { disabled: b.disabled, title: b.title } : null;
+      });
+      assert.ok(btn, "a Queued… button is shown");
+      assert.strictEqual(btn.disabled, true);
+      assert.match(btn.title, /Queued behind Staff Kanban's deploy/);
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+      assert.deepStrictEqual(await c.writes(), [], "showing the queue writes nothing");
+    },
+  },
+  {
+    name: "Shared files: chips on train cards, the warning variant on a conflict, the header line, and a held patch in Backlog",
+    seed: () => {
+      const s = only("r1", "d1", "b1");
+      s.docs.backlogItems.r1.sharedWith = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/MCP.md"], conflictPaths: [], conflict: false }];
+      s.docs.backlogItems.r1.foreignPaths = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/public/js/kanban/board.js"] }];
+      s.docs.backlogItems.d1.sharedWith = [{ projectId: "pW", projectName: "PH Website", paths: ["backlog-tracker/public/index.html"], conflictPaths: ["backlog-tracker/public/index.html"], conflict: true }];
+      Object.assign(s.docs.backlogItems.b1, { patchReady: true, buildAfterTrain: true });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible('.card[data-id="r1"] .train-overlap-chip, [data-id="r1"] .train-overlap-chip', "the Ready for Testing card shows its shared-files chip");
+      const chips = await c.page.evaluate(() => [...document.querySelectorAll(".train-overlap-chip")].map((e) => ({ text: e.textContent.trim(), title: e.title, warn: e.classList.contains("train-overlap-chip-warn"), icon: (e.querySelector(".material-symbols-outlined") || {}).textContent })));
+      const also = chips.find((x) => x.text.includes("Also changed on Staff Kanban's train"));
+      assert.ok(also, `an "Also changed on" chip (${JSON.stringify(chips)})`);
+      assert.strictEqual(also.icon, "call_split");
+      assert.match(also.title, /backlog-tracker\/MCP\.md/, "hover lists the files");
+      assert.strictEqual(also.warn, false);
+      const conflict = chips.find((x) => x.text.includes("Conflicts with PH Website's train: backlog-tracker/public/index.html"));
+      assert.ok(conflict && conflict.warn, "an approved card whose train conflicts shows the warning variant");
+      assert.ok(chips.some((x) => x.text.includes("Changes Staff Kanban's files: backlog-tracker/public/js/kanban/board.js")), "the owned-paths warning");
+      await c.visible(".train-shared-hint", "the header line shows");
+      const header = await c.text(".train-shared-hint");
+      assert.ok(header.includes("Shares files with ") && header.includes("Staff Kanban's train") && header.includes("PH Website's train"), header);
+      await c.waitText(".held-patch-hint", "Built — joins the next release", "the held Backlog card says it joins the next release");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+    },
+  },
+  {
     name: "Ready for Testing: Test this → links to the seeded previewUrl",
     seed: () => only("r1"),
     async run(c) {
@@ -812,6 +924,46 @@ const scenarios = [
       assert.ok(w, JSON.stringify(writes));
       assert.strictEqual(w.data.model, "standard");
       assert.ok(!("title" in w.data) && !("category" in w.data), "only the changed field is written");
+    },
+  },
+  {
+    // Flow 6/9 (jKM13xJ7PxW9THm3YQ9g): automation notes sit collapsed under "Pipeline history (N)";
+    // people's and Claude's notes stay open. A keyed note shows once (newest).
+    name: "Edit item: automation notes are collapsed under Pipeline history, people's notes stay open; opens on click and by keyboard",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b1.notes = [
+        { author: "tester@ph.example", text: "Person says the widget is still blue", at: "2026-11-14T00:00:00.000Z" },
+        { author: "backlog-automation", text: "Re-running it once, old version", at: "2026-11-14T00:01:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+        { author: "claude", text: "Claude built the purple widget", at: "2026-11-14T00:02:00.000Z" },
+        { author: "backlog-automation", text: "Committed to the integration branch", at: "2026-11-14T00:03:00.000Z" },
+        { author: "backlog-automation", text: "Sent back automatically, newest version", at: "2026-11-14T00:04:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+      ];
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.waitText("#ei-notes-list", "Person says the widget is still blue", "the person's note, open");
+      await c.waitText("#ei-notes-list", "Claude built the purple widget", "Claude's note, open");
+      c.at("the collapsed section, one entry per key", "#ei-pipeline-toggle");
+      await until(async () => /Pipeline history \(2\)/.test((await c.page.textContent("#ei-pipeline-toggle").catch(() => "")) || ""), "Pipeline history (2) on the toggle");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "false");
+      assert.strictEqual(await c.page.isVisible("#ei-pipeline-body"), false, "collapsed by default");
+      await c.click("#ei-pipeline-toggle", "Pipeline history");
+      await c.visible("#ei-pipeline-body", "the pipeline notes");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "true");
+      const body = await c.page.innerText("#ei-pipeline-body");
+      assert.ok(body.indexOf("Sent back automatically, newest version") < body.indexOf("Committed to the integration branch"), `newest first, got ${JSON.stringify(body)}`);
+      assert.ok(!body.includes("old version"), "the replaced version of a keyed note is not shown");
+      c.at("keyboard: Enter on the focused toggle collapses it again", "#ei-pipeline-toggle");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Enter");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "false", "the section to collapse by keyboard");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Space");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "true", "the section to open by keyboard");
     },
   },
   {
@@ -2346,6 +2498,36 @@ const scenarios = [
       await c.page.waitForFunction(() => /Status unavailable/.test((document.querySelector('.faq-article-row[data-id="w1"] .badge-wp') || {}).textContent || ""), null, { timeout: 8000 });
       await c.page.waitForFunction(() => /unavailable/.test((document.getElementById("faq-wp-sync") || {}).textContent || ""), null, { timeout: 8000 });
       await c.visible('.faq-article-row[data-id="w1"] .faq-article-title', "the list still renders");
+    },
+  },
+  {
+    // 3HabqHlC4WwL137CYTv1: a category/folder or article can be hidden from
+    // the website; the article list says so and the editor carries the flag.
+    name: "FAQ Management: hidden-from-website badge (own flag and via category) and the editor toggle",
+    seed: () => seed({
+      faqCategories: {
+        fc0: { name: "Run your own retail media", icon: "storefront", order: 0, hiddenFromWebsite: true, createdAt: t(T0), updatedAt: t(T0) },
+        fc1: { name: "Getting started", icon: "rocket_launch", order: 1, createdAt: t(T0), updatedAt: t(T0) },
+      },
+      faqArticles: {
+        h1: { title: "Hidden by category one", categoryId: "fc0", order: 0, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        h2: { title: "Hidden itself one", categoryId: "fc1", order: 1, status: "published", hiddenFromWebsite: true, bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        v1: { title: "Visible one", categoryId: "fc1", order: 2, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      await c.page.fill("#fa-tree-search", "one");
+      await c.visible('.faq-article-row[data-id="v1"] .faq-article-title', "search lists all three");
+      const hidden = (id) => c.page.locator(`.faq-article-row[data-id="${id}"] .badge-faq-hidden`).count();
+      assert.strictEqual(await hidden("h1"), 1, "hidden through its category");
+      assert.strictEqual(await hidden("h2"), 1, "hidden by its own flag");
+      assert.strictEqual(await hidden("v1"), 0, "a visible article has no badge");
+      await c.click('.faq-article-row[data-id="h2"] .faq-article-title', "open the hidden article");
+      await c.click("#fa-group-status-toggle", "open Status & publishing");
+      await c.visible("#fa-hidden-from-website-toggle", "the toggle shows");
+      assert.strictEqual(await c.page.isChecked("#fa-hidden-from-website-toggle"), true, "loads the article's own flag");
     },
   },
   {

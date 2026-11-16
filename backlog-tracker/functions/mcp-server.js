@@ -60,6 +60,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
 const { inFlightItemIds } = require("./notify-routine");
+const ownerFiring = require("./owner-firing");
 // Build order (ZE8h8cfaezOb0eTsRjSH): dependencies as data, cycles refused,
 // and the order a send_to_build click fires in.
 const buildOrder = require("./build-order");
@@ -1015,6 +1016,9 @@ function unauthorized(res, detail) {
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
 const testRounds = require("./test-rounds");
+// Hidden-from-website rule shared with the export, the live feed and the
+// Support Inbox (3HabqHlC4WwL137CYTv1).
+const faqFeed = require("./faq-feed");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -1802,6 +1806,21 @@ function itemSummary(id, d, projects) {
     dependsOnItemIds: Array.isArray(d.dependsOnItemIds) ? d.dependsOnItemIds.filter((x) => typeof x === "string") : [],
     dependsOnSource: buildOrder.DEPENDENCY_SOURCES.includes(d.dependsOnSource) ? d.dependsOnSource : null,
     queuedAfter: d.queuedAfter && d.queuedAfter.itemId ? { itemId: d.queuedAfter.itemId, title: d.queuedAfter.title || null } : null,
+    // Owner scoping (ZmEWDC40NYOiojehfPjk): whose agent ticket this is (null =
+    // a shared ticket any editor's agent may change) and, when an upstream
+    // ticket's build changed an interface contract, the review flag.
+    ownerEmail: ownerFiring.ticketOwner(d),
+    contractReview: d.contractReview && d.contractReview.status
+      ? {
+          status: d.contractReview.status,
+          upstreamItemId: d.contractReview.upstreamItemId || null,
+          upstreamTitle: d.contractReview.upstreamTitle || null,
+          commit: d.contractReview.commit || null,
+          files: Array.isArray(d.contractReview.files) ? d.contractReview.files.filter((x) => typeof x === "string") : [],
+          summary: d.contractReview.summary || "",
+          flaggedAt: tsToISO(d.contractReview.flaggedAt) || (typeof d.contractReview.flaggedAt === "string" ? d.contractReview.flaggedAt : null),
+        }
+      : null,
   };
 }
 
@@ -1964,6 +1983,9 @@ function itemDetail(id, d, projects) {
       author: n && n.author ? n.author : "viewer",
       text: n && n.text ? n.text : "",
       at: tsToISO(n && n.at) || (n && typeof n.at === "string" ? n.at : null),
+      // An automation note that is one event updated in place (Flow 6/9)
+      // carries its key and when the event started; other notes are as before.
+      ...(n && typeof n.key === "string" && n.key ? { key: n.key, firstAt: tsToISO(n.firstAt) || (typeof n.firstAt === "string" ? n.firstAt : null) } : {}),
     })),
   });
 }
@@ -2195,6 +2217,81 @@ const mirrorDeleteRefusal = (name, sourcePath, manifestPath) =>
 // instructions say it in these words (functions/kanban.js has KANBAN_SCOPE).
 const BACKLOG_SCOPE = "The backlog is for agent work: agent-built product, docs, prototype and tooling changes. A task a human staff member does belongs on the Staff Kanban (kanban_create_task, which can assign it).";
 
+// ── Personal Routine binding: shared by the MCP tools and the console page ──
+// One bootstrap, one validation and one write path for both routes, so the
+// console's Settings → My Claude Routine page (handleMyRoutineBinding) and
+// set_my_routine_binding can never drift apart.
+function routineBootstrapPrompt() {
+  return `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+}
+
+// null when fine, else the reason (shown to the person as is).
+function routineBindingError(fireUrl, token) {
+  if (!fireUrl && !token) return null; // clearing
+  if (!fireUrl || !token) return "Pass both the fire URL and the token, or both empty to clear your binding.";
+  if (!/^https:\/\//.test(fireUrl)) return "The fire URL must be an https:// URL.";
+  if (!routineFireHostAllowed(fireUrl)) return "The fire URL must be a Claude Routine API trigger on api.anthropic.com — the console will only ever send the fire text (which carries board credentials) there.";
+  if (fireUrl.length > 2000 || token.length > 512) return "The fire URL or token is longer than expected.";
+  if (token.length < 8) return "That doesn't look like a real token.";
+  return null;
+}
+
+async function hasRoutineBindingFor(member) {
+  const [bindingSnap, selfSnap] = await Promise.all([
+    db().collection("routineBindings").doc(member).get(),
+    db().collection("consoleUsers").doc(member).get(),
+  ]);
+  const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
+  const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
+  // Legacy location (consoleUsers.routineFire*) is still honoured until
+  // functions/index.js's lazy migration has moved it.
+  const has = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
+  const boundAt = binding.boundAt && typeof binding.boundAt.toDate === "function" ? binding.boundAt.toDate().toISOString() : null;
+  return { has, boundAt };
+}
+
+// Writes (or, with both values empty, clears) the caller's own binding.
+// Returns { error } or { cleared } / { registered }.
+async function writeRoutineBinding(member, rawFireUrl, rawToken) {
+  const fireUrl = String(rawFireUrl || "").trim();
+  const token = String(rawToken || "").trim();
+  const error = routineBindingError(fireUrl, token);
+  if (error) return { error };
+  const clearing = !fireUrl && !token;
+  // routineBindings/{member} is readable and writable by nobody but the
+  // server (firestore.rules `allow read, write: if false`). It used to
+  // live on consoleUsers, which every member could read — so every
+  // member could read every other member's Routine bearer token.
+  const bindingRef = db().collection("routineBindings").doc(member);
+  if (clearing) await bindingRef.delete();
+  else await bindingRef.set({ email: member, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
+  // And make sure no copy lingers in the old, member-readable place.
+  await db().collection("consoleUsers").doc(member).set({
+    routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
+  }, { merge: true });
+  return clearing ? { cleared: true } : { registered: true };
+}
+
+const ROUTINES_URL = "https://claude.ai/code/routines";
+
+// Guided Routine setup on connect (BXkUvoayo98j744RUCy8). Appended to the
+// server instructions only for a member who can write (set_my_routine_binding
+// is board.write) and has no binding yet, so a bound member or a viewer sees
+// nothing. Instructions are read at initialize, i.e. once per connection, so
+// a member who finishes setup stops getting it on their next connect.
+const ROUTINE_SETUP_INSTRUCTIONS = "Before other work: hasRoutineBinding false, so offer setup per get_routine_setup_instructions' agentGuidance. Never repeat the token.";
+
+async function routineSetupInstructionsFor(session) {
+  if (!session || !session.email || !(session.scopes || []).includes("board.write")) return "";
+  try {
+    return (await hasRoutineBindingFor(session.email)).has ? "" : ROUTINE_SETUP_INSTRUCTIONS;
+  } catch (err) {
+    // A failed read must never fail initialize; the member just isn't nudged.
+    logger.warn("could not read routine binding at initialize", { error: String(err && err.message ? err.message : err) });
+    return "";
+  }
+}
+
 const TOOLS = [
   {
     name: "whoami",
@@ -2207,13 +2304,7 @@ const TOOLS = [
       // set_my_routine_binding's own comment on why). The nudge only shows
       // once: someone who's deliberately chosen to keep using the shared
       // project token doesn't need to be reminded on every whoami call.
-      const selfSnap = await db().collection("consoleUsers").doc(session.email).get();
-      const selfData = selfSnap.exists ? selfSnap.data() || {} : {};
-      const bindingSnap = await db().collection("routineBindings").doc(session.email).get();
-      const binding = bindingSnap.exists ? bindingSnap.data() || {} : {};
-      // Legacy location (consoleUsers.routineFire*) is still honoured until
-      // functions/index.js's lazy migration has moved it.
-      const hasRoutineBinding = !!((binding.fireUrl && binding.token) || (selfData.routineFireUrl && selfData.routineFireToken));
+      const { has: hasRoutineBinding } = await hasRoutineBindingFor(session.email);
       return textResult({
         email: session.email,
         displayName: session.displayName || null,
@@ -2224,7 +2315,7 @@ const TOOLS = [
         hasRoutineBinding,
         routineBindingNudge: hasRoutineBinding
           ? null
-          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token. Call get_routine_setup_instructions to set up your own.",
+          : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token, and agent tickets you own can't be started at all. Set one up in the console (Settings → My Claude Routine) or call get_routine_setup_instructions.",
         note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets), fail_testing (Failed testing for named Ready for Testing tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
@@ -2252,16 +2343,34 @@ const TOOLS = [
     scope: "board.read",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     async run() {
-      const bootstrapPrompt = `This routine fires when someone clicks "Notify Claude" or "Notify Claude — Deploy" on a project in the live "Backlog Tracker & FAQs" board — a real Firestore-backed web app at ${PUBLIC_ORIGIN}, NOT a Claude Artifact. Do not search Artifacts for it; you will not find it there.\n\nYour actual, current, authoritative operating instructions are NOT in this prompt — they live in a version-controlled file in the board's own GitHub repo. Before doing anything else:\n\n1. Fetch \`https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/backlog-tracker/ROUTINE_INSTRUCTIONS.md\` — a plain, unauthenticated GET (no credential needed or available).\n2. Read it in full and follow it exactly for the rest of this run.\n\nIf that fetch fails outright, stop and say so plainly rather than improvising. Never attempt a \`git push\`, a GitHub API write, or any other way of getting code onto GitHub yourself — you have no GitHub credential of any kind, deliberately.`;
+      const bootstrapPrompt = routineBootstrapPrompt();
       return textResult({
+        routinesUrl: ROUTINES_URL,
         steps: [
-          "1. Go to claude.ai/code/routines (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.",
+          `1. Go to ${ROUTINES_URL} (sign in with the SAME account you want board-triggered sessions to run under) and create a new Routine.`,
           "2. Set its prompt to the exact text in `bootstrapPrompt` below — this is the same bootstrap the shared project Routine uses, so your personal one behaves identically once it fires.",
           "3. In that Routine's settings, add an API trigger. This generates a fire URL (ends in /fire) and a bearer token — copy both; the token is shown once.",
-          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values. Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first.",
+          "4. Call set_my_routine_binding with fireUrl and token set to exactly those two values (or paste them into the console's Settings → My Claude Routine page, which does the same). Nothing else needs to change on the board — the next time you click Notify Claude / Notify Claude — Deploy / Groom Backlog on any project, the Cloud Function looks up your binding first. Agent tickets you own fire ONLY through this binding.",
           "5. To go back to the shared project token, call set_my_routine_binding again with fireUrl and token both set to \"\" (clears the binding).",
         ],
+        // What the agent says to the person, one step per message, waiting
+        // for them between steps (the server instructions ask for this when
+        // a member connects with no binding).
+        walkthrough: [
+          { step: 1, say: `Open ${ROUTINES_URL}, signed in with your own Claude account, and create a new Routine. Tell me when it's created.`, link: ROUTINES_URL },
+          { step: 2, say: "Paste this as the Routine's prompt, exactly as it is, and save it.", copy: "bootstrapPrompt" },
+          { step: 3, say: "In the Routine's settings, add an API trigger. Copy the fire URL (it ends in /fire) and the bearer token. The token is shown only once." },
+          { step: 4, say: "Paste the fire URL and the token here. I'll register them with set_my_routine_binding and check with whoami that it worked." },
+        ],
         bootstrapPrompt,
+        tokenHandling: "Pass the token to set_my_routine_binding once and never repeat it in a message; no tool ever returns it.",
+        agentGuidance: [
+          "Present the walkthrough one step at a time and wait for the person after each step before showing the next.",
+          "Show routinesUrl as a clickable link and bootstrapPrompt as a fenced code block they can copy.",
+          "When they paste the fire URL and token, call set_my_routine_binding once with exactly those values, then whoami to confirm hasRoutineBinding is true.",
+          "Never ask for the token again and never repeat it in a message.",
+          "If they decline, do what they asked instead, and remind them once in this conversation (not again) that their board clicks keep using the shared Routine, not their own Claude account, until it is set up.",
+        ],
         note: "This only changes which credentials fire — the board click itself (Notify Claude / Notify Claude — Deploy / Groom Backlog) still has to happen on the board; nothing here fires a session directly.",
       });
     },
@@ -2279,29 +2388,9 @@ const TOOLS = [
       required: ["fireUrl", "token"], additionalProperties: false,
     },
     async run(args, session) {
-      const fireUrl = String(args.fireUrl || "").trim();
-      const token = String(args.token || "").trim();
-      const clearing = !fireUrl && !token;
-      if (!clearing) {
-        if (!fireUrl || !token) return toolError("Pass both fireUrl and token, or both as \"\" to clear your binding.");
-        if (!/^https:\/\//.test(fireUrl)) return toolError("fireUrl must be an https:// URL.");
-        if (!routineFireHostAllowed(fireUrl)) return toolError("fireUrl must be a Claude Routine API trigger on api.anthropic.com — the console will only ever POST the fire text (which carries board credentials) there.");
-        if (fireUrl.length > 2000 || token.length > 512) return toolError("fireUrl or token is longer than expected.");
-        if (token.length < 8) return toolError("That doesn't look like a real token.");
-      }
-      // routineBindings/{email} is readable and writable by nobody but the
-      // server (firestore.rules `allow read, write: if false`). It used to
-      // live on consoleUsers, which every member could read — so every
-      // member could read every other member's Routine bearer token.
-      const bindingRef = db().collection("routineBindings").doc(session.email);
-      if (clearing) await bindingRef.delete();
-      else await bindingRef.set({ email: session.email, fireUrl, token, boundAt: FieldValue.serverTimestamp() });
-      // And make sure no copy lingers in the old, member-readable place.
-      await db().collection("consoleUsers").doc(session.email).set({
-        routineFireUrl: null, routineFireToken: null, routineBoundAt: null,
-      }, { merge: true });
-      // The token itself is deliberately never written to the audit log —
-      // same "never echoed back" care as the response below.
+      const out = await writeRoutineBinding(session.email, args.fireUrl, args.token);
+      if (out.error) return toolError(out.error);
+      const clearing = !!out.cleared;
       await audit(session, "set_my_routine_binding", { cleared: clearing });
       return textResult(clearing
         ? { cleared: true }
@@ -2497,6 +2586,7 @@ const TOOLS = [
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of tickets (any project) this one must build after. Ticket ids and exact open-ticket titles named in the description's Dependencies section are added automatically." },
+        ownedByMe: { type: "boolean", description: "Agent ticket owned by you: it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding). Default false." },
       },
       required: ["projectId", "desc"], additionalProperties: false,
     },
@@ -2549,6 +2639,8 @@ const TOOLS = [
         ...(model === "advanced" ? { model } : {}),
         ...(deps.ids.length ? { dependsOnItemIds: deps.ids, dependsOnSource: deps.source } : {}),
         ...(blocked ? { blocked } : {}),
+        // Agent ticket owner (functions/owner-firing.js): only ever the caller.
+        ...(args.ownedByMe === true ? { ownerEmail: session.email } : {}),
         status: "backlog",
         // Provenance the board can show and an admin can audit: filed by a
         // person's agent, on their behalf, not by the board automation.
@@ -2562,6 +2654,7 @@ const TOOLS = [
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
         title, type, category, model, status: "backlog",
+        ownerEmail: args.ownedByMe === true ? session.email : null,
         dependsOn: await dependencyRefsFor(deps.ids),
         intake: intake.blocked
           ? { passed: false, blocked: intake.blocked, gaps: intake.gaps.map((g) => `${g.heading} (${g.why})`) }
@@ -2572,7 +2665,7 @@ const TOOLS = [
   },
   {
     name: "update_backlog_item",
-    description: "Correct a ticket's title, description, type, area, model requirement (standard, or advanced for Claude Opus) or the tickets it builds after (dependsOnItemIds; a loop is refused). Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
+    description: "Correct a ticket's title, description, type, area, model requirement (standard, or advanced for Claude Opus) or the tickets it builds after (dependsOnItemIds; a loop is refused). Another member's agent ticket (ownerEmail set to someone else) is refused, naming its owner: you can read it and comment on it, not change it. Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2584,6 +2677,7 @@ const TOOLS = [
         category: { type: "string", enum: CATEGORIES },
         model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Replace the tickets this one builds after (any project; [] clears). A loop is refused." },
+        ownedByMe: { type: "boolean", description: "true claims an unowned ticket as your agent ticket (it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding)); false releases your own (an admin may release anyone's). Another member's agent ticket can't be claimed." },
       },
       required: ["itemId"], additionalProperties: false,
     },
@@ -2591,6 +2685,15 @@ const TOOLS = [
       const ref = db().collection("backlogItems").doc(String(args.itemId));
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      // Owner scoping: another member's agent ticket is read-only to this
+      // agent. The one exception is an admin releasing it (ownedByMe false
+      // alone), which the ownedByMe block below already governs.
+      const onlyRelease = args.ownedByMe === false && ["title", "desc", "type", "category", "model", "dependsOnItemIds"].every((k) => args[k] == null);
+      const ownerRefusal = onlyRelease ? null : ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, "edit");
+      if (ownerRefusal) {
+        await audit(session, "update_backlog_item_refused", { itemId: ref.id, owner: ownerFiring.ticketOwner(snap.data() || {}) });
+        return toolError(ownerRefusal);
+      }
       const fields = {};
       if (args.title != null) {
         const t = String(args.title).trim();
@@ -2622,7 +2725,22 @@ const TOOLS = [
         fields.dependsOnItemIds = v.ids;
         fields.dependsOnSource = v.ids.length ? "manual" : null;
       }
-      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model, dependsOnItemIds.");
+      if (args.ownedByMe != null) {
+        const owner = ownerFiring.ticketOwner(snap.data() || {});
+        if (args.ownedByMe === true) {
+          if (owner && owner !== session.email) return toolError(`This is ${owner}'s agent ticket; only they (or an admin) can release it.`);
+          const cur = snap.data() || {};
+          // Claiming decides whose account builds it and who alone may start
+          // it, so it is for the person who filed it (or an admin), in Backlog.
+          if (!owner && (cur.status || "backlog") !== "backlog") return toolError("Only a Backlog ticket can be made an agent ticket.");
+          if (!owner && String(cur.createdByEmail || "").toLowerCase() !== session.email && !atLeast(session.role, "admin")) return toolError("Only the person who filed this ticket (or an admin) can make it their agent ticket.");
+          fields.ownerEmail = session.email;
+        } else if (owner) {
+          if (owner !== session.email && !atLeast(session.role, "admin")) return toolError(`This is ${owner}'s agent ticket; only they (or an admin) can release it.`);
+          fields.ownerEmail = null;
+        }
+      }
+      if (!Object.keys(fields).length) return toolError("Nothing to change — pass at least one of title, desc, type, category, model, dependsOnItemIds, ownedByMe.");
       fields.updatedAt = FieldValue.serverTimestamp();
       fields.updatedByEmail = session.email;
       await ref.update(fields);
@@ -2638,7 +2756,7 @@ const TOOLS = [
     { name: "delete_backlog_items", verb: "delete", past: "deleted", extra: "Deleting is permanent: prefer archive_backlog_items unless the tickets are junk." },
   ].map((spec) => ({
     name: spec.name,
-    description: `${spec["verb"][0].toUpperCase()}${spec.verb.slice(1)} one or more Backlog tickets by id (a single ticket is a list of one). ${spec.extra} Refuses the whole call, changing nothing, if any ticket is not found or is past Backlog (Ready for Testing, on a train, shipped or already archived). Logged to mcpAuditLog under your email.`,
+    description: `${spec["verb"][0].toUpperCase()}${spec.verb.slice(1)} one or more Backlog tickets by id (a single ticket is a list of one). ${spec.extra} Refuses the whole call, changing nothing, if any ticket is not found, is past Backlog (Ready for Testing, on a train, shipped or already archived), or is another member's agent ticket. Logged to mcpAuditLog under your email.`,
     scope: "board.write",
     destructive: spec.verb === "delete",
     inputSchema: {
@@ -2658,7 +2776,10 @@ const TOOLS = [
       snaps.forEach((snap, i) => {
         if (!snap.exists) { problems.push(`${ids[i]}: no such ticket`); return; }
         const st = (snap.data() || {}).status || "backlog";
-        if (st !== "backlog") problems.push(`${ids[i]}: is in ${st}, not Backlog`);
+        if (st !== "backlog") { problems.push(`${ids[i]}: is in ${st}, not Backlog`); return; }
+        // Owner scoping: never another member's agent ticket.
+        const refusal = ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, spec.verb);
+        if (refusal) problems.push(`${ids[i]}: ${refusal}`);
       });
       if (problems.length) return toolError(`Nothing was ${spec.past}. ${problems.join("; ")}.`);
       const batch = db().batch();
@@ -2674,7 +2795,7 @@ const TOOLS = [
   })),
   {
     name: "set_blocked",
-    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments.",
+    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments. Refused on another member's agent ticket.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2693,6 +2814,8 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
       if ((snap.data() || {}).status !== "backlog") return toolError("Only tickets in Backlog can be flagged as blocked.");
+      const ownerRefusal = ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, "flag");
+      if (ownerRefusal) return toolError(ownerRefusal);
       await ref.update({
         blocked: { reason: args.reason, note: note.slice(0, 200), setBy: session.email, setAt: new Date() },
         updatedAt: FieldValue.serverTimestamp(),
@@ -4530,7 +4653,11 @@ const TOOLS = [
       const target = await resolveFaqRelease(args.release);
       if (target.error) return toolError(target.error);
       const cats = new Map();
-      (await db().collection("faqCategories").get()).forEach((d) => cats.set(d.id, (d.data() || {}).name || ""));
+      const catRows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => { cats.set(d.id, (d.data() || {}).name || ""); catRows.push({ ...(d.data() || {}), id: d.id }); });
+      // Members see hidden-from-website articles too (the Support Inbox
+      // answers from them); each hit says whether it is on the website.
+      const hiddenCats = faqFeed.hiddenCategoryIds(catRows);
       const hits = [];
       (await db().collection("faqArticles").limit(MAX_READ_DOCS).get()).forEach((doc) => {
         const a = doc.data() || {};
@@ -4545,7 +4672,7 @@ const TOOLS = [
           if ((a.keywords || []).some((k) => String(k).toLowerCase().includes(t))) score += 3;
           if (hay.includes(t)) score += 1;
         }
-        if (score > 0) hits.push({ score, id: doc.id, title, summary: a.summary || "", docType: a.docType || null, category: cats.get(a.categoryId) || null, slug: a.slug || null, status: a.status });
+        if (score > 0) hits.push({ score, id: doc.id, title, summary: a.summary || "", docType: a.docType || null, category: cats.get(a.categoryId) || null, slug: a.slug || null, status: a.status, hiddenFromWebsite: faqFeed.isHiddenFromWebsite(a, hiddenCats) });
       });
       hits.sort((x, y) => y.score - x.score);
       const limit = Math.min(Math.max(parseInt(args.limit, 10) || 8, 1), 25);
@@ -4584,7 +4711,12 @@ const TOOLS = [
         return toolError(`Article ${snap.id} doesn't apply to release ${target.release.version || target.release.name || target.release.id} (it was introduced later or removed earlier). Use search_faq with the same release to find what does.`);
       }
       const cat = a.categoryId ? await db().collection("faqCategories").doc(a.categoryId).get() : null;
+      const catRows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => catRows.push({ ...(d.data() || {}), id: d.id }));
+      const hiddenCats = faqFeed.hiddenCategoryIds(catRows);
       return textResult({
+        hiddenFromWebsite: faqFeed.isHiddenFromWebsite(a, hiddenCats),
+        hiddenFromWebsiteOwnFlag: a.hiddenFromWebsite === true,
         id: snap.id, title: a.title || "", slug: a.slug || "", docType: a.docType || null,
         category: cat && cat.exists ? (cat.data() || {}).name : null,
         status: a.status || null, summary: a.summary || "", keywords: a.keywords || [],
@@ -4629,6 +4761,7 @@ const TOOLS = [
         bodyMd: { type: "string", description: `The article body — the same HTML shape the console's rich-text editor saves (paragraphs, headings, lists, callouts; see REQUIREMENTS.md -> "Rich formatting in article bodies"). Up to ${FAQ_BODY_MAX} characters.` },
         programId: { type: "string", description: "An existing programs doc id. Required unless projectId is given and that project itself has a programId set (used as the default) — every article needs to resolve to a program so FAQ impact review on a deploy can find it." },
         projectId: { type: "string", description: "Optional — an existing project id, from list_projects. Also supplies the default programId (see above) when programId is omitted." },
+        hiddenFromWebsite: { type: "boolean", description: "true keeps the article off the website and public help search even once a person publishes it; the Support Inbox still answers customer emails from it. Use it for a feature that hasn't launched yet. Default false (a category or folder hidden with set_faq_visibility hides its articles either way)." },
         ...FAQ_SEO_PROPERTIES,
       },
       required: ["title", "categoryId", "bodyMd"], additionalProperties: false,
@@ -4654,6 +4787,8 @@ const TOOLS = [
       }
       const docType = args.docType != null ? String(args.docType) : "faq";
       if (!FAQ_DOC_TYPES.includes(docType)) return toolError(`docType must be one of: ${FAQ_DOC_TYPES.join(", ")}.`);
+      if (args.hiddenFromWebsite != null && typeof args.hiddenFromWebsite !== "boolean") return toolError("hiddenFromWebsite must be true or false.");
+      const hiddenFromWebsite = args.hiddenFromWebsite === true;
       const seo = parseFaqSeoArgs(args);
       if (seo.error) return toolError(seo.error);
       // A new article stores only the SEO fields that have a value.
@@ -4700,6 +4835,7 @@ const TOOLS = [
         categoryId, projectId, programId,
         title, slug, summary, bodyMd, docType, keywords,
         ...seoFields,
+        ...(hiddenFromWebsite ? { hiddenFromWebsite: true } : {}),
         status: "draft",
         needsReview: false,
         order: maxOrder + 1,
@@ -4708,9 +4844,9 @@ const TOOLS = [
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
-      await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId });
+      await audit(session, "create_faq_article", { articleId: ref.id, title, slug, categoryId, hiddenFromWebsite });
       return textResult({
-        created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft",
+        created: true, articleId: ref.id, title, slug, categoryId, docType, status: "draft", hiddenFromWebsite,
         missingSeoFields: faqMissingSeoFields(seoFields),
         note: "Created as a draft. Nothing is published until a person reviews and publishes it from FAQ Management.",
       });
@@ -4815,6 +4951,72 @@ const TOOLS = [
       return textResult({
         proposed: true, articleId: ref.id, needsReview: true, reviewStatus: "awaiting-review",
         note: "The live article is unchanged. A person reviews this in FAQ Management (Review proposed update); approving it publishes on the next hourly FAQ export — no ticket or deploy train needed, since no sourceItemIds are attached.",
+      });
+    },
+  },
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ───────────────────────
+  // A category, folder or article can be kept off the website (the Support
+  // Centre, the faq/data export, public help search) while the Support Inbox
+  // still answers emails from it — how articles for a not-yet-launched
+  // feature are written. Agents writing those articles hide them here.
+  // Hiding is always allowed. Showing something on the website is a launch,
+  // so over MCP it is refused for a live article and for a category or
+  // folder; a person does that in FAQ Management. A draft article can be
+  // un-hidden, as nothing reaches the website until a person publishes it.
+  {
+    name: "list_faq_categories",
+    description: "Every help-centre category and folder (a folder is a category with a parentId), with its icon and whether it is hidden from the website. Use the ids with create_faq_article and set_faq_visibility.",
+    scope: "board.read",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    async run() {
+      const rows = [];
+      (await db().collection("faqCategories").get()).forEach((d) => rows.push({ ...(d.data() || {}), id: d.id }));
+      const hiddenCats = faqFeed.hiddenCategoryIds(rows);
+      const out = rows.map((c) => ({
+        id: c.id, name: c.name || "", parentId: c.parentId || null, icon: c.icon || "help", order: typeof c.order === "number" ? c.order : 0,
+        hiddenFromWebsite: hiddenCats.has(c.id), hiddenFromWebsiteOwnFlag: c.hiddenFromWebsite === true,
+      }));
+      out.sort((x, y) => x.order - y.order || x.id.localeCompare(y.id));
+      return textResult({ matched: out.length, categories: out });
+    },
+  },
+  {
+    name: "set_faq_visibility",
+    description: "Hide a help-centre article, folder or category from the website, or show a draft article again. Hidden content is left out of the website and public help search, but the Support Inbox still answers customer emails from it; hiding a category or folder hides everything in it. Pass exactly one of articleId or categoryId. Showing a live article, a folder or a category on the website launches it, so that is done by a person in FAQ Management, not here.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        articleId: { type: "string", description: "From search_faq or get_faq_article." },
+        categoryId: { type: "string", description: "A category or folder id, from list_faq_categories." },
+        hiddenFromWebsite: { type: "boolean", description: "true hides it from the website; false shows it (draft articles only over MCP)." },
+      },
+      required: ["hiddenFromWebsite"], additionalProperties: false,
+    },
+    async run(args, session) {
+      if (typeof args.hiddenFromWebsite !== "boolean") return toolError("hiddenFromWebsite must be true or false.");
+      const articleId = args.articleId != null ? String(args.articleId).trim() : "";
+      const categoryId = args.categoryId != null ? String(args.categoryId).trim() : "";
+      if (!!articleId === !!categoryId) return toolError("Pass exactly one of articleId or categoryId.");
+      const hide = args.hiddenFromWebsite;
+      const collection = articleId ? "faqArticles" : "faqCategories";
+      const id = articleId || categoryId;
+      const ref = db().collection(collection).doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) return toolError(articleId ? `No FAQ article with id ${id}. Use search_faq to find one.` : `No FAQ category with id ${id}. Use list_faq_categories.`);
+      const cur = snap.data() || {};
+      if (!hide) {
+        if (categoryId) return toolError("Showing a category or folder on the website launches every article in it, so a person does that in FAQ Management (edit the category, untick Hide from website).");
+        if (cur.status === "published") return toolError("This article is live, so showing it on the website launches it. A person does that in FAQ Management (open the article, untick Hide from website).");
+      }
+      const was = cur.hiddenFromWebsite === true;
+      if (was !== hide) await ref.set({ hiddenFromWebsite: hide, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      await audit(session, "set_faq_visibility", { [articleId ? "articleId" : "categoryId"]: id, hiddenFromWebsite: hide, changed: was !== hide });
+      return textResult({
+        updated: was !== hide, [articleId ? "articleId" : "categoryId"]: id, hiddenFromWebsite: hide,
+        note: hide
+          ? "Hidden from the website and public help search; the Support Inbox still answers from it. A person shows it again in FAQ Management when the feature launches."
+          : "No longer hidden. It still reaches the website only once a person publishes it.",
       });
     },
   },
@@ -5372,18 +5574,18 @@ const PROMPTS = [
 ];
 
 const SERVER_INSTRUCTIONS = [
-  "This is the PH Agent Console: the Personalisation Hub prototype backlog board and help centre. You act as the signed-in member; writes carry their email. A viewer reads, an editor also writes, an admin has the release tools.",
-  "Tickets: list_projects, list_backlog_items, get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked, clear_blocked, archive_backlog_items, delete_backlog_items act on tickets. To show what waits on people: get_ready_for_testing_board or get_approved_for_deployment_board.",
-  "To take over a project, read its start-here document (startHereDocId from list_projects; get_project_document), then the documents it lists. The project_handover prompt does the same.",
+  "PH Agent Console: Personalisation Hub's backlog board and help centre. You act as the signed-in member; writes carry their email. Viewers read, editors write, admins also release.",
+  "Tickets: list_projects, list_backlog_items, get_backlog_item. create_backlog_item files into Backlog; update_backlog_item, add_item_comment, set_blocked, clear_blocked, archive_backlog_items, delete_backlog_items act on tickets. Waiting on people: get_ready_for_testing_board, get_approved_for_deployment_board.",
+  "To take over a project: its start-here document (startHereDocId from list_projects; get_project_document), then the documents it lists, or the project_handover prompt.",
   "Reading docs: list_project_documents, get_project_document, get_project_docs (all).",
-  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document: read it first and send all of it (max 20,000 characters). list_doc_revisions / get_doc_revision recover old versions.",
-  REPO_WINS + " Board-only documents are edited on the board.",
+  "Writing docs: set_project_requirements, set_project_readme, set_project_artifact, snapshot_project_artifact, set_project_description, set_project_type, create_project_document, update_project_document, delete_project_document, create_interface, update_interface, delete_interface. A write replaces the whole document (read it first, send all of it, max 20,000 characters); list_doc_revisions / get_doc_revision recover old versions.",
+  REPO_WINS,
   "Concepts: list_concepts, get_concept, create_concept, add_concept_comment, add_concept_critique, list_concept_critiques, synthesise_concept_critiques, set_concept_description, set_concept_type, set_concept_readme, set_concept_requirements, set_concept_artifact, demote_project.",
-  "Help centre: search_faq, get_faq_article; create_faq_article and update_faq_article only propose drafts for a person to approve (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision).",
+  "Help centre: search_faq, get_faq_article; create_faq_article/update_faq_article only draft (list_pending_faq_revisions, get_faq_revision, comment_on_faq_revision); set_faq_visibility hides from website.",
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Leads: list_leads, get_lead; writes create_lead, create_leads, update_lead, update_lead_stage, add_lead_contact, update_lead_contact, remove_lead_contact, add_lead_note, link_lead_customer_account, unlink_lead_customer_account, link_lead_prospect, unlink_lead_prospect, archive_lead, restore_lead; delete_lead is admin only. Prospects: list_prospects, upsert_prospects.",
   "Skills: list_skills, get_skill; upload_skill, update_skill, delete_skill, mark_skill_reviewed, report_skill_miss.",
-  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings sets the skills that build and deploy runs load; finalise_project / unfreeze_project freeze a project.",
+  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills that build and deploy runs load); finalise_project / unfreeze_project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {
@@ -5407,6 +5609,7 @@ async function dispatchRpc(msg, session, ctx) {
       const asked = String(params.protocolVersion || "");
       const version = SUPPORTED_PROTOCOL_VERSIONS.includes(asked) ? asked : SUPPORTED_PROTOCOL_VERSIONS[0];
       ctx.protocolVersion = version;
+      const routineSetup = await routineSetupInstructionsFor(session);
       return rpcResult(msg.id, {
         protocolVersion: version,
         // resources: the two MCP App views (ui://backlog-tracker/…) — a host
@@ -5421,7 +5624,7 @@ async function dispatchRpc(msg, session, ctx) {
           description: "The Personalisation Hub prototype backlog board and help centre.",
           icons: SERVER_ICONS,
         },
-        instructions: SERVER_INSTRUCTIONS,
+        instructions: routineSetup ? `${routineSetup} ${SERVER_INSTRUCTIONS}` : SERVER_INSTRUCTIONS,
       });
     }
     case "ping":
@@ -5637,6 +5840,33 @@ async function handleMyConnections(req, res) {
   res.status(405).json({ error: "method not allowed" });
 }
 
+// Settings → My Claude Routine (xFzQgynkoMdV33iWJFZq): the console's own
+// self-service setup for a member's personal Routine binding, the same write
+// as set_my_routine_binding. GET says only whether a binding exists (and the
+// bootstrap prompt to paste into the new Routine); the stored URL and token
+// are never sent back. POST {fireUrl, token} saves, both empty clears. Every
+// member writes only their own binding; viewers can't build, so editor+.
+async function handleMyRoutineBinding(req, res) {
+  if (rateLimited(req, "routine-binding", 30)) return tooMany(res);
+  const who = await requireConsoleUser(req, req.method === "GET" ? null : "editor");
+  if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
+  const member = who.user.email;
+  if (req.method === "GET") {
+    const { has, boundAt } = await hasRoutineBindingFor(member);
+    res.status(200).json({ hasRoutineBinding: has, boundAt, bootstrapPrompt: routineBootstrapPrompt(), routinesUrl: "https://claude.ai/code/routines" });
+    return;
+  }
+  if (req.method === "POST") {
+    const body = req.body || {};
+    const out = await writeRoutineBinding(member, body.fireUrl, body.token);
+    if (out.error) { res.status(400).json({ error: out.error }); return; }
+    await audit({ email: member, clientId: "console", role: who.user.role }, "set_my_routine_binding", { cleared: !!out.cleared, via: "console" });
+    res.status(200).json({ ...out, hasRoutineBinding: !out.cleared });
+    return;
+  }
+  res.status(405).json({ error: "method not allowed" });
+}
+
 // Admin: make sure a member can actually sign in.
 //
 // Google sign-in needs nothing here — Firebase creates the account on first
@@ -5708,7 +5938,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin
   // with a Firebase ID token; nothing cross-origin has any business here.
-  if (path === "/claims/sync" || path === "/me/connections" || path === "/admin/provision" || path.startsWith("/kanban/")) {
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/me/routine-binding" || path === "/admin/provision" || path.startsWith("/kanban/")) {
     res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
   }
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
@@ -5730,6 +5960,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
       case "/revoke": return await handleRevoke(req, res);
       case "/claims/sync": return await handleClaimsSync(req, res);
       case "/me/connections": return await handleMyConnections(req, res);
+      case "/me/routine-binding": return await handleMyRoutineBinding(req, res);
       case "/admin/provision": return await handleAdminProvision(req, res);
       // Staff Kanban's browser endpoints (functions/kanban.js).
       case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
@@ -5754,9 +5985,9 @@ exports.resolveConsoleUser = resolveConsoleUser;
 // Exported for the unit tests in test/mcp-server.test.js — none of these
 // touch Firestore or Auth, so they can be checked without an emulator.
 exports.__test = {
-  routePath, redirectUriAllowed, routineFireHostAllowed, redirectHostLabel, generateTitle, suggestCategory, atLeast,
+  routePath, redirectUriAllowed, routineFireHostAllowed, routineBindingError, routineBootstrapPrompt, handleMyRoutineBinding, redirectHostLabel, generateTitle, suggestCategory, atLeast,
   sha256b64url, authorizationServerMetadata, protectedResourceMetadata,
-  TOOLS, PROMPTS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
+  TOOLS, PROMPTS, SERVER_INSTRUCTIONS, ROUTINE_SETUP_INSTRUCTIONS, CATEGORIES, STATUS_LABELS, SUPPORTED_PROTOCOL_VERSIONS, SERVER_ICONS,
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, pagesRepoPath, setMainShaFetcher: (f) => { mainShaFetcher = f || defaultMainSha; }, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,

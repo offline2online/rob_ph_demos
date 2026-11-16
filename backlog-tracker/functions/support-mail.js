@@ -43,6 +43,7 @@
 
 const crypto = require("crypto");
 const core = require("./support-core");
+const faqFeed = require("./faq-feed");
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
 
 const TICKETS = "supportTickets";
@@ -67,11 +68,15 @@ const DRAFT_MODEL = "claude-opus-5-5";
 const DRAFT_TIMEOUT_MS = 40000;
 const PREVIEWS_PER_HOUR = 40;
 
-// An article as triage uses it.
-function articleView(a, categoryName = "") {
+// An article as triage uses it. `hidden` (hiddenFromWebsite on the article or
+// its category/folder, see functions/faq-feed.js) keeps it in the catalogue
+// the reply is written from, with no url: it has no public page to link to.
+function articleView(a, categoryName = "", hidden = false) {
   return {
     id: a.id, title: a.title || "", summary: a.summary || "", directAnswer: a.directAnswer || "", keywords: a.keywords || [], questionVariants: a.questionVariants || [],
-    categoryName, bodyMd: a.bodyMd || "", body: core.htmlToText(a.bodyMd || ""), url: `https://personalisationhub.com/support-centre/article.html?id=${encodeURIComponent(a.id)}`,
+    categoryName, bodyMd: a.bodyMd || "", body: core.htmlToText(a.bodyMd || ""),
+    url: hidden ? "" : `https://personalisationhub.com/support-centre/article.html?id=${encodeURIComponent(a.id)}`,
+    hiddenFromWebsite: !!hidden,
   };
 }
 
@@ -271,7 +276,9 @@ function createSupportMail({
   const articles = () => cached("articles", async () => {
     const [rows, cats] = await Promise.all([rowsOf("faqArticles"), rowsOf("faqCategories")]);
     const catName = new Map(cats.map((c) => [c.id, c.name || ""]));
-    return rows.filter((a) => a.status === "published").map((a) => articleView(a, catName.get(a.categoryId) || ""));
+    // Hidden-from-website articles are answered from too (3HabqHlC4WwL137CYTv1).
+    const hiddenCats = faqFeed.hiddenCategoryIds(cats);
+    return rows.filter((a) => a.status === "published").map((a) => articleView(a, catName.get(a.categoryId) || "", faqFeed.isHiddenFromWebsite(a, hiddenCats)));
   });
   const accounts = () => cached("accounts", async () => {
     const [prospects, leads] = await Promise.all([rowsOf("prospects"), rowsOf("leads")]);
