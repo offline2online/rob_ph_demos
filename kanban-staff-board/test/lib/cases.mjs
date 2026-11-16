@@ -1198,29 +1198,35 @@ export function defineNewCases(E) {
 
   T("TC-65", "rotating a phone or tablet mid-edit and mid-drag loses nothing", { on: on.touch, timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
-    const swap = () => p.setViewportSize({ width: p.viewportSize().height, height: p.viewportSize().width });
+    // Rotate, then wait until the page has laid itself out at the new size (and drawn a frame) before reading it.
+    const swap = async () => {
+      const w = p.viewportSize().height, h = p.viewportSize().width;
+      await p.setViewportSize({ width: w, height: h });
+      await p.waitForFunction(([w, h]) => innerWidth === w && innerHeight === h, [w, h]);
+      await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+    };
     // mid-edit
     await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
     await p.fill("#f-title", "Half written"); await p.fill("#f-estimate", "3h"); await typeDescription(p, "Some words");
-    await swap(); await sleep(400);
-    assert.equal(await modalOpen(p), true, "the form is still open");
+    await swap();
+    await eventually(async () => assert.equal(await modalOpen(p), true, "the form is still open"));
     assert.equal(await val(p, "#f-title"), "Half written"); assert.equal(await val(p, "#f-estimate"), "3h");
     assert.match(await p.$eval('[data-field="description"] .ql-editor', (e) => e.innerText), /Some words/);
-    await swap(); await sleep(400);
-    assert.equal(await val(p, "#f-title"), "Half written");
+    await swap();
+    await eventually(async () => assert.equal(await val(p, "#f-title"), "Half written"));
     await saveTask(p);
-    const key = await toastKey(p);
+    const key = await until(() => toastKey(p), "the saved toast");
     assert.ok(key, "saved after two rotations");
     // mid-drag
     const state0 = JSON.stringify(await Promise.all(COLS.map((c) => columnKeys(p, c))));
     const P = await pickUp(p, "PH-34", "touch");
-    assert.equal((await dragGone(p)).ghost, true);
-    await swap(); await sleep(400);
+    await eventually(async () => assert.equal((await dragGone(p)).ghost, true, "the drag is live"));
+    await swap();
     const live = await dragGone(p);
     await P.move(P.at.x, P.at.y + 4, 2);
-    await P.up(); await sleep(300);
-    assert.deepEqual(await dragGone(p), { ghost: false, zones: false, active: false, marker: false, dragging: false }, "nothing left over after the drop");
-    assert.equal(await p.$$eval(card("PH-34"), (e) => e.length), 1, "exactly one card");
+    await P.up();
+    await eventually(async () => assert.deepEqual(await dragGone(p), { ghost: false, zones: false, active: false, marker: false, dragging: false }, "nothing left over after the drop"));
+    await eventually(async () => assert.equal(await p.$$eval(card("PH-34"), (e) => e.length), 1, "exactly one card"));
     const w = await where(p, "PH-34");
     confirm("TC-65", "what should rotating the device mid-drag do (cancel the drag, or carry on)?", `the drag ${live.ghost ? "carried on" : "was cancelled"}; on release the card ${w.status === "backlog" ? "stayed in Backlog" : "went to " + w.status + (w.resolution ? "/" + w.resolution : "")}`);
     await p.done();
