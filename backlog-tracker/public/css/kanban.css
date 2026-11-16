@@ -310,6 +310,20 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-ac-item .icon-btn:disabled { opacity: .35; }
 .kb-ac-add .kb-input:first-child { flex: 1 1 auto; }
 .kb-ac-chip.done { color: var(--success, #1a7f37); font-weight: 600; }
+/* Send to Agent (KB-AGENT-1): agent tickets built of agent tickets sent. */
+.kb-agent-chip.done { color: var(--success, #1a7f37); font-weight: 600; }
+.kb-agents li { align-items: center; }
+.kb-agents .kb-agent-ic { font-size: 18px; color: var(--text-muted); }
+.kb-agents .kb-agent-proj { white-space: nowrap; }
+.kb-status-pill.kb-agent-status.built { background: rgba(82, 196, 26, .12); color: var(--success, #1a7f37); }
+.kb-agent-wait { margin: 8px 0 0; }
+.kb-agent-split { margin-top: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--surface-2); }
+.kb-agent-drafts { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.kb-agent-draft { display: grid; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.kb-agent-draft-head { display: flex; align-items: center; justify-content: space-between; min-height: 24px; }
+.kb-agent-text { resize: vertical; min-height: 64px; font: inherit; }
+.kb-agent-actions { justify-content: space-between; }
+.kb-agent-actions .form-actions { display: flex; gap: 8px; margin-left: auto; }
 .kb-attach-btn { cursor: pointer; min-height: 40px; padding: 0 14px; margin-top: 2px; }
 .kb-comments { list-style: none; margin: 6px 0 8px; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .kb-comment { display: flex; gap: 10px; align-items: flex-start; }

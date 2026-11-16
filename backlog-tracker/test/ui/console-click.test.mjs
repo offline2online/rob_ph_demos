@@ -785,6 +785,15 @@ const scenarios = [
     },
   },
   {
+    name: "Send to Agent: an agent ticket made from a Staff Kanban ticket links back to it",
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { kanbanKey: "PH-12", ownerEmail: "editor@personalisationhub.com" }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .kanban-link-badge', "PH-12", "the link back to the Kanban ticket");
+      assert.strictEqual(await c.page.getAttribute('.card[data-id="b1"] .kanban-link-badge', "href"), "#staff-kanban/ticket/PH-12");
+    },
+  },
+  {
     name: "Model: an Advanced card shows its chip and build log; Edit item switches it back to Standard",
     seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }); return s; },
     async run(c) {

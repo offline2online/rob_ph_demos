@@ -300,6 +300,50 @@ AC: create epic > task > subtask > sub-subtask; a fifth level is blocked; comple
 the leaf and each parent moves to Ready for Testing, with n/m done at every level;
 TC-70, `kanban-mcp.test.js` and `kanban-core.test.mjs`.
 
+**KB-AGENT-1 Send to Agent.** A ticket's assignee (its owner) splits it into one or
+more agent tickets on the Agent Board (ticket VlBatzRVbPt6heAEp5mu, 15 Nov 2026).
+- **Who:** only the ticket's assignee, while it is open. Anyone else, a viewer, or
+  a closed ticket sees no **Send to Agent** button, and the server refuses them too
+  (`POST /mcp/kanban/send-to-agent` checks the signed-in member against the assignee).
+- **Propose:** the modal's **Agent tickets** section has **Send to Agent**. Claude
+  (`functions/kanban-agent.js`, Claude Opus, structured output) proposes the split:
+  one to ten agent tickets, each a title, a description and acceptance criteria. With
+  no API key, or when the call fails, the proposal is the ticket itself as one agent
+  ticket (its title, description text and acceptance criteria).
+- **Edit and confirm:** the owner picks the Agent Board project (the ticket's own
+  Project when it has one and it is open), edits every title, description and
+  acceptance-criteria list (one per line), adds or removes agent tickets (at most
+  ten at a time), and **Create N agent tickets** files them.
+- **What is filed:** each agent ticket goes to that project's Backlog with its title,
+  a description in the Agent Board's four intake sections (Outcome = description and
+  acceptance criteria; Test steps = one check per criterion; Spec reference = this
+  ticket and its address), `ownerEmail` = the owner (so it fires only on the owner's
+  own Claude Routine; Agent Board → "Agent tickets fire under their owner's own
+  Claude account"), `kanbanKey` = this ticket's key and `createdVia: "send-to-agent"`.
+  This ticket gets one activity line ("sent to agent: 3 agent tickets on …").
+- **Links both ways:** this ticket lists its agent tickets (`agentTickets`), each with
+  its live Agent Board status and a link to its card, under "x of y done" with a
+  progress bar; its board card shows a `smart_toy` chip "x/y". Each agent ticket's
+  card on the Agent Board shows a chip with this ticket's key that opens it.
+- **Built and the roll-up:** an agent ticket counts as done once it reaches Ready for
+  Testing on the Agent Board, or anything after it. A trigger on `backlogItems`
+  (`kanbanAgentRollup`) recounts `agentDone` / `agentTotal` whenever a linked agent
+  ticket changes status or is deleted, and when every one is built it moves this
+  ticket to **Ready for Testing** (if it is still in Backlog, Ready for Dev or In
+  Progress) as its owner, through `kanban_move_task`: the testing hand-off, the
+  activity line ("all 3 agent tickets are built on the Agent Board") and the parent
+  automation of KB-TASK-14 follow as for any move. An agent ticket sent back later
+  lowers the count; the ticket stays where it is.
+- **Security:** `agentTickets`, `agentTotal` and `agentDone` are written by the server
+  only (`firestore.rules`: a page may not change them on a ticket or a card).
+  `kanbanKey` on an agent ticket is informational; the roll-up reads only the Kanban
+  ticket's own `agentTickets`.
+AC: as the owner, Send to Agent, edit the proposed split into 3, confirm; the three
+are in the project's Backlog with the owner, each linking back, and this ticket lists
+them with "0 of 3 done"; a non-owner has no Send to Agent; build all 3 and this ticket
+moves to Ready for Testing by itself. TC-71, `kanban-mcp.test.js` ("send to agent: …")
+and `kanban-core.test.mjs`.
+
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
 `PH-36`) or words from the title or description; results rank exact key, key
@@ -528,8 +572,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `agentTotal`, `agentDone` (agent tickets sent and built, KB-AGENT-1; only once there are any, written by the server), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `agentTickets[] {id, projectId}`, `agentTotal`, `agentDone` (Send to Agent, KB-AGENT-1: the Agent Board tickets made from it and how many are built; server only), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited) |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
@@ -621,7 +665,9 @@ the same comparison on the server.
 ## 14. Interfaces
 
 - **Agent Board** (Backlog Tracker & FAQs project): separate pipeline; no
-  shared tickets.
+  shared tickets. Send to Agent (KB-AGENT-1) is the one bridge: it files agent
+  tickets (`backlogItems`, with `ownerEmail` and `kanbanKey`) from a Kanban
+  ticket and reads their status back; it never moves an agent ticket.
 - **Console members** (`consoleUsers`): people, roles, photos.
 - **Console releases** (`releases`): fix versions.
 - **MCP server** (`backlog-tracker/functions/mcp-server.js`, tools in
