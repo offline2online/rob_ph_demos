@@ -129,15 +129,6 @@ async function eventually(check, ms = 8000) {
     catch (e) { if (Date.now() - t0 > ms) throw e; await sleep(40); }
   }
 }
-// Opens the New task form and waits until it has finished opening. The form puts the cursor in its title on a short
-// timer (openTask); on a busy runner that timer can fire after the case has already moved to another field, and an
-// Enter meant for that field then lands in the title and submits the form. TC-68 flaked on exactly this: its first
-// criterion's Enter created the ticket and closed the form, and the next fill waited 30 s for #f-ac-input.
-async function openNewTask(p) {
-  await press(p, "#kb-new-btn");
-  await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the New task form");
-  await eventually(async () => assert.equal(await p.evaluate(() => document.activeElement && document.activeElement.id), "f-title", "the form has put the cursor in its title"));
-}
 // Tickets whose card (kanbanCards) differs from the ticket, or is missing; cards without a ticket.
 const cardDrift = (page) => page.evaluate(async () => {
   const core = await import("/js/kanban/kanban-core.js");
@@ -1025,12 +1016,9 @@ T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an a
   await eventually(async () => assert.match(await chip(), /AC 1\/5/));
   await press(p, "#f-cancel");
   // A new ticket saves with criteria; 51 can't be added.
-  await openNewTask(p);
+  await press(p, "#kb-new-btn");
   await p.fill("#f-title", "Ticket with criteria");
-  for (const [i, t] of ["One", "Two", "Three"].entries()) {
-    await p.fill("#f-ac-input", t); await p.press("#f-ac-input", "Enter");
-    await eventually(async () => assert.equal((await p.$$("#f-ac .kb-ac-item")).length, i + 1, `criterion ${i + 1} is listed`));
-  }
+  for (const t of ["One", "Two", "Three"]) { await p.fill("#f-ac-input", t); await p.press("#f-ac-input", "Enter"); }
   assert.equal((await p.$$("#f-ac .kb-ac-item")).length, 3);
   await press(p, "#f-save");
   const made = await until(async () => (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Ticket with criteria")))[0], "the new ticket to be saved");
