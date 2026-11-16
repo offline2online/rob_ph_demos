@@ -29,6 +29,7 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
+import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
@@ -741,8 +742,38 @@ function ownerFireInfoHTML(block) {
   return `<a class="owner-fire-info" href="${ROUTINE_SETUP_HASH}" title="${escapeHTML(block.message)}" aria-label="${escapeHTML(block.message)}"><span class="material-symbols-outlined" aria-hidden="true">info</span></a>`;
 }
 
+// The card's one status line (card-state.js): what it waits for, on whom and
+// for how long. Shared with the MCP server, so the board and an agent say the
+// same thing.
+const CARD_STATE_ICONS = {
+  "nobody": "radio_button_unchecked", "tester": "fact_check", "approver": "how_to_reg", "decision": "pan_tool",
+  "automation": "autorenew", "another ticket": "link", "another project": "schedule",
+};
+function cardStateContext(projectId) {
+  const itemsById = Object.fromEntries(allItems.map((i) => [i.id, i]));
+  return { itemsById, projectItems: items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === projectId) };
+}
+function cardStateFor(item, now = Date.now()) {
+  const pid = item.projectId || GENERAL_PROJECT_ID;
+  const project = projects.find((p) => p.id === pid) || { id: pid };
+  return cardState(item, project, now, cardStateContext(pid));
+}
+function cardStateLineHTML(st) {
+  const slug = String(st.waitingOn).replace(/\s+/g, "-");
+  return `<p class="card-state-line card-state-${escapeHTML(slug)}${st.warn ? " card-state-warn" : ""}" data-state="${escapeHTML(st.state)}" data-waiting-on="${escapeHTML(st.waitingOn)}" title="${escapeHTML(`Waiting on: ${st.waitingOn}`)}"><span class="material-symbols-outlined" aria-hidden="true">${CARD_STATE_ICONS[st.waitingOn] || "info"}</span><span class="card-state-text">${escapeHTML(st.line)}</span></p>`;
+}
+// Time in column, beside the type badge: quiet, warning-coloured past the
+// column's threshold (AGE_THRESHOLDS in card-state.js).
+function cardAgeHTML(item, st, now = Date.now()) {
+  const entered = statusEnteredMs(item);
+  if (!entered || item.status === "archived") return "";
+  const label = ageLabel(now - entered);
+  return `<span class="card-age${st.warn ? " card-age-warn" : ""}" title="${escapeHTML(`In this column since ${new Date(entered).toLocaleString()}`)}">${escapeHTML(label)}</span>`;
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
+  const cardSt = cardStateFor(item);
   // Moving back is a designed, documented flow from ready-to-publish (send
   // back for more work — the first half of pulling a ticket off the train;
   // Failed testing there is the second) but NOT from ready-for-testing
@@ -890,18 +921,9 @@ function cardHTML(item) {
   const failBtn = (isTesting && !noDeploy)
     ? failTestingButtonHTML(item)
     : "";
-  // Deliberately not a button: there used to be a "Merge to main" button
-  // here that just wrote status: "published-live" directly, with zero
-  // connection to whether the PR was actually merged on GitHub — a card
-  // could say "Merged to Main" while its PR sat open. The only honest way
-  // to reach published-live now is the project's own "Notify Claude —
-  // Deploy" action (see deployNotifyButtonHTML), which only advances a
-  // card once backlog-automation.yml has actually merged its PR.
-  const mergeBtn = isLiveBranch && !noDeployPending
-    ? (isDeploying
-        ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
-        : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
-    : "";
+  // The "Waiting for Deploy to Main" / "Deploying — locked" lines that used to
+  // sit here are now the card's status line (cardStateLineHTML, card-state.js),
+  // and the header says why Deploy to Main is not offered (deployGateHintHTML).
   // Eject from train (FVrOIVAAp46NdcgGovMW) — the explicit, one-click way to
   // pull a stuck Approved for Deployment card off a locked train so the rest
   // of the release can still reach Deploy to Main. Before this, doing the
@@ -936,9 +958,6 @@ function cardHTML(item) {
   const revertBtn = isPublished && !noDeploy && item.mergeCommit && !isReverting
     ? `<button type="button" class="icon-btn revert-btn" data-id="${item.id}" title="Revert this deployment — opens a PR to undo it; still needs testing and Deploy to Main like any other fix">&#8630;</button>`
     : "";
-  const revertingHint = isReverting
-    ? `<span class="in-development-hint" title="A revert PR is being opened for this card — it's locked until backlog-automation.yml pushes the branch and this card moves back to Ready for Testing">Revert requested &mdash; locked</span>`
-    : "";
   const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment && !isSentToClaude;
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
@@ -957,20 +976,9 @@ function cardHTML(item) {
     : (isSentToClaude
         ? sentToClaudeHintHTML(item)
         : "");
-  // Failed testing sends a card back to Backlog AND asks the automation to
-  // revert its commits off the project's integration branch (see
-  // failTesting / processRevertFromTrain). Between those two things the
-  // card is in Backlog with live code still on the train, which is exactly
-  // the state the pipeline must never quietly leave standing — so it says
-  // so on the card. revertBlockedBy means the revert hit a conflict because
-  // a later ticket builds on this one: the board stays honest about it
-  // (and Deploy to Main stays hidden, since the ticket is still on the
-  // branch) until a human sends those tickets back too or fixes the branch.
-  const leavingTrainHint = (isBacklog && item.revertRequested)
-    ? (Array.isArray(item.revertBlockedBy) && item.revertBlockedBy.length
-        ? `<span class="in-development-hint" title="Reverting this ticket off ${escapeHTML(item.deployBranch || "the integration branch")} conflicted because ${escapeHTML(item.revertBlockedBy.join(", "))} build on top of it — send those back too, or fix the branch by hand">Still on the branch &mdash; blocked by ${item.revertBlockedBy.length} later ticket${item.revertBlockedBy.length === 1 ? "" : "s"}</span>`
-        : `<span class="in-development-hint" title="Its commits are being reverted off the project's integration branch so this rejected ticket can't ship in the next deployment">Coming off the branch&hellip;</span>`)
-    : "";
+  // A rejected ticket coming off the branch ("Being taken off the release",
+  // or "… blocked by <title>" when a later ticket builds on it) is said by the
+  // status line now (card-state.js); Deploy to Main stays hidden meanwhile.
   const noDeployBadge = noDeploy
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
@@ -1181,12 +1189,14 @@ function cardHTML(item) {
         <div class="card-top-left">
           ${selectCb}
           <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
+          ${cardAgeHTML(item, cardSt)}
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
       ${popText
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
+      ${cardStateLineHTML(cardSt)}
       ${sentBackLastTimeHTML(item)}
       ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
@@ -1197,7 +1207,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${failBtn}${mergeBtn}${ejectBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
+      ${approveBtn}${failBtn}${ejectBtn}${inDevelopmentHint}
     </article>`;
 }
 
@@ -1988,6 +1998,27 @@ function kanbanE2eChipHTML(project) {
   </div>`;
 }
 
+// Why Deploy to Main is not offered (RC6wVNJJcPjNTR5hov9W): wherever the
+// button is hidden or disabled the header names the reason and the next
+// action, plus how long a stuck train has been stuck. The queued case already
+// has its own line (deployQueuedHintHTML).
+function deployGateHintHTML(project) {
+  if (!project || project.id === GENERAL_PROJECT_ID) return "";
+  const pid = project.id;
+  const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid);
+  const gate = deployGate(project, projectItems);
+  const train = trainState(project, projectItems, Date.now(), cardStateContext(pid));
+  const stuck = train.stuckReason && train.since;
+  let line = "";
+  let age = "";
+  if (gate && gate.line && gate.kind !== "queued") { line = gate.line; if (stuck) age = ` · stuck ${ageLabel(train.ageMs)}`; }
+  else if (stuck) line = train.line; // already carries its age
+  if (!line) return "";
+  return `<div class="deploy-gate-hint${train.warn ? " deploy-gate-hint-warn" : ""}" data-project-id="${escapeHTML(pid)}" data-gate="${escapeHTML(gate ? gate.kind : train.state)}">
+    <span class="material-symbols-outlined deploy-gate-icon" aria-hidden="true">${train.warn ? "warning" : "info"}</span><span>${escapeHTML(line)}${escapeHTML(age)}</span>
+  </div>`;
+}
+
 function trainLockedNoteHTML(project) {
   if (!isTrainLocked(project)) return "";
   const note = (typeof project.trainNote === "string" && project.trainNote.trim())
@@ -2747,7 +2778,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
+      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -3022,6 +3053,106 @@ function programGroupHTML(group) {
 // (collapsing a project, selecting cards, etc.) — a one-frame (~16ms)
 // delay there is imperceptible.
 let renderScheduled = false;
+// ── Needs attention (RC6wVNJJcPjNTR5hov9W) ───────────────────────────────
+// One strip above the projects listing, across every project, what waits on
+// a person or is stuck past its threshold, oldest first (needsAttention in
+// card-state.js, the same list get_pipeline_health returns over MCP). Each
+// row has one button for the usual next action. "Waiting on me" narrows it
+// to cards the signed-in member filed, was asked about, or can approve.
+let needsAttentionMineOnly = false;
+let needsAttentionOpen = true;
+const NEEDS_ATTENTION_ACTIONS = {
+  open: ["Open", "open_in_new"], answer: ["Answer", "forum"], test: ["Test", "fact_check"], approve: ["Approve", "how_to_reg"], deploy: ["Deploy", "rocket_launch"],
+};
+function needsAttentionViewer() {
+  const role = currentConsoleRole();
+  return { email: (auth.currentUser && auth.currentUser.email) || "", canApprove: role === "admin" || role === "editor" };
+}
+function needsAttentionEntries(now = Date.now()) {
+  return needsAttention(items, projects, now);
+}
+function renderNeedsAttention() {
+  const el = document.getElementById("needs-attention");
+  if (!el) return;
+  if (!projectsLoaded) { el.hidden = true; return; }
+  const all = needsAttentionEntries();
+  const viewer = needsAttentionViewer();
+  const shown = needsAttentionMineOnly ? all.filter((e) => waitingOnMe(e, viewer)) : all;
+  el.hidden = false;
+  el.classList.toggle("needs-attention-empty", !all.length);
+  const head = `<div class="needs-attention-head">
+      <button type="button" class="needs-attention-toggle" aria-expanded="${all.length && needsAttentionOpen ? "true" : "false"}"${all.length ? "" : " disabled"}>
+        <span class="material-symbols-outlined" aria-hidden="true">${all.length ? "notifications" : "task_alt"}</span>
+        <span class="needs-attention-title">Needs attention</span>
+        <span class="needs-attention-count">${all.length}</span>
+      </button>
+      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : ""}
+    </div>`;
+  if (!all.length || !needsAttentionOpen) { el.innerHTML = head; return; }
+  const rows = shown.map((e) => {
+    const act = NEEDS_ATTENTION_ACTIONS[e.action] || NEEDS_ATTENTION_ACTIONS.open;
+    const age = e.ageMs ? ageLabel(e.ageMs) : "";
+    return `<li class="needs-attention-row${e.warn ? " needs-attention-row-warn" : ""}" data-kind="${e.kind}" data-id="${escapeHTML(e.id)}" data-project-id="${escapeHTML(e.projectId || "")}">
+        <span class="material-symbols-outlined needs-attention-kind" aria-hidden="true">${e.kind === "ticket" ? "description" : (e.escalated ? "notifications" : "rocket_launch")}</span>
+        <span class="needs-attention-main">
+          <span class="needs-attention-name">${escapeHTML(e.title)}${e.kind === "ticket" && e.projectName ? `<span class="needs-attention-project"> · ${escapeHTML(e.projectName)}</span>` : ""}</span>
+          <span class="needs-attention-line">${escapeHTML(e.line)}</span>
+        </span>
+        <span class="needs-attention-meta"><span class="needs-attention-who">${escapeHTML(e.waitingOn)}</span>${age ? `<span class="needs-attention-age">${escapeHTML(age)}</span>` : ""}</span>
+        <button type="button" class="needs-attention-action" data-action="${escapeHTML(e.action)}" data-kind="${e.kind}" data-id="${escapeHTML(e.id)}" data-project-id="${escapeHTML(e.projectId || "")}"><span class="material-symbols-outlined" aria-hidden="true">${act[1]}</span>${act[0]}</button>
+      </li>`;
+  }).join("");
+  el.innerHTML = head + (shown.length
+    ? `<ul class="needs-attention-list">${rows}</ul>`
+    : `<p class="needs-attention-none">Nothing waiting on you.</p>`);
+}
+function gotoCard(id) {
+  const item = allItems.find((i) => i.id === id);
+  const pid = item ? (item.projectId || GENERAL_PROJECT_ID) : null;
+  if (pid && isProjectCollapsed(pid)) toggleProjectCollapsed(pid);
+  requestAnimationFrame(() => {
+    const card = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+    card.classList.add("card-flash");
+    setTimeout(() => card.classList.remove("card-flash"), 1600);
+  });
+}
+function gotoProject(pid) {
+  if (isProjectCollapsed(pid)) toggleProjectCollapsed(pid);
+  requestAnimationFrame(() => {
+    const sec = document.querySelector(`.project[data-project-id="${CSS.escape(pid)}"]`);
+    if (sec) sec.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+}
+async function runNeedsAttentionAction(btn) {
+  const { action, kind, id, projectId } = btn.dataset;
+  if (action === "answer" && kind === "ticket") { openResolveModal(id, { answer: true }); return; }
+  if (action === "test" && kind === "ticket") {
+    const item = allItems.find((i) => i.id === id);
+    const url = item && item.previewUrl ? safeHttpUrl(item.previewUrl) : "";
+    if (url) { window.open(url, "_blank", "noopener"); return; }
+    gotoCard(id); return;
+  }
+  if (action === "deploy") {
+    // Only the project's own header button deploys, and only when it is
+    // offered; otherwise this brings you to the project.
+    const deployBtn = document.querySelector(`.deploy-notify-btn[data-project-id="${CSS.escape(projectId)}"]:not([disabled])`);
+    if (deployBtn) { closeAllOptionMenus(); requestDeployNotify(projectId); return; }
+    gotoProject(projectId); return;
+  }
+  if (kind !== "ticket") { gotoProject(projectId || id); return; }
+  gotoCard(id);
+}
+document.getElementById("needs-attention")?.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".needs-attention-toggle");
+  if (toggle) { needsAttentionOpen = !needsAttentionOpen; renderNeedsAttention(); return; }
+  const mine = e.target.closest(".needs-attention-mine");
+  if (mine) { needsAttentionMineOnly = !needsAttentionMineOnly; renderNeedsAttention(); return; }
+  const act = e.target.closest(".needs-attention-action");
+  if (act) runNeedsAttentionAction(act);
+});
+
 function render() {
   if (renderScheduled) return;
   renderScheduled = true;
@@ -3060,6 +3191,7 @@ function renderNow() {
     if (el.scrollTop) scrollPositions[el.id] = el.scrollTop;
   });
 
+  renderNeedsAttention();
   document.getElementById("projects-root").innerHTML = programs.length
     ? groupProjectsByProgram(renderedProjects).map(programGroupHTML).join("")
     : renderedProjects.map(projectSectionHTML).join("");

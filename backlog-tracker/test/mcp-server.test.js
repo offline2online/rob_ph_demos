@@ -1091,6 +1091,49 @@ async function rpc(token, method, params, id = 1) {
     for (const n of ["list_artifact_versions", "get_artifact_version"]) assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === n).scope, "board.read");
   });
 
+  await test("get_pipeline_health: train lines and Needs attention, viewers may call it, it writes nothing", async () => {
+    const items = env.store.col("backlogItems");
+    const H = 3600 * 1000;
+    items.set("ph-stale", { projectId: "proj1", title: "Stale test", status: "ready-for-testing", deployCommit: "c1", statusEnteredAt: new Date(Date.now() - 30 * H).toISOString(), type: "feature" });
+    items.set("ph-asked", { projectId: "proj1", title: "Asked", status: "backlog", blocked: { reason: "needs-decision", note: "A or B", setAt: new Date(Date.now() - 2 * H).toISOString() }, type: "feature" });
+    const VIEWER4 = "healthviewer@ph.example";
+    const idToken = signIn(VIEWER4);
+    addConsoleUser(VIEWER4, { role: "viewer" });
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const auth = await call({ method: "POST", path: "/mcp/authorize/complete", body: { idToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256", scope: "board.read" } });
+    const tok = await call({ method: "POST", path: "/mcp/token", body: { grant_type: "authorization_code", code: new URL(auth.body.redirect).searchParams.get("code"), code_verifier: v, client_id: clientId, redirect_uri: REDIRECT } });
+    const snapshot = () => JSON.stringify([[...items.keys()].sort().map((k) => [k, items.get(k)]), [...env.store.col("projects").keys()].sort().map((k) => [k, env.store.col("projects").get(k)])]);
+    const before = snapshot();
+    const res = await rpc(tok.body.access_token, "tools/call", { name: "get_pipeline_health", arguments: { projectId: "proj1" } });
+    assert.ok(!res.body.error && !res.body.result.isError, JSON.stringify(res.body));
+    const out = JSON.parse(res.body.result.content[0].text);
+    const stale = out.needsAttention.find((e) => e.id === "ph-stale");
+    assert.ok(stale, "the stale Ready for Testing card is listed");
+    assert.strictEqual(stale.waitingOn, "tester");
+    assert.strictEqual(stale.overdue, true);
+    assert.strictEqual(stale.nextAction, "test");
+    assert.ok(stale.ageHours >= 29.9);
+    const asked = out.needsAttention.find((e) => e.id === "ph-asked");
+    assert.strictEqual(asked.waitingOn, "decision");
+    assert.ok(out.needsAttention.indexOf(stale) < out.needsAttention.indexOf(asked), "oldest first");
+    assert.ok(Array.isArray(out.trains));
+    assert.strictEqual(out.thresholdsHours["ready-for-testing"], 24);
+    assert.strictEqual(snapshot(), before, "it changes nothing");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "get_pipeline_health").scope, "board.read");
+    // list_backlog_items summaries carry the same state.
+    const listed = JSON.parse((await rpc(tok.body.access_token, "tools/call", { name: "list_backlog_items", arguments: { projectId: "proj1", status: "ready-for-testing" } })).body.result.content[0].text);
+    const row = listed.items.find((i) => i.id === "ph-stale");
+    assert.strictEqual(row.state, "testing");
+    assert.strictEqual(row.waitingOn, "tester");
+    assert.ok(row.ageHours >= 29.9);
+    assert.match(row.stateLine, /^Ready to test · 30 h$/);
+    // whoami points at it.
+    const who = JSON.parse((await rpc(tok.body.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.match(who.pipelineHealth, /get_pipeline_health/);
+    items.delete("ph-stale"); items.delete("ph-asked");
+  });
+
   await test("snapshots add no writable project field", async () => {
     assert.deepStrictEqual([...mcp.__test.PROJECT_WRITABLE_FIELDS].sort(), WRITABLE_BEFORE_SNAPSHOTS.slice().sort());
   });

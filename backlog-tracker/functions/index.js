@@ -27,6 +27,7 @@ const { modelRequirementBlock, reviewModelTag } = require("./model-requirement")
 const { contractReviewBlock } = require("./contract-review");
 const buildOrder = require("./build-order");
 const ownerFiring = require("./owner-firing");
+const cardState = require("./card-state");
 
 initializeApp();
 
@@ -2075,6 +2076,63 @@ async function stampBuildReportedAt(event) {
 }
 exports.onBacklogItemBuildReported = onDocumentUpdated("backlogItems/{itemId}", stampBuildReportedAt);
 
+// Time in column (RC6wVNJJcPjNTR5hov9W, "Flow 7/9"): every status change, by
+// any writer, stamps backlogItems/{id}.statusEnteredAt with the server's
+// clock, so the card's age and the Needs attention strip have one source.
+// Writers that change status: the board (moveItem, failTesting, eject,
+// approve, confirm no-deploy, restore/archive), the MCP server
+// (fail_testing, approve tools, archive), run-backlog-automation.js (land,
+// revert, merge) and these Cloud Functions. A trigger covers them all,
+// including writers added later; a writer that stamps the field itself in
+// the same write is left alone (statusEnteredPatch in card-state.js).
+async function stampStatusEnteredAt(event) {
+  const before = event.data?.before?.data ? event.data.before.data() : undefined;
+  const after = event.data?.after?.data ? event.data.after.data() : undefined;
+  if (!after) return;
+  if (!cardState.statusEnteredPatch(before, after, "now")) return;
+  await event.data.after.ref.update({ statusEnteredAt: FieldValue.serverTimestamp() });
+}
+exports.onBacklogItemStatusEntered = onDocumentWritten("backlogItems/{itemId}", stampStatusEnteredAt);
+
+// A stuck train is escalated once (RC6wVNJJcPjNTR5hov9W): the automation
+// stamps projects/{id}.trainStuckSince when a train enters a stuck state and
+// trainStuckEscalatedAt once it has been stuck past its threshold
+// (card-state.js → trainStuckPatch). That one write posts one message
+// through the existing notify channel (NOTIFY_WEBHOOK_URL, normally Slack).
+// With no webhook configured the board's Needs attention strip is the alert:
+// it lists the escalated train with a notification icon. No repeats: a new
+// escalation needs the state to end (all three fields cleared) and start again.
+function trainStuckMessage(project, projectId) {
+  const reason = project.trainStuckReason;
+  const label = cardState.TRAIN_STUCK_LABELS[reason] || "Train stuck";
+  const since = cardState.toMillis(project.trainStuckSince);
+  const age = since ? cardState.ageLabel(Date.now() - since) : "";
+  return `"${project.name || projectId}" release needs a person: ${label}${age ? ` (for ${age})` : ""}. ${project.trainNote ? `${String(project.trainNote).slice(0, 300)} ` : ""}See Needs attention at the top of https://backlog-tracker-e4ed2.web.app/`;
+}
+async function postTrainStuck(event, { webhookUrl = NOTIFY_WEBHOOK_URL.value(), fetchImpl = fetch } = {}) {
+  const before = event.data?.before?.data() || {};
+  const after = event.data?.after?.data() || {};
+  if (!after.trainStuckEscalatedAt || before.trainStuckEscalatedAt) return null;
+  const text = trainStuckMessage(after, event.params.projectId);
+  if (!webhookUrl) {
+    logger.info("Train stuck: NOTIFY_WEBHOOK_URL not set; the board's Needs attention strip carries the alert", { projectId: event.params.projectId });
+    return { posted: false, text };
+  }
+  try {
+    const res = await fetchImpl(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, projectId: event.params.projectId, projectName: after.name || "", reason: after.trainStuckReason || null }),
+    });
+    if (!res.ok) logger.error("Train stuck webhook responded with a non-2xx status", { projectId: event.params.projectId, status: res.status });
+    return { posted: !!res.ok, text };
+  } catch (err) {
+    logger.error("Train stuck webhook failed", { projectId: event.params.projectId, error: err instanceof Error ? err.message : String(err) });
+    return { posted: false, text };
+  }
+}
+exports.onTrainStuckEscalated = onDocumentUpdated({ document: "projects/{projectId}", secrets: [NOTIFY_WEBHOOK_URL] }, (event) => postTrainStuck(event));
+
 // patchFiles (up to ~180 KB of file contents) moves off the card into
 // backlogItems/{id}/pipeline/patch the moment it is written, so the board's
 // live listener stops downloading it into every open tab — see
@@ -2724,4 +2782,4 @@ exports.kanbanAgentRollup = mcp.kanbanAgentRollup;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };
+exports.__test = { ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt, stampStatusEnteredAt, postTrainStuck, trainStuckMessage };

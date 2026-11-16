@@ -1045,6 +1045,70 @@ const scenarios = [
     },
   },
   {
+    // RC6wVNJJcPjNTR5hov9W (Flow 7/9): every card's first row is one status
+    // line with its time in column; the header says why Deploy to Main is
+    // missing; Needs attention lists what waits on a person, oldest first.
+    name: "Card state: status lines, Deploy to Main reason and Needs attention",
+    seed: () => {
+      const s = only("b1", "r1", "d1", "l1");
+      const now = Date.now();
+      Object.assign(s.docs.backlogItems.r1, { statusEnteredAt: t(now - 30 * 3600_000), testRound: 2, createdByEmail: "editor@ph.example" });
+      Object.assign(s.docs.backlogItems.d1, { statusEnteredAt: t(now - 2 * 3600_000) });
+      Object.assign(s.docs.backlogItems.l1, { statusEnteredAt: t(now - 3600_000), mergeCommit: "m1", deployConclusion: "success" });
+      Object.assign(s.docs.backlogItems.b1, { statusEnteredAt: t(now - 3 * 3600_000), blocked: { reason: "needs-decision", note: "A or B?", setBy: "claude", setAt: new Date(now - 26 * 3600_000).toISOString() }, createdByEmail: "someone@ph.example" });
+      s.docs.projects.p2 = { name: "Red Project", createdAt: t(T0), deployBranch: "deploy/red", repoFolder: "red", trainStatus: "deploying", trainHold: "tests-red", trainTestsRed: { "red-tests": { sha: "x" } }, trainStuckReason: "tests-red-no-culprit", trainStuckSince: new Date(now - 3 * 3600_000).toISOString() };
+      s.docs.backlogItems.x1 = { projectId: "p2", title: "Red approved", desc: "x", type: "bug", category: "HQ Admin", status: "ready-to-publish", deployCommit: "fff", createdAt: t(T0), updatedAt: t(now - 3600_000), statusEnteredAt: t(now - 3600_000) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const line = (id) => c.page.locator(`.card[data-id="${id}"] .card-state-line`).first().innerText();
+      await c.visible('.card[data-id="r1"] .card-state-line', "the Ready for Testing card has its status line");
+      assert.match(await line("r1"), /Ready to test · round 2 · 30 h/);
+      assert.match(await line("b1"), /Needs your decision · 26 h/);
+      assert.match(await line("d1"), /Approved · waits for Fix the thing to be approved/);
+      assert.match(await line("l1"), /Live · deploy checked/);
+      // The first row under the title.
+      const firstUnderTitle = await c.page.evaluate(() => document.querySelector('.card[data-id="r1"] .card-title').nextElementSibling.className);
+      assert.match(firstUnderTitle, /card-state-line/);
+      // Time in column beside the type badge, warning past 24 h in testing.
+      assert.ok(await c.page.locator('.card[data-id="r1"] .card-top .card-age.card-age-warn').count(), "a 30 h Ready for Testing card shows its age in the warning colour");
+      assert.strictEqual((await c.text('.card[data-id="d1"] .card-age')).trim(), "2 h");
+      assert.strictEqual(await c.page.locator('.card[data-id="d1"] .card-age-warn').count(), 0, "2 h approved is quiet");
+      // The header says why Deploy to Main is missing.
+      await c.visible('.deploy-gate-hint[data-project-id="p1"]', "the header names why Deploy to Main is missing");
+      assert.match(await c.text('.deploy-gate-hint[data-project-id="p1"]'), /Deploy to Main appears when Fix the thing is approved or sent back/);
+      assert.match(await c.text('.deploy-gate-hint[data-project-id="p2"]'), /Tests failing: red-tests — nobody is pinned as the cause yet/);
+      // Needs attention: the stale testing card, the blocked card and the red train, oldest first.
+      await c.visible("#needs-attention .needs-attention-row", "Needs attention lists rows");
+      const rows = await c.page.evaluate(() => [...document.querySelectorAll("#needs-attention .needs-attention-row")].map((r) => `${r.dataset.kind}:${r.dataset.id}`));
+      assert.ok(rows.indexOf("ticket:r1") >= 0 && rows.indexOf("ticket:b1") > rows.indexOf("ticket:r1"), `oldest first: ${rows}`);
+      assert.ok(rows.includes("train:p2"), `the red train is listed: ${rows}`);
+      // Waiting on me: an editor sees what they filed and what a tester or approver can act on.
+      await c.click("#needs-attention .needs-attention-mine", "Waiting on me");
+      const mine = await c.page.evaluate(() => [...document.querySelectorAll("#needs-attention .needs-attention-row")].map((r) => r.dataset.id));
+      assert.ok(mine.includes("r1") && !mine.includes("b1"), `waiting on me: ${mine}`);
+      await c.click("#needs-attention .needs-attention-mine", "show all again");
+      // Each button does its action: Answer opens the answer dialog.
+      await c.click('#needs-attention .needs-attention-action[data-id="b1"]', "Answer");
+      await c.waitText("#rs-title", "Answer: Purple widget", "the Answer dialog opens for that ticket");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+    },
+  },
+  {
+    name: "Needs attention: collapsed to a count when nothing waits on a person; Open scrolls to the card",
+    seed: () => only("l1"),
+    async run(c) {
+      await c.boardReady();
+      await c.visible("#needs-attention", "the strip is there");
+      assert.strictEqual((await c.text("#needs-attention .needs-attention-count")).trim(), "0");
+      assert.strictEqual(await c.page.locator("#needs-attention .needs-attention-row").count(), 0);
+      const pos = await c.page.evaluate(() => getComputedStyle(document.getElementById("needs-attention")).position);
+      assert.notStrictEqual(pos, "fixed", "normal flow, never position: fixed");
+    },
+  },
+  {
     // 14 Nov 2026: a build session sends a heartbeat; the locked card says
     // which phase it is in and how long ago it was last heard from.
     name: "Build heartbeat: a building card shows the phase and the age of the last heartbeat",

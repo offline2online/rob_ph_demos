@@ -65,6 +65,7 @@ const testRounds = require("../functions/test-rounds");
 const contractReview = require("../functions/contract-review");
 // Late arrivals, the deploy queue, shared files between trains (wPoSOXfp8Em06Vzp3Cz7).
 const deployQueue = require("../functions/deploy-queue");
+const cardState = require("../functions/card-state");
 const kanbanHeal = require("./kanban-e2e-heal");
 const flakyLedger = require("./flaky-ledger");
 const { notifyRoutineOutcome, stalledNoteText, cardSettled, unbuiltReportAction } = require("../functions/notify-routine");
@@ -7640,6 +7641,47 @@ function trainSweepPlan(items, liveCommits) {
 //     that would catch it if one appears)
 // trainLockShouldClear (train-lock.js) is the exact same predicate the
 // Cloud Function uses, so "empty" means the same thing in both places.
+// Stuck trains get a clock and one escalation (RC6wVNJJcPjNTR5hov9W, "Flow
+// 7/9"). A train in a merge conflict, waiting for a person to merge its PR,
+// red with no ticket pinned as the cause, locked with a ticket still not
+// approved, or holding a revert another ticket blocks used to sit with no
+// clock and no alert (29 Oct 2026: red from 05:10 to 20:25). Every pass
+// stamps projects/{id}.trainStuckSince/trainStuckReason when one starts,
+// trainStuckEscalatedAt once it passes its threshold (2 h; 12 h for a locked
+// train with an unapproved ticket) — which makes onTrainStuckEscalated post
+// one message — and clears all three when it ends. card-state.js →
+// trainStuckPatch decides; this only reads and writes.
+const TRAIN_STUCK_PROJECT_FIELDS = ["name", "trainStatus", "trainHold", "trainLocked", "trainReady", "trainTestsRed", "trainStuckSince", "trainStuckReason", "trainStuckEscalatedAt"];
+const TRAIN_STUCK_ITEM_FIELDS = ["status", "deployCommit", "revertRequested", "revertBlockedBy", "trainTest", "title", "projectId"];
+async function sweepStuckTrains(now = Date.now()) {
+  const projects = await runQuery({ from: [{ collectionId: "projects" }], select: selectFields(TRAIN_STUCK_PROJECT_FIELDS) });
+  for (const project of projects) {
+    const watched = project.trainLocked || project.trainStatus === "conflict" || project.trainStatus === "awaiting-human-merge"
+      || project.trainHold === "tests-red" || Object.keys(project.trainTestsRed || {}).length || project.trainStuckSince || project.trainStuckReason;
+    // A project with no train state at all is never stuck, except by a
+    // blocked revert, which needs its cards: read them only for projects
+    // that could be stuck, plus any with a pending revert (below).
+    let items = null;
+    if (watched) items = await itemsForProject(project.id, TRAIN_STUCK_ITEM_FIELDS);
+    else {
+      const reverting = await runQuery({
+        from: [{ collectionId: "backlogItems" }],
+        select: selectFields(TRAIN_STUCK_ITEM_FIELDS),
+        where: { compositeFilter: { op: "AND", filters: [
+          { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: project.id } } },
+          { fieldFilter: { field: { fieldPath: "revertRequested" }, op: "EQUAL", value: { booleanValue: true } } },
+        ] } },
+      });
+      if (!reverting.length) continue;
+      items = reverting;
+    }
+    const patch = cardState.trainStuckPatch(project, items, now);
+    if (!patch) continue;
+    console.log(`[train-stuck] ${project.id}: ${patch.trainStuckEscalatedAt ? `escalated (${project.trainStuckReason})` : patch.trainStuckReason ? `stuck: ${patch.trainStuckReason}` : "no longer stuck"}`);
+    await patchProject(project.id, patch);
+  }
+}
+
 async function reconcileLockedTrains() {
   const locked = await runQuery({
     from: [{ collectionId: "projects" }],
@@ -8328,6 +8370,11 @@ async function main() {
     console.error(`[build-queue] sweep failed: ${err.message}`);
   }
   try {
+    await sweepStuckTrains();
+  } catch (err) {
+    console.error(`[train-stuck] sweep failed: ${err.message}`);
+  }
+  try {
     await sweepRebuildRequests();
   } catch (err) {
     console.error(`[rebuild] sweep failed: ${err.message}`);
@@ -8523,6 +8570,7 @@ if (require.main === module) {
 // run (main(), above, has real Firestore/GitHub side effects the moment
 // this module loads if not guarded — see the require.main check).
 module.exports = {
+  sweepStuckTrains,
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   // test/contract-review.test.js — contract-change review flags

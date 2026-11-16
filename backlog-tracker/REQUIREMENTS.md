@@ -62,6 +62,9 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   requirementsMd?: string,        // LEGACY: Requirements text, same rule against docs/requirements
   docs?: { [kind: "readme" | "requirements"]: { chars: number, sha256: string, sourceCommit: string | null, updatedAt: timestamp } }, // pointers only; the text is in projects/{projectId}/docs/{kind} below. Writable over MCP (PROJECT_WRITABLE_FIELDS)
   description?: string,           // one or two sentences (max 300 chars) on what the project covers, surfaced by list_projects (set_project_description)
+  trainStuckSince?: string | null,       // 16 Nov 2026 (RC6wVNJJcPjNTR5hov9W) — when the train entered a stuck state; automation-only (sweepStuckTrains), cleared when it ends. See "Stuck trains"
+  trainStuckReason?: "conflict" | "awaiting-human-merge" | "tests-red-no-culprit" | "locked-unapproved" | "revert-blocked" | null,
+  trainStuckEscalatedAt?: string | null, // set once per spell past TRAIN_STUCK_THRESHOLDS; its write posts one notify-webhook message (onTrainStuckEscalated)
   repoFolder?: string,            // repo-root-relative folder the project owns, no trailing slash — the join to GitHub that patchFiles paths resolve against
   repoFolderNotApplicable?: boolean, // true = deliberately no single folder (e.g. Backlog Tracker & FAQs)
   deployBranch?: string,          // the project's one integration branch, deploy/<folder> (the deployment train)
@@ -184,6 +187,7 @@ train" → "Deploy queue".
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
+  statusEnteredAt?: timestamp,         // 16 Nov 2026 (RC6wVNJJcPjNTR5hov9W) — when the card entered its current column; stamped by onBacklogItemStatusEntered on every status change by any writer (backfill: scripts/backfill-status-entered.js). See "Card state line"
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
   //   15 Nov 2026 (wPoSOXfp8Em06Vzp3Cz7): also set with patchReady when a BUILT patch became ready on a closing train — the patch is held on the card ("Built — joins the next release") and processApplyPatch lands it after the merge.
   sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
@@ -733,6 +737,84 @@ was dropped.
   resolves a conflict confined to the `APP_VERSION` line by taking main's
   file; the bump is recomputed afterwards. Anything else differing in that
   file is left for a person.
+
+### Card state line (RC6wVNJJcPjNTR5hov9W, 16 Nov 2026)
+
+The board held most of what a person needs about a stuck ticket as separate
+chips, in notes, or not at all (how long a card had sat in its column, a fire
+being retried, a rebuild waiting for the release, why Deploy to Main was
+missing), and agents explained it after the fact ("Stuck on a stale flag, not
+a code problem", about 5 hours). Now:
+
+- **Time in column.** `backlogItems.statusEnteredAt` is stamped with the
+  server clock on every status change by every writer (board, MCP,
+  automation, Cloud Functions) by one trigger, `onBacklogItemStatusEntered`
+  in `functions/index.js`; a writer that stamps it in the same write is left
+  alone. Cards without it fall back to `updatedAt`, then `createdAt`;
+  `scripts/backfill-status-entered.js` (dry run by default, `--apply` to
+  write, idempotent) copies `updatedAt` onto non-archived cards. The card
+  shows the age beside the type badge ("2 h", "3 d"), in the warning colour
+  past its column's threshold. The thresholds are one exported table,
+  `AGE_THRESHOLDS` in `public/js/card-state.js`: Backlog blocked on a
+  person 24 h, building 2 h, Ready for Testing 24 h, Approved 12 h.
+- **One status line per card.** `cardState(item, project, now, ctx)` in
+  `public/js/card-state.js` (plain ESM; `functions/card-state.js` is its
+  generated CommonJS copy, `scripts/gen-card-state-cjs.sh`, and a test fails
+  if they drift) returns `{state, line, waitingOn, since, ageMs, warn,
+  action}`, `waitingOn` being one of nobody, tester, approver, decision,
+  automation, another ticket, another project. The card shows the line as
+  its first row under the title. It replaced the plain "Coming off the
+  branch…", "Still on the branch — blocked by…", "Revert requested — locked"
+  and "Waiting for Deploy to Main" lines; the detailed chips (blocked flag
+  with Answer, round chip, build order, train tests, Sent to Claude with its
+  heartbeat) stay. Examples: "Building · testing · heard from 3 min ago",
+  "Queued: builds after <title>", "Waiting for your answer · 2 d", "Ready to
+  test · round 2 · 5 h", "Approved · waits for <title> to be approved",
+  "Rebuild waits for this release to merge", "Being taken off the release ·
+  blocked by <title>", "Deploying · tests running 12 min", "Live · deploy
+  checked". Every status × flag combination maps to exactly one line
+  (`test/card-state.test.mjs` enumerates them). A field from a later ticket
+  that a card lacks is simply absent; the function still answers.
+- **The header says why Deploy to Main is not offered** (`deployGate` →
+  `deployGateHintHTML` in `app.js`): "Deploy to Main appears when <title> is
+  approved or sent back", "…when the revert of <title> finishes", "Tests
+  failing: <workflow> — <ticket> is being sent back" (or "nobody is pinned as
+  the cause yet"). The queued case keeps its own "Queued behind …" line. A
+  stuck train adds how long it has been stuck.
+
+### Needs attention (RC6wVNJJcPjNTR5hov9W, 16 Nov 2026)
+
+A strip at the top of the Agent Board, above the projects and in normal flow
+(nothing `position: fixed`), collapsed to "Needs attention 0" when empty.
+It lists, across all projects, everything waiting on a person (tester,
+approver, decision) or stuck past its threshold, oldest first:
+ticket or train, its status line, who it waits on, its age, and one button
+for the usual next action — Open (scrolls to the card), Answer (the blocked
+flag's Answer dialog), Test (opens the test link), Deploy (the project's own
+Deploy to Main, only when the header offers it; otherwise it scrolls to the
+project). **Waiting on me** narrows it to cards the signed-in member filed
+(and that wait on a person) or, for an editor or admin, everything waiting on
+a tester or approver. `needsAttention()` and `waitingOnMe()` in
+`card-state.js`; the same list is `get_pipeline_health` over MCP.
+
+### Stuck trains (RC6wVNJJcPjNTR5hov9W, 16 Nov 2026)
+
+Five train states had no clock and no alert (a train red from 05:10 to 20:25
+on 29 Oct 2026): `trainStatus` "conflict", "awaiting-human-merge",
+`trainHold` "tests-red" (or `trainTestsRed`) with no ticket pinned as the
+cause, a locked train with an unapproved ticket, and a revert blocked by a
+later ticket (`revertBlockedBy`). Every automation pass
+(`sweepStuckTrains` in `run-backlog-automation.js`, deciding with
+`trainStuckPatch` in `card-state.js`) stamps `projects/{id}.trainStuckSince`
+and `trainStuckReason` when one starts, `trainStuckEscalatedAt` once it has
+lasted 2 hours (locked with an unapproved ticket: 12 hours,
+`TRAIN_STUCK_THRESHOLDS`), and clears all three when it ends; a different
+reason restarts the clock. Past its threshold the train appears in Needs
+attention with the reason. The escalation write makes `onTrainStuckEscalated`
+(`functions/index.js`) post **one** message through the existing notify
+channel (`NOTIFY_WEBHOOK_URL`, normally Slack); with no webhook configured the
+Needs attention strip is the alert (the row shows a bell icon). No repeats
+within a spell.
 
 ### Shared files between trains (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
 

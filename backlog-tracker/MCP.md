@@ -121,7 +121,7 @@ mis-edited collection can never lock everyone out.
 
 ## What the agent can and can't do
 
-**Can — read:** `whoami`, `list_projects`, `list_backlog_items`,
+**Can — read:** `whoami`, `get_pipeline_health`, `list_projects`, `list_backlog_items`,
 `get_backlog_item`, `get_ready_for_testing_board`,
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_project_documents`, `get_project_document`,
@@ -225,6 +225,21 @@ carries `matchedIn` and a `snippet`. `truncated: true` means the 1,500-ticket
 read limit was hit, so pass `projectId`. `get_backlog_item` includes
 `lastFailureReason` (why it last failed testing or was ejected). Example:
 `list_backlog_items({projectId: "mIPdOCAWevhrgD8g2tCZ", search: "Failed testing", searchIn: ["notes"]})`.
+
+**Pipeline health — call it first when sweeping the board** (RC6wVNJJcPjNTR5hov9W,
+16 Nov 2026). `get_pipeline_health` (read-only, viewers too; optional
+`projectId`) returns, per project with anything on its train or stuck, the
+train's state line (what it waits for, on whom), `stuckReason`,
+`trainStuckSince`, `ageHours`, `overdue` and `escalated`; and `needsAttention`:
+every ticket or train waiting on a person (`waitingOn` tester, approver or
+decision) or stuck past its threshold, oldest first, each with `id`, `line`,
+`waitingOn`, `ageHours` and `nextAction` (open, answer, test, deploy). Every
+`list_backlog_items` summary also carries `state`, `stateLine`, `waitingOn`
+(`nobody`, `tester`, `approver`, `decision`, `automation`, `another ticket`,
+`another project`), `ageHours` (time in that state) and `overdue`. The lines
+come from `public/js/card-state.js` (its CommonJS copy is
+`functions/card-state.js`), the same module the board draws, so an agent and
+the board say the same thing. `whoami` points to it (`pipelineHealth`).
 
 **What the agent is told on connect.** The server instructions (`SERVER_INSTRUCTIONS`
 in `functions/mcp-server.js`) are the first text a connected agent reads. They

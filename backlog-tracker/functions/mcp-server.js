@@ -64,6 +64,7 @@ const ownerFiring = require("./owner-firing");
 // Build order (ZE8h8cfaezOb0eTsRjSH): dependencies as data, cycles refused,
 // and the order a send_to_build click fires in.
 const buildOrder = require("./build-order");
+const cardState = require("./card-state");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 
 // initializeApp() runs in index.js before this module is required; resolve
@@ -1781,6 +1782,14 @@ function matchTicketText(d, needle, fields) {
   return matchedIn.length ? { matchedIn, snippet } : null;
 }
 
+// The card's status line (card-state.js, shared with the board): state,
+// waitingOn and how long it has waited, in hours.
+function itemStateFields(id, d, project, itemsById, now = Date.now()) {
+  const projectItems = [...itemsById.values()].filter((x) => x && x.projectId === d.projectId);
+  const st = cardState.cardState({ id, ...d }, project || { id: d.projectId }, now, { itemsById: Object.fromEntries(itemsById), projectItems });
+  return { state: st.state, stateLine: st.line, waitingOn: st.waitingOn, ageHours: Math.round((st.ageMs / 3600000) * 10) / 10, overdue: st.warn };
+}
+
 function itemSummary(id, d, projects) {
   const project = projects && projects.get(d.projectId);
   return {
@@ -2316,6 +2325,7 @@ const TOOLS = [
         routineBindingNudge: hasRoutineBinding
           ? null
           : "You have no personal Notify Claude Routine binding yet — every board click you make still fires under the shared project token, and agent tickets you own can't be started at all. Set one up in the console (Settings → My Claude Routine) or call get_routine_setup_instructions.",
+        pipelineHealth: "Sweeping the board? Call get_pipeline_health first: each project's train in one line with its age, and everything waiting on a person or stuck past its threshold, oldest first, with ids.",
         note: "Moving cards, Notify Claude clicks and campaign triggering stay on the board's own buttons. Exceptions, all admin-only and each the same action as the board's own button: send_to_build (Ready for Dev for named Backlog tickets), approve_for_deployment (Ready for Testing to Approved for Deployment for named tickets), fail_testing (Failed testing for named Ready for Testing tickets) and approve_deploy_to_main (fires Deploy to Main once the project's whole train is approved). set_my_routine_binding only chooses which Routine your own later board clicks fire; the click itself still happens on the board.",
       });
     },
@@ -2530,6 +2540,7 @@ const TOOLS = [
       }
       const page = rows.slice(from, from + limit);
       const last = page[page.length - 1];
+      const stateItems = new Map([...readById].map(([id, d]) => [id, { id, ...d }]));
       const depRefs = new Map();
       for (const r of page) {
         const depIds = Array.isArray(r.d.dependsOnItemIds) ? r.d.dependsOnItemIds : [];
@@ -2541,6 +2552,7 @@ const TOOLS = [
         nextCursor: from + limit < rows.length && last ? encodeListCursor(last.key, last.id) : null,
         items: page.map((r) => {
           const item = itemSummary(r.id, r.d, projects);
+          Object.assign(item, itemStateFields(r.id, r.d, projects.get(r.d.projectId), stateItems));
           if (depRefs.has(r.id)) item.dependsOn = depRefs.get(r.id);
           if (r.hit) { item.matchedIn = r.hit.matchedIn; item.snippet = r.hit.snippet; }
           return item;
@@ -2551,6 +2563,52 @@ const TOOLS = [
         out.truncated = true;
         out.note = `Only the first ${MAX_READ_DOCS} tickets were read, so results may be incomplete. Pass projectId to narrow the read.`;
       }
+      return textResult(out);
+    },
+  },
+  {
+    name: "get_pipeline_health",
+    description: "Call this first when sweeping the board. Read-only. Per project: its train in one line (what it is waiting for, on whom, and since when — e.g. \"Deploy to Main appears when <title> is approved or sent back\", \"Deploy blocked · merge conflict · 3 h\") with trainStuckSince when it is stuck; plus Needs attention: every ticket or train waiting on a person (tester, approver, decision) or stuck past its threshold, oldest first, each with its id, status line, waitingOn and age in hours. The same lines the board shows (card-state.js).",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string", description: "Restrict to one project (from list_projects)." } },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const a = args || {};
+      if (a.projectId !== undefined && typeof a.projectId !== "string") return toolError("projectId must be a string.");
+      const now = Date.now();
+      const projects = await loadProjectsById();
+      let q = db().collection("backlogItems");
+      if (a.projectId) q = q.where("projectId", "==", a.projectId);
+      const snap = await q.limit(MAX_READ_DOCS).get();
+      const items = [];
+      let read = 0;
+      snap.forEach((doc) => {
+        read += 1;
+        const d = doc.data() || {};
+        if ((d.status || "backlog") === "archived") return;
+        items.push({ id: doc.id, ...d });
+      });
+      const projectList = [...projects.values()].filter((p) => !a.projectId || p.id === a.projectId);
+      const itemsById = Object.fromEntries(items.map((i) => [i.id, i]));
+      const hours = (ms) => Math.round((ms / 3600000) * 10) / 10;
+      const trains = projectList.map((p) => {
+        const mine = items.filter((i) => i.projectId === p.id);
+        const t = cardState.trainState(p, mine, now, { itemsById });
+        return {
+          projectId: p.id, project: p.name || "", state: t.state, line: t.line, waitingOn: t.waitingOn,
+          stuckReason: t.stuckReason || null, trainStuckSince: tsToISO(p.trainStuckSince), ageHours: hours(t.ageMs), overdue: t.warn, escalated: t.escalated,
+          onTrain: mine.filter(cardState.onTrain).length,
+        };
+      }).filter((t) => t.onTrain || t.stuckReason || t.state !== "idle");
+      const needsAttention = cardState.needsAttention(items, projectList, now).map((e) => ({
+        kind: e.kind, id: e.id, projectId: e.projectId, project: e.projectName, title: e.title, line: e.line,
+        waitingOn: e.waitingOn, since: e.since, ageHours: hours(e.ageMs), overdue: e.warn, nextAction: e.action,
+      }));
+      const out = { generatedAt: new Date(now).toISOString(), trains, needsAttention, thresholdsHours: Object.fromEntries(Object.entries(cardState.AGE_THRESHOLDS).map(([k, v]) => [k, v / 3600000])) };
+      if (read >= MAX_READ_DOCS) { out.truncated = true; out.note = `Only the first ${MAX_READ_DOCS} tickets were read. Pass projectId to narrow the read.`; }
       return textResult(out);
     },
   },

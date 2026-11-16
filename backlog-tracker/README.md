@@ -806,6 +806,31 @@ unlocks on its own the moment the automation flips `status` to
 "E2E auto-fix" bug onto the same train, the suite re-runs, and Deploy to Main
 waits only for green.
 
+### Every card and train says what it waits for (16 Nov 2026)
+
+Each card's first row under its title is one status line from
+`public/js/card-state.js` ("Ready to test · round 2 · 5 h", "Waiting for your
+answer · 2 d", "Approved · waits for <title> to be approved"), with its time
+in column beside the type badge (warning colour past `AGE_THRESHOLDS`). A
+project header says why Deploy to Main is missing, and **Needs attention**
+at the top of the board lists everything waiting on a person or stuck, oldest
+first, with one action button and a "Waiting on me" filter. Over MCP the same
+answer is `get_pipeline_health`.
+
+- `functions/card-state.js` is a generated CommonJS copy: edit
+  `public/js/card-state.js`, then run `scripts/gen-card-state-cjs.sh`
+  (`test/card-state.test.mjs` fails if they drift).
+- `statusEnteredAt` is stamped by the `onBacklogItemStatusEntered` trigger;
+  run `scripts/backfill-status-entered.js --apply` once after the release
+  (with `BOARD_API_KEY`) to fill older cards. Before that, cards fall back to
+  `updatedAt`.
+- A stuck train (conflict, waiting for a human merge, red with no culprit,
+  locked with an unapproved ticket, revert blocked) is clocked by
+  `sweepStuckTrains` in the automation and escalated once, after 2 h (12 h
+  for the locked case), through `NOTIFY_WEBHOOK_URL`
+  (`onTrainStuckEscalated`). See `REQUIREMENTS.md` → "Card state line",
+  "Needs attention", "Stuck trains".
+
 ### Cards that ship together are grouped on the board
 
 Two or more cards packaged into the same deployment are drawn bracketed
