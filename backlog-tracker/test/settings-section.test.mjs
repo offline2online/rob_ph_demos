@@ -34,6 +34,11 @@ assert.strictEqual(skillRows(skills)[0].files, 2);
 const br = bindingRows({ build: ["ph-designer", "missing"], deploy: [] }, skills);
 assert.deepStrictEqual(br.map((r) => [r.phase, r.name]), [["Build", "Designer"], ["Build", "Not in the library yet"]]);
 assert.deepStrictEqual(bindingRows(null, skills), []);
+// Flow 8/9: per-project and per-area lists are listed with their scope; old shape unchanged.
+const scoped = bindingRows({ build: ["ph-designer"], byProject: { p1: { deploy: ["ph-designer"] } }, byArea: { "PH Website": ["wp"] } }, skills, [{ id: "p1", name: "Demo" }]);
+assert.deepStrictEqual(scoped.map((r) => [r.phase, r.slug]), [["Build", "ph-designer"], ["Deploy · Demo", "ph-designer"], ["Build · PH Website tickets", "wp"]]);
+assert.strictEqual(new Set(scoped.map((r) => r.id)).size, 3, "row ids are unique");
+assert.strictEqual(br[0].id, "build:ph-designer", "global row ids are as before");
 
 const ar = automationRows({ build: ["ph-designer"] });
 assert.deepStrictEqual(ar.map((r) => r.name), ["Notify Claude", "Groom Backlog", "Batch review", "Run E2E"]);

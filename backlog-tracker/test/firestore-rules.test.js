@@ -677,6 +677,40 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { reviewedByModel: "claude-opus-5-5" }, { merge: true }));
   await check("The Routine (automation user) can record builtByModel", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }, { merge: true }));
+  // Model chosen per ticket (16 Nov 2026, Flow 8/9): the classifier's verdict,
+  // an escalation and an automatic review are the pipeline's; a person's own
+  // choice (modelAuto false, or true to follow the suggestion) is theirs.
+  await check("A human editor can choose a model and mark it theirs (modelAuto false)", "allow", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { model: "standard", modelAuto: false }, { merge: true }));
+  await check("modelAuto must be a boolean", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { modelAuto: "yes" }, { merge: true }));
+  await check("A human editor CANNOT write modelSuggested", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { modelSuggested: { model: "standard", reasons: [], version: 1 } }, { merge: true }));
+  await check("A human editor CANNOT write modelEscalatedAt", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { modelEscalatedAt: new Date() }, { merge: true }));
+  await check("A human editor CANNOT stamp an automatic review (autoReview)", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { autoReview: { commit: "abc", requestedAt: new Date() } }, { merge: true }));
+  await check("The automation can record the suggestion and an escalation", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { modelSuggested: { model: "advanced", reasons: [{ key: "security", text: "touches security rules" }], version: 1 }, modelEscalatedAt: new Date() }, { merge: true }));
+  // A project's own Routine (Flow 8/9): write-only, admin only.
+  await check("A team admin can set a project's own Routine", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projectRoutineBindings/p1"), { fireUrl: "https://api.anthropic.com/v1/fire", token: "sk-ant-x", boundAt: new Date(), boundByEmail: "ada@ph.example" }));
+  await check("Nobody — not even the admin who set it — can read a project's Routine back", "deny", () =>
+    getDoc(doc(as(TEAM_ADMIN), "projectRoutineBindings/p1")));
+  await check("An owner cannot read a project's Routine either", "deny", () =>
+    getDoc(doc(as(HUMAN), "projectRoutineBindings/p1")));
+  await check("A member (editor) cannot set a project's Routine", "deny", () =>
+    setDoc(doc(as(MEMBER), "projectRoutineBindings/p1"), { fireUrl: "https://api.anthropic.com/v1/fire", token: "t" }));
+  await check("A project's Routine must fire on api.anthropic.com", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projectRoutineBindings/p1"), { fireUrl: "https://evil.example/fire", token: "t" }));
+  await check("A project's Routine doc holds only its four fields", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projectRoutineBindings/p1"), { fireUrl: "https://api.anthropic.com/v1/fire", token: "t", note: "x" }));
+  await check("A member (editor) can set a project's required tools", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { requiredConnectors: ["wordpress-mcp"] }, { merge: true }));
+  await check("A member (editor) cannot say a project Routine is set (routineBoundAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { routineBoundAt: new Date() }, { merge: true }));
+  await check("A member (editor) cannot write the automation's review scope", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { reviewScope: { itemIds: ["i1"], requestedAt: new Date() } }, { merge: true }));
   // Heartbeats and build attempts (14 Nov 2026): the automation decides from
   // these whether to start a build again or land a patch.
   await check("A human editor CANNOT write a build heartbeat (buildSession.heartbeatAt)", "deny", () =>
