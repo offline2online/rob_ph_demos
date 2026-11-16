@@ -751,6 +751,12 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@ph.example", notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A team admin CANNOT stamp notifyAutomationAt either", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { notifyAutomationAt: serverTimestamp() }, { merge: true }));
+  // Replaying the automation's timestamp would make a click look like the
+  // pipeline's own and fire another member's agent ticket on their Routine.
+  await check("An editor CANNOT backdate notifyRequestedAt (replaying notifyAutomationAt)", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: new Date(0), notifyRequestedByEmail: "sam@ph.example" }, { merge: true }));
+  await check("An editor CANNOT set notifyRequestedAt to any client-chosen time", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: new Date(Date.now() + 60000) }, { merge: true }));
   await check("The automation user can stamp notifyAutomationAt", "allow", () =>
     setDoc(doc(as(BOT), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A rename leaves a stored requester email untouched (unchanged passes)", "allow", async () => {
