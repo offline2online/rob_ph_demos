@@ -25,5 +25,40 @@ for (const [label, rollup, want] of cases) {
   if (got === want) console.log(`  ok  ${label}`);
   else { failed++; console.log(`  FAIL ${label}: got ${got}, want ${want}`); }
 }
+
+// ── The PR's repeat of a suite the deploy gate already passed (16 Nov 2026) ──
+{
+  const { withoutGateTestedChecks, workflowDisplayName, trainChecksState: tcs } = require("../scripts/run-backlog-automation.js");
+  const rollup = [
+    { name: "e2e-quick", workflowName: "e2e-quick", status: "COMPLETED", conclusion: "SUCCESS" },
+    { name: "ui-kanban (2)", workflowName: "Rules & MCP server tests", status: "IN_PROGRESS", conclusion: "" },
+    { name: "rules", workflowName: "Rules & MCP server tests", status: "COMPLETED", conclusion: "SUCCESS" },
+    { name: "personal-email-check", workflowName: "Personal email check", status: "IN_PROGRESS", conclusion: "" },
+  ];
+  // Nothing passed by the gate: every check counts, as before.
+  assert.strictEqual(withoutGateTestedChecks(rollup, []), rollup);
+  assert.strictEqual(tcs(rollup), "pending");
+  // The console suite passed on the head before the version bump: its repeat is not waited for…
+  const left = withoutGateTestedChecks(rollup, ["Rules & MCP server tests", null]);
+  assert.deepStrictEqual(left.map((c) => c.name), ["e2e-quick", "personal-email-check"]);
+  // …but any other check still is,
+  assert.strictEqual(tcs(left), "pending");
+  assert.strictEqual(tcs(withoutGateTestedChecks(rollup.slice(0, 3), ["Rules & MCP server tests"])), "success");
+  // a red repeat does not park a train whose suite passed on the same content,
+  const redRepeat = [rollup[0], { name: "ui-touch (1)", workflowName: "Rules & MCP server tests", status: "COMPLETED", conclusion: "FAILURE" }];
+  assert.strictEqual(tcs(redRepeat), "failure");
+  assert.strictEqual(tcs(withoutGateTestedChecks(redRepeat, ["Rules & MCP server tests"])), "success");
+  // and a required check is never dropped, even when the gate ran its workflow.
+  const dsp = [{ name: "e2e-quick", workflowName: "e2e-quick", status: "IN_PROGRESS", conclusion: "" }];
+  assert.strictEqual(tcs(withoutGateTestedChecks(dsp, ["e2e-quick"])), "pending");
+  // The names come from the workflow files themselves.
+  const cwd = process.cwd();
+  process.chdir(require("path").join(__dirname, "../.."));
+  try {
+    assert.strictEqual(workflowDisplayName("firestore-rules-test.yml"), "Rules & MCP server tests");
+    assert.strictEqual(workflowDisplayName("no-such-workflow.yml"), null);
+  } finally { process.chdir(cwd); }
+  console.log("train-checks: the PR's repeat of a gate-tested suite is not waited for");
+}
 console.log(`\n${cases.length - failed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

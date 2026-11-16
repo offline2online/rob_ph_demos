@@ -205,20 +205,28 @@ const SECRETS = { CLAUDE_ROUTINE_FIRE_URL: "https://api.anthropic.com/v1/fire", 
   });
 
   // ── 4. Lanes ─────────────────────────────────────────────────────────────
-  await test("lanes: four tickets, two sharing an area — three fire at once, the fourth queues behind its lane-mate", async () => {
+  await test("lanes: three of a lane build at once; the fourth and fifth queue behind the first and second", async () => {
     const A = t("A", { groomAreas: ["backlog-tracker/public"], createdAt: "2026-11-10T00:00:00Z" });
     const B = t("B", { groomAreas: ["backlog-tracker/public"], createdAt: "2026-11-09T00:00:00Z" });
     const C = t("C", { groomAreas: ["faq"] });
     const D = t("D", { desc: desc({ spec: "dsp-integration/apps/api/src/server.ts" }) });
     const plan = bo.planBuildOrder([A, B, C, D]);
-    assert.deepStrictEqual(plan.fire.map((x) => x.id), ["B", "C", "D"], "the older of the two lane-mates goes first");
-    assert.deepStrictEqual(plan.queued.map((q) => [q.item.id, q.after.id, q.after.title]), [["A", "B", "Ticket B"]]);
-    assert.strictEqual(plan.summary, "3 started. 1 queued (same area, one at a time).");
-    // Priority beats age.
-    const hi = bo.planBuildOrder([{ ...A, priority: "high" }, B]);
-    assert.deepStrictEqual([hi.fire[0].id, hi.queued[0].item.id], ["A", "B"]);
-    const lo = bo.planBuildOrder([A, { ...B, priority: "low" }]);
-    assert.deepStrictEqual([lo.fire[0].id, lo.queued[0].item.id], ["A", "B"]);
+    assert.strictEqual(bo.LANE_WIDTH, 3);
+    assert.deepStrictEqual(plan.fire.map((x) => x.id), ["A", "B", "C", "D"], "two lane-mates fit in the lane's width");
+    assert.deepStrictEqual(plan.queued, []);
+    assert.strictEqual(plan.summary, null);
+    // Five in one lane (the 16 Nov 2026 click: flaky-test tickets sharing a spec section).
+    const mates = [5, 4, 3, 2, 1].map((n) => t(`L${n}`, { groomAreas: ["backlog-tracker/test"], createdAt: `2026-11-0${n}T00:00:00Z` }));
+    const five = bo.planBuildOrder(mates);
+    assert.deepStrictEqual(five.fire.map((x) => x.id).sort(), ["L1", "L2", "L3"], "the three oldest start");
+    assert.deepStrictEqual(five.queued.map((q) => [q.item.id, q.after.id, q.after.title]), [["L4", "L1", "Ticket L1"], ["L5", "L2", "Ticket L2"]], "each waits for the ticket three places ahead");
+    assert.strictEqual(five.summary, "3 started. 2 queued (same area, 3 at a time).");
+    // Priority beats age for who waits.
+    const four = mates.slice(1);
+    const hi = bo.planBuildOrder(four.map((m) => (m.id === "L4" ? { ...m, priority: "high" } : m)));
+    assert.deepStrictEqual([hi.fire.map((x) => x.id).sort(), hi.queued.map((q) => q.item.id)], [["L1", "L2", "L4"], ["L3"]]);
+    const lo = bo.planBuildOrder(four.map((m) => (m.id === "L1" ? { ...m, priority: "low" } : m)));
+    assert.deepStrictEqual(lo.queued.map((q) => [q.item.id, q.after.id]), [["L1", "L2"]]);
   });
 
   await test("lanes: same file path or same named function in Outcome/Spec reference chains; Test steps and docs do not", async () => {
@@ -230,14 +238,18 @@ const SECRETS = { CLAUDE_ROUTINE_FIRE_URL: "https://api.anthropic.com/v1/fire", 
     const F = t("F", { desc: desc({ spec: "backlog-tracker/README.md" }) });
     assert.ok(bo.laneKeysOf(A).includes("fn:fireBuildSessionsPerItem") && bo.laneKeysOf(A).includes("file:functions/index.js"));
     const plan = bo.planBuildOrder([A, B, C, D, E, F]);
-    assert.deepStrictEqual(plan.fire.map((x) => x.id), ["A", "D", "F"]);
-    assert.deepStrictEqual(plan.queued.map((q) => [q.item.id, q.after.id]), [["B", "A"], ["C", "B"], ["E", "D"]]);
+    assert.deepStrictEqual(bo.lanesOf([A, B, C, D, E, F]).map((l) => l.map((x) => x.id)), [["A", "B", "C"], ["D", "E"], ["F"]]);
+    assert.deepStrictEqual(plan.fire.map((x) => x.id), ["A", "B", "C", "D", "E", "F"], "every lane fits its width");
+    assert.deepStrictEqual(plan.queued, []);
   });
 
   await test("lanes: a ticket sharing a lane with a build already running waits for that one too", async () => {
     const running = t("R", { groomAreas: ["faq"], title: "Running ticket" });
     const A = t("A", { groomAreas: ["faq"] });
-    const plan = bo.planBuildOrder([A], { building: [running] });
+    const one = bo.planBuildOrder([A], { building: [running] });
+    assert.deepStrictEqual([one.fire.map((x) => x.id), one.queued], [["A"], []], "one running: there is room in the lane");
+    const full = [running, t("R2", { groomAreas: ["faq"] }), t("R3", { groomAreas: ["faq"] })];
+    const plan = bo.planBuildOrder([A], { building: full });
     assert.deepStrictEqual(plan.fire, []);
     assert.deepStrictEqual(plan.queued.map((q) => [q.item.id, q.after.title]), [["A", "Running ticket"]]);
   });
@@ -250,6 +262,10 @@ const SECRETS = { CLAUDE_ROUTINE_FIRE_URL: "https://api.anthropic.com/v1/fire", 
     assert.strictEqual(bo.queueReleasePlan(q, { ...building, status: "ready-for-testing" }).release, true, "landed");
     assert.strictEqual(bo.queueReleasePlan(q, { ...building, buildSession: { attemptId: "n1", status: "error" } }).release, true, "failed");
     assert.strictEqual(bo.queueReleasePlan(q, { ...building, buildSession: { attemptId: "n1", status: "done" } }).release, true, "finished without a patch");
+    // Being rebuilt: the report on the card is from before its latest fire (16 Nov 2026: let go and re-queued every run for three hours).
+    const refired = { ...building, buildAttemptId: null, lastFire: { status: "started", at: "2026-11-16T09:30:00Z" }, buildSession: { status: "done", reportedAt: "2026-11-16T09:26:00Z" } };
+    assert.deepStrictEqual(bo.queueReleasePlan(q, refired), { release: false }, "the previous attempt's report does not finish the rebuild");
+    assert.strictEqual(bo.queueReleasePlan(q, { ...refired, buildSession: { status: "done", reportedAt: "2026-11-16T10:40:00Z" } }).release, true, "the rebuild's own report does");
     assert.strictEqual(bo.queueReleasePlan(q, { ...building, blocked: { reason: "waiting-on-input" } }).release, true, "blocked");
     assert.strictEqual(bo.queueReleasePlan(q, { ...building, lastFire: { status: "failed" } }).release, true, "never started");
     assert.strictEqual(bo.queueReleasePlan(q, null).release, true, "deleted");
@@ -334,17 +350,20 @@ const SECRETS = { CLAUDE_ROUTINE_FIRE_URL: "https://api.anthropic.com/v1/fire", 
         L: t("L", { title: "Landed one", status: "ready-for-testing", deployCommit: "feedfacefeedface0000" }),
         A: t("A", { groomAreas: ["faq"], dependsOnItemIds: ["L"], createdAt: "2026-11-01T00:00:00Z" }),
         B: t("B", { groomAreas: ["faq"], createdAt: "2026-11-02T00:00:00Z" }),
+        C: t("C", { groomAreas: ["faq"], createdAt: "2026-11-03T00:00:00Z" }),
+        D: t("D", { groomAreas: ["faq"], createdAt: "2026-11-04T00:00:00Z" }),
       },
       projects: { p1: { name: "Backlog Tracker & FAQs" } },
     });
     const mod = loadIndex(db, SECRETS);
     const realFetch = global.fetch; const stub = fireStub(); global.fetch = stub;
-    try { await click(mod, "p1", ["A", "B"]); } finally { global.fetch = realFetch; }
-    assert.deepStrictEqual(stub.ids(), ["A"]);
-    assert.ok(stub.calls[0].includes("Already landed and in your base") && stub.calls[0].includes("- L: Landed one (ready-for-testing, commit feedfacefeed)"));
-    const B = db.__state.backlogItems.B;
-    assert.strictEqual(B.queuedAfter.itemId, "A");
-    assert.ok(!B.blocked, "queued is not blocked: no Answer button");
+    try { await click(mod, "p1", ["A", "B", "C", "D"]); } finally { global.fetch = realFetch; }
+    assert.deepStrictEqual(stub.ids().sort(), ["A", "B", "C"], "three of the lane start");
+    const forA = stub.calls.find((c) => c.includes("Already landed and in your base"));
+    assert.ok(forA && forA.includes("- L: Landed one (ready-for-testing, commit feedfacefeed)"));
+    const D = db.__state.backlogItems.D;
+    assert.strictEqual(D.queuedAfter.itemId, "A");
+    assert.ok(!D.blocked, "queued is not blocked: no Answer button");
   });
 
   // ── Through the real intake trigger ──────────────────────────────────────

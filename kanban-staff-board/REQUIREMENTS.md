@@ -210,7 +210,8 @@ width header (photo, first name, count, remaining effort) that expands or
 collapses its row; Expand all / Collapse all. The header of the lane being
 scrolled through is pinned under the column headers. Dragging a card into
 another person's lane reassigns it. On a phone every lane shows the current
-column and swiping changes it for all lanes.
+column and swiping changes it for all lanes; collapsing a lane (or Collapse
+all) hides its cards on a phone exactly as on a wider screen.
 
 ## 6. Tasks
 
@@ -408,6 +409,22 @@ version of the same editor. Stored HTML is sanitised (DOMPurify) when shown.
 **KB-MOD-4 Dictation.** The description (when editing) and the comment box
 each have a round 36 px mic that turns into a red stop button while
 listening; one recording at a time.
+
+**KB-MOD-4b The microphone is asked for once; dictated text can be typed over
+(15 Nov 2026).** Reported: "it keeps asking for permission over and over
+again", and a dictated comment couldn't be corrected by typing. Record task and
+both mics probe the microphone (`getUserMedia`) only until access has been
+given: after that, in this visit or remembered by this browser (`localStorage`
+`kb-mic-granted`, or the Permissions API answering "granted"), the recogniser
+starts directly, so Safari and an "allow this time" grant don't ask again on
+every start. If the recogniser is then refused, the grant is forgotten and the
+start retries once through the probe, so a real prompt or the "blocked" message
+still shows. Typing, pasting or dropping into a box the mic is dictating into
+stops the mic and keeps the text exactly as typed (later words heard are
+dropped), and a caret put at the end while words arrive stays at the end; adding
+the comment while dictating stops the mic first. Posted comments are edited from
+their ⋮ menu (KB-MOD-3). Tested by KB-C27 in
+`backlog-tracker/test/ui/staff-kanban.test.mjs`.
 
 **KB-MOD-4a Each phrase written once, Android included (21 Oct 2026).**
 Reported from an Android phone on Record task: "add add add a new add a new

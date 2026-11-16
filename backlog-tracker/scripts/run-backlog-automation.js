@@ -1103,11 +1103,31 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
 // - A flag a PERSON set (set_blocked over MCP, setBy an email address) was
 //   answered for them. It is left alone.
 const AUTO_ANSWER_AFTER_MS = 0;
-const MAX_AUTO_ANSWERS = 2;
+//
+// 16 Nov 2026 (Rob: "there shouldn't be blocked tickets that need attention,
+// only if the attention is a real question for me"). After MAX_AUTO_ANSWERS
+// the ticket stopped and read "Waiting for your answer", though its note said
+// "Nothing to answer" and nothing had been asked. It now goes to the senior
+// model instead: the ticket is raised to Advanced (Claude Opus) and built
+// MAX_AUTO_RETRIES more times (the second 30 minutes after the first), told
+// to make the call itself. The board shows it as waiting on the automation
+// (card-state.js selfAnswering). Only when the senior model could not get it
+// through is a person asked, and then one question with options to click
+// (blocked.question / blocked.options, or the standard "try again or park
+// it"; card-state.js personQuestion). The limits live in card-state.js so
+// the board and this agree.
+const { AUTO_ANSWER_LIMITS } = require("../functions/card-state");
+const MAX_AUTO_ANSWERS = AUTO_ANSWER_LIMITS.answers;
+const MAX_AUTO_RETRIES = AUTO_ANSWER_LIMITS.retries;
 const NEVER_RAN_BACKOFF_MS = 30 * 60 * 1000;
 const NEVER_RAN_MAX_GAP_MS = 6 * 60 * 60 * 1000;
-const MAX_NEVER_RAN_RETRIES = 12;
+const MAX_NEVER_RAN_RETRIES = AUTO_ANSWER_LIMITS.neverRan;
 const DEFAULT_SENIOR_ANSWER = "Take the best option, state the assumption you made on the card, and do not ask again.";
+const SENIOR_MODEL_BRIEF = "You are the senior model for this ticket: two automatic answers did not get it through. Read every note on the card, " +
+  "decide what is wrong, make the call yourself and build it; say what you decided under \"Assumed:\". Only if it cannot be built without something " +
+  "only a person can give, set blocked {reason: \"waiting-on-input\", note, question, options}: `question` is ONE plain sentence a person can answer " +
+  "without reading the notes, and `options` is 2 to 4 short choices [{label, recommended}], your recommended one first with recommended true " +
+  "(a yes/no question is two options). Never ask anything a person would have to type an answer to.";
 function autoAnswerPlan(item, now = Date.now()) {
   const b = item && item.blocked;
   if (!b || b.reason !== "waiting-on-input" || (item.status && item.status !== "backlog") || item.patchReady) return null;
@@ -1128,10 +1148,24 @@ function autoAnswerPlan(item, now = Date.now()) {
       fields: { neverRanRetries: tries + 1 },
     };
   }
-  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
-  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   const recommendation = typeof b.recommendation === "string" ? b.recommendation.trim() : "";
   const answer = recommendation || DEFAULT_SENIOR_ANSWER;
+  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) {
+    // The immediate answers are used up: keep going by itself, with a gap.
+    const tries = Number(item.autoRetries) || 0;
+    if (tries >= MAX_AUTO_RETRIES) return null;
+    if (tries > 0 && now - setAt < NEVER_RAN_BACKOFF_MS * 2 ** (tries - 1)) return null;
+    const raise = item.model === "advanced" ? {} : { model: "advanced", modelAuto: false, modelEscalatedAt: new Date(now).toISOString() };
+    const brief = `${SENIOR_MODEL_BRIEF}${recommendation ? ` The earlier build recommended: ${recommendation}` : ""}`;
+    return {
+      answer: brief,
+      fromRecommendation: !!recommendation,
+      senior: true,
+      text: `Passed to the senior model (Advanced, Claude Opus) to make the call, try ${tries + 1} of ${MAX_AUTO_RETRIES}, without waiting for a person: ${brief}`,
+      fields: { autoRetries: tries + 1, ...raise },
+    };
+  }
+  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   return {
     answer,
     fromRecommendation: !!recommendation,
@@ -1767,8 +1801,9 @@ async function releaseDependents(landed) {
   }
 }
 
-// Same-area tickets build one at a time (ZE8h8cfaezOb0eTsRjSH): a Ready for
-// Dev click queues a ticket behind the lane-mate it would collide with
+// Same-area tickets build a few at a time (ZE8h8cfaezOb0eTsRjSH; three since
+// 16 Nov 2026, build-order.js LANE_WIDTH): a Ready for
+// Dev click queues a ticket past that behind a lane-mate
 // (backlogItems.queuedAfter, written by functions/index.js). Every run, a
 // queued ticket whose lane-mate has landed, failed, been blocked, archived or
 // deleted is let go and its build requested, so it builds on the train tip
@@ -1795,7 +1830,9 @@ async function sweepBuildQueue(nowMs = Date.now()) {
       const project = await getProject(w.projectId).catch(() => null);
       if (!project) continue;
       const locked = !!project.trainLocked;
-      const notes = await appendNote(w, `Queue: ${plan.why}, so this ticket ${locked ? "builds as soon as this project's closing train has merged" : "builds now, on the train as it is after that"}.`);
+      // One note for the queue, replaced each time (key): a ticket let go and
+      // queued again used to add the same line every run.
+      const notes = await appendNote(w, `Queue: ${plan.why}, so this ticket ${locked ? "builds as soon as this project's closing train has merged" : "builds now, on the train as it is after that"}.`, { key: "build-queue" });
       await patchItem(w.id, { queuedAfter: null, notes, updatedAt: stamp, ...(locked ? { buildAfterTrain: true } : {}) });
       if (!locked) queueBuildRequest(project, w.id);
       console.log(`[build-queue] ${w.id}: released (${plan.why})`);
@@ -3397,7 +3434,8 @@ function readTrainTestGate(deployBranch) {
     }
     return { workflow: t.workflow, label: t.label, run: testRun, speaksForHead };
   });
-  return { head, ...trainTestGate(checks) };
+  // `tested`: every workflow this gate judged (all of them green when state is).
+  return { head, tested: checks.map((c) => c.workflow), ...trainTestGate(checks) };
 }
 
 // ── Auto-eject the ticket that turned the train red ─────────────────────────
@@ -6896,6 +6934,30 @@ function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
   return all === "none" ? "success" : all;
 }
 
+// The train PR's checks without the suites the deploy gate has already passed
+// on this content. Deploy to Main reads the train's tests on the final head
+// (main merged in), then adds the version bump and opens the PR. GitHub's
+// pull_request path filter looks at the PR's whole diff, so the push of the
+// bump starts the same suites again on a head that differs by version.js
+// alone, which no suite reads; the deploy used to wait for that second run
+// (PR #613, 16 Nov 2026: green at 19:44, merged at 20:04 after a 30-minute
+// repeat). `gateWorkflowNames` are the display names of the gate's green
+// workflows; a required check is never dropped. Pure.
+function withoutGateTestedChecks(rollup, gateWorkflowNames, required = REQUIRED_TRAIN_CHECKS) {
+  const names = new Set((gateWorkflowNames || []).filter(Boolean));
+  if (!Array.isArray(rollup) || !names.size) return rollup;
+  return rollup.filter((c) => required.includes(c.name || c.context) || !names.has(c.workflowName));
+}
+
+// A workflow file's display name (`name:` at the top), which is what a PR's
+// check rollup calls it. Null when it can't be read.
+function workflowDisplayName(file) {
+  try {
+    const m = /^name:\s*(.+?)\s*$/m.exec(fs.readFileSync(path.join(process.cwd(), ".github/workflows", file), "utf8"));
+    return m ? m[1].replace(/^(['"])(.*)\1$/, "$2") : null;
+  } catch { return null; }
+}
+
 // GitHub holds a workflow run on a bot-opened PR as `action_required` until
 // someone approves it, and a held run reports no check at all — so the
 // required e2e-quick would never appear and the train would wait forever
@@ -7442,6 +7504,17 @@ async function processDeployTrain(project) {
   // PR #433 was read back 6 s after the main-merge and version-bump push,
   // looked green, and was merged before e2e-quick had run on what shipped.
   const pushedHead = run("git", ["rev-parse", "HEAD"]);
+  // What the gate passed is what ships when the only change since is the
+  // version bump: the PR's repeat of those suites is not waited for.
+  let gateTested = [];
+  try {
+    const since = pushedHead === gate.head ? [] : run("git", ["diff", "--name-only", gate.head, pushedHead]).split("\n").filter(Boolean);
+    if (since.every((p) => p === VERSION_JS)) gateTested = (gate.tested || []).map((w) => workflowDisplayName(w));
+  } catch (err) {
+    console.log(`[deploy-train] ${project.id}: couldn't compare the gate's head with the pushed head (${scrubSecrets(err.message)}) — waiting for every PR check`);
+  }
+  const judged = (rollup) => withoutGateTestedChecks(rollup, gateTested);
+  if (gateTested.filter(Boolean).length) console.log(`[deploy-train] ${project.id}: ${gateTested.filter(Boolean).join(", ")} passed on ${gate.head.slice(0, 7)} and only the version bump follows — not waiting for the PR's repeat`);
 
   // 3. One PR for the whole train. Reused if an earlier run already opened
   //    it (this job can be interrupted between opening and merging).
@@ -7491,12 +7564,12 @@ async function processDeployTrain(project) {
       continue;
     }
     approveHeldRuns(pr.headRefOid);
-    let checks = trainChecksState(pr.statusCheckRollup);
+    let checks = trainChecksState(judged(pr.statusCheckRollup));
     if (checks === "infra") {
       const sha = pr.headRefOid || "";
       const reruns = project.trainCiRerunSha === sha ? (Number(project.trainCiReruns) || 0) : 0;
       if (reruns < TRAIN_CI_INFRA_RERUNS) {
-        const n = rerunInfraChecks(pr.statusCheckRollup);
+        const n = rerunInfraChecks(judged(pr.statusCheckRollup));
         console.log(`[deploy-train] ${project.id}: PR #${prNumber} has check(s) GitHub never finished running — re-ran ${n} workflow run(s) (attempt ${reruns + 1}/${TRAIN_CI_INFRA_RERUNS}); trainReady stays set`);
         followUpReasons.push(`${project.id}: PR #${prNumber} checks re-run after a GitHub-side cancellation`);
         await patchProject(project.id, {
@@ -7513,7 +7586,7 @@ async function processDeployTrain(project) {
       checks = "failure";
     }
     if (checks === "failure") {
-      const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
+      const red = (judged(pr.statusCheckRollup) || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
         // resumeRedTrains() picks the deploy back up by itself once this PR
@@ -7570,7 +7643,7 @@ async function processDeployTrain(project) {
   // An already-MERGED PR is never waiting on anything — a check still
   // running on it must not send this back round the loop and leave the
   // train's cards un-flipped.
-  if (pr && pr.state !== "MERGED" && (pr.headRefOid !== pushedHead || trainChecksState(pr.statusCheckRollup) === "pending")) {
+  if (pr && pr.state !== "MERGED" && (pr.headRefOid !== pushedHead || trainChecksState(judged(pr.statusCheckRollup)) === "pending")) {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
@@ -8728,7 +8801,7 @@ module.exports = {
   contractChangeOf, flagContractDependents,
   patchFilesFromCommit,
   patchRefProblem,
-  autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, MAX_AUTO_RETRIES, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested
@@ -8758,7 +8831,7 @@ module.exports = {
   // test/docs-sync.test.js, test/docs-sync-all.test.js
   syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
-  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
+  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns, withoutGateTestedChecks, workflowDisplayName,
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push

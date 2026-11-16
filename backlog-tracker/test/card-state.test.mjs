@@ -107,7 +107,34 @@ test("the lines the ticket names", () => {
   const L = (flags, status = "backlog", project = PROJECTS.idle, c = ctx) => esm.cardState({ id: "i", projectId: "p1", status, statusEnteredAt: iso(5 * H), ...flags }, project, NOW, c).line;
   assert.strictEqual(L(FLAGS.buildingBeat), "Building · testing · heard from 3 min ago");
   assert.strictEqual(L({ queuedAfter: { itemId: "a" } }), "Queued: builds after Ahead");
-  assert.strictEqual(L({ blocked: { reason: "waiting-on-input", setAt: iso(50 * H) } }), "Waiting for your answer · 2 d");
+  // A person's own flag is a question for a person.
+  assert.strictEqual(L({ blocked: { reason: "waiting-on-input", setBy: "owner@example.com", setAt: iso(50 * H) } }), "Waiting for your answer · 2 d");
+  // A flag the pipeline raised and answers itself is not (16 Nov 2026): it waits on the automation, with no Answer prompt…
+  const auto = (flags) => esm.cardState({ id: "i", projectId: "p1", status: "backlog", statusEnteredAt: iso(5 * H), ...flags }, PROJECTS.idle, NOW, ctx);
+  const raised = { reason: "waiting-on-input", setBy: "build-report", setAt: iso(50 * H) };
+  assert.deepStrictEqual([auto({ blocked: raised }).line, auto({ blocked: raised }).waitingOn, auto({ blocked: raised }).action], ["Being rebuilt by itself · nothing to answer", "automation", "open"]);
+  // After two automatic answers it is with the senior model, still nothing for a person…
+  assert.strictEqual(auto({ blocked: raised, autoAnswers: 2, autoRetries: 1 }).line, "With the senior model to make the call · nothing to answer");
+  assert.strictEqual(auto({ blocked: raised, autoAnswers: 2, autoRetries: 1 }).waitingOn, "automation");
+  assert.strictEqual(auto({ blocked: { ...raised, setBy: "self-heal", kind: "never-ran" }, neverRanRetries: 11 }).line, "Build did not start · tried again by itself");
+  // …until its automatic tries are used up, when it says so and does wait on a person.
+  const stopped = auto({ blocked: raised, autoAnswers: 2, autoRetries: 2 });
+  assert.deepStrictEqual([stopped.line, stopped.waitingOn, stopped.action], ["Needs your pick: one question, options to click · 2 d", "decision", "answer"]);
+  assert.strictEqual(auto({ blocked: { ...raised, kind: "never-ran" }, neverRanRetries: 12 }).waitingOn, "decision");
+  // The question a person gets: the senior model's own, recommended first, at most four choices…
+  const asked = esm.personQuestion({ autoAnswers: 2, autoRetries: 2, blocked: { ...raised, question: "  Ship the export as CSV or as XLSX? ", options: ["XLSX", { label: "CSV", recommended: true }, "CSV", "", "Both", "Neither", "Later"] } });
+  assert.deepStrictEqual(asked, { question: "Ship the export as CSV or as XLSX?", fromBuild: true, options: [
+    { label: "CSV", recommended: true, noBuild: false }, { label: "XLSX", recommended: false, noBuild: false }, { label: "Both", recommended: false, noBuild: false }, { label: "Neither", recommended: false, noBuild: false }] });
+  // …and when it left none (or fewer than two choices), the standard one: nothing to type either way.
+  const std = esm.personQuestion({ autoAnswers: 2, autoRetries: 2, blocked: { ...raised, note: "The build stopped without packaging a patch.\n\nNothing to answer…", question: "Why?", options: ["Only one"] } });
+  assert.strictEqual(std.question, "This ticket was built 4 times, the last on the senior model, and did not get through: The build stopped without packaging a patch. What should happen to it?");
+  assert.deepStrictEqual(std.options, [{ label: "Try again on the senior model", recommended: true, noBuild: false }, { label: esm.PARK_OPTION, recommended: false, noBuild: true }]);
+  // Needs attention lists the stopped one and the person's flag, never the one being retried.
+  const na = esm.needsAttention([
+    { id: "r", projectId: "p1", status: "backlog", statusEnteredAt: iso(5 * H), blocked: raised },
+    { id: "s", projectId: "p1", status: "backlog", statusEnteredAt: iso(5 * H), blocked: raised, autoAnswers: 2, autoRetries: 2 },
+  ], [{ id: "p1", ...PROJECTS.idle }], NOW);
+  assert.deepStrictEqual(na.filter((x) => x.kind === "ticket").map((x) => x.id), ["s"]);
   assert.strictEqual(L({ testRound: 2 }, "ready-for-testing"), "Ready to test · round 2 · 5 h");
   assert.strictEqual(L({ deployCommit: "c0" }, "ready-to-publish", PROJECTS.idle, { itemsById: {}, projectItems: [{ id: "i", projectId: "p1", status: "ready-to-publish", deployCommit: "c0" }, ...SIBLINGS.testing] }), "Approved · waits for Sibling in testing to be approved");
   assert.strictEqual(L(FLAGS.buildAfterTrain), "Rebuild waits for this release to merge");

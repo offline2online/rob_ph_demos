@@ -717,6 +717,18 @@ T("TC-25", "phone swimlanes: every lane shows the current column; swipe changes 
   await p.tap('.kb-pager-tab[data-col="3"]'); await p.waitForTimeout(200);
   const shown = await p.$$eval(".kb-lane-cell", (e) => e.filter((c) => getComputedStyle(c).display !== "none").map((c) => c.dataset.status));
   assert.ok(shown.length >= 1 && shown.every((s) => s === "ready-for-testing"));
+  // Collapsing a lane hides its cards on a phone too, and expanding brings them back (dET0knIEG81wsnXoJ7ht)
+  const visible = (sel) => p.$$eval(sel, (e) => e.filter((c) => getComputedStyle(c).display !== "none").length);
+  const huyCells = `.kb-lane-cell[data-lane="${HUY}"]`;
+  const huyShown = await visible(huyCells);
+  await p.tap(`.kb-lane[data-lane="${HUY}"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), 0, "a collapsed lane shows no cards");
+  await p.tap(`.kb-lane[data-lane="${HUY}"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), huyShown, "expanding the lane shows its cards again");
+  await p.tap("#kb-lanes-collapse"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), 0, "Collapse all hides every lane's cards");
+  await p.tap("#kb-lanes-expand"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), shown.length, "Expand all shows them again");
   if (prof.engine === "chromium") {
     // a real swipe: touch events over the DevTools protocol
     const cdp = await p.context().newCDPSession(p);
@@ -1702,6 +1714,63 @@ T("KB-C25", "a tag written over MCP shows as a mention in the ticket and survive
   const t = await stored(p, "PH-20");
   assert.deepEqual(t.mentions, [HUY], "the tag is still on the ticket, so nobody is told a second time");
   assert.match(t.description, new RegExp(`data-user="${HUY.replace(/\./g, "\\.")}"`));
+  await p.done();
+});
+
+// The recogniser keeps hearing "one two three …" until it is stopped; the
+// page's getUserMedia probes are counted in window.__gum.
+const talkingSpeech = () => ({
+  arg: null,
+  fn: () => {
+    window.__gum = 0;
+    navigator.mediaDevices.getUserMedia = async () => { window.__gum++; return { getTracks: () => [{ stop() {} }] }; };
+    if (navigator.permissions) navigator.permissions.query = async () => ({ state: "prompt" });
+    const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+    window.SpeechRecognition = class {
+      start() {
+        let n = 0;
+        this.t = setInterval(() => { n = Math.min(n + 1, words.length); if (this.onresult) this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: words.slice(0, n).join(" ") }], { isFinal: false })] }); }, 80);
+      }
+      stop() { clearInterval(this.t); setTimeout(() => this.onend && this.onend(), 10); }
+      abort() { clearInterval(this.t); setTimeout(() => this.onend && this.onend(), 10); }
+    };
+  },
+});
+
+T("KB-C27", "the microphone is asked for once, and typing in a dictated comment stops the mic and keeps the edit", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: talkingSpeech() });
+  const box = '[data-field="comments"] .ql-editor';
+  const text = () => p.$$eval(box, (e) => (e[0] ? e[0].innerText.trim() : ""));
+  await press(p, '.kb-card[data-key="PH-23"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => /^One two/.test(await text()), "dictation in the comment box");
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "mic", "the mic to stop");
+  // Again, and in another ticket: no second permission probe.
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "stop", "the mic to listen again");
+  assert.equal(await p.evaluate(() => window.__gum), 1, "asked for the microphone once, not on every start");
+  assert.equal(await p.evaluate(() => localStorage.getItem("kb-mic-granted")), "1", "the grant is remembered for the next visit");
+  // Typing while it listens: the mic stops and the typed words stay.
+  // (the caret is put at the end while words are still arriving: it stays there)
+  await p.click(box); await p.keyboard.press("Control+End"); await p.waitForTimeout(200); await p.keyboard.type(" edited by hand");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "mic", "typing to stop the mic");
+  await p.waitForTimeout(400);
+  const kept = await text();
+  assert.match(kept, /edited by hand$/, `the edit survives later results: ${kept}`);
+  await p.keyboard.press("Backspace"); await p.keyboard.press("Backspace");
+  await p.waitForTimeout(200);
+  assert.match(await text(), /edited by ha$/, "and can be edited further");
+  await press(p, "#f-comment-add"); await p.waitForTimeout(200);
+  assert.match(await p.$$eval(".kb-comment-text", (e) => e[e.length - 1].textContent), /edited by ha$/, "the comment is saved as edited");
+  await press(p, "#task-close");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "stop", "the mic on another ticket");
+  await press(p, "#f-comment-mic");
+  assert.equal(await p.evaluate(() => window.__gum), 1, "still asked only once");
   await p.done();
 });
 

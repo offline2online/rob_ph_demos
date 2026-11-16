@@ -1823,7 +1823,7 @@ function itemSummary(id, d, projects) {
       : null,
     modelEscalatedAt: tsToISO(d.modelEscalatedAt),
     blocked: d.blocked && d.blocked.reason
-      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
+      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt), ...(d.blocked.question ? { question: String(d.blocked.question).slice(0, 240), options: (Array.isArray(d.blocked.options) ? d.blocked.options : []).slice(0, 4).map((o) => ({ label: String((o && o.label) || o || "").slice(0, 120), recommended: !!(o && o.recommended) })) } : {}) }
       : null,
     // Build order: the tickets this one builds after (ids; get/list add
     // titles and statuses as dependsOn), who set the list, and the lane-mate
@@ -3326,7 +3326,7 @@ const TOOLS = [
 
       // The order the build trigger will fire them in (functions/build-order.js):
       // a ticket whose dependency is still in Backlog is held, and tickets in
-      // the same area are queued one after another.
+      // the same area are built three at a time, the rest queued.
       const clickItems = ids.map((id) => byId.get(id));
       const outside = [...new Set(clickItems.flatMap((i) => (Array.isArray(i.dependsOnItemIds) ? i.dependsOnItemIds : [])))].filter((id) => !ids.includes(id));
       const depsById = {};
@@ -3354,7 +3354,7 @@ const TOOLS = [
         queued: plan.queued.map((q) => ({ id: q.item.id, title: q.item.title || "", after: q.after })),
         held: plan.held.map((h) => ({ id: h.item.id, title: h.item.title || "", waitingFor: h.waitingFor.map((w) => ({ id: w.id, title: w.title, notSent: !w.building })) })),
         summary: plan.summary,
-        note: "This is the same request the board's Ready for Dev button makes: one build session starts per ticket that can build now (fired); a ticket whose dependency is still in Backlog is held and starts by itself when that dependency reaches Ready for Testing; tickets likely to touch the same files are queued and start one after another. The pipeline moves each card to Ready for Testing when it lands. This call returns before that — watch the board or list_backlog_items.",
+        note: "This is the same request the board's Ready for Dev button makes: one build session starts per ticket that can build now (fired); a ticket whose dependency is still in Backlog is held and starts by itself when that dependency reaches Ready for Testing; tickets likely to touch the same files build three at a time, and the rest are queued and start as each one lands. The pipeline moves each card to Ready for Testing when it lands. This call returns before that — watch the board or list_backlog_items.",
       });
     },
   },

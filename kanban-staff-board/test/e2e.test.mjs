@@ -529,6 +529,18 @@ T("TC-25", "phone swimlanes: every lane shows the current column; swipe changes 
   await p.tap('.kb-pager-tab[data-col="3"]'); await p.waitForTimeout(200);
   const shown = await p.$$eval(".kb-lane-cell", (e) => e.filter((c) => getComputedStyle(c).display !== "none").map((c) => c.dataset.status));
   assert.ok(shown.length >= 1 && shown.every((s) => s === "ready-for-testing"));
+  // Collapsing a lane hides its cards on a phone too, and expanding brings them back (dET0knIEG81wsnXoJ7ht)
+  const visible = (sel) => p.$$eval(sel, (e) => e.filter((c) => getComputedStyle(c).display !== "none").length);
+  const huyCells = `.kb-lane-cell[data-lane="huy"]`;
+  const huyShown = await visible(huyCells);
+  await p.tap(`.kb-lane[data-lane="huy"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), 0, "a collapsed lane shows no cards");
+  await p.tap(`.kb-lane[data-lane="huy"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), huyShown, "expanding the lane shows its cards again");
+  await p.tap("#kb-lanes-collapse"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), 0, "Collapse all hides every lane's cards");
+  await p.tap("#kb-lanes-expand"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), shown.length, "Expand all shows them again");
   if (prof.engine === "chromium") {
     // a real swipe: touch events over the DevTools protocol
     const cdp = await p.context().newCDPSession(p);
