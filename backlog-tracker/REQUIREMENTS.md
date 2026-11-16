@@ -535,8 +535,30 @@ busy. Now:
   higher-ranking agent) or, without one, the default "take the best option,
   state the assumption, do not ask again"; it clears the flag and requests a
   rebuild (held until the train merges when the release is closing). At most
-  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`), after which it stays
-  flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
+  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`). **After those two it
+  goes to the senior model, not to a person (16 Nov 2026)**: the ticket is
+  raised to Advanced (`model: "advanced"`, `modelEscalatedAt`; Claude Opus)
+  and built `MAX_AUTO_RETRIES` (2) more times (`autoRetries`; the second 30
+  minutes after the first), told to make the call itself. While any of this
+  is still to come the card is not a question for anyone: its chip reads
+  "Handled automatically", its line "Being rebuilt by itself" or "With the
+  senior model to make the call", it waits on the automation, it is not in
+  Needs attention and not in the "N waiting on your answer" count
+  (`selfAnswering` in `card-state.js`, which also holds the limits). A build
+  that never ran (`blocked.kind "never-ran"`) keeps its own 12 tries. A flag a
+  person set (`setBy` an email address) is never answered for them.
+- **A question that does reach a person is one sentence with options to
+  click (16 Nov 2026).** Only when the senior model's tries are used up does
+  the card wait on a person ("Needs your pick"). The Answer dialog then shows
+  `personQuestion(item)`: the senior model's own `blocked.question` (one plain
+  sentence, 240 characters at most) and `blocked.options` (2 to 4 choices,
+  `[{label, recommended}]`, the recommended one shown first and marked), or,
+  when it left none, the standard question "built N times … did not get
+  through: <reason>. What should happen to it?" with "Try again on the senior
+  model (recommended)" and "Park it: leave it in Backlog and stop trying".
+  One click answers: an option is saved as the answer and the ticket is
+  rebuilt; Park it clears the flag and builds nothing. Nothing has to be
+  typed (typing stays possible). A dependency wait (`dependsOnItemIds`, `blocked.reason`
   `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
   has no Answer button, and unblocks by itself when its dependencies have left
   Backlog. See "Build order" below for how dependencies are recorded and how

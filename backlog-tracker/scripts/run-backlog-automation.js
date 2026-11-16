@@ -1103,11 +1103,31 @@ function selfHealPlan(item, project, why, { ignoreLock = false, nowIso } = {}) {
 // - A flag a PERSON set (set_blocked over MCP, setBy an email address) was
 //   answered for them. It is left alone.
 const AUTO_ANSWER_AFTER_MS = 0;
-const MAX_AUTO_ANSWERS = 2;
+//
+// 16 Nov 2026 (Rob: "there shouldn't be blocked tickets that need attention,
+// only if the attention is a real question for me"). After MAX_AUTO_ANSWERS
+// the ticket stopped and read "Waiting for your answer", though its note said
+// "Nothing to answer" and nothing had been asked. It now goes to the senior
+// model instead: the ticket is raised to Advanced (Claude Opus) and built
+// MAX_AUTO_RETRIES more times (the second 30 minutes after the first), told
+// to make the call itself. The board shows it as waiting on the automation
+// (card-state.js selfAnswering). Only when the senior model could not get it
+// through is a person asked, and then one question with options to click
+// (blocked.question / blocked.options, or the standard "try again or park
+// it"; card-state.js personQuestion). The limits live in card-state.js so
+// the board and this agree.
+const { AUTO_ANSWER_LIMITS } = require("../functions/card-state");
+const MAX_AUTO_ANSWERS = AUTO_ANSWER_LIMITS.answers;
+const MAX_AUTO_RETRIES = AUTO_ANSWER_LIMITS.retries;
 const NEVER_RAN_BACKOFF_MS = 30 * 60 * 1000;
 const NEVER_RAN_MAX_GAP_MS = 6 * 60 * 60 * 1000;
-const MAX_NEVER_RAN_RETRIES = 12;
+const MAX_NEVER_RAN_RETRIES = AUTO_ANSWER_LIMITS.neverRan;
 const DEFAULT_SENIOR_ANSWER = "Take the best option, state the assumption you made on the card, and do not ask again.";
+const SENIOR_MODEL_BRIEF = "You are the senior model for this ticket: two automatic answers did not get it through. Read every note on the card, " +
+  "decide what is wrong, make the call yourself and build it; say what you decided under \"Assumed:\". Only if it cannot be built without something " +
+  "only a person can give, set blocked {reason: \"waiting-on-input\", note, question, options}: `question` is ONE plain sentence a person can answer " +
+  "without reading the notes, and `options` is 2 to 4 short choices [{label, recommended}], your recommended one first with recommended true " +
+  "(a yes/no question is two options). Never ask anything a person would have to type an answer to.";
 function autoAnswerPlan(item, now = Date.now()) {
   const b = item && item.blocked;
   if (!b || b.reason !== "waiting-on-input" || (item.status && item.status !== "backlog") || item.patchReady) return null;
@@ -1128,10 +1148,24 @@ function autoAnswerPlan(item, now = Date.now()) {
       fields: { neverRanRetries: tries + 1 },
     };
   }
-  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) return null;
-  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   const recommendation = typeof b.recommendation === "string" ? b.recommendation.trim() : "";
   const answer = recommendation || DEFAULT_SENIOR_ANSWER;
+  if ((Number(item.autoAnswers) || 0) >= MAX_AUTO_ANSWERS) {
+    // The immediate answers are used up: keep going by itself, with a gap.
+    const tries = Number(item.autoRetries) || 0;
+    if (tries >= MAX_AUTO_RETRIES) return null;
+    if (tries > 0 && now - setAt < NEVER_RAN_BACKOFF_MS * 2 ** (tries - 1)) return null;
+    const raise = item.model === "advanced" ? {} : { model: "advanced", modelAuto: false, modelEscalatedAt: new Date(now).toISOString() };
+    const brief = `${SENIOR_MODEL_BRIEF}${recommendation ? ` The earlier build recommended: ${recommendation}` : ""}`;
+    return {
+      answer: brief,
+      fromRecommendation: !!recommendation,
+      senior: true,
+      text: `Passed to the senior model (Advanced, Claude Opus) to make the call, try ${tries + 1} of ${MAX_AUTO_RETRIES}, without waiting for a person: ${brief}`,
+      fields: { autoRetries: tries + 1, ...raise },
+    };
+  }
+  if (now - setAt < AUTO_ANSWER_AFTER_MS) return null;
   return {
     answer,
     fromRecommendation: !!recommendation,
@@ -8767,7 +8801,7 @@ module.exports = {
   contractChangeOf, flagContractDependents,
   patchFilesFromCommit,
   patchRefProblem,
-  autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
+  autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, MAX_AUTO_RETRIES, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested

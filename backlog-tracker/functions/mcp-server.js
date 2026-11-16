@@ -1823,7 +1823,7 @@ function itemSummary(id, d, projects) {
       : null,
     modelEscalatedAt: tsToISO(d.modelEscalatedAt),
     blocked: d.blocked && d.blocked.reason
-      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
+      ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt), ...(d.blocked.question ? { question: String(d.blocked.question).slice(0, 240), options: (Array.isArray(d.blocked.options) ? d.blocked.options : []).slice(0, 4).map((o) => ({ label: String((o && o.label) || o || "").slice(0, 120), recommended: !!(o && o.recommended) })) } : {}) }
       : null,
     // Build order: the tickets this one builds after (ids; get/list add
     // titles and statuses as dependsOn), who set the list, and the lane-mate

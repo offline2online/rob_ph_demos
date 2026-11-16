@@ -1797,6 +1797,8 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .rs-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; }
 .rs-msg-agent { align-self: flex-start; background: rgba(22,155,194,0.10); color: #333; }
 .rs-msg-user { align-self: flex-end; background: #169bc2; color: #fff; }
+.rs-options { display: flex; flex-direction: column; gap: 8px; align-self: stretch; }
+.rs-option { min-height: 40px; text-align: left; white-space: normal; }
 
 /* Docs page: repo mirrors are read-only (js/docs-view.js). Same pill family
    as .docs-behind-chip; neutral for a mirror, red when its last sync failed. */

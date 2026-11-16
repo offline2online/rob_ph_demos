@@ -30,7 +30,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { suggestModel, suggestionHint, modelChipText, reviewNeedsOpus, reviewedForCommit, buildsByModel } from "./model-suggest.js";
-import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS } from "./card-state.js";
+import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS, selfAnswering, personQuestion } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
@@ -1097,7 +1097,7 @@ function cardHTML(item) {
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason === "waiting-on-dependency")
     ? dependencyFlagHTML(item)
     : (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : item.blocked.reason === "tools-unavailable" ? "construction" : "hourglass_top"}</span>${escapeHTML(blockedFlagLabel(item.blocked))}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" && item.blocked.reason !== "tools-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : item.blocked.reason === "tools-unavailable" ? "construction" : "hourglass_top"}</span>${escapeHTML(blockedFlagLabel(item.blocked, item))}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" && item.blocked.reason !== "tools-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="${selfAnswering(item) === "retrying" ? "Nothing is being asked: this is handled automatically. Use this only to steer it" : "Pick an answer — this rebuilds the ticket"}"><span class="material-symbols-outlined">forum</span>${selfAnswering(item) === "retrying" ? "Steer" : "Answer"}</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
   const e2eFixBadge = item.e2eAutoFix
     ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
@@ -1405,7 +1405,7 @@ function backlogCountForProject(pid) {
 }
 
 function waitingOnAnswerCountForProject(pid) {
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "waiting-on-input").length;
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "waiting-on-input" && selfAnswering(i) !== "retrying").length;
 }
 
 // Shown in place of Ready for Dev when the only Backlog cards left are blocked
@@ -1532,8 +1532,12 @@ function isUnreviewedBuild(item) {
 // The blocked chip's words. tools-unavailable (Flow 8/9) names what the build
 // session lacked; it has a clear control and no Answer button, like
 // model-unavailable: nobody can answer it, a person adds the tool.
-function blockedFlagLabel(b) {
+function blockedFlagLabel(b, item) {
   if (b.reason === "needs-decision") return "Needs your decision";
+  // A flag the pipeline raised and answers itself asks nothing of a person.
+  const self = item ? selfAnswering(item) : null;
+  if (self === "retrying") return "Handled automatically";
+  if (self === "used-up") return "Needs your pick";
   if (b.reason === "model-unavailable") return "Not built: needs Opus";
   if (b.reason === "tools-unavailable") {
     const missing = Array.isArray(b.missing) ? b.missing.filter((x) => typeof x === "string" && x.trim()) : [];
@@ -5876,6 +5880,50 @@ function rsAsk() {
   rsInput.focus();
 }
 const ANSWER_STEP_KEY = "__build-answer";
+// The choices of a question, as buttons in the chat: one click answers.
+function rsOptions(options) {
+  const row = document.createElement("div");
+  row.className = "rs-options";
+  for (const o of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = o.recommended ? "btn-primary rs-option" : "btn-ghost rs-option";
+    b.textContent = o.recommended ? `${o.label} (recommended)` : o.label;
+    b.addEventListener("click", () => {
+      if (resolveBusy) return;
+      row.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+      if (o.noBuild) { parkResolveItem(o.label); return; }
+      rsInput.value = o.label;
+      submitResolveAnswer();
+    });
+    row.appendChild(b);
+  }
+  rsChat.appendChild(row);
+  rsChat.scrollTop = rsChat.scrollHeight;
+}
+// "Park it": the flag is cleared and nothing is built; the ticket stays in
+// Backlog until someone sends it to build again.
+async function parkResolveItem(label) {
+  if (!resolveItemId || resolveBusy) return;
+  resolveBusy = true;
+  try {
+    const me = (auth.currentUser && auth.currentUser.email) || "viewer";
+    await updateDoc(doc(db, "backlogItems", resolveItemId), {
+      notes: arrayUnion({ author: me, text: `Answer: ${label}. Not rebuilt; it stays in Backlog until it is sent to build again.`, at: new Date() }),
+      blocked: null,
+      blockedClearedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    rsSay("user", label);
+    rsSay("agent", "Parked. It stays in Backlog and nothing more is tried until you send it to build again.");
+    resolveQueue = [];
+    rsComposer.hidden = true; rsSend.hidden = true;
+  } catch (err) {
+    rsSay("agent", `Couldn't save that: ${err && err.message ? err.message : err}. Try again.`);
+  } finally {
+    resolveBusy = false;
+  }
+}
 function openResolveModal(id, opts = {}) {
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
@@ -5888,6 +5936,16 @@ function openResolveModal(id, opts = {}) {
   if (opts.answer && isBlockedItem(item) && item.blocked.note) {
     resolveQueue = [{ key: ANSWER_STEP_KEY, heading: "Answer", question: "Your answer is saved on the ticket and the build restarts." }, ...resolveQueue];
     rsComposer.hidden = false; rsSend.hidden = false;
+    // One clear question with choices to click (16 Nov 2026): the senior
+    // model's own, or the standard one once the automatic tries are used up.
+    const pq = (selfAnswering(item) === "used-up" || (item.blocked.question && Array.isArray(item.blocked.options))) ? personQuestion(item) : null;
+    if (pq) {
+      rsSay("agent", pq.question);
+      rsOptions(pq.options);
+      rsSay("agent", "Pick one. Typing an answer instead is optional.");
+      rsInput.focus();
+      return;
+    }
     rsSay("agent", `The build asked:\n${item.blocked.note}`);
     rsAsk();
     return;
