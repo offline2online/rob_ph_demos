@@ -66,7 +66,8 @@ try {
     } finally { await o.close(); }
   }
 
-// An owner account (admitted by the rules with NO consoleUsers row) uploads a
+// An owner account (the `owner` custom claim — never an address — admitted
+// by the rules with NO consoleUsers row) uploads a
 // photo: the row is created with it, nothing errors, and Remove clears it.
 // The page's role is seeded as "editor" on purpose: the save must not depend
 // on the cached console role (the first fix did, and still failed live), and
@@ -74,7 +75,7 @@ try {
 // owner's MCP connection — functions/mcp-server.js).
 {
   const OWNER = "owner@example.com";
-  const o = await h.open({ seed: { user: { email: OWNER, role: "editor" }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
+  const o = await h.open({ seed: { user: { email: OWNER, role: "editor", claims: { owner: true } }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
   const { page } = o;
   try {
     await page.waitForSelector(".edit-item-btn", { state: "attached" });

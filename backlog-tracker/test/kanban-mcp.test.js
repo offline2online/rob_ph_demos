@@ -204,7 +204,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       for (const d of env.store.col("memberDirectory").values()) assert.ok(!("pronunciation" in d));
       assert.match(env.store.col("staffPronunciations").get(NEWB).pronunciation, /New-bee/);
     } finally {
-      for (const e of ["duong", "duy", "thuc", "hong"]) { env.store.col("consoleUsers").delete(`${e}@personalisationhub.com`); env.store.col("memberDirectory").delete(`${e}@personalisationhub.com`); }
+      for (const e of ["duong", "duy", "thuc", "hong"]) { env.store.col("consoleUsers").delete(`${e}@ph.example`); env.store.col("memberDirectory").delete(`${e}@ph.example`); }
       env.store.col("consoleUsers").delete(NEWB); env.store.col("memberDirectory").delete(NEWB); env.store.col("staffPronunciations").delete(NEWB);
     }
   });

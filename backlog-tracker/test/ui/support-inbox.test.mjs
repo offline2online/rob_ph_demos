@@ -40,7 +40,7 @@ const docs = {
   faqArticles: { a1: { status: "published", title: "Add a display to a store", directAnswer: "Open Displays and Devices, then choose Add display.", keywords: ["display"] }, a2: { status: "draft", title: "Draft about displays" } },
   memberDirectory: { "editor@ph.example": { email: "editor@ph.example", displayName: "Ed Itor" }, "admin@personalisationhub.com": { email: "admin@personalisationhub.com", displayName: "Ada Min" } },
 };
-const seedFor = (role, extra = {}) => ({ user: { email: `${role}@personalisationhub.com`, role }, docs, supportStatus: connected, ...extra });
+const seedFor = (role, extra = {}) => ({ user: { email: `${role}@ph.example`, role }, docs, supportStatus: connected, ...extra });
 
 const audit = (page, sel) => page.evaluate((sel) => {
   const scope = document.querySelector(sel);

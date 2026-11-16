@@ -352,7 +352,7 @@ const scenarios = [
       await c.visible("#um-bulk", "bulk bar shows");
       await c.page.selectOption("#um-bulk-role", "admin");
       await c.click("#um-bulk-apply", "Apply");
-      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@personalisationhub.com`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@ph.example`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
       // deactivate one from Manage
       await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@ph.example"]').click());
       await c.visible("#um-manage", "Manage panel opens");

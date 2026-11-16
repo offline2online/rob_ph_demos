@@ -15,7 +15,7 @@ const STATUS = {
     { id: "wordpress", label: "WordPress media library (application password)", env: "WP_AUTH", set: false, hint: null, siteUrl: null, updatedBy: null, updatedAt: null, lastTest: null, lastUsedAt: null, readable: false },
   ],
 };
-const seed = (role) => ({ user: { email: `${role}@personalisationhub.com`, role }, docs: { projects: {} }, mediaKeys: STATUS });
+const seed = (role) => ({ user: { email: `${role}@ph.example`, role }, docs: { projects: {} }, mediaKeys: STATUS });
 
 const h = await startHarness();
 let failed = 0;
