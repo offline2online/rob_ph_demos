@@ -18,6 +18,7 @@ import { dirname, resolve } from "node:path";
 import { wantedProfiles, launchEngines, contextOptions } from "./lib/profiles.mjs";
 import { where, press, sleep, moveBy, dragCard, toastText } from "./lib/driver.mjs";
 import { defineNewCases } from "./lib/cases.mjs";
+import { recordFlaky } from "../../backlog-tracker/test/ui/flaky.mjs";
 
 let pw;
 try { pw = await import("playwright"); } catch { pw = createRequire(execSync("npm root -g").toString().trim() + "/")("playwright"); }
@@ -56,9 +57,11 @@ const RETRIES = +(process.env.KB_RETRIES ?? 1);
 const LIVE = [];
 const sweep = () => Promise.all(LIVE.splice(0).map((c) => c.close().catch(() => {})));
 async function withRetry(id, prof, fn) {
+  let why = "";
   for (let attempt = 0; ; attempt++) {
-    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt}`); FLAKY.push({ id, profile: prof.id }); } return; }
-    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; console.log(`# RETRY ${id} [${prof.id}]: ${String(e && e.message).split("\n")[0]}`); }
+    // The FLAKY line carries the first failure, and the flake is written to the run's flaky-tests file (the board's ledger reads it).
+    try { await fn(prof); await sweep(); if (attempt) { console.log(`# FLAKY ${id} [${prof.id}]: failed, passed on retry ${attempt} — ${why}`); FLAKY.push({ id, profile: prof.id, why }); recordFlaky({ suite: "staff-kanban-prototype", id, profile: prof.id, error: why }); } return; }
+    catch (e) { await sweep(); if (attempt >= RETRIES) throw e; why = why || String(e && e.message).split("\n")[0]; console.log(`# RETRY ${id} [${prof.id}]: ${String(e && e.message).split("\n")[0]}`); }
   }
 }
 async function knownDefect(id, prof, why, fn) {
@@ -187,7 +190,7 @@ T("TC-06", "staff filter makes swimlanes; dragging into another lane reassigns",
   await p.done();
 });
 
-T("KB-C21", "a staff avatar picked as a filter is about 30% larger than the rest, and goes back when it is switched off", async (prof) => {
+T("KB-C26", "a staff avatar picked as a filter is about 30% larger than the rest, and goes back when it is switched off", async (prof) => {
   const p = await open(prof);
   const size = (who) => p.$eval(`.kb-person-chip[data-person="${who}"] .kb-avatar`, (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
   assert.deepEqual(await size("linh"), [28, 28], "not picked: 28px");

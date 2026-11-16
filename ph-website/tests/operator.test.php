@@ -1,8 +1,9 @@
 <?php
 /**
- * php ph-website/tests/operator.test.php : the hidden Run Your Own RMN page, /run-your-own-rmn/ (snippet 10063, operator.php), an
+ * php ph-website/tests/operator.test.php : the Run Your Own RMN page (launched 15 Nov 2026: OPERATOR_LIVE ships true, and one pass forces it
+ * hidden through ph_operator_live), /run-your-own-rmn/ (snippet 10063, operator.php), an
  * Elementor page built from ph-website/elementor/run-your-own-rmn.md. POST ph-site/v1/operator-lead validation (400 with the field),
- * optional and normalised LinkedIn, the required "I am" (stored and sent on as `audience`), the background allow-list, honeypot, 429, personal email accepted, one lead per person in both
+ * optional and normalised LinkedIn, no "I am" (removed 15 Nov 2026: `audience` neither required nor validated, a stray one ignored), the background allow-list, honeypot, 429, personal email accepted, one lead per person in both
  * orders, the ph_lead_captured payload and the console ingest body (leadType, source detail "Run Your Own RMN page – product tour"),
  * the test flag and no admin mail in test. The page: no call path writes a post (operator_init, every hook function and the three
  * shortcodes are run against a page, a plain page, no page and a stale cache; no wp_insert_post / wp_update_post of a page, no
@@ -32,7 +33,7 @@ $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements';
 $GLOBALS['opts'] = array( 'admin_email' => 'a@x.test' ); $GLOBALS['tr'] = array(); $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); $GLOBALS['filters'] = array();
 function add_action( $n, $cb ) {} function add_filter() {} function register_setting() {} function add_settings_field() {} function current_user_can() { return false; }
 function apply_filters( $n, $v ) { return array_key_exists( $n, $GLOBALS['filters'] ) ? $GLOBALS['filters'][ $n ] : $v; }
-function wp_unslash( $v ) { return $v; } function sanitize_text_field( $v ) { return trim( strip_tags( (string) $v ) ); }
+function wp_unslash( $v ) { return $v; } function sanitize_text_field( $v ) { return trim( strip_tags( (string) $v ) ); } function sanitize_textarea_field( $v ) { return trim( strip_tags( (string) $v ) ); }
 function sanitize_email( $v ) { return trim( (string) $v ); } function is_email( $v ) { return (bool) filter_var( $v, FILTER_VALIDATE_EMAIL ); }
 function get_transient( $k ) { return $GLOBALS['tr'][ $k ] ?? false; } function set_transient( $k, $v ) { $GLOBALS['tr'][ $k ] = $v; }
 function wp_insert_post( $a ) { if ( 'ph_lead' !== ( $a['post_type'] ?? '' ) ) { $GLOBALS['page_writes'][] = array( 'insert', $a ); } $GLOBALS['posts'][] = $a; $id = count( $GLOBALS['posts'] ); if ( ! empty( $a['meta_input'] ) ) { foreach ( $a['meta_input'] as $k => $v ) { $GLOBALS['meta'][ $id ][ $k ] = $v; } } return $id; }
@@ -69,20 +70,21 @@ require $dir . '/leads.php';
 require $dir . '/operator.php';
 require $dir . '/redirects.php';
 require $dir . '/ai-surface.php';
+require $dir . '/tour.php'; // TOUR_INDUSTRIES: the golf tour joins llms.txt and the twins only when the page is live (ai_tours())
 }
 
 namespace AngieSnippets\PhIndustryEnhancements_10063 {
 const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = 'test'; // main.php's, for operator_enqueue()
 $n_ip = 0;
 $call = function ( array $b, $ip = null ) use ( &$n_ip ) { $_SERVER['REMOTE_ADDR'] = $ip ?? '10.0.0.' . ( ++$n_ip ); return operator_handle( $b ); };
-$good = array( 'name' => 'Ada Lovelace', 'email' => 'ada@gmail.com', 'linkedin' => 'linkedin.com/in/ada', 'region' => 'Manchester and the North West', 'audience' => 'An individual operator', 'background' => 'Retail media', 'consent' => true, 'page' => '/run-your-own-rmn/', 'test' => false, 'website' => '' );
+$good = array( 'name' => 'Ada Lovelace', 'email' => 'ada@gmail.com', 'linkedin' => 'linkedin.com/in/ada', 'region' => 'Manchester and the North West', 'background' => 'Retail media', 'consent' => true, 'page' => '/run-your-own-rmn/', 'test' => false, 'website' => '' );
 $reset = function () { $GLOBALS['posts'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['mails'] = array(); };
 
 /* Validation: 400 with the field */
 foreach ( array(
 	array( 'name', '' ), array( 'name', str_repeat( 'a', 121 ) ), array( 'email', 'nope' ), array( 'email', str_repeat( 'a', 112 ) . '@ex.test' ),
 	array( 'linkedin', 'https://example.com/in/ada' ), array( 'linkedin', 'ftp://linkedin.com/in/ada' ), array( 'linkedin', 'https://linkedin.com.evil.test/in/a' ), array( 'linkedin', 'https://' . str_repeat( 'a', 290 ) . '.linkedin.com/x' ),
-	array( 'region', '' ), array( 'region', str_repeat( 'r', 121 ) ), array( 'audience', '' ), array( 'audience', 'A large retailer' ), array( 'audience', 'operator' ), array( 'background', '' ), array( 'background', 'Astronaut' ), array( 'consent', false ),
+	array( 'region', '' ), array( 'region', str_repeat( 'r', 121 ) ), array( 'background', '' ), array( 'background', 'Astronaut' ), array( 'consent', false ),
 ) as $c ) {
 	list( $st, $out ) = $call( array_merge( $good, array( $c[0] => $c[1] ) ) );
 	ok( 400 === $st && $c[0] === ( $out['field'] ?? '' ) && '' !== ( $out['error'] ?? '' ), "400 with field {$c[0]} for " . substr( var_export( $c[1], true ), 0, 40 ) );
@@ -103,15 +105,14 @@ foreach ( OPERATOR_BACKGROUNDS as $bg ) {
 	ok( 200 === $st, "background accepted: $bg" );
 }
 ok( array( 'Agency media or account management', 'Ad-tech sales or partnerships', 'Retail media', 'Creative agency', 'Retail business owner or manager', 'Marketing', 'Something else' ) === OPERATOR_BACKGROUNDS, 'the seven backgrounds, in the design\'s order (adds "Creative agency" and "Retail business owner or manager")' );
-/* "I am": required, one of the three */
-foreach ( OPERATOR_AUDIENCES as $au ) {
-	list( $st ) = $call( array_merge( $good, array( 'audience' => $au, 'email' => 'au' . md5( $au ) . '@x.test' ) ) );
-	ok( 200 === $st, "I am accepted: $au" );
+/* No "I am" (15 Nov 2026): a body without `audience` is accepted; a stray one, any value, is ignored, never an error or stored */
+ok( ! defined( __NAMESPACE__ . '\\OPERATOR_AUDIENCES' ) && ! defined( 'AngieSnippets\\PhIndustryEnhancements_10063\\OPERATOR_AUDIENCES' ), 'no OPERATOR_AUDIENCES list any more' );
+ok( ! array_key_exists( 'audience', $good ), 'the good body carries no audience' );
+foreach ( array( '', 'A large retailer', 'operator', 'An individual operator' ) as $i => $au ) {
+	$reset();
+	list( $st, $out ) = $call( array_merge( $good, array( 'audience' => $au, 'email' => "au$i@x.test" ) ) );
+	ok( 200 === $st && ! empty( $out['ok'] ) && ! isset( $GLOBALS['meta'][1]['ph_lead_audience'] ) && ! array_key_exists( 'audience', $GLOBALS['fired'][0][1] ) && false === strpos( $GLOBALS['mails'][0][2], 'I am' ), 'a stray audience ' . var_export( $au, true ) . ' is ignored: 200, not stored, not in the payload or the email' );
 }
-ok( array( 'An individual operator', 'Part of an operator team', 'A small to medium retailer' ) === OPERATOR_AUDIENCES, 'the three "I am" options' );
-$noia = $good; unset( $noia['audience'] );
-list( $st, $out ) = $call( $noia );
-ok( 400 === $st && 'audience' === ( $out['field'] ?? '' ), '"I am" is required: a body without it answers 400 with field audience' );
 $reset();
 
 /* Honeypot, throttle, personal email */
@@ -126,28 +127,41 @@ list( $st ) = $call( $good ); ok( 200 === $st, 'personal email domain (gmail) ac
 /* Stored lead and the ph_lead_captured payload */
 $m = $GLOBALS['meta'][1];
 ok( 'ph_lead' === $GLOBALS['posts'][0]['post_type'] && 'private' === $GLOBALS['posts'][0]['post_status'], 'a private ph_lead' );
-ok( 'Ada Lovelace' === $m['ph_lead_name'] && 'ada@gmail.com' === $m['ph_lead_email'] && 'https://linkedin.com/in/ada' === $m['ph_lead_linkedin'] && 'Manchester and the North West' === $m['ph_lead_region'] && 'Retail media' === $m['ph_lead_background'] && 'An individual operator' === $m['ph_lead_audience'], 'meta: name, email, linkedin, region, background and audience (the "I am" label)' );
+ok( 'Ada Lovelace' === $m['ph_lead_name'] && 'ada@gmail.com' === $m['ph_lead_email'] && 'https://linkedin.com/in/ada' === $m['ph_lead_linkedin'] && 'Manchester and the North West' === $m['ph_lead_region'] && 'Retail media' === $m['ph_lead_background'] && ! isset( $m['ph_lead_audience'] ), 'meta: name, email, linkedin, region and background; no audience' );
 ok( 'operator' === $m['ph_lead_source'] && 'Network operator inquiry' === $m['ph_lead_source_label'] && 1 === $m['ph_lead_consent'] && '/run-your-own-rmn/' === $m['ph_lead_page'] && ! isset( $m['ph_lead_test'] ), 'meta: source key operator, label "Network operator inquiry", consent, page /run-your-own-rmn/, not test' );
 ok( 'Network operator inquiry' === $m['ph_lead_activity'][0]['label'] && 'Run Your Own RMN page – product tour' === $m['ph_lead_activity'][0]['detail'], 'activity row "Network operator inquiry", detail "Run Your Own RMN page – product tour"' );
 ok( 'Ada Lovelace / Network operator inquiry' === $GLOBALS['posts'][0]['post_title'], 'lead title names the new label' );
 $p = $GLOBALS['fired'][0];
 ok( 'ph_lead_captured' === $p[0], 'fires ph_lead_captured' );
 $p = $p[1];
-foreach ( array( 'company' => 'Ada Lovelace', 'company_industry' => 'Network operator inquiry', 'industry' => 'operator', 'contact_name' => 'Ada Lovelace', 'email' => 'ada@gmail.com', 'linkedin' => 'https://linkedin.com/in/ada', 'countries' => 'Manchester and the North West', 'job_title' => 'Retail media', 'audience' => 'An individual operator', 'source_label' => 'Network operator inquiry', 'source_detail' => 'Run Your Own RMN page – product tour', 'lead_type' => 'operator', 'source' => 'operator', 'page' => '/run-your-own-rmn/', 'test' => false ) as $k => $v ) {
+foreach ( array( 'company' => 'Ada Lovelace', 'company_industry' => 'Network operator inquiry', 'industry' => 'operator', 'contact_name' => 'Ada Lovelace', 'email' => 'ada@gmail.com', 'linkedin' => 'https://linkedin.com/in/ada', 'countries' => 'Manchester and the North West', 'job_title' => 'Retail media', 'source_label' => 'Network operator inquiry', 'source_detail' => 'Run Your Own RMN page – product tour', 'lead_type' => 'operator', 'source' => 'operator', 'page' => '/run-your-own-rmn/', 'test' => false ) as $k => $v ) {
 	ok( array_key_exists( $k, $p ) && $v === $p[ $k ], "payload $k = " . var_export( $v, true ) );
 }
 ok( 1 === count( $GLOBALS['mails'] ) && 'New network operator inquiry: Ada Lovelace' === $GLOBALS['mails'][0][1] && 'a@x.test' === $GLOBALS['mails'][0][0], 'admin email "New network operator inquiry: <name>"' );
-ok( false !== strpos( $GLOBALS['mails'][0][2], "\nI am: An individual operator\n" ), 'admin email carries "I am"' );
+ok( ! array_key_exists( 'audience', $p ), 'payload: no audience (the console stores a blank)' );
+ok( false === strpos( $GLOBALS['mails'][0][2], 'I am' ) && false !== strpos( $GLOBALS['mails'][0][2], "Where they plan to operate: Manchester and the North West\nBackground: Retail media\n" ), 'admin email: no "I am:" line, Background straight after Where they plan to operate' );
 ok( false !== strpos( $GLOBALS['mails'][0][2], 'Page: /run-your-own-rmn/' ) && ! preg_match( '/fr[a]nch/i', $GLOBALS['mails'][0][1] . $GLOBALS['mails'][0][2] ), 'admin email names the new page and never the retired offer name' );
 
 /* Ingest body */
 $body = lead_ingest_body( $p );
-foreach ( array( 'company' => 'Ada Lovelace', 'industry' => 'Network operator inquiry', 'countries' => 'Manchester and the North West', 'contactName' => 'Ada Lovelace', 'jobTitle' => 'Retail media', 'email' => 'ada@gmail.com', 'linkedin' => 'https://linkedin.com/in/ada', 'page' => '/run-your-own-rmn/', 'pageIndustry' => 'operator', 'sourceLabel' => 'Network operator inquiry', 'sourceDetail' => 'Run Your Own RMN page – product tour', 'leadType' => 'operator', 'region' => 'Manchester and the North West', 'background' => 'Retail media', 'audience' => 'An individual operator' ) as $k => $v ) {
+foreach ( array( 'company' => 'Ada Lovelace', 'industry' => 'Network operator inquiry', 'countries' => 'Manchester and the North West', 'contactName' => 'Ada Lovelace', 'jobTitle' => 'Retail media', 'email' => 'ada@gmail.com', 'linkedin' => 'https://linkedin.com/in/ada', 'page' => '/run-your-own-rmn/', 'pageIndustry' => 'operator', 'sourceLabel' => 'Network operator inquiry', 'sourceDetail' => 'Run Your Own RMN page – product tour', 'leadType' => 'operator', 'region' => 'Manchester and the North West', 'background' => 'Retail media' ) as $k => $v ) {
 	ok( isset( $body[ $k ] ) && $v === $body[ $k ], "ingest body $k" );
 }
+ok( ! isset( $body['audience'] ), 'ingest body: no audience, so the console stores a blank one' );
 ok( ! isset( $body['test'] ), 'ingest body: no test flag for a real lead' );
 $other = lead_ingest_body( array( 'company' => 'Nimbus', 'name' => 'Ada', 'email' => 'a@n.test', 'industry' => 'telco', 'source_label' => 'Interactive product tour – Telco' ) );
 ok( ! isset( $other['leadType'] ) && ! isset( $other['region'] ) && ! isset( $other['background'] ) && ! isset( $other['audience'] ), 'other pages\' bodies are unchanged (no leadType, region, background, audience)' );
+ok( 'tour' === ( $body['form'] ?? '' ) && ! isset( $body['network_industry'] ) && ! isset( $body['message'] ), 'ingest body: a tour-gate lead sends form "tour" and no industry or message' );
+ok( ! isset( $other['network_industry'] ) && ! isset( $other['message'] ) && ! isset( $other['form'] ), 'other pages\' bodies carry no network_industry, message or form' );
+// Telco, pharmacy and pubs leads: the body's keys are exactly what they were before network_industry, message and form were forwarded.
+$base_keys = array( 'company', 'website', 'industry', 'countries', 'storeCount', 'contactName', 'jobTitle', 'email', 'linkedin', 'page', 'pageIndustry' );
+foreach ( array(
+	'telco'    => array( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.com', 'industry' => 'telco', 'source' => 'telco-business-model', 'page' => '/industries/telco/' ), array() ),
+	'pharmacy' => array( array( 'name' => 'Cy', 'company' => 'Harbour', 'email' => 'c@h.test', 'source' => 'pharmacy-business-model', 'source_label' => 'Pharmacy business model download', 'consent' => true, 'industry' => 'pharmacy', 'inputs' => array( 'stores' => 40 ), 'estimate_3yr' => 1000, 'test' => false, 'page' => '/industries/pharmacy/', 'post_id' => 3 ), array( 'sourceLabel' ) ),
+	'pubs'     => array( array( 'name' => 'Di', 'company' => 'Taps', 'email' => 'd@t.test', 'source' => 'pubs-business-model', 'source_label' => 'Pubs & Hospitality business model download', 'consent' => true, 'industry' => 'pubs-hospitality', 'inputs' => array( 'sites' => 12 ), 'estimate_3yr' => 2000, 'test' => true, 'page' => '/industries/pubs-hospitality/', 'post_id' => 4 ), array( 'sourceLabel', 'test' ) ),
+) as $pg => $c ) {
+	ok( array_merge( $base_keys, $c[1] ) === array_keys( lead_ingest_body( $c[0] ) ), "$pg body: the same keys as before (no network_industry, message or form)" );
+}
 
 /* One lead per person, both orders */
 $reset();
@@ -157,7 +171,7 @@ list( $st ) = $call( array_merge( $good, array( 'email' => 'grace@orbit.example'
 ok( 200 === $st && 1 === count( $GLOBALS['posts'] ), 'industry tour then operator inquiry: no second lead' );
 $acts = $GLOBALS['meta'][1]['ph_lead_activity'];
 ok( 2 === count( $acts ) && 'Network operator inquiry' === $acts[1]['label'], 'industry tour then operator inquiry: an activity row "Network operator inquiry" is added' );
-ok( 'interactive-product-tour' === $GLOBALS['meta'][1]['ph_lead_source'] && 'Orbit' === $GLOBALS['meta'][1]['ph_lead_company'] && 'Retail media' === $GLOBALS['meta'][1]['ph_lead_background'] && 'An individual operator' === $GLOBALS['meta'][1]['ph_lead_audience'], 'the existing lead keeps its source and company and gains the network operator fields' );
+ok( 'interactive-product-tour' === $GLOBALS['meta'][1]['ph_lead_source'] && 'Orbit' === $GLOBALS['meta'][1]['ph_lead_company'] && 'Retail media' === $GLOBALS['meta'][1]['ph_lead_background'] && ! isset( $GLOBALS['meta'][1]['ph_lead_audience'] ), 'the existing lead keeps its source and company and gains the network operator fields' );
 ok( 1 === (int) $GLOBALS['fired'][0][1]['post_id'], 'payload names the existing lead' );
 // operator inquiry then industry tour (tour.php adds activity to the same lead)
 $reset();
@@ -208,8 +222,8 @@ ok( ! $GLOBALS['page_writes'] && ! $GLOBALS['posts'] && ! $GLOBALS['updated'], '
 $hooks = function () {
 	operator_init(); operator_sync_state(); operator_is_page(); operator_robots( array( 'index' => true ) ); operator_document_title( 'T' ); operator_sitemap_args( array() );
 	operator_menu_objects( array(), true, true ); operator_head_html( operator_og_image(), true ); operator_llms_filter( 'x', true ); operator_agent_page( true ); operator_robots_allow( array(), true ); operator_seopress_off( 'x' );
-	operator_calculator_html(); operator_tour_html(); operator_faq_html(); operator_twin();
-	operator_mount_blocks( '<div class="elementor"><div class="e-con" id="ph-rmn-calculator"></div><div class="e-con" id="ph-rmn-faq"></div><div class="e-con" id="ph-rmn-tour"></div></div>' );
+	operator_calculator_html(); operator_tour_html(); operator_faq_html(); operator_request_html(); operator_twin();
+	operator_mount_blocks( '<div class="elementor"><div class="e-con" id="ph-rmn-calculator"></div><div class="e-con" id="ph-rmn-faq"></div><div class="e-con" id="ph-rmn-tour"></div><div class="e-con" id="ph-rmn-request"></div></div>' );
 };
 foreach ( array( 'elementor page' => function () use ( $mkpage ) { $mkpage( 10900 ); }, 'plain page' => function () use ( $mkpage ) { $mkpage( 10776, '' ); }, 'no page' => function () {}, 'stale cache' => function () use ( $mkpage ) { $GLOBALS['opts']['ph_operator_page'] = 10776; } ) as $case => $setup ) {
 	foreach ( array( false, true ) as $onpage ) {
@@ -248,8 +262,8 @@ ok( false !== strpos( $hsrc, "operator_llms_filter( \$text, operator_is_live() &
 ok( false !== strpos( $hsrc, "if ( ! is_array( \$items ) || ( ! \$on_page && ! \$live ) || ! operator_page_id() ) {" ), 'no page: the menu filter returns the menu unchanged' );
 
 /* The shortcodes stay registered: the same three blocks, each enqueuing the page's assets (on the page only) */
-ok( array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq' ) === OPERATOR_SHORTCODES, 'shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq]' );
-foreach ( array( 'calculator' => 'operator_calculator_html', 'tour' => 'operator_tour_html', 'faq' => 'operator_faq_html' ) as $k => $fn ) {
+ok( array( 'calculator' => 'ph_operator_calculator', 'tour' => 'ph_operator_tour', 'faq' => 'ph_operator_faq', 'request' => 'ph_operator_request' ) === OPERATOR_SHORTCODES, 'shortcodes [ph_operator_calculator], [ph_operator_tour], [ph_operator_faq], [ph_operator_request]' );
+foreach ( array( 'calculator' => 'operator_calculator_html', 'tour' => 'operator_tour_html', 'faq' => 'operator_faq_html', 'request' => 'operator_request_html' ) as $k => $fn ) {
 	ok( false !== strpos( $hsrc, "add_shortcode( OPERATOR_SHORTCODES['$k'], function () {\n\t\toperator_enqueue();\n\t\treturn $fn();" ), "[ph_operator_$k] enqueues the assets and returns $fn()" );
 }
 ok( false === strpos( $hsrc, "add_shortcode( 'ph_operator'," ) && false === strpos( $hsrc, 'OPERATOR_SHORTCODE,' ), 'the whole-page [ph_operator] shortcode is gone' );
@@ -261,24 +275,24 @@ $fresh();
 /* The mount containers: Elementor's rendered page with three empty containers gets each block once, in place, on the resolved page only */
 $econ = function ( $id, $inner = '' ) { return '<div class="elementor-element elementor-element-' . substr( md5( $id ), 0, 7 ) . ' e-con-full e-flex e-con e-parent" data-id="' . substr( md5( $id ), 0, 7 ) . '" data-element_type="e-flexbox"' . ( '' !== $id ? ' id="' . $id . '"' : '' ) . ' data-settings="{&quot;k&quot;:&quot;a &gt; b&quot;}">' . $inner . '</div>'; };
 $fixture = function ( array $ids ) use ( $econ ) { $h = '<div data-elementor-type="wp-page" data-elementor-id="10785" class="elementor elementor-10785">'; foreach ( $ids as $id ) { $h .= $econ( $id, in_array( $id, OPERATOR_MOUNTS, true ) ? '' : '<h2>' . $id . '</h2>' ); } return $h . '</div>'; };
-$all_ids = array( 'top', 'why', 'who', 'how', 'venues', 'standards', 'ph-rmn-calculator', 'independents', 'ph-rmn-faq', 'ph-rmn-tour' );
-ok( array( 'calculator' => 'ph-rmn-calculator', 'faq' => 'ph-rmn-faq', 'tour' => 'ph-rmn-tour' ) === OPERATOR_MOUNTS, 'mount containers: CSS IDs ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour' );
+$all_ids = array( 'top', 'why', 'who', 'how', 'venues', 'standards', 'ph-rmn-calculator', 'independents', 'ph-rmn-faq', 'ph-rmn-tour', 'ph-rmn-request' );
+ok( array( 'calculator' => 'ph-rmn-calculator', 'faq' => 'ph-rmn-faq', 'tour' => 'ph-rmn-tour', 'request' => 'ph-rmn-request' ) === OPERATOR_MOUNTS, 'mount containers: CSS IDs ph-rmn-calculator, ph-rmn-faq, ph-rmn-tour, ph-rmn-request (the request form, after the tour)' );
 $fx = $fixture( $all_ids );
 $fresh(); $el = $mkpage( 10785 ); $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $el; // \$GLOBALS['enq'] still holds the three entries from the check above
 $mounted = operator_mount( $fx );
-$blocks  = array( 'calculator' => operator_calculator_html(), 'faq' => operator_faq_html(), 'tour' => operator_tour_html() );
+$blocks  = array( 'calculator' => operator_calculator_html(), 'faq' => operator_faq_html(), 'tour' => operator_tour_html(), 'request' => operator_request_html() );
 foreach ( OPERATOR_MOUNTS as $k => $cid ) {
 	ok( 1 === substr_count( $mounted, 'data-phf="' . $k . '"' ) && 1 === substr_count( $mounted, $blocks[ $k ] ), "mount: the $k block is in the page exactly once" );
 	$open = substr( $econ( $cid ), 0, -6 );
 	ok( false !== strpos( $mounted, $open . $blocks[ $k ] . '</div>' ), "mount: the $k block sits inside #$cid, straight after its opening tag" );
 }
 $md = new \DOMDocument(); @$md->loadHTML( '<?xml encoding="utf-8"?>' . $mounted ); $mx = new \DOMXPath( $md );
-foreach ( array( 'ph-rmn-calculator' => 'calculator', 'ph-rmn-faq' => 'faq', 'ph-rmn-tour' => 'tour' ) as $cid => $anchor ) {
+foreach ( array( 'ph-rmn-calculator' => 'calculator', 'ph-rmn-faq' => 'faq', 'ph-rmn-tour' => 'tour', 'ph-rmn-request' => 'request-info' ) as $cid => $anchor ) {
 	ok( 1 === $mx->query( '//div[@id="' . $cid . '"]/div[contains(@class,"phf-block")]/section[@id="' . $anchor . '"]' )->length && 1 === $mx->query( '//*[@id="' . $anchor . '"]' )->length, "mount: #$anchor is inside the block inside #$cid, once in the document" );
 }
 ok( 1 === $mx->query( '//script[@type="application/ld+json"]' )->length && 1 === substr_count( $mounted, '"@type":"FAQPage"' ) && 1 === $mx->query( '//div[@id="ph-rmn-faq"]//script[@type="application/ld+json"]' )->length, 'mount: the FAQPage JSON-LD is in the first HTML response, once, with the FAQ' );
 $stripped = $mounted; foreach ( $blocks as $b ) { $stripped = str_replace( $b, '', $stripped ); }
-ok( $fx === $stripped, 'mount: nothing but the three blocks is added; every other element and id is untouched' );
+ok( $fx === $stripped, 'mount: nothing but the four blocks is added; every other element and id is untouched' );
 operator_mount( $fx ); operator_enqueue();
 ok( 3 === count( $GLOBALS['enq'] ), 'mount: the assets are still enqueued once, however many blocks are mounted and however often the content is rendered' );
 ok( false !== strpos( $hsrc, "function operator_mount( \$content ) {\n\tif ( ! is_string( \$content ) || ! operator_is_page() ) {\n\t\treturn \$content;\n\t}\n\toperator_enqueue();\n\treturn operator_mount_blocks( \$content );" ), 'mount: off the page it returns the content untouched before anything else; on the page it enqueues the assets (operator_enqueue: once, on the page only)' );
@@ -314,15 +328,19 @@ ok( array( '/retail-media-platform' ) === array_keys( redirect_map() ), 'redirec
 ok( ! in_array( '/run-your-own-rmn/', redirect_map(), true ) && '' === redirect_target( '/run-your-own-rmn/' ), 'nothing redirects to or from /run-your-own-rmn/' );
 ok( ! preg_match( '/fr[a]nch/i', (string) file_get_contents( $dir . '/redirects.php' ) ), 'redirects.php never names the retired offer' );
 
-/* noindex state and sitemaps */
+/* Launched 15 Nov 2026: OPERATOR_LIVE ships true, so with no filter the page is live: indexable, in both sitemaps, the header item on
+   every page, and llms.txt, the twin, the agent endpoint, robots.txt and the golf tour name it. One pass then forces it hidden through
+   the ph_operator_live filter, and every one of those goes back to hidden. */
+ok( true === OPERATOR_LIVE, 'OPERATOR_LIVE ships true (launched 15 Nov 2026)' );
+ok( ! array_key_exists( 'ph_operator_live', $GLOBALS['filters'] ) && true === operator_is_live(), 'live by default: operator_is_live() with no filter' );
 $d = $mkpage( 7 );
 operator_sync_state();
-ok( 'yes' === $GLOBALS['meta'][7]['_seopress_robots_index'] && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'hidden: SEOPress noindex set on the page' );
-$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
-ok( array( 7 ) === $args['post__not_in'], 'hidden: left out of the sitemap queries' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live (default): no SEOPress noindex on the page, state live' );
+ok( ! isset( operator_sitemap_args( array( 'post_type' => 'page' ) )['post__not_in'] ), 'live (default): in the WordPress and SEOPress sitemap queries' );
 $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 $r = operator_robots( array( 'index' => true, 'follow' => true ) );
-ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'hidden: wp_robots noindex on /run-your-own-rmn/' );
+ok( empty( $r['noindex'] ) && ! empty( $r['index'] ), 'live (default): wp_robots indexable on /run-your-own-rmn/' );
+ok( false === strpos( $hsrc, "if ( operator_is_live() && ! headers_sent() )" ) && false !== strpos( $hsrc, "if ( ! operator_is_live() && ! headers_sent() ) {\n\t\t\theader( 'X-Robots-Tag: noindex' );" ), 'X-Robots-Tag noindex is sent on the page only while not live' );
 ok( 'Run Your Own Retail Media Network (RMN) - Personalisation Hub' === operator_document_title( 'Old - Personalisation Hub' ), 'document title "Run Your Own Retail Media Network (RMN) - Personalisation Hub" on the page' );
 $other = new \WP_Post(); $other->ID = 99; $other->post_name = 'about-us'; $GLOBALS['qo'] = $other;
 ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ) && 'T' === operator_document_title( 'T' ), 'another page: keyed by the resolved id, so untouched' );
@@ -330,14 +348,39 @@ $GLOBALS['qo'] = $d;
 $GLOBALS['is_page'] = false;
 ok( array( 'index' => true ) === operator_robots( array( 'index' => true ) ), 'other pages: robots unchanged' );
 ok( 'Home | X' === operator_document_title( 'Home | X' ), 'other pages: title unchanged' );
+$hmk = function ( $id, $title, $url, $parent = 0 ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => array( 'menu-item' ), 'current' => false, 'menu_order' => 0 ); };
+$hdr = function () use ( $hmk ) { return array( $hmk( 1, 'Features', '/features/' ), $hmk( 3, 'Industry', '/industries/' ), $hmk( 4, 'Telco', '/industries/telco/', 3 ), $hmk( 5, 'Support', '/support-centre/' ), $hmk( 6, 'Blog', '/blog/' ) ); };
+$top = function ( $items ) { return implode( ',', array_map( function ( $i ) { return $i->title; }, array_filter( $items, function ( $i ) { return '0' === (string) $i->menu_item_parent; } ) ) ); };
+ok( 'Features,Industry,Run Your Own RMN,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'live (default): a non-operator page\'s header gets "Run Your Own RMN" between Industry and Support' );
+$wp_robots0 = "User-agent: *\nDisallow: /wp-admin/\n";
+ok( false !== strpos( operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), '## Run your own RMN' ), 'live (default): llms.txt gets the "Run your own RMN" section' );
+ok( is_array( operator_agent_page( operator_is_live() ) ), 'live (default): the agent endpoint lists the page and its twin' );
+ok( false !== strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'Allow: /run-your-own-rmn/' ), 'live (default): robots.txt allows /run-your-own-rmn/ for AI agents' );
+$tours = ai_tours();
+ok( isset( $tours['rmn'] ) && 5 === count( $tours ) && false !== strpos( ai_tours_llms_md(), '/run-your-own-rmn/' ) && '' !== ai_tour_section( 'rmn' ), 'live (default): the golf tour joins llms.txt and the twins' );
+ok( 1 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'live (default): the head links the markdown twin' );
+
+/* Forced hidden through the ph_operator_live filter: everything back to hidden */
+$GLOBALS['filters']['ph_operator_live'] = false;
+ok( false === operator_is_live(), 'ph_operator_live false: hidden' );
+operator_sync_state();
+ok( 'yes' === ( $GLOBALS['meta'][7]['_seopress_robots_index'] ?? '' ) && 'hidden:7' === $GLOBALS['opts']['ph_operator_state'], 'forced hidden: SEOPress noindex set on the page' );
+$args = operator_sitemap_args( array( 'post_type' => 'page' ) );
+ok( array( 7 ) === ( $args['post__not_in'] ?? null ), 'forced hidden: left out of the sitemap queries' );
+$GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
+$r = operator_robots( array( 'index' => true, 'follow' => true ) );
+ok( ! empty( $r['noindex'] ) && ! isset( $r['index'] ), 'forced hidden: wp_robots noindex on /run-your-own-rmn/' );
+$GLOBALS['is_page'] = false;
+ok( 'Features,Industry,Support,Blog' === $top( operator_menu_objects( $hdr(), operator_is_page(), operator_is_live() ) ), 'forced hidden: a non-operator page\'s header is unchanged' );
+ok( "## Pricing and trial\n" === operator_llms_filter( "## Pricing and trial\n", operator_is_live() && operator_page_id() > 0 ), 'forced hidden: llms.txt unchanged' );
+ok( null === operator_agent_page( operator_is_live() ), 'forced hidden: the agent endpoint gets nothing' );
+ok( false === strpos( robots_txt_text( $wp_robots0, true, operator_robots_allow( array(), operator_is_live() && operator_page_id() > 0 ) ), 'run-your-own-rmn' ), 'forced hidden: robots.txt does not name the page' );
+ok( ! isset( ai_tours()['rmn'] ) && 4 === count( ai_tours() ) && false === strpos( ai_tours_llms_md(), 'run-your-own-rmn' ) && '' === ai_tour_section( 'rmn' ), 'forced hidden: the golf tour is out of llms.txt and the twins' );
+ok( 0 === ( new \DOMXPath( ( function () { $x = new \DOMDocument(); @$x->loadHTML( '<?xml encoding="utf-8"?><html><head>' . operator_head_html( array( 'url' => 'https://x.test/i.webp', 'width' => 1200, 'height' => 630, 'alt' => 'x' ), operator_is_live() ) . '</head></html>' ); return $x; } )() ) )->query( '//link[@type="text/markdown"]' )->length, 'forced hidden: no twin link in the head' );
 $GLOBALS['filters']['ph_operator_live'] = true;
 operator_sync_state();
-ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'live: SEOPress noindex removed' );
-ok( ! isset( operator_sitemap_args( array() )['post__not_in'] ), 'live: in the sitemaps' );
-$GLOBALS['is_page'] = true;
-ok( ! isset( operator_robots( array( 'index' => true ) )['noindex'] ), 'live: indexable' );
+ok( ! isset( $GLOBALS['meta'][7]['_seopress_robots_index'] ) && 'live:7' === $GLOBALS['opts']['ph_operator_state'], 'back to live: SEOPress noindex removed again' );
 unset( $GLOBALS['filters']['ph_operator_live'] ); $GLOBALS['is_page'] = false;
-ok( false === OPERATOR_LIVE, 'OPERATOR_LIVE ships false' );
 
 /* Header menu (the page exists: $d, id 7) */
 $mk = function ( $id, $title, $url, $parent = 0, $cur = false ) { return (object) array( 'ID' => $id, 'db_id' => $id, 'title' => $title, 'url' => $url, 'menu_item_parent' => (string) $parent, 'classes' => $cur ? array( 'menu-item', 'current-menu-item' ) : array( 'menu-item' ), 'current' => $cur, 'menu_order' => 0 ); };
@@ -375,12 +418,14 @@ foreach ( array( 'calculator' => operator_calculator_html(), 'faq' => operator_f
 ok( false !== strpos( operator_calculator_html(), 'id="calculator"' ) && false !== strpos( operator_faq_html(), 'id="faq"' ) && false !== strpos( operator_tour_html(), 'id="tour"' ), 'anchors #calculator, #faq and #tour come with their blocks' );
 foreach ( array( 'Your head start in a changing industry', 'Three ways to run your own network', 'Built to fix retail media', 'Give independents a fighting chance', 'Why it beats anything out there', OPERATOR_HERO_P ) as $s ) { ok( false === strpos( html_entity_decode( $html, ENT_QUOTES ), $s ), 'static copy is Elementor\'s now, not rendered by a block: ' . substr( $s, 0, 40 ) ); }
 foreach ( array( '$591K', '>90<', '>270<', '2,190,000', '3,942,000', '$59.1M' ) as $s ) { ok( false !== strpos( operator_calculator_html(), $s ), "calculator: server-rendered default $s" ); }
-foreach ( array( '/setup fee/i', '/minimum/i', '/\bsplit\b/i', '/\d+\s*%\s*(of|share)/i', '/50\s*%/', '/0\.5/', '/half/i', '/PH\'s share/i' ) as $re ) { ok( ! preg_match( $re, $text ), "no commercial term in the blocks: $re" ); }
+foreach ( array( '/setup fee (of|is)\b/i', '/minimum/i', '/\bsplit\b/i', '/\d+\s*%\s*(of|share)/i', '/50\s*%/', '/0\.5/', '/half/i', '/PH\'s share/i' ) as $re ) { ok( ! preg_match( $re, $text ), "no commercial term in the blocks: $re" ); }
 ok( false !== strpos( $html, 'I agree to be contacted. See the <a href="/privacy-policy/">privacy policy</a>.' ), 'consent line links the privacy policy' );
-ok( 10 === substr_count( $html, '<option>' ) && 7 === substr_count( substr( $html, strpos( $html, 'id="t-bg"' ) ), '<option>' ), 'the 3 "I am" options and the 7 backgrounds' );
+ok( 7 === substr_count( $html, '<option>' ) && 7 === substr_count( substr( $html, strpos( $html, 'id="t-bg"' ) ), '<option>' ), 'the gate\'s only options are the 7 backgrounds' );
 $tour_html = html_entity_decode( operator_tour_html(), ENT_QUOTES );
-ok( false !== strpos( $tour_html, '<label for="t-ia">I am</label><select id="t-ia" name="audience" required><option value="" selected disabled>Select one</option><option>An individual operator</option><option>Part of an operator team</option><option>A small to medium retailer</option></select>' ), 'gate: a required select "I am" with the three options' );
-ok( strpos( $tour_html, 'Where you plan to operate' ) < strpos( $tour_html, 'for="t-ia"' ) && strpos( $tour_html, 'for="t-ia"' ) < strpos( $tour_html, 'Your background' ), 'gate: "I am" comes after "Where you plan to operate" and before "Your background"' );
+preg_match_all( '#<label for="t-[a-z]+">([^<]+)</label>#', $tour_html, $tl );
+ok( array( 'Full name', 'Email', 'LinkedIn profile (optional)', 'Where you plan to operate', 'Your background' ) === $tl[1], 'gate: the fields, with no "I am": ' . implode( ' | ', $tl[1] ) );
+ok( false === strpos( $tour_html, 't-ia' ) && false === strpos( $tour_html, 'name="audience"' ) && false === strpos( $tour_html, 'An individual operator' ) && false === strpos( $tour_html, '>I am<' ), 'gate: no "I am" select, no audience field, none of its options' );
+ok( false !== strpos( $tour_html, '<div class="phf-f phf-f-wide"><label for="t-bg">Your background</label>' ), 'gate: "Your background" spans both columns, so the five fields leave no empty slot' );
 ok( false !== strpos( $tour_html, '<option>Retail media</option><option>Creative agency</option><option>Retail business owner or manager</option><option>Marketing</option><option>Something else</option></select>' ), 'gate: the backgrounds in the design\'s order' );
 /* The calculator's "I am" toggle and its two modes */
 $calc_html = operator_calculator_html();
@@ -399,7 +444,7 @@ ok( ! preg_match( '/fr[a]nch/i', $html ), 'the blocks (text and every attribute)
 foreach ( array( '<p class="phf-cin-h">Your network</p>', '<p class="phf-gate-p">Tell us a little about yourself to watch the full walkthrough. Our team will also follow up with more on the opportunity.</p>' ) as $s ) {
 	ok( false !== strpos( html_entity_decode( $html, ENT_QUOTES ), $s ), 'exact copy: ' . substr( $s, 0, 70 ) );
 }
-ok( 8 === substr_count( operator_calculator_html(), 'role="tooltip"' ), 'a tooltip on every input and on How it\'s calculated' );
+ok( 9 === substr_count( operator_calculator_html(), 'role="tooltip"' ), 'a tooltip on every input, on How it\'s calculated and on Earnings per display per month' );
 $c = operator_calc( operator_defaults() );
 ok( 591300.0 === round( $c['income'], 1 ) && 59130000.0 === round( $c['extraSales'], 1 ), 'operator_calc defaults' );
 ok( '$950' === operator_money( 950 ) && '$1K' === operator_money( 1000 ) && '$1.0M' === operator_money( 1e6 ), 'money format' );
@@ -488,16 +533,50 @@ $faqld = json_decode( $fl->item( 0 )->textContent, true );
 ok( is_array( $faqld ) && 'https://schema.org' === $faqld['@context'] && 'FAQPage' === $faqld['@type'] && 'https://personalisationhub.com/run-your-own-rmn/#faq' === $faqld['@id'] && $wp['@id'] === $faqld['isPartOf']['@id'] && 'en-GB' === $faqld['inLanguage'], 'FAQ JSON-LD: valid FAQPage, isPartOf the WebPage' );
 $byType['FAQPage'] = $faqld;
 $visible = array();
+$faqCta  = array();
 foreach ( $px->query( '//section[@id="faq"]//details' ) as $det ) {
-	$visible[] = array( trim( $px->query( './/summary', $det )->item( 0 )->textContent ), trim( $px->query( './/div[contains(@class,"phf-faq-a")]', $det )->item( 0 )->textContent ) );
+	$paras = array();
+	foreach ( $px->query( './/div[contains(@class,"phf-faq-a")]/p', $det ) as $pp ) { $paras[] = trim( $pp->textContent ); }
+	$visible[] = array( trim( $px->query( './/summary', $det )->item( 0 )->textContent ), implode( ' ', $paras ) );
+	$links     = $px->query( './/div[contains(@class,"phf-faq-a")]//a', $det );
+	$faqCta[]  = $links->length ? array( $links->item( 0 )->getAttribute( 'href' ), trim( $links->item( 0 )->textContent ), $links->item( 0 )->getAttribute( 'class' ), $links->length ) : null;
 }
-$ldq = array_map( function ( $q ) { return array( $q['name'], $q['acceptedAnswer']['text'] ); }, $byType['FAQPage']['mainEntity'] );
-ok( count( $visible ) >= 5 && count( $visible ) <= 6 && $visible === $ldq, 'FAQPage equals the visible FAQ (' . count( $visible ) . ' questions)' );
+// The JSON-LD answer may carry the CTA as an <a>; its text without tags is what the page shows.
+$ldq = array_map( function ( $q ) { return array( $q['name'], trim( strip_tags( $q['acceptedAnswer']['text'] ) ) ); }, $byType['FAQPage']['mainEntity'] );
+ok( 13 === count( $visible ) && $visible === $ldq, 'FAQPage equals the visible FAQ (' . count( $visible ) . ' questions)' );
 ok( 'Running your own RMN' === trim( $px->query( '//section[@id="faq"]//h2' )->item( 0 )->textContent ), 'FAQ titled "Running your own RMN"' );
+// Rob's 15 Nov 2026 rewrite (B9eyzr7i3Rgkl7EQ5idN): thirteen questions and answers, word for word and in this order.
+$faqWant = array(
+	array( 'What is a retail media network?', 'A business selling advertising to brands across the places it reaches its customers: in-store screens and, for retailers, their website and app. What makes it retail media is the data: campaigns are targeted using first-party data about the venue and its customers, and, where sales data is shared, measured against what actually sells. When you run your own, you bring many independent venues together so brands can buy them as one network.' ),
+	array( 'Who can run their own RMN?', 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs. Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.' ),
+	array( 'How do I make money?', 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' ),
+	array( 'What\'s in it for the venues?', 'A share of the advertising revenue you agree with them, slots to promote their own products and services, and promotions that adapt to the moment, such as time of day and weather, to lift sales. They don\'t have to find advertisers or run campaigns: that\'s your job.' ),
+	array( 'What does it cost to get started?', 'There\'s a one-off platform setup fee, which keeps places for serious applicants ready to commit. After that you have a free roll-out runway to sign up venues and win your first advertisers before monthly platform fees apply, and those fees are based on outcomes, so we only grow when you do. Your other costs are your own AWS hosting, which scales with your network, and hardware. The full commercial terms for your industry are in the information pack.' ),
+	array( 'What hardware do I need?', 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' ),
+	array( 'Who pays for the screens and players?', 'It doesn\'t have to be you. A brand can fund the hardware as part of its advertising deal. A brand can commit to category exclusivity across your network for a set period, for example the only golf ball brand on screen for 12 months, which funds the roll-out. Or venues can buy their own. The information pack covers what works best in your industry.' ),
+	array( 'Can I get exclusive rights to an industry?', 'Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' ),
+	array( 'Which industries can I choose?', 'Any business with a physical location where people shop or spend time: car dealerships, golf clubs, sailing clubs and marinas, fuel and convenience, trade suppliers, rural and farm supplies, independent grocery, liquor stores, hardware, utility shopfronts, gyms and leisure centres, and cafés and bakeries. Your industry shapes the venues, hardware, advertisers and roll-out, so we ask for it when you register your interest.' ),
+	array( 'What do I get?', 'The white-label platform, under your brand and in your own AWS account, with the playbooks, templates and sales framework to launch. Campaigns are created by talking a brief to the AI campaign agent, which builds the creative for every screen type, and they can adapt to context such as time, weather and local stock. Venue and customer data stays in your account, and the network and its advertiser relationships are yours.' ),
+	array( 'How do advertisers know it works?', 'Every campaign reports plays and views by screen and venue. Where a venue shares its sales data, results are matched to sales of the advertised products, which is what brands pay a premium for.' ),
+	array( 'How does the earnings estimate work?', 'The calculator multiplies venues, visitors per venue per day, the share who view the ads and displays per venue to get monthly ad views, then applies the CPM to get ad revenue. Your potential income is your share of that, before costs. It also estimates extra sales from personalised offers, which Retailer mode adds to the retailer\'s potential incremental income. It\'s an estimate to explore the opportunity, not a forecast.' ),
+	array( 'How do I get started?', 'Register your interest and tell us your industry and the relationships you have in it. There\'s no commitment: we\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so register your interest now.' ),
+);
+ok( array_column( $faqWant, 0 ) === array_column( $visible, 0 ), 'FAQ: the thirteen questions in the brief\'s order' );
+foreach ( $faqWant as $i => $want ) {
+	ok( $want === array_slice( operator_faq()[ $i ], 0, 2 ), 'FAQ copy word for word: ' . $want[0] );
+	ok( ( 12 === $i ? $want[1] . ' Register your interest' : $want[1] ) === $visible[ $i ][1], 'FAQ shows, word for word: ' . $want[0] );
+}
+$faqCopy = array( 12 => $faqWant[12][1] );
+ok( $visible[12][1] === $faqCopy[12] . ' Register your interest', '"How do I get started?" shows its answer, then the "Register your interest" link' );
+ok( array( '#request-info', 'Register your interest', 'phf-pill', 1 ) === $faqCta[12] && 12 === count( array_filter( array_slice( $faqCta, 0, 12 ), 'is_null' ) ), 'FAQ: only "How do I get started?" has a link, one pink pill "Register your interest" to #request-info' );
+$lastLd = $byType['FAQPage']['mainEntity'][12]['acceptedAnswer']['text'];
+ok( $faqCopy[12] . ' <a href="https://personalisationhub.com/run-your-own-rmn/#request-info">Register your interest</a>' === $lastLd, 'FAQ JSON-LD: the last answer carries the same link, absolute: ' . substr( $lastLd, -110 ) );
+ok( 1 === count( array_filter( $byType['FAQPage']['mainEntity'], function ( $q ) { return false !== strpos( $q['acceptedAnswer']['text'], '<' ); } ) ), 'FAQ JSON-LD: no other answer carries markup' );
 $faqText = implode( ' ', array_merge( ...$visible ) );
-ok( ! preg_match( '/\d/', str_replace( '1,000', '', $faqText ) ), 'FAQ: no figures beyond the page\'s own "1,000"' );
-foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/personaliz|organiz/i', '/fr[a]nch/i', '/\b(UK|Britain|British|America|Australia)\b/' ) as $re ) { ok( ! preg_match( $re, $faqText ), "FAQ: nothing matching $re" ); }
-foreach ( array( 'three ways to run your own network' => 'the three ways', 'individual operator' => 'individual operator', 'operator team' => 'operator team', 'small to medium retailer' => 'small to medium retailer', 'without the upfront cost' => 'without the upfront cost', 'free runway' => 'the free runway', 'based on outcomes, so we only grow when you do' => 'growing on outcomes', '"Retailer" to see the extra sales in your stores, which are then added to your income' => 'the calculator\'s retailer mode' ) as $needle => $what ) { ok( false !== stripos( $faqText, $needle ), "FAQ restates a fact on the page: $what" ); }
+ok( ! preg_match( '/\d/', str_replace( array( '20-minute', 'for 12 months' ), '', $faqText ) ), 'FAQ: no figures beyond the "20-minute" call and the brief\'s "for 12 months" exclusivity example (no fee, percentage or runway figure)' );
+foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/%/', '/\$/', '/\bhalf\b/i', '/personaliz|organiz/i', '/fr[a]nch/i', '/\b(UK|Britain|British|America|Australia|United States|USA|New Zealand|Canada|Ireland)\b/', '/lock-?in/i', '/(setup|set-up) fee (of|is|costs?)\b/i', '/fee of\b/i', '/minimum/i', '/guarantee/i', '/revenue[- ]share/i', '/\bsplit\b/i', '/runway (of|for|lasts?) /i', '/\bDSPs?\b/', '/programmatic/i', '/\bMCP\b/', '/no large capital outlay/i' ) as $re ) { ok( ! preg_match( $re, $faqText ), "FAQ: nothing matching $re" ); }
+ok( 1 === preg_match_all( '/\d+\s*months?/i', $faqText ) && false !== strpos( $faqText, 'the only golf ball brand on screen for 12 months' ), 'FAQ: the only month figure is the category exclusivity example, never a runway length' );
+foreach ( array( 'first-party data' => 'first-party data', 'measured against what actually sells' => 'measurement against sales', 'individual operator' => 'individual operator', 'operator team' => 'operator team', 'small to medium retailer' => 'small to medium retailer', 'one-off platform setup fee, which keeps places for serious applicants' => 'the one-off setup fee (no amount)', 'free roll-out runway' => 'the free runway', 'based on outcomes, so we only grow when you do' => 'growing on outcomes', 'Every screen needs a media player' => 'every screen needs a player', 'A brand can fund the hardware' => 'funded hardware', 'Retailer mode adds to the retailer\'s potential incremental income' => 'the calculator\'s retailer mode', 'register your interest' => 'the one next step' ) as $needle => $what ) { ok( false !== stripos( $faqText, $needle ), "FAQ states: $what" ); }
 $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $d;
 ok( '' === operator_seopress_off( '<meta property="og:title" content="x">' ), "on the page SEOPress's own description, canonical, OG and Twitter tags are switched off" );
 $GLOBALS['is_page'] = false;
@@ -520,12 +599,56 @@ $wp_robots = "User-agent: *\nDisallow: /wp-admin/\nAllow: /wp-admin/admin-ajax.p
 ok( false === strpos( robots_txt_text( $wp_robots, true, operator_robots_allow( array(), false ) ), 'run-your-own-rmn' ) && false !== strpos( robots_txt_text( $wp_robots, true, operator_robots_allow( array(), true ) ), "Allow: /\nAllow: /run-your-own-rmn/\n" ), 'robots.txt: "Allow: /run-your-own-rmn/" in the AI agents\' group only when live' );
 $tw = operator_twin();
 ok( 0 === strpos( $tw, "# Run your own retail media network\n\n> " . OPERATOR_META_DESC . "\n\nSource: https://personalisationhub.com/run-your-own-rmn/" ), 'twin: H1, summary and source' );
-foreach ( array( '## Key facts', '**Your brand, your own AWS account:**', "**Without the upfront cost.**\n\n" . OPERATOR_HERO_P, "## Your head start in a changing industry\n\n" . OPERATOR_HEAD_START[0] . "\n\n" . OPERATOR_HEAD_START[1], "## Three ways to run your own network\n\n" . OPERATOR_WAYS_INTRO, '- **Small to medium retailer:** Run your own omnichannel retail media network', '## How it works', '2. **Roll out with a free runway:** ', "## Built to fix retail media's fragmentation\n\n" . OPERATOR_STANDARDS_LEADS[0] . "\n\n" . OPERATOR_STANDARDS_LEADS[1], '- **A dedicated engineering team behind you:** ', "## Give independents a fighting chance\n\n" . OPERATOR_INDEP_LEADS[0] . "\n\n" . OPERATOR_INDEP_LEADS[1] . "\n\n**" . OPERATOR_INDEP_BAND[0] . '** ' . OPERATOR_INDEP_BAND[1], '- **A way to fight back:** ', '## Benefits calculator', 'Choose "Operator or team" or "Retailer"', '- Venues (90): ', "With the defaults, as \"Operator or team\", the page shows:\n\n- Your potential income a year: \$591K\n- Venues in your network: 90\n", '- Ad views a month: 3,942,000', '- Extra sales for your venues a year: $59.1M', "With the defaults, as \"Retailer\", the page shows:\n\n- Your potential income a year: \$60.0M\n- Stores in your network: 90\n", '- Extra sales in your stores a year: $59.1M', 'which describes you (an individual operator, part of an operator team, a small to medium retailer)', OPERATOR_HOW_CALC, 'estimate_rmn_earnings', '## FAQ', '## Interactive product tour', 'https://personalisationhub.com/run-your-own-rmn/#tour' ) as $want ) {
+foreach ( array( '## Key facts', '**Your brand, your own AWS account:**', "**Without the upfront cost.**\n\n" . OPERATOR_HERO_P, "## Your head start in a changing industry\n\n" . OPERATOR_HEAD_START[0] . "\n\n" . OPERATOR_HEAD_START[1], "## Three ways to run your own network\n\n" . OPERATOR_WAYS_INTRO, '- **Small to medium retailer:** Run your own omnichannel retail media network', '## How it works', '2. **Roll out with a free runway:** ', "## Built to fix retail media's fragmentation\n\n" . OPERATOR_STANDARDS_LEADS[0] . "\n\n" . OPERATOR_STANDARDS_LEADS[1], '- **A dedicated engineering team behind you:** ', "## Give independents a fighting chance\n\n" . OPERATOR_INDEP_LEADS[0] . "\n\n" . OPERATOR_INDEP_LEADS[1] . "\n\n**" . OPERATOR_INDEP_BAND[0] . '** ' . OPERATOR_INDEP_BAND[1], '- **A way to fight back:** ', '## Benefits calculator', 'Choose "Operator or team" or "Retailer"', '- Venues (90): ', "With the defaults, as \"Operator or team\", the page shows:\n\n- Your potential income a year: \$591K\n- Venues in your network: 90\n", '- Ad views a month: 3,942,000', '- Extra sales for your venues a year: $59.1M', "With the defaults, as \"Retailer\", the page shows:\n\n- Retailer's potential incremental income a year: \$60.0M\n- Stores in your network: 90\n", '- Extra sales in your stores a year: $59.1M', OPERATOR_HOW_CALC, 'estimate_rmn_earnings', '## FAQ', '## Interactive product tour', 'https://personalisationhub.com/run-your-own-rmn/#tour' ) as $want ) {
 	ok( false !== strpos( $tw, $want ), 'twin has: ' . substr( $want, 0, 60 ) );
 }
+ok( false === strpos( $tw, 'which describes you' ) && false === strpos( $tw, 'individual operator, part of an operator team' ) && false === strpos( $tw, 'i_am' ), 'twin: the gate and the request form no longer mention the "I am" field' );
 foreach ( operator_faq() as $qa ) { ok( false !== strpos( $tw, '### ' . $qa[0] . "\n\n" . $qa[1] ), 'twin FAQ: ' . $qa[0] ); }
-foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/fr[a]nch/i', '/personaliz/i', '/network operator/i', '/world-leading/i' ) as $re ) { ok( ! preg_match( $re, $tw ), "twin: nothing matching $re (no share constant, none of the replaced copy)" ); }
+ok( false !== strpos( $tw, '### How do I get started?' . "\n\n" . operator_faq()[12][1] . "\n\n[Register your interest](https://personalisationhub.com/run-your-own-rmn/#request-info)\n\n## Interactive product tour" ) && 1 === substr_count( $tw, '](https://personalisationhub.com/run-your-own-rmn/#request-info)' ), 'twin FAQ: "How do I get started?" ends with the same link, as markdown' );
+$twFaq = substr( $tw, strpos( $tw, "## FAQ\n" ), strpos( $tw, "## Interactive product tour" ) - strpos( $tw, "## FAQ\n" ) );
+ok( 13 === substr_count( $twFaq, "\n### " ) && ! preg_match( '/lock-?in/i', $tw ), 'twin FAQ: thirteen questions, no "no lock-in"' );
+foreach ( array( '/programmatic/i', '/\bDSPs?\b/', '/\bMCP\b/', '/%/', '/\$/', '/lock-?in/i' ) as $re ) { ok( ! preg_match( $re, $twFaq ), "twin FAQ: nothing matching $re" ); }
+foreach ( array( '/programmatic/i', '/\bDSPs?\b/', '/\bMCP\b/', '/%/', '/\$/', '/lock-?in/i' ) as $re ) { ok( ! preg_match( $re, (string) wp_json_encode( operator_faq_ld() ) ) && ! preg_match( $re, implode( ' ', array_merge( ...operator_faq() ) ) ), "operator_faq() and its JSON-LD: nothing matching $re" ); }
+ok( false !== strpos( $tw, OPERATOR_TOUR_P ) && 0 === strpos( OPERATOR_TOUR_P, 'Watch a network operator sell screens across 100 golf clubs, ' ), 'twin: the tour intro is the network operator\'s' );
+foreach ( array( '/0\.5/', '/50\s*%/', '/0\.7/', '/70\s*%/', '/\bhalf\b/i', '/fr[a]nch/i', '/personaliz/i', '/network operator/i', '/world-leading/i' ) as $re ) { ok( ! preg_match( $re, str_replace( OPERATOR_TOUR_P, '', $tw ) ), "twin: nothing matching $re (no share constant, none of the replaced copy)" ); }
 foreach ( $lines as $l ) { if ( '"' !== $l[0] && ! preg_match( '/^\d\. "/', $l ) ) { ok( false !== strpos( $tw, $l ), 'twin publishes the page\'s line: ' . substr( $l, 0, 60 ) ); } }
+// 15 Nov 2026 (ayzaMouFF6U5CIsAMbSx): direct advertiser deals only (PH is not connected to any DSPs yet), Amazon Signage named.
+ok( 'You sell direct to brands: each brand buys screen time across your network through a direct advertiser deal, by slot, at a fixed CPM (cost per thousand views) over an agreed period. Endemic brands, the ones your venues sell, are the natural first buyers because their ads can drive sales on the spot, but any brand that wants the audience can buy. The more venues and screens you add, the more you can earn.' === operator_faq()[2][1], 'FAQ Q3 "How do I make money?": direct advertiser deals at a fixed CPM, word for word' );
+ok( 'Every screen needs a media player to run your network\'s content, so even venues that already have screens need one plugged in. Players such as Amazon Signage are now low cost, and the platform runs on any signage player. Venues without screens also need a commercial display; we\'ll introduce you to recommended hardware partners for your industry.' === operator_faq()[5][1], 'FAQ Q6 "What hardware do I need?": Amazon Signage, word for word' );
+$cardSI = array_values( array_filter( operator_standards(), function ( $c ) { return 'Seamless integrations' === $c[1]; } ) );
+ok( 1 === count( $cardSI ) && 'Connects to venues\' existing systems through open APIs, and runs on any signage player, including Amazon Signage.' === $cardSI[0][2], '"Seamless integrations" card matches the live Elementor card (page 10785, element 4ce4f48f)' );
+ok( false !== strpos( $tw, '- **Seamless integrations:** ' . $cardSI[0][2] . "\n" ), 'twin: the "Seamless integrations" card\'s new copy' );
+// 15 Nov 2026 (bB30Qb10Oz4eYHXfOCFk): the operator team is a retail media, an ad sales and an IT operations expert, matching the live Elementor card (page 10785, element 29becd9b).
+$teamCard = 'Team up a retail media expert, an ad sales expert and an IT operations expert. Between you, you cover venues, advertisers and your retail media network, all focused on maximising the advertising revenue your venues earn and the in-store sales they make from the endemic brands they stock.';
+$teamQ2   = 'An individual operator building a network across many venues of one kind, such as golf clubs. An operator team, ideally a retail media expert, an ad sales expert and an IT operations expert. Or a small to medium retailer that wants its own retail media network across its stores, website and app without enterprise costs. Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.';
+ok( 'Operator team' === operator_ways()[1][1] && $teamCard === operator_ways()[1][2], '"Operator team" card matches the live Elementor card (page 10785, element 29becd9b), word for word' );
+ok( 'Who can run their own RMN?' === operator_faq()[1][0] && $teamQ2 === operator_faq()[1][1], 'FAQ Q2: the operator team is a retail media, an ad sales and an IT operations expert' );
+ok( false !== strpos( $tw, '- **Operator team:** ' . $teamCard ) || false !== strpos( $tw, $teamCard ), 'twin: the "Operator team" card\'s new copy' );
+ok( false !== strpos( $tw, '### Who can run their own RMN?' . "\n\n" . $teamQ2 ) && false !== strpos( (string) wp_json_encode( operator_faq_ld() ), 'an IT operations expert' ), 'twin and FAQPage JSON-LD: the new Q2' );
+ok( false !== strpos( $brief, '"Operator team": "' . $teamCard . '"' ), 'brief: the "Operator team" card word for word' );
+// 15 Nov 2026 (92tOS4qL1KqeOF3jPu24): Q2, Q8 and Q13 on expertise, existing relationships, and region and industry.
+ok( 'Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.' === substr( operator_faq()[1][1], -strlen( 'Whichever you are, the strongest applicants know their industry well and have existing relationships to build on.' ) ), 'FAQ Q2 ends on knowing the industry and existing relationships' );
+ok( 'Can I get exclusive rights to an industry?' === operator_faq()[7][0] && 'Networks are set up by region and industry, and sized to the audience their venues reach. Exclusivity goes to people who know that industry and already have relationships with its venues and the brands that sell through them, because those relationships are what launch and grow a network. Places are limited, and you keep your exclusivity by hitting the agreed roll-out and growth milestones.' === operator_faq()[7][1], 'FAQ Q8 "Can I get exclusive rights to an industry?": region and industry, existing relationships, word for word' );
+ok( 'How do I get started?' === operator_faq()[12][0] && 'Register your interest and tell us your industry and the relationships you have in it. There\'s no commitment: we\'ll send an information pack with the commercial model, exclusivity, hardware options and roll-out plan, then book a 20-minute call. Places are limited in each industry, so register your interest now.' === operator_faq()[12][1] && true === ( operator_faq()[12][2] ?? null ), 'FAQ Q13 "How do I get started?": your industry and the relationships you have in it, word for word, still linking #request-info' );
+$faqAll = implode( ' ', array_merge( ...operator_faq() ) ) . ' ' . (string) wp_json_encode( operator_faq_ld() ) . ' ' . $tw;
+ok( ! preg_match( '/industry first|then by region|first come, first served/i', $faqAll ), 'nothing in the FAQ, its JSON-LD or the twin says "industry first", "then by region" or "first come, first served"' );
+ok( false !== strpos( $tw, '### Can I get exclusive rights to an industry?' . "\n\n" . operator_faq()[7][1] ) && false !== strpos( (string) wp_json_encode( operator_faq_ld() ), 'already have relationships with its venues' ), 'twin and FAQPage JSON-LD: the new Q8' );
+$cae = array();
+$it  = new \RecursiveIteratorIterator( new \RecursiveDirectoryIterator( dirname( __DIR__ ), \FilesystemIterator::SKIP_DOTS ) );
+foreach ( $it as $file ) {
+	$path = $file->getPathname();
+	if ( false !== strpos( $path, '/node_modules/' ) || ! preg_match( '/\.(php|js|mjs|md|json|html|css|txt)$/', $path ) || in_array( basename( $path ), array( 'operator.test.php', 'operator.test.mjs' ), true ) ) { continue; }
+	if ( false !== stripos( (string) file_get_contents( $path ), 'creative agency expert' ) ) { $cae[] = substr( $path, strlen( dirname( __DIR__ ) ) + 1 ); }
+}
+ok( array() === $cae && false === stripos( $tw, 'creative agency expert' ) && false === stripos( (string) wp_json_encode( operator_faq_ld() ), 'creative agency expert' ), 'nothing in ph-website/, the twin or the JSON-LD says "creative agency expert"' . ( $cae ? ' (found in ' . implode( ', ', $cae ) . ')' : '' ) );
+$cardsText = implode( ' ', array_map( function ( $c ) { return $c[1] . ' ' . $c[2]; }, operator_standards() ) );
+$ldText    = (string) wp_json_encode( operator_faq_ld(), JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+foreach ( array( 'cards' => $cardsText, 'FAQ' => implode( ' ', array_merge( ...operator_faq() ) ), 'twin' => $tw, 'FAQ JSON-LD' => $ldText ) as $where => $txt ) {
+	ok( ! preg_match( '/programmatic/i', $txt ) && ! preg_match( '/\bDSPs?\b/', $txt ), "$where: no \"programmatic\" or \"DSP\"" );
+}
+ok( 2 === substr_count( implode( ' ', array_merge( ...operator_faq() ) ) . ' ' . $cardsText, 'Amazon Signage' ) && 1 === substr_count( operator_faq()[5][1], 'Amazon Signage' ) && 1 === substr_count( $cardsText, 'Amazon Signage' ), 'Amazon Signage only in Q6 and the "Seamless integrations" card' );
+ok( 2 === substr_count( $tw, 'Amazon Signage' ) && 1 === substr_count( $ldText, 'Amazon Signage' ), 'twin: Amazon Signage twice (Q6 and the card); FAQ JSON-LD: once (Q6)' );
+ok( 1 === preg_match( "/const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = '1\.9\.29';/", (string) file_get_contents( $dir . '/main.php' ) ), 'main.php: assets version 1.9.29, so returning browsers fetch the new operator.js and operator.css' );
 $src = (string) file_get_contents( $dir . '/operator.php' );
 ok( false !== strpos( $src, "add_filter( 'ph_llms_txt'" ) && false !== strpos( $src, "add_filter( 'ph_agent_extra_pages'" ) && false !== strpos( $src, "add_filter( 'ph_ai_robots_allow'" ) && false !== strpos( $src, "|| ! operator_is_page() || ! operator_is_live() ) {" ), 'hooks: llms.txt, agent endpoint, robots.txt, and the twin served only on the page when live' );
 
@@ -551,6 +674,113 @@ ok( ! glob( $dir . '/fr[a]nch*' ), 'no snippet file is named after the retired o
 ok( false !== strpos( $src, "register_rest_route( 'ph-site/v1', '/operator-lead'" ), 'REST route ph-site/v1/operator-lead' );
 ok( false !== strpos( $src, "add_filter( 'wp_robots'" ) && false !== strpos( $src, "header( 'X-Robots-Tag: noindex' )" ) && false !== strpos( $src, "'seopress_sitemaps_single_query'" ) && false !== strpos( $src, "'wp_sitemaps_posts_query_args'" ), 'hooks: wp_robots, X-Robots-Tag, both sitemaps' );
 ok( false !== strpos( $src, "if ( \$done || ! operator_is_page() ) {\n\t\treturn;\n\t}\n\t\$done = true;\n\t\$ver  = PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063;" ) && false !== strpos( $src, "add_action( 'wp_enqueue_scripts', __NAMESPACE__ . '\\\\operator_enqueue' );" ), 'operator.css and operator.js load only on the page (in the head and from the blocks), with the assets version' );
+
+/* 15 Nov 2026 (ticket qJHMfzBhoppVEWhTCrEL): the retailer income label, "Earnings per display per month" and the request form */
+$fresh(); $reset(); $GLOBALS['tr'] = array();
+// 1. The retailer income label, in the PHP-rendered panel's labels and the twin; the operator label unchanged.
+ok( 'Retailer\'s potential incremental income a year' === operator_calc_outputs( 'retailer' )['yours'] && 'Your potential income a year' === operator_calc_outputs()['yours'], 'labels: "Retailer\'s potential incremental income a year" (Retailer), "Your potential income a year" (Operator or team)' );
+$calc_html = operator_calculator_html();
+ok( false !== strpos( $calc_html, '<p class="phf-cout-l" data-lab="yours">Your potential income a year</p><p class="phf-cout-v" data-out="yours">$591K</p>' ), 'panel: the income label is server-rendered in operator mode and carries data-lab="yours" (operator.js renames it with the toggle)' );
+ok( false !== strpos( $tw = operator_twin(), "- Retailer's potential incremental income a year: \$60.0M" ) && false === strpos( $tw, '- Your potential income a year: $60.0M' ), 'twin: the retailer figure under the retailer label' );
+$faq_calc = array_column( operator_faq(), 1, 0 )['How does the earnings estimate work?'];
+ok( false !== strpos( $faq_calc, 'the retailer\'s potential incremental income' ) && ! preg_match( '/\d/', $faq_calc ), 'FAQ: the calculator answer names the retailer\'s potential incremental income, with no figure' );
+// 3. Earnings per display per month: $183 at the defaults, below the CTA row, operator only; "–" with no displays.
+$c = operator_calc( operator_defaults() );
+ok( 270 === $c['displays'] && 183 === (int) round( $c['perDisplay'] ) && '$183' === operator_view( $c )['perDisplay'], 'per display: $591,300 a year / 270 displays / 12 = $183' );
+ok( '$183' === operator_view( operator_calc( operator_defaults(), 'retailer' ) )['perDisplay'], 'per display: always the operator\'s income (the row is hidden in Retailer mode)' );
+foreach ( array( array( 'dis' => 0 ), array( 'ven' => 0 ), array( 'ven' => 0, 'dis' => 0 ) ) as $z ) {
+	$cz = operator_calc( array_merge( operator_defaults(), $z ) );
+	ok( null === $cz['perDisplay'] && '–' === operator_view( $cz )['perDisplay'], 'per display: no displays gives "–" (never NaN or Infinity): ' . json_encode( $z ) );
+}
+ok( '$1K' === operator_per_display( 999.5 ) && '$2K' === operator_per_display( 1500 ) && '$183' === operator_per_display( 182.5 ) && '$0' === operator_per_display( 0.4 ), 'per display: whole dollars rounded half up, operator_money() from $1K' );
+$ctas = strpos( $calc_html, '<div class="phf-cctas">' ); $perd = strpos( $calc_html, '<div class="phf-perd"' );
+ok( false !== $ctas && false !== $perd && $perd > $ctas && $perd > strpos( $calc_html, 'See how it works' ), 'panel: the per-display row is below the CTA row' );
+ok( false !== strpos( $calc_html, '<span class="phf-perd-l" data-lab="perDisplay">Earnings per display per month</span>' ) && false !== strpos( $calc_html, '<span class="phf-perd-v" data-out="perDisplay">$183</span>' ) && false === strpos( substr( $calc_html, $perd, 600 ), ' hidden' ), 'panel: "Earnings per display per month" $183, shown at the defaults (operator mode)' );
+ok( false !== strpos( html_entity_decode( $calc_html, ENT_QUOTES ), 'id="c-perd-tip">Your potential income a year ÷ the displays in your network ÷ 12. Each display you add earns about this much a month.</span>' ), 'panel: the per-display tooltip' );
+ok( false !== strpos( $calc_html, '<a class="phf-pill" href="#request-info">Register your interest</a>' ), 'calculator CTA "Register your interest" goes to #request-info' );
+ok( 'Earnings per display per month' === operator_calc_outputs()['perDisplay'] && ! isset( operator_calc_outputs( 'retailer' )['perDisplay'] ), 'outputs: per display in operator mode only' );
+ok( false !== strpos( $tw, "- Earnings per display per month: \$183\n" ) && 1 === substr_count( $tw, 'Earnings per display per month' ), 'twin: the default per-display figure, in operator mode only' );
+// 2. The request form block.
+$rq = operator_request_html(); $rqt = html_entity_decode( $rq, ENT_QUOTES );
+ok( 0 === strpos( $rq, '<div class="phf phf-block" data-phf="request"><section id="request-info" class="phf-sec phf-tint" aria-labelledby="req-h">' ), 'request block: .phf wrapper, a full-width section with anchor #request-info' );
+foreach ( array( '<p class="phf-eb">Register your interest</p>', '<h2 id="req-h" class="phf-h2b phf-h2-req">Register your interest in running your own RMN</h2>', '<p class="phf-req-p">Registering your interest is free and there\'s no commitment. Tell us which industry you\'d like to run your network in and we\'ll send you an information pack, then book a 20-minute call. Places are limited in each industry.</p>', '>Register your interest</button>', 'I agree to be contacted. See the <a href="/privacy-policy/">privacy policy</a>.', 'name="website"', 'LinkedIn profile (optional)', 'Anything you\'d like us to know (optional)</label><textarea id="r-ms" name="message" rows="4" maxlength="1000"', 'data-ok="Your interest is registered. We\'ll send your information pack shortly."' ) as $w ) { ok( false !== strpos( $rqt, $w ), 'request block: ' . substr( $w, 0, 70 ) ); }
+$labels = array(); preg_match_all( '#<label for="r-[a-z]+">([^<]+)</label>#', $rqt, $lm ); $labels = $lm[1];
+ok( array( 'Full name', 'Email', 'LinkedIn profile (optional)', 'Where you plan to operate', 'Industry you want to run your network in', 'Your industry', 'Your background', 'Anything you\'d like us to know (optional)' ) === $labels, 'request block: the fields in order, industry after "Where you plan to operate": ' . implode( ' | ', $labels ) );
+preg_match( '#<select id="r-in" name="industry" required>(.*?)</select>#', $rqt, $im ); preg_match_all( '#<option>([^<]+)</option>#', $im[1] ?? '', $io );
+ok( array( 'Car dealerships', 'Golf clubs', 'Sailing clubs and marinas', 'Fuel and convenience', 'Trade suppliers', 'Rural and farm supplies', 'Independent grocery', 'Liquor stores', 'Hardware', 'Utility shopfronts', 'Gyms and leisure centres', 'Cafés and bakeries', 'Other (tell us)' ) === $io[1] && operator_industries() === $io[1], 'request block: the twelve industries, then "Other (tell us)"' );
+ok( false !== strpos( $rqt, '<div class="phf-f" id="r-io-f" hidden><label for="r-io">Your industry</label>' ) && 7 === substr_count( substr( $rqt, strpos( $rqt, 'id="r-bg"' ) ), '<option>' ), 'request block: the "Other" input hidden until chosen; seven backgrounds' );
+ok( false === strpos( $rqt, 'r-ia' ) && false === strpos( $rqt, 'name="audience"' ) && false === strpos( $rqt, 'An individual operator' ) && false === strpos( $rqt, '>I am<' ), 'request block: no "I am" select, no audience field, none of its options' );
+foreach ( array( '/0\.5/', '/0\.7/', '/50\s*%/', '/70\s*%/', '/fr[a]nch/i', '/personaliz|organiz/i' ) as $re ) { ok( ! preg_match( $re, $rq ) && ! preg_match( $re, $calc_html ), "request block and calculator: nothing matching $re" ); }
+// Register your interest (Rob, 15 Nov 2026): no commitment, and "request further information" appears nowhere a visitor or an agent reads.
+ok( false !== strpos( $rqt, '>Thanks. Your interest is registered. We\'ll send your information pack shortly.</p>' ) && false !== strpos( $rqt, 'data-ok="Your interest is registered. We\'ll send your information pack shortly."' ), 'request block: the success line, with and without a first name' );
+ok( false !== strpos( $tw, 'To register your interest, use the form at the bottom of the page (https://personalisationhub.com/run-your-own-rmn/#request-info)' ), 'twin: "To register your interest, use the form at the bottom of the page"' );
+$opjs = (string) file_get_contents( $dir . '/operator.js' );
+ok( 1 === substr_count( $opjs, 'rbtn.textContent = "Register your interest"' ), 'operator.js: the busy state restores "Register your interest"' );
+$rfi = array( 'twin' => $tw, 'llms' => operator_llms_filter( "# PH\n\n## Pricing and trial\n", true ), 'request block' => $rq, 'calculator' => $calc_html, 'FAQ' => operator_faq_html() );
+foreach ( array( 'operator.php', 'operator-content.php', 'operator.js', 'operator.css', 'cta.php', 'cta.js' ) as $fn ) { $rfi[ $fn ] = (string) file_get_contents( $dir . '/' . $fn ); }
+foreach ( $rfi as $where => $src ) { ok( false === stripos( $src, 'request further information' ), "\"request further information\" appears nowhere in: $where" ); }
+ok( false !== strpos( $tw, "## Register your interest\n\nRegister your interest in running your own RMN: " ) && false !== strpos( $tw, 'https://personalisationhub.com/run-your-own-rmn/#request-info' ), 'twin: the request form, with how to use it' );
+// The request block fills #ph-rmn-request exactly once, after the tour, on the resolved page only.
+$fresh(); $el = $mkpage( 10785 ); $GLOBALS['is_page'] = true; $GLOBALS['qo'] = $el;
+$m4 = operator_mount( $fixture( $all_ids ) );
+ok( 1 === substr_count( $m4, 'data-phf="request"' ) && 1 === substr_count( $m4, 'id="request-info"' ) && strpos( $m4, 'data-phf="tour"' ) < strpos( $m4, 'data-phf="request"' ), 'mount: the request block once, inside #ph-rmn-request, after the tour' );
+ok( $m4 === operator_mount( $m4 ), 'mount: the request block is never added twice' );
+$GLOBALS['is_page'] = false; ok( false === strpos( operator_mount( $fixture( $all_ids ) ), 'data-phf="request"' ), 'mount: off the page the request container is not filled' );
+$fresh(); $reset(); $GLOBALS['tr'] = array();
+// REST with form "request": every field validated as the gate's, plus the industry and the message.
+$rgood = array_merge( $good, array( 'form' => 'request', 'industry' => 'Golf clubs', 'industry_other' => '', 'message' => 'We run nine clubs in Yorkshire.', 'email' => 'req@x.test' ) );
+foreach ( array(
+	array( 'name', '' ), array( 'email', 'nope' ), array( 'linkedin', 'https://example.com/in/ada' ), array( 'region', '' ), array( 'background', 'Astronaut' ),
+	array( 'industry', '' ), array( 'industry', 'Pubs' ), array( 'industry_other', '' ), array( 'industry_other', str_repeat( 'x', 121 ) ), array( 'message', str_repeat( 'm', 1001 ) ), array( 'consent', false ),
+) as $cse ) {
+	$bd = array_merge( $rgood, array( $cse[0] => $cse[1] ) );
+	if ( 'industry_other' === $cse[0] ) { $bd['industry'] = 'Other (tell us)'; }
+	list( $st, $out ) = $call( $bd );
+	ok( 400 === $st && $cse[0] === ( $out['field'] ?? '' ) && '' !== ( $out['error'] ?? '' ), "request: 400 with field {$cse[0]} for " . substr( var_export( $cse[1], true ), 0, 30 ) );
+}
+ok( ! $GLOBALS['posts'] && ! $GLOBALS['fired'] && ! $GLOBALS['mails'], 'request: invalid submissions store, fire and mail nothing' );
+list( $st ) = $call( array_merge( $rgood, array( 'message' => str_repeat( 'é', 1000 ), 'email' => 'max@x.test' ) ) );
+ok( 200 === $st, 'request: a 1,000-character message is accepted (characters, not bytes)' );
+list( $st ) = $call( array_merge( $rgood, array( 'message' => '', 'email' => 'nomsg@x.test' ) ) );
+ok( 200 === $st, 'request: the message is optional' );
+$reset();
+list( $st, $out ) = $call( array_merge( $rgood, array( 'website' => 'spam' ) ) );
+ok( 200 === $st && ! empty( $out['ok'] ) && ! $GLOBALS['posts'] && ! $GLOBALS['fired'] && ! $GLOBALS['mails'], 'request: the honeypot pretends success and stores nothing' );
+$GLOBALS['tr'] = array();
+for ( $i = 0; $i < 10; $i++ ) { $call( array_merge( $rgood, array( 'email' => "rq$i@x.test" ) ), '8.8.8.8' ); }
+list( $st ) = $call( $rgood, '8.8.8.8' ); ok( 429 === $st, 'request: the throttle applies (the 11th in an hour answers 429)' );
+$GLOBALS['tr'] = array(); $reset();
+list( $st ) = $call( $rgood );
+$m = $GLOBALS['meta'][1]; $p = $GLOBALS['fired'][0][1];
+ok( 200 === $st && 'Golf clubs' === $m['ph_lead_network_industry'] && 'We run nine clubs in Yorkshire.' === $m['ph_lead_message'] && 'operator' === $m['ph_lead_source'] && 'Network operator inquiry' === $m['ph_lead_source_label'], 'request: a Network operator inquiry, with the industry and the message on the lead' );
+ok( 'Network operator inquiry' === $m['ph_lead_activity'][0]['label'] && 'Run Your Own RMN page – register your interest' === $m['ph_lead_activity'][0]['detail'], 'request: activity "Network operator inquiry", detail "Run Your Own RMN page – register your interest"' );
+ok( 'Run Your Own RMN page – register your interest' === $p['source_detail'] && 'request' === $p['form'] && 'Golf clubs' === $p['network_industry'] && 'We run nine clubs in Yorkshire.' === $p['message'] && 'operator' === $p['lead_type'] && 'Run Your Own RMN page – register your interest' === lead_ingest_body( $p )['sourceDetail'], 'request: the payload and the console body carry the request source detail' );
+$rb = lead_ingest_body( $p );
+ok( 'Golf clubs' === ( $rb['network_industry'] ?? '' ) && 'We run nine clubs in Yorkshire.' === ( $rb['message'] ?? '' ) && 'request' === ( $rb['form'] ?? '' ), 'request: the console body carries network_industry, message and form' );
+ok( 1 === count( $GLOBALS['mails'] ) && 'New network operator inquiry (registered interest): Ada Lovelace' === $GLOBALS['mails'][0][1] && false !== strpos( $GLOBALS['mails'][0][2], "\nIndustry: Golf clubs\n" ) && false !== strpos( $GLOBALS['mails'][0][2], "\nMessage: We run nine clubs in Yorkshire.\n" ) && false !== strpos( $GLOBALS['mails'][0][2], 'Source: Run Your Own RMN page – register your interest' ), 'request: admin email "New network operator inquiry (request)" with the industry and the message' );
+// A repeat submission (and a gate lead first) is activity on the one lead, never a second lead.
+list( $st ) = $call( array_merge( $rgood, array( 'message' => 'A second note.', 'industry' => 'Other (tell us)', 'industry_other' => 'Pubs' ) ) );
+$m = $GLOBALS['meta'][1];
+ok( 200 === $st && 1 === count( $GLOBALS['posts'] ) && 2 === count( $m['ph_lead_activity'] ) && 'Run Your Own RMN page – register your interest' === $m['ph_lead_activity'][1]['detail'], 'request: a repeat is recorded as activity on the same lead' );
+ok( 'Other: Pubs' === ( lead_ingest_body( $GLOBALS['fired'][1][1] )['network_industry'] ?? '' ) && 'A second note.' === ( lead_ingest_body( $GLOBALS['fired'][1][1] )['message'] ?? '' ), 'request: "Other (tell us)" reaches the console body as "Other: <what they named>" with that submission\'s message' );
+ok( "We run nine clubs in Yorkshire.\n\nA second note." === $m['ph_lead_message'] && 'Golf clubs' === $m['ph_lead_network_industry'] && 'Other: Pubs' === $GLOBALS['fired'][1][1]['network_industry'], 'request: a repeat keeps every message; "Other (tell us)" sends the industry they named' );
+$reset();
+$call( array_merge( $good, array( 'email' => 'both@x.test' ) ) ); // the tour gate first
+list( $st ) = $call( array_merge( $rgood, array( 'email' => 'both@x.test' ) ) );
+ok( 200 === $st && 1 === count( $GLOBALS['posts'] ) && array( 'Run Your Own RMN page – product tour', 'Run Your Own RMN page – register your interest' ) === array_column( $GLOBALS['meta'][1]['ph_lead_activity'], 'detail' ) && 'Golf clubs' === $GLOBALS['meta'][1]['ph_lead_network_industry'], 'gate then request: one lead, two activity rows, the industry added' );
+$reset();
+list( $st ) = $call( array_merge( $rgood, array( 'test' => true, 'email' => 'rt@x.test' ) ) );
+ok( 200 === $st && '1' === $GLOBALS['meta'][1]['ph_lead_test'] && true === $GLOBALS['fired'][0][1]['test'] && ! $GLOBALS['mails'], 'request: test mode flags the lead and sends no admin email' );
+$reset();
+list( $st ) = $call( array_merge( $good, array( 'email' => 'gate@x.test' ) ) );
+ok( 'tour' === $GLOBALS['fired'][0][1]['form'] && 'Run Your Own RMN page – product tour' === $GLOBALS['fired'][0][1]['source_detail'] && 'New network operator inquiry: Ada Lovelace' === $GLOBALS['mails'][0][1] && ! isset( $GLOBALS['meta'][1]['ph_lead_network_industry'] ), 'the tour gate is unchanged (no industry asked, its own source detail and email subject)' );
+$reset();
+
+// (15 Nov 2026) The unlocked state above the tour says the guided tour is ready, never "You're in" (it read as approval to run a network).
+$in = html_entity_decode( operator_tour_html(), ENT_QUOTES );
+ok( false !== strpos( $in, '<p class="phf-in-h" id="phf-in-h" tabindex="-1">Thanks. Your guided tour is ready.</p><p class="phf-in-p">Three short demos, about two minutes each. Choose one below to start.</p>' ), 'unlocked block: "Thanks. Your guided tour is ready." and the line below it' );
+foreach ( array( 'tour block' => $in, 'twin' => operator_twin() ) as $k => $v ) { ok( ! preg_match( '/You(\'|’|&#39;|&rsquo;)re in/i', $v ), "no \"You're in\" in the $k" ); }
+foreach ( glob( dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/operator*' ) as $f ) { ok( ! preg_match( '/You(\'|’|&#39;|&rsquo;)re in/i', file_get_contents( $f ) ), 'no "You\'re in" in ' . basename( $f ) ); }
 
 if ( $fails ) {
 	fwrite( STDERR, "operator.test.php: $fails of $count checks failed\n" );

@@ -55,6 +55,12 @@ const AGENT_MODEL = "claude-opus-5-5";
 const AGENT_TIMEOUT_MS = 300000;
 const AGENT_BUDGET_MS = 420000;
 const MAX_CONTINUATIONS = 4;
+// The functions that run the research are stopped by the platform after 540
+// seconds (the most a Firestore-triggered function may run). The research
+// stops gathering RESEARCH_WINDOW_MS after the run starts and writes up what it
+// has, leaving time for that write-up, the website, the logos and the save.
+const RESEARCH_WINDOW_MS = 380000;
+const REPAIR_TIMEOUT_MS = 70000;
 const COMPANY_COLLECTION = "prospectCompanies";
 // Logos are copied into the console's own storage (brand/<company>/...), so a
 // demo keeps working when a company moves its file. One file is 1.5 MB at most.
@@ -65,10 +71,27 @@ const LOGO_TYPES = { "image/svg+xml": "svg", "image/png": "png", "image/webp": "
 // useful size, and an animated file (a site's animated favicon, an animated
 // SVG) is never kept as it is. Uses sharp, which the functions already ship.
 const LOGO_PX = 800;
+const LOGO_RULE = 2; // 2 (14 Nov 2026): the company's own logo only, see chooseLogos
 async function toStaticPng(bytes, ext) {
   const sharp = require("sharp");
   const img = ext === "svg" ? sharp(bytes, { density: 600 }) : sharp(bytes, { pages: 1 });
   return img.resize({ width: LOGO_PX, height: LOGO_PX, fit: "inside", withoutEnlargement: ext !== "svg" }).png().toBuffer();
+}
+// The largest image inside an .ico file when it is stored as a PNG (most
+// modern icons are); null when the file is not an .ico or holds only bitmaps.
+function icoPng(bytes) {
+  if (!bytes || bytes.length < 22 || bytes.readUInt16LE(0) !== 0 || bytes.readUInt16LE(2) !== 1) return null;
+  const n = bytes.readUInt16LE(4);
+  let best = null;
+  for (let i = 0; i < n && 6 + (i + 1) * 16 <= bytes.length; i++) {
+    const o = 6 + i * 16;
+    const w = bytes[o] || 256, size = bytes.readUInt32LE(o + 8), off = bytes.readUInt32LE(o + 12);
+    if (off + size > bytes.length || size < 8) continue;
+    const data = bytes.slice(off, off + size);
+    if (data.readUInt32BE(0) !== 0x89504e47) continue; // not a PNG inside
+    if (!best || w > best.w) best = { w, data };
+  }
+  return best ? best.data : null;
 }
 // More than one frame in a GIF, or animation in an SVG.
 function isAnimated(bytes, ext) {
@@ -169,35 +192,67 @@ function readPage(html, base) {
 // version for light backgrounds.
 const FOR_DARK = /(^|[^a-z])(white|light|reverse[d]?|negative|inverse|inverted|knockout|wht)([^a-z]|$)/i;
 function pageLogos(html, abs) {
-  const out = { light: "", dark: "" };
-  for (const m of String(html || "").matchAll(/<img\s[^>]*>/gi)) {
+  const h = String(html || "");
+  // Where the site's own header ends: a logo before this point is the site's logo.
+  const ends = [h.search(/<\/header>/i), h.search(/<main[\s>]/i)].filter((i) => i > 0);
+  const headerEnd = ends.length ? Math.min(...ends) : -1;
+  const images = [];
+  for (const m of h.matchAll(/<img\s[^>]*>/gi)) {
     const tag = m[0];
     const src = (tag.match(/\ssrc\s*=\s*["']([^"']+)["']/i) || [])[1] || (tag.match(/\sdata-src\s*=\s*["']([^"']+)["']/i) || [])[1];
     if (!src || /^data:/i.test(src) || !/logo/i.test(tag)) continue;
     const url = abs(src);
     if (!url) continue;
-    const file = url.split("?")[0].split("/").pop() || "";
-    if (FOR_DARK.test(file)) { if (!out.dark) out.dark = url; } else if (!out.light) out.light = url;
-    if (out.light && out.dark) break;
+    const file = decodeURIComponent(url.split("?")[0].split("/").pop() || "");
+    const alt = entity((tag.match(/\salt\s*=\s*"([^"]*)"/i) || tag.match(/\salt\s*=\s*'([^']*)'/i) || [])[1]);
+    images.push({ url, file, alt, inHeader: (headerEnd > 0 && m.index < headerEnd) || /class\s*=\s*["'][^"']*(site-logo|navbar-brand|header|masthead|brand-logo)/i.test(tag), dark: FOR_DARK.test(file) });
+    if (images.length >= 40) break;
   }
   // The logo the site declares for itself in its structured data (schema.org Organization.logo).
-  if (!out.light) {
-    for (const m of String(html || "").matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-      let found = "";
-      const walk = (v, depth) => {
-        if (found || !v || depth > 6) return;
-        if (Array.isArray(v)) { v.forEach((x) => walk(x, depth + 1)); return; }
-        if (typeof v !== "object") return;
-        const l = v.logo;
-        const u = typeof l === "string" ? l : (l && typeof l === "object" ? (l.url || l.contentUrl || "") : "");
-        if (u && typeof u === "string") { found = abs(u); if (found) return; }
-        Object.values(v).forEach((x) => walk(x, depth + 1));
-      };
-      try { walk(JSON.parse(m[1]), 0); } catch { /* not JSON */ }
-      if (found) { if (FOR_DARK.test(found.split("?")[0].split("/").pop() || "")) { if (!out.dark) out.dark = found; } else out.light = found; break; }
-    }
+  const declared = { light: "", dark: "" };
+  for (const m of h.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+    let found = "";
+    const walk = (v, depth) => {
+      if (found || !v || depth > 6) return;
+      if (Array.isArray(v)) { v.forEach((x) => walk(x, depth + 1)); return; }
+      if (typeof v !== "object") return;
+      const l = v.logo;
+      const u = typeof l === "string" ? l : (l && typeof l === "object" ? (l.url || l.contentUrl || "") : "");
+      if (u && typeof u === "string") { found = abs(u); if (found) return; }
+      Object.values(v).forEach((x) => walk(x, depth + 1));
+    };
+    try { walk(JSON.parse(m[1]), 0); } catch { /* not JSON */ }
+    if (found) { if (FOR_DARK.test(found.split("?")[0].split("/").pop() || "")) declared.dark = found; else declared.light = found; break; }
   }
-  return out;
+  return { declared, images };
+}
+
+// A company's name without where it trades or how it is incorporated, squashed
+// to letters and digits: "7-Eleven Australia" -> "7eleven". "" when too short to match on.
+const NAME_NOISE = ["the", "plc", "ltd", "limited", "group", "inc", "incorporated", "corp", "corporation", "co", "company", "holdings", "pty", "llc", "gmbh", "sa", "ag", "nv", "and",
+  "australia", "australian", "uk", "usa", "us", "america", "american", "canada", "ireland", "europe", "international", "global", "nz", "zealand", "new", "united", "kingdom", "states"];
+function coreName(company) {
+  // A hyphen inside a word joins it ("Co-op" is "coop", not "co" and "op").
+  const words = String(company || "").toLowerCase().replace(/&/g, " and ").replace(/([a-z0-9])-(?=[a-z0-9])/g, "$1").replace(/[^a-z0-9\u00c0-\u024f]+/g, " ").split(/\s+/).filter(Boolean);
+  const kept = words.filter((w) => !NAME_NOISE.includes(w));
+  return { words: kept, squashed: kept.join(""), plain: kept.join(" ") };
+}
+const squash = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9\u00c0-\u024f]+/g, "");
+
+// Which of a page's images is this company's logo. Not any image that says
+// "logo": a home page shows partners', campaigns' and awards' logos too. In
+// order: the one the site declares in its structured data; one in the site's
+// header; one elsewhere whose FILE is named for the company and "logo".
+function chooseLogos(pageInfo, company) {
+  const info = pageInfo && typeof pageInfo === "object" ? pageInfo : {};
+  const declared = info.declared || {};
+  const images = Array.isArray(info.images) ? info.images : [];
+  const core = coreName(company).squashed;
+  const named = (t) => core.length >= 3 && squash(t).includes(core);
+  const rank = (x) => (x.inHeader ? (named(x.file) || named(x.alt) ? 4 : 3) : (named(x.file) && /logo/i.test(x.file) ? 2 : 0));
+  const best = (dark) => images.filter((x) => x.dark === dark && rank(x) > 0).sort((a, b) => rank(b) - rank(a))[0];
+  const light = best(false), dark = best(true);
+  return { light: declared.light || (light ? light.url : ""), dark: declared.dark || (dark ? dark.url : "") };
 }
 
 // Wikimedia Commons' own search results -> the company's logo files. A file
@@ -228,7 +283,7 @@ function commonsLogos(json, company) {
 const AGENT_SYSTEM = [
   "You research a company for the sales team of Personalisation Hub, a platform retailers use to run a retail media network and personalised content on in-store screens, digital signage, menu boards, kiosks and their mobile store site.",
   "Use web search and web fetch. Use only public sources; never guess, and never invent a link.",
-  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
+  "THE MOST IMPORTANT FINDING is how many physical sites the company trades from: stores, pubs, restaurants, branches, forecourts, hotels or venues, across every brand and format and across owned, managed, leased, tenanted and licensee-run sites together. Run a search for this alone before anything else (the company's own site, its latest annual report or results, then the trade press) and do not finish without it unless no public source gives one. storeCount is that TOTAL as a number. Never put a subset there: not one brand, not one division, not the sites being opened, sold, converted or reviewed. storeCountBreakdown says in one or two sentences what the total is made of, with a number for each part (for example by managed and leased, by brand, by country), and names the date of the figure. storeCountSource is the page the total comes from, with the date the figure is as at (not the date you read it). Prefer the most recently dated figure the company or its parent has published. If sources disagree, use the company's own most recent figure and say so in the breakdown.",
   "Find, where available: the company's industry in a few words, and its sector, which is exactly one of these when one fits and empty otherwise: " + prospectsCore.INDUSTRIES.map((i) => i.label).join("; ") + ";",
   "the countries it trades in, as plain country names with nothing in brackets; its head-office city and country; how many stores or sites it has, using the company's own latest figure;",
   "its size (employees, as a number from the latest accounts or the company's own site, and annual revenue); its technology stack and technology vendors (e.g. e-commerce platform, POS, CRM, CDP, cloud, digital signage, retail media or ad tech);",
@@ -396,10 +451,43 @@ async function claudeScreen({ apiKey, workspaceId, Anthropic, company, website, 
 
 // One request. Streamed where the SDK offers it: a research turn runs for
 // minutes, longer than an unstreamed call is allowed to stay open.
-async function send(client, params) {
+// With a deadline (ms since the epoch) the request is cut off then, and what
+// had streamed in by that moment comes back with stop_reason "deadline", so a
+// long research run still yields what it found instead of being killed with
+// the function and leaving the record "running" for ever.
+async function send(client, params, { deadline, timeout } = {}) {
   const m = client.beta.messages;
-  if (typeof m.stream === "function") return m.stream(params).finalMessage();
-  return m.create(params);
+  const opts = timeout ? { timeout } : undefined;
+  if (typeof m.stream !== "function") return m.create(params, opts);
+  const stream = m.stream(params, opts);
+  if (!deadline) return stream.finalMessage();
+  let last = null, cut = false;
+  if (typeof stream.on === "function") stream.on("streamEvent", (_ev, snapshot) => { if (snapshot) last = snapshot; });
+  const wait = Math.max(0, deadline - Date.now());
+  const timer = setTimeout(() => { cut = true; try { stream.abort(); } catch { /* already over */ } }, wait);
+  try { return await stream.finalMessage(); } catch (err) {
+    if (!cut) throw err;
+    return { ...(last || {}), content: ((last && last.content) || []).slice(), stop_reason: "deadline" };
+  } finally { clearTimeout(timer); }
+}
+
+// What a run that was cut short had gathered, as plain notes: its own words,
+// and the pages it searched and read (titles, addresses, and the pages' text).
+function notesOf(content) {
+  const out = [];
+  for (const b of content || []) {
+    if (!b) continue;
+    if (b.type === "text" && b.text) out.push(b.text);
+    else if (b.type === "web_search_tool_result" && Array.isArray(b.content)) {
+      for (const r of b.content) if (r && r.url) out.push(`[search result] ${r.title || ""} ${r.url}${r.page_age ? ` (${r.page_age})` : ""}`);
+    } else if (b.type === "web_fetch_tool_result" && b.content && b.content.type === "web_fetch_result") {
+      const doc = b.content.content || {};
+      const src = doc.source || {};
+      const body = typeof src.data === "string" && src.type === "text" ? src.data : "";
+      out.push(`[page read] ${doc.title || ""} ${b.content.url || ""}\n${body.slice(0, 6000)}`);
+    }
+  }
+  return out.join("\n");
 }
 // The answer's words. Web-search citations split one sentence across several
 // text blocks, so they are joined with nothing between them: a newline there
@@ -408,7 +496,7 @@ const textOf = (res) => ((res && res.content) || []).filter((b) => b.type === "t
 
 // Researches one company. Returns the agent's JSON, or throws with the reason
 // (which the record then shows): a refusal, a cut-off answer, no JSON at all.
-async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now }) {
+async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now, deadline = 0, focus = "", searches = 22, fetches = 10 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = workspaceHeaders(workspaceId);
   const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
@@ -417,10 +505,13 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
     website ? `Website: ${website}` : "Website: not known (find it).",
     country ? `Country of interest: ${country}` : "",
     `Today is ${new Date().toISOString().slice(0, 10)}.`,
+    focus,
   ].filter(Boolean).join("\n");
   const base = { model: AGENT_MODEL, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"], system: AGENT_SYSTEM };
   const messages = [{ role: "user", content: ask }];
   const started = clock();
+  // Everything the run has gathered over its turns, for the notes if it is cut short.
+  const gathered = [];
   let res;
   for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
     res = await send(client, {
@@ -431,22 +522,26 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
       cache_control: { type: "ephemeral" },
       output_config: { effort: "medium" },
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 22 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10, max_content_tokens: 12000 },
+        { type: "web_search_20260209", name: "web_search", max_uses: searches },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: fetches, max_content_tokens: 12000 },
       ],
       messages,
-    });
+    }, { deadline });
+    gathered.push(...((res && res.content) || []));
     if (res.stop_reason !== "pause_turn") break;
     if (clock() - started > AGENT_BUDGET_MS) break;
+    // Not worth starting another turn that the deadline would cut off at once.
+    if (deadline && deadline - clock() < 60000) break;
     // A long server-tool turn paused: send it back as it is and the server resumes it.
     messages.push({ role: "assistant", content: res.content });
   }
   if (!res) throw new Error("no answer came back");
   if (res.stop_reason === "refusal") throw new Error("the model declined to research this company");
-  const text = textOf(res);
-  const found = parseAgentJson(text);
+  const short = res.stop_reason === "deadline" || res.stop_reason === "pause_turn";
+  const text = short ? notesOf(gathered) : textOf(res);
+  const found = short ? null : parseAgentJson(text);
   if (found) return found;
-  if (!text.trim()) throw new Error(res.stop_reason === "pause_turn" ? "the research ran out of time before it answered" : `the research ended with no answer (${res.stop_reason || "unknown"})`);
+  if (!text.trim()) throw new Error(short ? "the research ran out of time before it found anything" : `the research ended with no answer (${res.stop_reason || "unknown"})`);
   // It researched but the answer isn't readable JSON (cut off, or prose around
   // it): one short call with no tools turns those notes into the JSON.
   const fix = await send(client, {
@@ -454,10 +549,44 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
     max_tokens: 16000,
     output_config: { effort: "low" },
     messages: [{ role: "user", content: `${ask}\n\nThese are your research notes on this company. Reply with only the JSON object described, in a \`\`\`json code block, using only what the notes say.\n\n<notes>\n${text.slice(-60000)}\n</notes>` }],
-  });
+  }, { timeout: REPAIR_TIMEOUT_MS });
   const fixed = fix && fix.stop_reason !== "refusal" ? parseAgentJson(textOf(fix)) : null;
-  if (!fixed) throw new Error("the research finished but its answer could not be read");
+  if (!fixed) throw new Error(short ? "the research ran out of time and its notes could not be read" : "the research finished but its answer could not be read");
+  // Said on the record: this is what the run found before time ran out.
+  if (short) Object.defineProperty(fixed, "cutShort", { value: true, enumerable: false });
   return fixed;
+}
+
+// One company researched as two halves at once, so the whole brief fits in
+// the function's time: the estate (the site count first) and the people, and
+// the market (retail media, personalisation, news, money). Each half answers
+// in the same JSON shape; its own fields win when the two are put together.
+const ESTATE_KEYS = ["name", "website", "websiteConfidence", "industry", "sector", "countries", "hqCity", "hqCountry", "storeCount", "storeCountBreakdown", "storeCountSource", "estate", "people"];
+const RESEARCH_HALVES = [
+  { name: "estate", searches: 10, fetches: 5, focus: "This run covers only part of the brief, and another run covers the rest at the same time. Find: how many physical sites it trades from (first, and most important) with storeCountBreakdown, storeCountSource and estate; its industry, sector, countries and head office; and the people. Leave every other field empty." },
+  { name: "market", searches: 14, fetches: 6, focus: "This run covers only part of the brief, and another run covers the site count, the estate and the people at the same time. Find: summary, employees, revenue, its LinkedIn page, its logo files, retailMedia (with the competitors' networks), personalisation, inStoreDigital, loyalty, primaryCloud, strategy, techStack, vendors, news, financials, facts, fit and talkingPoints. Leave storeCount null and people empty." },
+];
+function mergeHalves(estate, market) {
+  if (!estate) return market; if (!market) return estate;
+  const out = {};
+  for (const k of new Set([...Object.keys(estate), ...Object.keys(market)])) {
+    const own = ESTATE_KEYS.includes(k) ? [estate[k], market[k]] : [market[k], estate[k]];
+    out[k] = blank(own[0]) || (k === "websiteConfidence" && !own[0]) ? own[1] : own[0];
+  }
+  for (const k of ["techStack", "vendors", "countries", "talkingPoints"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = uniq([...(market[k] || []), ...(estate[k] || [])], 40, 400);
+  for (const k of ["news", "facts"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = mergeBy([...(market[k] || []), ...(estate[k] || [])], (x) => JSON.stringify(x && (x.url || x.label || x.title)), 40);
+  if (Array.isArray(estate.people) || Array.isArray(market.people)) out.people = mergeBy([...(estate.people || []), ...(market.people || [])], personKey, 10);
+  return out;
+}
+async function claudeResearchSplit(args) {
+  const runs = await Promise.allSettled(RESEARCH_HALVES.map((h) => claudeResearch({ ...args, focus: h.focus, searches: h.searches, fetches: h.fetches })));
+  const [a, b] = runs.map((r) => (r.status === "fulfilled" ? r.value : null));
+  runs.forEach((r, i) => { if (r.status === "rejected" && args.onHalfError) args.onHalfError(RESEARCH_HALVES[i].name, r.reason); });
+  if (!a && !b) throw runs[0].reason;
+  const out = mergeHalves(a, b);
+  const short = (a && a.cutShort) || (b && b.cutShort) || !a || !b;
+  if (short) Object.defineProperty(out, "cutShort", { value: true, enumerable: false });
+  return out;
 }
 
 // ── Merging, kept apart from the fetching so the test can drive it ──────
@@ -475,10 +604,41 @@ function mergeBy(list, key, n) {
   return out.slice(0, n);
 }
 
+// One person, however the name is written: "Stan Reynolds" and "Stanley (Stan)
+// Reynolds" are the same key (first initial and surname).
+function personKey(x) {
+  const words = String((x && x.name) || "").toLowerCase().replace(/\([^)]*\)/g, " ").replace(/[^a-z\u00c0-\u024f' -]+/g, " ").split(/\s+/).filter(Boolean);
+  if (!words.length) return "";
+  return words.length === 1 ? words[0] : `${words[0][0]}|${words[words.length - 1]}`;
+}
+// The newer run's entry for a person, with a LinkedIn link or note the older one had and it lacks.
+function mergePeople(now, before, n) {
+  const out = [], at = new Map();
+  for (const x of [...(now || []), ...(before || [])]) {
+    const k = personKey(x);
+    if (!k) continue;
+    if (at.has(k)) { const have = out[at.get(k)]; if (!have.linkedin && x.linkedin) have.linkedin = x.linkedin; if (!have.note && x.note) have.note = x.note; continue; }
+    at.set(k, out.length); out.push({ ...x });
+  }
+  return out.slice(0, n);
+}
+// The site count a refresh keeps: the one whose source is dated later. A run
+// that finds an older figure than the record already has does not replace it.
+function newerCount(f, p) {
+  const d = (s) => String((s && s.date) || "");
+  const found = { storeCount: f.storeCount || null, storeCountBreakdown: f.storeCountBreakdown || "", storeCountSource: f.storeCountSource || null };
+  const had = { storeCount: p.storeCount || null, storeCountBreakdown: p.storeCountBreakdown || "", storeCountSource: p.storeCountSource || null };
+  if (!found.storeCount) return had.storeCount ? had : found;
+  if (had.storeCount && d(had.storeCountSource) && d(found.storeCountSource) && d(had.storeCountSource) > d(found.storeCountSource)) return had;
+  return found;
+}
+
 // The enrichment map both records carry: the newest non-empty value, else the one before.
 function enrichmentMap(prev, f, logoUrl, sources, meta) {
   const p = prev && typeof prev === "object" ? prev : {};
-  const was = p.logos && typeof p.logos === "object" ? p.logos : {};
+  // Logos chosen before the current rule (LOGO_RULE) are not carried forward:
+  // the first rule took any image on the page that said "logo".
+  const was = p.logoRule === LOGO_RULE && p.logos && typeof p.logos === "object" ? p.logos : {};
   const got = f.logos && typeof f.logos === "object" ? f.logos : {};
   const hq = [f.hqCity, f.hqCountry].filter(Boolean).join(", ");
   return {
@@ -492,13 +652,12 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     // The full logo for light and for dark backgrounds (checked image files),
     // for the branded walkthrough demo; "" when none was found.
     logos: { light: got.light || was.light || "", dark: got.dark || was.dark || "" },
+    logoRule: LOGO_RULE,
     // Where each stored logo was copied from (the company's own file or Wikimedia Commons).
-    logoSources: { ...(p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
+    logoSources: { ...(p.logoRule === LOGO_RULE && p.logoSources && typeof p.logoSources === "object" ? p.logoSources : {}), ...(f.logoSources && typeof f.logoSources === "object" ? f.logoSources : {}) },
     // The number of sites is the finding that matters most: kept here as well
     // as on the company's own field, with what it is made of and its source.
-    storeCount: f.storeCount || p.storeCount || null,
-    storeCountBreakdown: f.storeCount ? f.storeCountBreakdown : keep(f.storeCountBreakdown, p.storeCountBreakdown),
-    storeCountSource: f.storeCount ? f.storeCountSource : (f.storeCountSource || p.storeCountSource || null),
+    ...newerCount(f, p),
     hq: keep(hq, p.hq),
     employees: keep(f.employees, p.employees),
     revenue: keep(f.revenue, p.revenue),
@@ -515,7 +674,7 @@ function enrichmentMap(prev, f, logoUrl, sources, meta) {
     fit: keep(f.fit, p.fit),
     talkingPoints: f.talkingPoints.length ? f.talkingPoints : (Array.isArray(p.talkingPoints) ? p.talkingPoints : []),
     // A refresh adds to people and news: one run can miss a person the last one found.
-    people: mergeBy([...f.people, ...(Array.isArray(p.people) ? p.people : [])], (x) => String(x && x.name || "").toLowerCase(), 12),
+    people: mergePeople(f.people, Array.isArray(p.people) ? p.people : [], 12),
     news: mergeBy([...f.news, ...(Array.isArray(p.news) ? p.news : [])], (x) => String(x && x.url || "").replace(/\/+$/, "").toLowerCase(), 10).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))),
     financials: f.financials || p.financials || null,
     facts: f.facts.length ? f.facts : (Array.isArray(p.facts) ? p.facts : []),
@@ -531,7 +690,7 @@ function applyToLead(data, f, logoUrl, sources, meta) {
   const changed = [];
   const set = (k, v) => { if (blank(v) || same(company[k], v)) return; if (!ownable(company[k], filled[k])) return; company[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || str(f.industry, 120));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   if (!company.website && f.website && f.website.length <= 300) { company.website = f.website; changed.push("website"); }
   const countries = uniq([...(lead.company.countries || []), ...[f.hqCountry, ...f.countries].filter(Boolean)], 60, 60);
   if (countries.length > (lead.company.countries || []).length) { company.countries = countries; changed.push("countries"); }
@@ -551,7 +710,7 @@ function applyToProspect(data, f, logoUrl, sources, meta) {
   const set = (k, v) => { if (blank(v) || same(stored(k), v)) return; if (!ownable(stored(k), filled[k])) return; fields[k] = v; filled[k] = v; changed.push(k); };
   set("industry", f.sector || prospectsCore.normaliseIndustry(f.industry));
   set("hqCountry", str(f.hqCountry, 60));
-  set("storeCount", f.storeCount);
+  set("storeCount", newerCount(f, prev).storeCount);
   set("linkedinUrl", f.linkedinCompany);
   if (!stored("website") && f.website && f.website.length <= 300) { fields.website = f.website; changed.push("website"); }
   const markets = uniq([...p.markets, ...f.countries], 60, 60);
@@ -758,7 +917,10 @@ function createLeadEnrich({
       if (ext === "svg" && /<script|\son[a-z]+\s*=|javascript:|<foreignObject/i.test(bytes.toString("utf8"))) return "";
       // A file that says it is one type and is another (a GIF served as an icon) is read for what it is.
       const real = bytes.slice(0, 3).toString("latin1") === "GIF" ? "gif" : ext;
-      const png = await toPng(bytes, real);
+      // An .ico is a container: the image library reads the PNG inside it, not the file.
+      const inner = real === "ico" ? icoPng(bytes) : null;
+      if (real === "ico" && !inner) return "";
+      const png = await toPng(inner || bytes, inner ? "png" : real);
       if (!png || !png.length || png.length > MAX_LOGO_BYTES) return "";
       const hash = crypto.createHash("sha256").update(png).digest("hex").slice(0, 12);
       const path = `brand/${prospectsCore.slugId(company) || "company"}/${kind}-${hash}.png`;
@@ -783,8 +945,9 @@ function createLeadEnrich({
   // copied is left as it is; one that can't be copied keeps its original address.
   async function keepLogos(company, result, prevEnrichment) {
     const prev = prevEnrichment && typeof prevEnrichment === "object" ? prevEnrichment : {};
-    const was = { ...(prev.logos || {}), icon: prev.logoUrl };
-    const wasFrom = prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
+    const current = prev.logoRule === LOGO_RULE;
+    const was = { ...(current ? prev.logos || {} : {}), icon: prev.logoUrl };
+    const wasFrom = current && prev.logoSources && typeof prev.logoSources === "object" ? prev.logoSources : {};
     const found = { light: result.f.logos.light, dark: result.f.logos.dark, icon: result.logoUrl };
     const out = {}, from = {};
     for (const kind of ["light", "dark", "icon"]) {
@@ -804,7 +967,7 @@ function createLeadEnrich({
   // The company's full logos, each from the first source that answers as an
   // image: the agent's link, the home page's own logo images, then Wikimedia Commons.
   async function logosFor(company, pageSeen, f) {
-    const seen = pageSeen || {};
+    const seen = chooseLogos(pageSeen, company);
     const got = f || {};
     let commons = { light: "", dark: "" };
     const need = { light: !(await firstImage([got.logoLight, seen.light])), dark: !(await firstImage([got.logoDark, seen.dark])) };
@@ -812,29 +975,39 @@ function createLeadEnrich({
       try {
         // Files whose title has the company's name and "logo" first; then a plain
         // search, which also finds names a title search misses (hyphens, "The").
+        // The name as given, then without where it trades ("7-Eleven Australia" -> "7-Eleven"):
+        // a country arm usually has no logo file of its own.
         const clean = String(company).replace(/"/g, "");
-        for (const query of [`intitle:"${clean}" intitle:logo filetype:drawing|bitmap`, `${clean} logo`]) {
-          const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
-          if (!r.ok) continue;
-          const found = commonsLogos(JSON.parse(await r.text()), company);
-          commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
-          if (commons.light) break;
+        const short = String(company).split(/\s+/).filter((w) => !NAME_NOISE.includes(w.toLowerCase().replace(/[^a-z]/g, ""))).join(" ").replace(/"/g, "");
+        const names = uniq([clean, short], 2, 120);
+        const queries = names.flatMap((nm) => [[`intitle:"${nm}" intitle:logo filetype:drawing|bitmap`, nm], [`${nm} logo`, nm]]);
+        for (const [query, nm] of queries) {
+          // One search failing (a timeout, a rate limit) does not stop the others.
+          try {
+            const r = await safeGet(`https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&gsrsearch=${encodeURIComponent(query)}&prop=imageinfo&iiprop=url%7Cmime`);
+            if (!r.ok) continue;
+            const found = commonsLogos(JSON.parse(await r.text()), nm);
+            commons = { light: commons.light || found.light, dark: commons.dark || found.dark };
+            if (commons.light) break;
+          } catch { /* next search */ }
         }
       } catch { /* none */ }
     }
     return { light: await firstImage([got.logoLight, seen.light, commons.light]), dark: await firstImage([got.logoDark, seen.dark, commons.dark]) };
   }
 
-  async function agentSource(company, website, country) {
+  async function agentSource(company, website, country, deadline) {
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearch)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country });
+      const raw = await (research || claudeResearchSplit)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline,
+        onHalfError: (half, err) => logger.warn("enrichment research half failed", { half, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) }) });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
       if (blank(Object.entries(cleanFindings(raw)).filter(([k, v]) => k !== "websiteConfidence" && !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
       const n = [found.industry, found.hqCountry, found.storeCount, found.summary, found.logoUrl, found.linkedinCompany].filter((x) => !blank(x)).length + found.techStack.length + found.news.length + (found.financials ? 1 : 0);
-      return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.`, found };
+      const cut = raw.cutShort === true ? " Part of the research did not finish in time, so some fields may be missing; Refresh info runs it again." : "";
+      return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.${cut}`, found };
     } catch (err) {
       const why = agentError(err);
       logger.warn("enrichment agent failed", { company, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) });
@@ -843,8 +1016,8 @@ function createLeadEnrich({
   }
 
   // One research run for a company: the agent first (it may find the website), then the site.
-  async function research_(company, website, country) {
-    const agent = await agentSource(company, website, country);
+  async function research_(company, website, country, deadline) {
+    const agent = await agentSource(company, website, country, deadline);
     const empty = cleanFindings({});
     const f = agent.found || empty;
     const site = website || f.website || "";
@@ -927,6 +1100,7 @@ function createLeadEnrich({
     if (collection === "leads" && data.test === true) return { ok: false, error: "test leads are not enriched" };
     const req = requestOf(data) || { id: `auto-${crypto.randomBytes(4).toString("hex")}`, by, trigger };
     const startedAt = now();
+    const runStart = Date.now();
     await ref.update({ "enrichment.request": { ...req, status: "running", startedAt } });
 
     const isLead = collection === "leads";
@@ -963,7 +1137,7 @@ function createLeadEnrich({
       if (!verdict.ok) held = verdict;
     }
     let result;
-    try { result = held ? await basics_(name, site, held) : await research_(name, site, country); } catch (err) {
+    try { result = held ? await basics_(name, site, held) : await research_(name, site, country, runStart + RESEARCH_WINDOW_MS); } catch (err) {
       await ref.update({ "enrichment.request": { ...req, status: "error", startedAt, finishedAt: now(), message: String(err && err.message ? err.message : err).slice(0, 200) } });
       return { ok: false, error: "enrichment failed" };
     }
@@ -1152,5 +1326,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  notesOf, send, RESEARCH_WINDOW_MS, mergeHalves, claudeResearchSplit, RESEARCH_HALVES, applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

@@ -1,0 +1,12 @@
+/* PH floating CTA (cta.php / cta.js): the site's primary button, fixed bottom right. Above page content and sticky headers, below the
+   Elementor popup (9999) and the cookie banner (.ph-cc, 99999); --ph-fcta-lift (set by cta.js) lifts it above the banner while that is open. */
+body .ph-fcta{--ph-fcta-gap:24px;--ph-fcta-lift:0px;position:fixed;right:calc(var(--ph-fcta-gap) + env(safe-area-inset-right,0px));bottom:calc(var(--ph-fcta-gap) + env(safe-area-inset-bottom,0px) + var(--ph-fcta-lift));z-index:9000;max-width:calc(100vw - 2 * var(--ph-fcta-gap) - env(safe-area-inset-left,0px) - env(safe-area-inset-right,0px));margin:0;padding:0;opacity:1;visibility:visible;transform:none;transition:opacity .2s ease,transform .2s ease,visibility 0s linear 0s,bottom .2s ease}
+body .ph-fcta.ph-fcta-off{opacity:0;visibility:hidden;transform:translateY(12px);pointer-events:none;transition:opacity .2s ease,transform .2s ease,visibility 0s linear .2s,bottom .2s ease}
+@media (prefers-reduced-motion:reduce){body .ph-fcta{transform:none;transition:opacity .2s linear,visibility 0s linear 0s}body .ph-fcta.ph-fcta-off{transform:none;transition:opacity .2s linear,visibility 0s linear .2s}}
+body .ph-fcta .ph-fcta-b,body .ph-fcta .ph-fcta-b:visited,body .ph-fcta .ph-fcta-b:hover,body .ph-fcta .ph-fcta-b:focus,body .ph-fcta .ph-fcta-b:active{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:48px;min-width:48px;max-width:100%;margin:0;padding:14px 22px;border:0;border-radius:999px;background:#169BC2;color:#fff;font:600 16px/1.25 "Kantumruy Pro",system-ui,-apple-system,sans-serif;letter-spacing:normal;text-transform:none;text-decoration:none;text-align:center;white-space:nowrap;box-shadow:0 6px 18px rgba(28,37,64,.22),0 2px 4px rgba(28,37,64,.12);cursor:pointer;-webkit-tap-highlight-color:transparent}
+body .ph-fcta .ph-fcta-b:hover{background:#0F7A9A;color:#fff}
+body .ph-fcta .ph-fcta-b:active{background:#09759C;color:#fff}
+body .ph-fcta .ph-fcta-b:focus{outline:none}
+body .ph-fcta .ph-fcta-b:focus-visible{outline:3px solid #1C2540;outline-offset:3px;box-shadow:0 0 0 3px #fff,0 6px 18px rgba(28,37,64,.22)}
+@media (max-width:767px){body .ph-fcta{--ph-fcta-gap:16px}body .ph-fcta .ph-fcta-b,body .ph-fcta .ph-fcta-b:hover,body .ph-fcta .ph-fcta-b:focus,body .ph-fcta .ph-fcta-b:active{white-space:normal}}
+@media print{body .ph-fcta{display:none}}

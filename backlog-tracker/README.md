@@ -261,6 +261,13 @@ safe and moving:
   "The automatic rebuild requested at … never started (…). Click Ready for
   Dev to build it again." — and `rebuildRequestedAt` is cleared. Tests:
   `test/rebuild-requests.test.js`, `test/notify-fanout.test.js`.
+- **Build order** (`functions/build-order.js`, 14 Nov 2026) — dependencies
+  are read from the Dependencies section at intake (`onBacklogItemDependencies`)
+  and can be set under Edit item → Builds after or over MCP; a Ready for Dev
+  click holds a ticket whose dependency is still in Backlog, and queues
+  tickets likely to touch the same files one behind another (`queuedAfter`,
+  released by `sweepBuildQueue`). REQUIREMENTS.md → "Build order"; tests:
+  `test/build-order.test.js`.
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
   waits flagged `blocked.reason: "waiting-on-dependency"` (not a question:
   the card reads "Waiting for: <ticket title>" with a link, no Answer button,
@@ -280,6 +287,17 @@ safe and moving:
   blocked cards writes `notifyRoutine` status "error" with the reason.
 - **`buildSession`** — each session reports on its own card; the button
   shows "Deving… N/M" and each card unlocks when its own session reports.
+- **Heartbeats and build attempts** (14 Nov 2026) — a session also sends
+  `buildSession.heartbeatAt` / `.phase` / `.attemptId` when it starts, at
+  each phase change and at least every 10 minutes; the locked card shows
+  "Testing · heard from 3 min ago" (warning colour after 10 minutes). No
+  first heartbeat in 10 minutes, or none for 20, and the session is started
+  again once; a beating session is never restarted, and after 3 hours it is
+  flagged for a person. Each fire carries a `buildAttemptId` the card
+  stores, and a patch handed back under an older one is refused, so a ticket
+  is not built twice. A session runs `npm run test:fast` (plus
+  `npm run test:fast-ui` for a `public/` change) and leaves the long suites
+  to the train. See `REQUIREMENTS.md` → "Heartbeats and build attempts".
 - **Per-ticket model** (13 Nov 2026) — `backlogItems.model` is `standard`
   (default) or `advanced` (Claude Opus only), set from New item / Edit item
   → Model or MCP `create_backlog_item` / `update_backlog_item`. Each fire
@@ -407,6 +425,14 @@ What the train changes:
   automatic send-back now opens with a one-line `Why:` (the failing test,
   from the run's log — `lastFailureReason.summary`), and the board shows one
   line per rejection above a ticket's comments (`public/js/rejection-summary.js`).
+  **Testing rounds** (15 Nov 2026): every send-back is stored on the card
+  (`testRound`, `sendBacks`, `sendBackCount`, `countedSendBacks` —
+  `functions/test-rounds.js`, read by `public/js/test-rounds-view.js`), a
+  "Round N" chip shows from round 2 in every column, and the 3rd counted
+  send-back flags the ticket needs-decision instead of rebuilding it; the ⋮
+  menu's **Testing loops** lists the looping tickets.
+  `scripts/backfill-test-rounds.js` stores the fields on older cards.
+  REQUIREMENTS.md → "Testing rounds".
   **A failed train test is re-run once before anyone acts on it** (19 Oct
   2026): `trainRunVerdict` reads GitHub's attempt number — red on attempt 1
   is `rerun`, red on attempt 2 is `failed` — so a flaky test no longer sends
@@ -2622,10 +2648,24 @@ every destination already existed.
   `leadType`) "operator" or "Network operator inquiry" (the Run Your Own RMN page's
   product tour gate) is an individual, not a company: shown as "Network operator
   inquiry", stored as `leadType: "operator"`, the person as the one contact,
-  `operator {region, background}`, its own stages (Applied, Screening, Intro call,
+  `operator {region, background, audience}`, its own stages (Applied, Screening, Intro call,
   Approved, Not a fit), and no TAM matching, AWS routing or enrichment. No other key
   is accepted for this type. The board's **Companies / Network operators** switch
-  shows one pipeline at a time; `list_leads` filters by `leadType`. See
+  shows one pipeline at a time; `list_leads` filters by `leadType`.
+  **"I am" (14 Nov 2026)**: the gate also asks who is inquiring. The website
+  sends it as `audience` (its label); it is stored as `operator.audience`
+  (`individual`, `team`, `retailer`, or "" when not given), shown first on the
+  card's line, as "I am" in the summary and as a select on the form, and
+  `list_leads` filters by `audience`. Backgrounds gained `creative-agency` and
+  `retail-owner`.
+  **Industry and message (15 Nov 2026)**: the page's Request further information
+  form sends `network_industry`, `message` and `form: "request"`; they are stored
+  as `operator.networkIndustry` (≤120), `operator.message` (≤1,000, longer is cut)
+  and `operator.form` (`request` or `tour`). A repeat submission replaces the
+  industry and adds a new message to the history as a dated note. The card line
+  shows the industry after the region, the summary adds "Industry they want to
+  run" and "Message", the form has an "Industry they want to run" field, and
+  `list_leads` filters by `networkIndustry`. See
   REQUIREMENTS.md → "Leads: Network operator inquiries".
 - **Leads, Apple-style (10 Nov 2026, ticket iAY4X9RF5K16vLEGYswi):** the board,
   the lead form and the lead detail view follow the console's Apple-style rules
@@ -2674,6 +2714,13 @@ every destination already existed.
   iPad menu. `/` now has a no-cache header in `firebase.json`, and a failed
   start reloads once by itself (`auth-gate.js`). `test/ui/stale-page.test.mjs`
   checks both; see REQUIREMENTS.md → "Stale page after a release".
+- **A newer page with older scripts** (14 Nov 2026): the Support Inbox menu
+  item showed on the iPad and did nothing. `auth-gate.js` now checks that
+  every sidebar item was wired while the scripts started; if not it reloads
+  once, then says which item can't open and offers Reload.
+  `console-webkit.yml` runs the menu and the Support Inbox in a real WebKit
+  engine as an iPad, against the sources, the minified build and the live
+  site's files.
 - **iPad taps** (3 Nov, widened 5 Nov 2026): every button, link, tab and menu
   item in the console acts on finger-lift through one console-wide handler,
   `installTouchTaps()` in `public/js/touch-click.js`. It survives iPad
@@ -2824,13 +2871,19 @@ ones, in Chromium), `test/kanban-mcp.test.js` (server and MCP tools),
 The Staff Kanban suites — `kanban-staff-board/test/e2e.test.mjs` (the
 `kanban-staff-board-tests.yml` workflow) and `test/ui/staff-kanban.test.mjs`,
 `test/kanban-mcp.test.js`, `test/kanban-rules.test.js` (inside the console tests,
-`firestore-rules-test.yml`) — run on **every deployment train of any project that
-changes `backlog-tracker/` or `kanban-staff-board/`**: when a build lands in
-Ready for Testing, on each later push to the train (Deploy to Feature), and
-again as the gate before Deploy to Main. Both workflows are in
-`TRAIN_TEST_WORKFLOWS` (`kanban: "console" | "all"`, `extraPrefixes`), so the
-existing dispatch, per-card result and merge gate cover them; no workflow file
-changed.
+`firestore-rules-test.yml`) — run on the deployment train of any project that
+changes the code they test: when a build lands in Ready for Testing, on each
+later push to the train (Deploy to Feature), and again as the gate before
+Deploy to Main. Both workflows are in `TRAIN_TEST_WORKFLOWS`
+(`kanban: "console" | "all"`), so the existing dispatch, per-card result and
+merge gate cover them. **Each suite has one owner (14 Nov 2026):** the console
+tests run for a `backlog-tracker/` or `kanban-staff-board/` change (the console
+suite imports the shared cases in `kanban-staff-board/test/lib`); the prototype
+suite runs only for a `kanban-staff-board/` change. Before that a
+`backlog-tracker/` change started both, and the test plan ran twice per train.
+A UI case that fails is retried once inside the run and a pass on the retry is
+counted on the board, not failed: `REQUIREMENTS.md` → "Flaky tests: retry once,
+record, ticket at three".
 
 When a run is red (after the one automatic re-run), `processKanbanE2eHeal`
 (`scripts/run-backlog-automation.js`, decisions in `scripts/kanban-e2e-heal.js`)
@@ -2944,10 +2997,39 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
 notes and timeline in the `messages` subcollection. For each new customer
-email the function picks the most relevant *published* Help Centre articles
-and asks Claude for a triage: category, one-line summary, whether the
-articles fully answer it, a confidence, and a reply. Then one rule
-(`decideAction`) decides:
+email Claude triages it in steps (`runTriage` in `functions/support-mail.js`):
+
+1. **Match.** It sees the subject and body together with the *whole*
+   published Help Centre, one line per article (category, title, summary,
+   short answer, question variants, keywords). It decides whether the email
+   is about Personalisation Hub or the retail media proposition, and picks
+   up to 3 articles that answer it. Out-of-scope mail (SEO offers, CVs,
+   suppliers' invoices, other products) is labelled "Not about PH", gets no
+   article and no draft, and is left out of the stats.
+2. **Draft from the best article.** It writes the reply from that article's
+   full text and scores its confidence.
+3. **Add answers only when needed.** If that scores under 80%, it writes
+   the reply again from the 2 or 3 best articles combined (never more than
+   3), and keeps whichever scores higher. Both scores are kept on the draft
+   (`confidenceSteps`), and the page shows "Confidence 55% from 1 article,
+   82% with 3 combined".
+
+Every draft opens "Hi <first name>," and "Thanks for your email." (or
+"Hi there," when the name isn't clear, e.g. a role mailbox such as Legal).
+This is added in code (`composeReply`), not left to the model. The
+confidence is shown beside every suggested reply as a word and a number
+(High from 80%, Medium from 60%, Low below). **Try an email** (an editor's
+tab in the Support Inbox) runs any subject and text through all of this
+without filing, saving or sending anything.
+
+`scripts/support-eval.js` (Actions → "Support Inbox matching check",
+`support-eval.yml`) runs 33 made-up emails with known right answers
+(`test/fixtures/support-eval.json`) against the real model and the
+published Help Centre, and re-runs the newest real tickets, printing only
+their SUP key and article titles. Run it after changing the prompts or the
+Help Centre, and add a case whenever a real email is matched badly.
+
+Then one rule (`decideAction`) decides:
 
 - **Sent by itself** and the ticket resolved by AI: only when sending is
   switched on in Settings, the articles answer the question, the reply cites

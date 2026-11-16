@@ -22,6 +22,7 @@ const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+const buildOrder = require("./build-order");
 
 initializeApp();
 
@@ -212,22 +213,37 @@ function itemNotesBlock(item, { max = 12, maxChars = 1500 } = {}) {
 }
 
 function perItemSelfReportHint(projectId, itemId) {
-  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to the real time from \`date -u +%Y-%m-%dT%H:%M:%SZ\` — never a guessed time, and take any other timestamp you write from that command too (the board also stamps its own buildSession.reportedAt when you report). Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them. If you block this ticket on a genuine question only a person can settle (blocked.reason "waiting-on-input"), write blocked.note as ONE plain-English question that states the options (A or B) and what happens with each, with no ticket ids, then end it with "Answer on the card (Answer button)" — the Answer button saves the reply and rebuilds the ticket; never tell the person to reply and click Ready for Dev.`;
+  return `\n\nWhen you finish this run (whether you set patchReady or stopped on a blocker), PATCH backlogItems/${itemId} with buildSession.status set to "done" (or "error" with buildSession.errorMessage, if you stopped early) and buildSession.finishedAt set to the real time from \`date -u +%Y-%m-%dT%H:%M:%SZ\` — never a guessed time, and take any other timestamp you write from that command too (the board also stamps its own buildSession.reportedAt when you report). Do NOT write projects/${projectId}.notifyRoutine — other tickets from the same click are still being built by their own sessions, and the board waits for every one of them. Do not ask a person anything: nobody is watching, and a question stops the ticket. Where the ticket leaves a choice open, take the option that best fits its Outcome, the spec and the code (the smaller, more reversible one when two fit equally), build it, and say in one line on the card what you assumed and what the other option was, under "Assumed:". Never end a note with a question and never use an interactive question tool. Set blocked {reason: "waiting-on-input"} only for something only a person can supply (a file you cannot make, a credential, missing access, a guard that refuses your hand-off), and write blocked.note as a plain statement of what is needed, with no ticket ids. Hand your patch over as a commit, not as file contents: commit on this session's branch, git push it, and set patchCommit (the full commit id), patchRef (that branch), patchBaseSha, patchPartCount 0 and patchReady true on the card with no patchFiles (ROUTINE_INSTRUCTIONS.md, step 4); fall back to patchFiles only if the push is refused.`;
 }
 
-function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "" }) {
+// One id per fire (14 Nov 2026). The card stores the current one; the session
+// sends it with every heartbeat and with its patch, so a session that was
+// presumed dead and started again can neither mask the new one's silence nor
+// land a second copy of the ticket (functions/notify-routine.js).
+function newBuildAttemptId() {
+  return require("crypto").randomBytes(8).toString("hex");
+}
+
+// The one-line heartbeat rule, in the fire text as well as in
+// ROUTINE_INSTRUCTIONS.md (which is long enough for it to be missed).
+function heartbeatHint(itemId, buildAttemptId) {
+  if (!buildAttemptId) return "";
+  return `\n\nHEARTBEAT — build attempt ${buildAttemptId}. PATCH backlogItems/${itemId} with buildSession.heartbeatAt (timestampValue from \`date -u +%Y-%m-%dT%H:%M:%SZ\`), buildSession.phase ("reading", "building", "testing" or "packaging") and buildSession.attemptId "${buildAttemptId}" — an updateMask of exactly those three field paths — as your first action, at each phase change, and at least every 10 minutes while a long command runs (start the command in the background and beat while you wait). No first heartbeat within 10 minutes, or none for 20, and this session is treated as dead and the ticket is started again; a session that keeps beating is never restarted. Immediately before packaging, read the card again: if its buildAttemptId is no longer "${buildAttemptId}", or it has gained a deployCommit since you started, another session has this ticket — do NOT set patchReady and do NOT write buildSession (not even status "done": the record is that session's now); append what you found as a note and stop. Otherwise send patchAttemptId "${buildAttemptId}" in the same PATCH as patchFiles (a patch from a superseded attempt is refused). ROUTINE_INSTRUCTIONS.md → "Heartbeat and build attempt".`;
+}
+
+function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "", buildAttemptId = null, builtOn = [] }) {
   const others = siblings.filter((s) => s.id !== item.id);
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
 // 26 Oct 2026 handed back patches without the UI suite (two said it "could
 // not run here"), and two of those went red on the train. Said here as well
 // as in ROUTINE_INSTRUCTIONS.md, which is long enough for it to be missed.
-const PRE_HANDBACK_TESTS = `\n\nBefore setting patchReady, run your project's full test command from ROUTINE_INSTRUCTIONS.md → "Before setting patchReady" (backlog-tracker/: cd backlog-tracker/test && npm run test:offline; dsp-integration/: the e2e-quick chain listed there; Retail-media-insights/: cd Retail-media-insights && npm run test:ci) and make it pass, updating the tests your change affects (UI tests included) in the same patch. This sandbox has Chromium at /opt/pw-browsers/chromium and npm registry access, so "tests could not run here" is never a reason to hand a patch back: if one really can't run, comment the exact error on the card and do not set patchReady.`;
+const PRE_HANDBACK_TESTS = `\n\nBefore setting patchReady, run the tests for what you changed, as ROUTINE_INSTRUCTIONS.md → "Sessions run the affected tests; the train runs everything" lists them — the suites covering the paths in your patch plus that project's fast offline checks (backlog-tracker/: cd backlog-tracker/test && npm run test:fast, plus npm run test:fast-ui when the patch touches backlog-tracker/public/; dsp-integration/: the e2e-quick chain listed there; Retail-media-insights/: cd Retail-media-insights && npm run test:ci) — and make them pass, updating the tests your change affects (UI tests included) in the same patch. The train runs every suite when the ticket lands, so leave the long suites named there as train-only (the ph-website tour, the Staff Kanban tablet matrix) to it unless your patch touches them, and list in your build note what you ran and what you left to the train. Run anything long in the background and keep sending heartbeats while it runs. This sandbox has Chromium at /opt/pw-browsers/chromium and npm registry access, so "tests could not run here" is never a reason to hand a patch back: if one really can't run, comment the exact error on the card and do not set patchReady.`;
 
 async function fireRoutine(fireUrl, token, text, fetchImpl = fetch) {
   const res = await fetchImpl(fireUrl, {
@@ -286,7 +302,11 @@ function fireRetryPlan({ status = null, attempts = 1, deferred = false, deferral
 function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Date.now() }) {
   const base = { at: new Date(now), requestedAt: requestedAt || null, requestedByEmail: requestedByEmail || null };
   if (result.sessionId) {
-    return { ...base, status: "started", sessionId: result.sessionId, sessionUrl: result.sessionUrl || null, error: null, attempts: (prior.attempts || 0) + 1, deferrals: prior.deferrals || 0, nextAttemptAt: null };
+    return {
+      ...base, status: "started", sessionId: result.sessionId, sessionUrl: result.sessionUrl || null, error: null, attempts: (prior.attempts || 0) + 1, deferrals: prior.deferrals || 0, nextAttemptAt: null,
+      // Marks a fire whose session was told to send heartbeats.
+      ...(result.buildAttemptId ? { buildAttemptId: result.buildAttemptId } : {}),
+    };
   }
   const deferred = !!result.deferred;
   const attempts = (prior.attempts || 0) + (deferred ? 0 : 1);
@@ -299,7 +319,7 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
   };
 }
 
-async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
+async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, projectName, prefix, suffix, builtOnById = {}, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
   const results = new Array(items.length);
   let next = 0;
   let throttled = false;
@@ -314,12 +334,13 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, projectId, proj
       nextStartAt = Math.max(nextStartAt, Date.now()) + spacingMs;
       if (wait) await new Promise((r) => setTimeout(r, wait));
       if (throttled) { deferNow(); continue; }
-      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix });
+      const buildAttemptId = newBuildAttemptId();
+      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix, buildAttemptId, builtOn: builtOnById[item.id] || [] });
       try {
         const r = await fireRoutine(fireUrl, token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
         if (r.status === 429) throttled = true;
-        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null };
+        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId } : {}) };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         logger.error("Routine fire threw for one ticket", { projectId, itemId: item.id, error });
@@ -396,6 +417,62 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       if (skipped.length) logger.info("Skipped tickets an earlier click is still building", { projectId: event.params.projectId, skipped });
     }
 
+    // Build order (ZE8h8cfaezOb0eTsRjSH, 14 Nov 2026): a click used to fire
+    // every ticket at once from the same base. Now a ticket whose dependency
+    // is still in Backlog is held (released when the dependency reaches Ready
+    // for Testing), and tickets likely to touch the same files build one after
+    // another; different lanes stay parallel. See functions/build-order.js.
+    let orderPlan = null;
+    let builtOnById = {};
+    if (items.length) {
+      try {
+        const clickIds = new Set(items.map((i) => i.id));
+        const backlogById = new Map(allBacklog.map((i) => [i.id, i]));
+        const outside = [...new Set(items.flatMap((i) => (Array.isArray(i.dependsOnItemIds) ? i.dependsOnItemIds : [])))].filter((id) => !clickIds.has(id));
+        const depsById = {};
+        const toFetch = [];
+        for (const id of outside) {
+          if (backlogById.has(id)) depsById[id] = backlogById.get(id);
+          else toFetch.push(id);
+        }
+        if (toFetch.length) {
+          const snaps = await db.getAll(...toFetch.map((id) => db.collection("backlogItems").doc(id)));
+          snaps.forEach((snap, n) => { depsById[toFetch[n]] = snap.exists ? { id: snap.id, ...snap.data() } : null; });
+        }
+        const building = allBacklog.filter((i) => inFlight.includes(i.id));
+        orderPlan = buildOrder.planBuildOrder(items, { depsById, building });
+        const nowIso = new Date().toISOString();
+        for (const h of orderPlan.held) {
+          await db.collection("backlogItems").doc(h.item.id).set({ blocked: buildOrder.heldBlock(h.waitingFor, nowIso), queuedAfter: null, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+        for (const q of orderPlan.queued) {
+          await db.collection("backlogItems").doc(q.item.id).set({ queuedAfter: { itemId: q.after.id, title: q.after.title, at: new Date() }, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        }
+        builtOnById = Object.fromEntries(orderPlan.fire.map((i) => [i.id, buildOrder.landedDependencies(i, depsById)]));
+        items = orderPlan.fire;
+        if (orderPlan.summary) logger.info("Build order applied to a click", { projectId: event.params.projectId, summary: orderPlan.summary });
+      } catch (err) {
+        // Ordering is an improvement, never a reason a click does nothing.
+        logger.error("Build order could not be worked out; firing the click unordered", { projectId: event.params.projectId, error: err instanceof Error ? err.message : String(err) });
+        orderPlan = null;
+      }
+    }
+    const buildOrderRecord = orderPlan && orderPlan.summary
+      ? { summary: orderPlan.summary, heldItemIds: orderPlan.held.map((h) => h.item.id), queuedItemIds: orderPlan.queued.map((q) => q.item.id), notSent: orderPlan.notSent, at: new Date() }
+      : null;
+
+    if (items.length === 0 && buildOrderRecord) {
+      // Everything in the click is held or queued: say so on the project
+      // rather than the click looking like it did nothing.
+      await db.collection("projects").doc(event.params.projectId).set({
+        notifyRoutine: orderPlan.notSent.length
+          ? { status: "error", errorMessage: `Nothing started. ${buildOrderRecord.summary}`, firedAt: new Date(), buildOrder: buildOrderRecord }
+          : { buildOrder: buildOrderRecord },
+      }, { merge: true });
+      logger.info("Notify requested, but every ticket in the click is held or queued", { projectId: event.params.projectId, summary: buildOrderRecord.summary });
+      return;
+    }
+
     if (items.length === 0) {
       if (inFlight.length) {
         logger.info("Notify requested, but every ticket in scope is already being built — nothing new to fire", { projectId: event.params.projectId, inFlight });
@@ -459,7 +536,7 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       // touch the same file from overwriting each other.
       const fired = await fireBuildSessionsPerItem({
         items, fireUrl, token, projectId: event.params.projectId, projectName,
-        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(),
+        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(), builtOnById,
       });
       const carried = ((previous && previous.sessions) || []).filter((x) => x && inFlight.includes(x.itemId));
       const sessions = [...carried, ...fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }))];
@@ -472,7 +549,10 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           const lastFire = lastFireRecord({
             result: f, prior: (item && item.lastFire) || {}, requestedAt: after.notifyRequestedAt, requestedByEmail: after.notifyRequestedByEmail,
           });
-          await db.collection("backlogItems").doc(f.itemId).set({ lastFire }, { merge: true });
+          // Only a fire that started a session replaces the card's current
+          // attempt: after a failed fire the earlier session is still the one
+          // whose patch may land.
+          await db.collection("backlogItems").doc(f.itemId).set({ lastFire, ...(lastFire.buildAttemptId ? { buildAttemptId: lastFire.buildAttemptId } : {}), ...(item && item.queuedAfter ? { queuedAfter: null } : {}) }, { merge: true });
         } catch (err) {
           logger.error("Couldn't record the fire outcome on the card", { projectId: event.params.projectId, itemId: f.itemId, error: err instanceof Error ? err.message : String(err) });
         }
@@ -506,6 +586,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
           sentItemIds,
           errorMessage: fireError || (failed.length ? `${failed.length} of ${fired.length} sessions failed to start: ${failed[0].error}${fired.some((f) => !f.sessionId && fireRetryPlan({ status: f.status ?? null, attempts: 1, deferred: !!f.deferred }).retry) ? " (will retry automatically)" : ""}` : null),
           firedVia: routineCredVia,
+          // What the click held or queued (null when it fired everything).
+          buildOrder: buildOrderRecord,
           // merge:true merges maps deeply, so a previous click's outcome would
           // otherwise survive into this one (finishedAt from 3 Oct did).
           finishedAt: FieldValue.delete(),
@@ -1747,6 +1829,59 @@ async function runTicketIntake(event) {
   upd.updatedAt = FieldValue.serverTimestamp();
   await event.data.after.ref.update(upd);
 }
+// Dependencies become data at intake (ZE8h8cfaezOb0eTsRjSH, 14 Nov 2026). The
+// Dependencies section used to be prose only, so a ticket that named another
+// was still fired before it and wasted a session. On a create or a description
+// edit, ticket ids and the exact titles of open tickets in the same project
+// are resolved into dependsOnItemIds with dependsOnSource "intake"; anything
+// else stays prose. A list a build session or a person set is only added to,
+// never overwritten (mergeDependsOn), and a reference that would close a loop
+// is left out. A list changed by anyone else (the Edit item picker, a build
+// session) is marked as theirs so a later description edit can't drop it.
+// Idempotent on its own output, which is what stops it looping.
+const sameIdList = (a, b) => JSON.stringify(Array.isArray(a) ? a : []) === JSON.stringify(Array.isArray(b) ? b : []);
+async function runDependencyIntake(event, db = getFirestore()) {
+  const after = event.data?.after?.data();
+  if (!after || after.status !== "backlog") return null;
+  const before = event.data?.before?.data();
+  const selfId = event.params.itemId;
+  const upd = {};
+  let ids = Array.isArray(after.dependsOnItemIds) ? after.dependsOnItemIds : [];
+  let source = after.dependsOnSource || null;
+  if (before && !sameIdList(before.dependsOnItemIds, after.dependsOnItemIds) && (before.dependsOnSource || null) === source && (!source || source === "intake")) {
+    const b = after.blocked;
+    source = b && b.reason === buildOrder.DEPENDENCY_REASON && b.setBy !== buildOrder.BUILD_ORDER_SETTER ? "build" : "manual";
+    upd.dependsOnSource = source;
+  }
+  if (!before || before.desc !== after.desc) {
+    const projectSnap = await db.collection("backlogItems").where("projectId", "==", after.projectId || "").get();
+    const sameProject = new Map();
+    projectSnap.forEach((d) => { if (d.id !== selfId) sameProject.set(d.id, { id: d.id, ...d.data() }); });
+    const candidates = [...sameProject.values()].filter((x) => buildOrder.OPEN_STATUSES.includes(x.status || "backlog"));
+    const refs = buildOrder.findDependencyReferences(after.desc, candidates, { selfId });
+    const known = new Map(sameProject);
+    const unknown = refs.ids.filter((id) => !known.has(id));
+    if (unknown.length) {
+      const snaps = await db.getAll(...unknown.map((id) => db.collection("backlogItems").doc(id)));
+      snaps.forEach((snap) => { if (snap.exists) known.set(snap.id, { id: snap.id, ...snap.data() }); });
+    }
+    // An id that names no ticket stays prose.
+    const found = [...refs.ids.filter((id) => known.has(id)), ...refs.titleIds];
+    const merged = buildOrder.mergeDependsOn(ids, source, found);
+    const depsOf = (id) => (known.get(id) || {}).dependsOnItemIds || [];
+    const accepted = merged.ids.filter((id) => ids.includes(id) || !buildOrder.findCycle(selfId, [id], depsOf));
+    if (!sameIdList(accepted, ids) || (merged.source || null) !== (after.dependsOnSource || null)) {
+      upd.dependsOnItemIds = accepted;
+      upd.dependsOnSource = accepted.length ? merged.source : (merged.source === "intake" ? null : merged.source);
+    }
+  }
+  if (!Object.keys(upd).length) return null;
+  if ("dependsOnSource" in upd && upd.dependsOnSource === (after.dependsOnSource || null) && !("dependsOnItemIds" in upd)) return null;
+  await event.data.after.ref.update(upd);
+  return upd;
+}
+exports.onBacklogItemDependencies = onDocumentWritten("backlogItems/{itemId}", (event) => runDependencyIntake(event));
+
 // Groom Backlog packages (ticket 4rc1t7zXf5o8q8BUTbQ5): the board queues
 // selected packages on projects/{id}.packageQueue; these two triggers run them
 // one batch at a time. Cards of a running batch carry packageId, so the card
@@ -2426,4 +2561,4 @@ exports.kanbanNotifyComment = mcp.kanbanNotifyComment;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };
+exports.__test = { runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt };

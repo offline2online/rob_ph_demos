@@ -41,11 +41,12 @@ Every copy, by the exact name the console lists it under:
 - 1 — Project rules, CLAUDE.md (3/5): linking projects, the train, board access · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (4/5): MCP server, project header, Docs page, archive · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (5/5): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
-- 2 — Console MCP guide (1/5): connect an agent, add a member · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (2/5): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (3/5): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (4/5): write tools and what the agent can't do · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (5/5): client view, authentication, files, deploy, tests · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (1/6): connect an agent, add a member · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (2/6): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (3/6): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (4/6): write tools, build order, your own Notify Claude Routine · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (5/6): skills library, help centre, copied documents, what the agent can't do · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (6/6): client view, authentication, files, deploy, tests · `backlog-tracker/MCP.md`
 - 3 — Help Centre (faq/): how it works and how it is edited · `faq/README.md`
 - 4 — Documentation standard (1/2): principles, types, repository rules, FAQ standard · `docs/CONTRIBUTING-docs.md`
 - 4 — Documentation standard (2/2): user guides, accessibility, templates, checklist · `docs/CONTRIBUTING-docs.md`
@@ -59,13 +60,13 @@ Where to begin, by role:
 
 - **Anyone new**: this file, then the Requirements block for what the
   console is for, then the README's "Deployment" section.
-- **Connecting an agent over MCP**: "2 — Console MCP guide (1/5)" to connect,
-  then "(2/5)", "(3/5)" and "(4/5)" for what the agent can and can't do.
+- **Connecting an agent over MCP**: "2 — Console MCP guide (1/6)" to connect,
+  then "(2/6)", "(3/6)", "(4/6)" and "(5/6)" for what the agent can and can't do.
 - **Writing or editing help-centre articles**: "3 — Help Centre (faq/)",
   then "4 — Documentation standard (1/2)" before writing a word. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
-  performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (5/5)"
+  performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (6/6)"
   for how authentication works. Read them before touching
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
@@ -101,6 +102,9 @@ Functions) unless a file is named.
    train changed. When one is red, `trainTestsRed()` reads it and
    `ejectRedCulprits()` re-runs the failed run once and, only if it fails
    again, sends the ticket that broke it back to Backlog.
+   A UI case that fails is retried once inside the run; a pass on the
+   retry is counted on the board's flake ledger, not failed
+   (`REQUIREMENTS.md` → "Flaky tests: retry once, record, ticket at three").
 7. **Ready for Testing**: `notifyOnItemsReadyForTesting()` presents the
    column for testing, with test links pinned to the landing commit.
 8. **Approve, or Failed testing**: ticking the cards and approving is the
@@ -125,7 +129,7 @@ Also in the flow: `.github/workflows/e2e-quick.yml` (a required check on every
 pull request to main, a passing no-op unless the change is for the Display
 Types project), `.github/workflows/e2e-nightly.yml` (02:00 Sydney on main,
 files tickets for failures) and the MCP tool `demote_project`, which turns a
-project back into a concept (see "2 — Console MCP guide (2/5)").
+project back into a concept (see "2 — Console MCP guide (2/6)").
 
 ### When a copy refreshes
 

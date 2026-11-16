@@ -227,7 +227,7 @@ $m = $GLOBALS['meta'][1] ?? array();
 ok( 200 === $r->status && 'Interactive product tour – Run Your Own RMN' === ( $m['ph_lead_source_label'] ?? '' ) && '/run-your-own-rmn/' === ( $m['ph_lead_page'] ?? '' ), 'Run Your Own RMN lead: source label and page' );
 ok( 'Member journey & outcome' === ( $m['ph_lead_tour_flow'] ?? '' ), 'Run Your Own RMN lead: the demo name is stored as the flow' );
 ok( 'rmn' === ( $GLOBALS['fired'][0][1]['industry'] ?? '' ), 'Run Your Own RMN lead: ph_lead_captured carries industry rmn' );
-foreach ( array( 'Venue setup', 'Advertiser creates by talking', 'Member journey & outcome' ) as $fl ) {
+foreach ( array( 'Network setup', 'Venue setup', 'Advertiser creates by talking', 'Member journey & outcome' ) as $fl ) {
 	ok( in_array( $fl, \AngieSnippets\PhIndustryEnhancements_10063\TOUR_FLOWS, true ), "TOUR_FLOWS accepts the golf demo $fl" );
 }
 $GLOBALS['posts'] = array(); $GLOBALS['fired'] = array(); $GLOBALS['meta'] = array(); $GLOBALS['mails'] = array();
@@ -393,11 +393,70 @@ foreach ( array( 'img/nope.jpg', 'vo/f1-01-1-4e6a1cf7d9.mp3', 'img/P5-forecourt.
 	$r = $gasset( '/run-your-own-rmn/tour/assets/v1/' . $bad, 'cached' );
 	ok( 404 === $r['status'] && 0 === $r['http'], "golf asset: $bad is not in the golf allow-list and answers 404" );
 }
+/* v2 (15 Nov 2026, the network): its own route, repo folder and cache; v1 stays served */
+$gasset2 = function ( $uri, $mode ) {
+	return json_decode( (string) shell_exec( 'ASSET_SET=golf2 ASSET_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' GET 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$G2 = '/run-your-own-rmn/tour/assets/v2/img/01-advertiser.jpg';
+$r  = $gasset2( $G2, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'] && 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/v2/img/01-advertiser.jpg.b64' === $r['url'], 'golf v2 asset: fetched once as base64 from tour-assets/rmn-golf/v2, sha-checked, cached and served' );
+ok( 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ), 'golf v2 asset: immutable cache' );
+$r = $gasset2( $G2, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/v2/img/01-advertiser.jpg.b64' ), 'golf v2 asset: the jsDelivr mirror of v2' );
+$r = $gasset2( $G2, 'bad' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf v2 asset: bytes that fail the sha are never stored or served' );
+$r = $gasset2( '/run-your-own-rmn/tour/assets/v2/img/N0-stores.jpg.b64', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'golf v2 asset: a name outside the v2 allow-list answers 404' );
+/* v3 (15 Nov 2026, clubs with 1 to 12 screens): its own route, repo folder and cache; v1 and v2 stay served */
+$gasset3 = function ( $uri, $mode ) {
+	return json_decode( (string) shell_exec( 'ASSET_SET=golf3 ASSET_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' GET 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$G3 = '/run-your-own-rmn/tour/assets/v3/img/01-advertiser.jpg';
+$r  = $gasset3( $G3, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'] && 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/v3/img/01-advertiser.jpg.b64' === $r['url'], 'golf v3 asset: fetched once as base64 from tour-assets/rmn-golf/v3, sha-checked, cached and served' );
+ok( 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ), 'golf v3 asset: immutable cache' );
+$r = $gasset3( $G3, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/v3/img/01-advertiser.jpg.b64' ), 'golf v3 asset: the jsDelivr mirror of v3' );
+$r = $gasset3( $G3, 'bad' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf v3 asset: bytes that fail the sha are never stored or served' );
+$r = $gasset3( '/run-your-own-rmn/tour/assets/v3/img/N0-stores.jpg.b64', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'golf v3 asset: a name outside the v3 allow-list answers 404' );
+/* v4 (15 Nov 2026, clubs with 2 to 16 screens, each with its own mix of types): its own route, repo folder and cache; v1 to v3 stay served */
+$gasset4 = function ( $uri, $mode ) {
+	return json_decode( (string) shell_exec( 'ASSET_SET=golf4 ASSET_MODE=' . $mode . ' php ' . escapeshellarg( __DIR__ . '/tour-asset-serve.php' ) . ' ' . escapeshellarg( $uri ) . ' GET 2>/dev/null' ), true ) ?: array( 'status' => -1, 'hdr' => array() );
+};
+$G4 = '/run-your-own-rmn/tour/assets/v4/img/01-advertiser.jpg';
+$r  = $gasset4( $G4, 'miss' );
+ok( 200 === $r['status'] && $r['body_ok'] && 1 === $r['http'] && $r['cached_ok'] && 'https://raw.githubusercontent.com/offline2online/rob_ph_demos/main/ph-website/tour-assets/rmn-golf/v4/img/01-advertiser.jpg.b64' === $r['url'], 'golf v4 asset: fetched once as base64 from tour-assets/rmn-golf/v4, sha-checked, cached and served' );
+ok( 'public, max-age=31536000, immutable' === $hdr( $r, 'Cache-Control' ), 'golf v4 asset: immutable cache' );
+$r = $gasset4( $G4, 'mirror' );
+ok( 200 === $r['status'] && $r['body_ok'] && false !== strpos( (string) $r['url'], 'https://cdn.jsdelivr.net/gh/offline2online/rob_ph_demos@main/ph-website/tour-assets/rmn-golf/v4/img/01-advertiser.jpg.b64' ), 'golf v4 asset: the jsDelivr mirror of v4' );
+$r = $gasset4( $G4, 'bad' );
+ok( 503 === $r['status'] && 'sha-mismatch' === $hdr( $r, 'X-PH-Tour-Reason' ) && ! $r['cached'], 'golf v4 asset: bytes that fail the sha are never stored or served' );
+$r = $gasset4( '/run-your-own-rmn/tour/assets/v4/img/N0-stores.jpg.b64', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'golf v4 asset: a name outside the v4 allow-list answers 404' );
+$r = $gasset( '/run-your-own-rmn/tour/assets/v1/img/N0-stores.jpg', 'cached' );
+ok( 404 === $r['status'] && 0 === $r['http'], 'golf v1 route does not serve a v2-only screenshot' );
 $r = $asset( '/industries/retail-media/tour/assets/v1/img/P5-proshop.jpg', 'cached' );
 ok( 404 === $r['status'] && 0 === $r['http'], 'a golf file is not served on the retail media route' );
-/* the golf allow-list is exactly the shipped SHA256SUMS of the decoded files, and covers every screenshot and voiceover line the golf tour asks for */
-$gmap  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN;
-$gdir  = dirname( __DIR__ ) . '/tour-assets/rmn-golf';
+/* v1 (single club, immutable): its allow-list still matches its SHA256SUMS */
+$g1map  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN;
+$g1sums = array();
+foreach ( file( dirname( __DIR__ ) . '/tour-assets/rmn-golf/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $g1sums[ $n ] = $h; }
+ok( count( $g1sums ) === count( $g1map ) && ! array_filter( $g1map, function ( $v, $n ) use ( $g1sums ) { return ( $g1sums[ $n ] ?? '' ) !== $v[0]; }, ARRAY_FILTER_USE_BOTH ), 'golf v1 allow-list still has exactly the files in v1 SHA256SUMS (' . count( $g1map ) . ')' );
+/* v2 (immutable since v3): its allow-list still matches its SHA256SUMS */
+$g2map  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V2;
+$g2sums = array();
+foreach ( file( dirname( __DIR__ ) . '/tour-assets/rmn-golf/v2/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $g2sums[ $n ] = $h; }
+ok( count( $g2sums ) === count( $g2map ) && ! array_filter( $g2map, function ( $v, $n ) use ( $g2sums ) { return ( $g2sums[ $n ] ?? '' ) !== $v[0]; }, ARRAY_FILTER_USE_BOTH ), 'golf v2 allow-list still has exactly the files in v2 SHA256SUMS (' . count( $g2map ) . ')' );
+/* v3 (immutable since v4): its allow-list still matches its SHA256SUMS */
+$g3map  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V3;
+$g3sums = array();
+foreach ( file( dirname( __DIR__ ) . '/tour-assets/rmn-golf/v3/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $g3sums[ $n ] = $h; }
+ok( count( $g3sums ) === count( $g3map ) && ! array_filter( $g3map, function ( $v, $n ) use ( $g3sums ) { return ( $g3sums[ $n ] ?? '' ) !== $v[0]; }, ARRAY_FILTER_USE_BOTH ), 'golf v3 allow-list still has exactly the files in v3 SHA256SUMS (' . count( $g3map ) . ')' );
+/* the v4 golf allow-list (what tour.html loads) is exactly the shipped v4 SHA256SUMS of the decoded files, and covers every screenshot and voiceover line the golf tour asks for */
+$gmap  = \AngieSnippets\PhIndustryEnhancements_10063\TOUR_ASSETS_RMN_V4;
+$gdir  = dirname( __DIR__ ) . '/tour-assets/rmn-golf/v4';
 $gsums = array();
 foreach ( file( $gdir . '/SHA256SUMS', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $l ) { list( $h, $n ) = preg_split( '/\s+/', trim( $l ) ); $gsums[ $n ] = $h; }
 ok( count( $gsums ) === count( $gmap ) && ! array_diff_key( $gsums, $gmap ) && ! array_diff_key( $gmap, $gsums ), 'golf allow-list has exactly the files in SHA256SUMS (' . count( $gmap ) . ')' );

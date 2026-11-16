@@ -190,12 +190,15 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     if (releaseWatched) { const r = releaseWatched; releaseWatched = ""; watchRelease(r); }
   }
   const countOf = async (ref) => (await getCountFromServer(ref)).data().count;
-  const cardsBehind = async () => (await countOf(cardsRef)) < (await countOf(tasksRef));
+  // (the two counts are asked for together: the board waits on one round trip, not two)
+  const cardsBehind = async () => { const [cards, tasks] = await Promise.all([countOf(cardsRef), countOf(tasksRef)]); return cards < tasks; };
   // Which collection the board reads. Behind: read the tickets, ask the server
   // to fill the cards, and move to them when they have caught up.
   async function chooseBoard() {
     let behind = false;
-    try { behind = await cardsBehind(); } catch (e) { behind = true; }
+    // A count that can't be read (offline, a dropped connection) says nothing about the cards: stay on them.
+    // Reading every open ticket in full instead is the costly path, for the one case the cards are known behind.
+    try { behind = await cardsBehind(); } catch (e) { behind = false; }
     boardColl = behind ? "kanbanTasks" : "kanbanCards";
     listenBoard();
     if (!behind || !backfill) return;
@@ -253,14 +256,26 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   }
   // KB-TASK-6: one array-contains query on searchTokens, capped; the page
   // ranks the result together with what it already holds.
-  async function searchServer(q) {
+  // The query is on one word of what was typed, so typing on (or back) often asks for the word just asked for.
+  // An answer is reused for a minute: each one reads up to 200 whole tickets.
+  const SEARCH_REUSE_MS = 60000;
+  const searched = new Map();
+  function searchServer(q) {
     const token = queryToken(q);
-    if (!token) return [];
-    const snap = await getDocs(query(tasksRef, where("searchTokens", "array-contains", token), limit(SERVER_SEARCH_LIMIT)));
-    const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
-    for (const t of list) texts.set(t.key, t.descriptionText);
-    pin(list);
-    return list;
+    if (!token) return Promise.resolve([]);
+    const hit = searched.get(token);
+    if (hit && Date.now() - hit.at < SEARCH_REUSE_MS) return hit.p;
+    const p = (async () => {
+      const snap = await getDocs(query(tasksRef, where("searchTokens", "array-contains", token), limit(SERVER_SEARCH_LIMIT)));
+      const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
+      for (const t of list) texts.set(t.key, t.descriptionText);
+      pin(list);
+      return list;
+    })();
+    searched.set(token, { p, at: Date.now() });
+    p.catch(() => { if (searched.get(token) && searched.get(token).p === p) searched.delete(token); });
+    if (searched.size > 200) searched.delete(searched.keys().next().value);
+    return p;
   }
   function watchComments(key, cb) {
     return onSnapshot(collection(db, "kanbanTasks", key, "comments"), (snap) => {

@@ -63,9 +63,9 @@ test("a card with no request is left alone", () => {
 });
 test("the note names when it was requested, the error if recorded, and what to do", () => {
   const withErr = rebuildNeverStartedNote(card({ rebuildRequestedAt: "2026-10-19T04:19:00.000Z", lastFire: { error: "Routine fire endpoint responded with status 429" } }));
-  assert.strictEqual(withErr, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started (Routine fire endpoint responded with status 429), after 2 more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.");
+  assert.strictEqual(withErr, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started (Routine fire endpoint responded with status 429), after 2 more requests. It is tried again by itself; nothing to answer.");
   const bare = rebuildNeverStartedNote(card({ rebuildRequestedAt: "2026-10-19T04:19:00.000Z" }));
-  assert.strictEqual(bare, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started, after 2 more requests. Flagged as waiting on your answer: answer on the card (Answer button) and it is built again.");
+  assert.strictEqual(bare, "The automatic rebuild requested at 2026-10-19T04:19:00.000Z never started, after 2 more requests. It is tried again by itself; nothing to answer.");
 });
 test("a failed fire marked for retry is re-requested only once its time has come", () => {
   const retrying = (nextAttemptAt, over = {}) => card({ lastFire: { status: "retrying", nextAttemptAt }, ...over });
