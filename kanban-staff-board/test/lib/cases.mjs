@@ -1438,7 +1438,7 @@ export function defineNewCases(E) {
 
   T("TC-31", "a new console member appears in the assignee list and filters without a reload; a disabled member leaves the pickers but stays on existing tickets", { ...consoleOnly("Console only: members come from the console's directory"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
-    const newbie = "noor.ali@personalisationhub.com";
+    const newbie = "noor.ali@ph.example";
     await p.evaluate((n) => { const b = globalThis.__fbStub; b.col("memberDirectory").set(n, { email: n, displayName: "Noor Ali" }); b.notify(); }, newbie);
     await sleep(500);
     assert.ok(await p.$(`.kb-person-chip[data-person="${newbie}"]`), "a filter chip for the new member");
@@ -1467,7 +1467,7 @@ export function defineNewCases(E) {
       await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
       await p.fill("#f-title", "Session A's ticket");
       // (another session writes the ticket and its board card together, as the page does)
-      await p.evaluate(async () => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const t = { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@personalisationhub.com" }; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", t); b.col("kanbanCards").set("PH-40", { ...core.cardOf(t), updatedBy: t.createdBy }); b.notify(); });
+      await p.evaluate(async () => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const t = { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@ph.example" }; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", t); b.col("kanbanCards").set("PH-40", { ...core.cardOf(t), updatedBy: t.createdBy }); b.notify(); });
       await sleep(300);
       await saveTask(p);
       assert.equal(await toastKey(p), "PH-41", "A's ticket skips the key B took");
@@ -1490,7 +1490,7 @@ export function defineNewCases(E) {
     // The server's tools write the ticket and its board card together.
     const putTicket = (t) => p.evaluate(async (t) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; b.col("kanbanTasks").set(t.key, t); b.col("kanbanCards").set(t.key, { ...core.cardOf(t), ...(t.closedAt ? { closedAt: t.closedAt } : {}), updatedBy: "agent" }); b.notify(); }, t);
     await p.evaluate(() => { globalThis.__fbStub.col("kanbanCounters").set("main", { nextNumber: 41 }); });
-    await putTicket({ key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "rob@offline2online.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" });
+    await putTicket({ key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "owner@example.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" });
     await until(() => p.$(card("PH-40")), "the new card", 5000);
     assert.equal(await countText(p), n0 + 1);
     assert.equal((await where(p, "PH-40")).status, "backlog");
@@ -1506,7 +1506,7 @@ export function defineNewCases(E) {
   T("TC-56", "two sessions move the same card at once: both boards end on the same state, with no duplicate card", { ...consoleOnly("Console only: the prototype keeps its state in one browser"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"), TALL);
     const input = prof.touch ? "touch" : "mouse";
-    const remote = (status) => p.evaluate(async (s) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = { ...c.get("PH-34"), status: s, open: true }; c.set("PH-34", t); b.col("kanbanCards").set("PH-34", { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify(); }, status);
+    const remote = (status) => p.evaluate(async (s) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = { ...c.get("PH-34"), status: s, open: true }; c.set("PH-34", t); b.col("kanbanCards").set("PH-34", { ...core.cardOf(t), updatedBy: "other@ph.example" }); b.notify(); }, status);
     if (prof.kind === "phone") { await statusMove(p, "PH-34", "in-progress"); await remote("approved"); await sleep(500); }
     else {
       // A picks the card up; B moves it; A drops it in In Progress

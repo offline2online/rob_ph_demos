@@ -51,7 +51,7 @@ assert.equal(APPROVAL_WARNING_TITLE, "Approve before tests pass?");
 
 // approvedByEmail is lowercased; nothing written without an email
 const NOW = { sentinel: true };
-assert.deepEqual(approvalFields("Sam@PersonalisationHub.com", NOW), { approvedByEmail: "sam@personalisationhub.com", approvedAt: NOW });
+assert.deepEqual(approvalFields("Sam@ph.example", NOW), { approvedByEmail: "sam@ph.example", approvedAt: NOW });
 assert.deepEqual(approvalFields(null, NOW), {});
 
 // "Approved by <email>", else approvedVia; time on hover

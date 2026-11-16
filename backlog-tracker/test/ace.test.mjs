@@ -27,7 +27,7 @@ t("the email icon opens a new email to the AWS manager naming opportunity and cu
 t("no manager, or a malformed address, gives no mailto", () => {
   assert.equal(mailtoFor(rows[1]), "");
   assert.equal(mailtoFor({ awsSeller: { email: "a b@c" } }), "");
-  assert.equal(mailtoFor({ awsSeller: { email: "x@y.com>\r\nBcc: z@z.com" } }), "");
+  assert.equal(mailtoFor({ awsSeller: { email: "x@y.example>\r\nBcc: z@z.example" } }), "");
 });
 t("a row links to the lead card whose company matches the customer", () => {
   const leads = [{ id: "L1", company: { name: "ACME Retail" } }, { id: "L2", company: { name: "Beta" } }];

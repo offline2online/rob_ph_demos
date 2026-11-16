@@ -5,7 +5,7 @@
 import assert from "node:assert";
 import { startHarness, until } from "./harness.mjs";
 
-const seed = { user: { email: "editor@personalisationhub.com", role: "editor" }, docs: { projects: { p1: { name: "Demo", createdAt: { $ts: 1_760_000_000_000 } } }, backlogItems: {} } };
+const seed = { user: { email: "editor@ph.example", role: "editor" }, docs: { projects: { p1: { name: "Demo", createdAt: { $ts: 1_760_000_000_000 } } }, backlogItems: {} } };
 const h = await startHarness();
 try {
   const { page } = await h.open({ seed, width: 820, height: 1180 });

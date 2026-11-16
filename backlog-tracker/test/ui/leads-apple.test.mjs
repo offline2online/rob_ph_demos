@@ -18,7 +18,7 @@ const enrichment = { at: t(T0), by: "agent", summary: "A UK grocery retailer.", 
 const lead = (name, stage, extra = {}) => ({ company: { name, website: "https://x.example", industry: extra.industry || "Grocery", countries: ["United Kingdom"], storeCount: 120 },
   contacts: [{ id: "k1", name: "Jo Bloggs", jobTitle: "Head of Digital", buyingRole: "decision-maker", email: "jo@x.example", linkedin: "https://linkedin.com/in/jo" }],
   stage, source: "Website form", assignee: "", customerAccount: null, inboundCount: extra.inbound || 0, enrichment: extra.enrichment || null, createdAt: t(T0), updatedAt: t(T0) });
-const seed = { user: { email: "editor@personalisationhub.com", role: "editor" }, docs: {
+const seed = { user: { email: "editor@ph.example", role: "editor" }, docs: {
   projects: { p1: { name: "Demo Project", createdAt: t(T0) } },
   leads: { acme: lead("Acme Retail", "demo", { enrichment, inbound: 3 }), beta: lead("Beta Pharmacy", "lead", { industry: "Pharmacy" }), gamma: lead("Gamma Telecom", "hot-lead", { industry: "Telco" }),
     delta: lead("Delta Fashion", "post-demo", { industry: "Fashion" }), eps: lead("Epsilon Electronics", "closed-won"), zeta: lead("Zeta Lost Co", "closed-lost") },

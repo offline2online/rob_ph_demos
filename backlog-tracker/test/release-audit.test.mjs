@@ -44,9 +44,9 @@ for (const type of Object.keys(client.AUDIT_LOG_LABELS)) assert.ok(fn.LOG_TYPES.
 assert.throws(() => fn.auditLogEntry({ type: "nonsense" }));
 
 // fire text: the marker the instructions key off, plus the release and projects
-const text = fn.buildAuditRequestText({ releaseId: "R1", release: { name: "Spring", version: "5.2" }, projects: [{ id: "p1", name: "DSP", programId: "g1" }], requestedByEmail: "rob@x.com" });
+const text = fn.buildAuditRequestText({ releaseId: "R1", release: { name: "Spring", version: "5.2" }, projects: [{ id: "p1", name: "DSP", programId: "g1" }], requestedByEmail: "rob@x.example" });
 assert.ok(text.startsWith('=== RELEASE AUDIT REQUEST for "Spring (5.2)" (releaseId: R1)'));
-assert.ok(text.includes("projectId: p1, programId: g1") && text.includes("rob@x.com"));
+assert.ok(text.includes("projectId: p1, programId: g1") && text.includes("rob@x.example"));
 assert.ok(fn.buildAuditRequestText({ releaseId: "R", release: {}, projects: [] }).includes("none assigned"));
 
 // the per-ticket FAQ flow is gone

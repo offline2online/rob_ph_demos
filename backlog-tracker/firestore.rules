@@ -28,9 +28,11 @@ service cloud.firestore {
     // removing someone cuts their agent off at once rather than whenever a
     // token happens to expire).
     //
-    // Two accounts stay hard-coded as owners so an empty or mis-edited
-    // consoleUsers collection can never lock everyone out of the thing that
-    // grants access, plus the board automation user the Routine signs in as.
+    // The account owner is recognised by the `owner: true` custom claim
+    // (isOwnerAccount below), so an empty or mis-edited consoleUsers
+    // collection can never lock everyone out of the thing that grants access;
+    // the board automation user the Routine signs in as is named because it
+    // is a service identity, not a person.
     // Server-side jobs (Cloud Functions, the deploy workflow's scripts, the
     // backlog automation) use a service account and bypass rules entirely.
     // The only anonymous access left is READ of the two help-centre
@@ -46,11 +48,13 @@ service cloud.firestore {
     function callerEmail() {
       return signedIn() ? request.auth.token.email.lower() : "";
     }
+    // The account owner carries the `owner: true` custom claim on their
+    // Firebase Auth user, set by scripts/set-owner-claim.js with the admin
+    // SDK. A claim lives in Auth, not Firestore, so an empty or mis-edited
+    // consoleUsers collection still can't lock the owner out, and no
+    // person's address is written into these rules.
     function isOwnerAccount() {
-      return callerEmail() in [
-        "rob@offline2online.com",
-        "rob@personalisationhub.com"
-      ];
+      return signedIn() && request.auth.token.get("owner", false) == true;
     }
     function isAutomationAccount() {
       return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
@@ -843,6 +847,15 @@ service cloud.firestore {
     // board in a browser AND to the MCP server their AI agent connects to
     // (backlog-tracker/MCP.md). mcpEnabled (default true when absent) turns
     // just the agent half off without removing the person.
+    // Run-time identity configuration (functions/identity.js): today just
+    // personAliases, the map of a second sign-in address to the same
+    // person's canonical one. Written only by scripts/set-owner-claim.js with
+    // the admin SDK; members read it so the Staff Kanban folds an alias into
+    // its person in the browser too.
+    match /consoleConfig/{configId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /consoleUsers/{userEmail} {
       // A signed-in person may always read their OWN row. auth-gate.js has
       // to check membership before it can know whether the caller is a
@@ -1326,12 +1339,16 @@ service cloud.firestore {
     // Notifications (KB-NAV-2, KB-MOD-3): written only by the Kanban fan-out
     // trigger (functions/kanban-notify.js, the admin SDK), never by a client.
     // Only the person notified reads theirs, marks it read or clears it.
-    // The owner's second sign-in address is the same person (PERSON_ALIASES in
-    // kanban-core.js): notifications are always addressed to the first, so
-    // signed in with the second he reads and clears those.
+    // A second sign-in address of the same person carries an `aliasOf` claim
+    // naming the canonical address (scripts/set-owner-claim.js; the same map
+    // is consoleConfig/identity.personAliases for kanban-core.js):
+    // notifications are always addressed to the canonical one, so signed in
+    // with the alias they read and clear those.
     function kanbanNotifiedIs(to) {
       return to == callerEmail()
-        || (callerEmail() == "rob@personalisationhub.com" && to == "rob@offline2online.com");
+        || (signedIn() && request.auth.token.get("aliasOf", "") is string
+            && request.auth.token.get("aliasOf", "") != ""
+            && to == request.auth.token.get("aliasOf", "").lower());
     }
     match /kanbanNotifications/{noteId} {
       allow read: if signedIn() && kanbanNotifiedIs(resource.data.to);

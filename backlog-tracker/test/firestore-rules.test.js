@@ -16,7 +16,9 @@ const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "ut
 // on purpose: it bypasses rules entirely, so there is nothing here to test.
 // `uid` is passed separately, never inside the token claims — the emulator
 // rejects a mock token carrying it ("use sub instead").
-const HUMAN = { uid: "human", claims: { email: "rob@offline2online.com", email_verified: true } };
+// The account owner: an admin by the `owner` custom claim (scripts/set-owner-claim.js), never by address.
+const HUMAN = { uid: "human", claims: { email: "owner@example.com", email_verified: true, owner: true } };
+const OWNER_ADDRESS_NO_CLAIM = { uid: "lookalike", claims: { email: "owner@example.com", email_verified: true } };
 const BOT = { uid: "bot", claims: { email: "board-automation@backlog-tracker-e4ed2.firebaseapp.com", email_verified: true } };
 const STRANGER = { uid: "stranger", claims: { email: "someone@example.com", email_verified: true } };
 // Membership is a consoleUsers doc now, not a hard-coded list (see the
@@ -24,19 +26,19 @@ const STRANGER = { uid: "stranger", claims: { email: "someone@example.com", emai
 // accounts whose access comes entirely from the rows reset() seeds below —
 // which is the whole point: adding a row is the act of granting access, to
 // the board in a browser and to that person's AI agent over MCP alike.
-const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", email_verified: true } };
-const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
-const DISABLED = { uid: "disabled", claims: { email: "expat@personalisationhub.com", email_verified: true } };
-const TEAM_ADMIN = { uid: "teamadmin", claims: { email: "ada@personalisationhub.com", email_verified: true } };
+const MEMBER = { uid: "member", claims: { email: "sam@ph.example", email_verified: true } };
+const VIEWER = { uid: "viewer", claims: { email: "kit@ph.example", email_verified: true } };
+const DISABLED = { uid: "disabled", claims: { email: "expat@ph.example", email_verified: true } };
+const TEAM_ADMIN = { uid: "teamadmin", claims: { email: "ada@ph.example", email_verified: true } };
 // A row carrying nothing but an email — no role, no disabled, no mcpEnabled.
 // Rules THROW on a property that isn't present rather than reading it as
 // null, so a bare property access here denies the member outright. That bug
 // shipped once and CI caught it; these cases are why.
-const SPARSE = { uid: "sparse", claims: { email: "min@personalisationhub.com", email_verified: true } };
+const SPARSE = { uid: "sparse", claims: { email: "min@ph.example", email_verified: true } };
 // Same address as MEMBER but signed in with an unverified email — the rules
 // require email_verified, which for an invited password account is what
 // completing Firebase's password-setup email establishes.
-const UNVERIFIED = { uid: "unverified", claims: { email: "sam@personalisationhub.com", email_verified: false } };
+const UNVERIFIED = { uid: "unverified", claims: { email: "sam@ph.example", email_verified: false } };
 
 // A project mid-release: the automation has created the train branch and the
 // board has latched the lock, which is exactly the state the Deploy click
@@ -80,7 +82,7 @@ async function reset() {
     await setDoc(doc(db, "backlogItems/iLive"), Object.assign({}, ITEM, { status: "published-live", mergeCommit: "abc1234", deployCommit: "abc1234" }));
     // Approval-record cases (19 Oct 2026): each approval is a one-time move.
     for (const n of ["iApp1", "iApp2", "iApp3", "iApp4", "iApp5"]) await setDoc(doc(db, "backlogItems/" + n), ITEM);
-    await setDoc(doc(db, "routineBindings/sam@personalisationhub.com"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
+    await setDoc(doc(db, "routineBindings/sam@ph.example"), { fireUrl: "https://api.anthropic.com/fire", token: "sk-ant-secret" });
     await setDoc(doc(db, "mediaProviderKeys/gemini"), { box: { v: 1, ct: "x" }, hint: "…abcd" });
     await setDoc(doc(db, "mediaKeyAudit/a1"), { action: "set", provider: "gemini" });
     // Support Inbox (functions/support-mail.js): a ticket with one message, the settings and the secrets.
@@ -94,21 +96,21 @@ async function reset() {
     // and the projects update rule sits closest to it for a non-admin.
     await setDoc(doc(db, "projects/pFull"), Object.assign({}, PROJECT, {
       docs: { requirements: { chars: 50000 }, readme: { chars: 20000 } }, routinePromptMd: "hello",
-      notifyRequestedByEmail: "ada@personalisationhub.com", deployNotifyRequestedByEmail: "ada@personalisationhub.com",
-      groomRequestedByEmail: "ada@personalisationhub.com", artifactUrl: "https://claude.ai/x", repoFolder: "backlog-tracker",
+      notifyRequestedByEmail: "ada@ph.example", deployNotifyRequestedByEmail: "ada@ph.example",
+      groomRequestedByEmail: "ada@ph.example", artifactUrl: "https://claude.ai/x", repoFolder: "backlog-tracker",
       trainStatus: "idle", trainNote: "n", trainPrNumber: 5, needsHumanMerge: false, trainReady: false, releaseId: "rDraft", programId: "prog1",
       notifyRoutine: { status: "done" }, deployRoutine: { status: "done" }, groomRoutine: { status: "done" },
     }));
     await setDoc(doc(db, "projects/pFull/docs/requirements"), { contentMd: "r".repeat(50000), chars: 50000 });
     await setDoc(doc(db, "projects/pFull/artifactVersions/1"), { version: 1, projectId: "pFull", sourceUrl: "https://claude.ai/x", pinnedUrl: "https://claude.ai/x", frozen: false });
-    await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
-    await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
-    await setDoc(doc(db, "consoleUsers/expat@personalisationhub.com"), { email: "expat@personalisationhub.com", role: "editor", disabled: true });
-    await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
-    await setDoc(doc(db, "consoleUsers/min@personalisationhub.com"), { email: "min@personalisationhub.com" });
-    await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@personalisationhub.com", type: "access" });
-    await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@personalisationhub.com" });
-    await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@personalisationhub.com", tool: "create_backlog_item" });
+    await setDoc(doc(db, "consoleUsers/sam@ph.example"), { email: "sam@ph.example", role: "editor" });
+    await setDoc(doc(db, "consoleUsers/kit@ph.example"), { email: "kit@ph.example", role: "viewer" });
+    await setDoc(doc(db, "consoleUsers/expat@ph.example"), { email: "expat@ph.example", role: "editor", disabled: true });
+    await setDoc(doc(db, "consoleUsers/ada@ph.example"), { email: "ada@ph.example", role: "admin" });
+    await setDoc(doc(db, "consoleUsers/min@ph.example"), { email: "min@ph.example" });
+    await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@ph.example", type: "access" });
+    await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@ph.example" });
+    await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@ph.example", tool: "create_backlog_item" });
     await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
     await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
     await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
@@ -156,6 +158,14 @@ async function main() {
   await check("Editor can reject a ticket (revertRequested)", "allow", () =>
     setDoc(doc(as(HUMAN), "backlogItems/i1"), { status: "backlog", revertRequested: true }, { merge: true }));
   await check("Editor can read the board", "allow", () => getDoc(doc(as(HUMAN), "projects/p1")));
+  // The owner is the claim, not the address: the same address with no claim
+  // and no consoleUsers row is nobody.
+  await check("The owner's address without the owner claim can't read the board", "deny", () => getDoc(doc(as(OWNER_ADDRESS_NO_CLAIM), "projects/p1")));
+  // consoleConfig/identity (the alias map): members read it, no client writes it.
+  await check("The owner can read consoleConfig/identity", "allow", () => getDoc(doc(as(HUMAN), "consoleConfig/identity")));
+  await check("Not even the owner can write consoleConfig/identity", "deny", () =>
+    setDoc(doc(as(HUMAN), "consoleConfig/identity"), { personAliases: { "x@ph.example": "owner@example.com" } }));
+  await check("Signed out can't read consoleConfig/identity", "deny", () => getDoc(doc(as(null), "consoleConfig/identity")));
 
   // ── What a person must NOT be able to do ────────────────────────────────
   // These decide which branch a real merge points at.
@@ -202,9 +212,9 @@ async function main() {
   // editor doing the deleting (and refreshable if the same id is deleted
   // again) and removable by nobody from the browser.
   await check("An editor records a tombstone when deleting an article", "allow", () =>
-    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", categoryId: "c1", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", categoryId: "c1", deletedAt: serverTimestamp(), deletedBy: "sam@ph.example" }));
   await check("Deleting the same id again just refreshes its tombstone", "allow", () =>
-    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", deletedAt: serverTimestamp(), deletedBy: "sam@personalisationhub.com" }));
+    setDoc(doc(as(MEMBER), "faqDeletedArticles/a1"), { title: "T", deletedAt: serverTimestamp(), deletedBy: "sam@ph.example" }));
   await check("A viewer cannot write a tombstone", "deny", () =>
     setDoc(doc(as(VIEWER), "faqDeletedArticles/a2"), { title: "T", deletedAt: serverTimestamp() }));
   await check("A tombstone needs a real deletedAt", "deny", () =>
@@ -228,53 +238,53 @@ async function main() {
   await check("A member row with no role defaults to editor and can write", "allow", () =>
     setDoc(doc(as(SPARSE), "backlogItems/i1"), { desc: "Edited by a minimal member row" }, { merge: true }));
   await check("A member row with no role is NOT an admin", "deny", () =>
-    setDoc(doc(as(SPARSE), "consoleUsers/newbie3@personalisationhub.com"), { email: "newbie3@personalisationhub.com", role: "editor" }));
+    setDoc(doc(as(SPARSE), "consoleUsers/newbie3@ph.example"), { email: "newbie3@ph.example", role: "editor" }));
   await check("A member with an unverified email cannot read the board", "deny", () => getDoc(doc(as(UNVERIFIED), "projects/p1")));
 
   // ── consoleUsers itself ────────────────────────────────────────────────
   await check("Anyone signed in may read their OWN membership row (the sign-in gate needs this)", "allow", () =>
     getDoc(doc(as(STRANGER), "consoleUsers/someone@example.com")));
   await check("A stranger cannot read someone else's membership row", "deny", () =>
-    getDoc(doc(as(STRANGER), "consoleUsers/sam@personalisationhub.com")));
+    getDoc(doc(as(STRANGER), "consoleUsers/sam@ph.example")));
   await check("A non-admin member CANNOT add a user", "deny", () =>
-    setDoc(doc(as(MEMBER), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "editor" }));
+    setDoc(doc(as(MEMBER), "consoleUsers/newbie@ph.example"), { email: "newbie@ph.example", role: "editor" }));
   await check("A non-admin member CANNOT promote themselves to admin", "deny", () =>
-    setDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { role: "admin" }, { merge: true }));
+    setDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { role: "admin" }, { merge: true }));
   await check("An admin can add a user", "allow", () =>
-    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "editor" }));
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@ph.example"), { email: "newbie@ph.example", role: "editor" }));
   await check("An admin cannot file a user under an id that isn't their email", "deny", () =>
-    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/not-the-email"), { email: "newbie@personalisationhub.com", role: "editor" }));
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/not-the-email"), { email: "newbie@ph.example", role: "editor" }));
   await check("An admin cannot invent a role", "deny", () =>
-    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@personalisationhub.com"), { email: "newbie@personalisationhub.com", role: "superuser" }));
+    setDoc(doc(as(TEAM_ADMIN), "consoleUsers/newbie@ph.example"), { email: "newbie@ph.example", role: "superuser" }));
   await check("An admin cannot delete their own row and strand themselves", "deny", () =>
-    deleteDoc(doc(as(TEAM_ADMIN), "consoleUsers/ada@personalisationhub.com")));
+    deleteDoc(doc(as(TEAM_ADMIN), "consoleUsers/ada@ph.example")));
   await check("An owner account works with no consoleUsers row at all", "allow", () =>
-    setDoc(doc(as(HUMAN), "consoleUsers/newbie2@personalisationhub.com"), { email: "newbie2@personalisationhub.com", role: "viewer" }));
+    setDoc(doc(as(HUMAN), "consoleUsers/newbie2@ph.example"), { email: "newbie2@ph.example", role: "viewer" }));
 
   // ── Profile photos: a member changes only their OWN photoUrl/photoUpdatedAt ─
-  const BUCKET_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fsam%40personalisationhub.com.jpg?alt=media&token=t";
+  const BUCKET_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fsam%40ph.example.jpg?alt=media&token=t";
   await check("A member can set their own photo", "allow", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
   await check("A member can clear their own photo", "allow", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: "", photoUpdatedAt: serverTimestamp() }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { photoUrl: "", photoUpdatedAt: serverTimestamp() }));
   await check("A member cannot set a photo URL pointing off the bucket", "deny", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: "https://evil.example/x.jpg", photoUpdatedAt: serverTimestamp() }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { photoUrl: "https://evil.example/x.jpg", photoUpdatedAt: serverTimestamp() }));
   await check("A member cannot backdate photoUpdatedAt", "deny", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: new Date(0) }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { photoUrl: BUCKET_URL, photoUpdatedAt: new Date(0) }));
   await check("A member cannot set someone else's photo", "deny", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/kit@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/kit@ph.example"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
   await check("A member cannot piggy-back their role on a photo update", "deny", () =>
-    updateDoc(doc(as(MEMBER), "consoleUsers/sam@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp(), role: "admin" }));
+    updateDoc(doc(as(MEMBER), "consoleUsers/sam@ph.example"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp(), role: "admin" }));
   await check("An admin can set another member's photo", "allow", () =>
-    updateDoc(doc(as(TEAM_ADMIN), "consoleUsers/kit@personalisationhub.com"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
+    updateDoc(doc(as(TEAM_ADMIN), "consoleUsers/kit@ph.example"), { photoUrl: BUCKET_URL, photoUpdatedAt: serverTimestamp() }));
 
   // An owner with no row: the profile menu reads the row, finds none, and
   // creates it with the photo (public/js/app.js saveMemberPhotoFields).
-  const OWNER_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Frob%40offline2online.com.jpg?alt=media&token=t";
+  const OWNER_URL = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fowner%40example.com.jpg?alt=media&token=t";
   await check("An owner with no row can read that their own row is missing", "allow", () =>
-    getDoc(doc(as(HUMAN), "consoleUsers/rob@offline2online.com")));
+    getDoc(doc(as(HUMAN), "consoleUsers/owner@example.com")));
   await check("An owner with no row can create it carrying their photo", "allow", () =>
-    setDoc(doc(as(HUMAN), "consoleUsers/rob@offline2online.com"), { email: "rob@offline2online.com", role: "admin", mcpEnabled: true, createdAt: serverTimestamp(), createdBy: "rob@offline2online.com", photoUrl: OWNER_URL, photoUpdatedAt: serverTimestamp() }));
+    setDoc(doc(as(HUMAN), "consoleUsers/owner@example.com"), { email: "owner@example.com", role: "admin", mcpEnabled: true, createdAt: serverTimestamp(), createdBy: "owner@example.com", photoUrl: OWNER_URL, photoUpdatedAt: serverTimestamp() }));
   await check("A non-member cannot create their own row to attach a photo", "deny", () =>
     setDoc(doc(as(STRANGER), "consoleUsers/someone@example.com"), { email: "someone@example.com", role: "admin", mcpEnabled: true, photoUrl: "", photoUpdatedAt: serverTimestamp() }));
 
@@ -282,7 +292,7 @@ async function main() {
   await check("An admin CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(TEAM_ADMIN), "mcpTokens/deadbeef")));
   await check("An owner CANNOT read stored MCP tokens", "deny", () => getDoc(doc(as(HUMAN), "mcpTokens/deadbeef")));
   await check("Nobody can forge an MCP token", "deny", () =>
-    setDoc(doc(as(HUMAN), "mcpTokens/forged"), { email: "rob@offline2online.com", type: "access" }));
+    setDoc(doc(as(HUMAN), "mcpTokens/forged"), { email: "owner@example.com", type: "access" }));
   await check("Nobody can register an MCP client from the browser", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpClients/c1"), { clientId: "c1" }));
   // ── Documentation revision history ─────────────────────────────────────
@@ -298,7 +308,7 @@ async function main() {
   await check("Nobody can delete a documentation revision", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "docRevisions/r1")));
 
   // Concept critiques + board-made revisions of a concept's documents.
-  const critique = { conceptId: "c1", role: "CFO", reviewer: "sam@personalisationhub.com", verdict: "conditional", summary: "", argumentsFor: ["a"], argumentsAgainst: [], assumptions: [], recommendations: [{ id: "r1", text: "Cap spend", status: "pending" }], status: "open" };
+  const critique = { conceptId: "c1", role: "CFO", reviewer: "sam@ph.example", verdict: "conditional", summary: "", argumentsFor: ["a"], argumentsAgainst: [], assumptions: [], recommendations: [{ id: "r1", text: "Cap spend", status: "pending" }], status: "open" };
   await check("An editor may add a concept critique", "allow", () => setDoc(doc(as(MEMBER), "conceptCritiques/k1"), critique));
   await check("A viewer may read a concept critique", "allow", () => getDoc(doc(as(VIEWER), "conceptCritiques/k1")));
   await check("A viewer cannot add a concept critique", "deny", () => setDoc(doc(as(VIEWER), "conceptCritiques/k2"), critique));
@@ -306,9 +316,9 @@ async function main() {
   await check("A critique's role is free text up to 80 characters", "deny", () => setDoc(doc(as(MEMBER), "conceptCritiques/k4"), { ...critique, role: "x".repeat(81) }));
   await check("A critique cannot be moved to another concept", "deny", () => setDoc(doc(as(MEMBER), "conceptCritiques/k1"), { ...critique, conceptId: "c2" }));
   await check("An editor may append a board revision of a concept's README", "allow", () =>
-    setDoc(doc(as(MEMBER), "docRevisions/boardrev"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "sam@personalisationhub.com" }));
+    setDoc(doc(as(MEMBER), "docRevisions/boardrev"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "sam@ph.example" }));
   await check("A board revision cannot be attributed to someone else", "deny", () =>
-    setDoc(doc(as(MEMBER), "docRevisions/boardrev2"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "ada@personalisationhub.com" }));
+    setDoc(doc(as(MEMBER), "docRevisions/boardrev2"), { target: "concept.readmeMd", conceptId: "c1", contentMd: "old", via: "board", replacedByEmail: "ada@ph.example" }));
 
   await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
@@ -516,9 +526,9 @@ async function main() {
 
   // ── 27 Sep 2026 hardening (SECURITY-PERFORMANCE.md) ─────────────────────
   await check("A member can GET their own consoleUsers row", "allow", () =>
-    getDoc(doc(as(VIEWER), "consoleUsers/kit@personalisationhub.com")));
+    getDoc(doc(as(VIEWER), "consoleUsers/kit@ph.example")));
   await check("A member can GET another member's row (attribution)", "allow", () =>
-    getDoc(doc(as(MEMBER), "consoleUsers/kit@personalisationhub.com")));
+    getDoc(doc(as(MEMBER), "consoleUsers/kit@ph.example")));
   await check("An editor CANNOT list the whole member roster", "deny", () =>
     getDocs(collection(as(MEMBER), "consoleUsers")));
   await check("A viewer CANNOT list the whole member roster", "deny", () =>
@@ -526,11 +536,11 @@ async function main() {
   await check("A team admin can list the member roster", "allow", () =>
     getDocs(collection(as(TEAM_ADMIN), "consoleUsers")));
   await check("Nobody — not even an owner — can read a routineBindings doc", "deny", () =>
-    getDoc(doc(as(HUMAN), "routineBindings/sam@personalisationhub.com")));
+    getDoc(doc(as(HUMAN), "routineBindings/sam@ph.example")));
   await check("The member themselves cannot read their own routineBindings doc", "deny", () =>
-    getDoc(doc(as(MEMBER), "routineBindings/sam@personalisationhub.com")));
+    getDoc(doc(as(MEMBER), "routineBindings/sam@ph.example")));
   await check("Nobody can write a routineBindings doc from a client", "deny", () =>
-    setDoc(doc(as(TEAM_ADMIN), "routineBindings/kit@personalisationhub.com"), { fireUrl: "https://x", token: "y" }));
+    setDoc(doc(as(TEAM_ADMIN), "routineBindings/kit@ph.example"), { fireUrl: "https://x", token: "y" }));
   await check("Not even an owner can read an encrypted Media Studio key", "deny", () =>
     getDoc(doc(as(HUMAN), "mediaProviderKeys/gemini")));
   await check("A team admin cannot write a Media Studio key from a client", "deny", () =>
@@ -594,7 +604,7 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { status: "backlog", revertRequested: true, lastFailureReason: { category: "bug" } }, { merge: true }));
   await check("A human editor can file a follow-up", "allow", async () => {
     const db = as(MEMBER);
-    const note = { author: "sam@personalisationhub.com", text: "Follow-up", at: new Date() };
+    const note = { author: "sam@ph.example", text: "Follow-up", at: new Date() };
     const batch = writeBatch(db);
     batch.set(doc(db, "backlogItems/iFollow"), Object.assign({}, ITEM, { status: "backlog", followUpOf: "i1", notes: [note] }));
     batch.update(doc(db, "backlogItems/i1"), { notes: arrayUnion(note) });
@@ -616,11 +626,11 @@ async function main() {
   // Agent tickets (xFzQgynkoMdV33iWJFZq): whose own Claude account a ticket
   // fires under is set by the server only, never from a browser.
   await check("A human editor CANNOT tag a ticket with an owner (ownerEmail)", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/i1"), { ownerEmail: "sam@personalisationhub.com" }, { merge: true }));
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { ownerEmail: "sam@ph.example" }, { merge: true }));
   await check("A human editor CANNOT file a ticket already tagged with an owner", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iOwned"), Object.assign({}, ITEM, { status: "backlog", ownerEmail: "ada@personalisationhub.com" })));
+    setDoc(doc(as(MEMBER), "backlogItems/iOwned"), Object.assign({}, ITEM, { status: "backlog", ownerEmail: "ada@ph.example" })));
   await check("The automation user can tag a ticket with an owner", "allow", () =>
-    setDoc(doc(as(BOT), "backlogItems/i1"), { ownerEmail: "sam@personalisationhub.com" }, { merge: true }));
+    setDoc(doc(as(BOT), "backlogItems/i1"), { ownerEmail: "sam@ph.example" }, { merge: true }));
   // trainTest (19 Oct 2026): the automation records a card's own test result.
   await check("A human editor CANNOT write trainTest", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));
@@ -685,19 +695,19 @@ async function main() {
     setDoc(doc(as(BOT), "backlogItems/i1"), { dependsOnSource: "intake", queuedAfter: { itemId: "x", title: "y" } }, { merge: true }));
   // Who approved (19 Oct 2026).
   await check("An editor's own-email approval with request.time is allowed", "allow", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+    setDoc(doc(as(MEMBER), "backlogItems/iApp1"), { status: "ready-to-publish", approvedByEmail: "sam@ph.example", approvedAt: serverTimestamp() }, { merge: true }));
   await check("Another person's email on an approval is denied", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "ada@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "ada@ph.example", approvedAt: serverTimestamp() }, { merge: true }));
   await check("An approval stamped with a made-up time is denied", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "sam@personalisationhub.com", approvedAt: new Date("2020-01-01") }, { merge: true }));
+    setDoc(doc(as(MEMBER), "backlogItems/iApp2"), { status: "ready-to-publish", approvedByEmail: "sam@ph.example", approvedAt: new Date("2020-01-01") }, { merge: true }));
   await check("approvedByEmail without the status move is denied", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iApp3"), { approvedByEmail: "sam@personalisationhub.com", approvedAt: serverTimestamp() }, { merge: true }));
+    setDoc(doc(as(MEMBER), "backlogItems/iApp3"), { approvedByEmail: "sam@ph.example", approvedAt: serverTimestamp() }, { merge: true }));
   await check("approvedVia from a browser is denied", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp3"), { status: "ready-to-publish", approvedVia: "dsp-board" }, { merge: true }));
   await check("An approval without the fields (an old open tab) is allowed", "allow", () =>
     setDoc(doc(as(MEMBER), "backlogItems/iApp4"), { status: "ready-to-publish" }, { merge: true }));
   await check("A create carrying approvedByEmail is denied", "deny", () =>
-    setDoc(doc(as(MEMBER), "backlogItems/iApp9"), Object.assign({}, ITEM, { status: "backlog", approvedByEmail: "sam@personalisationhub.com" })));
+    setDoc(doc(as(MEMBER), "backlogItems/iApp9"), Object.assign({}, ITEM, { status: "backlog", approvedByEmail: "sam@ph.example" })));
   await check("The Routine can set approvedVia", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/iApp5"), { approvedVia: "dsp-board" }, { merge: true }));
   await check("The Routine can still stamp deployCommit", "allow", () =>
@@ -715,20 +725,20 @@ async function main() {
   await check("An editor CANNOT delete a project", "deny", () => deleteDoc(doc(as(MEMBER), "projects/p1")));
   await check("A team admin can delete a project", "allow", () => deleteDoc(doc(as(TEAM_ADMIN), "projects/p1")));
   await check("An editor can only name themselves as the Notify requester", "deny", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "ada@ph.example" }, { merge: true }));
   await check("An editor naming themselves as the Notify requester is fine", "allow", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "Sam@personalisationhub.com" }, { merge: true }));
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "Sam@ph.example" }, { merge: true }));
   // Agent tickets (xFzQgynkoMdV33iWJFZq): notifyAutomationAt marks a build
   // request as the pipeline's own, which fires an agent ticket under its
   // owner's Routine whoever clicked — so no browser may write it.
   await check("An editor CANNOT stamp a click as the automation's (notifyAutomationAt)", "deny", () =>
-    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@personalisationhub.com", notifyAutomationAt: serverTimestamp() }, { merge: true }));
+    setDoc(doc(as(MEMBER), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@ph.example", notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A team admin CANNOT stamp notifyAutomationAt either", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("The automation user can stamp notifyAutomationAt", "allow", () =>
     setDoc(doc(as(BOT), "projects/p1"), { notifyRequestedAt: serverTimestamp(), notifyAutomationAt: serverTimestamp() }, { merge: true }));
   await check("A rename leaves a stored requester email untouched (unchanged passes)", "allow", async () => {
-    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "projects/p1"), { notifyRequestedByEmail: "ada@personalisationhub.com" }, { merge: true }));
+    await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "projects/p1"), { notifyRequestedByEmail: "ada@ph.example" }, { merge: true }));
     await setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed" }, { merge: true });
   });
   await check("An editor CANNOT change routinePromptMd", "deny", () =>
@@ -741,7 +751,7 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "https://claude.ai/artifact/abc" }, { merge: true }));
   // Requirements and README live in projects/{id}/docs/{requirements|readme}
   // (own 1 MiB document each); the project doc keeps only a pointer.
-  const DOC = (md, extra) => Object.assign({ contentMd: md, updatedAt: serverTimestamp(), updatedByEmail: "sam@personalisationhub.com", chars: md.length }, extra || {});
+  const DOC = (md, extra) => Object.assign({ contentMd: md, updatedAt: serverTimestamp(), updatedByEmail: "sam@ph.example", chars: md.length }, extra || {});
   await check("An editor can save a 300k-char requirements doc", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/p1/docs/requirements"), DOC("x".repeat(300000))));
   await check("An editor can save an 800k-char requirements doc", "allow", () =>
@@ -785,7 +795,7 @@ async function main() {
   await check("An editor can rename a fully populated project (stays inside the rules expression budget)", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/pFull"), { name: "Renamed" }, { merge: true }));
   await check("An editor can click Notify Claude on a fully populated project", "allow", () =>
-    setDoc(doc(as(MEMBER), "projects/pFull"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@personalisationhub.com" }, { merge: true }));
+    setDoc(doc(as(MEMBER), "projects/pFull"), { notifyRequestedAt: serverTimestamp(), notifyRequestedByEmail: "sam@ph.example" }, { merge: true }));
   await check("An editor can latch trainLocked on a fully populated project", "allow", () =>
     setDoc(doc(as(MEMBER), "projects/pFull"), { trainLocked: true }, { merge: true }));
   await check("A viewer CANNOT rename a fully populated project", "deny", () =>

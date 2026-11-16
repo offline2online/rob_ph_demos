@@ -47,6 +47,7 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const logger = require("firebase-functions/logger");
 const { defineSecret } = require("firebase-functions/params");
 const kanban = require("./kanban");
+const identity = require("./identity");
 const leads = require("./leads");
 const prospects = require("./prospects");
 // Staff Kanban's voice agent fill (functions/kanban.js). "unset" until the
@@ -97,13 +98,36 @@ const SERVER_ICONS = [
 const WEB_API_KEY = "AIzaSyDzG5MzavLWyKU7NXfTPskuWbFYFlc5W3g";
 const AUTH_DOMAIN = `${PROJECT_ID}.firebaseapp.com`;
 
-// Mirrors firestore.rules' own bootstrap list: these two accounts are
-// always admins even if consoleUsers is empty, so there is no way to lock
-// every owner out of the thing that grants access. Everyone else is a
-// consoleUsers doc. board-automation@ is intentionally NOT here — it is the
-// Routine's service identity, not a person, and has no business holding an
-// MCP token.
-const STATIC_ADMINS = ["rob@offline2online.com", "rob@personalisationhub.com"];
+// The account owner is whoever carries the `owner: true` custom claim on
+// their Firebase Auth user (set once by scripts/set-owner-claim.js — never by
+// a client, never from this repo). firestore.rules and storage.rules read the
+// same claim, so an owner is always an admin even if consoleUsers is empty:
+// there is still no way to lock every owner out of the thing that grants
+// access, and no address is written into the code. Everyone else is a
+// consoleUsers doc. The board automation user never carries the claim — it
+// is the Routine's service identity, not a person, and has no business
+// holding an MCP token.
+const OWNER_CLAIM = "owner";
+const ownerCache = new Map(); // lowercased email -> { owner, at }
+const OWNER_CACHE_MS = 60 * 1000;
+function claimsSayOwner(claims) {
+  return !!(claims && claims[OWNER_CLAIM] === true);
+}
+// Owner status for an address when the caller has no decoded token in hand
+// (an OAuth refresh, a stored session). Reads the Auth user's claims; cached
+// for a minute so a busy MCP session doesn't call Auth on every request.
+async function isOwnerEmail(lower, claims) {
+  if (claims) return claimsSayOwner(claims);
+  const hit = ownerCache.get(lower);
+  if (hit && Date.now() - hit.at < OWNER_CACHE_MS) return hit.owner;
+  let owner = false;
+  try {
+    const user = await adminAuth().getUserByEmail(lower);
+    owner = claimsSayOwner(user && user.customClaims);
+  } catch { owner = false; }
+  ownerCache.set(lower, { owner, at: Date.now() });
+  return owner;
+}
 
 const ROLE_RANK = { viewer: 1, editor: 2, admin: 3 };
 const ACCESS_TOKEN_TTL_S = 60 * 60;            // 1 hour
@@ -235,10 +259,15 @@ function routineFireHostAllowed(fireUrl) {
 // platform" means exactly one thing in both places — add someone once and
 // both their browser session and their agent work.
 
-async function resolveConsoleUser(email) {
+// `claims` is the caller's decoded ID token when there is one; without it the
+// owner claim is read from the Auth user (isOwnerEmail).
+async function resolveConsoleUser(email, claims) {
   const lower = String(email || "").trim().toLowerCase();
   if (!lower) return null;
-  const isStaticAdmin = STATIC_ADMINS.includes(lower);
+  // Keep the Staff Kanban's alias map current for everything this request
+  // goes on to do (identity.js; cached, one read a minute at most).
+  await identity.refresh(db);
+  const isStaticAdmin = await isOwnerEmail(lower, claims);
   let data = null;
   try {
     const snap = await db().collection("consoleUsers").doc(lower).get();
@@ -717,7 +746,7 @@ async function handleAuthorizeComplete(req, res) {
   // provisioned may not be, and we still let it in — the admin adding the
   // address IS the verification here, and requiring an inbox round-trip
   // would strand exactly the people this feature is for.
-  const user = await resolveConsoleUser(email);
+  const user = await resolveConsoleUser(email, decoded);
   if (!user) {
     return oauthError(res, 403, "access_denied", `${email} isn't on the PH Agent Console user list. Ask an admin to add you, then try again.`);
   }
@@ -5654,7 +5683,7 @@ async function requireConsoleUser(req, minRole) {
   if (!idToken) return { ok: false, status: 401, error: "missing X-Firebase-ID-Token" };
   let decoded;
   try { decoded = await adminAuth().verifyIdToken(idToken, true); } catch { return { ok: false, status: 401, error: "invalid sign-in" }; }
-  const user = await resolveConsoleUser(decoded.email);
+  const user = await resolveConsoleUser(decoded.email, decoded);
   if (!user) return { ok: false, status: 403, error: "not on the console user list" };
   if (minRole && !atLeast(user.role, minRole)) return { ok: false, status: 403, error: `requires ${minRole} access` };
   return { ok: true, user, uid: decoded.uid };

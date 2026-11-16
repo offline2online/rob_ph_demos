@@ -223,6 +223,34 @@ fully independent of each other. Treat backlog sweeps and publish workflows
 for each exactly as described in the "Prototype Backlog" section below —
 per-project, not shared.
 
+## Never hard-code a person's address — roles, claims and config instead
+
+**No personal email address (or other user identity) goes into any tracked
+file** — code, rules, docs, tests, fixtures, seed data, comments. This repo
+is public, and a file holding one makes the privacy plugin refuse every
+Routine's `patchFiles` hand-back: that blocked six tickets at once on
+16 Nov 2026, when the owner's address sat in `firestore.rules`,
+`mcp-server.js`, `app.js` and a dozen tests.
+
+- **Who may do something is a role**: the `owner: true` Firebase Auth custom
+  claim for the account owner (`backlog-tracker/scripts/set-owner-claim.js`),
+  `consoleUsers.role` / the `consoleRole` claim for everyone else. Check the
+  claim or the row — never compare against an address.
+- **A value that truly has to name someone is configuration**: a User
+  Management row, a Firestore config doc (`consoleConfig/identity`), a
+  repository secret or Secret Manager — never the repo. (The owner claim's
+  `CONSOLE_OWNER_EMAIL` secret is optional: admins are User Management rows.)
+  Scripts that use one must not print it (Actions logs here are public).
+- **Tests use fixture identities** on reserved domains: `owner@example.com`
+  (with `owner: true` on its token), `owner.alias@example.com`,
+  `<name>@ph.example`. Docs say "the account owner", not an address.
+- **Enforced**: `tools/check-personal-emails.js` runs in CI
+  (`.github/workflows/personal-email-check.yml`) and as a pre-commit hook
+  (`git config core.hooksPath tools/hooks`, once per clone). A genuinely
+  public, non-personal address (a published role mailbox on a brand's own
+  domain, a fictional fixture whose real domain is under test) goes in
+  `.personal-email-allowlist` with a comment saying why — never a person's.
+
 ## Common Workflows
 
 ### Publish changes
@@ -1026,6 +1054,7 @@ run.
 
 ## Guidelines
 
+- Never hard-code a personal email address or user identity — use roles/claims and config (see "Never hard-code a person's address" above)
 - Always push to `main` branch
 - Commit messages should be short and descriptive (e.g., "Add contact page", "Update hero image")
 - No build step required — files are served as-is

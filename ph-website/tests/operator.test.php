@@ -156,7 +156,7 @@ ok( ! isset( $other['network_industry'] ) && ! isset( $other['message'] ) && ! i
 // Telco, pharmacy and pubs leads: the body's keys are exactly what they were before network_industry, message and form were forwarded.
 $base_keys = array( 'company', 'website', 'industry', 'countries', 'storeCount', 'contactName', 'jobTitle', 'email', 'linkedin', 'page', 'pageIndustry' );
 foreach ( array(
-	'telco'    => array( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.com', 'industry' => 'telco', 'source' => 'telco-business-model', 'page' => '/industries/telco/' ), array() ),
+	'telco'    => array( array( 'name' => 'Bo', 'company' => 'Zed', 'role' => 'Head', 'email' => 'b@z.example', 'industry' => 'telco', 'source' => 'telco-business-model', 'page' => '/industries/telco/' ), array() ),
 	'pharmacy' => array( array( 'name' => 'Cy', 'company' => 'Harbour', 'email' => 'c@h.test', 'source' => 'pharmacy-business-model', 'source_label' => 'Pharmacy business model download', 'consent' => true, 'industry' => 'pharmacy', 'inputs' => array( 'stores' => 40 ), 'estimate_3yr' => 1000, 'test' => false, 'page' => '/industries/pharmacy/', 'post_id' => 3 ), array( 'sourceLabel' ) ),
 	'pubs'     => array( array( 'name' => 'Di', 'company' => 'Taps', 'email' => 'd@t.test', 'source' => 'pubs-business-model', 'source_label' => 'Pubs & Hospitality business model download', 'consent' => true, 'industry' => 'pubs-hospitality', 'inputs' => array( 'sites' => 12 ), 'estimate_3yr' => 2000, 'test' => true, 'page' => '/industries/pubs-hospitality/', 'post_id' => 4 ), array( 'sourceLabel', 'test' ) ),
 ) as $pg => $c ) {

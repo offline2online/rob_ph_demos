@@ -178,14 +178,14 @@ const revisions = (db) => Object.values(db.__state.docRevisions || {});
   await test("deleting a mirror records one projectDoc.deleted; deleting a board doc records nothing", async () => {
     const db = makeFakeDb();
     const mod = loadIndexFresh(db);
-    await mod.onProjectDocWritten(fakeEvent({ docId: "d1", before: { ...MIRROR, updatedByEmail: "rob@offline2online.com" }, after: undefined }));
+    await mod.onProjectDocWritten(fakeEvent({ docId: "d1", before: { ...MIRROR, updatedByEmail: "owner@example.com" }, after: undefined }));
     await mod.onProjectDocWritten(fakeEvent({ docId: "d2", before: { projectId: "p1", name: "Board", contentMd: "a" }, after: undefined }));
     const r = revisions(db);
     assert.strictEqual(r.length, 1);
     assert.strictEqual(r[0].target, "projectDoc.deleted");
     assert.strictEqual(r[0].contentMd, "old text");
     assert.strictEqual(r[0].docId, "d1");
-    assert.strictEqual(r[0].replacedByEmail, "rob@offline2online.com");
+    assert.strictEqual(r[0].replacedByEmail, "owner@example.com");
   });
 
   await test("a failing add is logged, never thrown", async () => {

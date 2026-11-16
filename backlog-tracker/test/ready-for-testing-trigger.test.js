@@ -190,10 +190,10 @@ const ITEMS = {
     calls.length = 0;
     const db = makeFakeDb({
       backlogItems: ITEMS,
-      routineBindings: { "rob@offline2online.com": { email: "rob@offline2online.com", fireUrl: "https://api.anthropic.com/v1/routines/trig_rob/fire", token: "rob-token" } },
+      routineBindings: { "owner@example.com": { email: "owner@example.com", fireUrl: "https://api.anthropic.com/v1/routines/trig_rob/fire", token: "rob-token" } },
     });
     const mod = loadIndexFresh(db);
-    await mod.notifyOnItemsReadyForTesting(projectEvent("p1", { name: "P" }, { name: "P", readyForTestingNotifyRequestedAt: stamp(3000), readyForTestingNotifyItemIds: ["t1"], readyForTestingNotifyRequestedByEmail: "rob@offline2online.com" }));
+    await mod.notifyOnItemsReadyForTesting(projectEvent("p1", { name: "P" }, { name: "P", readyForTestingNotifyRequestedAt: stamp(3000), readyForTestingNotifyItemIds: ["t1"], readyForTestingNotifyRequestedByEmail: "owner@example.com" }));
     assert.strictEqual(fireCalls().length, 1);
     assert.strictEqual(fireCalls()[0].url, "https://api.anthropic.com/v1/routines/trig_rob/fire");
     assert.strictEqual(fireCalls()[0].opts.headers.Authorization, "Bearer rob-token");
@@ -247,10 +247,10 @@ const ITEMS = {
   // ── The automation's half: the stamp it writes ──────────────────────────
   const { readyForTestingNotifyFields, tv } = require("../scripts/run-backlog-automation.js");
   await test("run-backlog-automation.js stamps the project with a real timestamp, the landed ids and the build's requester", () => {
-    const fields = readyForTestingNotifyFields({ id: "p1", notifyRequestedByEmail: "rob@offline2online.com" }, ["t1", "t2"]);
+    const fields = readyForTestingNotifyFields({ id: "p1", notifyRequestedByEmail: "owner@example.com" }, ["t1", "t2"]);
     assert.ok(fields.readyForTestingNotifyRequestedAt instanceof Date);
     assert.deepStrictEqual(fields.readyForTestingNotifyItemIds, ["t1", "t2"]);
-    assert.strictEqual(fields.readyForTestingNotifyRequestedByEmail, "rob@offline2online.com");
+    assert.strictEqual(fields.readyForTestingNotifyRequestedByEmail, "owner@example.com");
     const encoded = tv(fields).mapValue.fields;
     assert.ok(encoded.readyForTestingNotifyRequestedAt.timestampValue, "a Firestore timestamp, not a string — the function's stamp guard needs toMillis()");
     assert.deepStrictEqual(encoded.readyForTestingNotifyItemIds.arrayValue.values.map((v) => v.stringValue), ["t1", "t2"]);

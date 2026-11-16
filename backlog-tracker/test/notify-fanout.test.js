@@ -98,7 +98,7 @@ function seed() {
   return {
     backlogItems: {
       a: { projectId: PID, status: "backlog", type: "feature", title: "Ticket A", desc: "Do A",
-        notes: [{ author: "rob@offline2online.com", text: "DECIDED: the automated score wins.", at: "2026-10-03T23:32:02Z" }] },
+        notes: [{ author: "owner@example.com", text: "DECIDED: the automated score wins.", at: "2026-10-03T23:32:02Z" }] },
       b: { projectId: PID, status: "backlog", type: "bug", title: "Ticket B", desc: "Fix B" },
       c: { projectId: PID, status: "backlog", type: "feature", title: "Ticket C", desc: "Do C" },
       blocked: { projectId: PID, status: "backlog", type: "feature", title: "Blocked", desc: "x", blocked: { reason: "needs-decision" } },

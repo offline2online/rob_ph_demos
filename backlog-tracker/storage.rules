@@ -21,9 +21,10 @@ service firebase.storage {
     // keeps `consoleEditor` on each member's Firebase Auth user in step with
     // their consoleUsers doc (syncConsoleUserClaims on write, plus a
     // self-heal at /mcp/claims/sync for someone added before their first
-    // sign-in). The two owner accounts and the automation user stay
-    // hard-coded for the same reason they do in firestore.rules — no claim
-    // to go stale, no way to lock everyone out.
+    // sign-in). The account owner is the `owner: true` claim
+    // (scripts/set-owner-claim.js), the same one firestore.rules reads; the
+    // automation user stays named because it is a service identity, not a
+    // person. Never write a person's address into these rules.
     //
     // A claim rides in the ID token, so it can be up to an hour stale after
     // a role change; auth-gate.js force-refreshes the token when it sees a
@@ -34,11 +35,8 @@ service firebase.storage {
     function isEditor() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && (request.auth.token.email.lower() in [
-              "rob@offline2online.com",
-              "rob@personalisationhub.com",
-              "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
-            ]
+        && (request.auth.token.get("owner", false) == true
+            || request.auth.token.email.lower() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com"
             || request.auth.token.consoleEditor == true);
     }
 
@@ -46,14 +44,11 @@ service firebase.storage {
     // cropped to a 256x256 JPEG in the browser (~30 KB; 2 MB is the ceiling).
     // Any member may read; only the owner of that address, or an admin, may
     // write or delete it. Admins arrive via the consoleRole claim
-    // (functions/mcp-server.js) or the two hard-coded owner accounts.
+    // (functions/mcp-server.js) or the owner claim.
     function isAdminClaim() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && (request.auth.token.email.lower() in [
-              "rob@offline2online.com",
-              "rob@personalisationhub.com"
-            ]
+        && (request.auth.token.get("owner", false) == true
             || request.auth.token.consoleRole == "admin");
     }
     function isAvatarOwner(fileName) {

@@ -46,7 +46,7 @@ const attachments = [
 ];
 
 const seed = () => ({
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {
@@ -131,7 +131,7 @@ try {
   const BOARD_STATUSES = ["backlog", "ready-for-testing", "ready-to-publish", "published-live"];
   for (const width of WIDTHS) {
     const label = `agent board tickets @${width}px`;
-    const o = await harness.open({ seed: { user: { email: "editor@personalisationhub.com", role: "editor" }, docs: {
+    const o = await harness.open({ seed: { user: { email: "editor@ph.example", role: "editor" }, docs: {
       projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
       backlogItems: Object.fromEntries(BOARD_STATUSES.map((status, i) => [`s${i}`, { projectId: PID, title: `Title ${LONG_URL}`, desc: longDesc, type: "bug", category: "HQ Admin", status, notes: notes.slice(0, 2), createdAt: t(T0 + i), updatedAt: t(T0 + i) }])),
     } }, width, height: 900 });
@@ -148,7 +148,7 @@ try {
   const longTask = { ...KB.kanbanTasks[k0], title: `Title ${LONG_URL}`, description: `<p>${LONG_URL}</p>`, descriptionText: LONG_URL, labels: ["a-long-label-" + "z".repeat(60)] };
   for (const width of WIDTHS) {
     const label = `staff kanban tickets @${width}px`;
-    const o = await harness.open({ seed: kanbanSeed({ user: { email: "editor@personalisationhub.com", role: "admin" }, extra: { kanbanTasks: { [k0]: longTask }, kanbanCards: { [k0]: cardOfTask({ ...longTask, key: k0 }) } } }), width, height: 900, hash: "#staff-kanban" });
+    const o = await harness.open({ seed: kanbanSeed({ user: { email: "editor@ph.example", role: "admin" }, extra: { kanbanTasks: { [k0]: longTask }, kanbanCards: { [k0]: cardOfTask({ ...longTask, key: k0 }) } } }), width, height: 900, hash: "#staff-kanban" });
     try {
       await o.page.waitForSelector(".kb-card", { timeout: 20000 });
       const bad = await o.page.evaluate(boardScan, { lists: ".kb-list", card: ".kb-card", panY: true });

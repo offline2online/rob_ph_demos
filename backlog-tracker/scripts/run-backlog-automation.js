@@ -333,8 +333,22 @@ function patchFilesFromCommit(base, commit, opts = {}) {
   }
   return files;
 }
+// A build session may push ONLY its own claude/* session branch
+// (ROUTINE_INSTRUCTIONS.md → push rule). A hand-over that names any other
+// ref — main, a deploy/* train, someone else's branch — is refused rather
+// than fetched, so a session that pushed somewhere it must not gains
+// nothing by it.
+const SESSION_BRANCH_RE = /^claude\/[A-Za-z0-9._-][A-Za-z0-9._\/-]{0,190}$/;
+function patchRefProblem(ref) {
+  if (ref == null || ref === "") return "";
+  if (typeof ref !== "string" || !REF_RE.test(ref) || ref.includes("..")) return `patchRef "${String(ref).slice(0, 60)}" is not a branch name`;
+  if (!SESSION_BRANCH_RE.test(ref)) return `patchRef "${ref.slice(0, 60)}" is not a claude/* session branch: a build may push only its own claude/* branch, never main, a deploy/* train or another branch`;
+  return "";
+}
 function fetchPatchCommit(item) {
-  const ref = typeof item.patchRef === "string" && REF_RE.test(item.patchRef) && !item.patchRef.includes("..") ? item.patchRef : "";
+  const problem = patchRefProblem(item.patchRef);
+  if (problem) throw new Error(problem);
+  const ref = typeof item.patchRef === "string" && item.patchRef ? item.patchRef : "";
   // The branch the session pushed, else the commit itself.
   try { run("git", ["fetch", "origin", ref || item.patchCommit, "--quiet"]); }
   catch (err) { throw new Error(`the commit this patch was handed over as (${String(item.patchCommit).slice(0, 7)}${ref ? ` on ${ref}` : ""}) couldn't be fetched: ${String(err.message).split("\n")[0]}`); }
@@ -2476,6 +2490,7 @@ const NOT_DISPATCHED_AFTER_TRAIN = {
   "dsp-board.yml": "finishTrain's syncDocsAfterMerge re-syncs README/REQUIREMENTS and every board document with a sourcePath at the merge commit. A brand-new mirror still needs a dsp-board run.",
   "firestore-rules-test.yml */README.md": "a train ran the console tests on its PR before it merged; this path is there for a push straight to main that adds or renames a top-level folder (START-HERE.md's deploy map must name it).",
   "firestore-rules-test.yml **/board-docs.json": "a train ran the console tests on its PR before it merged; this path is there for a push straight to main that changes a project's manifest (docs-sync-all.test.js validates every one).",
+  "personal-email-check.yml": "a check, not a deploy: it reads every tracked file and changes nothing, and a train's PR already ran it (pull_request) before it merged.",
   "dsp-prototype.yml dsp-integration/scripts/rebuild-prototype.sh": "the script is in the source stamp (SOURCE_PATHS in rebuild-prototype.sh), so a change to it does make the bundle stale; what keeps it safe is dsp-prototype.yml's */10 schedule, which rebuilds it within ten minutes.",
 };
 
@@ -8176,6 +8191,7 @@ module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   patchFilesFromCommit,
+  patchRefProblem,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
