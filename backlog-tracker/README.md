@@ -1285,32 +1285,27 @@ tickets sat blocked. Now:
   (read by `functions/identity.js` and the Kanban store, applied through
   `kanban-core.setPersonAliases()`). Clients can read it, nobody can write
   it but the admin SDK.
-- **The values** live only in two repository secrets,
-  `CONSOLE_OWNER_EMAIL` and (optional, comma-separated)
-  `CONSOLE_OWNER_ALIASES`. `deploy-backlog-tracker.yml` runs
-  `scripts/set-owner-claim.js` from them **before** any rules deploy, and the
-  step fails — stopping the deploy — if no Auth user would hold the claim.
-  The script never prints an address (this repo's run logs are public).
-
-Set the secrets once (gh prompts for the value, so it stays out of shell
-history and out of any chat):
-
-```bash
-gh secret set CONSOLE_OWNER_EMAIL
-gh secret set CONSOLE_OWNER_ALIASES
-```
-
-Run it by hand, one-off, with a service account that may manage Auth users:
+- **No address is needed.** An admin is an ordinary row in Settings → User
+  Management with role `admin` — the owner has one like everyone else. The
+  claim is an optional break-glass for an account that must stay an admin
+  even if its row is deleted. Before any rules deploy,
+  `deploy-backlog-tracker.yml` runs `scripts/set-owner-claim.js`, which
+  checks that someone can administer the console (an owner claim, or an
+  enabled admin row whose person can sign in) and stops the deploy if
+  nobody can. It never prints an address (this repo's run logs are public).
+- **Optional**: to give an account the claim, set the `CONSOLE_OWNER_EMAIL`
+  (and, for a second sign-in address of the same person,
+  `CONSOLE_OWNER_ALIASES`) repository secret — `gh secret set` prompts for
+  the value — or run the script once by hand:
 
 ```bash
 cd backlog-tracker/scripts
 GOOGLE_APPLICATION_CREDENTIALS=<sa.json> CONSOLE_OWNER_EMAIL=<address> node set-owner-claim.js --dry
-GOOGLE_APPLICATION_CREDENTIALS=<sa.json> CONSOLE_OWNER_EMAIL=<address> node set-owner-claim.js
-GOOGLE_APPLICATION_CREDENTIALS=<sa.json> node set-owner-claim.js --verify   # exit 1 if nobody is owner
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> node set-owner-claim.js --verify   # exit 1 if nobody can administer
 ```
 
-The owner picks the claim up at their next token refresh (at most an hour;
-the sign-in wall forces one the first time the rules refuse them).
+  A second sign-in address with neither the claim nor its own User
+  Management row has no access; add it as a user if it should.
 
 **Keeping it that way**: `tools/check-personal-emails.js` fails on any
 address that isn't on a reserved domain (`example.com`, `*.example`,
@@ -2908,7 +2903,7 @@ The code is here:
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
 | `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
 | `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
-| `scripts/set-owner-claim.js` | Run on every deploy, before any rules deploy: gives the account owner (`CONSOLE_OWNER_EMAIL` secret) the `owner: true` custom claim, any alias addresses (`CONSOLE_OWNER_ALIASES`) `owner` + `aliasOf`, the owner a `consoleUsers` row, and writes `consoleConfig/identity.personAliases`. Fails the deploy if no Auth user would hold the claim. Never prints an address. See "The account owner" |
+| `scripts/set-owner-claim.js` | Run on every deploy, before any rules deploy: fails the deploy if nobody can administer the console (no owner claim and no enabled admin row). Only if the optional `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` secrets are set does it apply the `owner: true` claim (+ `aliasOf`), an owner row and `consoleConfig/identity.personAliases`. Never prints an address. See "The account owner" |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |
 | `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
 

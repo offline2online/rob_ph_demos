@@ -363,11 +363,13 @@ in three files to add anyone.
 - The account owner is an admin by the `owner: true` custom claim on their
   Firebase Auth user (`isOwnerAccount()` in the rules, `isOwnerEmail()` in
   `functions/mcp-server.js`, `isOwnerUser()` in `auth-gate.js`), so an empty
-  or mis-edited collection can never lock everyone out. The claim is set by
-  `scripts/set-owner-claim.js` from the `CONSOLE_OWNER_EMAIL` /
-  `CONSOLE_OWNER_ALIASES` repository secrets, before every rules deploy
-  (`deploy-backlog-tracker.yml` → "Apply the owner claim"; the deploy stops if
-  nobody would hold it). An alias account also carries `aliasOf: <canonical>`.
+  or mis-edited collection can never lock everyone out. The claim is
+  optional — admins are ordinary `role: "admin"` rows — and is set only if
+  the `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` repository secrets are
+  (`scripts/set-owner-claim.js`). Before every rules deploy that script
+  checks someone can still administer the console (an owner claim or an
+  enabled admin row) and stops the deploy if not. An alias account with the
+  claim also carries `aliasOf: <canonical>`.
   **No person's address is written anywhere in this repo** (root `CLAUDE.md`;
   `tools/check-personal-emails.js` enforces it). `board-automation@…` stays a
   named editor: it is a service identity, not a person.

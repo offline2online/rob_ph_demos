@@ -236,9 +236,10 @@ Routine's `patchFiles` hand-back: that blocked six tickets at once on
   claim for the account owner (`backlog-tracker/scripts/set-owner-claim.js`),
   `consoleUsers.role` / the `consoleRole` claim for everyone else. Check the
   claim or the row — never compare against an address.
-- **A value that truly has to name someone is configuration**: a repository
-  secret (`CONSOLE_OWNER_EMAIL`, `CONSOLE_OWNER_ALIASES`), Secret Manager,
-  or a Firestore config doc (`consoleConfig/identity`) — never the repo.
+- **A value that truly has to name someone is configuration**: a User
+  Management row, a Firestore config doc (`consoleConfig/identity`), a
+  repository secret or Secret Manager — never the repo. (The owner claim's
+  `CONSOLE_OWNER_EMAIL` secret is optional: admins are User Management rows.)
   Scripts that use one must not print it (Actions logs here are public).
 - **Tests use fixture identities** on reserved domains: `owner@example.com`
   (with `owner: true` on its token), `owner.alias@example.com`,

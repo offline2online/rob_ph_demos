@@ -194,13 +194,13 @@ jobs:
           BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
         run: node ensure-automation-user.js
 
-      # The account owner is the `owner: true` custom claim, not an address in
-      # the rules (scripts/set-owner-claim.js). Applied from repository
-      # secrets BEFORE anything below deploys rules, and the step fails —
-      # stopping the deploy — if no Auth user would carry the claim, so the
-      # console can never go out with nobody able to administer it. The
-      # script never prints an address (this repo's run logs are public).
-      - name: Apply the owner claim
+      # No address is needed: admins are User Management rows, and the
+      # optional `owner: true` claim (scripts/set-owner-claim.js, applied only
+      # if the CONSOLE_OWNER_EMAIL secret is set) is a break-glass on top.
+      # Runs BEFORE anything below deploys rules, and fails — stopping the
+      # deploy — if nobody could administer the console. The script never
+      # prints an address (this repo's run logs are public).
+      - name: Check the console has an administrator
         if: steps.dedupe.outputs.skip != 'true'
         working-directory: backlog-tracker/scripts
         env:

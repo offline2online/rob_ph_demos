@@ -3,11 +3,13 @@
 // functions/mcp-server.js (resolveConsoleUser) and public/js/auth-gate.js
 // (isOwnerUser) read instead of a hard-coded address.
 //
-// NO ADDRESS IS EVER WRITTEN INTO THIS FILE OR ANY OTHER IN THE REPO.
-// The addresses come from the environment only:
+// NO ADDRESS IS EVER WRITTEN INTO THIS FILE OR ANY OTHER IN THE REPO, AND
+// NONE IS NEEDED. An admin is an ordinary consoleUsers row with role
+// "admin" (Settings → User Management); the owner claim is an OPTIONAL
+// break-glass on top, for an account that must stay an admin even if its
+// row is deleted. Addresses, when given at all, come from the environment:
 //
-//   CONSOLE_OWNER_EMAIL     the owner's canonical sign-in address (required
-//                           unless --verify)
+//   CONSOLE_OWNER_EMAIL     optional: an address to give the owner claim
 //   CONSOLE_OWNER_ALIASES   optional, comma-separated: other addresses the
 //                           same person signs in with. Each gets the owner
 //                           claim plus `aliasOf: <canonical>`, and the map is
@@ -16,21 +18,27 @@
 //
 // Run it:
 //   - on a runner (normal): deploy-backlog-tracker.yml runs it before any
-//     rules deploy, from the repository secrets CONSOLE_OWNER_EMAIL /
-//     CONSOLE_OWNER_ALIASES. Set those once with `gh secret set` (it
-//     prompts for the value, so it never lands in shell history);
+//     rules deploy. With no secrets set it changes nothing and only checks
+//     that someone can still administer the console (below). The optional
+//     repository secrets CONSOLE_OWNER_EMAIL / CONSOLE_OWNER_ALIASES apply
+//     the claim if anyone ever wants the break-glass;
 //   - by hand (one-off), with a service account that may manage Auth users:
 //       GOOGLE_APPLICATION_CREDENTIALS=<sa.json> \
 //       CONSOLE_OWNER_EMAIL=<owner address> node set-owner-claim.js [--dry]
 //
 // Flags:
 //   --dry      say what would change, write nothing
-//   --verify   change nothing; exit 1 unless at least one Auth user carries
-//              owner: true (the deploy runs this so a rules deploy can never
-//              go out with nobody able to administer the console)
+//   --verify   change nothing; only the admin check below
+//
+// Every run (but --dry) ends with the admin check: exit 1 unless at least one
+// account can administer the console — an Auth user with owner: true, or an
+// enabled consoleUsers row with role "admin" whose Auth user exists. The
+// deploy runs before any rules deploy, so rules can never go out with nobody
+// able to administer the console.
 //
 // It is idempotent: a run where everything is already in place writes
-// nothing. It also makes sure the owner has a consoleUsers row (role admin),
+// nothing. Given an owner address, it also makes sure that owner has a
+// consoleUsers row (role admin),
 // so the member directory and Team & agent access list them like anyone
 // else — the row is convenience, the claim is what can't be locked out.
 // The owner picks the claim up at their next token refresh (at most an
@@ -62,14 +70,22 @@ function sameClaims(a, b) {
   return JSON.stringify(Object.entries(a || {}).sort()) === JSON.stringify(Object.entries(b || {}).sort());
 }
 
-async function anyOwner(auth) {
+// Can anyone administer the console? An owner claim, or an enabled admin row
+// whose person can actually sign in (an Auth user exists for it).
+async function anyAdmin(auth, db) {
   let token;
   do {
     const page = await auth.listUsers(1000, token);
-    if (page.users.some((u) => u.customClaims && u.customClaims.owner === true)) return true;
+    if (page.users.some((u) => u.customClaims && u.customClaims.owner === true)) return "an owner claim";
     token = page.pageToken;
   } while (token);
-  return false;
+  const rows = await db.collection("consoleUsers").where("role", "==", "admin").get();
+  for (const d of rows.docs) {
+    const r = d.data() || {};
+    if (r.disabled === true) continue;
+    try { await auth.getUserByEmail(d.id); return "an admin in User Management"; } catch { /* no Auth user yet */ }
+  }
+  return "";
 }
 
 async function run({ env = process.env, argv = process.argv, auth, db, log = console.log } = {}) {
@@ -84,7 +100,7 @@ async function run({ env = process.env, argv = process.argv, auth, db, log = con
 
   if (!VERIFY) {
     if (!owner) {
-      log("set-owner-claim: CONSOLE_OWNER_EMAIL is not set — nothing to apply");
+      log("set-owner-claim: no owner address configured — no claim to apply (admins are User Management rows)");
     } else {
       for (const a of [owner, ...aliases]) {
         if (!EMAIL_RE.test(a)) throw new Error("set-owner-claim: an owner/alias value is not an email address");
@@ -127,17 +143,17 @@ async function run({ env = process.env, argv = process.argv, auth, db, log = con
   }
 
   if (VERIFY || !DRY) {
-    const ok = await anyOwner(auth);
-    if (!ok) {
-      log("set-owner-claim: no Firebase Auth user carries owner: true — refusing, so the rules can't go out with nobody able to administer the console. Set the CONSOLE_OWNER_EMAIL repository secret and re-run.");
+    const who = await anyAdmin(auth, db);
+    if (!who) {
+      log("set-owner-claim: nobody can administer the console (no owner claim, no enabled admin in User Management) — refusing, so the rules can't go out like that. Add an admin in User Management, or set the CONSOLE_OWNER_EMAIL secret, and re-run.");
       return 1;
     }
-    log("set-owner-claim: an owner claim is in place");
+    log(`set-owner-claim: the console has an administrator (${who})`);
   }
   return 0;
 }
 
-module.exports = { run, parseEnv, claimsFor, sameClaims };
+module.exports = { run, parseEnv, claimsFor, sameClaims, anyAdmin };
 
 if (require.main === module) {
   run().then((code) => process.exit(code), (err) => { console.error(String(err && err.message || err)); process.exit(1); });
