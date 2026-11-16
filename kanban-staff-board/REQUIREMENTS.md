@@ -408,7 +408,8 @@ settings → Team (for names where the given name comes last, e.g. Lê Quang Huy
 Members come from `memberDirectory`, a copy of `consoleUsers` without roles kept
 by a Cloud Function, since the full member list is admin-only.
 **KB-PPL-3** One person, one entry. An alias (`PERSON_ALIASES` in
-`kanban-core.js`: today `rob@personalisationhub.com` → `rob@offline2online.com`)
+`kanban-core.js`, filled at run time from `consoleConfig/identity`, e.g.
+`owner.alias@example.com` → `owner@example.com`)
 is a second address the same person signs in with. It has no member row or
 directory entry, is never listed or offered as a person, and anything that
 names it (assignee, reporter, a mention, an agent signed in as it, "me")

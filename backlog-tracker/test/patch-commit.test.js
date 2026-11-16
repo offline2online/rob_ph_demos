@@ -10,7 +10,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
-const { patchFilesFromCommit } = require("../scripts/run-backlog-automation.js");
+const { patchFilesFromCommit, patchRefProblem } = require("../scripts/run-backlog-automation.js");
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -78,6 +78,15 @@ test("refused with a plain reason: a short or made-up id, no base, a commit not 
   fs.writeFileSync(path.join(dir, "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 0, 255, 254]));
   git("add", "-A"); git("commit", "-q", "-m", "binary");
   assert.throws(() => patchFilesFromCommit(base, git("rev-parse", "HEAD"), opts), /logo\.png is a binary file/);
+});
+
+test("a hand-over may name only a claude/* session branch (the push rule)", () => {
+  assert.equal(patchRefProblem(""), "");
+  assert.equal(patchRefProblem(undefined), "");
+  assert.equal(patchRefProblem("claude/fix-tc-68-abc123"), "");
+  for (const bad of ["main", "deploy/backlog-tracker-faqs", "fix/console", "claudex/x", "claude", "claude/../main", "refs/heads/main"]) {
+    assert.match(patchRefProblem(bad), /not a claude\/\* session branch|not a branch name/, bad);
+  }
 });
 
 fs.rmSync(dir, { recursive: true, force: true });

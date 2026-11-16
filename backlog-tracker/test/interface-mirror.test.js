@@ -104,10 +104,10 @@ const M = (...entries) => ({ [MANIFEST_PATH]: manifest(entries) });
   });
 
   await test("(f) replacing a hand edit sets overwroteEdit", async () => {
-    const f = fakes({ i1: { ...base, updatedByEmail: "rob@offline2online.com", updatedAt: "2026-10-03T10:00:00Z" } }, { ...M({ id: "i1", path: "c.md" }), "c.md": "from repo" });
+    const f = fakes({ i1: { ...base, updatedByEmail: "owner@example.com", updatedAt: "2026-10-03T10:00:00Z" } }, { ...M({ id: "i1", path: "c.md" }), "c.md": "from repo" });
     await syncMirroredInterfaces("abc", f.io);
     const oe = f.store.i1.overwroteEdit;
-    assert.strictEqual(oe.byEmail, "rob@offline2online.com");
+    assert.strictEqual(oe.byEmail, "owner@example.com");
     assert.ok(oe.revisionId);
     assert.ok(oe.at);
   });

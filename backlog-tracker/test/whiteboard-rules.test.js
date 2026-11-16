@@ -6,8 +6,8 @@ const { initializeTestEnvironment, assertSucceeds, assertFails } = require("@fir
 const { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, addDoc, serverTimestamp, writeBatch } = require("firebase/firestore");
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
-const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", email_verified: true } };
-const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
+const MEMBER = { uid: "member", claims: { email: "sam@ph.example", email_verified: true } };
+const VIEWER = { uid: "viewer", claims: { email: "kit@ph.example", email_verified: true } };
 const ID = "Ab3dEf6hIj9lMn2pQr5T";
 const OFF = "Zz3dEf6hIj9lMn2pQr5T";
 
@@ -20,8 +20,8 @@ async function reset() {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: "sam@personalisationhub.com", role: "editor" });
-    await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
+    await setDoc(doc(db, "consoleUsers/sam@ph.example"), { email: "sam@ph.example", role: "editor" });
+    await setDoc(doc(db, "consoleUsers/kit@ph.example"), { email: "kit@ph.example", role: "viewer" });
     await setDoc(doc(db, `whiteboards/${ID}`), { shared: true, createdAt: new Date(0) });
     await setDoc(doc(db, `whiteboards/${ID}/strokes/s1`), stroke());
     await setDoc(doc(db, `whiteboards/${OFF}`), { shared: false, createdAt: new Date(0) });
@@ -46,7 +46,7 @@ async function main() {
   await check("A signed-out visitor can't create one", "deny", () => newBoard(null));
   await check("A read-only viewer can't create one", "deny", () => newBoard(VIEWER));
   await check("The id must be 20 letters/digits", "deny", () => newBoard(MEMBER, "short"));
-  await check("A board holds no extra fields (no email or name)", "deny", () => newBoard(MEMBER, undefined, { shared: true, createdAt: serverTimestamp(), createdBy: "sam@personalisationhub.com" }));
+  await check("A board holds no extra fields (no email or name)", "deny", () => newBoard(MEMBER, undefined, { shared: true, createdAt: serverTimestamp(), createdBy: "sam@ph.example" }));
   await check("A member turns sharing off", "allow", () => updateDoc(doc(as(MEMBER), `whiteboards/${ID}`), { shared: false }));
   await check("A link holder can't turn sharing off", "deny", () => updateDoc(doc(anon(), `whiteboards/${ID}`), { shared: false }));
   await check("Boards can't be rewritten beyond the sharing switch", "deny", () => updateDoc(doc(as(MEMBER), `whiteboards/${ID}`), { createdAt: new Date() }));

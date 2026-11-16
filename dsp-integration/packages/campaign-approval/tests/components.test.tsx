@@ -201,11 +201,11 @@ describe('AdvertiserCell (Campaigns table Advertiser column)', () => {
     expect(screen.getByText('Approved · edit pending')).toBeInTheDocument()
   })
   it('Rejected: hover shows reason, who and when', async () => {
-    render(<AdvertiserCell advertiserName="S" approval={a({ status: 'rejected', reason: 'Price in artwork', reviewedBy: 'hq@x.com', reviewedAt: '2026-10-01T10:00:00.000Z' })} />)
+    render(<AdvertiserCell advertiserName="S" approval={a({ status: 'rejected', reason: 'Price in artwork', reviewedBy: 'hq@x.example', reviewedAt: '2026-10-01T10:00:00.000Z' })} />)
     fireEvent.mouseEnter(screen.getByText('Rejected'))
     const tip = await screen.findByRole('tooltip')
     expect(tip).toHaveTextContent('Price in artwork')
-    expect(tip).toHaveTextContent('hq@x.com')
+    expect(tip).toHaveTextContent('hq@x.example')
   })
   it('has no approve / reject actions', () => {
     render(<AdvertiserCell advertiserName="S" approval={a()} />)

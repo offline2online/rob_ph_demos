@@ -1,0 +1,6 @@
+#!/bin/sh
+# Refuse a commit that adds a personal email address (root CLAUDE.md →
+# "Never hard-code a person's address"). Enable once per clone:
+#   git config core.hooksPath tools/hooks
+root="$(git rev-parse --show-toplevel)" || exit 2
+exec node "$root/tools/check-personal-emails.js" --staged

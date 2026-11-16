@@ -133,7 +133,7 @@ const reported = (id, extra = {}) => backlog(id, { buildSession: { status: "done
   });
   await test("a person replied in a comment after the report -> rebuild with that reply as the answer", () => {
     const card = stopped();
-    card.notes.push({ author: "rob@offline2online.com", text: "A", at: new Date(REP + MIN).toISOString() });
+    card.notes.push({ author: "owner@example.com", text: "A", at: new Date(REP + MIN).toISOString() });
     assert.deepStrictEqual(unbuiltReportAction(card, LATER), { action: "rebuild", answer: "A" });
   });
   await test("nothing to do: within the grace period, a newer fire, a cleared flag, already flagged, patch packaged, the pipeline acted since, or a report over a day old", () => {

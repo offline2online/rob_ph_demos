@@ -1264,6 +1264,64 @@ server is per-person, per-token and individually revocable.
 **Read [`MCP.md`](./MCP.md)** for how to connect a client, how an admin adds
 someone, the full tool list, and how the OAuth flow is built.
 
+## The account owner — a claim, never an address (16 Nov 2026)
+
+Nothing in this repository names a person's email address — not the rules,
+the functions, the page, the docs or the tests. The owner used to be two
+hard-coded addresses in `firestore.rules`, `storage.rules`,
+`functions/mcp-server.js`, `functions/kanban.js`, `public/js/auth-gate.js`
+and `public/js/app.js`; because every file then held a personal address,
+the privacy plugin refused every Routine's `patchFiles` hand-back and six
+tickets sat blocked. Now:
+
+- **Who is the owner** is the `owner: true` Firebase Auth custom claim.
+  `isOwnerAccount()` (firestore.rules), `storage.rules`, `isOwnerEmail()` /
+  `resolveConsoleUser()` (mcp-server.js) and `isOwnerUser()` (auth-gate.js)
+  all read it. A claim lives in Auth, not Firestore, so an empty or
+  mis-edited `consoleUsers` still can't lock the owner out.
+- **A second sign-in address of the same person** carries `owner: true`
+  plus `aliasOf: <canonical address>` (the rules use it for Kanban
+  notifications), and the map is `consoleConfig/identity.personAliases`
+  (read by `functions/identity.js` and the Kanban store, applied through
+  `kanban-core.setPersonAliases()`). Clients can read it, nobody can write
+  it but the admin SDK.
+- **The values** live only in two repository secrets,
+  `CONSOLE_OWNER_EMAIL` and (optional, comma-separated)
+  `CONSOLE_OWNER_ALIASES`. `deploy-backlog-tracker.yml` runs
+  `scripts/set-owner-claim.js` from them **before** any rules deploy, and the
+  step fails — stopping the deploy — if no Auth user would hold the claim.
+  The script never prints an address (this repo's run logs are public).
+
+Set the secrets once (gh prompts for the value, so it stays out of shell
+history and out of any chat):
+
+```bash
+gh secret set CONSOLE_OWNER_EMAIL
+gh secret set CONSOLE_OWNER_ALIASES
+```
+
+Run it by hand, one-off, with a service account that may manage Auth users:
+
+```bash
+cd backlog-tracker/scripts
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> CONSOLE_OWNER_EMAIL=<address> node set-owner-claim.js --dry
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> CONSOLE_OWNER_EMAIL=<address> node set-owner-claim.js
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> node set-owner-claim.js --verify   # exit 1 if nobody is owner
+```
+
+The owner picks the claim up at their next token refresh (at most an hour;
+the sign-in wall forces one the first time the rules refuse them).
+
+**Keeping it that way**: `tools/check-personal-emails.js` fails on any
+address that isn't on a reserved domain (`example.com`, `*.example`,
+`*.test` …), a service identity, a role mailbox (`support@` …) or in
+`.personal-email-allowlist`. It runs as a pre-commit hook
+(`git config core.hooksPath tools/hooks`, once per clone) and in CI
+(`.github/workflows/personal-email-check.yml`). Tests use fixture
+identities: `owner@example.com` for the owner (with the `owner: true`
+claim on its token), `owner.alias@example.com` for the alias, and
+`<name>@ph.example` for everyone else.
+
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:
@@ -2519,9 +2577,10 @@ the full behavior.
   Function proxy (`X-Board-Key` header, also served at
   `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
   fallback. Adding an editor is now a
-  row in User Management → Users, not an edit to three files; only
-  the two owner accounts are still hard-coded, as the bootstrap that makes
-  an empty member list non-fatal.
+  row in User Management → Users, not an edit to three files. The bootstrap
+  that makes an empty member list non-fatal is the `owner: true` custom
+  claim on the account owner's Auth user — no address is in the code (see
+  "The account owner" below).
 - **No drag-and-drop.** Multi-project and an archive page (per-project
   "Archived (N)" button → sortable/filterable table, with a Restore
   action) have both since been ported over from the Artifact board;
@@ -2844,11 +2903,12 @@ The code is here:
 | `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
 | `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity (one line per changed field, `editActivity` in `kanban-core.js`), the Watch toggle, uploads, inline screenshots moved to Storage; links are written on both tickets in the same batch (`/mcp/kanban/backfill-links` makes older one-sided links two-sided and stamps `kanbanSettings/main.linksTwoSidedAt`) on save |
 | `public/js/kanban/kanban-bell.js` | The Notifications bell in the console topbar on every page: one `limit(30)` listener ordered by `at` plus a `count()` of unread, grouped by ticket, Mark all as read (clears the badge at once, re-counts, shows an error if the write fails), click to open the ticket (loaded by `app.js` at sign-in) |
-| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: `rob@personalisationhub.com` → `rob@offline2online.com`) |
+| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person, e.g. `owner.alias@example.com` → `owner@example.com`; empty in code, filled at run time from `consoleConfig/identity` via `setPersonAliases()`) |
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
 | `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
 | `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
+| `scripts/set-owner-claim.js` | Run on every deploy, before any rules deploy: gives the account owner (`CONSOLE_OWNER_EMAIL` secret) the `owner: true` custom claim, any alias addresses (`CONSOLE_OWNER_ALIASES`) `owner` + `aliasOf`, the owner a `consoleUsers` row, and writes `consoleConfig/identity.personAliases`. Fails the deploy if no Auth user would hold the claim. Never prints an address. See "The account owner" |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |
 | `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
 

@@ -9,7 +9,7 @@ import { cardOf, searchTokens } from "../../public/js/kanban/kanban-core.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const KB = JSON.parse(fs.readFileSync(path.join(here, "fixtures", "kanban-seed.json"), "utf8"));
-export const ROB = "rob@offline2online.com";
+export const ROB = "owner@example.com";
 export const emailOf = (first) => KB.users.find((u) => u.first === first).email;
 // A small JPEG for Rob, as his uploaded profile photo.
 const ROB_PHOTO = "data:image/jpeg;base64," + fs.readFileSync(path.join(here, "..", "..", "..", "kanban-staff-board", "prototype", "img", "rob.jpg")).toString("base64");
@@ -31,6 +31,8 @@ export function kanbanSeed({ user = { email: ROB, role: "admin" }, extra = {}, p
     kanbanSettings: { main: KB.settings },
     kanbanCounters: { main: { nextNumber: KB.nextNumber } },
     projects: {},
+    // The alias map is configuration, as in production (scripts/set-owner-claim.js).
+    consoleConfig: { identity: { personAliases: { "owner.alias@example.com": ROB } } },
   };
   for (const [key, cs] of Object.entries(KB.comments)) docs[`kanbanTasks/${key}/comments`] = cs;
   for (const [k, v] of Object.entries(extra)) docs[k] = { ...(docs[k] || {}), ...v };

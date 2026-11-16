@@ -1,5 +1,6 @@
-// Folds every alias address (PERSON_ALIASES in public/js/kanban/kanban-core.js)
-// into its owner on the board's data. Run by the deploy workflow on every
+// Folds every alias address (consoleConfig/identity.personAliases — set by
+// scripts/set-owner-claim.js, never written in this repo) into its owner on
+// the board's data. Run by the deploy workflow on every
 // deploy; it is idempotent, so a run with nothing to fold writes nothing.
 //
 //   GOOGLE_APPLICATION_CREDENTIALS=<sa.json> node apply-person-aliases.js [--dry]
@@ -7,7 +8,7 @@
 // For each alias → owner it:
 //   - deletes consoleUsers/<alias> (Settings → Team & agent access) and
 //     memberDirectory/<alias>, so the alias is not a second person. An alias
-//     that is an owner account in firestore.rules can still sign in; the
+//     that carries the owner claim can still sign in; the
 //     board treats it as its owner (functions/kanban.js, kanban-page.js).
 //   - re-points Staff Kanban tickets (assignee, reporter, previousAssignee,
 //     createdBy, updatedBy), their comments' authors and mentions, and
@@ -16,7 +17,7 @@
 //     and names the owner "Rob"-style from the address when nothing names them.
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getFirestore, FieldValue, FieldPath } = require("firebase-admin/firestore");
-const { PERSON_ALIASES } = require("../functions/kanban-core.js");
+const identity = require("../functions/identity.js");
 
 const DRY = process.argv.includes("--dry");
 const TASK_PEOPLE = ["assignee", "reporter", "previousAssignee", "createdBy", "updatedBy"];
@@ -25,6 +26,7 @@ async function main() {
   initializeApp({ credential: applicationDefault() });
   const db = getFirestore();
   const pending = [];
+  const PERSON_ALIASES = await identity.refresh(db, { force: true });
   const write = (what, fn) => { console.log(`apply-person-aliases: ${DRY ? "would " : ""}${what}`); if (!DRY) pending.push(fn); };
 
   for (const [alias, owner] of Object.entries(PERSON_ALIASES)) {

@@ -27,7 +27,7 @@ assert.deepEqual(sb.note, { author: "viewer", text: "Failed testing [Other]: bro
 // Follow-up.
 const original = { id: "orig123", projectId: "p1", title: "Rename the booking page", category: "HQ Admin", status: "ready-for-testing", deployBranch: "deploy/x" };
 const text = "Please can you also show approve and reject on hover";
-const r = followUpWrites({ original, text, title: "Show approve and reject on hover", author: "a@b.com", at, newId: "new456" });
+const r = followUpWrites({ original, text, title: "Show approve and reject on hover", author: "a@b.example", at, newId: "new456" });
 assert.equal(r.error, undefined);
 const n = r.newItem;
 assert.equal(n.status, "backlog");
@@ -50,10 +50,10 @@ const pipeline = ["patchFiles", "patchBranch", "patchReady", "mergeReady", "depl
   "patchBaseSha", "autoRebuilds", "rebuildRequestedAt", "lastFire", "patchPartCount", "revertRequested", "lastFailureReason", "previewUrl"];
 for (const k of pipeline) assert.ok(!(k in n), `new item must not carry ${k}`);
 assert.equal(n.notes.length, 1);
-assert.equal(n.notes[0].author, "a@b.com");
+assert.equal(n.notes[0].author, "a@b.example");
 assert.match(n.notes[0].text, /Follow-up of "Rename the booking page" \(orig123\)/);
 assert.match(r.originalNote.text, /new456/);
-assert.equal(r.originalNote.author, "a@b.com");
+assert.equal(r.originalNote.author, "a@b.example");
 assert.deepEqual(Object.keys(r).sort(), ["newId", "newItem", "originalNote"]);
 
 // Category falls back.

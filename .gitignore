@@ -2,3 +2,5 @@
 backlog-tracker/help-site/
 media-studio/.env
 media-studio/output/
+
+node_modules/

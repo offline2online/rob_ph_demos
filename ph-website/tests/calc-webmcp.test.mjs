@@ -49,18 +49,18 @@ try {
   r = await run({ stores: 999999 });
   assert.strictEqual(r.structuredContent.inputs.stores, 5000, "clamped to the field maximum");
   // Details without consent: refused.
-  r = await run({ name: "Ann", company: "Acme", email: "ann@acme.com" });
+  r = await run({ name: "Ann", company: "Acme", email: "ann@acme.example" });
   assert.ok(/agreement|consent/i.test(r.content[0].text) && (await p.evaluate(() => window.__posted)) === null, "no consent, no submission");
   // Details and consent: the form is submitted and the link returned.
-  r = await run({ stores: 100, name: "Ann Lee", company: "Acme", email: "ann@acme.com", consent: true });
+  r = await run({ stores: 100, name: "Ann Lee", company: "Acme", email: "ann@acme.example", consent: true });
   assert.ok(!r.isError && /download\?x=1/.test(r.structuredContent.download), "download link returned");
-  assert.deepStrictEqual(await p.evaluate(() => window.__posted), { name: "Ann Lee", company: "Acme", email: "ann@acme.com" }, "the page's own form was submitted");
+  assert.deepStrictEqual(await p.evaluate(() => window.__posted), { name: "Ann Lee", company: "Acme", email: "ann@acme.example" }, "the page's own form was submitted");
   // Invalid email: not submitted.
   p = await tab("");
   r = await run({ name: "Ann", company: "Acme", email: "nope", consent: true });
   assert.ok(/not accepted/.test(r.content[0].text) && (await p.evaluate(() => window.__posted)) === null, "bad email is not submitted");
   // Analytics event carries no arguments or contact details.
-  p = await tab(""); await run({ name: "Zed", email: "z@z.zz" });
-  assert.ok(!JSON.stringify(await p.evaluate(() => window.dataLayer)).includes("z@z.zz"), "no contact details in the dataLayer");
+  p = await tab(""); await run({ name: "Zed", email: "z@z.example" });
+  assert.ok(!JSON.stringify(await p.evaluate(() => window.dataLayer)).includes("z@z.example"), "no contact details in the dataLayer");
   console.log("calc-webmcp: all passed");
 } catch (e) { console.error("FAIL:", e.message); process.exitCode = 1; } finally { await browser.close(); }

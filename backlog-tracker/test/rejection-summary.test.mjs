@@ -7,7 +7,7 @@ import { rejectionsOf, rejectionSummaryHTML, lastRejectionLine } from "../public
 // NBQ1scD9GFEr6YbQxSYX's real thread (20 Oct 2026), abridged: two automatic
 // send-backs from before failure summaries, among build and landing notes.
 const legacy = [
-  { author: "rob@offline2online.com", text: "Filed from rob@offline2online.com's agent via MCP.", at: "2026-10-20T22:25:04.208Z" },
+  { author: "owner@example.com", text: "Filed from owner@example.com's agent via MCP.", at: "2026-10-20T22:25:04.208Z" },
   { author: "claude", text: "Built the voice-first New item modal. Record item button on top…", at: "2026-10-20T22:35:50.000Z" },
   { author: "backlog-automation", text: "The console tests failed on this ticket's own commit a19b508 (https://x/1). Re-running it once to rule out a flaky test before anything is sent back. Nothing to do yet.", at: "2026-10-20T22:40:20.584Z" },
   { author: "backlog-automation", text: "Sent back automatically (Failed testing [tests]): console tests (firestore-rules-test.yml) failed on this ticket's own commit a19b508 while everything before it on deploy/backlog-tracker-faqs passed: https://x/1 (it failed again when re-run). Its commits are being reverted off the train.", at: "2026-10-20T22:44:13.932Z" },
@@ -27,10 +27,10 @@ assert.equal(rejectionsOf([auto])[0].line, "deployment train tests: START-HERE.m
 
 // A person's Failed testing and Eject from train: category + first sentence.
 const person = { author: "viewer", at: "2026-10-21T10:00:00Z", text: "Failed testing [Visual or layout issue]: The Record button overlaps the title on a phone. Also the timer jumps." };
-const eject = { author: "rob@offline2online.com", at: "2026-10-21T11:00:00Z", text: "Ejected from train [Broke something else (regression)]: Quick comments stopped saving" };
+const eject = { author: "owner@example.com", at: "2026-10-21T11:00:00Z", text: "Ejected from train [Broke something else (regression)]: Quick comments stopped saving" };
 const r2 = rejectionsOf([person, eject]);
 assert.deepEqual(r2.map((r) => [r.kind, r.who, r.line]), [
-  ["ejected", "rob@offline2online.com", "Broke something else (regression): Quick comments stopped saving"],
+  ["ejected", "owner@example.com", "Broke something else (regression): Quick comments stopped saving"],
   ["sent-back", "a tester", "Visual or layout issue: The Record button overlaps the title on a phone"],
 ]);
 

@@ -21,6 +21,7 @@
 const { FieldValue } = require("firebase-admin/firestore");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
+const identity = require("./identity");
 
 const db = () => require("firebase-admin/firestore").getFirestore();
 const COL = "kanbanNotifications";
@@ -86,6 +87,7 @@ async function write(eventId, key, task, actor, recipients) {
 
 // onDocumentWritten("kanbanTasks/{key}")
 async function taskWritten(event) {
+  await identity.refresh(db);
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   if (!after) return null;
@@ -97,6 +99,7 @@ async function taskWritten(event) {
 
 // A comment's creation: { id, params: { key }, data: DocumentSnapshot }
 async function commentCreated(event) {
+  await identity.refresh(db);
   const comment = event.data.data();
   const snap = await db().collection("kanbanTasks").doc(event.params.key).get();
   if (!snap.exists) return null;
@@ -108,6 +111,7 @@ async function commentCreated(event) {
 
 // A comment's edit: only the people newly @mentioned in it are told, never again those it already named.
 async function commentEdited(event) {
+  await identity.refresh(db);
   const before = event.data.before.data(), after = event.data.after.data();
   const had = new Set(list(before.mentions).map(clean));
   const fresh = list(after.mentions).filter((m) => !had.has(clean(m)));

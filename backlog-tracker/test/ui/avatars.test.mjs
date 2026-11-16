@@ -10,18 +10,18 @@ import { startHarness, until } from "./harness.mjs";
 const T0 = 1_760_000_000_000;
 const t = (ms) => ({ $ts: ms });
 const PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
-const ME = "editor@personalisationhub.com";
+const ME = "editor@ph.example";
 const seed = {
   user: { email: ME, role: "editor" },
   docs: {
     projects: { p1: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     consoleUsers: {
       [ME]: { email: ME, role: "editor", displayName: "Edie Editor", photoUrl: PIXEL },
-      "sam@personalisationhub.com": { email: "sam@personalisationhub.com", role: "editor", displayName: "Sam Sample" },
+      "sam@ph.example": { email: "sam@ph.example", role: "editor", displayName: "Sam Sample" },
     },
     backlogItems: {
       b1: { projectId: "p1", title: "Purple widget", desc: "Make it purple", type: "feature", category: "HQ Admin", status: "backlog", createdAt: t(T0 + 1), updatedAt: t(T0 + 1),
-        notes: [{ author: ME, text: "mine", at: t(T0 + 2) }, { author: "sam@personalisationhub.com", text: "theirs", at: t(T0 + 3) }] },
+        notes: [{ author: ME, text: "mine", at: t(T0 + 2) }, { author: "sam@ph.example", text: "theirs", at: t(T0 + 3) }] },
     },
   },
 };
@@ -49,13 +49,13 @@ try {
       await page.waitForSelector("#ei-notes-list .ei-note-row");
       const mine = page.locator(`#ei-notes-list .ph-avatar[data-avatar-email="${ME}"]`);
       assert.ok(await mine.locator("img").count(), "my comment shows my photo");
-      const sam = page.locator('#ei-notes-list .ph-avatar[data-avatar-email="sam@personalisationhub.com"]');
+      const sam = page.locator('#ei-notes-list .ph-avatar[data-avatar-email="sam@ph.example"]');
       assert.equal((await sam.innerText()).trim(), "SS", "no photo -> first + last initials");
       assert.notEqual(await sam.evaluate((el) => getComputedStyle(el).backgroundColor), "rgba(0, 0, 0, 0)", "coloured circle");
       assert.equal(Math.round((await mine.first().boundingBox()).width), 24);
       // A photo arriving later repaints in place, no reload.
       await page.evaluate((px) => {
-        const b = globalThis.__fbStub; const col = b.col("consoleUsers"); col.set("sam@personalisationhub.com", { ...col.get("sam@personalisationhub.com"), photoUrl: px }); b.notify();
+        const b = globalThis.__fbStub; const col = b.col("consoleUsers"); col.set("sam@ph.example", { ...col.get("sam@ph.example"), photoUrl: px }); b.notify();
       }, PIXEL);
       await until(() => sam.locator("img").count(), "Sam's photo to appear without a reload");
       if (o.problems.length) throw new Error(`the page reported problems:\n ${o.problems.join("\n ")}`);
@@ -73,7 +73,7 @@ try {
 // the created row keeps agent access ON (mcpEnabled false would cut the
 // owner's MCP connection — functions/mcp-server.js).
 {
-  const OWNER = "rob@offline2online.com";
+  const OWNER = "owner@example.com";
   const o = await h.open({ seed: { user: { email: OWNER, role: "editor" }, docs: { projects: seed.docs.projects, backlogItems: seed.docs.backlogItems } }, width: 1280, height: 900 });
   const { page } = o;
   try {
