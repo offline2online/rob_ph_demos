@@ -152,7 +152,7 @@ run takes about as long as its slowest part instead of 28 minutes.
 `UI_SHARD=i/n` makes `ui/run-ui.mjs` run every n-th file of its list;
 `KB_SHARD=i/n` makes the Staff Kanban suite run every n-th profile of the
 viewport matrix. Unset (locally) both run everything. The minified build is
-tested by one part only. `ui-shards.test.js` checks the parts cover every
+tested by one part only (the one whose profiles are all Firefox and WebKit, which this workflow does not install). `ui-shards.test.js` checks the parts cover every
 file and profile exactly once and that the workflow's matrix matches its
 `i/n`. To reproduce one part locally:
 `KB_SHARD=2/4 npm run test:ui:kanban:matrix`.

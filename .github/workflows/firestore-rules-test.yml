@@ -241,7 +241,9 @@ jobs:
 
   ui-touch:
     # Three parts side by side (UI_SHARD, test/ui/run-ui.mjs): every third
-    # file of the list each. One job ran them in a row for 21 minutes.
+    # file of the list each. One job ran them in a row for 21 minutes. The
+    # list in package.json is ordered so the three long files (nav-touch,
+    # whiteboard-tablet, support-touch with whiteboard) fall in different parts.
     strategy:
       fail-fast: false
       matrix:
@@ -325,10 +327,11 @@ jobs:
           KB_SHARD: ${{ matrix.shard }}/4
         run: npm run test:ui:kanban:matrix
 
-      # Once against the minified Hosting build, in the part with the fewest
-      # profiles.
+      # Once against the minified Hosting build (8.5 minutes), in the part
+      # whose profiles are all Firefox and WebKit: those engines are not
+      # installed in this workflow, so that part is otherwise idle.
       - name: Run Staff Kanban suite against the minified build
-        if: matrix.shard == 3
+        if: matrix.shard == 1
         run: npm run test:ui:kanban:minified
 
       # A UI case that failed and passed on its one retry did not fail this

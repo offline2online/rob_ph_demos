@@ -40,9 +40,15 @@ const path = require("path");
   }
   assert.strictEqual(sharded, 2, "ui-touch and ui-kanban run in parts");
   // The minified run happens in exactly one part.
-  assert.ok(/if:\s*matrix\.shard == 3\s*\n\s*run: npm run test:ui:kanban:minified/.test(jobs["ui-kanban"]), "the minified build is tested by one part only");
+  assert.ok(/if:\s*matrix\.shard == \d\s*\n\s*run: npm run test:ui:kanban:minified/.test(jobs["ui-kanban"]), "the minified build is tested by one part only");
   // Every job the run is judged by is in wake-automation's needs.
   const needs = /needs:\s*\[([^\]]+)\]/.exec(jobs["wake-automation"])[1].split(",").map((x) => x.trim()).sort();
   assert.deepStrictEqual(needs, Object.keys(jobs).filter((j) => j !== "wake-automation").sort());
+  // The long touch files are spread over the parts (measured 16 Nov 2026:
+  // nav-touch 413 s, whiteboard-tablet 392 s, support-touch 264 s, whiteboard 155 s).
+  const touch = require("./package.json").scripts["test:ui:touch"].split(/\s+/).filter((f) => f.endsWith(".test.mjs")).map((f) => path.basename(f));
+  const partOf = (f) => touch.indexOf(f) % 3;
+  assert.strictEqual(new Set(["nav-touch.test.mjs", "whiteboard-tablet.test.mjs", "support-touch.test.mjs"].map(partOf)).size, 3, "the three longest touch files run in different parts");
+  assert.strictEqual(partOf("whiteboard.test.mjs"), partOf("support-touch.test.mjs"));
   console.log("ui-shards: ok");
 })().catch((err) => { console.error(err); process.exit(1); });
