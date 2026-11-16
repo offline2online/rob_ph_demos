@@ -2679,17 +2679,20 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
     seedItem("sA", { groomAreas: ["faq"], createdAt: new Date("2026-11-01T00:00:00Z") });
     seedItem("sB", { groomAreas: ["faq"], createdAt: new Date("2026-11-02T00:00:00Z") });
+    seedItem("sE", { groomAreas: ["faq"], createdAt: new Date("2026-11-03T00:00:00Z") });
+    seedItem("sF", { groomAreas: ["faq"], createdAt: new Date("2026-11-04T00:00:00Z") });
     seedItem("sC", { dependsOnItemIds: ["sA"] });
     seedItem("sD", { dependsOnItemIds: ["sX"] });
     seedItem("sX", { title: "Not sent" });
-    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sC", "sD"] });
+    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sE", "sF", "sC", "sD"] });
     assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
     const out = JSON.parse(res.body.result.content[0].text);
-    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA"]);
-    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sB", "sA"]]);
+    // Three of a lane build at once; the fourth waits for the first.
+    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA", "sB", "sE"]);
+    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sF", "sA"]]);
     assert.deepStrictEqual(out.held.map((x) => [x.id, x.waitingFor.map((w) => [w.id, w.notSent])]), [["sC", [["sA", false]]], ["sD", [["sX", true]]]]);
     assert.match(out.summary, /2 held: .*"Not sent", which was not sent/);
-    for (const id of ["sA", "sB", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
+    for (const id of ["sA", "sB", "sE", "sF", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 

@@ -20,7 +20,7 @@ export async function runMatrix({ name, command, args, cwd, profiles, env = proc
   console.log(`\n${name}: ${profiles.length} profile(s), ${jobs} at a time\n`);
   const run = (prof) => new Promise((resolve) => {
     const started = Date.now();
-    const child = spawn(command, args, { cwd, env: { ...env, KB_WORKER: "1", KB_PROFILES: prof.id, KB_ENGINES: "" } });
+    const child = spawn(command, args, { cwd, env: { ...env, KB_WORKER: "1", KB_PROFILES: prof.id, KB_ENGINES: "", KB_SHARD: "" } });
     let out = "";
     child.stdout.on("data", (d) => { out += d; });
     child.stderr.on("data", (d) => { out += d; });

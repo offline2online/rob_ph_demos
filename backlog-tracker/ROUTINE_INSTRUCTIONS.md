@@ -1770,7 +1770,7 @@ be stale by the time you run):
      ticket will touch (e.g. `["backlog-tracker/public", "faq"]`). Tickets
      that share an area are always built in the same package, so use the
      same spelling for the same area across tickets. Within a click they
-     are also built one at a time (build order: same area, one lane), so
+     are also built three at a time (build order: same area, one lane), so
      an area that is too broad slows builds down and one that is too narrow
      lets colliding tickets build in parallel.
    - Dependencies: if the ticket plainly needs another open ticket's code

@@ -29,7 +29,7 @@ assert.ok(appMin.includes("./kanban/kanban-page.js"), "the Kanban page import mu
 assert.equal(fs.readFileSync(path.join(out, "js/vendor/purify.min.js"), "utf8"), fs.readFileSync(path.join(root, "public/js/vendor/purify.min.js"), "utf8"), "vendored files are copied as they are");
 assert.equal(fs.readFileSync(path.join(out, "index.html"), "utf8"), fs.readFileSync(path.join(root, "public/index.html"), "utf8"), "index.html is copied as it is");
 
-const env = { ...process.env, HARNESS_PUBLIC_DIR: out, KB_PROFILES: "quick", KB_ENGINES: "chromium", KB_ONLY: process.env.KB_ONLY || "" };
+const env = { ...process.env, HARNESS_PUBLIC_DIR: out, KB_PROFILES: "quick", KB_ENGINES: "chromium", KB_SHARD: "", KB_ONLY: process.env.KB_ONLY || "" };
 const run = spawnSync(process.execPath, [path.join(here, "staff-kanban.test.mjs")], { cwd: path.join(here, ".."), env, stdio: "inherit" });
 fs.rmSync(out, { recursive: true, force: true });
 assert.equal(run.status, 0, "the Staff Kanban suite failed against the minified build");

@@ -1767,8 +1767,9 @@ async function releaseDependents(landed) {
   }
 }
 
-// Same-area tickets build one at a time (ZE8h8cfaezOb0eTsRjSH): a Ready for
-// Dev click queues a ticket behind the lane-mate it would collide with
+// Same-area tickets build a few at a time (ZE8h8cfaezOb0eTsRjSH; three since
+// 16 Nov 2026, build-order.js LANE_WIDTH): a Ready for
+// Dev click queues a ticket past that behind a lane-mate
 // (backlogItems.queuedAfter, written by functions/index.js). Every run, a
 // queued ticket whose lane-mate has landed, failed, been blocked, archived or
 // deleted is let go and its build requested, so it builds on the train tip
@@ -1795,7 +1796,9 @@ async function sweepBuildQueue(nowMs = Date.now()) {
       const project = await getProject(w.projectId).catch(() => null);
       if (!project) continue;
       const locked = !!project.trainLocked;
-      const notes = await appendNote(w, `Queue: ${plan.why}, so this ticket ${locked ? "builds as soon as this project's closing train has merged" : "builds now, on the train as it is after that"}.`);
+      // One note for the queue, replaced each time (key): a ticket let go and
+      // queued again used to add the same line every run.
+      const notes = await appendNote(w, `Queue: ${plan.why}, so this ticket ${locked ? "builds as soon as this project's closing train has merged" : "builds now, on the train as it is after that"}.`, { key: "build-queue" });
       await patchItem(w.id, { queuedAfter: null, notes, updatedAt: stamp, ...(locked ? { buildAfterTrain: true } : {}) });
       if (!locked) queueBuildRequest(project, w.id);
       console.log(`[build-queue] ${w.id}: released (${plan.why})`);
@@ -3397,7 +3400,8 @@ function readTrainTestGate(deployBranch) {
     }
     return { workflow: t.workflow, label: t.label, run: testRun, speaksForHead };
   });
-  return { head, ...trainTestGate(checks) };
+  // `tested`: every workflow this gate judged (all of them green when state is).
+  return { head, tested: checks.map((c) => c.workflow), ...trainTestGate(checks) };
 }
 
 // ── Auto-eject the ticket that turned the train red ─────────────────────────
@@ -6896,6 +6900,30 @@ function trainChecksState(rollup, required = REQUIRED_TRAIN_CHECKS) {
   return all === "none" ? "success" : all;
 }
 
+// The train PR's checks without the suites the deploy gate has already passed
+// on this content. Deploy to Main reads the train's tests on the final head
+// (main merged in), then adds the version bump and opens the PR. GitHub's
+// pull_request path filter looks at the PR's whole diff, so the push of the
+// bump starts the same suites again on a head that differs by version.js
+// alone, which no suite reads; the deploy used to wait for that second run
+// (PR #613, 16 Nov 2026: green at 19:44, merged at 20:04 after a 30-minute
+// repeat). `gateWorkflowNames` are the display names of the gate's green
+// workflows; a required check is never dropped. Pure.
+function withoutGateTestedChecks(rollup, gateWorkflowNames, required = REQUIRED_TRAIN_CHECKS) {
+  const names = new Set((gateWorkflowNames || []).filter(Boolean));
+  if (!Array.isArray(rollup) || !names.size) return rollup;
+  return rollup.filter((c) => required.includes(c.name || c.context) || !names.has(c.workflowName));
+}
+
+// A workflow file's display name (`name:` at the top), which is what a PR's
+// check rollup calls it. Null when it can't be read.
+function workflowDisplayName(file) {
+  try {
+    const m = /^name:\s*(.+?)\s*$/m.exec(fs.readFileSync(path.join(process.cwd(), ".github/workflows", file), "utf8"));
+    return m ? m[1].replace(/^(['"])(.*)\1$/, "$2") : null;
+  } catch { return null; }
+}
+
 // GitHub holds a workflow run on a bot-opened PR as `action_required` until
 // someone approves it, and a held run reports no check at all — so the
 // required e2e-quick would never appear and the train would wait forever
@@ -7442,6 +7470,17 @@ async function processDeployTrain(project) {
   // PR #433 was read back 6 s after the main-merge and version-bump push,
   // looked green, and was merged before e2e-quick had run on what shipped.
   const pushedHead = run("git", ["rev-parse", "HEAD"]);
+  // What the gate passed is what ships when the only change since is the
+  // version bump: the PR's repeat of those suites is not waited for.
+  let gateTested = [];
+  try {
+    const since = pushedHead === gate.head ? [] : run("git", ["diff", "--name-only", gate.head, pushedHead]).split("\n").filter(Boolean);
+    if (since.every((p) => p === VERSION_JS)) gateTested = (gate.tested || []).map((w) => workflowDisplayName(w));
+  } catch (err) {
+    console.log(`[deploy-train] ${project.id}: couldn't compare the gate's head with the pushed head (${scrubSecrets(err.message)}) — waiting for every PR check`);
+  }
+  const judged = (rollup) => withoutGateTestedChecks(rollup, gateTested);
+  if (gateTested.filter(Boolean).length) console.log(`[deploy-train] ${project.id}: ${gateTested.filter(Boolean).join(", ")} passed on ${gate.head.slice(0, 7)} and only the version bump follows — not waiting for the PR's repeat`);
 
   // 3. One PR for the whole train. Reused if an earlier run already opened
   //    it (this job can be interrupted between opening and merging).
@@ -7491,12 +7530,12 @@ async function processDeployTrain(project) {
       continue;
     }
     approveHeldRuns(pr.headRefOid);
-    let checks = trainChecksState(pr.statusCheckRollup);
+    let checks = trainChecksState(judged(pr.statusCheckRollup));
     if (checks === "infra") {
       const sha = pr.headRefOid || "";
       const reruns = project.trainCiRerunSha === sha ? (Number(project.trainCiReruns) || 0) : 0;
       if (reruns < TRAIN_CI_INFRA_RERUNS) {
-        const n = rerunInfraChecks(pr.statusCheckRollup);
+        const n = rerunInfraChecks(judged(pr.statusCheckRollup));
         console.log(`[deploy-train] ${project.id}: PR #${prNumber} has check(s) GitHub never finished running — re-ran ${n} workflow run(s) (attempt ${reruns + 1}/${TRAIN_CI_INFRA_RERUNS}); trainReady stays set`);
         followUpReasons.push(`${project.id}: PR #${prNumber} checks re-run after a GitHub-side cancellation`);
         await patchProject(project.id, {
@@ -7513,7 +7552,7 @@ async function processDeployTrain(project) {
       checks = "failure";
     }
     if (checks === "failure") {
-      const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
+      const red = (judged(pr.statusCheckRollup) || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
       await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
         // resumeRedTrains() picks the deploy back up by itself once this PR
@@ -7570,7 +7609,7 @@ async function processDeployTrain(project) {
   // An already-MERGED PR is never waiting on anything — a check still
   // running on it must not send this back round the loop and leave the
   // train's cards un-flipped.
-  if (pr && pr.state !== "MERGED" && (pr.headRefOid !== pushedHead || trainChecksState(pr.statusCheckRollup) === "pending")) {
+  if (pr && pr.state !== "MERGED" && (pr.headRefOid !== pushedHead || trainChecksState(judged(pr.statusCheckRollup)) === "pending")) {
     // Leave trainReady set: the next scheduled run picks the wait back up
     // rather than needing another click.
     console.log(`[deploy-train] ${project.id}: PR #${prNumber}'s checks are still running — will retry on the next run`);
@@ -8758,7 +8797,7 @@ module.exports = {
   // test/docs-sync.test.js, test/docs-sync-all.test.js
   syncDocsAfterMerge, gitDocsIo, syncDocsWhenMainMoves,
   // test/train-checks.test.js — a train merges only once e2e-quick passed
-  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns,
+  trainChecksState, rollupState, REQUIRED_TRAIN_CHECKS, approveHeldRuns, withoutGateTestedChecks, workflowDisplayName,
   // test/train-resume.test.js — GitHub-side cancellations re-run; red trains resume when green
   isInfraCheck, rerunInfraChecks, resumeRedTrains, TRAIN_CI_INFRA_RERUNS,
   // test/train-tests.test.js — console tests run on each train push
