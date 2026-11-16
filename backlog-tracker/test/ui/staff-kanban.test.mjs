@@ -719,6 +719,8 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
   await press(p, '.kb-card[data-key="PH-20"]');
+  // The ticket opens asynchronously: wait for its form before asking what it holds.
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title");
   assert.equal(await p.$("#f-save"), null, "no Save");
   assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
   assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");
