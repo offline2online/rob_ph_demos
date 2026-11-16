@@ -45,9 +45,10 @@
 // hour; auth-gate.js forces one the first time the rules refuse them).
 "use strict";
 
-const { initializeApp, applicationDefault, getApps } = require("firebase-admin/app");
-const { getAuth } = require("firebase-admin/auth");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+// firebase-admin is loaded only when a real run needs it, so the tests can
+// drive run() with stubs where the package isn't installed.
+const admin = (m) => require(`firebase-admin/${m}`);
+const serverTime = () => { try { return admin("firestore").FieldValue.serverTimestamp(); } catch { return new Date(); } };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -92,9 +93,10 @@ async function run({ env = process.env, argv = process.argv, auth, db, log = con
   const DRY = argv.includes("--dry");
   const VERIFY = argv.includes("--verify");
   if (!auth || !db) {
-    if (!getApps().length) initializeApp({ credential: applicationDefault() });
-    auth = auth || getAuth();
-    db = db || getFirestore();
+    const app = admin("app");
+    if (!app.getApps().length) app.initializeApp({ credential: app.applicationDefault() });
+    auth = auth || admin("auth").getAuth();
+    db = db || admin("firestore").getFirestore();
   }
   const { owner, aliases } = parseEnv(env);
 
@@ -127,7 +129,7 @@ async function run({ env = process.env, argv = process.argv, auth, db, log = con
       const row = await rowRef.get();
       if (!row.exists) {
         log(`set-owner-claim: ${DRY ? "would create" : "creating"} the owner's consoleUsers row (role admin)`);
-        if (!DRY) await rowRef.set({ email: owner, role: "admin", mcpEnabled: true, createdAt: FieldValue.serverTimestamp(), createdBy: "set-owner-claim" });
+        if (!DRY) await rowRef.set({ email: owner, role: "admin", mcpEnabled: true, createdAt: serverTime(), createdBy: "set-owner-claim" });
       }
 
       // The alias map. Replaces the whole map: the secret is the source of truth.
@@ -137,7 +139,7 @@ async function run({ env = process.env, argv = process.argv, auth, db, log = con
       const have = (cfg.exists && (cfg.data() || {}).personAliases) || {};
       if (!sameClaims(have, want)) {
         log(`set-owner-claim: ${DRY ? "would write" : "writing"} consoleConfig/identity.personAliases (${aliases.length} alias${aliases.length === 1 ? "" : "es"})`);
-        if (!DRY) await cfgRef.set({ personAliases: want, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        if (!DRY) await cfgRef.set({ personAliases: want, updatedAt: serverTime() }, { merge: true });
       }
     }
   }
