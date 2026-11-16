@@ -75,8 +75,13 @@ concurrency:
 #   rules        the Firestore rules against the emulator (needs Java)
 #   offline      unit, MCP, train and docs tests: no browser, no retry
 #   ui-console   the console click-through suites and the MCP App view
-#   ui-touch     iPad taps, stale page, whiteboard and the other small UI suites
-#   ui-kanban    the Staff Kanban test plan against the console
+#   ui-touch     iPad taps, stale page, whiteboard and the other small UI suites (3 parts)
+#   ui-kanban    the Staff Kanban test plan against the console (4 parts)
+#
+# ui-touch and ui-kanban each run as parts side by side (16 Nov 2026): the
+# run took 28 minutes because ui-kanban did, and every landing and every
+# deploy waits for it. The parts of a job together run every file and every
+# profile exactly once (test/ui-shards.test.js).
 #
 # The three ui-* jobs are Playwright-driven: a failed case is retried once in
 # the same run (test/ui/flaky.mjs, run-ui.mjs); unit, rules, MCP and docs
@@ -235,6 +240,12 @@ jobs:
           retention-days: 14
 
   ui-touch:
+    # Three parts side by side (UI_SHARD, test/ui/run-ui.mjs): every third
+    # file of the list each. One job ran them in a row for 21 minutes.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
     # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
     # Unpin once the repo's Playwright version supports Ubuntu 26.04.
     runs-on: ubuntu-24.04
@@ -257,6 +268,8 @@ jobs:
       # iPad taps under each simulated WebKit failure, the stale page after a
       # release, rotation, dictation, avatars, the whiteboard, Media Studio keys.
       - name: Run touch and small UI suites
+        env:
+          UI_SHARD: ${{ matrix.shard }}/3
         run: npm run test:ui:touch
 
       # A UI case that failed and passed on its one retry did not fail this
@@ -270,12 +283,21 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: flaky-tests-ui-touch
+          name: flaky-tests-ui-touch-${{ matrix.shard }}
           path: backlog-tracker/test/flaky-tests.json
           if-no-files-found: ignore
           retention-days: 14
 
   ui-kanban:
+    # Four parts side by side (KB_SHARD, kanban-staff-board/test/lib/
+    # profiles.mjs): every fourth profile of the viewport matrix each, so every
+    # case still runs in every profile, once. One job ran the eleven profiles
+    # four at a time for 28 minutes, and a deploy waits for this suite up to
+    # four times (the train, the deploy, and again after another train merges).
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     # Pinned: ubuntu-latest is now Ubuntu 26.04; this job's Chrome/Playwright setup may break there.
     # Unpin once the repo's Playwright version supports Ubuntu 26.04.
     runs-on: ubuntu-24.04
@@ -296,10 +318,18 @@ jobs:
         run: npm ci
 
       # The Staff Kanban test plan against the real console, every case in
-      # every profile of the viewport matrix, then once against the minified
-      # Hosting build. This workflow is the only one that runs these files.
+      # this part's profiles of the viewport matrix. This workflow is the only
+      # one that runs these files.
       - name: Run Staff Kanban console suite
-        run: npm run test:ui:kanban
+        env:
+          KB_SHARD: ${{ matrix.shard }}/4
+        run: npm run test:ui:kanban:matrix
+
+      # Once against the minified Hosting build, in the part with the fewest
+      # profiles.
+      - name: Run Staff Kanban suite against the minified build
+        if: matrix.shard == 3
+        run: npm run test:ui:kanban:minified
 
       # A UI case that failed and passed on its one retry did not fail this
       # job; it is listed here and in the job summary, and the backlog
@@ -312,7 +342,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: flaky-tests-ui-kanban
+          name: flaky-tests-ui-kanban-${{ matrix.shard }}
           path: backlog-tracker/test/flaky-tests.json
           if-no-files-found: ignore
           retention-days: 14

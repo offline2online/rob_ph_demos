@@ -17,10 +17,17 @@
 //      (in the same click or not) is held with blocked "waiting-on-dependency"
 //      and released by the automation when the dependency reaches Ready for
 //      Testing (releaseDependents / sweepDependencyWaits).
-//   3. Same-area tickets go one at a time. Tickets likely to touch the same
+//   3. Same-area tickets go a few at a time. Tickets likely to touch the same
 //      files (same groom area, same file path, same named function or spec
-//      section) form a lane and build one after another (`queuedAfter`);
-//      different lanes still build in parallel.
+//      section) form a lane. Up to LANE_WIDTH of a lane build at once; the
+//      rest queue (`queuedAfter`), each starting when a place frees up.
+//      Different lanes still build in parallel. Until 16 Nov 2026 a lane
+//      built strictly one at a time: seven flaky-test tickets sent in one
+//      click were a six-hour chain (each build session takes 60-90 minutes),
+//      although each changed a different test case. A patch is carried onto
+//      the train by a three-way merge, so two lane-mates collide only when
+//      they change the same lines; that one is rebuilt automatically
+//      (selfHealPlan), which takes no longer than the wait it replaced.
 //   4. Deadlocks are said out loud: a ticket waiting for one that is itself
 //      blocked on a person says so, and a cycle is refused (or, when a build
 //      session made one, flagged for a person).
@@ -41,6 +48,8 @@ const OPEN_STATUSES = ["backlog", "ready-for-testing", "ready-to-publish"];
 const SATISFIED_STATUSES = new Set(["ready-for-testing", "ready-to-publish", "published-live"]);
 // A queued ticket whose lane-mate never settles is let go after this long.
 const QUEUE_MAX_WAIT_MS = 3 * 60 * 60 * 1000;
+// How many tickets of one lane build at the same time.
+const LANE_WIDTH = 3;
 
 const uniq = (xs) => [...new Set((xs || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim()))];
 
@@ -265,11 +274,12 @@ function planBuildOrder(items, { depsById = {}, building = [] } = {}) {
   for (const lane of lanesOf([...(building || []), ...ready])) {
     const running = lane.filter((x) => buildingIds.has(x.id));
     const mine = lane.filter((x) => !buildingIds.has(x.id)).sort(laneOrder);
-    let prev = running.length ? running[running.length - 1] : null;
-    for (const item of mine) {
-      if (!prev) fire.push(item);
-      else queued.push({ item, after: { id: prev.id, title: titleOfItem(prev) } });
-      prev = item;
+    // LANE_WIDTH at a time: a ticket past that waits for the one LANE_WIDTH
+    // places ahead of it, so a place freeing up starts exactly one more.
+    const order = [...running, ...mine];
+    for (let k = running.length; k < order.length; k++) {
+      if (k < LANE_WIDTH) fire.push(order[k]);
+      else { const ahead = order[k - LANE_WIDTH]; queued.push({ item: order[k], after: { id: ahead.id, title: titleOfItem(ahead) } }); }
     }
   }
   // Keep the click's own order for what fires.
@@ -293,7 +303,7 @@ function buildOrderSummary({ fire, held, queued, notSent }) {
     if (waitTitles.length) pieces.push(`${unsent.length ? "and " : ""}${held.length === 1 && !unsent.length ? "it builds" : "they build"} after ${waitTitles.map((t) => `"${t}"`).join(", ")} reaches Ready for Testing`);
     parts.push(`${held.length} held: ${pieces.join(" ")}`);
   }
-  if (queued.length) parts.push(`${queued.length} queued (same area, one at a time)`);
+  if (queued.length) parts.push(`${queued.length} queued (same area, ${LANE_WIDTH} at a time)`);
   return `${parts.join(". ")}.`;
 }
 
@@ -340,7 +350,15 @@ function queueReleasePlan(queued, pred, nowMs = Date.now()) {
   const fire = pred.lastFire || {};
   if (fire.status === "failed") return { release: true, why: `"${title}" could not be started` };
   const s = pred.buildSession || {};
-  const current = !s.attemptId || !pred.buildAttemptId || s.attemptId === pred.buildAttemptId;
+  // A report from before the ticket's latest fire is the previous attempt's:
+  // the ticket is being built again, so it has not finished. Without this a
+  // ticket queued behind one that kept rebuilding was let go, queued again by
+  // the click (which saw the rebuild in flight) and let go again, every run:
+  // 139 "builds now" notes in three hours on 16 Nov 2026, and no build.
+  const firedMs = fire.status === "started" ? toMillis(fire.at) : null;
+  const reportedMs = toMillis(s.reportedAt) ?? toMillis(s.finishedAt);
+  const stale = firedMs != null && reportedMs != null && reportedMs < firedMs;
+  const current = !stale && (!s.attemptId || !pred.buildAttemptId || s.attemptId === pred.buildAttemptId);
   if (current && (s.status === "error" || s.status === "done")) return { release: true, why: `"${title}" finished without landing a patch` };
   const since = toMillis(q.at);
   if (since != null && nowMs - since > QUEUE_MAX_WAIT_MS) return { release: true, why: `"${title}" has not settled in 3 hours` };
@@ -396,7 +414,7 @@ function cycleBlock(path, titleOf, nowIso = new Date().toISOString()) {
 }
 
 module.exports = {
-  MAX_DEPENDENCIES, DEPENDENCY_REASON, BUILD_ORDER_SETTER, CYCLE_SETTER, DEPENDENCY_SOURCES, OPEN_STATUSES, SATISFIED_STATUSES, QUEUE_MAX_WAIT_MS,
+  MAX_DEPENDENCIES, DEPENDENCY_REASON, BUILD_ORDER_SETTER, CYCLE_SETTER, DEPENDENCY_SOURCES, OPEN_STATUSES, SATISFIED_STATUSES, QUEUE_MAX_WAIT_MS, LANE_WIDTH,
   looksLikeItemId, dependencySection, findDependencyReferences, mergeDependsOn,
   findCycle, cycleMessage, validateDependsOn,
   laneKeysOf, lanesOf, laneOrder,

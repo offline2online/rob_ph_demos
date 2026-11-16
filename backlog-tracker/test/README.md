@@ -147,6 +147,16 @@ CI runs the console tests as five parallel jobs (`rules`, `offline`,
 `ci-coverage.test.js` fails when a test file is run by two jobs or a job has
 no `timeout-minutes`.
 
+`ui-touch` runs as three parts and `ui-kanban` as four, side by side, so the
+run takes about as long as its slowest part instead of 28 minutes.
+`UI_SHARD=i/n` makes `ui/run-ui.mjs` run every n-th file of its list;
+`KB_SHARD=i/n` makes the Staff Kanban suite run every n-th profile of the
+viewport matrix. Unset (locally) both run everything. The minified build is
+tested by one part only. `ui-shards.test.js` checks the parts cover every
+file and profile exactly once and that the workflow's matrix matches its
+`i/n`. To reproduce one part locally:
+`KB_SHARD=2/4 npm run test:ui:kanban:matrix`.
+
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
 imports the real `public/js/app.js` under jsdom with the Firebase SDK
@@ -185,11 +195,11 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run console start-up smoke test (job `offline`) | `test:app-boots:unit` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), ui-retry. Locally `test:app-boots` runs these and then `test:ui` |
 | Run console click-through suites (job `ui-console`) | `test:ui:console` | mobile-shell, mobile-theme, console-click, ticket-detail-overflow, apple-redesign, leads-apple, support-inbox |
 | Run touch and small UI suites (job `ui-touch`) | `test:ui:touch` | support-touch, webkit-ipad, nav-rotation, nav-touch, stale-page, page-load-error, new-item-voice, avatars, whiteboard, whiteboard-tablet, media-keys |
-| Run Staff Kanban console suite (job `ui-kanban`) | `test:ui:kanban` | staff-kanban, minified |
+| Run Staff Kanban console suite (job `ui-kanban`, four parts) | `test:ui:kanban:matrix`, then `test:ui:kanban:minified` in one part (`test:ui:kanban` runs both) | staff-kanban, minified |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
-| Run deployment train tests | `test:train-lock` | notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage, push-workflow-guard |
+| Run deployment train tests | `test:train-lock` | ui-shards (the UI jobs' parts cover every file and profile exactly once), notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage, push-workflow-guard |
 | Run rules tests against the emulator | `test:rules` | firestore-rules, notes-append-emulator (`notesCommitWrite` against real Firestore) |
 
 ## Why this exists
