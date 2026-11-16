@@ -19,9 +19,11 @@ export const place = (id) => PLACES.find((x) => x.id === id);
 export const isTouch = (profile) => !!profile.touch;
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// A finger held on a card: the board starts a touch drag from a long-press timer (260 ms), and a
-// finger that moves more than 8 px before that timer has fired is a scroll, which drops the drag.
-// A busy runner can fire the timer late, so the hold lasts until the drag has started, not a fixed time.
+// A finger held on a card that is meant to start a drag (pickUp): the board starts a touch drag from
+// a long-press timer (260 ms), and a finger that moves more than 8 px before that timer has fired is a
+// scroll, which drops the drag. A busy runner can fire the timer late, so the hold lasts until the drag
+// has started, not a fixed time. dragCard keeps its fixed hold: the viewer cases (KB-C1, TC-58) drive
+// it on a board where no drag may start, and assert exactly that.
 export async function heldDown(p, o = {}) {
   if (o.holdMs) await sleep(o.holdMs);
   await p.waitForFunction(() => document.body.classList.contains("kb-drag-active"), null, { timeout: 8000 });
@@ -178,7 +180,7 @@ export async function dragCard(p, key, target, o = {}) {
   // On a phone the carousel scrolls sideways: bring the card's column to the middle.
   let b = await (await p.$(card)).boundingBox();
   await P.down(b.x + Math.min(30, b.width / 2), b.y + Math.min(20, b.height / 2));
-  if (input === "touch") await heldDown(p, o);
+  if (input === "touch") await sleep(o.holdMs || 420);
   const cx = b.x + Math.min(30, b.width / 2), cy = b.y + Math.min(20, b.height / 2);
   await P.move(cx + 14, cy + 10, 3);
   const sel = target.zone ? `.kb-close-zone[data-resolution="${target.zone}"]` : target.sel || (target.lane ? `.kb-lane-cell[data-lane="${target.lane}"][data-status="${target.status}"] .kb-list, .kb-lane-cell[data-lane="${target.lane}"][data-status="${target.status}"]` : `.kb-col[data-status="${target.status}"] .kb-list`);

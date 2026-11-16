@@ -127,9 +127,9 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
 - `ui/harness.mjs` waits for the console to have started (`appRendered`)
   before `open()` returns, so a case's first selector never races the
   sign-in stub and `app.js`.
-- A touch pick-up (`pickUp` / `dragCard` in
-  `kanban-staff-board/test/lib/driver.mjs`) holds the finger down until the
-  board has started the drag (`body.kb-drag-active`), not for a fixed time:
+- A touch pick-up (`pickUp` in `kanban-staff-board/test/lib/driver.mjs`)
+  holds the finger down until the board has started the drag
+  (`body.kb-drag-active`), not for a fixed time:
   the board starts a touch drag from a 260 ms long-press timer and drops it
   if the finger moves 8 px first, so a late timer on a busy runner used to
   cancel the drag (TC-65, "Expected values to be strictly equal").
