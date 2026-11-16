@@ -1210,8 +1210,12 @@ export function defineNewCases(E) {
     await p.fill("#f-title", "Half written"); await p.fill("#f-estimate", "3h"); await typeDescription(p, "Some words");
     await swap();
     await eventually(async () => assert.equal(await modalOpen(p), true, "the form is still open"));
-    assert.equal(await val(p, "#f-title"), "Half written"); assert.equal(await val(p, "#f-estimate"), "3h");
-    assert.match(await p.$eval('[data-field="description"] .ql-editor', (e) => e.innerText), /Some words/);
+    // Read the form in one snapshot and wait on it: the modal can be redrawn by the resize after it was seen open.
+    await eventually(async () => {
+      const f = await p.evaluate(() => ({ title: document.getElementById("f-title").value, estimate: document.getElementById("f-estimate").value, desc: (document.querySelector('[data-field="description"] .ql-editor') || {}).innerText || "" }));
+      assert.equal(f.title, "Half written"); assert.equal(f.estimate, "3h");
+      assert.match(f.desc, /Some words/);
+    });
     await swap();
     await eventually(async () => assert.equal(await val(p, "#f-title"), "Half written"));
     await saveTask(p);
