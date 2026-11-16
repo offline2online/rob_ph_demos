@@ -55,6 +55,12 @@ const AGENT_MODEL = "claude-opus-5-5";
 const AGENT_TIMEOUT_MS = 300000;
 const AGENT_BUDGET_MS = 420000;
 const MAX_CONTINUATIONS = 4;
+// The functions that run the research are stopped by the platform after 540
+// seconds (the most a Firestore-triggered function may run). The research
+// stops gathering RESEARCH_WINDOW_MS after the run starts and writes up what it
+// has, leaving time for that write-up, the website, the logos and the save.
+const RESEARCH_WINDOW_MS = 380000;
+const REPAIR_TIMEOUT_MS = 70000;
 const COMPANY_COLLECTION = "prospectCompanies";
 // Logos are copied into the console's own storage (brand/<company>/...), so a
 // demo keeps working when a company moves its file. One file is 1.5 MB at most.
@@ -445,10 +451,43 @@ async function claudeScreen({ apiKey, workspaceId, Anthropic, company, website, 
 
 // One request. Streamed where the SDK offers it: a research turn runs for
 // minutes, longer than an unstreamed call is allowed to stay open.
-async function send(client, params) {
+// With a deadline (ms since the epoch) the request is cut off then, and what
+// had streamed in by that moment comes back with stop_reason "deadline", so a
+// long research run still yields what it found instead of being killed with
+// the function and leaving the record "running" for ever.
+async function send(client, params, { deadline, timeout } = {}) {
   const m = client.beta.messages;
-  if (typeof m.stream === "function") return m.stream(params).finalMessage();
-  return m.create(params);
+  const opts = timeout ? { timeout } : undefined;
+  if (typeof m.stream !== "function") return m.create(params, opts);
+  const stream = m.stream(params, opts);
+  if (!deadline) return stream.finalMessage();
+  let last = null, cut = false;
+  if (typeof stream.on === "function") stream.on("streamEvent", (_ev, snapshot) => { if (snapshot) last = snapshot; });
+  const wait = Math.max(0, deadline - Date.now());
+  const timer = setTimeout(() => { cut = true; try { stream.abort(); } catch { /* already over */ } }, wait);
+  try { return await stream.finalMessage(); } catch (err) {
+    if (!cut) throw err;
+    return { ...(last || {}), content: ((last && last.content) || []).slice(), stop_reason: "deadline" };
+  } finally { clearTimeout(timer); }
+}
+
+// What a run that was cut short had gathered, as plain notes: its own words,
+// and the pages it searched and read (titles, addresses, and the pages' text).
+function notesOf(content) {
+  const out = [];
+  for (const b of content || []) {
+    if (!b) continue;
+    if (b.type === "text" && b.text) out.push(b.text);
+    else if (b.type === "web_search_tool_result" && Array.isArray(b.content)) {
+      for (const r of b.content) if (r && r.url) out.push(`[search result] ${r.title || ""} ${r.url}${r.page_age ? ` (${r.page_age})` : ""}`);
+    } else if (b.type === "web_fetch_tool_result" && b.content && b.content.type === "web_fetch_result") {
+      const doc = b.content.content || {};
+      const src = doc.source || {};
+      const body = typeof src.data === "string" && src.type === "text" ? src.data : "";
+      out.push(`[page read] ${doc.title || ""} ${b.content.url || ""}\n${body.slice(0, 6000)}`);
+    }
+  }
+  return out.join("\n");
 }
 // The answer's words. Web-search citations split one sentence across several
 // text blocks, so they are joined with nothing between them: a newline there
@@ -457,7 +496,7 @@ const textOf = (res) => ((res && res.content) || []).filter((b) => b.type === "t
 
 // Researches one company. Returns the agent's JSON, or throws with the reason
 // (which the record then shows): a refusal, a cut-off answer, no JSON at all.
-async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now }) {
+async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website, country, clock = Date.now, deadline = 0, focus = "", searches = 22, fetches = 10 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = workspaceHeaders(workspaceId);
   const client = new Client({ apiKey, timeout: AGENT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
@@ -466,10 +505,13 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
     website ? `Website: ${website}` : "Website: not known (find it).",
     country ? `Country of interest: ${country}` : "",
     `Today is ${new Date().toISOString().slice(0, 10)}.`,
+    focus,
   ].filter(Boolean).join("\n");
   const base = { model: AGENT_MODEL, fallbacks: "default", betas: ["server-side-fallback-2026-07-01"], system: AGENT_SYSTEM };
   const messages = [{ role: "user", content: ask }];
   const started = clock();
+  // Everything the run has gathered over its turns, for the notes if it is cut short.
+  const gathered = [];
   let res;
   for (let i = 0; i <= MAX_CONTINUATIONS; i++) {
     res = await send(client, {
@@ -480,22 +522,26 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
       cache_control: { type: "ephemeral" },
       output_config: { effort: "medium" },
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 22 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 10, max_content_tokens: 12000 },
+        { type: "web_search_20260209", name: "web_search", max_uses: searches },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: fetches, max_content_tokens: 12000 },
       ],
       messages,
-    });
+    }, { deadline });
+    gathered.push(...((res && res.content) || []));
     if (res.stop_reason !== "pause_turn") break;
     if (clock() - started > AGENT_BUDGET_MS) break;
+    // Not worth starting another turn that the deadline would cut off at once.
+    if (deadline && deadline - clock() < 60000) break;
     // A long server-tool turn paused: send it back as it is and the server resumes it.
     messages.push({ role: "assistant", content: res.content });
   }
   if (!res) throw new Error("no answer came back");
   if (res.stop_reason === "refusal") throw new Error("the model declined to research this company");
-  const text = textOf(res);
-  const found = parseAgentJson(text);
+  const short = res.stop_reason === "deadline" || res.stop_reason === "pause_turn";
+  const text = short ? notesOf(gathered) : textOf(res);
+  const found = short ? null : parseAgentJson(text);
   if (found) return found;
-  if (!text.trim()) throw new Error(res.stop_reason === "pause_turn" ? "the research ran out of time before it answered" : `the research ended with no answer (${res.stop_reason || "unknown"})`);
+  if (!text.trim()) throw new Error(short ? "the research ran out of time before it found anything" : `the research ended with no answer (${res.stop_reason || "unknown"})`);
   // It researched but the answer isn't readable JSON (cut off, or prose around
   // it): one short call with no tools turns those notes into the JSON.
   const fix = await send(client, {
@@ -503,10 +549,44 @@ async function claudeResearch({ apiKey, workspaceId, Anthropic, company, website
     max_tokens: 16000,
     output_config: { effort: "low" },
     messages: [{ role: "user", content: `${ask}\n\nThese are your research notes on this company. Reply with only the JSON object described, in a \`\`\`json code block, using only what the notes say.\n\n<notes>\n${text.slice(-60000)}\n</notes>` }],
-  });
+  }, { timeout: REPAIR_TIMEOUT_MS });
   const fixed = fix && fix.stop_reason !== "refusal" ? parseAgentJson(textOf(fix)) : null;
-  if (!fixed) throw new Error("the research finished but its answer could not be read");
+  if (!fixed) throw new Error(short ? "the research ran out of time and its notes could not be read" : "the research finished but its answer could not be read");
+  // Said on the record: this is what the run found before time ran out.
+  if (short) Object.defineProperty(fixed, "cutShort", { value: true, enumerable: false });
   return fixed;
+}
+
+// One company researched as two halves at once, so the whole brief fits in
+// the function's time: the estate (the site count first) and the people, and
+// the market (retail media, personalisation, news, money). Each half answers
+// in the same JSON shape; its own fields win when the two are put together.
+const ESTATE_KEYS = ["name", "website", "websiteConfidence", "industry", "sector", "countries", "hqCity", "hqCountry", "storeCount", "storeCountBreakdown", "storeCountSource", "estate", "people"];
+const RESEARCH_HALVES = [
+  { name: "estate", searches: 10, fetches: 5, focus: "This run covers only part of the brief, and another run covers the rest at the same time. Find: how many physical sites it trades from (first, and most important) with storeCountBreakdown, storeCountSource and estate; its industry, sector, countries and head office; and the people. Leave every other field empty." },
+  { name: "market", searches: 14, fetches: 6, focus: "This run covers only part of the brief, and another run covers the site count, the estate and the people at the same time. Find: summary, employees, revenue, its LinkedIn page, its logo files, retailMedia (with the competitors' networks), personalisation, inStoreDigital, loyalty, primaryCloud, strategy, techStack, vendors, news, financials, facts, fit and talkingPoints. Leave storeCount null and people empty." },
+];
+function mergeHalves(estate, market) {
+  if (!estate) return market; if (!market) return estate;
+  const out = {};
+  for (const k of new Set([...Object.keys(estate), ...Object.keys(market)])) {
+    const own = ESTATE_KEYS.includes(k) ? [estate[k], market[k]] : [market[k], estate[k]];
+    out[k] = blank(own[0]) || (k === "websiteConfidence" && !own[0]) ? own[1] : own[0];
+  }
+  for (const k of ["techStack", "vendors", "countries", "talkingPoints"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = uniq([...(market[k] || []), ...(estate[k] || [])], 40, 400);
+  for (const k of ["news", "facts"]) if (Array.isArray(estate[k]) || Array.isArray(market[k])) out[k] = mergeBy([...(market[k] || []), ...(estate[k] || [])], (x) => JSON.stringify(x && (x.url || x.label || x.title)), 40);
+  if (Array.isArray(estate.people) || Array.isArray(market.people)) out.people = mergeBy([...(estate.people || []), ...(market.people || [])], personKey, 10);
+  return out;
+}
+async function claudeResearchSplit(args) {
+  const runs = await Promise.allSettled(RESEARCH_HALVES.map((h) => claudeResearch({ ...args, focus: h.focus, searches: h.searches, fetches: h.fetches })));
+  const [a, b] = runs.map((r) => (r.status === "fulfilled" ? r.value : null));
+  runs.forEach((r, i) => { if (r.status === "rejected" && args.onHalfError) args.onHalfError(RESEARCH_HALVES[i].name, r.reason); });
+  if (!a && !b) throw runs[0].reason;
+  const out = mergeHalves(a, b);
+  const short = (a && a.cutShort) || (b && b.cutShort) || !a || !b;
+  if (short) Object.defineProperty(out, "cutShort", { value: true, enumerable: false });
+  return out;
 }
 
 // ── Merging, kept apart from the fetching so the test can drive it ──────
@@ -916,16 +996,18 @@ function createLeadEnrich({
     return { light: await firstImage([got.logoLight, seen.light, commons.light]), dark: await firstImage([got.logoDark, seen.dark, commons.dark]) };
   }
 
-  async function agentSource(company, website, country) {
+  async function agentSource(company, website, country, deadline) {
     const key = anthropicKey();
     if (!key || key === "unset") return { source: "agent", status: "not-configured", message: "The research agent isn't set up yet (ANTHROPIC_API_KEY), so only the website was read." };
     try {
-      const raw = await (research || claudeResearch)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country });
+      const raw = await (research || claudeResearchSplit)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, company, website, country, deadline,
+        onHalfError: (half, err) => logger.warn("enrichment research half failed", { half, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) }) });
       if (!raw) return { source: "agent", status: "error", message: "The research agent returned nothing usable." };
       if (blank(Object.entries(cleanFindings(raw)).filter(([k, v]) => k !== "websiteConfidence" && !blank(v)))) return { source: "agent", status: "error", message: "The research agent found nothing about this company." };
       const found = cleanFindings(raw);
       const n = [found.industry, found.hqCountry, found.storeCount, found.summary, found.logoUrl, found.linkedinCompany].filter((x) => !blank(x)).length + found.techStack.length + found.news.length + (found.financials ? 1 : 0);
-      return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.`, found };
+      const cut = raw.cutShort === true ? " Part of the research did not finish in time, so some fields may be missing; Refresh info runs it again." : "";
+      return { source: "agent", status: "ok", message: `Web research found ${n} ${n === 1 ? "detail" : "details"}, ${found.news.length} news ${found.news.length === 1 ? "item" : "items"}${found.financials ? " and recent financials" : ""}.${cut}`, found };
     } catch (err) {
       const why = agentError(err);
       logger.warn("enrichment agent failed", { company, status: err && err.status, error: String(err && err.message ? err.message : err).slice(0, 500) });
@@ -934,8 +1016,8 @@ function createLeadEnrich({
   }
 
   // One research run for a company: the agent first (it may find the website), then the site.
-  async function research_(company, website, country) {
-    const agent = await agentSource(company, website, country);
+  async function research_(company, website, country, deadline) {
+    const agent = await agentSource(company, website, country, deadline);
     const empty = cleanFindings({});
     const f = agent.found || empty;
     const site = website || f.website || "";
@@ -1018,6 +1100,7 @@ function createLeadEnrich({
     if (collection === "leads" && data.test === true) return { ok: false, error: "test leads are not enriched" };
     const req = requestOf(data) || { id: `auto-${crypto.randomBytes(4).toString("hex")}`, by, trigger };
     const startedAt = now();
+    const runStart = Date.now();
     await ref.update({ "enrichment.request": { ...req, status: "running", startedAt } });
 
     const isLead = collection === "leads";
@@ -1054,7 +1137,7 @@ function createLeadEnrich({
       if (!verdict.ok) held = verdict;
     }
     let result;
-    try { result = held ? await basics_(name, site, held) : await research_(name, site, country); } catch (err) {
+    try { result = held ? await basics_(name, site, held) : await research_(name, site, country, runStart + RESEARCH_WINDOW_MS); } catch (err) {
       await ref.update({ "enrichment.request": { ...req, status: "error", startedAt, finishedAt: now(), message: String(err && err.message ? err.message : err).slice(0, 200) } });
       return { ok: false, error: "enrichment failed" };
     }
@@ -1243,5 +1326,5 @@ function createLeadEnrich({
 
 module.exports = {
   createLeadEnrich, readPage, isPrivateAddress, hostOf, parseAgentJson, cleanFindings,
-  applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
+  notesOf, send, RESEARCH_WINDOW_MS, mergeHalves, claudeResearchSplit, RESEARCH_HALVES, applyToLead, applyToProspect, applyToProfile, chooseLogos, coreName, icoPng, LOGO_RULE, personKey, mergePeople, newerCount, linkMerge, tamSnapshot, isAnimated, toStaticPng, pageLogos, commonsLogos, clip, claudeResearch, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL, agentError, workspaceHeaders, AGENT_SYSTEM, AGENT_MODEL,
 };

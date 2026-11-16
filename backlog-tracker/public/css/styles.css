@@ -318,13 +318,17 @@ body {
   .col-head > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.25; }
 }
 .deploy-notify-btn-conflict .notify-claude-icon { color: var(--warning); }
-.col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+/* overflow-x: hidden — overflow-y: auto alone makes the x axis auto too, so a
+   ticket a few pixels wider than its column (its button row) let the column
+   scroll sideways under a finger (jcQCHLGeLP50iOeh1ZnJ). Tickets never scroll
+   left or right on the board. */
+.col-list { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; overflow-x: hidden; }
 .empty-hint { color: var(--text-muted); font-size: 12.5px; font-style: italic; padding: 10px 6px; text-align: center; }
 /* cursor:pointer signals the whole tile opens for editing on click now
    (Vz3OY3vWkOYs3M8BFhiK) — see the delegated click handler's own .card
    fallback in app.js, which excludes the card's buttons/inputs/links so
    their own actions still work normally. */
-.card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); cursor: pointer; }
+.card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 1px 2px rgba(20, 20, 20, .05); cursor: pointer; min-width: 0; max-width: 100%; }
 .card-in-development { cursor: default; }
 .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .card-top-left { display: flex; align-items: center; gap: 8px; }
@@ -334,7 +338,8 @@ body {
 .badge { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-radius: 9999px; padding: 2px 9px; }
 .badge-feature { background: var(--primary-tint); color: var(--primary); }
 .badge-bug { background: var(--danger-tint); color: var(--danger); }
-.card-move { display: flex; gap: 2px; }
+/* Wraps rather than pushing the ticket wider than its column (jcQCHLGeLP50iOeh1ZnJ). */
+.card-move { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px; min-width: 0; margin-left: auto; }
 .icon-btn { border: none; background: transparent; color: var(--text-muted); border-radius: 6px; cursor: pointer; padding: 4px 7px; font-size: 14px; }
 .icon-btn:hover { background: var(--surface-2); color: var(--text); }
 /* Revert (hfEmgPWmgrv5pxxcv8vE) — an .icon-btn like archive/delete beside
@@ -354,8 +359,8 @@ body {
   font-family: inherit; font-size: 11px; font-weight: 600; color: var(--primary);
 }
 .card-desc-toggle-btn:hover { text-decoration: underline; }
-.card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
-.card-footer-left { display: flex; align-items: center; gap: 4px; }
+.card-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-top: 10px; min-width: 0; }
+.card-footer-left { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .card-cat { font-size: 10.5px; color: var(--text-muted); background: var(--surface-2); border-radius: 9999px; padding: 2px 8px; }
 /* Bottom-right of the tile (in .card-move, alongside archive/delete), not
    a plain muted icon-row entry anymore — a filled, rounded pill with a
@@ -597,6 +602,22 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   padding: 6px 10px; font-size: 12px;
 }
 .train-locked-icon { font-size: 15px; flex-shrink: 0; }
+
+/* Deploy queue and shared files between trains (wPoSOXfp8Em06Vzp3Cz7) — see
+   public/js/train-overlap.js. The queued line is informational (muted, same
+   dashed status-line shape as the train-locked hint); the shared-files line
+   and the card chips are neutral unless the two train tips conflict, which
+   uses the warning colour so it is fixed before either train is approved. */
+.project.collapsed .train-queued-hint, .project.collapsed .train-shared-hint { display: none; }
+.train-queued-hint, .train-shared-hint {
+  display: flex; align-items: center; gap: 6px; margin: -2px 0 10px; box-sizing: border-box;
+  background: #fafafa; color: #595959; border: 1px dashed #d9d9d9; border-radius: 6px;
+  padding: 6px 10px; font-size: 12px;
+}
+.train-shared-hint-warn { background: rgba(201, 138, 10, .1); color: var(--warning); border-color: var(--warning); }
+.train-overlap-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-size: 11px; font-weight: 500; line-height: 1.6; padding: 1px 8px 1px 5px; margin: 0 4px 4px 0; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fafafa; color: #333333; cursor: default; overflow-wrap: anywhere; }
+.train-overlap-chip .material-symbols-outlined { font-size: 14px; flex-shrink: 0; }
+.train-overlap-chip-warn, .train-overlap-chip-owned { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 
 /* "Docs behind main" — see docsBehindChipHTML() in js/app.js. Amber, same
    warning family as the train-locked hint; a button, since it opens the Docs
@@ -889,6 +910,14 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
   color: var(--text-muted); background: var(--surface-2); border-radius: 9999px;
   padding: 2px 8px; margin: 6px 0 0 6px;
 }
+/* An agent ticket made by Send to Agent links back to its Staff Kanban ticket. */
+.kanban-link-badge {
+  display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; text-decoration: none;
+  color: var(--primary); background: var(--primary-tint); border-radius: 9999px;
+  padding: 2px 8px; margin: 6px 0 0 6px;
+}
+.kanban-link-badge .material-symbols-outlined { font-size: 13px; }
+.kanban-link-badge:hover { text-decoration: underline; }
 /* The PR a card's work landed in (backlogItems.prUrl/prNumber, written by
    run-backlog-automation.js). Links straight to GitHub, and reads merged
    once the automation has actually merged it. */
@@ -1318,6 +1347,18 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .ei-notes-list { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; overflow-x: hidden; }
 .ei-note-row { min-width: 0; }
 .ei-note-row { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+/* Pipeline history (Flow 6/9): the automation's notes, collapsed by default.
+   ph-designer components.md §14 collapsible section: bordered card, grey
+   header strip, chevron, ALL CAPS 12px title. The header is a <button>
+   (iPad taps: touch-click.js covers it). */
+.ei-pipeline { border: 1px solid var(--border); border-radius: 8px; flex-shrink: 0; }
+.ei-pipeline-toggle { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 8px 12px; background: var(--surface); border: 0; border-radius: 8px; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+.ei-pipeline.is-open .ei-pipeline-toggle { border-radius: 8px 8px 0 0; border-bottom: 1px solid var(--border); }
+.ei-pipeline-toggle:focus-visible { outline: 2px solid #169bc2; outline-offset: -2px; }
+.ei-pipeline-toggle .material-symbols-outlined { font-size: 20px; }
+.ei-pipeline-title { text-transform: uppercase; font-size: 12px; letter-spacing: 0.5px; color: var(--text-muted); }
+.ei-pipeline-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.ei-pipeline-body[hidden] { display: none; }
 .ei-note-meta { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
 .ei-note-meta > * { min-width: 0; overflow-wrap: anywhere; }
 .ei-note-meta > span { flex-shrink: 0; overflow-wrap: normal; }
@@ -1416,6 +1457,11 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .faq-article-title:hover, .faq-article-title:focus-visible { color: var(--primary); outline: none; }
 .faq-article-row-meta { margin: 0; font-size: 11.5px; color: var(--text-muted); }
 .badge-status-draft { background: var(--surface-2); color: var(--text-muted); }
+/* Hidden from the website (3HabqHlC4WwL137CYTv1): a neutral, outlined chip
+   so it reads as a visibility state, not an error or a publishing status. */
+.badge-faq-hidden { background: var(--surface-2); color: var(--text-muted); border: 1px dashed var(--border); }
+.faq-hidden-icon { font-size: 16px; color: var(--text-muted); flex-shrink: 0; }
+.faq-cat-edit-hidden { white-space: nowrap; }
 .badge-status-published { background: rgba(82, 196, 26, .12); color: var(--success); }
 .badge-wp { margin-left: 6px; }
 .badge-wp-live { background: rgba(82, 196, 26, .12); color: var(--success); }
@@ -1712,6 +1758,25 @@ a.review-flag { text-decoration: none; cursor: pointer; }
 .blocked-flag-waiting-on-dependency .dependency-link { color: inherit; text-decoration: underline; }
 .card .blocked-flag-waiting-on-dependency .blocked-flag-status { white-space: normal; }
 .blocked-flag-waiting-on-input { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+/* Build order (14 Nov 2026): "After: <title>" and "Queued: builds after <title>" */
+.order-chip { display: inline-flex; align-items: center; gap: 3px; box-sizing: border-box; max-width: 100%; font-size: 11px; font-weight: 500; padding: 1px 6px 1px 5px; border-radius: 9999px; border: 1px solid #d9d9d9; color: rgba(0, 0, 0, 0.65); background: #fafafa; cursor: help; }
+.order-chip .material-symbols-outlined { font-size: 14px; }
+.order-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.order-chip-click { max-width: 360px; margin-right: 6px; }
+.order-chip-queued { color: #531dab; background: #f9f0ff; border-color: #d3adf7; }
+.blocked-flag-stuck { font-weight: 400; }
+.ei-deps-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.ei-deps-chips:empty { display: none; }
+.ei-dep-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; font-size: 12px; padding: 0 0 0 8px; border-radius: 9999px; border: 1px solid #91d5ff; background: #e6f7ff; color: #096dd9; }
+.ei-dep-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ei-dep-chip button { border: 0; background: none; color: inherit; cursor: pointer; min-width: 32px; min-height: 32px; font-size: 14px; line-height: 1; }
+.ei-deps-search { width: 100%; box-sizing: border-box; }
+.ei-deps-results { display: flex; flex-direction: column; margin-top: 4px; max-height: 220px; overflow-y: auto; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; }
+.ei-dep-option { display: flex; justify-content: space-between; gap: 8px; text-align: left; border: 0; border-bottom: 1px solid #f0f0f0; background: none; padding: 8px 10px; min-height: 40px; font: inherit; font-size: 13px; cursor: pointer; }
+.ei-dep-option:last-child { border-bottom: 0; }
+.ei-dep-option:hover, .ei-dep-option:focus { background: #f5f5f5; }
+.ei-dep-option-meta { color: rgba(0, 0, 0, 0.45); font-size: 12px; white-space: nowrap; }
+.ei-deps-error { color: #cf1322; }
 .waiting-answer-chip { cursor: default; padding-right: 8px; }
 .needs-decision-chip { margin-right: 6px; padding-right: 8px; }
 .blocked-clear-btn { border: 0; background: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 3px; min-height: 32px; min-width: 32px; }
@@ -2528,6 +2593,8 @@ body { overflow-x: clip; }
 .lead-card[draggable="true"] { cursor: grab; }
 .lead-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .lead-card.lead-dragging { opacity: .45; }
+/* Where a dragged card will land in a lane (its priority order, top = deal with next). */
+.lead-drop-marker { height: 3px; margin: -2px 4px; border-radius: 2px; background: var(--primary); pointer-events: none; }
 .lead-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .lead-logo { width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 8px; object-fit: contain; background: #fff; box-shadow: 0 0 0 .5px var(--ap-divider); }
 .lead-logo-fallback { display: inline-flex; align-items: center; justify-content: center; background: rgba(120, 120, 128, .14); box-shadow: none; color: var(--text-muted); font-size: 12px; font-weight: 600; }
@@ -2584,6 +2651,14 @@ body { overflow-x: clip; }
 .lead-sum-stage-ro { display: none; }
 html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .lead-sum-stage { min-height: 36px; font: inherit; max-width: 100%; }
+/* Priority: its place in the lane, and Move to top / up / down (44px targets for touch). */
+.lead-prio { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.lead-prio-tools { display: inline-flex; gap: 4px; }
+.lead-prio-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: rgba(120, 120, 128, .12); color: var(--primary); cursor: pointer; font: inherit; }
+.lead-prio-btn .material-symbols-outlined { font-size: 20px; }
+.lead-prio-btn:disabled { color: var(--text-muted); opacity: .45; cursor: default; }
+.lead-prio-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .lead-sum-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 8px; }
 /* The lead detail view: logo header, then grouped sections on the grouped background. */
 .lead-detail.lead-drawer { width: min(480px, 100%); border-top: 0; }
@@ -2819,3 +2894,25 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .loop-reasons li { margin: 1px 0; }
 .rejection-uncounted { color: rgba(0, 0, 0, .45); }
 .page-header .page-header-info { font-size: 18px; color: rgba(0, 0, 0, .45); cursor: help; vertical-align: middle; }
+
+/* Agent tickets: owner-only firing (xFzQgynkoMdV33iWJFZq). The owner chip on
+   a card, the info link beside a control the viewer may not use (it links to
+   Settings → My Claude Routine), and that settings page. */
+.owner-badge { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+/* Contract-change review (ZmEWDC40NYOiojehfPjk): the console's warning pill. */
+.contract-review-flag { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+.owner-fire-gate { display: inline-flex; align-items: center; gap: 4px; }
+.owner-fire-info { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; color: var(--text-muted); text-decoration: none; border-radius: 9999px; }
+.owner-fire-info .material-symbols-outlined { font-size: 16px; }
+.owner-fire-info:hover, .owner-fire-info:focus-visible { color: var(--primary); }
+.card-select-cb:disabled { cursor: not-allowed; opacity: .45; }
+.routine-binding-status { display: flex; align-items: center; gap: 6px; margin: 4px 0 12px; font-size: 14px; }
+.routine-binding-status .material-symbols-outlined { font-size: 20px; }
+.routine-binding-status[data-state="on"] .material-symbols-outlined { color: var(--success); }
+.routine-binding-status[data-state="error"] { color: var(--danger); }
+.routine-steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; font-size: 14px; line-height: 1.5; }
+.routine-prompt { display: block; width: 100%; box-sizing: border-box; margin: 6px 0; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+.routine-binding-form { display: grid; gap: 4px; max-width: 520px; margin-top: 6px; }
+.routine-binding-form input { width: 100%; box-sizing: border-box; }
+.routine-binding-error { min-height: 1em; margin: 4px 0 0; color: var(--danger); font-size: 13px; }
+.routine-steps a { color: var(--primary); }

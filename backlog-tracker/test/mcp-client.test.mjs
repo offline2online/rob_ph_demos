@@ -188,9 +188,9 @@ await test("tools/list returns the whole surface", async () => {
     "kanban_assign_task", "kanban_attach_file", "kanban_attach_uploaded", "kanban_capture_screenshot", "kanban_capture_screenshots", "kanban_check_criteria", "kanban_comment", "kanban_create_contract_ticket", "kanban_create_task", "kanban_create_tasks", "kanban_create_upload_url", "kanban_delete_comment", "kanban_edit_comment", "kanban_flag_task", "kanban_get_staff_names", "kanban_get_task", "kanban_list_notifications", "kanban_list_people",
     "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task",
     "link_lead_customer_account", "link_lead_prospect", "list_artifact_versions", "list_backlog_items",
-    "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_prospects", "list_skill_misses",
+    "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_faq_categories", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_prospects", "list_skill_misses",
     "list_skills", "mark_skill_reviewed", "remove_lead_contact", "report_skill_miss", "restore_lead", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
-    "set_concept_requirements", "set_concept_type", "set_my_routine_binding", "set_phase_skill_bindings",
+    "set_concept_requirements", "set_concept_type", "set_faq_visibility", "set_my_routine_binding", "set_phase_skill_bindings",
     "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "set_project_type", "snapshot_project_artifact", "synthesise_concept_critiques", "unfreeze_project", "unlink_lead_customer_account", "unlink_lead_prospect", "update_backlog_item",
     "update_faq_article", "update_interface", "update_lead", "update_lead_contact", "update_lead_stage", "update_project_document", "update_skill",
     "upload_skill", "upsert_prospects", "whoami",
@@ -199,7 +199,7 @@ await test("tools/list returns the whole surface", async () => {
 
 await test("whoami names the signed-in person, not a shared key", async () => {
   const me = text(await client.callTool({ name: "whoami", arguments: {} }));
-  assert.strictEqual(me.email, "sam@personalisationhub.com");
+  assert.strictEqual(me.email, "sam@ph.example");
   assert.strictEqual(me.role, "editor");
   assert.strictEqual(me.canWrite, true);
 });
@@ -226,12 +226,12 @@ await test("create_backlog_item files a ticket into Backlog with a guessed area"
 await test("the filed ticket reads back with the person's email on it", async () => {
   const item = text(await client.callTool({ name: "get_backlog_item", arguments: { itemId: filedId } }));
   assert.strictEqual(item.project, "Live Visitor Profile");
-  assert.strictEqual(item.notes[0].author, "sam@personalisationhub.com");
+  assert.strictEqual(item.notes[0].author, "sam@ph.example");
 });
 
 await test("add_item_comment is attributed to the person", async () => {
   const out = text(await client.callTool({ name: "add_item_comment", arguments: { itemId: "tick-1", text: "Reproduced on the preview link." } }));
-  assert.strictEqual(out.author, "sam@personalisationhub.com");
+  assert.strictEqual(out.author, "sam@ph.example");
 });
 
 await test("search_faq finds a published help-centre article", async () => {

@@ -79,6 +79,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
   notifyRequestedAt?: timestamp,  // bumped by the "Notify Claude" button
   notifyRequestedByEmail?: string | null, // the signed-in member who clicked — per-member routine binding lookup, see notifyOnProjectReadyForReview below (VNE6dxMu3h6jO3g6FNNB)
   notifyItemIds?: string[] | null, // optional subset picked via the Backlog column's own checkboxes — see below
+  notifyAutomationAt?: timestamp, // = notifyRequestedAt on the pipeline's own build requests (run-backlog-automation.js buildRequestFields): an agent ticket in one fires on its owner's Routine whoever clicked last. Automation only (firestore.rules). See "Agent tickets fire under their owner's own Claude account"
   deployNotifyRequestedAt?: timestamp, // bumped by "Notify Claude — Deploy", OR by the approve_deploy_to_main MCP tool — see "team access & the MCP server" below
   deployNotifyRequestedVia?: "mcp" | null, // set alongside deployNotifyRequestedAt only when approve_deploy_to_main wrote it; a console click explicitly clears it back to null, so it's always accurate, never stale from an earlier MCP call
   deployNotifyRequestedByEmail?: string | null, // the signed-in member who triggered this — either the approve_deploy_to_main caller, or (VNE6dxMu3h6jO3g6FNNB) a plain console click; audit trail on the project doc itself, alongside mcpAuditLog, and the per-member routine binding lookup
@@ -106,7 +107,7 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     sentItemIds: string[],
     finishedAt?: timestamp,        // set by the fired session itself, if it follows the hint; cleared on each new click
     errorMessage?: string,
-    firedVia?: "member" | "shared", // which Routine credentials fired this — see notifyOnProjectReadyForReview / resolveRoutineCredentials below (VNE6dxMu3h6jO3g6FNNB)
+    firedVia?: "member" | "shared" | "owner" | "member+owner" | "shared+owner", // which Routine credentials fired this — see notifyOnProjectReadyForReview / resolveRoutineCredentials below (VNE6dxMu3h6jO3g6FNNB); "owner" = agent tickets on their owner's binding (xFzQgynkoMdV33iWJFZq)
   },
   deployRoutine?: {                // same shape as notifyRoutine (including firedVia), set by notifyOnProjectReadyToDeploy — see README.md
     status: "in-progress" | "done" | "error",
@@ -116,11 +117,12 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     itemCount: number,
     finishedAt?: timestamp,
     errorMessage?: string,
-    firedVia?: "member" | "shared",
+    firedVia?: "member" | "shared" | "owner" | "refused", // "owner"/"refused": a train carrying agent tickets (xFzQgynkoMdV33iWJFZq)
   },
   // groomRoutine has the same shape (including firedVia) again, set by
   // notifyOnProjectReadyForGrooming — omitted here only because it predates
   // this schema block; see that function in functions/index.js directly.
+  // It also carries note?: string — agent tickets left out of that groom.
   readyForTestingNotifyRequestedAt?: timestamp, // stamped by run-backlog-automation.js once per run per project, after it lands ticket(s) in Ready for Testing — see "The Ready for Testing hand-off" below
   readyForTestingNotifyItemIds?: string[],      // the ids that landed in that run
   readyForTestingNotifyRequestedByEmail?: string | null, // the member whose Notify Claude click started the build (per-member routine binding lookup, as above)
@@ -151,6 +153,17 @@ writing a spurious `"general"` project doc (this happened once in
 production on 2026-09-08 before the guard existed; the stray doc was
 deleted by hand).
 
+**Deploy queue and owned paths (wPoSOXfp8Em06Vzp3Cz7):**
+`projects/{id}.ownedPaths` (string[], at most 30 repo-relative prefixes;
+unset = the default in `functions/deploy-queue.js`, else `repoFolder/`) is
+member-editable from the Docs page, like `repoFolder`.
+`projects/{id}.trainHold` gains the value `"queued"` (automation-only, like
+every train field). `settings/deployQueue` is
+`{ entries: [{ projectId, projectName, deployBranch, enqueuedAt, progressKey,
+progressAt, passedOverAt }], updatedAt }`, written by the automation's
+service account only (no browser, an admin included). See "The deployment
+train" → "Deploy queue".
+
 ### `backlogItems/{itemId}`
 ```
 {
@@ -165,16 +178,22 @@ deleted by hand).
   updatedAt: timestamp,
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
-  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array
+  notes?: [{ author: "claude" | "viewer", text: string, at: timestamp, key?: string, firstAt?: string }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array; only a keyed backlog-automation note is ever replaced (one note per event, "Comments and notes")
   attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
   buildAfterTrain?: boolean,           // 26 Oct 2026 — a build that came due while this project's release was closing (trainLocked); the automation starts it on the first run after the train merges and clears it (sweepDeferredBuilds). Set by the automation or by the board's Answer
+  //   15 Nov 2026 (wPoSOXfp8Em06Vzp3Cz7): also set with patchReady when a BUILT patch became ready on a closing train — the patch is held on the card ("Built — joins the next release") and processApplyPatch lands it after the merge.
+  sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
+  foreignPaths?: [{projectId, projectName, paths}], // 15 Nov 2026 — files it changed that another project owns (projects.ownedPaths). A warning, never a refusal. Automation-only.
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
   lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
   patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
+  dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
+  dependsOnSource?: "intake" | "build" | "manual" | null, // 14 Nov 2026 — who set dependsOnItemIds. Intake replaces only its own list; a "build" or "manual" list is only ever added to. Written by the intake trigger and MCP, never a browser (a pipeline field in firestore.rules)
+  queuedAfter?: { itemId: string, title: string, at: timestamp } | null, // 14 Nov 2026 — a Ready for Dev click queued this ticket behind a same-area lane-mate; the automation starts it when that one lands or fails (sweepBuildQueue) and the card shows "Queued: builds after <title>". Function/automation only
   buildSession?: { status?: "done" | "error", finishedAt?, reportedAt?: timestamp, errorMessage?, heartbeatAt?: timestamp, phase?: "reading" | "building" | "testing" | "packaging", attemptId?: string }, // the session's own report. heartbeatAt/phase/attemptId (14 Nov 2026) are its heartbeat: written when it starts, at each phase change and at least every 10 minutes; a heartbeat counts only when attemptId equals the card's buildAttemptId. Automation/Routine identity only (a pipeline field in firestore.rules)
   previewStateAt?: string,      // ISO — when previewState last changed ("rebuilding" is aged from here)
   previewBuildWorkflow?: string | null, // e.g. "dsp-prototype.yml" — the workflow that rebuilds the bundle
@@ -182,12 +201,18 @@ deleted by hand).
   previewSha?: string | null,   // the commit the pipeline's link is pinned to
   previewUpdatedAt?: string,    // ISO — when the pipeline last changed the link
   testSummary?: string,         // Ready for Testing card's primary text — see below
+  kanbanKey?: string,           // VlBatzRVbPt6heAEp5mu — Send to Agent: the Staff Kanban ticket (PH-n) this agent ticket was made from (createdVia "send-to-agent", with ownerEmail = that ticket's assignee). The card shows a chip that opens it; a status change recounts that ticket (kanbanAgentRollup, functions/kanban-agent.js). Server-written; informational only (the roll-up reads kanbanTasks/{PH-n}.agentTickets). See kanban-staff-board/REQUIREMENTS.md → KB-AGENT-1
   noDeploymentRequired?: boolean, // set from the Edit item modal, or by the no-diff path when the content is already on main — see "No manual way to reach published-live exists" below for the one exception it carves out. The train wins over the flag: a card with a deployCommit is a train card whatever this says (isNoDeployCard() in app.js)
   testPassed?: boolean,         // DEPRECATED — the old per-card "Confirm tested" flag. Approval is the checkbox now (see "Approving out of Ready for Testing"); read-only leftover on old cards, never written
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
+  ownerEmail?: string | null,   // xFzQgynkoMdV33iWJFZq — an agent ticket's owner (lowercased email): it fires only on that member's personal Routine, and only they can start it. Set by the server only (MCP ownedByMe; Send to Agent). Pipeline field — no browser writes it. See "Agent tickets fire under their owner's own Claude account"
+  contractReview?: {            // ZmEWDC40NYOiojehfPjk — set when a ticket this one builds after (dependsOnItemIds) changed an interface contract on landing; cleared (null) when this ticket's own patch lands. Pipeline field (automation only). See "Owner scoping and contract-change review"
+    status: "needs-review", upstreamItemId: string, upstreamTitle: string | null,
+    commit: string, files: string[], summary: string, flaggedAt: string   // ISO
+  } | null,
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
   testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
@@ -357,9 +382,19 @@ in three files to add anyone.
 - `firestore.rules` resolves `isBoardReader` / `isEditor` / `isAdmin` by
   reading this doc, so a change takes effect on the next request — no token
   refresh, no cache.
-- `rob@offline2online.com` and `rob@personalisationhub.com` are hard-coded
-  admins in the rules, so an empty or mis-edited collection can never lock
-  everyone out. `board-automation@…` stays a hard-coded editor.
+- The account owner is an admin by the `owner: true` custom claim on their
+  Firebase Auth user (`isOwnerAccount()` in the rules, `isOwnerEmail()` in
+  `functions/mcp-server.js`, `isOwnerUser()` in `auth-gate.js`), so an empty
+  or mis-edited collection can never lock everyone out. The claim is
+  optional — admins are ordinary `role: "admin"` rows — and is set only if
+  the `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` repository secrets are
+  (`scripts/set-owner-claim.js`). Before every rules deploy that script
+  checks someone can still administer the console (an owner claim or an
+  enabled admin row) and stops the deploy if not. An alias account with the
+  claim also carries `aliasOf: <canonical>`.
+  **No person's address is written anywhere in this repo** (root `CLAUDE.md`;
+  `tools/check-personal-emails.js` enforces it). `board-automation@…` stays a
+  named editor: it is a service identity, not a person.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.
@@ -459,10 +494,33 @@ busy. Now:
   Used up, the ticket is flagged `blocked: { reason: "waiting-on-input",
   setBy: "self-heal" }` with the reason, so the board shows it under
   "waiting on your answer" with an Answer button that rebuilds it.
+- **Nothing waits on a person's answer (14 Nov 2026, Rob: "the tickets are
+  still asking me random questions which block the backlog flow")**. Build
+  sessions are told to decide and not ask: where a ticket leaves a choice
+  open they take the best option, build it and state the assumption on the
+  card ("Assumed:"), and they flag a card only for something only a person
+  can supply (`ROUTINE_INSTRUCTIONS.md`, the build prompt in
+  `functions/index.js`). A flagged question is answered on the automation's
+  next run, not after 10 minutes. A build that never ran (usage limit,
+  restart, refused fire: `blocked.kind` `never-ran`) asked nothing, so it is
+  not "answered": it is tried again by itself after 30 minutes, then 1, 2, 4
+  and every 6 hours, up to 12 times (`neverRanRetries`), and its flag says
+  "Nothing to answer". A flag a person set (`setBy` an address) is never
+  answered for them. Tests: `test/self-heal.test.js`.
+- **A patch can be handed over as a commit (14 Nov 2026)**: a build session
+  commits on its own branch, pushes, and writes only `patchCommit` (full id),
+  `patchRef` and `patchBaseSha` on the card. `basePatchFilesFor` fetches the
+  commit and `patchFilesFromCommit` reads every file it changes relative to
+  the base into the same `[{path, content}]` list (null for a deleted path),
+  so landing is unchanged. No file content goes through the board: no size
+  limit, no patch parts, and no upload for a session's environment to
+  refuse. Text files only; `patchFiles` remains the fallback. Only the
+  automation account may write the two fields (`firestore.rules`). Tests:
+  `test/patch-commit.test.js`.
 - **A question never strands a ticket (30 Oct 2026)**: a card flagged
-  `waiting-on-input` for 10 minutes without a reply takes the senior agent's
+  `waiting-on-input` takes the senior agent's
   answer. `sweepAutoAnswers` (`autoAnswerPlan`) appends the note "Answer to
-  the build's question (accepted automatically from the senior agent…)" using
+  the build's question (taken automatically…)" using
   `blocked.recommendation` (recorded by the build after consulting a
   higher-ranking agent) or, without one, the default "take the best option,
   state the assumption, do not ask again"; it clears the flag and requests a
@@ -471,7 +529,8 @@ busy. Now:
   flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
   `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
   has no Answer button, and unblocks by itself when its dependencies have left
-  Backlog.
+  Backlog. See "Build order" below for how dependencies are recorded and how
+  a click orders the builds.
 - **A rebuild due while the release is closing waits for the merge, not a
   click**: the card carries `buildAfterTrain: true` (set by `selfHealPlan`,
   `releaseDependents`, `sweepUnbuiltReports` or the board's Answer while
@@ -613,6 +672,168 @@ it (`laterPassFor`). This is the chip's side of "fixed further up the train",
 which already kept `pickRedCulprit` from blaming the card. On 26 Oct 2026
 four Retail Media cards read "failed" under a green head, and approving them
 asked for the tests to be acknowledged.
+
+### Late arrivals (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+On 14 Nov 2026 Backlog Tracker's train was locked at 23:34, its version bump
+committed at 23:57, and a ticket still building landed at 00:05 on top of the
+bump with a red docs test. Deploy to Main refused ("1 ticket still in Ready
+for Testing") until a person sent the newcomer back.
+
+- **Once a project's train is closing** (`trainLocked`, `trainReady`, or
+  `trainStatus` deploying / awaiting-human-merge), a patch that becomes ready
+  is **not landed**. `processApplyPatch` keeps the patch on the card
+  (`patchReady` stays set), sets `buildAfterTrain`, notes it once, and the
+  Backlog card shows **"Built — joins the next release"**.
+- The first automation run after the train merges lands it like any other
+  patch: carried onto the new main by `rebasePatchFilesOnto`, rebuilt once
+  only if that conflicts. `finishTrain` asks for that run straight away.
+- **Never on top of the version bump.** The one exception — a rebuild of a
+  ticket the train's own tests sent back (`lastFailureReason.category
+  "tests"`, with earlier `deployCommits`), or a re-patch of a card on the
+  train — lands as before while the train is only locked, never once the
+  deploy is under way.
+- Rules: `functions/deploy-queue.js` → `lateArrivalAction`;
+  `deferredBuildOutcome` leaves a held patch alone.
+
+### Deploy queue (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+There was no lock between projects, only the workflow's concurrency group.
+On 14 Nov 2026 three trains deployed at once; each bumped `version.js` to
+1.5.398, and every one after the first had to merge main, re-bump and re-run
+a 33-minute suite. The Backlog Tracker train then sat conflicted for 90
+minutes on the `APP_VERSION` line alone (PR #585) and its approved deploy
+was dropped.
+
+- **Deploy to Main enters `settings/deployQueue`** (written by the
+  automation only), in click order. `processDeployTrain` checks it first.
+- **Related trains go one at a time.** Two trains are related when the files
+  they change against main overlap, or both change something under a folder
+  that ships through the same deploy workflow (`backlog-tracker/` and
+  `faq/` → `deploy-backlog-tracker.yml`). `version.js` never counts.
+  Unrelated trains (Display Types and PH Website, say) run in parallel as
+  before.
+- A related train behind another is held with `trainHold: "queued"` and the
+  note "Queued behind <project>'s deploy; starts by itself when that merges".
+  The header shows **Queued…** and the note. It starts by itself:
+  `finishTrain` takes the merged train off the queue and asks for the next
+  run.
+- **Nothing runs while queued**: main is not merged in, no suite is started
+  and no version is bumped. At the head of the queue the order is: merge
+  main (resolvers below), push, the train's tests on that head, then the
+  bump. So the long suites run **once, on the final head**, and the bump
+  (which starts no tests) is computed from main once.
+- **A stalled head is passed over.** A queue head with no progress (its
+  status, hold, PR or branch head unchanged) for 60 minutes, or parked on a
+  conflict, is passed over: related trains behind it go, it keeps its place
+  for a retry, and its note says why. A conflicted entry nobody retries is
+  dropped after a day.
+- **`version.js` never conflicts.** `tryAutoResolveTrainMergeConflict`
+  resolves a conflict confined to the `APP_VERSION` line by taking main's
+  file; the bump is recomputed afterwards. Anything else differing in that
+  file is left for a person.
+
+### Shared files between trains (wPoSOXfp8Em06Vzp3Cz7, 15 Nov 2026)
+
+Nobody could see that two trains touched the same files until
+`trainStatus: "conflict"` at deploy time (14 Nov 2026: all three trains
+changed `MCP.md` and `version.js`; 6 of 98 main-into-train merges since
+20 Oct conflicted).
+
+- **When a patch lands**, its files are compared with every other project's
+  live train (`git diff --name-only origin/main...origin/deploy/<other>`).
+  Each overlap is written to the ticket as `sharedWith` and one note names
+  the files. The card shows **"Also changed on <project>'s train"**
+  (Material Symbols `call_split`; hover lists the files) in Ready for
+  Testing and Approved, and the project header shows **"Shares files with
+  <project>'s train"** while any card has it.
+- The two train tips are also merged with `git merge-tree`. If they
+  conflict, the chip is in the warning colour and reads **"Conflicts with
+  <project>'s train: <files>"**, so it is fixed before either is approved.
+- **Owned paths.** `projects/{id}.ownedPaths` lists the repo-relative
+  prefixes a project owns (default: its `repoFolder/`; editable on the Docs
+  page under the repo folder). Defaults: Backlog Tracker & FAQs
+  `backlog-tracker/`, `faq/`, `docs/`, `CLAUDE.md`, `.github/workflows/`;
+  Staff Kanban `kanban-staff-board/`, `backlog-tracker/functions/kanban`,
+  `backlog-tracker/public/js/kanban/`, `backlog-tracker/public/css/kanban.css`;
+  PH Website `ph-website/`. The longest matching prefix owns a file. A
+  landed patch that changes a file another project owns gets
+  `foreignPaths`, a note and the chip **"Changes <project>'s files:
+  <paths>"**, so the tester knows that project's train will need a sync. A
+  warning, never a refusal.
+- Rules: `functions/deploy-queue.js` (`sharedWithEntries`,
+  `foreignOwnedPaths`, `parseMergeTreeConflicts`); view:
+  `public/js/train-overlap.js`.
+
+### Build order (14 Nov 2026, ticket ZE8h8cfaezOb0eTsRjSH)
+
+A Ready for Dev click used to start one session per ticket, four at a time,
+in array order, all from the same base. Nothing decided order: 104 tickets
+(8%) carry "Not built: since this patch was written … changed … in the same
+places" because siblings built in parallel collided, and dependants were
+sent before their dependency and wasted a session. The rules, all in
+`functions/build-order.js` (pure, shared by the trigger, MCP, the automation
+and `test/build-order.test.js`):
+
+- **Dependencies are data at intake.** On a create or a description edit
+  (board, MCP `create_backlog_item` / `update_backlog_item`, the intake
+  trigger `onBacklogItemDependencies`), the Dependencies section is read:
+  20-character ticket ids (any project; an id that names no ticket stays
+  prose) and the exact titles of open tickets in the same project (quoted,
+  or verbatim for a title of four words or more). They are stored in
+  `dependsOnItemIds` with `dependsOnSource: "intake"`. Intake replaces only
+  its own list; a list a build session (`"build"`) or a person
+  (`"manual"`) set is merged, never overwritten. A reference that would
+  close a loop is left out.
+- **Settable by hand.** Edit item → **Builds after** searches open tickets
+  (this project first) and refuses a loop with the loop named ("A waits for
+  B waits for A"). MCP `create_backlog_item` / `update_backlog_item` take
+  `dependsOnItemIds` with the same check; `get_backlog_item` and
+  `list_backlog_items` return `dependsOn` (id, title, status).
+- **A click builds in order** (`notifyOnProjectReadyForReview`, so the board
+  click, `send_to_build` and a Groom package batch alike): a ticket whose
+  dependency is in the same click, or still in Backlog, is not fired but
+  held (`blocked: {reason: "waiting-on-dependency", note: "Waiting for:
+  <titles>", setBy: "build-order"}`) and released by `releaseDependents` /
+  `sweepDependencyWaits` when the dependency reaches Ready for Testing. A
+  dependency on the train, approved or live (or archived, or deleted) holds
+  nothing. When a held ticket's dependency was not sent and is not
+  building, the click says so: `projects/{id}.notifyRoutine.buildOrder`
+  `{summary, heldItemIds, queuedItemIds, notSent, at}` ("2 held: they need
+  "X", which was not sent"), shown beside the Ready for Dev button for two
+  hours; when nothing could start, `notifyRoutine` is an error saying that.
+- **Same-area tickets go one at a time; different areas stay parallel.**
+  Tickets that share a groom area (`groomAreas`), a file path (by file name;
+  `index.js` and the like keep their folder; Markdown files don't count), a
+  named function (camelCase, eight characters or more) or a quoted spec
+  section (`→ "Section"`) in their Outcome or Spec reference form a lane.
+  A lane fires its first ticket (priority high → medium/unset → low, then
+  oldest first) and queues the rest (`queuedAfter`; the card shows "Queued:
+  builds after <title>", not blocked, no Answer button). A ticket sharing a
+  lane with a build an earlier click is still running queues behind it.
+  `sweepBuildQueue` (every automation run) starts a queued ticket when the
+  one ahead of it lands, fails (its current attempt reports error or done
+  without a patch, its fire failed, or it is blocked), is archived or
+  deleted, or after three hours; it builds on the train tip after that.
+  Lanes are decided without a model call. `FANOUT_CONCURRENCY` (4) still
+  caps how many fire at once.
+- **Deadlock check.** `sweepDependencyWaits` rewrites a waiter's flag when a
+  dependency is itself blocked on a person: "Waiting for <title>, which is
+  blocked: it needs a decision …" (`blocked.stuckOn`), and restores it when
+  that is settled. An archived or deleted dependency releases the waiter
+  with a note. A loop a build session created is flagged on every ticket in
+  it as a question (`waiting-on-input`, setBy `dependency-cycle`, never
+  auto-answered or turned back into a wait).
+- **Fire text.** A fired ticket's prompt lists "Already landed and in your
+  base: …" — each dependency on the train or live, with its commit — so the
+  session reads those commits instead of rediscovering them.
+- **Card.** A Backlog card with dependencies still in Backlog shows "After:
+  <title>" (+N); the hover lists every dependency with its status.
+- **Rules.** Browsers may write `dependsOnItemIds` (a list of at most 20
+  strings); `dependsOnSource` and `queuedAfter` are pipeline fields.
+
+Ticket ZmEWDC40NYOiojehfPjk (owner scoping) builds on this: it adds owner
+permissions and the contract-change flag, not a second link field.
 
 ### Flaky tests: retry once, record, ticket at three
 
@@ -1657,12 +1878,13 @@ comment thread is this collection's own running record instead.
 
 ### `faqCategories/{id}` and `faqArticles/{id}`
 ```
-faqCategories/{id}: { name, icon, description, order, createdAt, updatedAt }
+faqCategories/{id}: { name, icon, description, order, parentId?, hiddenFromWebsite?: boolean, createdAt, updatedAt }
 faqArticles/{id}: {
   categoryId, programId (nullable), projectId (nullable), title, slug, summary, bodyMd,
   introducedInReleaseId (nullable), removedInReleaseId (nullable),   // see `releases` above
   docType: "faq" | "how-to" | "reference" | "explanation",
   keywords: string[], status: "draft" | "published", needsReview: boolean,
+  hiddenFromWebsite?: boolean,   // see "Hidden from the website" below; a live field, never in pendingRevision
   seoTitle?: string (≤60), metaDescription?: string (≤155), directAnswer?: string (≤300),
   questionVariants?: string[] (≤20), articleType?: "guide" | "faq" | "reference",   // SEO & agent fields — see "FAQ revision review" → SEO & agent fields
   order, createdAt, updatedAt, publishedAt,
@@ -1695,6 +1917,55 @@ existed; treated as `"faq"` client-side in that case, same default).
 Rendered as a small type badge on the public article page and in
 category article-listing rows (`faq/js/faq-data.js`'s `docTypeLabel()`)
 so the distinction is visible to readers, not just an internal tag.
+
+### Hidden from the website (15 Nov 2026, ticket `3HabqHlC4WwL137CYTv1`)
+
+Articles for a feature that hasn't launched yet are written in advance and
+used to answer support email, but must not appear on the website until the
+feature launches. `hiddenFromWebsite: true` can be set on:
+
+- **a category** — hides it, every folder under it and every article in either;
+- **a folder** (a category with a `parentId`) — hides it and its articles;
+- **an article** — hides that article only.
+
+The rule is in one place, `functions/faq-feed.js` (`hiddenCategoryIds`,
+`isHiddenFromWebsite`; the console mirrors it in `faqCategoryHiddenFromWebsite`
+/ `faqArticleHiddenFromWebsite`). Hidden content keeps its `status`; a hidden
+article can be published. What each reader sees:
+
+| Reader | Hidden content |
+|---|---|
+| Support Centre on personalisationhub.com (`/help-api/data/*` feed, and the `faq/data` export it falls back to) | Left out entirely, categories and folders included. The Support Centre drafts any page it had published for it. |
+| Public help search, article and MCP (`/help-api/search`, `/help-api/article`, personalisationhub.com/mcp) | Left out. |
+| Anonymous Firestore `get` of the article (`firestore.rules`) | Refused for an article hidden by its own flag. |
+| Support Inbox (`functions/support-mail.js`) | **Used**: a hidden published article is in the catalogue the reply is written from, with an empty `url`, and the drafting prompt says not to name or link it. The console shows it as "(not on the website)" under the draft. |
+| FAQ Management (console) | Shown, with a "Hidden from website" badge on the article row and the category heading, and a `visibility_off` icon in the folder tree. No "View live" link and no WordPress status badge. |
+| Board MCP (`search_faq`, `get_faq_article`, `list_faq_categories`) | Shown, with `hiddenFromWebsite` (effective) on each. |
+
+**Setting it.** In FAQ Management: the article editor's Status & publishing
+group ("Hide from website"), and the category edit form (pencil beside a
+category or folder heading). Over MCP: `create_faq_article` takes
+`hiddenFromWebsite`, and `set_faq_visibility` sets it on an article, folder or
+category (`list_faq_categories` gives the ids). Hiding is always allowed over
+MCP. Showing is launching, so over MCP it is refused for a published article
+and for a category or folder; a person does that in FAQ Management. A draft
+article can be un-hidden over MCP because a person still has to publish it.
+Changing the flag on published content pings the Support Centre to re-read
+the feed (`articleChangesPublished` / `categoryChangesPublished`).
+
+### FAQ category icons draw on the website and in the console (15 Nov 2026)
+
+The website draws category icons as inline SVG from a fixed set
+(`faq/js/icons.js`, mirrored in `ph-website/snippets/ph-support-centre/main.php`);
+any other name draws as "?". The console draws them with the Material Symbols
+font, loaded as an `icon_names` subset. The category icon picker used to offer
+24 names, 18 of which the website drew as "?", and four icons the live
+categories use (`install_desktop`, `manage_accounts`, `smartphone`,
+`integration_instructions`) were missing from the console's subset, so FAQ
+Management showed the bare word. The picker (`FAQ_CATEGORY_ICONS`) now offers
+exactly the website's category icons, all of them are in the font subset, and
+`test/icon-font.test.mjs` fails if the picker, a `faq/data` category, the
+website set or the font subset drift apart.
 
 ### Rich formatting in article bodies
 
@@ -2234,6 +2505,45 @@ REST API is reachable with a plain `curl`, no service account needed.
   `documents:commit` with an `appendMissingElements` transform and
   `currentDocument.exists: true`. Tests: `notes-append.test.js`,
   `notes-append-emulator.test.js`.
+  **One automation note per event, updated in place** (15 Nov 2026, Flow
+  6/9, `jKM13xJ7PxW9THm3YQ9g`): a card's state used to be read from notes
+  that repeated and contradicted each other (one test failure wrote three or
+  four notes; a bystander on a red train got the same note four or five
+  times). An automation note may carry `key` and `firstAt`
+  (`notes[]: {author: "backlog-automation", text, at, key?, firstAt?}`), and
+  `appendNote(item, text, {key})` with a key already on the card replaces
+  that note's text and `at`, keeping `firstAt`: `patchItem` sends one
+  `:commit` that first removes the stored entry (`removeAllFromArray`) and
+  then appends the new one. Only `backlog-automation` notes are matched;
+  people's and Claude's notes never carry a key and are never touched. Keys:
+  - `train-test:<deployCommit>:<workflow>` — one train-test failure on its
+    own ticket: "failed, re-running (<test>)" → "failed twice … checking it
+    is this ticket's" → "Sent back automatically …" or "Passed on re-run …
+    (flaky: <test>)" or "Not sent back: main is broken". Every failure note
+    names the failing case and assertion (`failureSummaryOf`, the run's
+    `--log-failed`; a flaky pass reads attempt 1's log). The owner is never
+    asked to use Failed testing: the automation sends it back itself.
+  - `train-red:<branch>:<spell start>` — a card on a red train that did not
+    cause it gets one note for the whole red spell
+    (`projects/{id}.trainRedSpell: {since, cause}`, set by
+    `reportTrainTestResults` when `trainTestsRed` first fills, cleared when it
+    empties), updated as the spell goes on and closed with "Train was red
+    for 2 h 10 min because of <ticket>; green again". A failure on a commit
+    that is no ticket's own says it cannot be pinned on one ticket and who
+    is asked to look (whoever approves the project's Deploy to Main).
+  - `build-silent:<buildAttemptId>` — the 75-minute "hasn't reported back"
+    and the "never reported back. Starting it again" of one build attempt.
+  - `revert:<oldest deployCommit>` — one revert request: taken off, blocked
+    (a changed blocker updates the note), no longer needed. A re-patch that
+    lands identical to the train while that revert is pending clears
+    `revertRequested` in the same write and says so on the request's note,
+    so the card never reads "Moved back to Ready for Testing" followed by
+    "Could not take this ticket off the train".
+  The Edit item modal lists people's and Claude's notes open, newest first,
+  and the automation's under a collapsed **Pipeline history (N)** button
+  (newest first, one entry per key). MCP `get_backlog_item` returns notes as
+  stored, plus `key` and `firstAt` where set. Tests: `note-keys.test.js`,
+  the console-click "Pipeline history" scenario.
 - **Test/preview link**: a Ready for Testing card gets a "Set test link"
   button; once set (via `showPromptDialog()` — see "In-app dialogs replace
   window.confirm/prompt/alert" below — prefilled with an editable template
@@ -2351,6 +2661,29 @@ the title opens the ticket detail, which shows the full description.
   release after it): the request was for every ticket on the board.
   `test/ui/console-click.test.mjs` → "Board cards: title only in every
   column" checks every column and that the popover is unclipped.
+
+### Tickets never scroll left or right on a board (15 Nov 2026)
+
+A ticket on the Agent Board or the Staff Kanban only ever scrolls up and
+down under a finger, never sideways (ticket jcQCHLGeLP50iOeh1ZnJ).
+
+- **Agent Board**: a column's list (`.col-list`) is `overflow-x: hidden`.
+  Its `overflow-y: auto` alone made the x axis scrollable too, so a ticket
+  whose button row (`.card-move`) was a few pixels wider than the column
+  (at 1024 px, the iPad's landscape width) let the whole column pan
+  sideways. The card's footer and button row now wrap instead of widening
+  the ticket (`public/css/styles.css`).
+- **Staff Kanban**: a ticket (`.kb-card`) is `touch-action: pan-y` at every
+  width, not only on a phone, and keeps a long title or label inside its
+  column (`min-width: 0`, `overflow-wrap: anywhere`). A sideways swipe that
+  starts on a ticket does nothing; on a tablet the board itself still
+  scrolls sideways (six columns don't fit) from the column headers and the
+  gaps between columns, and under a card being dragged at the edge
+  (KB-BOARD-4 in `kanban-staff-board/REQUIREMENTS.md`).
+- Tested by `test/ui/ticket-detail-overflow.test.mjs` (part of
+  `test:ui:console`) at 390, 820, 1024, 1180 and 1440 px: no column of
+  tickets scrolls sideways, no ticket is wider than its column, and every
+  Staff Kanban ticket is `pan-y`.
 
 ### A Backlog card locks while a fix is in flight
 
@@ -3651,6 +3984,30 @@ Routine directly" (see that rule, and its one exception
 `approve_deploy_to_main`, further below) — it changes which credentials a
 LATER board click will use, it never fires a Routine itself.
 
+**Guided Routine setup on connect (BXkUvoayo98j744RUCy8, 13 Nov 2026).**
+When a member with `board.write` connects and has no binding (the same
+check as `whoami.hasRoutineBinding`, including the legacy `consoleUsers`
+fields), `initialize` puts `ROUTINE_SETUP_INSTRUCTIONS` (one sentence, so the
+whole text still fits the 3,700 characters a host delivers whole) in front of
+the server instructions. It tells the agent to offer setup at the start of
+the conversation, before other work, and to follow
+`get_routine_setup_instructions`'s `agentGuidance`: present the steps one at a
+time, waiting for the person after each: (1) open `https://claude.ai/code/routines`
+signed in with their own Claude account and create a Routine; (2) paste the
+bootstrap prompt, shown as a copyable code block; (3) add an API trigger and
+copy the fire URL (ends in `/fire`) and the token (shown once); (4) paste
+both back, then the agent calls `set_my_routine_binding` once and `whoami` to
+confirm `hasRoutineBinding` is true. The agent never asks for the token again
+or repeats it. If the person declines, the agent reminds them once in that
+conversation that their board clicks keep using the shared Routine until it
+is set up. `get_routine_setup_instructions` also returns `routinesUrl`, a
+`walkthrough` array (`{step, say, link?, copy?}`) and the `agentGuidance`
+rules above. The standing instructions were tightened by about 140
+characters to make room; no tool was dropped from them. A bound member
+or a viewer gets the standard instructions unchanged. A failed binding read
+at `initialize` is logged and the block is left out; connecting never fails
+because of it.
+
 **Phase-bound skills (`settings/phaseSkillBindings`, l5mjAANU0dfveGhxmDjm)**
 let a shared skill be applied automatically as part of an existing pipeline
 phase, without adding board columns/stages of its own: a single doc,
@@ -4037,6 +4394,141 @@ field.
 - `builtByModel` and `reviewedByModel` are pipeline fields
   (`itemPipelineFields()` in `firestore.rules`): only the automation user
   writes them.
+
+## Agent tickets fire under their owner's own Claude account
+
+Ticket xFzQgynkoMdV33iWJFZq (15 Nov 2026). An agent ticket carries an owner,
+and every Routine session for it runs under that owner's own Claude account:
+never the shared project token, and never on someone else's click.
+
+- **Field**: `backlogItems.ownerEmail` (lowercased). A pipeline field in
+  `firestore.rules` (`itemPipelineFields()`): no browser writes it, so nobody
+  can tag a ticket with another person's account. It is set by the server:
+  MCP `create_backlog_item` / `update_backlog_item` with `ownedByMe: true`
+  (the caller only; claiming an existing ticket needs it to be in Backlog
+  and filed by the caller, or an admin; `ownedByMe: false` releases the
+  caller's own, an admin may release anyone's), and by Send to Agent
+  (VlBatzRVbPt6heAEp5mu) when it creates tickets from a Kanban ticket.
+- **Rule** (`functions/owner-firing.js`, applied in `functions/index.js`):
+  - **Ready for Dev** (`notifyOnProjectReadyForReview`): an agent ticket
+    fires on its owner's binding (`ownerRoutineCredentials`, the
+    `routineBindings/{owner}` lookup with no shared fallback) when the
+    owner clicked (`notifyRequestedByEmail`), or when the request is the
+    pipeline's own automatic rebuild (`notifyAutomationAt` equal to
+    `notifyRequestedAt`, written only by `run-backlog-automation.js`).
+    Anyone else's click, including an admin's `send_to_build`, is refused:
+    a ticket the click named gets `lastFire.status: "refused"`
+    (`reason: "not-owner"`) and the project's `notifyRoutine.errorMessage`
+    says why; one only swept up by a whole-column click is left alone.
+    An owner with no usable binding (none, or not on `api.anthropic.com`)
+    gets nothing fired (`reason: "no-binding"`). Untagged tickets in the
+    same click fire exactly as before (clicker's binding, else shared).
+  - **Deploy to Main** (`notifyOnProjectReadyToDeploy`): a train carrying
+    agent tickets deploys only when the clicker owns every one of them, on
+    their binding. A train mixing two owners' agent tickets, someone else's
+    click, or an owner with no binding is refused: nothing fires and
+    `deployRoutine` is `status: "error"` with the reason.
+  - **Groom Backlog** (`notifyOnProjectReadyForGrooming`): other members'
+    agent tickets are left out of the session; the clicker's own are
+    included only through their binding, and the session then runs on it.
+    What was left out is on `groomRoutine.note`; nothing left fires nothing.
+  - Review Batch, Run E2E, the Ready for Testing presentation and the
+    release audit are unchanged: they build nothing for a ticket.
+- **Board** (`public/js/owner-fire.js`, `app.js`): an agent ticket shows an
+  owner chip (`person`). In Backlog, a viewer who may not start it (someone
+  else's, or their own with no binding) sees its Ready for Dev checkbox
+  disabled, with an info icon whose tooltip says why and links to
+  Settings → My Claude Routine; Ready for Dev counts and sends only what the
+  viewer may start. Deploy to Main and Groom Backlog are disabled the same
+  way when the rule would refuse them. Whether the viewer has a binding
+  comes from `GET /mcp/me/routine-binding`, asked once, only when an agent
+  ticket is on screen. The server refuses anything the board gets wrong.
+- **Settings → My Claude Routine** (`#settings/routine`, every member): the
+  self-service setup that replaces the MCP-only path. Four steps: create a
+  Routine at claude.ai/code/routines, paste the bootstrap prompt (shown, with
+  Copy prompt), add an API trigger, paste its fire URL and token and Save.
+  Status says Connected or Not set up; Disconnect clears it. Served by
+  `/mcp/me/routine-binding` in `functions/mcp-server.js`: `GET` returns only
+  `hasRoutineBinding`, `boundAt` and the bootstrap prompt; `POST {fireUrl,
+  token}` (editor or admin; both empty clears) writes the signed-in member's
+  own `routineBindings/{email}` through the same `writeRoutineBinding` and
+  validation as `set_my_routine_binding`, and is audited in `mcpAuditLog`
+  (`via: "console"`). The URL and token are never sent back.
+- **Known limit**: over MCP, only the owner's own agent may change an agent
+  ticket (see "Owner scoping and contract-change review" below). A person
+  editing in the console is not limited yet: any editor can still change an
+  agent ticket's text there, which its owner's Routine then reads.
+- **Tests**: `test/owner-firing.test.js` (the rule, the three fire handlers,
+  the endpoint) and `test/owner-fire.test.mjs` (the board's half), both in
+  `npm run test:routine-binding`; `firestore-rules.test.js` (`ownerEmail` and
+  `notifyAutomationAt` are not a browser's); the console-click scenario
+  "agent tickets: owner-only Ready for Dev, set up My Claude Routine".
+
+## Owner scoping and contract-change review
+
+(16 Nov 2026, ticket ZmEWDC40NYOiojehfPjk.) Builds on "Agent tickets fire
+under their owner's own Claude account" above (the owner is
+`backlogItems.ownerEmail`) and on "Build order" (the blocks / blocked-by link
+is `dependsOnItemIds`; there is no second dependency field).
+
+**Read everything, change only your own.** Every member's agent reads the
+whole project over MCP: every ticket in full (`get_backlog_item`,
+`list_backlog_items`, both now returning `ownerEmail` and `contractReview`),
+the project's docs and its interface contracts, so it can see cross-cutting
+impact. It changes only tickets its own member owns:
+
+- `update_backlog_item`, `archive_backlog_items`, `delete_backlog_items` and
+  `set_blocked` on another member's agent ticket are refused with a message
+  naming the owner, and nothing changes (archive and delete refuse the whole
+  call). The rule is `ownerEditRefusal` in `functions/owner-firing.js`.
+- An admin's agent is refused like anyone else's (each agent is one owner's
+  session). The one exception is releasing a ticket (`update_backlog_item`
+  with only `ownedByMe: false`), which an admin may still do.
+- An untagged ticket (no `ownerEmail`) stays open to every editor's agent.
+- `add_item_comment` and `clear_blocked` stay open to every member: a comment
+  is how one owner tells another about an impact on their work.
+- A build fire naming someone else's agent ticket (a click by anyone but its
+  owner) is refused as before, and the refusal is now also appended to the
+  card's comments ("Not built: Only … can start this agent ticket").
+
+**Contract-change review flag.** When a ticket's patch lands on its train
+and that commit changes an interface contract, every open ticket (Backlog,
+Ready for Testing or Approved for Deployment) whose `dependsOnItemIds` names
+it is flagged:
+
+- What counts as a contract: `shared/interface-contract.md`,
+  `shared/board-interfaces.json`, and any file that manifest lists
+  (`interfaces[].path`, read before and after the commit). An edit made
+  straight to an `interfaces` record on the board belongs to no ticket's
+  build and flags nothing.
+- The flag is `backlogItems/{id}.contractReview` (data model below), with a
+  summary such as `shared/interface-contract.md (+4 −1; sections: Attribute
+  envelope)`: line counts and the Markdown headings the change falls under.
+  The dependent also gets a note, and the upstream card a note listing the
+  tickets it flagged. Nothing else on a dependent is touched: the upstream
+  ticket's session never edits it.
+- The card shows a warning chip **Needs review: upstream contract changed**
+  (Material Symbols `sync_problem`; hover = which ticket changed what).
+- The dependent's next build fire carries a block
+  `=== UPSTREAM CONTRACT CHANGED: REVIEW THIS TICKET ===` with the change,
+  so its owner's own session reviews and updates it. The flag clears when
+  that ticket's own patch lands (a commit, or a no-diff patch meaning nothing
+  needed to change), with a note.
+- A dependent already in Ready for Testing keeps the chip until it is sent
+  back and rebuilt; nothing rebuilds it automatically.
+- Code: `functions/contract-review.js` (pure rules, the record, the notes and
+  the fire block), `contractChangeOf` / `flagContractDependents` in
+  `scripts/run-backlog-automation.js` (called after a ticket's commit lands),
+  `contractReviewBlock` in `functions/index.js`'s build fire text.
+  `contractReview` is a pipeline field in `firestore.rules`: no browser can
+  set, fake or dismiss it.
+- **Tests**: `test/contract-review.test.js` (the rules, `contractChangeOf`
+  against a real git repo, `flagContractDependents` against an in-memory
+  Firestore; in `npm run test:routine-binding`), `test/owner-firing.test.js`
+  (the MCP refusals, the refused-fire note, the fire block),
+  `firestore-rules.test.js` (`contractReview` is not a browser's) and the
+  console-click scenario "contract-change review: a flagged dependent shows
+  Needs review".
 
 ## Blocked tickets: answering from the card
 
@@ -4431,7 +4923,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   editors write (`firestore.rules` → `isLead`, with the cases in
   `test/firestore-rules.test.js`).
 - **Moving a card**: drag it to another lane, or use its "Move to" select
-  (touch). The write is live for every open tab. Over MCP an agent manages
+  (touch). The write is live for every open tab.
+- **Priority within a lane (15 Nov 2026)**: a lane reads top to bottom as the
+  order to deal with its leads, so the top card is the one to work next. An
+  editor drags a card up or down its own lane (a line shows where it will land),
+  or drops it at a chosen place in another lane; the lead summary's **Priority**
+  row says "N of M in <stage>" with **Move to top / Move up / Move down**
+  (44px buttons, the touch and keyboard route), and Alt+Arrow Up/Down on a
+  focused card does the same. The order is `leads/{id}.rank`, a number, lower
+  is higher (`firestore.rules` → `isLead` allows it, number or absent).
+  `leads-core.js` → `compareInLane` sorts ranked leads first by rank, then
+  unranked ones newest change first (the order every lane had before);
+  `planLaneOrder` writes one midpoint rank when both neighbours are ranked and
+  otherwise renumbers that lane in steps of 1024, in one batch, writing only
+  the leads whose rank changes. A lead moved to another stage with the Stage
+  select (or no drop position) goes to the top of that lane (`topRank`). An
+  agent's `update_lead_stage` leaves `rank` alone. Tests: `test/leads.test.mjs`
+  and the "drag a lead up its lane" scenario in `test/ui/console-click.test.mjs`, and the `rank` rule in `test/leads-rules.test.js` (emulator, `npm run test:rules`). Over MCP an agent manages
   the whole pipeline with the board's permissions (editor writes, viewer reads),
   each write attributed to the member's email: `list_leads` (filters stage,
   company, assignee, source, industry, free text `q`; `limit`/`offset`; archived
@@ -4674,6 +5182,28 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     read, so the PNG inside it is used (`icoPng`); one holding only bitmaps
     is not copied and keeps its address. Tried on ten real sites: a logo for
     six, the right file for the two that had gone wrong.
+  - **A run always finishes** (15 Nov 2026): the triggers are stopped by the
+    platform after 540 seconds, the most a Firestore-triggered function may
+    run. A bank's research ran past that twice; the platform killed it, so
+    nothing was saved and the record said "running". The research now stops
+    gathering 380 seconds after the run starts (`RESEARCH_WINDOW_MS`), and
+    what it had found by then (its notes, the pages it searched and read) is
+    turned into the record by one short call with no tools (`notesOf`, at
+    most 70 seconds). The run's message says it ran out of time and that
+    Refresh info runs it again. A run left "running" for over 10 minutes
+    still counts as stale and does not block a new one. The first run after
+    this (the same bank) finished in 6 min 45 s with a full profile but no
+    site count and one person, so the brief now runs as **two halves at
+    once** (`claudeResearchSplit`, `RESEARCH_HALVES`): the estate (the site
+    count first, the breakdown, where it trades, the people; 10 searches, 5
+    page reads) and the market (summary, size, logos, retail media and
+    competitors, personalisation, in-store digital, loyalty, strategy, news,
+    financials, facts, fit, talking points; 14 searches, 6 page reads).
+    Tried on the same bank from a runner: 344 s, 561 sites, eight news
+    items. Each half's own fields win when they
+    are put together (`mergeHalves`); people are listed once each. When one
+    half fails the other is kept and the record says some fields may be
+    missing.
   - **One run per company**: a website lead for a company not yet in the TAM
     creates the TAM record and the lead together; the lead's run fills both,
     so the new TAM record does not start a second one.

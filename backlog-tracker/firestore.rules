@@ -28,9 +28,11 @@ service cloud.firestore {
     // removing someone cuts their agent off at once rather than whenever a
     // token happens to expire).
     //
-    // Two accounts stay hard-coded as owners so an empty or mis-edited
-    // consoleUsers collection can never lock everyone out of the thing that
-    // grants access, plus the board automation user the Routine signs in as.
+    // The account owner is recognised by the `owner: true` custom claim
+    // (isOwnerAccount below), so an empty or mis-edited consoleUsers
+    // collection can never lock everyone out of the thing that grants access;
+    // the board automation user the Routine signs in as is named because it
+    // is a service identity, not a person.
     // Server-side jobs (Cloud Functions, the deploy workflow's scripts, the
     // backlog automation) use a service account and bypass rules entirely.
     // The only anonymous access left is READ of the two help-centre
@@ -46,11 +48,13 @@ service cloud.firestore {
     function callerEmail() {
       return signedIn() ? request.auth.token.email.lower() : "";
     }
+    // The account owner carries the `owner: true` custom claim on their
+    // Firebase Auth user, set by scripts/set-owner-claim.js with the admin
+    // SDK. A claim lives in Auth, not Firestore, so an empty or mis-edited
+    // consoleUsers collection still can't lock the owner out, and no
+    // person's address is written into these rules.
     function isOwnerAccount() {
-      return callerEmail() in [
-        "rob@offline2online.com",
-        "rob@personalisationhub.com"
-      ];
+      return signedIn() && request.auth.token.get("owner", false) == true;
     }
     function isAutomationAccount() {
       return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
@@ -164,6 +168,9 @@ service cloud.firestore {
     // populated project, which would have denied a plain rename.
     //   - the train fields (deployBranch, trainReady, trainStatus,
     //     trainPrNumber, trainNote, needsHumanMerge) are automation-only;
+    //   - notifyAutomationAt marks a build request as the pipeline's own,
+    //     which fires an agent ticket under its owner's Routine whoever
+    //     clicked (functions/owner-firing.js), so it is automation-only too;
     //   - trainLocked may only be set true from a browser (app.js's
     //     deployToFeature); only a merged train clears it;
     //   - routinePromptMd is spliced verbatim into a Routine session's
@@ -173,11 +180,18 @@ service cloud.firestore {
     //     ever name themselves.
     function humanProjectUpdateOk() {
       let changed = incoming().diff(resource.data).affectedKeys();
-      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge"])
+      // trainHold (incl. "queued", the deploy queue's hold) is the automation's too.
+      return !changed.hasAny(["deployBranch", "trainReady", "trainStatus", "trainPrNumber", "trainNote", "needsHumanMerge", "notifyAutomationAt", "trainHold"])
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
+        // A person's click is stamped with the server's clock (app.js writes
+        // serverTimestamp()). Without this, a member could write back the
+        // automation's own notifyAutomationAt value and have their click
+        // treated as the pipeline's, firing another member's agent ticket on
+        // that member's Routine (owner-firing.js isAutomaticBuildRequest).
+        && (!changed.hasAny(["notifyRequestedAt"]) || incoming().notifyRequestedAt == request.time)
         && (!changed.hasAny(["deployNotifyRequestedByEmail"]) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
         && (!changed.hasAny(["groomRequestedByEmail"]) || requesterIsCaller(incoming().groomRequestedByEmail))
         && (!changed.hasAny(["reviewRequestedByEmail"]) || requesterIsCaller(incoming().reviewRequestedByEmail))
@@ -195,7 +209,10 @@ service cloud.firestore {
       // Firestore's own document limit and can only shrink from here.
       return (!("description" in incoming()) || incoming().description == null || (incoming().description is string && incoming().description.size() <= 300))
         && (!("routinePromptMd" in incoming()) || incoming().routinePromptMd == null || (incoming().routinePromptMd is string && incoming().routinePromptMd.size() <= 20000))
-        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")));
+        && (!("artifactUrl" in incoming()) || incoming().artifactUrl == null || (incoming().artifactUrl is string && incoming().artifactUrl.size() <= 2000 && incoming().artifactUrl.matches("^https://.*")))
+        // Owned paths (wPoSOXfp8Em06Vzp3Cz7): a member edits them on the
+        // Docs page like repoFolder; a short list of repo-relative prefixes.
+        && (!("ownedPaths" in incoming()) || incoming().ownedPaths == null || (incoming().ownedPaths is list && incoming().ownedPaths.size() <= 30));
     }
 
     // The type every concept and project carries (ticket ufOwuueuj1f5vmeN0xi2):
@@ -233,7 +250,9 @@ service cloud.firestore {
           && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))
           && (!("reviewRequestedByEmail" in incoming()) || requesterIsCaller(incoming().reviewRequestedByEmail))
           && (!("e2eRequestedByEmail" in incoming()) || requesterIsCaller(incoming().e2eRequestedByEmail))
-          && !("e2eStatus" in incoming())));
+          && !("e2eStatus" in incoming())
+          && (!("notifyRequestedAt" in incoming()) || incoming().notifyRequestedAt == request.time)
+          && !("notifyAutomationAt" in incoming())));
       allow update: if isEditor() && isNonEmptyBoundedString(incoming().name, 80)
         && entityTypeValidIfSet() && entityTypeKeptValid()
         && (!("releaseId" in incoming()) || incoming().releaseId == null || isNonEmptyBoundedString(incoming().releaseId, 100))
@@ -353,10 +372,16 @@ service cloud.firestore {
       return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
         "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
         "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion",
+        // Send to Agent (kanban-agent.js): the link back to the Kanban ticket
+        // and where a ticket came from, written by the server only.
+        "kanbanKey", "createdVia",
         "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit", "reviewBounceCount",
         // Parallel builds (4 Oct 2026): the commit a patch was written
         // against (the automation merges from it) and its rebuild counter.
         "patchBaseSha", "autoRebuilds",
+        // A patch handed over as a commit (14 Nov 2026): the commit the
+        // automation reads the files from, and the branch it was pushed to.
+        "patchCommit", "patchRef",
         // Automatic rebuilds (19 Oct 2026): when one was requested, and what
         // became of the fire — only the automation and the notify function write them.
         "rebuildRequestedAt", "lastFire",
@@ -380,7 +405,27 @@ service cloud.firestore {
         // Ready for Testing and was sent back. The automation and the MCP
         // server record them; the board's Failed testing keeps writing only
         // lastFailureReason, which processRevertFromTrain turns into one.
-        "testRound", "sendBacks", "sendBackCount", "countedSendBacks"];
+        "testRound", "sendBacks", "sendBackCount", "countedSendBacks",
+
+        // Build order (14 Nov 2026): who set a ticket's dependency list
+        // (intake / build / manual — the intake trigger decides) and the
+        // lane-mate a Ready for Dev click queued it behind. The list itself,
+        // dependsOnItemIds, is a person's to edit (Edit item → Builds after).
+        "dependsOnSource", "queuedAfter",
+        // Agent tickets (15 Nov 2026): whose own Claude account the ticket
+        // fires under (functions/owner-firing.js). Set by the server (Send to
+        // Agent, MCP ownedByMe) only, so nobody can tag a ticket with someone
+        // else's Routine.
+        "ownerEmail",
+        // Shared files between trains (wPoSOXfp8Em06Vzp3Cz7): what a landed
+        // ticket shares with another project's live train, and the files it
+        // changed that another project owns. Written by the automation only.
+        "sharedWith", "foreignPaths",
+        // Contract-change review (16 Nov 2026, ZmEWDC40NYOiojehfPjk): set on a
+        // dependent when its upstream ticket's build changed an interface
+        // contract, cleared when the dependent's own patch lands. The
+        // automation's alone, so nobody can dismiss or fake it from a tab.
+        "contractReview"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());
@@ -422,7 +467,14 @@ service cloud.firestore {
         (!("previewUrl" in incoming()) || incoming().previewUrl == null
           || (incoming().previewUrl is string && incoming().previewUrl.size() <= 2000 && incoming().previewUrl.matches("^https?://.*"))) &&
         // Per-ticket model requirement: unset means "standard".
-        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]);
+        (!("model" in incoming()) || incoming().model == null || incoming().model in ["standard", "advanced"]) &&
+        // Build order: the tickets this one builds after — a list of at most
+        // 20 ids (a rules list can't be walked, so the strings are checked by
+        // their first and last entry; the picker only ever writes ids).
+        (!("dependsOnItemIds" in incoming()) || incoming().dependsOnItemIds == null
+          || (incoming().dependsOnItemIds is list && incoming().dependsOnItemIds.size() <= 20
+            && (incoming().dependsOnItemIds.size() == 0
+              || (incoming().dependsOnItemIds[0] is string && incoming().dependsOnItemIds[incoming().dependsOnItemIds.size() - 1] is string))));
     }
 
     match /backlogItems/{itemId} {
@@ -628,8 +680,10 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam",
+          "leadType", "operator", "tam", "rank",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
+        && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by
         // the function that keeps the two in step (lead-enrich.js); an editor's save keeps it.
         && (d.get("tam", null) == null || d.get("tam", null) is map)
@@ -818,6 +872,15 @@ service cloud.firestore {
     // board in a browser AND to the MCP server their AI agent connects to
     // (backlog-tracker/MCP.md). mcpEnabled (default true when absent) turns
     // just the agent half off without removing the person.
+    // Run-time identity configuration (functions/identity.js): today just
+    // personAliases, the map of a second sign-in address to the same
+    // person's canonical one. Written only by scripts/set-owner-claim.js with
+    // the admin SDK; members read it so the Staff Kanban folds an alias into
+    // its person in the browser too.
+    match /consoleConfig/{configId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
     match /consoleUsers/{userEmail} {
       // A signed-in person may always read their OWN row. auth-gate.js has
       // to check membership before it can know whether the caller is a
@@ -1042,7 +1105,10 @@ service cloud.firestore {
         && isNonEmptyBoundedString(incoming().icon, 40)
         && incoming().order is number
         && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 300)
-        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100))
+        // Hidden from the website, with every folder and article under it
+        // (functions/faq-feed.js hiddenCategoryIds); Support Inbox only.
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool);
       allow delete: if isFaqEditor();
     }
 
@@ -1112,7 +1178,11 @@ service cloud.firestore {
       // freshness check GETs one published doc anonymously; nothing public
       // lists or queries the collection (the export runs as the service
       // account). An article with no status is a legacy import, published.
-      allow get: if isBoardReader() || resource.data.get("status", "published") == "published";
+      // A published article hidden from the website (hiddenFromWebsite —
+      // used by the Support Inbox before a feature launches) is not public
+      // either. Its category being hidden is enforced where the public reads
+      // (the export and the help API), as rules can't follow the parent chain.
+      allow get: if isBoardReader() || (resource.data.get("status", "published") == "published" && resource.data.get("hiddenFromWebsite", false) != true);
       allow list: if isBoardReader();
       allow create, update: if isFaqEditor()
         && incoming().size() <= 40
@@ -1136,6 +1206,7 @@ service cloud.firestore {
         && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
         && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
         && incoming().status in ["draft", "published"]
+        && (!("hiddenFromWebsite" in incoming()) || incoming().hiddenFromWebsite is bool)
         && incoming().order is number;
       allow delete: if isFaqEditor();
     }
@@ -1216,12 +1287,14 @@ service cloud.firestore {
         && key == "PH-" + string(incoming().number)
         && incoming().createdBy == callerEmail()
         && incoming().commentCount == 0
+        && !("agentTickets" in incoming()) && !("agentTotal" in incoming()) && !("agentDone" in incoming())
         && getAfter(kanbanCounterPath()).data.nextNumber == incoming().number + 1;
       allow update: if isEditor() && isKanbanTask(incoming())
         && incoming().key == resource.data.key
         && incoming().number == resource.data.number
         && incoming().createdBy == resource.data.createdBy
-        && incoming().createdAt == resource.data.createdAt;
+        && incoming().createdAt == resource.data.createdAt
+        && kanbanAgentFieldsKept(incoming(), resource.data);
       allow delete: if isEditor();
 
       match /comments/{commentId} {
@@ -1254,7 +1327,7 @@ service cloud.firestore {
     function isKanbanCard(d) {
       return d.keys().hasOnly(["key", "type", "title", "status", "resolution", "open", "closedAt", "rank", "assignee", "previousAssignee",
           "release", "sprint", "project", "priority", "flagged", "estimate", "logged", "due", "labels", "epic", "commentCount", "attachmentCount", "acTotal", "acDone",
-          "updatedAt", "updatedBy"])
+          "agentTotal", "agentDone", "updatedAt", "updatedBy"])
         && d.key is string && isNonEmptyBoundedString(d.title, 200)
         && d.type in ["task", "bug", "epic"]
         && d.status in ["backlog", "ready-for-dev", "in-progress", "ready-for-testing", "approved", "done"]
@@ -1264,12 +1337,25 @@ service cloud.firestore {
         && d.labels is list && d.labels.size() <= 30
         && d.commentCount is int && d.attachmentCount is int
         && d.get("acTotal", 0) is int && d.get("acDone", 0) is int && d.get("acDone", 0) <= d.get("acTotal", 0) && d.get("acTotal", 0) <= 50
+        && d.get("agentTotal", 0) is int && d.get("agentDone", 0) is int && d.get("agentDone", 0) <= d.get("agentTotal", 0) && d.get("agentTotal", 0) <= 50
         && d.get("project", "") is string && d.get("project", "").size() <= 100
         && d.updatedBy == callerEmail();
     }
+    // Send to Agent (KB-AGENT-1): a ticket's agent tickets and their counts are
+    // written only by the server (functions/kanban-agent.js), so a page can
+    // neither forge a link to an agent ticket nor mark agent work built. A
+    // card's counts a page writes must be the ones its ticket already carries.
+    function kanbanAgentFieldsKept(d, prev) {
+      return d.get("agentTickets", null) == prev.get("agentTickets", null)
+        && d.get("agentTotal", null) == prev.get("agentTotal", null)
+        && d.get("agentDone", null) == prev.get("agentDone", null);
+    }
     match /kanbanCards/{key} {
       allow read: if isBoardReader();
-      allow create, update: if isEditor() && isKanbanCard(incoming()) && incoming().key == key;
+      allow create: if isEditor() && isKanbanCard(incoming()) && incoming().key == key;
+      allow update: if isEditor() && isKanbanCard(incoming()) && incoming().key == key
+        && incoming().get("agentTotal", null) == resource.data.get("agentTotal", null)
+        && incoming().get("agentDone", null) == resource.data.get("agentDone", null);
       allow delete: if isEditor();
     }
     match /kanbanCounters/{counterId} {
@@ -1293,13 +1379,24 @@ service cloud.firestore {
     // Notifications (KB-NAV-2, KB-MOD-3): written only by the Kanban fan-out
     // trigger (functions/kanban-notify.js, the admin SDK), never by a client.
     // Only the person notified reads theirs, marks it read or clears it.
+    // A second sign-in address of the same person carries an `aliasOf` claim
+    // naming the canonical address (scripts/set-owner-claim.js; the same map
+    // is consoleConfig/identity.personAliases for kanban-core.js):
+    // notifications are always addressed to the canonical one, so signed in
+    // with the alias they read and clear those.
+    function kanbanNotifiedIs(to) {
+      return to == callerEmail()
+        || (signedIn() && request.auth.token.get("aliasOf", "") is string
+            && request.auth.token.get("aliasOf", "") != ""
+            && to == request.auth.token.get("aliasOf", "").lower());
+    }
     match /kanbanNotifications/{noteId} {
-      allow read: if signedIn() && resource.data.to == callerEmail();
+      allow read: if signedIn() && kanbanNotifiedIs(resource.data.to);
       allow create: if false;
-      allow update: if signedIn() && resource.data.to == callerEmail()
+      allow update: if signedIn() && kanbanNotifiedIs(resource.data.to)
         && incoming().diff(resource.data).affectedKeys().hasOnly(["read"]);
       // Only a read one: the bell prunes the person's own read notifications older than 30 days.
-      allow delete: if signedIn() && resource.data.to == callerEmail() && resource.data.read == true;
+      allow delete: if signedIn() && kanbanNotifiedIs(resource.data.to) && resource.data.read == true;
     }
     // Names and photos of every member, for assignee lists and avatars.
     // consoleUsers itself is admin-only to list; functions/index.js keeps
@@ -1316,12 +1413,15 @@ service cloud.firestore {
     // future settings page) — read/write rules still apply the same as any
     // other doc in this collection.
     // Admin-only to write: phaseSkillBindings feeds the Routine's prompt.
+    // settings/deployQueue (wPoSOXfp8Em06Vzp3Cz7) is the deploy queue the
+    // automation keeps with its service account: no browser writes it, an
+    // admin included — a queue entry decides which train merges next.
     match /settings/{docId} {
       allow read: if isBoardReader();
-      allow create, update: if isAdmin()
+      allow create, update: if isAdmin() && docId != "deployQueue"
         && (!("build" in incoming()) || (incoming().build is list && incoming().build.size() <= 20))
         && (!("deploy" in incoming()) || (incoming().deploy is list && incoming().deploy.size() <= 20));
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && docId != "deployQueue";
     }
 
     // ── Whiteboard ─────────────────────────────────────────────────────────

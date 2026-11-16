@@ -113,9 +113,9 @@ they can reconnect by signing in again. **Remove** takes away both halves.
 
 All of this is one Firestore doc per person, `consoleUsers/<lowercased
 email>`, which is what `firestore.rules` and the MCP server both resolve
-against. Two owner accounts (`rob@offline2online.com`,
-`rob@personalisationhub.com`) are hard-coded as admins in the rules so an
-empty or mis-edited collection can never lock everyone out.
+against. The account owner is an admin by the `owner: true` custom claim
+(`scripts/set-owner-claim.js`; no address is in the repo), so an empty or
+mis-edited collection can never lock everyone out.
 
 ---
 
@@ -210,7 +210,9 @@ Example prompt, for an agent that has just finished a page of the project artifa
 
 The board reads a light card per ticket (`kanbanCards/{PH-n}`, the fields a card shows); every write above puts the ticket and its card in the same batch or transaction. `kanban_list_tasks` and `kanban_release_report` read cards (a `search` reads tickets, since cards hold no description), `kanban_get_task` and `kanban_search_tickets` read the full ticket. Reads are bounded however large the board grows: `kanban_list_tasks` pushes its filters into the query and reads at most 500 tickets a call (`truncated` and `nextCursor`, passed back as `cursor`); `kanban_get_task` returns the newest 100 comments and 100 activity lines (`commentsOmitted`, `activityOmitted`); the next rank is one `status`+`rank` query; the directory, settings and releases are cached 60 s per function instance; and every `kanban_*` call writes an `mcpAuditLog` row with `ms`. `kanban_mark_notifications_read` also deletes the caller's own read notifications older than 30 days (200 at a time; there is no scheduled job). While the cards are behind the tickets (before `POST /mcp/kanban/backfill` has run) the tools read the tickets.
 
-Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES` in `public/js/kanban/kanban-core.js`: `rob@personalisationhub.com` is Rob, `rob@offline2online.com`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
+Every member is on the board, the owner included. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES`, loaded from `consoleConfig/identity`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
+
+### Ticket history, agent instructions, test and link state
 
 **Reading ticket history.** `list_backlog_items` pages: it returns at most
 100 tickets per call (default 25), newest-updated first and then by id, plus
@@ -237,7 +239,7 @@ release actions stay on the board apart from `send_to_build`,
 `set_project_requirements` / `set_project_readme` say the same from the
 project's own fields. `test/mcp-server.test.js` keeps them in step with the
 tool list: every name in them is a registered tool, every write and admin tool
-is named, and the instructions stay within 3,600 characters (what Claude Code
+is named, and the instructions stay within 3,700 characters (what Claude Code
 delivers whole).
 
 **Test and link state (server 1.5.0).** All read-only; every URL goes through
@@ -252,6 +254,19 @@ delivers whole).
   rebuilding, 1 with tests running." The MCP App card shows a link pill ("Test
   link rebuilding — don't test yet", "Test link ready · build abc1234", "Test
   link may be out of date") and "Test this (previous build)" while rebuilding.
+- **Testing rounds** (15 Nov 2026; `REQUIREMENTS.md` → "Testing rounds").
+  `get_ready_for_testing_board` also returns, per card, `testRound` (at least
+  1), `sendBackCount` (every send-back ever, counted or not), `inTestingLoop`
+  (`true` from round 3, `FIRST_CAP` in `functions/test-rounds.js`) and
+  `lastSendBack` (`{at, by, who, category, line}` of the last counted
+  send-back, `by` being `"person"`, `"tests"` or `"review"`, or `null`).
+  Tickets in a testing loop are listed first, highest round first; the rest
+  stay newest first. The first text line then starts its counts with "N in a
+  testing loop (round 3 or later, listed first)". The MCP App card shows a
+  "Round N" pill from round 2 (warning colour from round 3) and, from round
+  2, "Sent back last time: <line>" under the title. The rounds are read with
+  `loopState`, so a card written before the fields existed is read from its
+  notes.
 - `get_backlog_item`'s `train` block adds `previewState`, `previewSha`,
   `previewUpdatedAt`.
 - `list_projects` adds per project `trainTestsRed` (workflow → `{sha, url, at}`
@@ -346,8 +361,8 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build`, `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
-| `update_backlog_item` (title, description, type, area, model); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
+| `create_backlog_item` (always into the Backlog column; optional `dependsOnItemIds`, plus ids and exact titles from the Dependencies section, added automatically) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
+| `update_backlog_item` (title, description, type, area, model, `dependsOnItemIds`); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
 | | `create_interface` / `update_interface` / `delete_interface` (an interface joins any two projects or concepts: pass `endpoints` `[{type, id}, {type, id}]`, or `projectIds` for two projects; `update_interface` can re-point with `endpoints`) | | | | |
@@ -355,6 +370,22 @@ as text until Anthropic switches on its MCP Apps host.
 | | `create_concept` (requires `type`) / `add_concept_comment` / `set_concept_readme` / `set_concept_requirements` / `set_concept_artifact` / `set_concept_description` / `set_concept_type` (Concept Incubator; the last five refused once a concept is promoted, except comments) / `set_project_type` | | | | |
 | | `upsert_prospects`, leads | `list_prospects`, `list_leads`, `get_lead` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
+
+**Build order: what a ticket builds after.** `create_backlog_item` takes an
+optional `dependsOnItemIds`: up to 20 ticket ids, from any project, that
+this ticket must build after. An id that names no ticket, or a list that
+would close a loop, is refused. Ticket ids and the exact titles of open
+tickets named in the description's Dependencies section are added to the
+list automatically. `update_backlog_item` takes the same argument and
+replaces the list (`[]` clears it). Every ticket that `list_backlog_items`
+and `get_backlog_item` return carries `dependsOnItemIds`,
+`dependsOnSource` (`"intake"`, `"build"`, `"manual"` or `null`) and
+`queuedAfter` (`{itemId, title}` or `null`). The results of
+`create_backlog_item` and `get_backlog_item` also carry `dependsOn`:
+one `{id, title, status, statusLabel}` per dependency (`status` is
+`"deleted"` for a ticket that no longer exists). `list_backlog_items` adds
+`dependsOn` only to a ticket that has dependencies. How the order is used is in
+[`REQUIREMENTS.md` → "Build order"](REQUIREMENTS.md#build-order-14-nov-2026-ticket-ze8h8cfaezob0etsrjsh).
 
 **Setting up your own personal Notify Claude Routine** (so board clicks you
 make fire a session under your own Claude account instead of the one
@@ -365,11 +396,12 @@ prompt to use, getting its API trigger's fire URL and token, then calling
 `set_my_routine_binding` with both. There's no way to automate the
 claude.ai/code/routines step itself: the routines API has no delegated-OAuth
 "fire on behalf of" flow, so a Routine's fire URL/token is per-Routine and
-hand-generated once — this is the closest one-click setup the API allows.
+hand-generated once.
 `set_my_routine_binding` is **write-only**: your stored `fireUrl`/`token`
 are never returned by this or any other tool — `whoami`'s
 `hasRoutineBinding` only ever says whether one is set, never its value.
 Pass both as `""` to clear your binding and go back to the shared token.
+
 `functions/index.js`'s `resolveRoutineCredentials` checks the clicking
 member's binding first on every Notify Claude / Notify Claude — Deploy /
 Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
@@ -378,6 +410,30 @@ Groom Backlog click, falling back to the shared `CLAUDE_ROUTINE_FIRE_URL`/
 its fire URL must be on `api.anthropic.com` — until 27 Sep 2026 it lived on
 `consoleUsers`, which every member could read, and any `https://` host was
 accepted (see `SECURITY-PERFORMANCE.md`).
+The console's own **Settings → My Claude Routine** page does the same setup
+without an agent (`/mcp/me/routine-binding`, same write, same validation).
+
+**Agent tickets (`ownedByMe`)**: `create_backlog_item` with `ownedByMe: true`
+files a ticket owned by you (`ownerEmail`); `update_backlog_item` with
+`ownedByMe: true` claims a Backlog ticket you filed (an admin may claim any
+unowned one), and `false` releases your own (an admin may release anyone's).
+An agent ticket fires (build, deploy, groom) only on its owner's personal
+Routine and only on the owner's click: `send_to_build` by anyone else is
+refused for it, and an owner with no binding gets nothing fired. See
+`REQUIREMENTS.md` → "Agent tickets fire under their owner's own Claude
+account".
+
+**Owner scoping**: your agent reads every ticket in full, whoever owns it
+(`get_backlog_item` / `list_backlog_items` return `ownerEmail` and
+`contractReview`), but `update_backlog_item`, `archive_backlog_items`,
+`delete_backlog_items` and `set_blocked` on another member's agent ticket are
+refused with a message naming the owner, and nothing changes. An admin's
+agent is refused too, except releasing a ticket (`ownedByMe: false` alone).
+Untagged tickets stay open to everyone; `add_item_comment` and
+`clear_blocked` stay open on every ticket. A ticket whose upstream changed an
+interface contract carries `contractReview` (`status: "needs-review"`, the
+upstream ticket, commit, files and a summary); its own next build reviews it.
+See `REQUIREMENTS.md` → "Owner scoping and contract-change review".
 
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
 "nothing here deploys" (below), not a loosening of it — and since 27 Sep
@@ -430,17 +486,26 @@ logged to `mcpAuditLog` under the caller's email.**
   it back"**, admin only like the two above. Each named Ready for Testing
   ticket goes to Backlog with `revertRequested: true` (the automation reverts
   its commits off the train), `lastFailureReason` `{category, text, action:
-  "failed-testing", at}` and a note, and `rebuildAfterRevert: true`, so a
+  "failed-testing", at, who}` and a note, and `rebuildAfterRevert: true`, so a
   rebuild is queued by itself once the revert has landed (the board button
   leaves that to a later Ready for Dev). `category` is one of the board's
   failure categories, default `Other`. It refuses the whole call if a ticket
   is not in this project's Ready for Testing or is already marked for revert,
-  and logs to `mcpAuditLog` with the reason. It does not offer the dialog's
+  and logs to `mcpAuditLog` with the reason. It records the send-back on the
+  card at once (`recordSendBack` in `functions/test-rounds.js`: a `sendBacks`
+  entry by `"person"`, `who` the caller's email, and `sendBackCount` /
+  `countedSendBacks` raised; category "Blocking a release, not a rebuild" is
+  recorded uncounted), so the automation does not record it again when it
+  reverts the ticket, and applies the loop cap there: the 3rd counted
+  send-back leaves the ticket in Backlog flagged needs-decision instead of
+  rebuilding it. It does not offer the dialog's
   "it works, but I want something more" choice; file that with
   `create_backlog_item`.
 
 No MCP tool moves a card any other way, and `update_backlog_item` still has
 no `status`.
+
+### Write tools: skills library, help centre, copied documents and limits
 
 **The skills library is organisation-wide, not per-project** — a shared
 place to publish packaged instructions (like this repo's own `ph-designer`
@@ -815,6 +880,18 @@ prototype changes later.
 and `articleType` (`guide` | `faq` | `reference`); update still only parks a
 pending revision. `get_faq_article` reports `missingSeoFields`.
 
+## Hidden from the website
+
+`create_faq_article` takes `hiddenFromWebsite` (default false).
+`set_faq_visibility` (`articleId` or `categoryId`, `hiddenFromWebsite`) hides an
+article, folder or category from the website and public help search; the
+Support Inbox still answers email from hidden articles. It refuses to show a
+published article, a folder or a category (that launches it, so a person does
+it in FAQ Management); a draft can be un-hidden. `list_faq_categories` lists
+categories and folders with their ids and flags; `search_faq` and
+`get_faq_article` report `hiddenFromWebsite`. See REQUIREMENTS.md → "Hidden from
+the website".
+
 ## Public help search (no sign-in)
 
 Separate from this authenticated server: **`https://personalisationhub.com/mcp`** is a public, stateless, read-only remote MCP server (no sign-in) with the eight tools the personalisationhub.com WebMCP defines (describe platform, list industries, get industry, get feature, search help, get help article, start free trial, book demo), read live from the site and cached 5 minutes (`X-Cache`), plus `https://personalisationhub.com/help-api/search` and `/help-api/article`. Those personalisationhub.com addresses are the only public ones: the site forwards them server side to this console's `/help-api/*` (PH Agent Endpoint 1.8.0, `ph-website/snippets/ph-agent-endpoint/proxy.php`), and nothing public links to or names the console's own host. The console routes still answer for existing clients, but are never advertised. It only serves published, in-range articles, linked to their personalisationhub.com/support-centre/ URL. See REQUIREMENTS.md → "Public help search for AI agents".
@@ -846,3 +923,23 @@ Each lead has a `leadType`: `company` (a retail/company lead, the default) or `o
 - Remove: `archive_lead` / `restore_lead` (recoverable; the board hides archived leads) and `delete_lead` (admin only, permanent, needs `confirm: true`).
 
 Every change adds a line to the lead's history, shown in the lead drawer under "Notes and history" with who made it.
+
+## Guided Routine setup on connect
+
+Your agent offers personal Routine setup by itself when you connect without
+one (BXkUvoayo98j744RUCy8, 13 Nov 2026; see "Setting up your own personal
+Notify Claude Routine" above for the steps). When a member who can write connects
+and has no binding, `initialize` puts a one-sentence Routine-setup block at
+the front of the server instructions (`ROUTINE_SETUP_INSTRUCTIONS` in
+`functions/mcp-server.js`; it stays one sentence because the whole text must
+still fit the 3,700 characters a host delivers whole). It asks the agent to
+offer setup before other work and follow `get_routine_setup_instructions`'s
+`agentGuidance`: present the `walkthrough` one step at a time, waiting for you
+between steps (the `routinesUrl` link, the bootstrap prompt as a copyable
+code block, the API trigger, then pasting the fire URL and token back). The
+agent then calls `set_my_routine_binding` once and `whoami` to confirm. It
+must never ask for the token again or repeat it. If you decline, it reminds
+you once in that conversation and carries on.
+A bound member, or a viewer (who can't call `set_my_routine_binding`), gets
+the normal instructions with no setup block. Instructions are read once per
+connection, so after you set it up, your next connection shows no prompt.

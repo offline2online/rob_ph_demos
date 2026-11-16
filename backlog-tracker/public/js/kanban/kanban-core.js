@@ -213,9 +213,22 @@ export function rankBetween(prev, next) {
 // An alias is a second address the same person signs in with. The board
 // never lists it as a person of its own: anything that names it (assignee,
 // reporter, a mention, the signed-in agent) means the canonical address.
-// rob@personalisationhub.com is still an owner account in firestore.rules,
-// so it can sign in, but on the Staff Kanban it is Rob.
-export const PERSON_ALIASES = { "rob@personalisationhub.com": "rob@offline2online.com" };
+// No address is written here: the map is configuration, loaded at run time
+// from consoleConfig/identity.personAliases (written only by
+// scripts/set-owner-claim.js) and handed in through setPersonAliases().
+// Never hard-code a person's address in this repo (root CLAUDE.md).
+export const PERSON_ALIASES = {};
+export function setPersonAliases(map) {
+  for (const k of Object.keys(PERSON_ALIASES)) delete PERSON_ALIASES[k];
+  if (map && typeof map === "object") {
+    for (const [k, v] of Object.entries(map)) {
+      const from = String(k || "").trim().toLowerCase();
+      const to = String(v || "").trim().toLowerCase();
+      if (from && to && from !== to && from.includes("@") && to.includes("@")) PERSON_ALIASES[from] = to;
+    }
+  }
+  return PERSON_ALIASES;
+}
 export function canonicalEmail(e) {
   const v = String(e == null ? "" : e).trim().toLowerCase();
   return Object.prototype.hasOwnProperty.call(PERSON_ALIASES, v) ? PERSON_ALIASES[v] : v;
@@ -758,7 +771,7 @@ export function editActivity(before, after, names = {}) {
 // tests use the same functions, so a card and its ticket cannot be derived two ways.
 // (one string, not a list of quoted words: a lone quoted word that is also an icon name fails test/icon-font.test.mjs)
 export const CARD_FIELDS = ("key type title status resolution open rank assignee previousAssignee release sprint project "
-  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone").split(" ");
+  + "priority flagged estimate logged due labels epic commentCount attachmentCount acTotal acDone agentTotal agentDone").split(" ");
 const CARD_NORM = {
   key: (v) => String(v || ""),
   type: (v) => v || "task",
@@ -789,9 +802,89 @@ export function cardOf(t) {
     else if (k === "acTotal" || k === "acDone") {
       const n = Array.isArray(t.acceptanceCriteria) ? acCounts(t.acceptanceCriteria)[k === "acTotal" ? "total" : "done"] : t[k];
       c[k] = Number.isInteger(n) && n > 0 ? n : 0;
+    } else if (k === "agentTotal" || k === "agentDone") {
+      // Send to Agent (KB-AGENT-1): only the server writes these, so a card
+      // carries them only once the ticket has agent tickets; a page writing a
+      // card never sends a zero over the server's count.
+      if (Number.isInteger(t.agentTotal) && t.agentTotal > 0) c[k] = Number.isInteger(t[k]) && t[k] > 0 ? Math.min(t[k], t.agentTotal) : 0;
     } else c[k] = CARD_NORM[k](t[k]);
   }
   return c;
+}
+
+// ── Send to Agent (KB-AGENT-1) ──────────────────────────────────────────────
+// A Kanban ticket's owner (its assignee) splits it into agent tickets on the
+// Agent Board. kanbanTasks/{PH-n}.agentTickets lists them ({id, projectId}),
+// and agentTotal / agentDone (on the ticket and its card) count them, kept by
+// the server as the agent tickets move. An agent ticket counts as built once
+// it reaches Ready for Testing, or anything after it on the Agent Board.
+export const AGENT_MAX_TICKETS = 10;
+// Below the board's 10,000-character description limit, with room for intake.
+export const AGENT_DESC_MAX = 9500;
+export const AGENT_BUILT = ["ready-for-testing", "ready-to-publish", "published-live"];
+export const AGENT_STATUS_LABEL = {
+  backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment",
+  "published-live": "Merged to Main (Live)", archived: "Archived",
+};
+// An Agent Board ticket (its stored fields) → built or not. A status alone is
+// not proof: any editor can write status from a browser, and this decides an
+// automatic move of the Kanban ticket under its assignee's name. Built means
+// the pipeline itself stamped it — deployCommit, mergeCommit or testVersion,
+// which firestore.rules lets only the automation write.
+export function agentBuilt(item) {
+  if (!item) return false;
+  const stamped = !!(item.deployCommit || item.mergeCommit || item.testVersion);
+  if (AGENT_BUILT.includes(item.status)) return stamped;
+  return item.status === "archived" && !!(item.mergeCommit || item.deployCommit);
+}
+// The agent tickets that still exist → { total, done }.
+export function agentRollup(items) {
+  const live = (items || []).filter(Boolean);
+  return { total: live.length, done: live.filter(agentBuilt).length };
+}
+// Only the ticket's assignee may send it to an agent, and only while it is open.
+export function canSendToAgent(t, me) {
+  if (!t || !t.key || !me || !t.assignee) return false;
+  if (t.status === "done") return false;
+  return canonicalEmail(t.assignee) === canonicalEmail(me);
+}
+// A proposed or edited split → tickets the server accepts, or { error }.
+export function cleanAgentSplit(list) {
+  if (!Array.isArray(list) || !list.length) return { error: "Add at least one agent ticket." };
+  if (list.length > AGENT_MAX_TICKETS) return { error: `At most ${AGENT_MAX_TICKETS} agent tickets at a time.` };
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const x = list[i] || {};
+    const title = String(x.title || "").replace(/\s+/g, " ").trim();
+    const description = String(x.description || "").trim();
+    if (!title) return { error: `Agent ticket ${i + 1} needs a title.` };
+    if (title.length > 200) return { error: `Agent ticket ${i + 1}'s title is over 200 characters.` };
+    if (description.length > 6000) return { error: `Agent ticket ${i + 1}'s description is over 6000 characters.` };
+    const ac = (Array.isArray(x.acceptanceCriteria) ? x.acceptanceCriteria : String(x.acceptanceCriteria || "").split(/\r?\n/))
+      .map((c) => String(c && typeof c === "object" ? c.text || "" : c || "").replace(/^\s*[-*•]\s*/, "").replace(/\s+/g, " ").trim()).filter(Boolean);
+    if (ac.length > 20) return { error: `Agent ticket ${i + 1} has more than 20 acceptance criteria.` };
+    if (ac.some((c) => c.length > 500)) return { error: `An acceptance criterion on agent ticket ${i + 1} is over 500 characters.` };
+    // The written description repeats the criteria (Outcome and Test steps); the
+    // board saves at most 10,000 characters, so a longer one could never be edited,
+    // approved or archived there. Measured with the longest Kanban title and link.
+    const longest = agentTicketDesc({ title, description, acceptanceCriteria: ac }, { key: "PH-99999", title: "x".repeat(200), url: "x".repeat(200) }).length;
+    if (longest > AGENT_DESC_MAX) return { error: `Agent ticket ${i + 1} is too long for the Agent Board: shorten its description or criteria by about ${longest - AGENT_DESC_MAX} characters.` };
+    out.push({ title, description, acceptanceCriteria: ac });
+  }
+  return { tickets: out };
+}
+// An agent ticket's description, in the Agent Board's four intake sections.
+// The acceptance criteria become its test steps; the Kanban ticket is its spec.
+export function agentTicketDesc(x, kanban) {
+  const ac = x.acceptanceCriteria || [];
+  const outcome = [x.description || x.title, ac.length ? "Acceptance criteria:\n" + ac.map((c) => `- ${c}`).join("\n") : ""].filter(Boolean).join("\n\n");
+  const steps = ac.length ? ac.map((c, i) => `${i + 1}. Check: ${c}`).join("\n") : "";
+  return [
+    `## Outcome\n${outcome}`,
+    `## Test steps\n${steps}`,
+    "## Dependencies\n",
+    `## Spec reference\nStaff Kanban ticket ${kanban.key} "${String(kanban.title || "").slice(0, 200)}" (Send to Agent), ${kanban.url || ticketHash(kanban.key)}`,
+  ].join("\n\n");
 }
 // A patch to a ticket → the patch to its card (only what it changes).
 export function cardPatchOf(patch) {

@@ -2,7 +2,8 @@
 /**
  * Offline tests for the floating CTA (snippets/ph-industry-enhancements/cta.php). Run from run.php in its own process, or on its own:
  *   php ph-website/tests/cta.test.php
- * The variant resolver (request on the Run Your Own RMN page, tour on a page with a guided tour, demo elsewhere), the ph_floating_cta
+ * The variant resolver (hidden on every Support Centre page, request on the Run Your Own RMN page, tour on a page with a guided tour,
+ * demo elsewhere), the ph_floating_cta
  * filter override and its clean-up, the enqueue (never in the Elementor editor or preview), main.php's require and operator.js no longer
  * rewriting the header's demo button. The browser half is tests/cta.test.mjs.
  */
@@ -38,7 +39,7 @@ $dir = dirname( __DIR__ ) . '/snippets/ph-industry-enhancements/';
 eval( 'namespace AngieSnippets\\PhIndustryEnhancements_10063; const PH_INDUSTRY_ENHANCEMENTS_ASSETS_VERSION_10063 = "t"; function page_key() { return $GLOBALS["pkey"]; } function operator_is_page() { return $GLOBALS["opage"]; }' );
 require $dir . 'tour.php';
 require $dir . 'cta.php';
-use function AngieSnippets\PhIndustryEnhancements_10063\{cta_variant,cta_config,cta_tour_keys,cta_page_config,cta_enqueue,cta_here};
+use function AngieSnippets\PhIndustryEnhancements_10063\{cta_is_support_centre,cta_variant,cta_config,cta_tour_keys,cta_page_config,cta_enqueue,cta_here};
 
 /* the resolver */
 ok( 'request' === cta_variant( true, false ) && 'request' === cta_variant( true, true ), 'request on the Run Your Own RMN page (wins over its own tour)' );
@@ -49,7 +50,7 @@ sort( $keys );
 ok( array( 'convenience', 'pharmacy', 'retail-media', 'telco' ) === $keys, 'tour pages: the industry tours from TOUR_INDUSTRIES, not the operator page: ' . implode( ',', $keys ) );
 
 $c = cta_config( true, false );
-ok( 'request' === $c['variant'] && 'Request further information' === $c['label'] && 'scroll' === $c['action'] && '#request-info' === $c['target'], 'request config: label, scroll, #request-info' );
+ok( 'request' === $c['variant'] && 'Register your interest' === $c['label'] && 'scroll' === $c['action'] && '#request-info' === $c['target'], 'request config: label, scroll, #request-info' );
 $c = cta_config( false, true );
 ok( 'tour' === $c['variant'] && 'Take the guided tour' === $c['label'] && 'scroll' === $c['action'] && '#ph-tour' === $c['target'], 'tour config: label, scroll, #ph-tour' );
 $c = cta_config( false, false );
@@ -70,6 +71,59 @@ foreach ( array( '', 'industries', 'grocery', 'hospitality' ) as $k ) {
 	ok( 'demo' === cta_page_config()['variant'], "page config: '$k' is demo" );
 }
 $GLOBALS['pkey'] = '';
+
+/* the Support Centre (15 Nov 2026): no floating CTA anywhere under /support-centre/ */
+ok( 'hidden' === cta_variant( false, false, true ) && 'hidden' === cta_variant( true, true, true ), 'resolver: hidden on a Support Centre page, whatever else is true' );
+$c = cta_config( false, false, true );
+ok( true === $c['hidden'] && false === $c['locked'], 'Support Centre config: hidden, not locked' );
+$sc = array( '/support-centre/', '/support-centre/getting-started/', '/support-centre/platform-installation/aws-deployment-prerequisites/', '/support-centre?x=1', '/support-centre', '/Support-Centre/Search/?q=aws', '/support-centre/?s=aws&format=md', '/support%2Dcentre/', '/support-centre.md', 'https://personalisationhub.com/support-centre/getting-started/#top' );
+foreach ( $sc as $u ) {
+	ok( cta_is_support_centre( $u ), "is Support Centre: $u" );
+}
+foreach ( array( '/', '', '/industries/telco/', '/run-your-own-rmn/', '/blog/', '/blog/support-centre/', '/support-centre-news/', '/support/', '/?p=/support-centre/' ) as $u ) {
+	ok( ! cta_is_support_centre( $u ), "not Support Centre: '$u'" );
+}
+foreach ( array( '/support-centre/', '/support-centre/getting-started/', '/support-centre/platform-installation/aws-deployment-prerequisites/', '/support-centre?x=1' ) as $u ) {
+	$_SERVER['REQUEST_URI'] = $u;
+	foreach ( array( array( false, '' ), array( true, '' ), array( false, 'telco' ) ) as $ctx ) {
+		list( $GLOBALS['opage'], $GLOBALS['pkey'] ) = $ctx;
+		$GLOBALS['enq'] = array();
+		ok( true === cta_page_config()['hidden'], "page config: $u is hidden" );
+		cta_enqueue();
+		ok( array() === $GLOBALS['enq'], "enqueue: nothing (no cta.css, cta.js or PH_FLOATING_CTA) on $u" );
+	}
+}
+$GLOBALS['opage'] = false;
+$GLOBALS['pkey']  = '';
+foreach ( array( array( '/', false, '', 'demo' ), array( '/industries/telco/', false, 'telco', 'tour' ), array( '/run-your-own-rmn/', true, '', 'request' ), array( '/blog/', false, '', 'demo' ) ) as $row ) {
+	list( $_SERVER['REQUEST_URI'], $GLOBALS['opage'], $GLOBALS['pkey'], $want ) = $row;
+	$GLOBALS['enq'] = array();
+	$c = cta_page_config();
+	cta_enqueue();
+	ok( $want === $c['variant'] && false === $c['hidden'] && 3 === count( $GLOBALS['enq'] ), "unchanged: {$row[0]} is $want and enqueued" );
+}
+$_SERVER['REQUEST_URI'] = '/support-centre/getting-started/';
+$GLOBALS['opage'] = false;
+$GLOBALS['pkey']  = '';
+$GLOBALS['filter'] = function ( $cfg, $ctx ) {
+	ok( true === $ctx['support_centre'] && true === $cfg['hidden'], 'filter is told it is a Support Centre page, and gets it hidden' );
+	$cfg['hidden'] = false;
+	return $cfg;
+};
+$GLOBALS['enq'] = array();
+$c = cta_page_config();
+cta_enqueue();
+ok( false === $c['hidden'] && 'demo' === $c['variant'] && $c['locked'] && 3 === count( $GLOBALS['enq'] ), 'a module can still show it on a Support Centre page via ph_floating_cta (the demo button, locked)' );
+$GLOBALS['filter'] = function ( $cfg, $ctx ) {
+	ok( false === $ctx['support_centre'], 'filter context: support_centre false elsewhere' );
+	return $cfg;
+};
+$_SERVER['REQUEST_URI'] = '/';
+cta_page_config();
+$GLOBALS['filter'] = null;
+$GLOBALS['enq']    = array();
+unset( $_SERVER['REQUEST_URI'] );
+ok( 'demo' === cta_page_config()['variant'], 'no REQUEST_URI (CLI): not a Support Centre page' );
 
 /* the filter */
 $GLOBALS['filter'] = function ( $cfg, $ctx ) {
@@ -124,7 +178,7 @@ $ojs = file_get_contents( $dir . 'operator.js' );
 ok( false === strpos( $ojs, 'headerDemo' ) && false === strpos( $ojs, 'arrange\\s+a\\s+demo' ) && false === strpos( $ojs, 'data-phf-demo' ), 'operator.js no longer points the header\'s Arrange A Demo at #tour' );
 $cjs = file_get_contents( $dir . 'cta.js' );
 ok( false !== strpos( $cjs, 'event: "ph_floating_cta", variant: v' ), 'cta.js pushes ph_floating_cta with the variant only' );
-ok( false !== strpos( $cjs, 'Request further information' ) && false !== strpos( $cjs, 'Take the guided tour' ) && false !== strpos( $cjs, 'Arrange a demo' ), 'cta.js labels match cta.php' );
+ok( false !== strpos( $cjs, 'Register your interest' ) && false !== strpos( $cjs, 'Take the guided tour' ) && false !== strpos( $cjs, 'Arrange a demo' ), 'cta.js labels match cta.php' );
 foreach ( array( 'cta.php', 'cta.js', 'cta.css' ) as $f ) {
 	$src = file_get_contents( $dir . $f );
 	ok( 0 === preg_match( '/fr[a]nch|own[ -]bo[s]s|be-your[-]own|ph[-]bo[s]s/i', $src ), "$f: no retired names" );

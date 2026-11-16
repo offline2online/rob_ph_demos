@@ -261,6 +261,13 @@ safe and moving:
   "The automatic rebuild requested at … never started (…). Click Ready for
   Dev to build it again." — and `rebuildRequestedAt` is cleared. Tests:
   `test/rebuild-requests.test.js`, `test/notify-fanout.test.js`.
+- **Build order** (`functions/build-order.js`, 14 Nov 2026) — dependencies
+  are read from the Dependencies section at intake (`onBacklogItemDependencies`)
+  and can be set under Edit item → Builds after or over MCP; a Ready for Dev
+  click holds a ticket whose dependency is still in Backlog, and queues
+  tickets likely to touch the same files one behind another (`queuedAfter`,
+  released by `sweepBuildQueue`). REQUIREMENTS.md → "Build order"; tests:
+  `test/build-order.test.js`.
 - **`dependsOnItemIds` + `blocked`** — a ticket that needs another's code
   waits flagged `blocked.reason: "waiting-on-dependency"` (not a question:
   the card reads "Waiting for: <ticket title>" with a link, no Answer button,
@@ -307,6 +314,25 @@ Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 `ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.
 
 ### The deployment train — one branch and one PR per project
+
+**Late arrivals, the deploy queue and shared files (15 Nov 2026,
+wPoSOXfp8Em06Vzp3Cz7).** A patch that becomes ready while its project's
+train is closing (locked, or deploying) is held on the card ("Built — joins
+the next release") and lands by itself after the merge, never on top of the
+version bump. Deploy to Main enters `settings/deployQueue`: trains that share
+files or a deploy workflow merge one at a time in click order ("Queued
+behind <project>'s deploy"), and a queued train is not synced, tested or
+bumped until it reaches the head; then it merges main, tests that head once
+and bumps. A stalled head (60 minutes without progress) is passed over and
+keeps its place. `version.js` conflicts on the `APP_VERSION` line resolve to
+main's line. A landed ticket records what it shares with other trains
+(`sharedWith`, chip "Also changed on <project>'s train", or "Conflicts with
+…" in the warning colour when `git merge-tree` of the tips conflicts) and
+files another project owns (`foreignPaths`, `projects.ownedPaths`, chip
+"Changes <project>'s files"). Pure rules: `functions/deploy-queue.js`
+(`test/deploy-queue.test.js`); view: `public/js/train-overlap.js`
+(`test/train-overlap-view.test.mjs`). REQUIREMENTS.md → "Late arrivals",
+"Deploy queue", "Shared files between trains".
 
 **The train is brought up to date with main before any ticket lands (1 Oct
 2026).** `processApplyPatch` now calls `syncTrainWithMain` first: a train
@@ -404,11 +430,24 @@ What the train changes:
   from a clean train) with the failing run on its notes. A red ticket
   is not sent back when a later ticket on the train, which carries it, has
   passed (23 Oct 2026: the next ticket had fixed the test it broke). An approved
-  culprit is held by the deploy gate until Deploy to Main has actually been
-  clicked and parked red on it (`trainStatus: "conflict"` with
-  `trainCiRedPr`); then it is ejected and rebuilt the same way, so the rest
-  of the approved train ships with no second click (18 Oct 2026, PR #412).
-  It is only ejected with a green commit before it.
+  culprit is sent back the same way (15 Nov 2026, Flow 6/9: on 14 Nov an
+  approved ticket's own commit d49d456 failed twice and the train sat held
+  behind a note asking for Failed testing); main is still proven green first
+  (`provenGreenMain`, or the base check below), so a check that is red on
+  main never sends the train's first ticket back. Before that (18 Oct 2026,
+  PR #412) it was only ejected once Deploy to Main had been parked red on it.
+  **One note per event** (15 Nov 2026, Flow 6/9): an automation note can carry
+  a `key` (`train-test:<sha>:<workflow>`, `train-red:<branch>:<spell start>`,
+  `build-silent:<attempt>`, `revert:<sha>`), and `appendNote` with a key the
+  card already holds replaces that note (text and time, `firstAt` kept) in
+  the same `:commit` (`removeAllFromArray` then `appendMissingElements`). A
+  train-test failure is one note that moves from "failed, re-running" to
+  "sent back" or "passed on re-run (flaky: <test>)", naming the failing test;
+  a card on a red train it did not cause gets one note per red spell
+  (`projects/{id}.trainRedSpell`), closed with "Train was red for 2 h 10 min
+  because of <ticket>; green again". People's and Claude's notes never carry
+  a key. The Edit item modal shows the automation's notes collapsed under
+  **Pipeline history (N)**. Tests: `test/note-keys.test.js`.
   **Nothing is sent back for a failure main already has** (20 Oct 2026,
   NBQ1scD9GFEr6YbQxSYX): before a send-back the same workflow runs on the
   main commit the failing run contained (`baseCheckAction`, via a throwaway
@@ -1257,6 +1296,59 @@ server is per-person, per-token and individually revocable.
 **Read [`MCP.md`](./MCP.md)** for how to connect a client, how an admin adds
 someone, the full tool list, and how the OAuth flow is built.
 
+## The account owner — a claim, never an address (16 Nov 2026)
+
+Nothing in this repository names a person's email address — not the rules,
+the functions, the page, the docs or the tests. The owner used to be two
+hard-coded addresses in `firestore.rules`, `storage.rules`,
+`functions/mcp-server.js`, `functions/kanban.js`, `public/js/auth-gate.js`
+and `public/js/app.js`; because every file then held a personal address,
+the privacy plugin refused every Routine's `patchFiles` hand-back and six
+tickets sat blocked. Now:
+
+- **Who is the owner** is the `owner: true` Firebase Auth custom claim.
+  `isOwnerAccount()` (firestore.rules), `storage.rules`, `isOwnerEmail()` /
+  `resolveConsoleUser()` (mcp-server.js) and `isOwnerUser()` (auth-gate.js)
+  all read it. A claim lives in Auth, not Firestore, so an empty or
+  mis-edited `consoleUsers` still can't lock the owner out.
+- **A second sign-in address of the same person** carries `owner: true`
+  plus `aliasOf: <canonical address>` (the rules use it for Kanban
+  notifications), and the map is `consoleConfig/identity.personAliases`
+  (read by `functions/identity.js` and the Kanban store, applied through
+  `kanban-core.setPersonAliases()`). Clients can read it, nobody can write
+  it but the admin SDK.
+- **No address is needed.** An admin is an ordinary row in Settings → User
+  Management with role `admin` — the owner has one like everyone else. The
+  claim is an optional break-glass for an account that must stay an admin
+  even if its row is deleted. Before any rules deploy,
+  `deploy-backlog-tracker.yml` runs `scripts/set-owner-claim.js`, which
+  checks that someone can administer the console (an owner claim, or an
+  enabled admin row whose person can sign in) and stops the deploy if
+  nobody can. It never prints an address (this repo's run logs are public).
+- **Optional**: to give an account the claim, set the `CONSOLE_OWNER_EMAIL`
+  (and, for a second sign-in address of the same person,
+  `CONSOLE_OWNER_ALIASES`) repository secret — `gh secret set` prompts for
+  the value — or run the script once by hand:
+
+```bash
+cd backlog-tracker/scripts
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> CONSOLE_OWNER_EMAIL=<address> node set-owner-claim.js --dry
+GOOGLE_APPLICATION_CREDENTIALS=<sa.json> node set-owner-claim.js --verify   # exit 1 if nobody can administer
+```
+
+  A second sign-in address with neither the claim nor its own User
+  Management row has no access; add it as a user if it should.
+
+**Keeping it that way**: `tools/check-personal-emails.js` fails on any
+address that isn't on a reserved domain (`example.com`, `*.example`,
+`*.test` …), a service identity, a role mailbox (`support@` …) or in
+`.personal-email-allowlist`. It runs as a pre-commit hook
+(`git config core.hooksPath tools/hooks`, once per clone) and in CI
+(`.github/workflows/personal-email-check.yml`). Tests use fixture
+identities: `owner@example.com` for the owner (with the `owner: true`
+claim on its token), `owner.alias@example.com` for the alias, and
+`<name>@ph.example` for everyone else.
+
 ## Setup (all manual — this sandbox has no Firebase CLI/deploy access)
 
 Same caveat as `menu-board-demo/functions` in the root `CLAUDE.md`:
@@ -1808,6 +1900,11 @@ usage. An engineer can instead register their own Routine, so board clicks
    whether one is set. The fire URL must be on `api.anthropic.com`. Pass
    both as `""` to clear it and go back to the shared secrets.
 
+A member who can write and connects over MCP with no binding is walked
+through these steps by their own agent, one at a time, at the start of the
+conversation (the server instructions ask for it; see `MCP.md` →
+"Guided Routine setup on connect").
+
 `functions/index.js`'s `resolveRoutineCredentials` — shared by all three
 fire functions — checks the clicking member's binding
 (`projects/{id}.notifyRequestedByEmail` /
@@ -1822,6 +1919,34 @@ There's no way to automate the `claude.ai/code/routines` step itself —
 the routines API has no delegated-OAuth "fire on behalf of" flow, so a
 Routine's fire URL/token is per-Routine and hand-generated once. This
 MCP-driven local setup is the closest one-click the API allows.
+
+**Setting it up from the console (15 Nov 2026)**: Settings → **My Claude
+Routine** walks through the same steps without an agent — the bootstrap
+prompt with a Copy button, then a form for the fire URL and token
+(`/mcp/me/routine-binding` in `functions/mcp-server.js`, the same write and
+validation as `set_my_routine_binding`; write-only).
+
+**Agent tickets (xFzQgynkoMdV33iWJFZq)**: a ticket with `ownerEmail` fires
+only on its owner's binding — Ready for Dev, Deploy to Main and Groom
+Backlog alike, never the shared secrets, and never on anyone else's click
+(the pipeline's own automatic rebuilds, stamped `notifyAutomationAt`, also
+use the owner's binding). An owner with no binding gets nothing fired, and
+the board disables the control with an info link to My Claude Routine. Rule
+in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
+full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their
+owner's own Claude account".
+
+**Owner scoping and contract-change review (ZmEWDC40NYOiojehfPjk)**: every
+member's agent reads every ticket, but over MCP changes (update, archive,
+delete, flag) only its own member's agent tickets (`ownerEditRefusal` in
+`functions/owner-firing.js`); comments stay open. When a ticket's landed
+commit changes an interface contract (`shared/interface-contract.md`,
+`shared/board-interfaces.json` or a file it lists), the tickets that build
+after it get `contractReview` and a **Needs review: upstream contract
+changed** chip; their own next build reviews it, and the flag clears when
+that build lands (`functions/contract-review.js`, `flagContractDependents`
+in `scripts/run-backlog-automation.js`). See `REQUIREMENTS.md` → "Owner
+scoping and contract-change review".
 
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
@@ -2514,9 +2639,10 @@ the full behavior.
   Function proxy (`X-Board-Key` header, also served at
   `https://backlog-tracker-e4ed2.web.app/boardApi/...`) remains as a
   fallback. Adding an editor is now a
-  row in User Management → Users, not an edit to three files; only
-  the two owner accounts are still hard-coded, as the bootstrap that makes
-  an empty member list non-fatal.
+  row in User Management → Users, not an edit to three files. The bootstrap
+  that makes an empty member list non-fatal is the `owner: true` custom
+  claim on the account owner's Auth user — no address is in the code (see
+  "The account owner" below).
 - **No drag-and-drop.** Multi-project and an archive page (per-project
   "Archived (N)" button → sortable/filterable table, with a Restore
   action) have both since been ported over from the Artifact board;
@@ -2597,8 +2723,10 @@ every destination already existed.
   `leads/{id}` holds `company {name, website, industry, countries[],
   storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
   linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
-  {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
-  select (the way on a tablet). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
+  {id, name}`, `enrichment`, `rank`. Cards drag between lanes or use their "Move to"
+  select (the way on a tablet), and drag up or down their own lane to set
+  priority (`rank`, top = deal with next; the summary's Move to top / up / down
+  and Alt+Arrow do the same — REQUIREMENTS.md → "Priority within a lane"). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
   2026) is agent-led and uses no paid data provider: Claude with web search and web
   fetch (the `ANTHROPIC_API_KEY` secret Staff Kanban already uses) researches the
   company by name (website optional, no email needed) for industry, countries, HQ,
@@ -2839,11 +2967,13 @@ The code is here:
 | `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
 | `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity (one line per changed field, `editActivity` in `kanban-core.js`), the Watch toggle, uploads, inline screenshots moved to Storage; links are written on both tickets in the same batch (`/mcp/kanban/backfill-links` makes older one-sided links two-sided and stamps `kanbanSettings/main.linksTwoSidedAt`) on save |
 | `public/js/kanban/kanban-bell.js` | The Notifications bell in the console topbar on every page: one `limit(30)` listener ordered by `at` plus a `count()` of unread, grouped by ticket, Mark all as read (clears the badge at once, re-counts, shows an error if the write fails), click to open the ticket (loaded by `app.js` at sign-in) |
-| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: `rob@personalisationhub.com` → `rob@offline2online.com`) |
+| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person, e.g. `owner.alias@example.com` → `owner@example.com`; empty in code, filled at run time from `consoleConfig/identity` via `setPersonAliases()`) |
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
 | `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
+| `functions/kanban-agent.js` | Send to Agent (`kanban-staff-board/REQUIREMENTS.md` → KB-AGENT-1): `/mcp/kanban/send-to-agent` (`propose`: Claude's split of a ticket into agent tickets, or the ticket itself without a key; `confirm`: files them in an Agent Board project's Backlog with `ownerEmail` and `kanbanKey`, and lists them on the ticket), assignee only; and the `kanbanAgentRollup` trigger on `backlogItems`, which recounts a ticket's built agent tickets and moves it to Ready for Testing through `kanban_move_task` when all are built |
 | `functions/kanban-notify.js` | The notification fan-out: triggers on `kanbanTasks` and its comments write one `kanbanNotifications` doc per recipient (assigned, testing, returned, commented, mention, closed; never to the actor), and a daily job deletes ones read more than 30 days ago |
+| `scripts/set-owner-claim.js` | Run on every deploy, before any rules deploy: fails the deploy if nobody can administer the console (no owner claim and no enabled admin row). Only if the optional `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` secrets are set does it apply the `owner: true` claim (+ `aliasOf`), an owner row and `consoleConfig/identity.personAliases`. Never prints an address. See "The account owner" |
 | `scripts/apply-person-aliases.js` | Run on every deploy: removes an alias's `consoleUsers` / `memberDirectory` rows and moves tickets, comments, mentions and Kanban settings that name it onto its owner (idempotent; `--dry` reports only) |
 | `functions/kanban-core.js` | Generated CommonJS copy of `kanban-core.js`: `node test/kanban-core-copy.mjs --write` after changing the source (`kanban-mcp.test.js` fails until you do) |
 

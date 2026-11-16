@@ -15,6 +15,7 @@ import {
   statusChange, currentReleaseId, rankBetween, fold, searchTickets, hasInlineImages, PICK_LIMIT, filterTasks, agentDraft, keyNumber, isoDay,
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
+  AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -115,7 +116,18 @@ export function mountStaffKanban(ctx) {
     const s = (String(first || "").trim().charAt(0) + String(last || "").trim().charAt(0)).toUpperCase();
     return s || initialOf(email);
   }
+  // Built once for each change to the members, the settings or the signed-in person's own record, not once for
+  // every avatar and name on the board (a redraw asks for a few hundred). The list is shared: copy it to change it.
+  let peopleKey = [], peopleList = [], peopleById = new Map();
   function people() {
+    const self0 = canonicalEmail(me);
+    const key = [store.state.members, store.state.settings, getAvatarMember(self0), ctx.auth.currentUser && ctx.auth.currentUser.displayName];
+    if (key.every((v, i) => v === peopleKey[i]) && peopleKey.length) return peopleList;
+    peopleList = buildPeople(); peopleKey = key;
+    peopleById = new Map(peopleList.map((u) => [u.id, u]));
+    return peopleList;
+  }
+  function buildPeople() {
     const named = store.state.settings.firstNames || {};
     const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
       const name = String(m.displayName || "").trim() || [m.firstName, m.lastName].filter(Boolean).join(" ").trim() || String(m.email).split("@")[0];
@@ -129,7 +141,7 @@ export function mountStaffKanban(ctx) {
     }
     return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
   }
-  const user = (id) => (id ? people().find((u) => u.id === canonicalEmail(id)) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
+  const user = (id) => (id ? (people(), peopleById.get(canonicalEmail(id))) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
   const firstName = (id) => (user(id) || {}).first || "Unassigned";
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
@@ -221,7 +233,8 @@ export function mountStaffKanban(ctx) {
     const u = user(id);
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
     const ph = photoOf(u.id);
-    if (ph) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${esc(ph)}')"></span>`;
+    const src = KBEditor.cssUrl(ph);
+    if (src) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${src}')"></span>`;
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
@@ -263,7 +276,7 @@ export function mountStaffKanban(ctx) {
     return new Promise((resolve) => {
       const wrap = document.createElement("div");
       wrap.className = "modal-backdrop"; wrap.id = "kb-tester-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them. Only they are notified.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
       document.body.appendChild(wrap);
       const pick = wrap.querySelector("#kb-tester-pick"), ok = wrap.querySelector("#kb-tester-ok");
       const done = (v) => { wrap.remove(); resolve(v); };
@@ -394,7 +407,10 @@ export function mountStaffKanban(ctx) {
     if (hit && Date.now() - hit.at < PREFETCH_MS) return;
     const p = store.fetchTask(key);
     p.catch(() => { if (prefetched.get(key) && prefetched.get(key).p === p) prefetched.delete(key); });
-    prefetched.set(key, { p, at: Date.now() });
+    const entry = { p, at: Date.now() };
+    prefetched.set(key, entry);
+    // A read nobody used is let go, so a day of resting on cards doesn't hold a day of tickets.
+    setTimeout(() => { if (prefetched.get(key) === entry) prefetched.delete(key); }, PREFETCH_MS + 1000);
   }
   function takePrefetch(key) {
     const hit = prefetched.get(key);
@@ -609,7 +625,7 @@ export function mountStaffKanban(ctx) {
       <div class="kb-sticky" id="kb-sticky">
         <div class="kb-filters" role="search">
           <div class="kb-people" role="group" aria-label="Filter by assignee">
-            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${u.id}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
+            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${esc(u.id)}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
             <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
           </div>
           <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
@@ -1006,7 +1022,8 @@ export function mountStaffKanban(ctx) {
           ${kids ? `<span class="card-cat kb-est kb-epic-count">${kidsDone}/${kidsLive.length} done</span>` : res(t) === "withdrawn" ? '<span class="card-cat kb-est kb-withdrawn-chip">Withdrawn</span>' : est ? `<span class="card-cat kb-est" title="Remaining of ${fmtH(est)} estimate">${t.status === "done" ? fmtH(est) : fmtH(remaining(t)) + " left"}</span>` : '<span class="card-cat kb-est kb-est-none">No estimate</span>'}
           ${t.project && projectName(t.project) ? `<span class="card-cat kb-project-chip" title="Project: ${esc(projectName(t.project))}"><span class="material-symbols-outlined" aria-hidden="true">folder</span>${esc(projectName(t.project))}</span>` : ""}
           ${t.due && t.status !== "done" ? `<span class="card-cat kb-due${overdue ? " overdue" : dueSoon ? " soon" : ""}"><span class="material-symbols-outlined" aria-hidden="true">event</span>${fmtDate(t.due)}</span>` : ""}
-          ${(t.comments || []).length ? `<span class="kb-meta-ic" title="${t.comments.length} comment${t.comments.length > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.comments.length}</span>` : ""}
+          ${t.commentCount > 0 ? `<span class="kb-meta-ic kb-comment-chip" title="${t.commentCount} comment${t.commentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">chat_bubble</span>${t.commentCount}</span>` : ""}
+          ${t.agentTotal ? `<span class="kb-meta-ic kb-agent-chip${t.agentDone === t.agentTotal ? " done" : ""}" title="${t.agentDone || 0} of ${t.agentTotal} agent tickets built on the Agent Board"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>${t.agentDone || 0}/${t.agentTotal}</span>` : ""}
           ${t.acTotal ? `<span class="kb-meta-ic kb-ac-chip${t.acDone === t.acTotal ? " done" : ""}" title="${t.acDone} of ${t.acTotal} acceptance criteria done"><span class="material-symbols-outlined" aria-hidden="true">checklist</span>AC ${t.acDone}/${t.acTotal}</span>` : ""}
           ${t.attachmentCount ? `<span class="kb-meta-ic" title="${t.attachmentCount} attachment${t.attachmentCount > 1 ? "s" : ""}"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>${t.attachmentCount}</span>` : ""}
         </div>
@@ -1223,9 +1240,10 @@ export function mountStaffKanban(ctx) {
   let returnTo = null;
   // The open ticket's comments and activity arrive from their own listeners.
   let threadUnsubs = [];
-  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; }
+  function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; agentItems = new Map(); agentSplit = null; }
   function watchThread(key) {
     unwatchThread();
+    watchAgents(key);
     const redraw = () => redrawComments();
     threadUnsubs.push(store.watchComments(key, (list) => { if (draft && draft.key === key) { draft.comments = list; redraw(); } }));
     threadUnsubs.push(store.watchActivity(key, (list) => { if (draft && draft.key === key) { draft.activity = list; redraw(); } }));
@@ -1313,7 +1331,7 @@ export function mountStaffKanban(ctx) {
     const on = implicit || (!!draft && (draft.watchers || []).includes(me));
     b.hidden = !draft || draftIsNew;
     b.disabled = implicit;
-    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments and changes";
+    b.title = implicit ? "You're the assignee or reporter, so you follow this ticket" : on ? "Stop watching" : "Get notified about comments on this ticket";
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", String(on));
     $("#task-watch-label").textContent = on ? "Watching" : "Watch";
@@ -1329,9 +1347,19 @@ export function mountStaffKanban(ctx) {
       v: TRACKED.map((id) => { const el = $("#" + id, form); return el ? el.value : null; }),
       type: draft.type, labels: draft.labels, links: draft.links, flagged: !!draft.flagged,
       att: (draft.attachments || []).map((a) => a.url || a.name || ""),
-      desc: descQ ? KBEditor.getHtml(descQ) : null,
-      comment: commentQ ? KBEditor.getHtml(commentQ) : null,
+      desc: editorHtml("desc", descQ),
+      comment: editorHtml("comment", commentQ),
     });
+  }
+  // Reading an editor's HTML copies its whole document. Save's state is re-read ten times a second while a ticket
+  // is open, so the copy is kept until something could have changed it: the editor says its text changed, or the
+  // form saw a key, a click or an input (a table cell is typed into without the editor hearing of it).
+  const edHtml = { desc: null, comment: null };
+  const edStale = () => { edHtml.desc = null; edHtml.comment = null; };
+  function editorHtml(which, q) {
+    if (!q) return null;
+    if (!edHtml[which] || edHtml[which].q !== q) edHtml[which] = { q, html: KBEditor.getHtml(q) };
+    return edHtml[which].html;
   }
   function syncSaveState() {
     const b = $("#f-save");
@@ -1339,15 +1367,20 @@ export function mountStaffKanban(ctx) {
     const cs = $("[data-comment-save]");
     if (cs) cs.disabled = !editQ || editBase == null || KBEditor.getHtml(editQ) === editBase;
   }
-  function watchChanges() {
+  // `loaded` is the form as it was drawn, before the editors arrived (Quill downloads the first time a modal
+  // opens). A field changed in that gap is a change: only the editors' own text is taken from now.
+  function watchChanges(loaded) {
     clearInterval(changeTimer);
     if (!draft) return;
-    changeBase = formState();
+    const now = formState();
+    if (loaded && now) { const n = JSON.parse(now); changeBase = JSON.stringify({ ...JSON.parse(loaded), desc: n.desc, comment: n.comment }); }
+    else changeBase = now;
     // A typed, pasted or dictated edit in either editor counts at once.
-    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", syncSaveState); });
+    edStale();
+    [descQ, commentQ].forEach((q) => { if (q) q.on("text-change", () => { edStale(); syncSaveState(); }); });
     const form = $("#task-form");
     if (!form._changeBound) {
-      ["input", "change", "click", "keyup"].forEach((ev) => form.addEventListener(ev, () => setTimeout(syncSaveState, 0)));
+      ["input", "change", "click", "keyup", "paste", "drop"].forEach((ev) => form.addEventListener(ev, () => { edStale(); setTimeout(() => { edStale(); syncSaveState(); }, 0); }));
       form._changeBound = true;
     }
     // Dictation, uploads and the flag change the page without a form event.
@@ -1364,7 +1397,7 @@ export function mountStaffKanban(ctx) {
 
   // The people list, plus whoever the ticket already names if they've left.
   function peopleWith(id) {
-    const list = people();
+    const list = people().slice();
     if (id && !list.some((u) => u.id === id)) { const u = user(id); if (u) list.push(u); }
     return list;
   }
@@ -1440,6 +1473,7 @@ export function mountStaffKanban(ctx) {
           </div></div>`;
       }
       case "interface": return interfaceHTML();
+      case "agents": return agentsHTML();
       case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
@@ -1584,9 +1618,145 @@ export function mountStaffKanban(ctx) {
     const name = f ? f.name : "";
     return `<div class="kb-field" data-field="interface"><p class="kb-interface" id="f-interface">Interface: ${pid && name ? `<a href="#docs/${encodeURIComponent(pid)}?interface=${encodeURIComponent(id)}" data-interface-link>${esc(name)}</a>` : esc(name || id)}</p></div>`;
   };
+  // ── Send to Agent (KB-AGENT-1) ──────────────────────────────────────────
+  // The ticket's assignee splits it into agent tickets on the Agent Board:
+  // Claude proposes the split (functions/kanban-agent.js), the owner edits it,
+  // and Create files them in the chosen project's Backlog, tagged with the
+  // owner. The list below shows each one's live Agent Board status; when all
+  // are built the server moves this ticket to Ready for Testing.
+  let agentItems = new Map(), agentSplit = null, agentUnsub = null;
+  function watchAgents(key) {
+    if (agentUnsub) { agentUnsub(); agentUnsub = null; }
+    const ids = ((draft && draft.key === key && draft.agentTickets) || []).map((x) => x.id);
+    if (!ids.length || !store.watchAgentTickets) return;
+    const off = store.watchAgentTickets(ids, (m) => { if (draft && draft.key === key) { agentItems = m; redrawAgents(); } });
+    agentUnsub = off;
+    threadUnsubs.push(() => { off(); if (agentUnsub === off) agentUnsub = null; });
+  }
+  const agentStatus = (it) => (it ? AGENT_STATUS_LABEL[it.status] || it.status || "Backlog" : "Removed");
+  function agentsHTML() {
+    const d = draft;
+    if (!d || draftIsNew || !d.key) return "";
+    const linked = d.agentTickets || [];
+    const mine = canWrite() && canSendToAgent(d, me);
+    if (!linked.length && !mine) return "";
+    const loaded = linked.length && linked.every((x) => agentItems.has(x.id));
+    const sum = loaded ? agentRollup(linked.map((x) => agentItems.get(x.id))) : { total: d.agentTotal || linked.length, done: d.agentDone || 0 };
+    const list = linked.map((x) => {
+      const it = agentItems.get(x.id);
+      const built = agentBuilt(it);
+      return `<li data-agent-ticket="${esc(x.id)}"><span class="material-symbols-outlined kb-agent-ic" aria-hidden="true">smart_toy</span><a class="kb-link-title" href="#item-${esc(x.id)}" data-agent-open>${esc(it ? it.title || x.id : agentItems.has(x.id) ? "Removed from the Agent Board" : "Loading…")}</a>${projectName(x.projectId) ? `<span class="kb-none kb-agent-proj">${esc(projectName(x.projectId))}</span>` : ""}<span class="kb-status-pill kb-agent-status${built ? " built" : ""}">${esc(agentItems.has(x.id) ? agentStatus(it) : "…")}</span></li>`;
+    }).join("");
+    return `<div class="kb-field" data-field="agents"><label class="field-label">Agent tickets ${linked.length ? `<span class="kb-none" id="f-agent-count">${sum.done} of ${sum.total} done</span>` : ""}${tip("Work an AI agent builds on the Agent Board. When every agent ticket is built (Ready for Testing or later there), this ticket moves to Ready for Testing by itself. Only the ticket's assignee can send it to an agent.")}</label>
+      ${linked.length ? `<div class="kb-logbar kb-epic-progress"><span style="width:${sum.total ? (sum.done / sum.total) * 100 : 0}%"></span></div><ul class="kb-sublist kb-agents" id="f-agents">${list}</ul>` : ""}
+      ${mine ? agentSplitHTML() : ""}</div>`;
+  }
+  function agentSplitHTML() {
+    const sp = agentSplit;
+    if (!sp) return `<div class="kb-child-actions"><button type="button" class="btn-outline kb-icon-label" id="f-agent-send"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Send to Agent</button></div>`;
+    if (sp.loading) return `<p class="kb-none kb-agent-wait" id="f-agent-wait">Claude is proposing agent tickets…</p>`;
+    const projectList = projects(sp.projectId).filter((p) => !(ctx.projects() || []).some((x) => x.id === p.id && x.finalised));
+    return `<div class="kb-agent-split" id="f-agent-split">
+      <div class="kb-field"><label class="field-label" for="f-agent-project">Agent Board project</label><select id="f-agent-project" class="kb-input">${opt("", "Choose a project", sp.projectId)}${projectList.map((p) => opt(p.id, p.name, sp.projectId)).join("")}</select></div>
+      <ol class="kb-agent-drafts">${sp.tickets.map((x, i) => `<li class="kb-agent-draft" data-agent-i="${i}">
+        <div class="kb-agent-draft-head"><span class="kb-none">Agent ticket ${i + 1}</span>${sp.tickets.length > 1 ? `<button type="button" class="icon-btn" data-agent-rm="${i}" aria-label="Remove agent ticket ${i + 1}" title="Remove">&times;</button>` : ""}</div>
+        <input type="text" class="kb-input" data-agent-title maxlength="200" value="${esc(x.title)}" placeholder="Title" aria-label="Agent ticket ${i + 1} title">
+        <textarea class="kb-input kb-agent-text" data-agent-desc rows="3" maxlength="6000" placeholder="What the agent should build" aria-label="Agent ticket ${i + 1} description">${esc(x.description)}</textarea>
+        <textarea class="kb-input kb-agent-text" data-agent-ac rows="3" placeholder="Acceptance criteria, one per line" aria-label="Agent ticket ${i + 1} acceptance criteria">${esc((x.acceptanceCriteria || []).join("\n"))}</textarea>
+      </li>`).join("")}</ol>
+      <p class="tm-error" id="f-agent-error"${sp.error ? "" : " hidden"}>${esc(sp.error || "")}</p>
+      <div class="kb-child-actions kb-agent-actions">
+        ${sp.tickets.length < AGENT_MAX_TICKETS ? '<button type="button" class="btn-ghost kb-icon-label" id="f-agent-add"><span class="material-symbols-outlined" aria-hidden="true">add</span>Add agent ticket</button>' : "<span></span>"}
+        <span class="form-actions"><button type="button" class="btn-outline" id="f-agent-cancel">Cancel</button><button type="button" class="btn-primary" id="f-agent-create"${sp.saving ? " disabled" : ""}>${sp.saving ? "Creating…" : `Create ${sp.tickets.length} agent ticket${sp.tickets.length > 1 ? "s" : ""}`}</button></span>
+      </div></div>`;
+  }
+  function redrawAgents() {
+    const el = $('[data-field="agents"]', $("#task-form"));
+    if (!el) return;
+    readAgentSplit();
+    const html = agentsHTML();
+    if (!html) { el.remove(); return; }
+    const box = document.createElement("div"); box.innerHTML = html;
+    el.replaceWith(box.firstElementChild);
+  }
+  // What the owner typed into the split editor, back into agentSplit.
+  function readAgentSplit() {
+    const sp = agentSplit;
+    if (!sp || !sp.tickets) return;
+    const p = $("#f-agent-project"); if (p) sp.projectId = p.value;
+    $$("[data-agent-i]", $("#task-form")).forEach((li) => {
+      const x = sp.tickets[+li.dataset.agentI]; if (!x) return;
+      x.title = $("[data-agent-title]", li).value;
+      x.description = $("[data-agent-desc]", li).value;
+      x.acceptanceCriteria = $("[data-agent-ac]", li).value.split(/\n/).map((c) => c.trim()).filter(Boolean);
+    });
+  }
+  async function agentCall(body) {
+    const user = ctx.auth && ctx.auth.currentUser;
+    if (!user) throw new Error("Sign in again to send this ticket to an agent.");
+    const res = await fetch("/mcp/kanban/send-to-agent", { method: "POST", headers: { "Content-Type": "application/json", "X-Firebase-ID-Token": await user.getIdToken() }, body: JSON.stringify(body) });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Send to Agent answered ${res.status}`);
+    return out;
+  }
+  async function proposeAgentSplit() {
+    const key = draft && draft.key;
+    if (!key) return;
+    agentSplit = { loading: true };
+    redrawAgents();
+    try {
+      const out = await agentCall({ action: "propose", key });
+      if (!draft || draft.key !== key || !agentSplit) return;
+      const tickets = (out.proposal || []).slice(0, AGENT_MAX_TICKETS).map((x) => ({ title: x.title || "", description: x.description || "", acceptanceCriteria: x.acceptanceCriteria || [] }));
+      agentSplit = { projectId: out.projectId || draft.project || "", tickets: tickets.length ? tickets : [{ title: draft.title, description: "", acceptanceCriteria: [] }], source: out.source };
+    } catch (e) {
+      if (!draft || draft.key !== key) return;
+      agentSplit = null;
+      toast(esc(e.message || "Send to Agent failed"));
+    }
+    redrawAgents();
+  }
+  async function createAgentTickets() {
+    readAgentSplit();
+    const sp = agentSplit, key = draft && draft.key;
+    if (!sp || !key || sp.saving) return;
+    const clean = cleanAgentSplit(sp.tickets);
+    sp.error = !sp.projectId ? "Choose the Agent Board project these tickets go to." : clean.error || "";
+    if (sp.error) { redrawAgents(); return; }
+    sp.saving = true; redrawAgents();
+    try {
+      const out = await agentCall({ action: "confirm", key, projectId: sp.projectId, tickets: clean.tickets });
+      if (!draft || draft.key !== key) return;
+      draft.agentTickets = (draft.agentTickets || []).concat((out.created || []).map((x) => ({ id: x.id, projectId: x.projectId })));
+      draft.agentTotal = out.agentTotal; draft.agentDone = out.agentDone;
+      agentSplit = null;
+      watchAgents(key);
+      redrawAgents();
+      toast(`Created <b>${(out.created || []).length}</b> agent ticket${(out.created || []).length === 1 ? "" : "s"} on ${esc(projectName(sp.projectId) || "the Agent Board")}`);
+    } catch (e) {
+      sp.saving = false; sp.error = e.message || "Send to Agent failed";
+      redrawAgents();
+    }
+  }
+  function bindAgents(form) {
+    if (form._agentBound) return;
+    form._agentBound = true;
+    form.addEventListener("click", (e) => {
+      if (!e.target.closest('[data-field="agents"]')) return;
+      if (e.target.closest("#f-agent-send")) { proposeAgentSplit(); return; }
+      if (e.target.closest("#f-agent-cancel")) { agentSplit = null; redrawAgents(); return; }
+      if (e.target.closest("#f-agent-create")) { createAgentTickets(); return; }
+      if (e.target.closest("#f-agent-add")) { readAgentSplit(); agentSplit.tickets.push({ title: "", description: "", acceptanceCriteria: [] }); redrawAgents(); return; }
+      const rm = e.target.closest("[data-agent-rm]");
+      if (rm) { readAgentSplit(); agentSplit.tickets.splice(+rm.dataset.agentRm, 1); redrawAgents(); return; }
+      if (e.target.closest("[data-agent-open]")) { closeTask({ keepAddress: true }); }
+    });
+    // Enter in a title must not submit the ticket's own form.
+    form.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-agent-title]")) e.preventDefault(); });
+  }
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
-  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${a.url ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
+  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
   // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
   let editingComment = "", editQ = null;
   const commentMenuHTML = (c) => {
@@ -1648,9 +1818,9 @@ export function mountStaffKanban(ctx) {
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
-    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "links", "attachments", "comments"];
+    const main = draftIsNew ? ["voice", "title", "description", "criteria", "children", "attachments", "links"] : ["title", "description", "interface", "criteria", "children", "agents", "links", "attachments", "comments"];
     const side = ["priority", "type", "epic", "assignee", "reporter", "release", "estimate", "logged", "sprint", "project", "due", "labels"].concat(draftIsNew ? [] : ["status"]);
-    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
+    const visible = (k) => k === "voice" || k === "children" || k === "criteria" || k === "interface" || k === "agents" || CORE_FIELDS.some((f) => f.key === k) || fieldOn(k);
     const hidden = OPTIONAL_FIELDS.map((f) => f.key).filter((k) => k !== "flag" && !fieldOn(k) && !(draftIsNew && k === "comments"));
     // On an existing ticket, hidden fields stay editable below; a new task shows only the configured form.
     form.innerHTML = `
@@ -1670,6 +1840,7 @@ export function mountStaffKanban(ctx) {
   }
   function bindForm() {
     const form = $("#task-form");
+    bindAgents(form);
     $$(".kb-type-toggle .type-opt", form).forEach((b) => b.addEventListener("click", () => {
       draft.type = b.dataset.type;
       syncCreateCta();
@@ -1755,7 +1926,8 @@ export function mountStaffKanban(ctx) {
     });
     const ca = $("#f-comment-add");
     if (ca) ca.addEventListener("click", () => { addCommentFromEditor(); });
-    bindEditors().finally(watchChanges);
+    const loaded = draft, asDrawn = formState();
+    bindEditors().finally(() => watchChanges(draft === loaded ? asDrawn : ""));
     bindVoice();
     bindChildren(form);
     bindCriteria(form);
@@ -2466,7 +2638,7 @@ export function mountStaffKanban(ctx) {
       <section class="docs-block kb-report-block">
         <div class="docs-block-header"><h3>Remaining effort by staff member${tip(capPer ? `Bar length is remaining effort. Capacity assumes 6 focused hours per working day until release: ${fmtH(capPer)} each.` : "Bar length is remaining effort.")}</h3></div>
         <div class="kb-bars" id="rp-bars">
-          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${p.id || "none"}" data-tip="${esc(`${firstName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
+          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${esc(p.id || "none")}" data-tip="${esc(`${firstName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
             <span class="kb-bar-name">${avatar(p.id)}${esc(firstName(p.id))}</span>
             <span class="kb-bar-track">${capPer && p.id ? `<span class="kb-bar-cap" style="left:${(capPer / scale) * 100}%"></span>` : ""}<span class="kb-bar-fill" style="width:${(p.rem / scale) * 100}%"></span></span>
             <span class="kb-bar-val">${fmtH(p.rem)}</span>
@@ -2481,7 +2653,7 @@ export function mountStaffKanban(ctx) {
           <table class="archive-table kb-table">
             <thead><tr><th>Staff member</th><th class="num">Tasks</th>${statusCols.map((s) => `<th class="num">${esc(s.short)}</th>`).join("")}<th class="num">Estimate</th><th class="num">Logged</th><th class="num">Remaining</th>${capPer ? "<th>Capacity</th>" : ""}</tr></thead>
             <tbody>
-              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${p.id || "none"}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
+              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${esc(p.id || "none")}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
             </tbody>
             ${rows.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter(s.match).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
           </table>

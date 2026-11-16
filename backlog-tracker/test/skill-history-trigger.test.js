@@ -175,8 +175,8 @@ const FILES_V2 = [{ path: "SKILL.md", content: "v2" }];
     const mod = loadIndexFresh(db);
     await mod.onSkillWritten(fakeEvent({
       skillId: "s1",
-      before: { name: "Skill One", slug: "skill-one", files: FILES_V1, updatedByEmail: "rob@offline2online.com" },
-      after: { name: "Skill One", slug: "skill-one", files: FILES_V2, updatedByEmail: "rob@offline2online.com", lastWriteVia: "console" },
+      before: { name: "Skill One", slug: "skill-one", files: FILES_V1, updatedByEmail: "owner@example.com" },
+      after: { name: "Skill One", slug: "skill-one", files: FILES_V2, updatedByEmail: "owner@example.com", lastWriteVia: "console" },
     }));
     const revisions = Object.values(db.__state.docRevisions || {});
     assert.strictEqual(revisions.length, 1);
@@ -197,7 +197,7 @@ const FILES_V2 = [{ path: "SKILL.md", content: "v2" }];
     await mod.onSkillWritten(fakeEvent({
       skillId: "s1",
       before: { name: "Skill One", slug: "skill-one", files: FILES_V1 },
-      after: { name: "Skill One", slug: "skill-one", files: FILES_V2, updatedByEmail: "agent@offline2online.com", lastWriteVia: "mcp" },
+      after: { name: "Skill One", slug: "skill-one", files: FILES_V2, updatedByEmail: "agent@o2o.example", lastWriteVia: "mcp" },
     }));
     assert.strictEqual(Object.keys(db.__state.docRevisions).length, 1, "no second revision should have been written");
   });
@@ -218,7 +218,7 @@ const FILES_V2 = [{ path: "SKILL.md", content: "v2" }];
     const mod = loadIndexFresh(db);
     await mod.onSkillWritten(fakeEvent({
       skillId: "s1",
-      before: { name: "Skill One", slug: "skill-one", version: "1.0.0", files: FILES_V1, updatedByEmail: "rob@offline2online.com" },
+      before: { name: "Skill One", slug: "skill-one", version: "1.0.0", files: FILES_V1, updatedByEmail: "owner@example.com" },
       after: undefined,
     }));
     const revisions = Object.values(db.__state.docRevisions || {});

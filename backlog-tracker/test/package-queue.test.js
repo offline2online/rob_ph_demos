@@ -32,6 +32,19 @@ const bl = (id, extra = {}) => ({ id, status: "backlog", ...extra });
     assert.deepStrictEqual(r.fire, ["c"]);
   });
 
+  await test("build order: a ticket held for a dependency or queued behind a lane-mate neither stalls nor fails the batch", () => {
+    const queue = q(["p1", ["a", "b", "c"], "running"], ["p2", ["d"], "queued"]); queue[0].startedAt = 1000;
+    const r = nextQueueStep(queue, {
+      a: { id: "a", status: "ready-for-testing" },
+      b: bl("b", { blocked: { reason: "waiting-on-dependency", setBy: "build-order", note: "Waiting for: A." } }),
+      c: bl("c", { queuedAfter: { itemId: "a", title: "A" } }),
+      d: bl("d"),
+    }, 5000);
+    assert.deepStrictEqual(r.queue.map((p) => p.status), ["done", "running"]);
+    assert.match(r.queue[0].note, /2 ticket\(s\) build later, in order/);
+    assert.deepStrictEqual(r.fire, ["d"]);
+  });
+
   await test("a failing batch does not block the rest", () => {
     const queue = q(["p1", ["a"], "running"], ["p2", ["c"], "queued"], ["p3", ["d"], "queued"]); queue[0].startedAt = 1000;
     const r = nextQueueStep(queue, { a: bl("a", { buildSession: { status: "error" } }), c: bl("c"), d: bl("d") }, 5000);

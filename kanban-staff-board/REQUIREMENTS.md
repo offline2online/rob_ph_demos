@@ -60,7 +60,7 @@ box, **Release report**, **+ New task**, and a settings cog (no ⋮ menu). AC: t
 cog opens Kanban settings; Release report opens the report for the board's
 selected release.
 
-**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, drag, `kanban_assign_task`, MCP create); handed to you for testing, and returned to you from testing; a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason); your ticket closed (Completed or Withdrawn) by someone else. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
+**Notifications (bell).** The console topbar carries a **Notifications** bell on every page, not only the Kanban. One notification per recipient, never to the person who acted, for: assigned to you (create, edit, lane drag, `kanban_assign_task`, MCP create); a comment on a ticket you are assignee or reporter of, or watching; an @mention in a description or comment (wins over the other reason; over MCP, `mention` on `kanban_create_task`, `kanban_update_task` and `kanban_comment`). Over MCP a description tag is added to the end of the description as the chip the editor writes, for each member named whom it doesn't already tag; `mention` alone on `kanban_update_task` tags the description the ticket has; a non-member is refused and nothing is written; `kanban_create_tasks` has no `mention`. **A move between columns notifies nobody** (Rob, 12 Nov 2026: moves are agreed in person): not the tester a ticket is handed to on its way into Ready for Testing, not the developer it returns to, not its people when it is Completed or Withdrawn. The ticket modal has a **Watch** toggle (`watchers[]`); the assignee and reporter watch automatically. The bell groups by ticket, shows an unread count and **Mark all read**, and a click opens the ticket. Cost per member is flat: one `limit(30)` listener ordered by `at` descending plus a `count()` of unread. The notifications are written by a Firestore trigger on `kanbanTasks` and its comments (`functions/kanban-notify.js`), so the board, MCP and voice paths notify the same way and no client writes one; there is no scheduled job: when a member marks notifications read (**Mark all read** on the bell, `kanban_mark_notifications_read`) their own read notifications older than 30 days are deleted, one query (`to`, `read`, `at`) of at most 200.
 
 **Ticket links (console build, 11 Nov 2026).** So staff can pass a ticket to
 each other, for example in Slack:
@@ -153,7 +153,7 @@ not close the card).
 reassigns it to the ticket's designated tester, or, when it has none, to the
 tester the person moving it picks in a prompt (over MCP, `kanban_move_task`'s
 `tester`; with none the assignee is left alone). There is no board-wide default
-tester, and only the chosen tester is notified. It remembers the developer;
+tester, and nobody is notified of the move (see Notifications). It remembers the developer;
 moving it back to In Progress or Ready for Dev returns it to that developer. AC: card shows "From
 <developer>"; a toast states the reassignment; the activity log records it.
 Every edit of a ticket's fields on the board also writes one activity line per
@@ -164,7 +164,14 @@ labels, linked/unlinked tickets); status moves keep their own line.
 **KB-BOARD-6 Cards.** Show type icon, key (`PH-n`), priority, flag, title,
 parent epic (under the title), time-logged progress, remaining estimate or due
 date, comment and attachment counts, and the assignee's avatar. Epic cards show
-child progress ("2/8 done", withdrawn children excluded).
+child progress ("2/8 done", withdrawn children excluded). A card never
+scrolls left or right: it is `touch-action: pan-y` at every width, so a
+sideways swipe that starts on a card neither pans the card nor the board, and
+a long title or label wraps inside the card. AC: no card is wider than its
+column at 390, 820, 1024, 1180 or 1440 px
+(`backlog-tracker/test/ui/ticket-detail-overflow.test.mjs`); on a tablet the
+board still scrolls sideways from the column headers and the gaps between
+columns.
 
 **KB-BOARD-7 Page scroll and pinned headers.** The board scrolls as one page
 (columns have no inner scrollbars). The console topbar scrolls away; the
@@ -191,6 +198,11 @@ after the change is theirs and is never put back.
 
 **KB-FLT-3 Desktop fit.** The filter bar stays on one line from 1024 px wide
 with the sidebar open, with every filter on.
+
+**KB-FLT-4 Picked staff stand out.** A staff avatar that is switched on as a
+filter is drawn about 30% larger than the others (36 px against 28 px) as well
+as ringed in the primary colour, at every width, so the active staff filters
+can be told apart at a glance. Switching it off returns it to 28 px. KB-C21.
 
 **KB-LANE-1 Swimlanes.** Selecting one or more staff splits the board into one
 lane per selected person (Jira's "swimlanes by assignee"), each with a full-
@@ -295,6 +307,55 @@ AC: create epic > task > subtask > sub-subtask; a fifth level is blocked; comple
 the leaf and each parent moves to Ready for Testing, with n/m done at every level;
 TC-70, `kanban-mcp.test.js` and `kanban-core.test.mjs`.
 
+**KB-AGENT-1 Send to Agent.** A ticket's assignee (its owner) splits it into one or
+more agent tickets on the Agent Board (ticket VlBatzRVbPt6heAEp5mu, 15 Nov 2026).
+- **Who:** only the ticket's assignee, while it is open. Anyone else, a viewer, or
+  a closed ticket sees no **Send to Agent** button, and the server refuses them too
+  (`POST /mcp/kanban/send-to-agent` checks the signed-in member against the assignee).
+- **Propose:** the modal's **Agent tickets** section has **Send to Agent**. Claude
+  (`functions/kanban-agent.js`, Claude Opus, structured output) proposes the split:
+  one to ten agent tickets, each a title, a description and acceptance criteria. With
+  no API key, or when the call fails, the proposal is the ticket itself as one agent
+  ticket (its title, description text and acceptance criteria).
+- **Edit and confirm:** the owner picks the Agent Board project (the ticket's own
+  Project when it has one and it is open), edits every title, description and
+  acceptance-criteria list (one per line), adds or removes agent tickets (at most
+  ten at a time), and **Create N agent tickets** files them.
+- **What is filed:** each agent ticket goes to that project's Backlog with its title,
+  a description in the Agent Board's four intake sections (Outcome = description and
+  acceptance criteria; Test steps = one check per criterion; Spec reference = this
+  ticket and its address), `ownerEmail` = the owner (so it fires only on the owner's
+  own Claude Routine; Agent Board → "Agent tickets fire under their owner's own
+  Claude account"), `kanbanKey` = this ticket's key and `createdVia: "send-to-agent"`.
+  This ticket gets one activity line ("sent to agent: 3 agent tickets on …").
+- **Links both ways:** this ticket lists its agent tickets (`agentTickets`), each with
+  its live Agent Board status and a link to its card, under "x of y done" with a
+  progress bar; its board card shows a `smart_toy` chip "x/y". Each agent ticket's
+  card on the Agent Board shows a chip with this ticket's key that opens it.
+- **Built and the roll-up:** an agent ticket counts as done once it reaches Ready for
+  Testing on the Agent Board, or anything after it, **and** the pipeline has stamped it
+  (`deployCommit`, `mergeCommit` or `testVersion`, which only the automation can write):
+  a status alone is not proof, since an editor can write one from a browser
+  (`agentBuilt` in `kanban-core.js`). An archived one counts only with a `mergeCommit`
+  or `deployCommit`, and the automatic move needs every linked ticket to still exist.
+  A trigger on `backlogItems`
+  (`kanbanAgentRollup`) recounts `agentDone` / `agentTotal` whenever a linked agent
+  ticket changes status or is deleted, and when every one is built it moves this
+  ticket to **Ready for Testing** (if it is still in Backlog, Ready for Dev or In
+  Progress) as its owner, through `kanban_move_task`: the testing hand-off, the
+  activity line ("all 3 agent tickets are built on the Agent Board") and the parent
+  automation of KB-TASK-14 follow as for any move. An agent ticket sent back later
+  lowers the count; the ticket stays where it is.
+- **Security:** `agentTickets`, `agentTotal` and `agentDone` are written by the server
+  only (`firestore.rules`: a page may not change them on a ticket or a card).
+  `kanbanKey` on an agent ticket is informational; the roll-up reads only the Kanban
+  ticket's own `agentTickets`.
+AC: as the owner, Send to Agent, edit the proposed split into 3, confirm; the three
+are in the project's Backlog with the owner, each linking back, and this ticket lists
+them with "0 of 3 done"; a non-owner has no Send to Agent; build all 3 and this ticket
+moves to Ready for Testing by itself. TC-71, `kanban-mcp.test.js` ("send to agent: …")
+and `kanban-core.test.mjs`.
+
 **KB-TASK-6 Ticket search picker.** Wherever a ticket is chosen (linked
 tickets, adding an existing ticket to an epic) the user types a number (`36`,
 `PH-36`) or words from the title or description; results rank exact key, key
@@ -335,7 +396,9 @@ toolbar (Quill 1.3.7): headings H1–H4, bold/italic/underline/strike,
 alignment, lists, quote, inline code, code block, Note/Important/Warning
 callouts, link, image (with alt text), video, tables with row/column controls,
 clear formatting. Plus: **@mentions** of staff (notified when the ticket or comment is saved, by the notification trigger), **URLs that
-link themselves**, **screenshots** (upload, paste or drop; downscaled to ≤1400 px and held in
+link themselves**, **screenshots** (the toolbar's image button opens the computer's file picker at once and
+what is chosen is inserted where the cursor was, several at a time, each with its file name as alt text, with no
+dialog in between; Shift-click opens the dialog for an image by link; or paste or drop; downscaled to ≤1400 px and held in
 Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact
@@ -406,7 +469,8 @@ settings → Team (for names where the given name comes last, e.g. Lê Quang Huy
 Members come from `memberDirectory`, a copy of `consoleUsers` without roles kept
 by a Cloud Function, since the full member list is admin-only.
 **KB-PPL-3** One person, one entry. An alias (`PERSON_ALIASES` in
-`kanban-core.js`: today `rob@personalisationhub.com` → `rob@offline2online.com`)
+`kanban-core.js`, filled at run time from `consoleConfig/identity`, e.g.
+`owner.alias@example.com` → `owner@example.com`)
 is a second address the same person signs in with. It has no member row or
 directory entry, is never listed or offered as a person, and anything that
 names it (assignee, reporter, a mention, an agent signed in as it, "me")
@@ -521,8 +585,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 
 | Collection | Shape |
 |---|---|
-| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
-| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
+| `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `agentTotal`, `agentDone` (agent tickets sent and built, KB-AGENT-1; only once there are any, written by the server), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
+| `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `agentTickets[] {id, projectId}`, `agentTotal`, `agentDone` (Send to Agent, KB-AGENT-1: the Agent Board tickets made from it and how many are built; server only), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
 | `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited) |
 | `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
@@ -596,8 +660,14 @@ the same comparison on the server.
   listener callbacks are coalesced into one render per animation frame, and a
   redraw keeps every card whose markup is unchanged, so a colleague's move
   patches that one card. Search is debounced 150 ms and matches against
-  per-ticket text prepared once. Measured with the console's UI suite (2,000 and
-  5,000 open tickets): first cards under 1.5 s, My tasks under 150 ms.
+  per-ticket text prepared once. Targets with 2,000 and 5,000 open tickets:
+  first cards under 1.5 s, My tasks under 150 ms. The console's UI suite
+  (KB-SCALE) checks this without a stopwatch limit, because a shared CI runner
+  can be several times slower from one run to the next: the big board is timed
+  beside the 39-ticket board on the same runner and may take at most 5× as long
+  to show its first cards and 10× for My tasks, and the cards and elements a
+  redraw makes are counted (a page per column, however many tickets). The run
+  prints the milliseconds for reading against the targets.
 - **Accessibility:** keyboard-operable picker, menus and modal; ARIA on tabs,
   toggles and dialogs; tooltips reachable by focus and tap.
 - **Responsive:** desktop ≥1024 px with sidebar; tablet (iPad portrait and
@@ -608,7 +678,9 @@ the same comparison on the server.
 ## 14. Interfaces
 
 - **Agent Board** (Backlog Tracker & FAQs project): separate pipeline; no
-  shared tickets.
+  shared tickets. Send to Agent (KB-AGENT-1) is the one bridge: it files agent
+  tickets (`backlogItems`, with `ownerEmail` and `kanbanKey`) from a Kanban
+  ticket and reads their status back; it never moves an agent ticket.
 - **Console members** (`consoleUsers`): people, roles, photos.
 - **Console releases** (`releases`): fix versions.
 - **MCP server** (`backlog-tracker/functions/mcp-server.js`, tools in

@@ -25,7 +25,7 @@ const T0 = 1_760_000_000_000;
 // ── Seed: one project with a card in every column, an archived card and a doc
 const PID = "p1";
 const seed = (extra = {}) => ({
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { [PID]: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: {
@@ -80,6 +80,7 @@ function makeCtx(o, width) {
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
   ctx.enrichCalls = o.enrichCalls;
+  ctx.routineWrites = o.routineWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
   ctx.click = async (selector, step) => { at(step || `click ${selector}`, selector); await page.click(selector); };
@@ -100,6 +101,62 @@ function makeCtx(o, width) {
 
 // ── Scenarios ──────────────────────────────────────────────────────────────
 const scenarios = [
+  {
+    // Agent tickets fire under their owner's own Claude account only
+    // (xFzQgynkoMdV33iWJFZq): someone else's can't be ticked, your own needs
+    // your personal Routine, and Settings → My Claude Routine connects one.
+    name: "agent tickets: owner-only Ready for Dev, set up My Claude Routine from the info link",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.own = { projectId: PID, title: "My agent ticket", desc: "Built under my own account", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "editor@ph.example", createdAt: t(T0 + 7), updatedAt: t(T0 + 7) };
+      s.docs.backlogItems.theirs = { projectId: PID, title: "Their agent ticket", desc: "Someone else's", type: "feature", category: "HQ Admin", status: "backlog", ownerEmail: "ada@ph.example", createdAt: t(T0 + 8), updatedAt: t(T0 + 8) };
+      s.routineBinding = { hasRoutineBinding: false };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const box = (id) => `.card[data-id="${id}"] .card-select-cb`;
+      await until(async () => (await c.page.locator(box("own")).isDisabled()) && (await c.page.locator(box("theirs")).isDisabled()), "both agent tickets' boxes disabled");
+      assert.strictEqual(await c.page.locator(box("b1")).isDisabled(), false, "an ordinary ticket can still be ticked");
+      assert.match(await c.page.getAttribute(box("theirs"), "title"), /ada@ph\.example/, "someone else's says whose it is");
+      assert.match(await c.page.getAttribute(`.card[data-id="own"] .owner-fire-info`, "title"), /My Claude Routine/, "my own says to set up my Routine");
+      await c.click(`.card[data-id="own"] .owner-fire-info`, "the info link on my agent ticket");
+      await c.visible('[data-settings-pane="routine"]', "My Claude Routine opens");
+      await c.waitText("#routine-binding-status", "Not set up", "it says I have none");
+      assert.ok((await c.page.inputValue("#routine-bootstrap-prompt")).includes("ROUTINE_INSTRUCTIONS.md"), "the prompt to paste is there");
+      await c.page.fill("#routine-fire-url", "https://api.anthropic.com/v1/claude_code/routines/trig_1/fire");
+      await c.page.fill("#routine-fire-token", "sk-test-token");
+      await c.click("#routine-binding-save", "Save");
+      await c.waitText("#routine-binding-status", "Connected", "it says connected");
+      assert.deepStrictEqual(c.routineWrites.map((w) => w.fireUrl), ["https://api.anthropic.com/v1/claude_code/routines/trig_1/fire"]);
+      assert.strictEqual(await c.page.inputValue("#routine-fire-token"), "", "the token is not left on the page");
+      assert.strictEqual(await c.page.isVisible("#routine-binding-clear"), true, "Disconnect is offered");
+      await c.page.evaluate(() => document.getElementById("nav-ph-console-btn").click());
+      await c.boardReady();
+      await until(async () => !(await c.page.locator(box("own")).isDisabled()), "my agent ticket can be ticked now");
+      assert.strictEqual(await c.page.locator(box("theirs")).isDisabled(), true, "someone else's still can't");
+    },
+  },
+  {
+    // Contract-change review (ZmEWDC40NYOiojehfPjk): a ticket whose upstream
+    // changed an interface contract shows a warning chip, the summary on hover.
+    name: "contract-change review: a flagged dependent shows Needs review, with what changed",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.dep = { projectId: PID, title: "Front end for the attribute envelope", desc: "Builds after the back end", type: "feature", category: "HQ Admin", status: "backlog", dependsOnItemIds: ["b1"],
+        contractReview: { status: "needs-review", upstreamItemId: "b1", upstreamTitle: "Back end for the attribute envelope", commit: "c".repeat(40), files: ["shared/interface-contract.md"], summary: "shared/interface-contract.md (+4 −1; sections: Attribute envelope)", flaggedAt: "2026-11-16T05:00:00.000Z" },
+        createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const chip = `.card[data-id="dep"] .contract-review-flag`;
+      await c.visible(chip, "the Needs review chip");
+      assert.match(await c.page.textContent(chip), /Needs review: upstream contract changed/);
+      assert.match(await c.page.getAttribute(chip, "title"), /Back end for the attribute envelope.*Attribute envelope/, "the hover says which ticket changed what");
+      assert.strictEqual(await c.page.locator(`.card[data-id="b1"] .contract-review-flag`).count(), 0, "an unflagged ticket has no chip");
+    },
+  },
   {
     name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
     seed: () => {
@@ -270,7 +327,7 @@ const scenarios = [
         await c.visible(`[data-settings-pane="${sub}"]`, `${label} pane shows`);
         await overflow(`settings ${sub}`);
       }
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support"], "User Management first, the rest in their old order");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#settings-submenu .settings-tab")].map((b) => b.dataset.settingsPage)), ["user-management", "projects", "releases", "skills", "automations", "integrations", "support", "routine"], "User Management first, the rest in their old order");
       assert.strictEqual(await c.page.locator('#settings-submenu .settings-tab[aria-selected="true"]').count(), 1, "exactly one Settings tab is selected");
       assert.strictEqual(await c.page.locator('#nav-drawer [data-nav-group="user-management"], #nav-drawer #um-users-btn, #nav-drawer #um-roles-btn, #nav-drawer #um-permissions-btn').count(), 0, "no User Management, Roles or Permissions items in the nav");
       assert.strictEqual(await c.page.locator("#nav-drawer #releases-btn, #nav-drawer #skills-btn").count(), 0, "Releases and Skills are not in the main navigation");
@@ -296,8 +353,8 @@ const scenarios = [
       s.user = { email: "admin@personalisationhub.com", role: "admin" };
       s.docs.consoleUsers = {
         "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin", lastLoginAt: t(T0) },
-        "sam@personalisationhub.com": { email: "sam@personalisationhub.com", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
-        "kim@personalisationhub.com": { email: "kim@personalisationhub.com", role: "viewer", displayName: "Kim Lee" },
+        "sam@ph.example": { email: "sam@ph.example", role: "editor", displayName: "Sam Patel", lastLoginAt: t(T0 - 3600000) },
+        "kim@ph.example": { email: "kim@ph.example", role: "viewer", displayName: "Kim Lee" },
       };
       return s;
     },
@@ -324,47 +381,47 @@ const scenarios = [
       // add from the side panel
       await c.click("#team-add-open", "Add User");
       await c.visible("#team-add-email", "side panel opens");
-      await c.page.fill("#team-add-email", "new@personalisationhub.com");
+      await c.page.fill("#team-add-email", "new@ph.example");
       await c.page.fill("#team-add-first", "Nina");
       await c.page.fill("#team-add-last", "New");
       await c.page.selectOption("#team-add-role", "viewer");
       await c.click("#team-add-btn", "Add");
       await c.click("#dialog-ok", "dismiss the added confirmation");
       await until(async () => (await c.page.locator("#um-grid .ag-center-cols-container .ag-row").count()) === 4, "the new user to show in the grid", 8000);
-      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com"));
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@ph.example"));
       assert.ok(stored && stored.role === "viewer", "the new user was saved with the chosen role");
       assert.strictEqual(stored.displayName, "Nina New", "display name is first + last");
       assert.strictEqual(stored.firstName, "Nina"); assert.strictEqual(stored.lastName, "New");
-      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
+      assert.strictEqual((await c.page.locator('#um-grid .ag-row[row-id="new@ph.example"] .ph-avatar-initial').first().textContent()).trim(), "NN", "initials show first + last");
       // clicking the name opens the panel; edit the name there
-      await c.page.locator('#um-grid .ag-row[row-id="new@personalisationhub.com"] .um-name-btn').first().click();
+      await c.page.locator('#um-grid .ag-row[row-id="new@ph.example"] .um-name-btn').first().click();
       await c.visible("#um-manage-first", "name click opens the manage panel");
       await c.page.fill("#um-manage-last", "Newman");
       await c.click("#um-manage-name-save", "Save name");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@personalisationhub.com").displayName)) === "Nina Newman", "name edit to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("new@ph.example").displayName)) === "Nina Newman", "name edit to persist", 5000);
       await c.click("#tm-close", "close panel");
       // inline role change
-      await c.page.selectOption('select[aria-label="Role for kim@personalisationhub.com"]', "editor");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").role)) === "editor", "inline role change to persist", 5000);
+      await c.page.selectOption('select[aria-label="Role for kim@ph.example"]', "editor");
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@ph.example").role)) === "editor", "inline role change to persist", 5000);
       // bulk role change
-      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@personalisationhub.com"] .ag-selection-checkbox input').check();
-      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@personalisationhub.com"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="kim@ph.example"] .ag-selection-checkbox input').check();
+      await c.page.locator('#um-grid .ag-pinned-left-cols-container .ag-row[row-id="new@ph.example"] .ag-selection-checkbox input').check();
       await c.visible("#um-bulk", "bulk bar shows");
       await c.page.selectOption("#um-bulk-role", "admin");
       await c.click("#um-bulk-apply", "Apply");
-      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@personalisationhub.com`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => ["kim", "new"].map((n) => globalThis.__fbStub.col("consoleUsers").get(`${n}@ph.example`).role).join())) === "admin,admin", "bulk role change to persist", 5000);
       // deactivate one from Manage
-      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@personalisationhub.com"]').click());
+      await c.page.evaluate(() => document.querySelector('.um-manage[data-manage="sam@ph.example"]').click());
       await c.visible("#um-manage", "Manage panel opens");
       await c.click("#um-manage-active", "Deactivate");
       await c.click("#dialog-ok", "confirm deactivation");
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@personalisationhub.com").disabled)) === true, "deactivation to persist", 5000);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("sam@ph.example").disabled)) === true, "deactivation to persist", 5000);
       // assign a role on Users, then manage roles
-      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@personalisationhub.com"] option').count()) === 6, "default roles to seed and list", 8000);
+      await until(async () => (await c.page.locator('select[aria-label="Assigned role for kim@ph.example"] option').count()) === 6, "default roles to seed and list", 8000);
       const engineerId = await c.page.evaluate(() => { const m = globalThis.__fbStub.col("roles"); for (const [id, d] of m.entries()) if (d.name === "Engineer") return id; });
       assert.ok(engineerId, "Engineer role seeded");
-      await c.page.selectOption('select[aria-label="Assigned role for kim@personalisationhub.com"]', engineerId);
-      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@personalisationhub.com").roleId)) === engineerId, "assigned role to persist", 5000);
+      await c.page.selectOption('select[aria-label="Assigned role for kim@ph.example"]', engineerId);
+      await until(async () => (await c.page.evaluate(() => globalThis.__fbStub.col("consoleUsers").get("kim@ph.example").roleId)) === engineerId, "assigned role to persist", 5000);
       await c.click("#um-tab-roles", "Roles sub-tab");
       await c.visible('[data-um-panel="roles"]', "Roles page shows");
       await c.visible("#roles-grid .ag-row", "roles listed");
@@ -603,6 +660,61 @@ const scenarios = [
     },
   },
   {
+    name: "Deploy queue: a queued train shows Queued… and the note under its header",
+    seed: () => {
+      const s = only("d1");
+      Object.assign(s.docs.projects[PID], { trainReady: true, trainLocked: true, trainStatus: "deploying", trainHold: "queued",
+        trainNote: "Queued behind Staff Kanban's deploy; starts by itself when that merges. (both trains ship through deploy-backlog-tracker.yml, so they merge one at a time.)" });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible(".train-queued-hint", "the queued line shows under the header");
+      assert.ok((await c.text(".train-queued-hint")).includes("Queued behind Staff Kanban's deploy; starts by itself when that merges"));
+      c.at("the deploy button reads Queued… and is disabled", ".project-header-actions");
+      const btn = await c.page.evaluate(() => {
+        const b = [...document.querySelectorAll(".project-header-actions button.notify-claude-btn")].find((e) => /Queued/.test(e.textContent));
+        return b ? { disabled: b.disabled, title: b.title } : null;
+      });
+      assert.ok(btn, "a Queued… button is shown");
+      assert.strictEqual(btn.disabled, true);
+      assert.match(btn.title, /Queued behind Staff Kanban's deploy/);
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+      assert.deepStrictEqual(await c.writes(), [], "showing the queue writes nothing");
+    },
+  },
+  {
+    name: "Shared files: chips on train cards, the warning variant on a conflict, the header line, and a held patch in Backlog",
+    seed: () => {
+      const s = only("r1", "d1", "b1");
+      s.docs.backlogItems.r1.sharedWith = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/MCP.md"], conflictPaths: [], conflict: false }];
+      s.docs.backlogItems.r1.foreignPaths = [{ projectId: "pK", projectName: "Staff Kanban", paths: ["backlog-tracker/public/js/kanban/board.js"] }];
+      s.docs.backlogItems.d1.sharedWith = [{ projectId: "pW", projectName: "PH Website", paths: ["backlog-tracker/public/index.html"], conflictPaths: ["backlog-tracker/public/index.html"], conflict: true }];
+      Object.assign(s.docs.backlogItems.b1, { patchReady: true, buildAfterTrain: true });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.visible('.card[data-id="r1"] .train-overlap-chip, [data-id="r1"] .train-overlap-chip', "the Ready for Testing card shows its shared-files chip");
+      const chips = await c.page.evaluate(() => [...document.querySelectorAll(".train-overlap-chip")].map((e) => ({ text: e.textContent.trim(), title: e.title, warn: e.classList.contains("train-overlap-chip-warn"), icon: (e.querySelector(".material-symbols-outlined") || {}).textContent })));
+      const also = chips.find((x) => x.text.includes("Also changed on Staff Kanban's train"));
+      assert.ok(also, `an "Also changed on" chip (${JSON.stringify(chips)})`);
+      assert.strictEqual(also.icon, "call_split");
+      assert.match(also.title, /backlog-tracker\/MCP\.md/, "hover lists the files");
+      assert.strictEqual(also.warn, false);
+      const conflict = chips.find((x) => x.text.includes("Conflicts with PH Website's train: backlog-tracker/public/index.html"));
+      assert.ok(conflict && conflict.warn, "an approved card whose train conflicts shows the warning variant");
+      assert.ok(chips.some((x) => x.text.includes("Changes Staff Kanban's files: backlog-tracker/public/js/kanban/board.js")), "the owned-paths warning");
+      await c.visible(".train-shared-hint", "the header line shows");
+      const header = await c.text(".train-shared-hint");
+      assert.ok(header.includes("Shares files with ") && header.includes("Staff Kanban's train") && header.includes("PH Website's train"), header);
+      await c.waitText(".held-patch-hint", "Built — joins the next release", "the held Backlog card says it joins the next release");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+    },
+  },
+  {
     name: "Ready for Testing: Test this → links to the seeded previewUrl",
     seed: () => only("r1"),
     async run(c) {
@@ -644,7 +756,7 @@ const scenarios = [
       assert.ok(w.data.notes && w.data.notes.$arrayUnion && /settings page/.test(JSON.stringify(w.data.notes)), "a note carries the details");
       // Testing rounds: the same write shape, with who sent it back; the loop
       // fields are the automation's to record (firestore.rules).
-      assert.strictEqual(w.data.lastFailureReason.who, "editor@personalisationhub.com");
+      assert.strictEqual(w.data.lastFailureReason.who, "editor@ph.example");
       for (const f of ["testRound", "sendBacks", "sendBackCount", "countedSendBacks"]) assert.ok(!(f in w.data), `the browser never writes ${f}`);
     },
   },
@@ -785,6 +897,15 @@ const scenarios = [
     },
   },
   {
+    name: "Send to Agent: an agent ticket made from a Staff Kanban ticket links back to it",
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { kanbanKey: "PH-12", ownerEmail: "editor@ph.example" }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .kanban-link-badge', "PH-12", "the link back to the Kanban ticket");
+      assert.strictEqual(await c.page.getAttribute('.card[data-id="b1"] .kanban-link-badge', "href"), "#staff-kanban/ticket/PH-12");
+    },
+  },
+  {
     name: "Model: an Advanced card shows its chip and build log; Edit item switches it back to Standard",
     seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }); return s; },
     async run(c) {
@@ -803,6 +924,46 @@ const scenarios = [
       assert.ok(w, JSON.stringify(writes));
       assert.strictEqual(w.data.model, "standard");
       assert.ok(!("title" in w.data) && !("category" in w.data), "only the changed field is written");
+    },
+  },
+  {
+    // Flow 6/9 (jKM13xJ7PxW9THm3YQ9g): automation notes sit collapsed under "Pipeline history (N)";
+    // people's and Claude's notes stay open. A keyed note shows once (newest).
+    name: "Edit item: automation notes are collapsed under Pipeline history, people's notes stay open; opens on click and by keyboard",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b1.notes = [
+        { author: "tester@ph.example", text: "Person says the widget is still blue", at: "2026-11-14T00:00:00.000Z" },
+        { author: "backlog-automation", text: "Re-running it once, old version", at: "2026-11-14T00:01:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+        { author: "claude", text: "Claude built the purple widget", at: "2026-11-14T00:02:00.000Z" },
+        { author: "backlog-automation", text: "Committed to the integration branch", at: "2026-11-14T00:03:00.000Z" },
+        { author: "backlog-automation", text: "Sent back automatically, newest version", at: "2026-11-14T00:04:00.000Z", key: "train-test:abc:firestore-rules-test", firstAt: "2026-11-14T00:01:00.000Z" },
+      ];
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.waitText("#ei-notes-list", "Person says the widget is still blue", "the person's note, open");
+      await c.waitText("#ei-notes-list", "Claude built the purple widget", "Claude's note, open");
+      c.at("the collapsed section, one entry per key", "#ei-pipeline-toggle");
+      await until(async () => /Pipeline history \(2\)/.test((await c.page.textContent("#ei-pipeline-toggle").catch(() => "")) || ""), "Pipeline history (2) on the toggle");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "false");
+      assert.strictEqual(await c.page.isVisible("#ei-pipeline-body"), false, "collapsed by default");
+      await c.click("#ei-pipeline-toggle", "Pipeline history");
+      await c.visible("#ei-pipeline-body", "the pipeline notes");
+      assert.strictEqual(await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded"), "true");
+      const body = await c.page.innerText("#ei-pipeline-body");
+      assert.ok(body.indexOf("Sent back automatically, newest version") < body.indexOf("Committed to the integration branch"), `newest first, got ${JSON.stringify(body)}`);
+      assert.ok(!body.includes("old version"), "the replaced version of a keyed note is not shown");
+      c.at("keyboard: Enter on the focused toggle collapses it again", "#ei-pipeline-toggle");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Enter");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "false", "the section to collapse by keyboard");
+      await c.page.focus("#ei-pipeline-toggle");
+      await c.page.keyboard.press("Space");
+      await until(async () => (await c.page.getAttribute("#ei-pipeline-toggle", "aria-expanded")) === "true", "the section to open by keyboard");
     },
   },
   {
@@ -1001,6 +1162,50 @@ const scenarios = [
     },
   },
   {
+    name: "Build order: a card with a dependency in Backlog shows 'After: <title>'; a queued card says what it builds after",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems["b-dep"] = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [], blocked: null };
+      s.docs.backlogItems.b1.dependsOnItemIds = ["b-dep"];
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Second ticket", dependsOnItemIds: [], queuedAfter: { itemId: "b-dep", title: "Roles page" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .order-chip', "After: Roles page", "the After chip");
+      assert.match(await c.page.getAttribute('.card[data-id="b1"] .order-chip', "title"), /Builds after:\n• Roles page — Backlog/);
+      await c.waitText('.card[data-id="b2"] .order-chip-queued', "Queued: builds after Roles page", "the Queued chip");
+      assert.strictEqual(await c.page.locator('.card[data-id="b2"] .blocked-answer-btn').count(), 0, "queued is not a question");
+    },
+  },
+  {
+    name: "Build order: Edit item → Builds after adds a ticket, refuses a loop, and saves only dependsOnItemIds",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.b2 = { ...s.docs.backlogItems.b1, title: "Roles page", dependsOnItemIds: [] };
+      s.docs.backlogItems.b3 = { ...s.docs.backlogItems.b1, title: "Reports export", dependsOnItemIds: ["b1"] };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.page.fill("#ei-deps-search", "Reports");
+      await c.click('#ei-deps-results .ei-dep-option[data-dep-id="b3"]', "pick Reports export");
+      await c.waitText("#ei-deps-error", "That would make a loop", "the loop refusal");
+      assert.strictEqual(await c.page.locator("#ei-deps-chips .ei-dep-chip").count(), 0, "nothing added");
+      await c.page.fill("#ei-deps-search", "Roles");
+      await c.click('#ei-deps-results .ei-dep-option[data-dep-id="b2"]', "pick Roles page");
+      await c.waitText("#ei-deps-chips", "Roles page", "the chosen ticket");
+      await c.click("#ei-save", "Save changes");
+      const writes = await c.waitWrites(1);
+      const w = writes.find((x) => x.path === "backlogItems/b1");
+      assert.ok(w, JSON.stringify(writes));
+      assert.deepStrictEqual(w.data.dependsOnItemIds, ["b2"]);
+      assert.ok(!("title" in w.data) && !("dependsOnSource" in w.data), "only the list is written; who set it is the trigger's");
+    },
+  },
+  {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
     seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
     async run(c) {
@@ -1194,12 +1399,12 @@ const scenarios = [
     name: "permissions: an admin sets the matrix; an engineer loses Concepts (nav and URL) and gets view-only where granted",
     seed: () => {
       const s = seed();
-      s.user = { email: "eng@personalisationhub.com", role: "editor" };
+      s.user = { email: "eng@ph.example", role: "editor" };
       s.docs.roles = {
         rAdmin: { name: "Admin", description: "", createdAt: t(T0) },
         rEng: { name: "Engineer", description: "", createdAt: t(T0), permissions: { concepts: "none", skills: "view" } },
       };
-      s.docs.consoleUsers = { "eng@personalisationhub.com": { email: "eng@personalisationhub.com", role: "editor", roleId: "rEng" } };
+      s.docs.consoleUsers = { "eng@ph.example": { email: "eng@ph.example", role: "editor", roleId: "rEng" } };
       return s;
     },
     async run(c) {
@@ -1342,7 +1547,7 @@ const scenarios = [
       assert.ok(stored, "the lead was written");
       assert.strictEqual(stored.stage, "hot-lead", "the stage was written");
       assert.strictEqual(stored.contacts[0].buyingRole, "decision-maker");
-      assert.strictEqual(stored.createdByEmail, "editor@personalisationhub.com");
+      assert.strictEqual(stored.createdByEmail, "editor@ph.example");
       // Drag the other card between lanes.
       // Pointer drag on a wide layout where both lanes are on screen; narrower, the summary drawer's stage select is the way to move.
       if (c.page.viewportSize().width > 1000) await c.page.dragAndDrop('.lead-lane[data-stage="demo"] .lead-card', '.lead-lane[data-stage="post-demo"] .lead-lane-head');
@@ -1365,6 +1570,55 @@ const scenarios = [
       assert.ok((await c.text("#lead-summary-panel")).includes("Existing Co Ltd"), "the summary shows the linked account");
       await c.page.keyboard.press("Escape");
       assert.deepStrictEqual(await c.page.evaluate(() => globalThis.__fbStub.col("leads").get("lx").customerAccount), { id: "acc_42", name: "Existing Co Ltd" });
+    },
+  },
+  {
+    name: "Promote: Leads - drag a lead up its lane to set its priority; the summary's Move up / down / to top reorder it too",
+    seed: () => seed({ leads: {
+      la: { company: { name: "Alpha Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 3000) },
+      lb: { company: { name: "Bravo Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 2000) },
+      lc: { company: { name: "Charlie Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 1000) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the seeded leads are in the Lead lane");
+      const order = () => c.page.evaluate(() => [...document.querySelectorAll('.lead-lane[data-stage="lead"] .lead-card')].map((e) => e.dataset.leadId));
+      assert.deepStrictEqual(await order(), ["la", "lb", "lc"], "unranked leads: newest change first, as before");
+      const wide = c.page.viewportSize().width > 1000;
+      if (wide) {
+        // Drag Charlie onto the top half of Alpha: it lands first in the lane.
+        const top = await c.page.locator('.lead-card[data-lead-id="la"]').boundingBox();
+        await c.page.dragAndDrop('.lead-card[data-lead-id="lc"]', '.lead-card[data-lead-id="la"]', { targetPosition: { x: top.width / 2, y: 4 } });
+      } else {
+        await c.page.click('.lead-card[data-lead-id="lc"] .lead-card-name');
+        await c.visible('#lead-sum-body .lead-prio-btn[data-prio="top"]', "the summary shows the Priority buttons");
+        await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="top"]');
+        await c.page.keyboard.press("Escape");
+      }
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["lc", "la", "lb"]), "Charlie to move to the top of the lane", 5000);
+      const ranks = await c.page.evaluate(() => ["la", "lb", "lc"].map((id) => globalThis.__fbStub.col("leads").get(id).rank));
+      assert.ok(ranks.every((r) => typeof r === "number") && ranks[2] < ranks[0] && ranks[0] < ranks[1], `ranks persisted in the new order: ${ranks}`);
+      // The summary says where it sits, and Move down / Move up move it one place.
+      await c.page.click('.lead-card[data-lead-id="lc"] .lead-card-name');
+      await c.visible("#lead-sum-priority", "the Priority row");
+      assert.ok((await c.text("#lead-sum-priority")).startsWith("1 of 3"), "it is first of three");
+      assert.ok(await c.page.locator('#lead-sum-body .lead-prio-btn[data-prio="up"]').isDisabled(), "the top lead can't move up");
+      await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="down"]');
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["la", "lc", "lb"]), "Move down to swap it with Alpha", 5000);
+      assert.ok((await c.text("#lead-sum-priority")).startsWith("2 of 3"));
+      await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="up"]');
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["lc", "la", "lb"]), "Move up to put it back", 5000);
+      await c.page.keyboard.press("Escape");
+      // A lead moved to another stage by the Stage select lands at the top of that lane.
+      await c.page.click('.lead-card[data-lead-id="lb"] .lead-card-name');
+      await c.page.selectOption("#lead-sum-stage", "hot-lead");
+      await c.page.keyboard.press("Escape");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card[data-lead-id="lb"]', "Bravo is in Hot Lead");
+      await c.page.click('.lead-card[data-lead-id="la"] .lead-card-name');
+      await c.page.selectOption("#lead-sum-stage", "hot-lead");
+      await c.page.keyboard.press("Escape");
+      await until(async () => (await c.page.evaluate(() => [...document.querySelectorAll('.lead-lane[data-stage="hot-lead"] .lead-card')].map((e) => e.dataset.leadId).join(","))) === "la,lb", "the newly moved lead to be on top of Hot Lead", 5000);
     },
   },
   {
@@ -1929,7 +2183,7 @@ const scenarios = [
       pb: { name: "Beta Pharmacy", country: "Germany", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
       pc: { name: "Gamma Fashion", industry: "Fashion", hqCountry: "France", markets: ["France", "Ireland"], awsRegion: "eu-west-3", storeCount: null, vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
     }, prospectCompanies: {
-      alphagrocer: { name: "Alpha Grocer", profile: { summary: "A UK grocery chain.", techStack: ["SAP"], primaryCloud: "AWS", emailFormats: ["first.last@alpha.example"], staffOwner: "rob@offline2online.com", lastResearchedAt: "2026-11-01" },
+      alphagrocer: { name: "Alpha Grocer", profile: { summary: "A UK grocery chain.", techStack: ["SAP"], primaryCloud: "AWS", emailFormats: ["first.last@alpha.example"], staffOwner: "owner@example.com", lastResearchedAt: "2026-11-01" },
         people: [
           { id: "ceo", name: "Carol Chief", title: "CEO", reportsTo: "", buyingRole: "decision-maker", email: "carol@alpha.example" },
           { id: "cio", name: "Ian Tech", title: "CIO", reportsTo: "ceo", buyingRole: "champion", email: "ian@alpha.example", engagement: ["demo"] },
@@ -2244,6 +2498,36 @@ const scenarios = [
       await c.page.waitForFunction(() => /Status unavailable/.test((document.querySelector('.faq-article-row[data-id="w1"] .badge-wp') || {}).textContent || ""), null, { timeout: 8000 });
       await c.page.waitForFunction(() => /unavailable/.test((document.getElementById("faq-wp-sync") || {}).textContent || ""), null, { timeout: 8000 });
       await c.visible('.faq-article-row[data-id="w1"] .faq-article-title', "the list still renders");
+    },
+  },
+  {
+    // 3HabqHlC4WwL137CYTv1: a category/folder or article can be hidden from
+    // the website; the article list says so and the editor carries the flag.
+    name: "FAQ Management: hidden-from-website badge (own flag and via category) and the editor toggle",
+    seed: () => seed({
+      faqCategories: {
+        fc0: { name: "Run your own retail media", icon: "storefront", order: 0, hiddenFromWebsite: true, createdAt: t(T0), updatedAt: t(T0) },
+        fc1: { name: "Getting started", icon: "rocket_launch", order: 1, createdAt: t(T0), updatedAt: t(T0) },
+      },
+      faqArticles: {
+        h1: { title: "Hidden by category one", categoryId: "fc0", order: 0, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        h2: { title: "Hidden itself one", categoryId: "fc1", order: 1, status: "published", hiddenFromWebsite: true, bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+        v1: { title: "Visible one", categoryId: "fc1", order: 2, status: "published", bodyMd: "body", createdAt: t(T0), updatedAt: t(T0) },
+      },
+    }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "publish", "faq-articles-btn", "faq-articles-page");
+      await c.page.fill("#fa-tree-search", "one");
+      await c.visible('.faq-article-row[data-id="v1"] .faq-article-title', "search lists all three");
+      const hidden = (id) => c.page.locator(`.faq-article-row[data-id="${id}"] .badge-faq-hidden`).count();
+      assert.strictEqual(await hidden("h1"), 1, "hidden through its category");
+      assert.strictEqual(await hidden("h2"), 1, "hidden by its own flag");
+      assert.strictEqual(await hidden("v1"), 0, "a visible article has no badge");
+      await c.click('.faq-article-row[data-id="h2"] .faq-article-title', "open the hidden article");
+      await c.click("#fa-group-status-toggle", "open Status & publishing");
+      await c.visible("#fa-hidden-from-website-toggle", "the toggle shows");
+      assert.strictEqual(await c.page.isChecked("#fa-hidden-from-website-toggle"), true, "loads the article's own flag");
     },
   },
   {

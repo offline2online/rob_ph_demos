@@ -274,7 +274,7 @@ function unbuiltReportAction(card, now = Date.now()) {
   const why = last ? last.text.trim() : "The build session finished without packaging a patch and left no explanation on the card.";
   return {
     action: "block",
-    blocked: { reason: "waiting-on-input", note: `${why.length > 1500 ? `${why.slice(0, 1500)}…` : why}\n\nAnswer on the card (Answer button)`, setBy: UNBUILT_SETTER },
+    blocked: { reason: "waiting-on-input", note: `${why.length > 1500 ? `${why.slice(0, 1500)}…` : why}\n\nNothing to answer: the best option is taken and it is built again by itself. To steer it, use the Answer button.`, setBy: UNBUILT_SETTER },
   };
 }
 

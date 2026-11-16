@@ -35,6 +35,43 @@ function descriptionFromSummary(summary, max = META_DESCRIPTION_MAX) {
   return cut + "…";
 }
 
+// ── Hidden from the website (3HabqHlC4WwL137CYTv1) ──────────────────────────
+// A category, a folder (a category with a parentId) or a single article can
+// carry `hiddenFromWebsite: true`. Hiding a category hides every folder under
+// it and every article in either. Hidden content stays in Firestore and
+// stays "published", so the Support Inbox still answers from it
+// (functions/support-mail.js reads every published article), but it never
+// reaches the public: not the faq/data export, not the live feed the
+// WordPress Support Centre reads (/help-api/data/*), not the public help
+// search and MCP. Un-hiding it is how a new feature's articles launch.
+//
+// `cats` is an iterable of {id, parentId, hiddenFromWebsite} rows (or an
+// object keyed by id). Returns the set of category ids hidden by their own
+// flag or an ancestor's.
+function hiddenCategoryIds(cats) {
+  const byId = new Map();
+  const rows = cats instanceof Map ? [...cats.values()] : Array.isArray(cats) ? cats : Object.entries(cats || {}).map(([id, c]) => ({ id, ...c }));
+  for (const c of rows) if (c && c.id) byId.set(c.id, c);
+  const hidden = new Set();
+  for (const c of byId.values()) {
+    const seen = new Set();
+    let cur = c;
+    while (cur && !seen.has(cur.id)) {
+      if (cur.hiddenFromWebsite === true) { hidden.add(c.id); break; }
+      seen.add(cur.id);
+      cur = cur.parentId ? byId.get(cur.parentId) : null;
+    }
+  }
+  return hidden;
+}
+// True when an article must not appear on the website: its own flag, or its
+// category / folder is hidden. `hiddenCats` is hiddenCategoryIds(...).
+function isHiddenFromWebsite(article, hiddenCats) {
+  if (!article) return false;
+  if (article.hiddenFromWebsite === true) return true;
+  return !!(hiddenCats && article.categoryId && hiddenCats.has(article.categoryId));
+}
+
 function categoryRecord(id, c) {
   return { id, name: c.name || "", icon: c.icon || "help", description: c.description || "", order: c.order || 0, parentId: c.parentId || null };
 }
@@ -124,7 +161,7 @@ const serializeReleases = (releases) => JSON.stringify(releases, null, 2) + "\n"
 // Drives the refresh ping. Compares the public projection only, so editing a
 // draft, a pendingRevision or a retire proposal never pings.
 function publicArticleView(id, a) {
-  if (!a || a.status !== "published") return null;
+  if (!a || a.status !== "published" || a.hiddenFromWebsite === true) return null;
   const { updatedAt, ...rest } = articleRecord(id, a, ""); // eslint-disable-line no-unused-vars
   return JSON.stringify(rest);
 }
@@ -132,7 +169,8 @@ function articleChangesPublished(id, before, after) {
   return publicArticleView(id, before) !== publicArticleView(id, after);
 }
 function categoryChangesPublished(id, before, after) {
-  const view = (c) => (c ? JSON.stringify(categoryRecord(id, c)) : null);
+  // Hiding or showing a category changes what the public sees too.
+  const view = (c) => (c ? JSON.stringify({ ...categoryRecord(id, c), hidden: c.hiddenFromWebsite === true }) : null);
   return view(before) !== view(after);
 }
 
@@ -193,7 +231,7 @@ function firestoreRefreshStore(db, docPath = "settings/faqRefreshPing") {
 
 module.exports = {
   hash, iso, categoryRecord, articleRecord, releaseRecord, sortReleases, sortCategories,
-  descriptionFromSummary, META_DESCRIPTION_MAX,
+  descriptionFromSummary, META_DESCRIPTION_MAX, hiddenCategoryIds, isHiddenFromWebsite,
   buildIndex, serializeIndex, serializeArticle, serializeReleases,
   articleChangesPublished, categoryChangesPublished,
   createRefreshPinger, firestoreRefreshStore,

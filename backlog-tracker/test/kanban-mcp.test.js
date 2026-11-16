@@ -28,13 +28,18 @@ async function call(opts) { const req = makeReq(opts); const res = makeRes(); aw
 
 const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
 const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const SAM = "sam@ph.example", KIT = "kit@ph.example", ROB = "owner@example.com", HUY = "huy.le@ph.example";
+// The account owner and their second sign-in address are recognised by
+// custom claims (scripts/set-owner-claim.js), never by an address in code.
+const ROB_ALIAS = "owner.alias@example.com";
+const CLAIMS = { [ROB]: { owner: true }, [ROB_ALIAS]: { owner: true, aliasOf: ROB } };
 function signIn(email) {
   const token = `idtoken-${email}`;
-  env.authState.idTokens.set(token, { uid: `uid-${email}`, email, email_verified: true });
-  env.authState.users.set(email, { uid: `uid-${email}`, email, customClaims: {} });
+  const claims = CLAIMS[email] || {};
+  env.authState.idTokens.set(token, Object.assign({ uid: `uid-${email}`, email, email_verified: true }, claims));
+  env.authState.users.set(email, { uid: `uid-${email}`, email, customClaims: Object.assign({}, claims) });
   return token;
 }
-const SAM = "sam@personalisationhub.com", KIT = "kit@personalisationhub.com", ROB = "rob@offline2online.com", HUY = "huy.le@personalisationhub.com";
 function member(email, role, displayName) {
   env.store.col("consoleUsers").set(email, { email, role, displayName });
   env.store.col("memberDirectory").set(email, { email, displayName, photoUrl: "", disabled: false });
@@ -88,6 +93,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
 (async () => {
   console.log("\nStaff Kanban — server\n");
+  // The alias map is configuration (consoleConfig/identity), not code.
+  env.store.col("consoleConfig").set("identity", { personAliases: { [ROB_ALIAS]: ROB } });
   member(SAM, "editor", "Sam Sample");
   member(KIT, "viewer", "Kit Viewer");
   member(ROB, "admin", "Rob");
@@ -168,11 +175,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
 
   await test("Staff names: seeded pronunciations, admin-only setting, new members prompted, nothing leaks to the board", async () => {
-    const NEWB = "newbie@personalisationhub.com";
-    member("duong@personalisationhub.com", "editor", "Dương Nguyễn");
-    member("duy@personalisationhub.com", "editor", "Duy Tran");
-    member("thuc@personalisationhub.com", "editor", "Thuc Le");
-    member("hong@personalisationhub.com", "editor", "Hong Pham");
+    const NEWB = "newbie@ph.example";
+    member("duong@ph.example", "editor", "Dương Nguyễn");
+    member("duy@ph.example", "editor", "Duy Tran");
+    member("thuc@ph.example", "editor", "Thuc Le");
+    member("hong@ph.example", "editor", "Hong Pham");
     try {
       const names = await tool(kit, "kanban_get_staff_names", {});
       const by = (n) => names.json.staff.find((x) => x.name === n);
@@ -180,7 +187,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       assert.match(by("Thuc").pronunciation, /Took/); assert.match(by("Hong").pronunciation, /Hong/);
       assert.ok(by("Dương").fullName && by("Rob").pronunciation);
       const ppl = await tool(kit, "kanban_list_people", {});
-      assert.match(ppl.json.people.find((x) => x.email === "duy@personalisationhub.com").pronunciation, /Zui/);
+      assert.match(ppl.json.people.find((x) => x.email === "duy@ph.example").pronunciation, /Zui/);
       member(NEWB, "editor", "Newbie Person");
       const again = await tool(kit, "kanban_get_staff_names", {});
       assert.ok(again.json.pronunciationNeeded.some((x) => x.email === NEWB)); assert.match(again.json.prompt, /ask the admin/i);
@@ -197,7 +204,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       for (const d of env.store.col("memberDirectory").values()) assert.ok(!("pronunciation" in d));
       assert.match(env.store.col("staffPronunciations").get(NEWB).pronunciation, /New-bee/);
     } finally {
-      for (const e of ["duong", "duy", "thuc", "hong"]) { env.store.col("consoleUsers").delete(`${e}@personalisationhub.com`); env.store.col("memberDirectory").delete(`${e}@personalisationhub.com`); }
+      for (const e of ["duong", "duy", "thuc", "hong"]) { env.store.col("consoleUsers").delete(`${e}@ph.example`); env.store.col("memberDirectory").delete(`${e}@ph.example`); }
       env.store.col("consoleUsers").delete(NEWB); env.store.col("memberDirectory").delete(NEWB); env.store.col("staffPronunciations").delete(NEWB);
     }
   });
@@ -415,26 +422,26 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
 
   // ── member directory ──────────────────────────────────────────────────
   await test("the directory follows consoleUsers: added, renamed, removed (no role copied)", async () => {
-    const write = (before, after) => kanban.syncMemberDirectoryWrite({ params: { userEmail: "new@personalisationhub.com" }, data: { before: { exists: !!before, data: () => before }, after: { exists: !!after, data: () => after } } });
-    await write(null, { email: "new@personalisationhub.com", role: "admin", displayName: "New Person" });
-    const d = env.store.col("memberDirectory").get("new@personalisationhub.com");
+    const write = (before, after) => kanban.syncMemberDirectoryWrite({ params: { userEmail: "new@ph.example" }, data: { before: { exists: !!before, data: () => before }, after: { exists: !!after, data: () => after } } });
+    await write(null, { email: "new@ph.example", role: "admin", displayName: "New Person" });
+    const d = env.store.col("memberDirectory").get("new@ph.example");
     assert.strictEqual(d.displayName, "New Person"); assert.ok(!("role" in d));
     await write({ displayName: "New Person" }, { displayName: "Renamed" });
-    assert.strictEqual(env.store.col("memberDirectory").get("new@personalisationhub.com").displayName, "Renamed");
+    assert.strictEqual(env.store.col("memberDirectory").get("new@ph.example").displayName, "Renamed");
     await write({ displayName: "Renamed" }, null);
-    assert.ok(!env.store.col("memberDirectory").has("new@personalisationhub.com"));
+    assert.ok(!env.store.col("memberDirectory").has("new@ph.example"));
   });
   await test("/mcp/kanban/directory-sync fills the directory for any member", async () => {
     env.store.col("memberDirectory").clear();
     const r = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn(KIT) } });
     assert.strictEqual(r.statusCode, 200);
     // The bootstrap admin has no consoleUsers row but is a member all the
-    // same; its alias (rob@personalisationhub.com) is not a member of its own.
+    // same; its alias (owner.alias@example.com) is not a member of its own.
     const ids = [...env.store.col("consoleUsers").keys()];
-    for (const b of ["rob@offline2online.com"]) if (!ids.includes(b)) ids.push(b);
+    for (const b of ["owner@example.com"]) if (!ids.includes(b)) ids.push(b);
     assert.strictEqual(env.store.col("memberDirectory").size, ids.length);
-    assert.ok(env.store.col("memberDirectory").has("rob@offline2online.com"));
-    assert.ok(!env.store.col("memberDirectory").has("rob@personalisationhub.com"));
+    assert.ok(env.store.col("memberDirectory").has("owner@example.com"));
+    assert.ok(!env.store.col("memberDirectory").has("owner.alias@example.com"));
     const out = await call({ method: "POST", path: "/mcp/kanban/directory-sync", headers: { "X-Firebase-ID-Token": signIn("nobody@example.com") } });
     assert.strictEqual(out.statusCode, 403);
   });
@@ -537,9 +544,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(task(r.json.key).release, "r412");
   });
 
-  // ── aliases (core.PERSON_ALIASES) ─────────────────────────────────────
+  // ── aliases (consoleConfig/identity → core.PERSON_ALIASES) ─────────────────────────────────────
   await test("an alias is never a person of its own: not listed, and folds into its owner", async () => {
-    const ALIAS = "rob@personalisationhub.com";
+    const ALIAS = "owner.alias@example.com";
     env.store.col("memberDirectory").set(ALIAS, { email: ALIAS, displayName: "", photoUrl: "", disabled: false });
     const ppl = await tool(sam, "kanban_list_people");
     const emails = ppl.json.people.map((p) => p.email);
@@ -559,7 +566,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(mine.json.tasks.some((t) => t.key === made.json.key));
   });
   await test("an agent signed in as the alias works as its owner: \"me\" and authorship", async () => {
-    const ALIAS = "rob@personalisationhub.com";
+    const ALIAS = "owner.alias@example.com";
     const alias = await connect(ALIAS);
     const who = await tool(alias, "kanban_create_task", { title: "Note to self", assignee: "me" });
     assert.ok(!who.isError, who.text);
@@ -570,7 +577,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(mine.json.tasks.some((x) => x.key === who.json.key));
   });
   await test("the directory never keeps an entry for an alias", async () => {
-    const ALIAS = "rob@personalisationhub.com";
+    const ALIAS = "owner.alias@example.com";
     env.store.col("consoleUsers").set(ALIAS, { email: ALIAS, role: "admin" });
     await kanban.syncWholeDirectory();
     assert.strictEqual(env.store.col("memberDirectory").get(ALIAS), undefined);
@@ -580,16 +587,16 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     env.store.col("consoleUsers").delete(ALIAS);
   });
   await test("agent fill tells Claude who is speaking, from the token, and folds an alias answer", async () => {
-    const c = kanban.cleanContext({ users: [{ id: ROB, first: "Rob" }, { id: "rob@personalisationhub.com", first: "rob" }, { id: HUY, first: "Huy" }], me: "rob@personalisationhub.com" });
+    const c = kanban.cleanContext({ users: [{ id: ROB, first: "Rob" }, { id: "owner.alias@example.com", first: "rob" }, { id: HUY, first: "Huy" }], me: "owner.alias@example.com" });
     assert.deepStrictEqual(c.users.map((u) => u.id), [ROB, HUY]);
     assert.strictEqual(c.me, ROB);
-    const d = kanban.draftFromClaude({ title: "Chase the printer", assignee: "rob@personalisationhub.com" }, c);
+    const d = kanban.draftFromClaude({ title: "Chase the printer", assignee: "owner.alias@example.com" }, c);
     assert.strictEqual(d.assignee, ROB);
     let sent = null;
     class Spy { constructor() { this.beta = { messages: { create: async (req) => { sent = req; return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ title: "Chase the printer", assignee: ROB }) }] }; } } }; } }
     const out = await kanban.claudeDraft("k", "remind me to chase the printer", kanban.cleanContext({ users: [{ id: ROB, first: "Rob" }], me: ROB }), { Anthropic: Spy });
     assert.strictEqual(out.assignee, ROB);
-    assert.match(sent.messages[0].content, /"me":"rob@offline2online.com"/);
+    assert.match(sent.messages[0].content, /"me":"owner@example.com"/);
     assert.match(sent.system, /speaker/);
   });
 
@@ -601,7 +608,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(rep.isError); assert.match(rep.text, /reporter nobody@example\.com isn't a member/);
     const as = await tool(sam, "kanban_assign_task", { key: "PH-1", assignee: "nobody@example.com" });
     assert.ok(as.isError); assert.match(as.text, /isn't a member.*kanban_list_people/);
-    const ok = await tool(sam, "kanban_create_task", { title: "Alias owner", assignee: "rob@personalisationhub.com" });
+    const ok = await tool(sam, "kanban_create_task", { title: "Alias owner", assignee: "owner.alias@example.com" });
     assert.ok(!ok.isError, ok.text); assert.strictEqual(task(ok.json.key).assignee, ROB);
   });
   await test("a release must exist; an id, name or version all find it", async () => {
@@ -738,8 +745,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
   await test("assigning to the same person, or an alias of them, logs no reassignment", async () => {
     const k = (await tool(sam, "kanban_create_task", { title: "Same owner", assignee: ROB })).json.key;
-    await tool(sam, "kanban_assign_task", { key: k, assignee: "rob@personalisationhub.com" });
-    await tool(sam, "kanban_update_task", { key: k, assignee: "rob@personalisationhub.com" });
+    await tool(sam, "kanban_assign_task", { key: k, assignee: "owner.alias@example.com" });
+    await tool(sam, "kanban_update_task", { key: k, assignee: "owner.alias@example.com" });
     assert.ok(!activity(k).some((t) => /reassigned/.test(t)), activity(k).join(" | "));
     assert.strictEqual(task(k).assignee, ROB);
   });
@@ -761,7 +768,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
   await test("a card holds the 20 board fields and nothing of the description, and equals the ticket's", async () => {
     const c = env.store.col("kanbanCards").get("PH-1"), t = task("PH-1");
-    assert.deepStrictEqual(Object.keys(c).sort(), [...core.CARD_FIELDS, "updatedAt", "updatedBy"].sort());
+    // agentTotal / agentDone ride on a card only once its ticket has agent tickets (Send to Agent).
+    assert.deepStrictEqual(Object.keys(c).sort(), [...core.CARD_FIELDS.filter((f) => !["agentTotal", "agentDone"].includes(f)), "updatedAt", "updatedBy"].sort());
     for (const f of ["description", "descriptionText", "searchTokens", "links", "attachments", "mentions"]) assert.ok(!(f in c), f);
     assert.strictEqual(c.attachmentCount, (t.attachments || []).length);
     assert.strictEqual(c.commentCount, t.commentCount);
@@ -918,8 +926,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   });
   await test("kanban_attach_file: 60 files an hour per member, then refused; the window is per member", async () => {
     const lim = env.store.col("kanbanAttachLimits");
-    member("lena@personalisationhub.com", "editor", "Lena Editor");
-    const kitEditor = await connect("lena@personalisationhub.com");
+    member("lena@ph.example", "editor", "Lena Editor");
+    const kitEditor = await connect("lena@ph.example");
     lim.set(SAM, { windowStart: Date.now() - 60000, count: 59 });
     const last = await attach(sam, { name: "last.png", data: realPng(5).toString("base64") });
     assert.ok(!last.isError, last.text);
@@ -1017,7 +1025,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const early = await finish(sam, r);
     assert.ok(early.isError); assert.match(early.text, /Nothing has been uploaded/);
     put(r, realPng(100));
-    const other = await finish(await connect("lena@personalisationhub.com"), r);
+    const other = await finish(await connect("lena@ph.example"), r);
     assert.ok(other.isError); assert.match(other.text, /No such upload/);
     const wrongKey = await tool(sam, "kanban_attach_uploaded", { key: "PH-2", uploadId: r.json.uploadId });
     assert.ok(wrongKey.isError);
@@ -1074,6 +1082,22 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok([...env.store.col("mcpAuditLog").values()].some((x) => x.tool === "kanban_remove_attachment" && x.email === SAM));
     const gone = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: uploaded.path });
     assert.ok(gone.isError);
+  });
+  await test("kanban_remove_attachment: an attachment naming a file outside the ticket's folder is unlinked, and that file is left alone", async () => {
+    // A ticket's attachments are written by members; one can name any path. The server must not delete it.
+    const outside = "avatars/someone-else.jpg", otherTicket = "kanban/PH-2/secret.png";
+    env.authState.uploads[outside] = { size: 1 }; env.authState.uploads[otherTicket] = { size: 1 };
+    const t0 = task("PH-1");
+    env.store.col("kanbanTasks").set("PH-1", { ...t0, attachments: [...(t0.attachments || []), { name: "a.jpg", url: "https://example.test/a", path: outside }, { name: "b.png", url: "https://example.test/b", path: otherTicket }, { name: "c.png", url: "https://example.test/c", path: "kanban/PH-1/../PH-2/secret.png" }] });
+    for (const p of [outside, otherTicket, "kanban/PH-1/../PH-2/secret.png"]) {
+      const r = await tool(sam, "kanban_remove_attachment", { key: "PH-1", path: p });
+      assert.ok(!r.isError, r.text);
+      assert.strictEqual(r.json.fileDeleted, false, `${p} is not deleted`);
+      assert.ok(!task("PH-1").attachments.some((x) => x.path === p), "the attachment is off the ticket");
+    }
+    assert.ok(env.authState.uploads[outside], "a file outside kanban/ stays");
+    assert.ok(env.authState.uploads[otherTicket], "another ticket's file stays");
+    delete env.authState.uploads[outside]; delete env.authState.uploads[otherTicket];
   });
   await test("kanban_remove_attachment: by name; an ambiguous name asks for the path; unknown, no argument, unknown ticket and viewer are refused", async () => {
     const a = await attach(sam, { name: "dup.png", data: realPng(300).toString("base64") });
@@ -1168,8 +1192,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     try { const x = await cap(sam, {}); assert.ok(x.isError); assert.match(x.text, /isn't installed/); } finally { captureLib.renderer._render = orig; }
   });
   await test("kanban_capture_screenshots: one call, each page reported on its own; the bad ones attach nothing", async () => {
-    member("lena2@personalisationhub.com", "editor", "Lena Two");
-    const lena = await connect("lena2@personalisationhub.com");
+    member("lena2@ph.example", "editor", "Lena Two");
+    const lena = await connect("lena2@ph.example");
     await withRenderer((o) => (/nope/.test(o.url) ? fakePage({ status: 404, finalUrl: o.url }) : fakePage({ finalUrl: o.url })), async (calls) => {
       const r = await tool(lena, "kanban_capture_screenshots", { caption: "As designed", items: [
         { key: "PH-1", url: ART + "#/exchange" }, { key: "PH-3", url: ART + "#/nope" }, { key: "PH-4", url: "https://example.com/x" }, { key: "PH-9999", url: ART },
@@ -1210,8 +1234,8 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(Object.keys(env.authState.uploads).length, was);
   });
   await test("kanban_capture_screenshots: each pair crops to its own selector; the call's selector is the default", async () => {
-    member("lena3@personalisationhub.com", "editor", "Lena Three");
-    const lena = await connect("lena3@personalisationhub.com");
+    member("lena3@ph.example", "editor", "Lena Three");
+    const lena = await connect("lena3@ph.example");
     await withRenderer((o) => (o.selectors.includes("#gone") ? (() => { const e = new Error("Nothing matching the selector"); e.code = "no-element"; throw e; })() : fakePage({ finalUrl: o.url })), async (calls) => {
       const r = await tool(lena, "kanban_capture_screenshots", { selector: ".card", items: [
         { key: "PH-1", url: ART, selector: "#revenue" }, { key: "PH-3", url: ART, selectors: ["#a", "#b"] }, { key: "PH-4", url: ART }, { key: "PH-5", url: ART, selector: "#gone" },
@@ -1249,6 +1273,50 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   const notesFor = (to) => [...env.store.col("kanbanNotifications").values()].filter((n) => n.to === to);
   const base = { title: "Sweep is broken", status: "in-progress", assignee: HUY, reporter: ROB, updatedBy: ROB, mentions: [], watchers: [] };
 
+  await test("mention: kanban_create_task and kanban_update_task tag people in the description, and the trigger tells exactly those newly tagged", async () => {
+    const made = await tool(sam, "kanban_create_task", { title: "Tagged on create", description: "Please look at the offer banner.", mention: [HUY, KIT, HUY] });
+    assert.ok(!made.isError, made.text);
+    assert.deepStrictEqual(made.json.tagged, [HUY, KIT], "each person once");
+    const key = made.json.key, t1 = task(key);
+    assert.deepStrictEqual([...t1.mentions].sort(), [HUY, KIT].sort(), "stored where the trigger reads them");
+    assert.ok(t1.description.startsWith("<p>Please look at the offer banner.</p>"), "the text is kept");
+    for (const e of [HUY, KIT]) assert.ok(t1.description.includes(`<span class="kb-mention" data-user="${e}"`), `${e} has a chip`);
+    assert.ok(!t1.descriptionText.includes("data-user"), "the plain text carries names, not markup");
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("m1", key, null, t1));
+    assert.deepStrictEqual([HUY, KIT].map((e) => notesFor(e).map((n) => [n.kind, n.via])), [[["mention", "description"]], [["mention", "description"]]]);
+    assert.strictEqual(notesFor(SAM).length, 0, "the person who tagged is told nothing");
+    // Tag one more on the ticket as it stands: only they are new.
+    const more = await tool(sam, "kanban_update_task", { key, mention: [HUY, ROB] });
+    assert.ok(!more.isError, more.text);
+    assert.deepStrictEqual(more.json.tagged, [ROB]);
+    const t2 = task(key);
+    assert.deepStrictEqual([...t2.mentions].sort(), [HUY, KIT, ROB].sort());
+    assert.strictEqual((t2.description.match(new RegExp(`data-user="${HUY}"`, "g")) || []).length, 1, "nobody is tagged twice");
+    env.store.col("kanbanNotifications").clear();
+    await notify.taskWritten(ev("m2", key, t1, t2));
+    assert.deepStrictEqual(notesFor(ROB).map((n) => n.kind), ["mention"]);
+    assert.strictEqual(notesFor(HUY).length + notesFor(KIT).length, 0, "those already tagged are not told again");
+    const g = await tool1(sam, "kanban_get_task", { key });
+    assert.ok(g.json.activity.some((a) => a.who === SAM && /^tagged .+ in the description$/.test(a.text)), "the log says who was tagged");
+    // A new description sent with a mention carries the tag too.
+    const both = await tool(sam, "kanban_update_task", { key, description: "Rewritten.", mention: [KIT] });
+    assert.ok(!both.isError, both.text);
+    assert.ok(task(key).description.startsWith("<p>Rewritten.</p>") && task(key).description.includes(`data-user="${KIT}"`));
+    // Refusals: everyone already tagged; someone who isn't a member; too many; a viewer.
+    const again = await tool(sam, "kanban_update_task", { key, mention: [KIT] });
+    assert.ok(again.isError && /already tagged/.test(again.text), again.text);
+    const stranger = await tool(sam, "kanban_update_task", { key, mention: ["nobody@example.com"] });
+    assert.ok(stranger.isError && /not a member: nobody@example.com/.test(stranger.text), stranger.text);
+    const strangerNew = await tool(sam, "kanban_create_task", { title: "No", mention: ["nobody@example.com"] });
+    assert.ok(strangerNew.isError && /not a member/.test(strangerNew.text), strangerNew.text);
+    assert.ok(![...env.store.col("kanbanTasks").values()].some((x) => x.title === "No"), "nothing is created when a tag is refused");
+    const many = await tool(sam, "kanban_update_task", { key, mention: Array.from({ length: 21 }, (_, i) => `p${i}@example.com`) });
+    assert.ok(many.isError, many.text);
+    // A name that could carry markup is written as text.
+    assert.ok(!/<(script|img)/i.test(task(key).description));
+  });
+
   await test("fan-out: assigned goes to the assignee, never to the person who acted", async () => {
     env.store.col("kanbanNotifications").clear();
     await notify.taskWritten(ev("e1", "PH-50", null, { ...base, createdBy: ROB }));
@@ -1265,12 +1333,17 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(SAM).length, 1);
   });
 
-  await test("fan-out: Ready for Testing hands it to the tester, and sending it back returns it", async () => {
+  await test("fan-out: a move between columns tells nobody: not the tester it is handed to, not the developer it returns to", async () => {
     env.store.col("kanbanNotifications").clear();
     await notify.taskWritten(ev("e4", "PH-50", { ...base, assignee: HUY }, { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing", updatedBy: HUY }));
-    assert.strictEqual(notesFor(ROB)[0].kind, "testing");
     await notify.taskWritten(ev("e5", "PH-50", { ...base, assignee: ROB, previousAssignee: HUY, status: "ready-for-testing" }, { ...base, assignee: HUY, previousAssignee: HUY, status: "in-progress", updatedBy: ROB }));
-    assert.strictEqual(notesFor(HUY)[0].kind, "returned");
+    await notify.taskWritten(ev("e5b", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0, "no notification for any of the three moves");
+    // Someone tagged in the same save is still told, and so is a person made the assignee by hand while it moves.
+    await notify.taskWritten(ev("e5c", "PH-50", { ...base, status: "backlog" }, { ...base, status: "in-progress", mentions: [SAM], updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(SAM).map((n) => n.kind), ["mention"]);
+    await notify.taskWritten(ev("e5d", "PH-50", { ...base, assignee: HUY, status: "backlog" }, { ...base, assignee: KIT, status: "in-progress", updatedBy: ROB }));
+    assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["assigned"]);
   });
 
   await test("fan-out: a description @mention notifies once, and wins over assigned", async () => {
@@ -1282,11 +1355,11 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(notesFor(HUY).length, 1, "an old mention is not repeated by an unrelated edit");
   });
 
-  await test("fan-out: closing someone else's ticket tells its assignee and reporter, not the closer", async () => {
+  await test("fan-out: closing a ticket is a move too and tells nobody", async () => {
     env.store.col("kanbanNotifications").clear();
-    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", updatedBy: SAM }));
-    assert.deepStrictEqual([HUY, ROB].map((e) => notesFor(e).map((n) => n.kind)), [["closed"], ["closed"]]);
-    assert.strictEqual(notesFor(SAM).length, 0);
+    await notify.taskWritten(ev("e8", "PH-50", { ...base }, { ...base, status: "done", resolution: "completed", updatedBy: SAM }));
+    await notify.taskWritten(ev("e8b", "PH-50", { ...base }, { ...base, status: "done", resolution: "withdrawn", updatedBy: SAM }));
+    assert.strictEqual(env.store.col("kanbanNotifications").size, 0);
   });
 
   await test("fan-out: a comment tells the assignee, reporter and watchers, not its author", async () => {
@@ -1298,6 +1371,16 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.deepStrictEqual(notesFor(KIT).map((n) => n.kind), ["commented"], "a watcher");
     assert.deepStrictEqual(notesFor(SAM).map((n) => [n.kind, n.via]), [["mention", "comment"]]);
     assert.strictEqual(notesFor(HUY).length, 0, "the commenter is told nothing");
+  });
+
+  await test("fan-out: two people whose addresses differ only by punctuation are each told", async () => {
+    env.store.col("kanbanNotifications").clear();
+    env.store.col("kanbanTasks").set("PH-51", { ...base, watchers: [] });
+    const c = { author: HUY, mentions: ["linh.tran@ph.example", "linh_tran@ph.example", "linh-tran@ph.example"] };
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who} has their own notification`);
+    await notify.commentCreated({ id: "c9", params: { key: "PH-51" }, data: { data: () => c } });
+    for (const who of c.mentions) assert.strictEqual(notesFor(who).length, 1, `${who}: a redelivery adds nothing`);
   });
 
   await test("fan-out: editing a comment tells only the people it newly mentions", async () => {
@@ -1365,7 +1448,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
   await test("bounded reads: a big board", async () => {
     const tasks = env.store.col("kanbanTasks"), cards = env.store.col("kanbanCards");
     for (const k of [...tasks.keys()]) { tasks.delete(k); cards.delete(k); }
-    const OTHER = "ada@personalisationhub.com";
+    const OTHER = "ada@ph.example";
     const seed = (n, over) => {
       const key = core.keyOf(n);
       const t = Object.assign({ key, number: n, type: "task", title: `Seed ${n}`, description: "", status: "backlog", resolution: null, open: true, rank: n * 10, assignee: OTHER, previousAssignee: "", reporter: OTHER, release: "", sprint: "", project: "", estimate: null, logged: 0, priority: "medium", due: "", labels: [], epic: "", links: [], flagged: false, attachments: [], commentCount: 0, searchTokens: [`ph-${n}`] }, over);
@@ -1464,10 +1547,10 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       await tool1(sam, "kanban_comment", { key: "PH-1", text: "no mention", mention: [] }).catch(() => null);
       for (const c of ["memberDirectory", "kanbanSettings", "releases", "kanbanSprints", "projects"]) assert.ok(!env.store.reads.get(c), `${c} was read again within the minute`);
       // a directory write on this instance drops the copy
-      await kanban.syncMemberDirectoryWrite({ params: { userEmail: "late@personalisationhub.com" }, data: { before: { exists: false }, after: { exists: true, data: () => ({ email: "late@personalisationhub.com", displayName: "Late" }) } } });
+      await kanban.syncMemberDirectoryWrite({ params: { userEmail: "late@ph.example" }, data: { before: { exists: false }, after: { exists: true, data: () => ({ email: "late@ph.example", displayName: "Late" }) } } });
       const p = await tool1(sam, "kanban_list_people", {});
-      assert.ok(p.json.people.some((x) => x.email === "late@personalisationhub.com"));
-      env.store.col("memberDirectory").delete("late@personalisationhub.com");
+      assert.ok(p.json.people.some((x) => x.email === "late@ph.example"));
+      env.store.col("memberDirectory").delete("late@ph.example");
     } finally { keepCaches = false; kanban.clearCaches(); }
   });
 
@@ -1659,6 +1742,105 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     const v = await tool(kit, "kanban_my_work", {});
     assert.ok(!v.isError); assert.strictEqual(v.json.open, 0);
   });
+
+  // ── Send to Agent (KB-AGENT-1, functions/kanban-agent.js) ────────────────
+  {
+    const kanbanAgent = require("../functions/kanban-agent.js");
+    const send = (email, body) => call({ method: "POST", path: "/mcp/kanban/send-to-agent", headers: { "X-Firebase-ID-Token": signIn(email) }, body });
+    env.store.col("projects").set("agentProj", { name: "Agent Proj" });
+    env.store.col("projects").set("frozenProj", { name: "Frozen", finalised: true });
+    env.authState.secrets.ANTHROPIC_API_KEY = "unset";
+    let key = "", ids = [];
+    await test("send to agent: only the assignee may, and without a key the proposal is the ticket itself", async () => {
+      key = (await tool(sam, "kanban_create_task", { title: "Ship the loyalty widget", description: "Customers see their points.", assignee: "me", project: "agentProj", acceptanceCriteria: ["Points show", "Zero shows as 0"] })).json.key;
+      const huy = await send(HUY, { action: "propose", key });
+      assert.strictEqual(huy.statusCode, 403); assert.match(huy.body.error, /assignee/);
+      assert.strictEqual((await send(KIT, { action: "propose", key })).statusCode, 403);
+      const r = await send(SAM, { action: "propose", key });
+      assert.strictEqual(r.statusCode, 200);
+      assert.strictEqual(r.body.source, "ticket"); assert.strictEqual(r.body.projectId, "agentProj");
+      assert.deepStrictEqual(r.body.proposal, [{ title: "Ship the loyalty widget", description: "Customers see their points.", acceptanceCriteria: ["Points show", "Zero shows as 0"] }]);
+    });
+    await test("send to agent: Claude's split is cleaned, and a refusal gives none", async () => {
+      let sent = null;
+      class Fake { constructor() { this.beta = { messages: { create: async (req) => { sent = req; return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ tickets: [{ title: "  Points API ", description: "Expose points.", acceptanceCriteria: ["- returns points"] }, { title: "Widget", description: "Show it.", acceptanceCriteria: [] }] }) }] }; } } }; } }
+      const out = await kanbanAgent.claudeSplit("k", task(key) && Object.assign({ key }, task(key)), { Anthropic: Fake });
+      assert.strictEqual(sent.model, kanbanAgent.AGENT_SPLIT_MODEL); assert.strictEqual(sent.output_config.format.type, "json_schema");
+      assert.deepStrictEqual(out, [{ title: "Points API", description: "Expose points.", acceptanceCriteria: ["returns points"] }, { title: "Widget", description: "Show it.", acceptanceCriteria: [] }]);
+      const refusal = class { constructor() { this.beta = { messages: { create: async () => ({ stop_reason: "refusal", content: [] }) } }; } };
+      assert.strictEqual(await kanbanAgent.claudeSplit("k", { key, title: "x" }, { Anthropic: refusal }), null);
+    });
+    await test("send to agent: confirm files owner-tagged agent tickets in Backlog, linked both ways", async () => {
+      const tickets = [
+        { title: "Points API", description: "Expose a customer's points.", acceptanceCriteria: ["GET returns points"] },
+        { title: "Loyalty widget", description: "Show the points.", acceptanceCriteria: ["Widget shows points", "Zero shows as 0"] },
+        { title: "Help article", description: "Explain points.", acceptanceCriteria: [] },
+      ];
+      assert.strictEqual((await send(HUY, { action: "confirm", key, projectId: "agentProj", tickets })).statusCode, 403);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "nope", tickets })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "frozenProj", tickets })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets: [{ title: " ", description: "x" }] })).statusCode, 400);
+      assert.strictEqual((await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets: Array.from({ length: 11 }, (_, i) => ({ title: `T${i}` })) })).statusCode, 400);
+      const r = await send(SAM, { action: "confirm", key, projectId: "agentProj", tickets });
+      assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+      assert.strictEqual(r.body.created.length, 3); assert.strictEqual(r.body.agentTotal, 3); assert.strictEqual(r.body.agentDone, 0);
+      ids = r.body.created.map((x) => x.id);
+      for (const [i, id] of ids.entries()) {
+        const it = env.store.col("backlogItems").get(id);
+        assert.strictEqual(it.projectId, "agentProj"); assert.strictEqual(it.status, "backlog");
+        assert.strictEqual(it.ownerEmail, SAM); assert.strictEqual(it.kanbanKey, key); assert.strictEqual(it.createdVia, "send-to-agent");
+        assert.strictEqual(it.title, tickets[i].title);
+        assert.match(it.desc, /^## Outcome\n/); assert.match(it.desc, new RegExp(`## Spec reference\\nStaff Kanban ticket ${key} `));
+        if (tickets[i].acceptanceCriteria.length) assert.match(it.desc, /## Test steps\n1\. Check: /);
+      }
+      const t = task(key);
+      assert.deepStrictEqual(t.agentTickets, ids.map((id) => ({ id, projectId: "agentProj" })));
+      assert.strictEqual(t.agentTotal, 3); assert.strictEqual(t.agentDone, 0);
+      const c = env.store.col("kanbanCards").get(key);
+      assert.strictEqual(c.agentTotal, 3); assert.strictEqual(c.agentDone, 0);
+      assert.deepStrictEqual(cardDrift(), []);
+      assert.ok(activity(key).some((a) => /^sent to agent: 3 agent tickets on Agent Proj/.test(a)));
+    });
+    const written = (id, before, after) => kanbanAgent.agentTicketWritten({ data: { before: { exists: !!before, data: () => before }, after: { exists: !!after, data: () => after } }, params: { itemId: id } });
+    await test("send to agent: built agent tickets are counted, and all built moves the Kanban ticket to Ready for Testing", async () => {
+      assert.strictEqual(kanbanAgent.rollupChanged({ status: "backlog" }, { status: "ready-for-testing" }), null);
+      assert.strictEqual(kanbanAgent.rollupChanged({ kanbanKey: key, status: "backlog", title: "a" }, { kanbanKey: key, status: "backlog", title: "b" }), null);
+      const items = env.store.col("backlogItems");
+      // The pipeline stamps what it moves (deployCommit / mergeCommit); a status alone is not "built".
+      const STAMP = { "ready-for-testing": { deployCommit: "d" }, "ready-to-publish": { deployCommit: "d" }, "published-live": { mergeCommit: "m" } };
+      const move = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status }, STAMP[status] || {})); return written(id, before, items.get(id)); };
+      const bare = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status })); return written(id, before, items.get(id)); };
+      kanban.clearCaches();
+      // A browser-written status with no pipeline stamp is not built.
+      let r = await bare(ids[0], "ready-for-testing");
+      assert.strictEqual(r.done, 0, "status alone is not proof");
+      r = await move(ids[0], "ready-for-testing");
+      assert.strictEqual(r.done, 1); assert.strictEqual(r.moved, false);
+      assert.strictEqual(task(key).agentDone, 1); assert.strictEqual(env.store.col("kanbanCards").get(key).agentDone, 1);
+      assert.strictEqual(task(key).status, "backlog");
+      r = await move(ids[1], "published-live");
+      assert.strictEqual(r.done, 2);
+      kanban.clearCaches();
+      r = await move(ids[2], "ready-to-publish");
+      assert.strictEqual(r.done, 3); assert.strictEqual(r.moved, true);
+      assert.strictEqual(task(key).status, "ready-for-testing");
+      assert.strictEqual(env.store.col("kanbanCards").get(key).status, "ready-for-testing");
+      assert.ok(activity(key).some((a) => a === "all 3 agent tickets are built on the Agent Board"));
+      assert.deepStrictEqual(cardDrift(), []);
+      // Sent back on the Agent Board: the count drops, the Kanban ticket stays where it is.
+      r = await move(ids[2], "backlog");
+      assert.strictEqual(task(key).agentDone, 2); assert.strictEqual(task(key).status, "ready-for-testing");
+      // A deleted agent ticket leaves the count.
+      const gone = Object.assign({}, items.get(ids[2])); items.delete(ids[2]);
+      await written(ids[2], gone, null);
+      assert.strictEqual(task(key).agentTotal, 2); assert.strictEqual(task(key).agentDone, 2);
+    });
+    await test("send to agent: a closed ticket can't be sent, and an agent ticket with no Kanban link changes nothing", async () => {
+      await tool(sam, "kanban_move_task", { key, status: "done", resolution: "completed" });
+      assert.strictEqual((await send(SAM, { action: "propose", key })).statusCode, 403);
+      assert.strictEqual(await written("x", { status: "backlog" }, { status: "ready-for-testing" }), null);
+    });
+  }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) { for (const [n, e] of failures) console.log(`\n--- ${n}\n${e && e.stack}`); process.exit(1); }

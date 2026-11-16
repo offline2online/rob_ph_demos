@@ -28,19 +28,19 @@ const docs = {
     t3: ticket(3, { subject: "Invoice query", needsHuman: true, category: "billing" }),
     t4: ticket(4, { subject: "Weekly deals", automated: "mailing list", category: "automated" }),
     t5: ticket(5, { subject: "Thanks, sorted", status: "resolved", resolvedBy: "ai", firstResponseAt: t(T0 + 0.05 * H), resolvedAt: t(T0 + 0.05 * H), category: "how-to" }),
-    t6: ticket(6, { subject: "Fixed by the team", status: "resolved", resolvedBy: "editor@personalisationhub.com", humanInvolved: true, firstResponseAt: t(T0 + 2 * H), resolvedAt: t(T0 + 6 * H), category: "bug" }),
+    t6: ticket(6, { subject: "Fixed by the team", status: "resolved", resolvedBy: "editor@ph.example", humanInvolved: true, firstResponseAt: t(T0 + 2 * H), resolvedAt: t(T0 + 6 * H), category: "bug" }),
     t7: ticket(7, { subject: "Waiting for their reply", status: "pending", humanInvolved: true, firstResponseAt: t(T0 + H) }),
     t8: ticket(8, { subject: "Buy cheap links", status: "spam" }),
   },
   "supportTickets/t1/messages": {
     m1: { direction: "in", from: "ann@shop.example", fromName: "Ann Lee", text: "Hi,\nHow do I add a display to my store?\n<script>alert(1)</script>", at: t(T0), attachments: [{ name: "photo.png" }] },
     e1: { direction: "event", text: "Raised for triage.", by: "system", at: t(T0 + 1000) },
-    n1: { direction: "note", text: "Store 14, new starter.", by: "editor@personalisationhub.com", at: t(T0 + 2000) },
+    n1: { direction: "note", text: "Store 14, new starter.", by: "editor@ph.example", at: t(T0 + 2000) },
   },
   faqArticles: { a1: { status: "published", title: "Add a display to a store", directAnswer: "Open Displays and Devices, then choose Add display.", keywords: ["display"] }, a2: { status: "draft", title: "Draft about displays" } },
-  memberDirectory: { "editor@personalisationhub.com": { email: "editor@personalisationhub.com", displayName: "Ed Itor" }, "admin@personalisationhub.com": { email: "admin@personalisationhub.com", displayName: "Ada Min" } },
+  memberDirectory: { "editor@ph.example": { email: "editor@ph.example", displayName: "Ed Itor" }, "admin@personalisationhub.com": { email: "admin@personalisationhub.com", displayName: "Ada Min" } },
 };
-const seedFor = (role, extra = {}) => ({ user: { email: `${role}@personalisationhub.com`, role }, docs, supportStatus: connected, ...extra });
+const seedFor = (role, extra = {}) => ({ user: { email: `${role}@ph.example`, role }, docs, supportStatus: connected, ...extra });
 
 const audit = (page, sel) => page.evaluate((sel) => {
   const scope = document.querySelector(sel);

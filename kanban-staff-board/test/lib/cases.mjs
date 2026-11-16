@@ -1066,6 +1066,9 @@ export function defineNewCases(E) {
     const kpis = () => p.$$eval(".kb-kpi", (e) => e.map((k) => ({ label: k.querySelector(".kb-kpi-label").childNodes[0].textContent.trim(), value: k.querySelector(".kb-kpi-value").textContent.trim(), sub: k.querySelector(".kb-kpi-sub").textContent.trim() })));
     const bars = () => p.$$eval(".kb-bar-row", (e) => Object.fromEntries(e.map((b) => [b.dataset.person, b.querySelector(".kb-bar-val").textContent.trim()])));
     const rows = () => p.$$eval(".kb-click-row", (e) => e.map((r) => r.innerText.replace(/\s+/g, " ").trim()));
+    // innerText is the rendered text: read while the report is not laid out yet (phone, just opened) it comes back as
+    // the raw text, unspaced and without the pills' capitals. Wait until every row has a box before reading it.
+    const laidOut = () => until(() => p.$$eval(".kb-click-row", (e) => e.length > 0 && e.every((r) => r.getClientRects().length > 0)), "the report's rows to be laid out");
     const oracle = async () => {
       const all = (await E.tasks(p)).filter((t) => t.type !== "epic" && t.release === rel);
       const out = all.filter((t) => t.status !== "done");
@@ -1082,24 +1085,28 @@ export function defineNewCases(E) {
       for (const [pid, h] of Object.entries(o.per)) if (h > 0) assert.ok(Math.abs(hrs(b[pid] || "") - h) < 0.51, `${when}: ${pid} remaining ${b[pid]} vs ${h}h`);
       return { o, k, b };
     };
-    const a = await check("before");
+    // The report draws as soon as the page has any data, then again as the rest arrives: wait for the
+    // figures to match the stored tickets rather than reading the first paint.
+    const a = await eventually(() => check("before"));
     // epics never count
     const epicsInRelease = (await E.tasks(p)).filter((t) => t.type === "epic" && t.release === rel).length;
     assert.ok(epicsInRelease > 0, "the release has an epic");
     assert.ok(!(await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open))).some((k) => /^PH-[1-5]$/.test(k)), "epics are not listed in the report");
     // a shared URL reproduces the view
     const url = await p.evaluate(() => location.hash);
+    await laidOut();
     const before = { k: await kpis(), r: await rows() };
-    await p.reload(); await p.waitForSelector(".kb-kpi");
+    await p.reload(); await p.waitForSelector(".kb-kpi"); await laidOut();
     assert.equal(await p.evaluate(() => location.hash), url);
-    assert.deepEqual({ k: await kpis(), r: await rows() }, before, "the same URL shows the same report");
+    // After the reload the report is redrawn as the tickets load; wait for it to reach the same view.
+    await eventually(async () => assert.deepEqual({ k: await kpis(), r: await rows() }, before, "the same URL shows the same report"));
     // move tickets on the board, come back
     await E.go(p, "kanban"); await p.waitForSelector(".kb-card");
     await statusMove(p, "PH-33", "completed");   // Huy, 12h, 4.12
     await statusMove(p, "PH-29", "withdrawn");   // Huy, 8h, 4.12
     await statusMove(p, "PH-27", "in-progress"); // moves nothing out of the release
     await E.go(p, "report", `release=${rel}&status=all`); await p.waitForSelector(".kb-kpi");
-    const b = await check("after the moves");
+    const b = await eventually(() => check("after the moves"));
     assert.equal(b.o.outstanding, a.o.outstanding - 2, "two fewer outstanding");
     assert.ok(Math.abs(a.o.remaining - b.o.remaining - 20) < 0.01, "20h less remaining");
     assert.equal(b.o.completed, a.o.completed + 1); assert.equal(b.o.withdrawn, a.o.withdrawn + 1);
@@ -1431,7 +1438,7 @@ export function defineNewCases(E) {
 
   T("TC-31", "a new console member appears in the assignee list and filters without a reload; a disabled member leaves the pickers but stays on existing tickets", { ...consoleOnly("Console only: members come from the console's directory"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
-    const newbie = "noor.ali@personalisationhub.com";
+    const newbie = "noor.ali@ph.example";
     await p.evaluate((n) => { const b = globalThis.__fbStub; b.col("memberDirectory").set(n, { email: n, displayName: "Noor Ali" }); b.notify(); }, newbie);
     await sleep(500);
     assert.ok(await p.$(`.kb-person-chip[data-person="${newbie}"]`), "a filter chip for the new member");
@@ -1460,7 +1467,7 @@ export function defineNewCases(E) {
       await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
       await p.fill("#f-title", "Session A's ticket");
       // (another session writes the ticket and its board card together, as the page does)
-      await p.evaluate(async () => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const t = { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@personalisationhub.com" }; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", t); b.col("kanbanCards").set("PH-40", { ...core.cardOf(t), updatedBy: t.createdBy }); b.notify(); });
+      await p.evaluate(async () => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const t = { key: "PH-40", number: 40, type: "task", title: "Session B's ticket", status: "backlog", open: true, rank: 9999, assignee: "", labels: [], searchTokens: ["ph-40"], createdBy: "other@ph.example" }; b.col("kanbanCounters").set("main", { nextNumber: 41 }); b.col("kanbanTasks").set("PH-40", t); b.col("kanbanCards").set("PH-40", { ...core.cardOf(t), updatedBy: t.createdBy }); b.notify(); });
       await sleep(300);
       await saveTask(p);
       assert.equal(await toastKey(p), "PH-41", "A's ticket skips the key B took");
@@ -1483,7 +1490,7 @@ export function defineNewCases(E) {
     // The server's tools write the ticket and its board card together.
     const putTicket = (t) => p.evaluate(async (t) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; b.col("kanbanTasks").set(t.key, t); b.col("kanbanCards").set(t.key, { ...core.cardOf(t), ...(t.closedAt ? { closedAt: t.closedAt } : {}), updatedBy: "agent" }); b.notify(); }, t);
     await p.evaluate(() => { globalThis.__fbStub.col("kanbanCounters").set("main", { nextNumber: 41 }); });
-    await putTicket({ key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "rob@offline2online.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" });
+    await putTicket({ key: "PH-40", number: 40, type: "bug", title: "Raised by an agent", status: "backlog", open: true, rank: 9999, assignee: "", reporter: "owner@example.com", release: "4-12", estimate: 3, logged: 0, priority: "high", labels: ["api"], searchTokens: ["ph-40", "raised", "agent"], createdBy: "agent" });
     await until(() => p.$(card("PH-40")), "the new card", 5000);
     assert.equal(await countText(p), n0 + 1);
     assert.equal((await where(p, "PH-40")).status, "backlog");
@@ -1499,7 +1506,7 @@ export function defineNewCases(E) {
   T("TC-56", "two sessions move the same card at once: both boards end on the same state, with no duplicate card", { ...consoleOnly("Console only: the prototype keeps its state in one browser"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"), TALL);
     const input = prof.touch ? "touch" : "mouse";
-    const remote = (status) => p.evaluate(async (s) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = { ...c.get("PH-34"), status: s, open: true }; c.set("PH-34", t); b.col("kanbanCards").set("PH-34", { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify(); }, status);
+    const remote = (status) => p.evaluate(async (s) => { const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub; const c = b.col("kanbanTasks"); const t = { ...c.get("PH-34"), status: s, open: true }; c.set("PH-34", t); b.col("kanbanCards").set("PH-34", { ...core.cardOf(t), updatedBy: "other@ph.example" }); b.notify(); }, status);
     if (prof.kind === "phone") { await statusMove(p, "PH-34", "in-progress"); await remote("approved"); await sleep(500); }
     else {
       // A picks the card up; B moves it; A drops it in In Progress

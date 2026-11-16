@@ -223,6 +223,34 @@ fully independent of each other. Treat backlog sweeps and publish workflows
 for each exactly as described in the "Prototype Backlog" section below —
 per-project, not shared.
 
+## Never hard-code a person's address — roles, claims and config instead
+
+**No personal email address (or other user identity) goes into any tracked
+file** — code, rules, docs, tests, fixtures, seed data, comments. This repo
+is public, and a file holding one makes the privacy plugin refuse every
+Routine's `patchFiles` hand-back: that blocked six tickets at once on
+16 Nov 2026, when the owner's address sat in `firestore.rules`,
+`mcp-server.js`, `app.js` and a dozen tests.
+
+- **Who may do something is a role**: the `owner: true` Firebase Auth custom
+  claim for the account owner (`backlog-tracker/scripts/set-owner-claim.js`),
+  `consoleUsers.role` / the `consoleRole` claim for everyone else. Check the
+  claim or the row — never compare against an address.
+- **A value that truly has to name someone is configuration**: a User
+  Management row, a Firestore config doc (`consoleConfig/identity`), a
+  repository secret or Secret Manager — never the repo. (The owner claim's
+  `CONSOLE_OWNER_EMAIL` secret is optional: admins are User Management rows.)
+  Scripts that use one must not print it (Actions logs here are public).
+- **Tests use fixture identities** on reserved domains: `owner@example.com`
+  (with `owner: true` on its token), `owner.alias@example.com`,
+  `<name>@ph.example`. Docs say "the account owner", not an address.
+- **Enforced**: `tools/check-personal-emails.js` runs in CI
+  (`.github/workflows/personal-email-check.yml`) and as a pre-commit hook
+  (`git config core.hooksPath tools/hooks`, once per clone). A genuinely
+  public, non-personal address (a published role mailbox on a brand's own
+  domain, a fictional fixture whose real domain is under test) goes in
+  `.personal-email-allowlist` with a comment saying why — never a person's.
+
 ## Common Workflows
 
 ### Publish changes
@@ -331,7 +359,7 @@ files **at the repo root**. That is exactly what happened to PR #185 on
 `README.md`, changed none of the real files, and every card still said
 "Deployed / Main Branch (Live)".
 
-So, when a project is added, all four of these get set before any ticket
+So, when a project is added, all of these get set before any ticket
 is worked:
 
 1. **The folder exists in the repo**, with its own `README.md` and
@@ -351,6 +379,12 @@ is worked:
    project"), never created as a board document by hand. The post-merge
    sync creates and refreshes the mirrors, sets the project's start
    document and records unclassified documents.
+6. **`projects/{id}.ownedPaths`** lists the repo-relative prefixes the
+   project owns (Docs page, under the repo folder; default `<folder>/`).
+   Set it whenever the project shares a folder with another one (Staff
+   Kanban's files live inside `backlog-tracker/`): a ticket on another
+   project that changes them is flagged "Changes <project>'s files", so
+   that train knows it needs a sync (`functions/deploy-queue.js`).
 
 A project with no folder of its own is legitimate but is the exception,
 not the default — "Backlog Tracker & FAQs" owns both `backlog-tracker/`
@@ -430,7 +464,23 @@ board:
 - **The first approval locks the Backlog** (`trainLocked`): Ready for Dev
   and Groom Backlog hide until the train merges, so no new ticket joins a
   release that is already closing. Backlog cards stay fully editable; only
-  starting a build is held.
+  starting a build is held. **A build that finishes after the lock is held,
+  not landed** (15 Nov 2026): its card reads "Built — joins the next
+  release" (`buildAfterTrain` with `patchReady`) and it lands by itself
+  right after the train merges. Nothing ever lands on top of the version
+  bump.
+- **Deploys queue among trains that share files** (`settings/deployQueue`,
+  15 Nov 2026): two trains that change the same files, or both ship through
+  `deploy-backlog-tracker.yml`, merge one at a time in click order; the
+  second shows "Queued behind <project>'s deploy" and starts by itself.
+  While queued nothing is merged in, tested or bumped; at the head of the
+  queue it merges main, runs its tests once on that head, then bumps.
+  Unrelated trains deploy in parallel. A conflict on `version.js`'s
+  `APP_VERSION` line alone resolves to main's line. Cards that share files
+  with another project's train say so while testing ("Also changed on …",
+  or "Conflicts with …" when the tips don't merge). See
+  `backlog-tracker/REQUIREMENTS.md` → "Late arrivals", "Deploy queue",
+  "Shared files between trains".
 - **The train is brought up to date with main before any ticket lands**
   (`syncTrainWithMain` in `run-backlog-automation.js`, 1 Oct 2026): an
   empty train is fast-forwarded to main, a loaded one gets main merged in,
@@ -594,8 +644,9 @@ the ticket and in `mcpAuditLog`.
   `viewer` (read only; `board.write` is never issued to one).
 - **Tickets: read/file/comment only, deliberately.** Read: `whoami`,
   `list_projects`, `list_backlog_items`, `get_backlog_item`, `search_faq`,
-  `get_faq_article`. Write: `create_backlog_item` (always into Backlog),
-  `update_backlog_item` (title, desc, type, category — **no status**),
+  `get_faq_article`. Write: `create_backlog_item` (always into Backlog;
+  optional `model`, `standard` | `advanced`), `update_backlog_item` (title,
+  desc, type, category, model — **no status**),
   `archive_backlog_items` / `delete_backlog_items` (Backlog tickets only),
   `add_item_comment`.
 - **`get_ready_for_testing_board` / `get_approved_for_deployment_board`
@@ -1025,6 +1076,7 @@ run.
 
 ## Guidelines
 
+- Never hard-code a personal email address or user identity — use roles/claims and config (see "Never hard-code a person's address" above)
 - Always push to `main` branch
 - Commit messages should be short and descriptive (e.g., "Add contact page", "Update hero image")
 - No build step required — files are served as-is

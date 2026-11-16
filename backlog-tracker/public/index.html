@@ -19,7 +19,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600&display=swap">
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_business,add_photo_alternate,ads_click,anchor,apartment,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,download,draft,drag_handle,draw,edit,email,error,event,event_available,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,forum,function,functions,gavel,grocery,group,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,inbox,info,ink_eraser,input,insights,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,language,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,map,mark_email_unread,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,pending_actions,people,person,photo,preview,priority,progress_activity,psychology,public,publish,queue,radio,refresh,remove,replay,report,resize,right_panel_close,right_panel_open,rocket_launch,rule,schedule,screenshot,script,search,security,select,send,settings,share,smart_toy,source,sprint,star,start,stop,storage,store,storefront,subdirectory_arrow_right,subject,support,support_agent,swap_horiz,sync,sync_problem,tab,table,target,task,task_alt,title,toolbar,tooltip,touch_app,travel_explore,trending_up,try,tune,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,warning,width&display=block">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0..1,0&icon_names=accessibility,account_circle,add,add_a_photo,add_business,add_photo_alternate,ads_click,anchor,apartment,api,arrow_back,arrow_downward,arrow_drop_down,arrow_upward,article,attach_file,attachment,auto_awesome,auto_fix_high,automation,autorenew,badge,block,bolt,brush,bug_report,build,business,call_split,campaign,cancel,cards,category,center_focus_strong,chat_bubble,check_box,check_circle,checklist,class,close,cloud,code,comment,construction,contacts,content_copy,content_cut,contract,crop,dashboard,deck,delete,delete_sweep,description,details,devices,do_not_disturb_on,docs,done,download,draft,drag_handle,draw,edit,email,error,event,event_available,expand_less,expand_more,fact_check,filter,filter_alt,fit_screen,flag,folder,folder_copy,folder_shared,forum,function,functions,gavel,grocery,group,groups,handshake,healing,help,help_center,history,hourglass_empty,hourglass_top,how_to_reg,iframe,image,inbox,info,ink_eraser,input,insights,install_desktop,integration_instructions,inventory_2,ios_share,keyboard_arrow_down,keyboard_arrow_up,keyboard_double_arrow_down,keyboard_double_arrow_up,label,language,left_panel_close,left_panel_open,light,lightbulb,link,link_off,list,list_alt,local_offer,lock,logout,loop,mail,manage_accounts,map,mark_email_unread,menu,menu_book,merge_type,message,mic,monitoring,more_horiz,more_vert,mouse,move,movie,navigation,note,notes,notifications,open_in_new,palette,pan_tool,password,payments,pending,pending_actions,people,person,photo,preview,priority,progress_activity,psychology,public,publish,queue,radio,radio_button_unchecked,refresh,remove,replay,report,resize,right_panel_close,right_panel_open,rocket_launch,routine,rule,schedule,screenshot,script,search,security,select,send,settings,share,smart_toy,smartphone,source,sprint,star,start,stop,storage,store,storefront,subdirectory_arrow_right,subject,support,support_agent,swap_horiz,sync,sync_problem,tab,table,table_chart,target,task,task_alt,title,toolbar,tooltip,touch_app,travel_explore,trending_up,try,tune,tv,undo,unfold_more,update,upload,view_agenda,view_kanban,visibility,visibility_off,warning,width&display=block">
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/apple.css">
   <link rel="stylesheet" href="css/kanban.css">
@@ -48,6 +48,7 @@
   <link rel="modulepreload" href="js/ticket-intake.js">
   <link rel="modulepreload" href="js/follow-up.js">
   <link rel="modulepreload" href="js/card-test-status.js">
+  <link rel="modulepreload" href="js/train-overlap.js">
   <link rel="modulepreload" href="js/firebase-config.js">
   <link rel="modulepreload" href="js/version.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js">
@@ -664,6 +665,13 @@
         </select>
         <p class="field-hint">Which Claude model must build and review this ticket. An Advanced ticket is never built on a lesser model: if Claude Opus isn't available it is skipped and flagged instead.</p>
         <p class="field-hint model-log" id="ei-model-log" hidden></p>
+        <label class="field-label" for="ei-deps-search">Builds after</label>
+        <div class="ei-deps-chips" id="ei-deps-chips"></div>
+        <input type="text" id="ei-deps-value" hidden tabindex="-1" aria-hidden="true">
+        <input type="search" id="ei-deps-search" class="ei-deps-search" placeholder="Search open tickets by title" autocomplete="off" aria-controls="ei-deps-results">
+        <div class="ei-deps-results" id="ei-deps-results" role="listbox" aria-label="Open tickets" hidden></div>
+        <p class="field-hint ei-deps-error" id="ei-deps-error" role="alert" hidden></p>
+        <p class="field-hint">Tickets this one needs first. Ready for Dev holds it until they reach Ready for Testing, then starts it by itself.</p>
         <label class="np-interface-toggle">
           <input type="checkbox" id="ei-no-deploy-checkbox">
           No deployment required
@@ -856,6 +864,15 @@
         </label>
         <div class="form-row" style="justify-content:flex-end;">
           <button type="button" class="btn-primary" id="docs-repo-folder-save">Save repo folder</button>
+        </div>
+      </div>
+
+      <div class="docs-block" data-docs-tab="general">
+        <h3>Owned paths</h3>
+        <p class="field-hint">Repo-relative prefixes this project owns, one per line (a folder ends with <code>/</code>). A ticket on another project that changes a file here gets a &ldquo;Changes this project&rsquo;s files&rdquo; warning, so its tester knows this project&rsquo;s train will need main merged in. Leave empty for the default: the repo folder.</p>
+        <textarea id="docs-owned-paths-input" rows="4" placeholder="e.g. dsp-integration/"></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-owned-paths-save">Save owned paths</button>
         </div>
       </div>
 
@@ -1130,6 +1147,11 @@
               <span class="fa-status-badge" id="fa-status-badge">Draft</span>
               <p class="field-hint">Use <strong>Save draft</strong> or <strong>Publish</strong> at the top of the page to change this.</p>
               <p class="field-hint" id="fa-live-link-hint" hidden></p>
+              <label class="fa-needs-review-toggle">
+                <input type="checkbox" id="fa-hidden-from-website-toggle">
+                Hide from website
+              </label>
+              <p class="field-hint">A hidden article isn't on the website or in public help search, even when published. The Support Inbox still answers emails from it. Untick it to launch. Hiding a category or folder hides every article in it.</p>
             </div>
           </div>
         </aside>
@@ -1444,6 +1466,7 @@
           <button type="button" class="settings-tab" role="tab" data-settings-page="automations">Automations</button>
           <button type="button" class="settings-tab" role="tab" data-settings-page="integrations">Integrations &amp; MCP</button>
           <button type="button" class="settings-tab" role="tab" data-settings-page="support">Support inbox</button>
+          <button type="button" class="settings-tab" role="tab" data-settings-page="routine">My Claude Routine</button>
         </nav>
         <div class="settings-content">
 
@@ -1552,6 +1575,49 @@
                Rendered by js/support-page.js → mountSupportSettings. -->
           <div class="settings-pane" data-settings-pane="support" hidden>
             <div id="support-settings"><p class="interface-row-empty">Loading…</p></div>
+          </div>
+
+          <!-- Each member's own Claude Routine (xFzQgynkoMdV33iWJFZq): set up
+               once, and board clicks (and every agent ticket they own) fire
+               under their own Claude account. Write-only: the page is told
+               only whether a binding exists (functions/mcp-server.js,
+               /mcp/me/routine-binding). -->
+          <div class="settings-pane" data-settings-pane="routine" hidden>
+            <div class="docs-block" id="routine-setup-block">
+              <div class="docs-block-header">
+                <h3>My Claude Routine
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About your Claude Routine" data-tip="Your own Claude Code Routine, under your own Claude account. Once connected, Ready for Dev, Deploy to Main and Groom Backlog clicks you make start sessions on it instead of the shared project Routine. Agent tickets you own run only on it: without one they can't be started. The fire URL and token can't be read back here, by anyone."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+              </div>
+              <p class="routine-binding-status" id="routine-binding-status" role="status">Checking…</p>
+              <ol class="routine-steps">
+                <li>
+                  <strong>Create a Routine.</strong> Open <a href="https://claude.ai/code/routines" target="_blank" rel="noopener">claude.ai/code/routines</a>, signed in with the Claude account the sessions should run under, and create a new Routine.
+                </li>
+                <li>
+                  <strong>Paste this prompt</strong> as the Routine's prompt.
+                  <textarea id="routine-bootstrap-prompt" class="routine-prompt" rows="6" readonly aria-label="Routine prompt"></textarea>
+                  <button type="button" class="btn-ghost" id="routine-copy-prompt">Copy prompt</button>
+                </li>
+                <li>
+                  <strong>Add an API trigger</strong> in the Routine's settings. Copy its fire URL (it ends in /fire) and its token: the token is shown once.
+                </li>
+                <li>
+                  <strong>Connect it here.</strong>
+                  <form id="routine-binding-form" class="routine-binding-form" autocomplete="off">
+                    <label class="field-label" for="routine-fire-url">Fire URL</label>
+                    <input type="url" id="routine-fire-url" placeholder="https://api.anthropic.com/…/fire" spellcheck="false">
+                    <label class="field-label" for="routine-fire-token">Token</label>
+                    <input type="password" id="routine-fire-token" autocomplete="new-password" spellcheck="false">
+                    <p class="routine-binding-error" id="routine-binding-error" role="alert"></p>
+                    <div class="form-row" style="justify-content:flex-start;gap:8px;">
+                      <button type="submit" class="btn-primary" id="routine-binding-save">Save</button>
+                      <button type="button" class="btn-ghost" id="routine-binding-clear" hidden>Disconnect</button>
+                    </div>
+                  </form>
+                </li>
+              </ol>
+            </div>
           </div>
 
           <div class="settings-pane" data-settings-pane="integrations" hidden>
@@ -1664,6 +1730,7 @@
             <div class="faq-cat-heading-group">
               <span class="material-symbols-outlined faq-cat-heading-icon" id="faq-cat-heading-icon" hidden>help</span>
               <h3 id="faq-articles-heading">Articles</h3>
+              <span class="badge badge-faq-hidden" id="faq-cat-heading-hidden" title="Not on the website. The Support Inbox still answers from its articles." hidden>Hidden from website</span>
               <button type="button" class="icon-btn faq-cat-edit-toggle" id="faq-cat-edit-toggle" title="Edit this category's name, icon and description" hidden>
                 <span class="material-symbols-outlined">edit</span>
               </button>
@@ -1678,6 +1745,10 @@
               <select id="faq-cat-edit-icon-select" aria-label="Category icon"></select>
             </div>
             <input type="text" id="faq-cat-edit-desc-input" maxlength="200" placeholder="Short description" aria-label="Category description">
+            <label class="fa-needs-review-toggle faq-cat-edit-hidden" title="Hides this category, its folders and their articles from the website. The Support Inbox still answers from them.">
+              <input type="checkbox" id="faq-cat-edit-hidden-input">
+              Hide from website
+            </label>
             <button type="button" class="icon-btn" id="faq-cat-edit-save-btn" title="Save">&#10003;</button>
             <button type="button" class="icon-btn" id="faq-cat-edit-delete-btn" title="Delete category">&#128465;</button>
             <button type="button" class="icon-btn" id="faq-cat-edit-cancel-btn" title="Cancel">&times;</button>

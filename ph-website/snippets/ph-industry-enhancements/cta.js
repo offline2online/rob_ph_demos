@@ -1,7 +1,7 @@
 /* PH floating CTA (cta.php, 15 Nov 2026): one call to action fixed bottom right on every page, in place of the header's "Arrange a Demo".
    window.PH_FLOATING_CTA (printed by cta.php) names the variant decided server-side; this confirms it once the page has loaded, for blocks
    that mount later:
-   - request: "Request further information", an <a> to #request-info (the Run Your Own RMN form). Without that form on the page it falls
+   - request: "Register your interest", an <a> to #request-info (the Run Your Own RMN form). Without that form on the page it falls
      back to the page's tour;
    - tour: "Take the guided tour", an <a> to the tour band (.ph-ind-tour, id ph-tour; on the Run Your Own RMN page its #tour section),
      scrolls there and focuses the tour's gate or start button;
@@ -12,7 +12,7 @@
    is open. Each click pushes dataLayer {event: "ph_floating_cta", variant}: no personal data. */
 (function () {
   "use strict";
-  var LABELS = { request: "Request further information", tour: "Take the guided tour", demo: "Arrange a demo" };
+  var LABELS = { request: "Register your interest", tour: "Take the guided tour", demo: "Arrange a demo" };
 
   function tourEl(doc) {
     var m = doc.querySelector(".ph-ind-tour") || doc.querySelector(".ph-ind-tour-mount"), band = m && (m.closest(".ph-ind-tour") || m);

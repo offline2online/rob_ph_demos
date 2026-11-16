@@ -92,23 +92,30 @@ t("local agent fill reads people, priority, estimate, release and type", () => {
   assert.deepEqual([out.type, out.priority, out.assignee, out.estimate, out.release], ["bug", "highest", "huy@x", 4, "r2"]);
   assert.match(out.title, /^Preview shows the wrong price/);
 });
-t("an alias address is its owner", () => {
-  assert.equal(k.canonicalEmail(" Rob@PersonalisationHub.com "), "rob@offline2online.com");
+t("an alias address is its owner (the map is config, handed in at run time)", () => {
+  assert.equal(k.isAliasEmail("owner.alias@example.com"), false, "no address is built into the code");
+  k.setPersonAliases({ " Owner.Alias@Example.com ": "owner@example.com", "bad": "x", "a@b.example": "a@b.example" });
+  assert.deepEqual({ ...k.PERSON_ALIASES }, { "owner.alias@example.com": "owner@example.com" }, "trimmed, lowercased; junk and self-maps dropped");
+  assert.equal(k.canonicalEmail(" owner.alias@example.com "), "owner@example.com");
   assert.equal(k.canonicalEmail("huy@x"), "huy@x");
   assert.equal(k.canonicalEmail(""), "");
-  assert.equal(k.isAliasEmail("rob@personalisationhub.com"), true);
-  assert.equal(k.isAliasEmail("rob@offline2online.com"), false);
+  assert.equal(k.isAliasEmail("owner.alias@example.com"), true);
+  assert.equal(k.isAliasEmail("owner@example.com"), false);
+  k.setPersonAliases({});
+  assert.equal(k.canonicalEmail("owner.alias@example.com"), "owner.alias@example.com");
 });
 t("local agent fill gives a note the speaker means for themselves to the speaker", () => {
-  const users = [{ id: "rob@offline2online.com", first: "Rob" }, { id: "huy@x", first: "Huy" }];
+  const users = [{ id: "owner@example.com", first: "Rob" }, { id: "huy@x", first: "Huy" }];
   const today = new Date("2026-10-21T12:00:00");
   for (const note of ["I need to send the release notes to the client", "remind me to chase the DSP contract", "add a task for myself to review the FAQ", "assign it to me: review the pricing page"]) {
-    assert.equal(k.agentDraft(note, { users, me: "rob@offline2online.com", today }).assignee, "rob@offline2online.com", note);
+    assert.equal(k.agentDraft(note, { users, me: "owner@example.com", today }).assignee, "owner@example.com", note);
   }
   // signed in as the alias, it is still the owner
-  assert.equal(k.agentDraft("I need to call the printer", { users, me: "rob@personalisationhub.com", today }).assignee, "rob@offline2online.com");
+  k.setPersonAliases({ "owner.alias@example.com": "owner@example.com" });
+  assert.equal(k.agentDraft("I need to call the printer", { users, me: "owner.alias@example.com", today }).assignee, "owner@example.com");
+  k.setPersonAliases({});
   // someone named wins, and without a speaker nothing is guessed
-  assert.equal(k.agentDraft("I need Huy to look at this, assign it to Huy", { users, me: "rob@offline2online.com", today }).assignee, "huy@x");
+  assert.equal(k.agentDraft("I need Huy to look at this, assign it to Huy", { users, me: "owner@example.com", today }).assignee, "huy@x");
   assert.equal(k.agentDraft("I need to call the printer", { users, today }).assignee, undefined);
 });
 t("field validation names what's wrong", () => {
@@ -144,6 +151,29 @@ t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed a
   assert.equal(k.cardOf({ key: "PH-1", acTotal: 4, acDone: 3 }).acDone, 3, "a card read back keeps its counts");
   assert.deepEqual([k.cardPatchOf({ acceptanceCriteria: stored }).acTotal, k.cardPatchOf({ acceptanceCriteria: stored }).acDone], [2, 1]);
   assert.ok(k.CARD_FIELDS.includes("acTotal") && k.CARD_FIELDS.includes("acDone"));
+  // Send to Agent (KB-AGENT-1): the agent counts ride on a card only once there are agent tickets
+  assert.ok(!("agentTotal" in k.cardOf({ key: "PH-1" })) && !("agentDone" in k.cardOf({ key: "PH-1", agentDone: 2 })));
+  assert.deepEqual([k.cardOf({ key: "PH-1", agentTotal: 3, agentDone: 1 }).agentTotal, k.cardOf({ key: "PH-1", agentTotal: 3 }).agentDone], [3, 0]);
+  assert.ok(!("agentTotal" in k.cardPatchOf({ title: "x", agentTotal: 3 })), "only the server writes the counts");
+  assert.deepEqual(k.agentRollup([{ status: "backlog" }, { status: "ready-for-testing", deployCommit: "d1" }, { status: "archived", mergeCommit: "abc" }, { status: "archived" }, null]), { total: 4, done: 2 });
+  // A status a browser wrote is not proof: only a pipeline stamp is.
+  assert.equal(k.agentBuilt({ status: "ready-for-testing" }), false, "status alone, no stamp");
+  assert.equal(k.agentBuilt({ status: "ready-to-publish", testVersion: "1.5.414" }), true);
+  assert.equal(k.agentBuilt({ status: "published-live", mergeCommit: "m" }), true);
+  // What the server writes must stay editable on the board (10,000 characters).
+  const long = { title: "t", description: "d".repeat(6000), acceptanceCriteria: Array.from({ length: 20 }, () => "c".repeat(400)) };
+  assert.match(k.cleanAgentSplit([long]).error, /too long for the Agent Board/);
+  assert.ok(k.cleanAgentSplit([{ title: "t", description: "d".repeat(3000), acceptanceCriteria: ["a", "b"] }]).tickets, "an ordinary one passes");
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "A@x.example"), true);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "b@x.example"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "", status: "backlog" }, "a@x.example"), false);
+  assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "done" }, "a@x.example"), false);
+  assert.deepEqual(k.cleanAgentSplit([{ title: " A  b ", description: " d ", acceptanceCriteria: "- one\n\n* two" }]).tickets, [{ title: "A b", description: "d", acceptanceCriteria: ["one", "two"] }]);
+  assert.match(k.cleanAgentSplit([]).error, /at least one/);
+  assert.match(k.cleanAgentSplit([{ title: "" }]).error, /needs a title/);
+  assert.match(k.cleanAgentSplit(Array.from({ length: 11 }, () => ({ title: "t" }))).error, /At most 10/);
+  const agentDesc = k.agentTicketDesc({ title: "T", description: "Do it.", acceptanceCriteria: ["Works"] }, { key: "PH-7", title: "Parent", url: "https://x/#staff-kanban/ticket/PH-7" });
+  assert.match(agentDesc, /^## Outcome\nDo it\.\n\nAcceptance criteria:\n- Works\n\n## Test steps\n1\. Check: Works\n\n## Dependencies\n\n\n## Spec reference\nStaff Kanban ticket PH-7 "Parent"/);
   // activity lines
   const after = value.map((c) => ({ ...c })); after[0].done = true; after[1].text = "Second, reworded"; after.push({ id: "zzzzzzzz", text: "Third", done: false });
   assert.deepEqual(k.diffCriteria(value, after), ['ticked criterion "First item"', 'edited criterion "Second" → "Second, reworded"', 'added criterion "Third"']);

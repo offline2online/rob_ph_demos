@@ -7,7 +7,7 @@
 const assert = require("assert");
 const {
   createLeadEnrich, readPage, isPrivateAddress, parseAgentJson, cleanFindings, applyToLead, AGENT_SYSTEM,
-  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
+  pageLogos, chooseLogos, coreName, icoPng, commonsLogos, claudeResearch, claudeResearchSplit, agentError, workspaceHeaders, clip, applyToProspect, claudeScreen, obviousSpam, SCREEN_SYSTEM, SCREEN_MODEL,
 } = require("../functions/lead-enrich");
 
 let n = 0;
@@ -288,11 +288,12 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
       logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
     });
     await api.onEnrichWrite("leads", created("leads", "l1", db.state));
-    assert.equal(sent.length, 2, "the paused turn is sent back once");
+    assert.equal(sent.length, 3, "two halves, and the paused turn is sent back once");
     assert.equal(sent[0].model, "claude-opus-5-5");
     assert.deepEqual(sent[0].tools.map((t) => t.type), ["web_search_20260209", "web_fetch_20260209"]);
     assert.match(sent[0].messages[0].content, /Company: Greene King/);
-    assert.equal(sent[1].messages.length, 2); assert.equal(sent[1].messages[1].role, "assistant");
+    const resumed = sent.filter((x) => x.messages.length === 2);
+    assert.equal(resumed.length, 1); assert.equal(resumed[0].messages[1].role, "assistant");
     assert.equal(db.state.leads.l1.company.industry, "Pubs & Hospitality");
     assert.equal(db.state.leads.l1.enrichment.financials.summary, "Revenue rose 5% to £2.4bn.");
   });
@@ -333,6 +334,73 @@ function make({ key = "sk-test", role = "editor", agent = AGENT, fetchImpl, seed
     assert.equal(out.storeCount, 2600);
     assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
     assert.match(sent[1].messages[0].content, /2,600 pubs/);
+  });
+  // ── 15 Nov 2026: a bank's research ran past the function's 540 s limit twice;
+  // the platform killed it and the record said "running" with nothing saved ──
+  await test("a research run still going at its deadline is cut off and what it gathered is written up", async () => {
+    const sent = [];
+    const snapshot = { role: "assistant", content: [
+      { type: "text", text: "NAB runs about 700 branches across Australia." },
+      { type: "server_tool_use", id: "s1", name: "web_search", input: { query: "NAB branches" } },
+      { type: "web_search_tool_result", tool_use_id: "s1", content: [{ type: "web_search_result", title: "NAB annual report", url: "https://nab.example/annual", page_age: "2026" }] },
+      { type: "web_fetch_tool_result", tool_use_id: "f1", content: { type: "web_fetch_result", url: "https://nab.example/branches", content: { type: "document", title: "Branch network", source: { type: "text", media_type: "text/plain", data: "We run 698 branches." } } } },
+    ] };
+    class Slow {
+      constructor() { this.beta = { messages: { stream: (params) => {
+        sent.push(JSON.parse(JSON.stringify(params)));
+        if (sent.length > 1) return { finalMessage: async () => text("```json\n" + JSON.stringify({ ...AGENT, storeCount: 698 }) + "\n```") };
+        let listener = null, reject = null;
+        return {
+          on: (ev, fn) => { if (ev === "streamEvent") { listener = fn; setTimeout(() => listener({ type: "content_block_stop" }, snapshot), 5); } },
+          abort: () => reject(new Error("Request was aborted.")),
+          finalMessage: () => new Promise((_, rej) => { reject = rej; }),
+        };
+      } } }; }
+    }
+    const t0 = Date.now();
+    const out = await claudeResearch({ apiKey: "k", Anthropic: Slow, company: "NAB", deadline: Date.now() + 60 });
+    assert.ok(Date.now() - t0 < 2000, "the run stops at its deadline");
+    assert.equal(out.storeCount, 698);
+    assert.equal(out.cutShort, true);
+    assert.equal(sent.length, 2); assert.equal(sent[1].tools, undefined);
+    const notes = sent[1].messages[0].content;
+    assert.match(notes, /about 700 branches/); assert.match(notes, /nab\.example\/annual/); assert.match(notes, /We run 698 branches/);
+  });
+  await test("the run gives the research a deadline inside the function's limit, and a cut-short run says so on the record", async () => {
+    let got = null;
+    const research = async (args) => { got = args; const r = { ...AGENT }; Object.defineProperty(r, "cutShort", { value: true, enumerable: false }); return r; };
+    const db = fakeDb({ leads: { l1: { ...LEAD } }, prospects: {}, prospectCompanies: {} });
+    const api = createLeadEnrich({
+      db, verifyIdToken: async () => ({ email: "x" }), resolveConsoleUser: async () => null,
+      anthropicKey: () => "sk-test", research, screen: async () => PASS,
+      lookup: async () => [{ address: "93.184.216.34" }], fetch: async () => resp(200, HOME),
+      logger: { warn() {}, error() {} }, now: () => new Date("2026-11-10T10:00:00Z"),
+    });
+    const t0 = Date.now();
+    await api.onEnrichWrite("leads", created("leads", "l1", db.state));
+    assert.ok(got.deadline > t0 && got.deadline - t0 <= 400000, "well inside 540 s");
+    const e = db.state.leads.l1.enrichment;
+    assert.equal(e.request.status, "done");
+    assert.match(e.request.message, /did not finish in time/);
+  });
+  await test("the research runs as two halves at once, the estate and the market, and puts them together", async () => {
+    const sent = [];
+    const estate = { name: "NAB", storeCount: 601, storeCountBreakdown: "601 branches.", people: [{ name: "Jane Smith", title: "CDO" }], summary: "", news: [], techStack: ["Salesforce"] };
+    const market = { name: "", storeCount: 450, summary: "A bank.", retailMedia: "None yet.", people: [{ name: "J. Smith", title: "Chief Data Officer" }, { name: "Ann Lee", title: "CMO" }], news: [{ title: "Results", url: "https://x/1" }], techStack: ["Salesforce", "AWS"] };
+    class Two { constructor() { this.beta = { messages: { stream: (params) => { sent.push(params); const est = /and the people\. Leave/.test(params.messages[0].content); return { finalMessage: async () => text("```json\n" + JSON.stringify(est ? estate : market) + "\n```") }; } } }; } }
+    const out = await claudeResearchSplit({ apiKey: "k", Anthropic: Two, company: "NAB" });
+    assert.equal(sent.length, 2, "both halves are asked at once");
+    assert.deepEqual(sent.map((p) => p.tools[0].max_uses).sort(), [10, 14]);
+    assert.equal(out.storeCount, 601, "the estate half owns the site count");
+    assert.equal(out.summary, "A bank."); assert.equal(out.retailMedia, "None yet.");
+    assert.deepEqual(out.people.map((p) => p.name), ["Jane Smith", "Ann Lee"]);
+    assert.deepEqual(out.techStack, ["Salesforce", "AWS"]);
+    assert.equal(out.cutShort, undefined);
+    class Half { constructor() { this.beta = { messages: { stream: (params) => ({ finalMessage: async () => { if (/and the people\. Leave/.test(params.messages[0].content)) throw new Error("overloaded"); return text(JSON.stringify(market)); } }) } }; } }
+    const one = await claudeResearchSplit({ apiKey: "k", Anthropic: Half, company: "NAB" });
+    assert.equal(one.summary, "A bank."); assert.equal(one.cutShort, true, "a missing half is said on the record");
+    class None { constructor() { this.beta = { messages: { stream: () => ({ finalMessage: async () => { throw new Error("overloaded"); } }) } }; } }
+    await assert.rejects(claudeResearchSplit({ apiKey: "k", Anthropic: None, company: "NAB" }), /overloaded/);
   });
   await test("a refusal, an empty answer and an unreadable answer each fail with the reason", async () => {
     await assert.rejects(claudeResearch({ apiKey: "k", Anthropic: fake([{ stop_reason: "refusal", content: [] }]), company: "X" }), /declined/);

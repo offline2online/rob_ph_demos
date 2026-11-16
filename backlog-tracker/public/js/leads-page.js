@@ -1,9 +1,13 @@
 // Promote › Leads (#promote/leads): the board and the lead form.
 //
 // One card per company in `leads/{id}`; the lanes are leads-core.js STAGES (OPERATOR_STAGES for network operator inquiries).
-// A tile drags between lanes (HTML5 drag and drop); clicking it (or Enter)
+// A tile drags between lanes (HTML5 drag and drop), and up or down its own
+// lane to set its priority (`rank`, leads-core.js planLaneOrder): the top of a
+// lane is the lead to deal with next. Clicking a tile (or Enter)
 // opens the lead summary drawer, whose stage select moves it without a pointer
-// drag, which is how it moves on a tablet. Tiles are coloured by industry
+// drag, which is how it moves on a tablet, and whose Priority row (Move to
+// top / up / down) reorders it the same way; Alt+Arrow Up/Down does it from
+// the keyboard. Tiles are coloured by industry
 // (industry-palette.js), shown as a small dot beside the industry; everything
 // else is neutral with one accent (the Apple-style rules in css/apple.css). The
 // page, the detail view and the form are built from the shared grouped cards
@@ -21,12 +25,12 @@
 // operators switch shows one pipeline at a time, each with its own lanes,
 // and a network operator inquiry is never matched to Prospects (TAM) or researched.
 import {
-  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp,
+  collection, doc, getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   BUYING_ROLES, normaliseLead, groupByStage, leadFromForm, blankContact, stageLabel, roleLabel,
   companyLine, conversionFields, isStageFor, mergeInbound, inboundLabel,
-  stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel, AUDIENCES, audienceLabel,
+  stagesFor, defaultStageFor, leadName, leadTypeLabel, BACKGROUNDS, backgroundLabel, AUDIENCES, audienceLabel, planLaneOrder, topRank,
 } from "./leads-core.js";
 import { normaliseProspect, planInbound, awsContactFrom, mergeContact, isAwsProspect, companyKey, AWS_PROSPECT_ID } from "./prospects-core.js";
 import { kpis, formatMonthly } from "./ace-core.js";
@@ -281,15 +285,56 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     render();
   });
 
+  // The leads in one lane of the shown pipeline, in the order the board draws them.
+  const laneOf = (type, stage) => groupByStage(leads.filter((x) => x.leadType === type), type)[stage] || [];
+  // Moved to another stage with no drop position (the summary's Stage select): it lands at the top of that lane.
   async function moveTo(id, stage) {
     const l = leads.find((x) => x.id === id);
     if (!l || !isStageFor(l.leadType, stage) || l.stage === stage || !canEdit()) return;
-    l.stage = stage; render(); // optimistic; the snapshot confirms or corrects it
+    const rank = topRank(laneOf(l.leadType, stage), id);
+    l.stage = stage; l.rank = rank; render(); // optimistic; the snapshot confirms or corrects it
     try {
-      await updateDoc(doc(db, "leads", id), { stage, stageChangedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByEmail: me() });
+      await updateDoc(doc(db, "leads", id), { stage, rank, stageChangedAt: serverTimestamp(), updatedAt: serverTimestamp(), updatedByEmail: me() });
     } catch (err) {
       showBoardError(`Couldn't move ${leadName(l)}: ${err && err.message ? err.message : err}`);
     }
+  }
+  // Put a lead at position `index` of `stage`'s lane (0 = top, the highest
+  // priority): a drop at a place in a lane, or the summary's Priority buttons.
+  // Only the leads whose rank changes are written, in one batch.
+  async function placeLead(id, stage, index) {
+    const l = leads.find((x) => x.id === id);
+    if (!l || !isStageFor(l.leadType, stage) || !canEdit()) return;
+    const lane = laneOf(l.leadType, stage);
+    const writes = planLaneOrder(lane, id, index);
+    const stageChanged = l.stage !== stage;
+    if (!writes.length && !stageChanged) return;
+    for (const w of writes) { const x = leads.find((y) => y.id === w.id); if (x) x.rank = w.rank; }
+    l.stage = stage; render(); // optimistic; the snapshot confirms or corrects it
+    try {
+      const batch = writeBatch(db);
+      for (const w of writes) {
+        if (w.id === id) continue;
+        batch.update(doc(db, "leads", w.id), { rank: w.rank });
+      }
+      const own = writes.find((w) => w.id === id);
+      const mine = { ...(own ? { rank: own.rank } : {}), updatedAt: serverTimestamp(), updatedByEmail: me() };
+      if (stageChanged) { mine.stage = stage; mine.stageChangedAt = serverTimestamp(); }
+      batch.update(doc(db, "leads", id), mine);
+      await batch.commit();
+    } catch (err) {
+      showBoardError(`Couldn't move ${leadName(l)}: ${err && err.message ? err.message : err}`);
+    }
+  }
+  // Move a lead up or down its own lane by `delta` places ("top" = to the top).
+  function nudge(id, delta) {
+    const l = leads.find((x) => x.id === id);
+    if (!l) return;
+    const lane = laneOf(l.leadType, l.stage);
+    const at = lane.findIndex((x) => x.id === id);
+    const to = delta === "top" ? 0 : at + delta;
+    if (at < 0 || to < 0 || to >= lane.length || to === at) return;
+    placeLead(id, l.stage, to);
   }
   function showBoardError(msg) { $("leads-empty-text").textContent = msg; $("leads-empty-add").hidden = true; $("leads-empty").hidden = false; }
 
@@ -300,9 +345,23 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     e.dataTransfer.effectAllowed = "move";
     card.classList.add("lead-dragging");
   });
+  // Where in a lane a drop at clientY lands: the index among the lane's other
+  // cards (the dragged one left out), and the card it goes before (null = the end).
+  function dropPlace(lane, clientY) {
+    const cards = [...lane.querySelectorAll(".lead-card")].filter((c) => !c.classList.contains("lead-dragging"));
+    for (let i = 0; i < cards.length; i++) {
+      const r = cards[i].getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) return { index: i, before: cards[i] };
+    }
+    return { index: cards.length, before: null };
+  }
+  const clearDropMarks = () => {
+    board.querySelectorAll(".lead-drop-target").forEach((c) => c.classList.remove("lead-drop-target"));
+    board.querySelectorAll(".lead-drop-marker").forEach((m) => m.remove());
+  };
   board.addEventListener("dragend", () => {
     board.querySelectorAll(".lead-dragging").forEach((c) => c.classList.remove("lead-dragging"));
-    board.querySelectorAll(".lead-drop-target").forEach((c) => c.classList.remove("lead-drop-target"));
+    clearDropMarks();
   });
   board.addEventListener("dragover", (e) => {
     const lane = e.target.closest && e.target.closest(".lead-lane");
@@ -310,20 +369,37 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     e.preventDefault();
     board.querySelectorAll(".lead-drop-target").forEach((c) => { if (c !== lane) c.classList.remove("lead-drop-target"); });
     lane.classList.add("lead-drop-target");
+    // A line shows where the card will land in the lane.
+    const body = lane.querySelector(".lead-lane-body");
+    if (!body) return;
+    const { before } = dropPlace(lane, e.clientY);
+    let marker = board.querySelector(".lead-drop-marker");
+    if (!marker) { marker = document.createElement("div"); marker.className = "lead-drop-marker"; marker.setAttribute("aria-hidden", "true"); }
+    if (marker.parentNode !== body || marker.nextSibling !== before) body.insertBefore(marker, before);
   });
   board.addEventListener("drop", (e) => {
     const lane = e.target.closest && e.target.closest(".lead-lane");
     if (!lane) return;
     e.preventDefault();
-    lane.classList.remove("lead-drop-target");
+    const { index } = dropPlace(lane, e.clientY);
+    clearDropMarks();
     const id = e.dataTransfer.getData("text/plain");
-    if (id) moveTo(id, lane.dataset.stage);
+    if (id) placeLead(id, lane.dataset.stage, index);
   });
   board.addEventListener("click", (e) => {
     const card = e.target.closest && e.target.closest(".lead-card");
     if (card) openSummary(card.dataset.leadId);
   });
   board.addEventListener("keydown", (e) => {
+    if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) { // reorder from the keyboard
+      const card = e.target.closest && e.target.closest(".lead-card");
+      if (!card || e.target !== card || !canEdit()) return;
+      e.preventDefault();
+      const id = card.dataset.leadId;
+      nudge(id, e.key === "ArrowUp" ? -1 : 1);
+      const again = board.querySelector(`.lead-card[data-lead-id="${CSS.escape(id)}"]`); if (again) again.focus();
+      return;
+    }
     if (e.key !== "Enter" && e.key !== " ") return;
     const card = e.target.closest && e.target.closest(".lead-card");
     if (card && e.target === card) { e.preventDefault(); openSummary(card.dataset.leadId); }
@@ -348,6 +424,14 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
   function prospectHTML(l) {
     if (!l.prospectId) return "";
     return group("Prospect record", row("From", '<a href="#promote/prospects">Prospects (TAM)</a>'), { id: "lead-sum-prospect" });
+  }
+  // Its place in its lane (1 = deal with it next), with Move to top / up / down for editors.
+  function priorityHTML(l) {
+    const lane = laneOf(l.leadType, l.stage);
+    const at = lane.findIndex((x) => x.id === l.id);
+    const btn = (act, icon, label, off) => `<button type="button" class="lead-prio-btn" data-prio="${act}" aria-label="${label}" title="${label}" data-editor-only${off ? " disabled" : ""}><span class="material-symbols-outlined" aria-hidden="true">${icon}</span></button>`;
+    const tools = canEdit() ? `<span class="lead-prio-tools">${btn("top", "keyboard_double_arrow_up", "Move to top", at <= 0)}${btn("up", "arrow_upward", "Move up", at <= 0)}${btn("down", "arrow_downward", "Move down", at < 0 || at >= lane.length - 1)}</span>` : "";
+    return `<span class="lead-prio"><span id="lead-sum-priority">${at >= 0 ? `${at + 1} of ${lane.length} in ${esc(stageLabel(l.stage))}` : ""}</span>${tools}</span>`;
   }
   function historyHTML(l) {
     if (!l.history.length) return "";
@@ -397,6 +481,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       ${group("Lead", [
         row("Type", esc(leadTypeLabel(l.leadType))),
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
+        row("Priority", priorityHTML(l)),
         row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned")),
         row("Source", esc(sourceText(l))),
         row("Source page", pageLink(l)),
@@ -434,6 +519,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
       <div id="lead-sum-research">${researchGroupsHTML(e)}</div>
       ${group("Lead", [
         row("Stage", `<select id="lead-sum-stage" class="lead-sum-stage" aria-label="Stage" data-editor-only>${stageOptions}</select><span class="lead-sum-stage-ro">${esc(stageLabel(l.stage))}</span>`),
+        row("Priority", priorityHTML(l)),
         row("Assignee", esc(l.assignee ? memberName(l.assignee) : "Unassigned")),
         row("Inbound", esc(inboundLabel(l))),
         row("Source", esc(sourceText(l))),
@@ -486,6 +572,16 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
     else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
   });
   $("lead-sum-body").addEventListener("click", (e) => {
+    const prio = e.target.closest && e.target.closest(".lead-prio-btn");
+    if (prio && summaryId && !prio.disabled) {
+      const act = prio.dataset.prio;
+      nudge(summaryId, act === "top" ? "top" : act === "up" ? -1 : 1);
+      // The drawer was redrawn: keep focus in it (on the same button, or the next one still usable) so Esc and Tab keep working.
+      const btns = [...$("lead-sum-body").querySelectorAll(".lead-prio-btn")].filter((b) => !b.disabled);
+      const again = btns.find((b) => b.dataset.prio === act) || btns[0] || $("lead-sum-close");
+      if (again) again.focus();
+      return;
+    }
     if (!e.target.closest || !e.target.closest("#lead-sum-add-contact") || !summaryId) return;
     const id = summaryId; closeSummary(false); openLead(id);
   });

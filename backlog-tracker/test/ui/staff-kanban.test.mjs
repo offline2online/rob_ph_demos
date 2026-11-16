@@ -110,7 +110,7 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   const p = op.page;
   await until(() => p.locator(hash.includes("report") || hash.includes("settings") ? "#kb-view .page-header" : ".kb-card").count(), "the Staff Kanban page", 20000);
   await p.waitForTimeout(150);
-  p.profile = prof; p.engine = prof.engine; p.ctx = op.context;
+  p.profile = prof; p.engine = prof.engine; p.ctx = op.context; p.agentCalls = op.agentSendCalls;
   // A card opens its ticket in a new tab (KB-LINK-1). The cases written before that drive the ticket in this page, which is
   // what the board does when the browser refuses a new tab; KB-C15 (o.newTab) covers the new tab itself.
   if (!o.newTab) { const block = () => { window.open = () => null; }; await p.addInitScript(block); await p.evaluate(block); }
@@ -435,8 +435,7 @@ T("TC-13", "rich description: link, @mention, screenshot, table and callout are 
   const ed = '[data-field="description"] .ql-editor';
   await p.click(ed); await p.keyboard.press("Control+End");
   await p.keyboard.type(" See https://offline2online.com/menu-board for the preview. Ask @mi");
-  await p.waitForTimeout(150);
-  assert.ok((await p.$$eval('[data-field="description"] .kb-mention-item', (e) => e.length)) >= 1);
+  await p.waitForSelector('[data-field="description"] .kb-mention-item.on');
   await p.keyboard.press("Enter");
   await p.evaluate(async () => {
     const c = document.createElement("canvas"); c.width = 300; c.height = 160; c.getContext("2d").fillRect(0, 0, 300, 160);
@@ -453,6 +452,8 @@ T("TC-13", "rich description: link, @mention, screenshot, table and callout are 
   await press(p, "#f-save");
   await until(async () => /PH-20/.test(await p.textContent("#kb-toast")), "saved");
   const html = (await stored(p, "PH-20")).description;
+  // The tag is stored on the ticket: that list, not the toast, is what the server notifies from.
+  assert.deepEqual((await stored(p, "PH-20")).mentions, [MINH], "the ticket lists who its description tags");
   assert.match(html, /<a href="https:\/\/offline2online\.com\/menu-board"/);
   assert.match(html, new RegExp(`data-user="${MINH.replace(/\./g, "\\.")}"`));
   assert.match(html, /<img src="https:\/\/firebasestorage\.googleapis\.com\//, "the screenshot went to Storage, not inline");
@@ -477,7 +478,7 @@ T("TC-14", "comments: rich comment with @mention, and a dictated comment via the
   assert.equal(await p.textContent("#f-comment-mic"), "stop");
   await press(p, "#f-comment-mic"); await p.waitForTimeout(400);
   assert.equal(await p.textContent("#f-comment-mic"), "mic");
-  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu"); await p.waitForTimeout(100); await p.keyboard.press("Enter");
+  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu"); await p.waitForSelector(".kb-mention-item.on"); await p.keyboard.press("Enter");
   await press(p, "#f-comment-add"); await p.waitForTimeout(200);
   const last = await p.$$eval(".kb-comment-text", (e) => e[e.length - 1].innerHTML);
   assert.match(last, /Checked this on the Covent Garden store and it is fixed/);
@@ -485,6 +486,7 @@ T("TC-14", "comments: rich comment with @mention, and a dictated comment via the
   assert.match(await p.textContent("#kb-toast"), /Huy notified/);
   const c = await writes(p, /^kanbanTasks\/PH-23\/comments\//);
   assert.equal(c.length, 1); assert.equal(c[0].data.author, ROB); assert.match(c[0].data.text, /Covent Garden/);
+  assert.deepEqual(c[0].data.mentions, [HUY], "the comment lists who it tags: the server notifies from that");
   assert.equal((await stored(p, "PH-23")).commentCount, 1);
   await p.done();
 });
@@ -675,15 +677,26 @@ T("TC-23", "Agent Board and Staff Kanban are separate pages in the navigation", 
 T("TC-24", "completed vs withdrawn via the Status menu; epic progress ignores withdrawn", async (prof) => {
   const p = await open(prof);
   await press(p, '.kb-card[data-key="PH-26"]');
+  // The modal opens once the full ticket has been read: wait for PH-26's own form and its editor (Save's
+  // change tracking starts when the editor arrives), not for whatever #f-status happens to be in the page.
+  await until(async () => /PH-26/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-26 to open");
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-description .ql-editor");
   const opts = await p.$$eval("#f-status option", (o) => o.map((x) => x.textContent));
   assert.ok(opts.includes("Completed") && opts.includes("Withdrawn") && !opts.some((t) => /Completed \//.test(t)));
-  await p.selectOption("#f-status", "done:withdrawn"); await press(p, "#f-save"); await p.waitForTimeout(150);
-  assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" });
-  assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn")));
+  // Choose Withdrawn and wait for Save to switch on. A form redrawn meanwhile (the ticket re-read) shows the
+  // ticket's status again, so the choice is made again on the form that is there.
+  await eventually(async () => {
+    if ((await p.inputValue("#f-status")) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn");
+    assert.ok(await p.isEnabled("#f-save"), "Save is on: the status changed");
+  });
+  await press(p, "#f-save");
+  await eventually(async () => assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" }));
+  await eventually(async () => assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn"))));
   const t = await stored(p, "PH-26");
   assert.equal(t.open, false); assert.equal(t.resolution, "withdrawn"); assert.ok(t.closedAt);
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the saved ticket to close");
   await press(p, '.kb-card[data-key="PH-1"]');
-  assert.match(await p.textContent('[data-field="children"] .field-label'), /withdrawn/);
+  await eventually(async () => assert.match(await p.textContent('#task-backdrop:not([hidden]) [data-field="children"] .field-label', { timeout: 2000 }), /withdrawn/));
   await p.done();
 });
 
@@ -716,7 +729,14 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     await dragCard(p, "PH-34", { status: "in-progress" }, { input: prof.touch ? "touch" : "mouse" }).catch((e) => { if (!e.unreachable) throw e; });
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
-  await press(p, '.kb-card[data-key="PH-20"]');
+  // A viewer's touch drag above never starts a card drag, so Chromium treats it as a pan and flings; the next tap
+  // only stops the fling and produces no click. Tap until the modal opens (it opens on the first tap when nothing
+  // was flung), then wait for it properly.
+  for (let i = 0; i < 4; i++) {
+    await press(p, '.kb-card[data-key="PH-20"]');
+    if (await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 1500 }).then(() => true, () => false)) break;
+  }
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 5000 });
   assert.equal(await p.$("#f-save"), null, "no Save");
   assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
   assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");
@@ -737,6 +757,19 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   await p.waitForSelector("#task-backdrop:not([hidden])");
   assert.equal(await p.textContent("#task-title-h"), "PH-20");
   assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, true);
+  await p.done();
+});
+
+T("KB-C2f", "notifications bell: the owner signed in with his second address sees the notifications addressed to his first", async (prof) => {
+  const seed = bellSeed();
+  seed.user = { email: "owner.alias@example.com", role: "admin" };
+  const p = await open(prof, "#staff-kanban", { seed });
+  await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
+  await press(p, "#kb-bell");
+  assert.match(await p.textContent("#kb-bell-panel"), /PH-20[\s\S]*Huy mentioned you in a comment/);
+  await press(p, ".kb-bell-item");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await eventually(async () => assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, true, "opening it marks it read"));
   await p.done();
 });
 
@@ -942,6 +975,55 @@ T("TC-70", "hierarchy: epic > task > subtask > sub-subtask, no fifth level, and 
   await p.done();
 });
 
+T("TC-71", "Send to Agent: only the assignee sees it; the proposed split is edited to three and created; the agent tickets show live status and x of y done; the card counts them", async (prof) => {
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].assignee = ROB; seed.docs.kanbanCards["PH-20"].assignee = ROB;
+  seed.docs.kanbanTasks["PH-20"].project = "agentProj"; seed.docs.kanbanCards["PH-20"].project = "agentProj";
+  seed.docs.projects.agentProj = { name: "Agent Proj", createdAt: { $ts: 1_760_000_000_000 } };
+  seed.agentSplit = { proposal: [{ title: "Points API", description: "Expose points.", acceptanceCriteria: ["GET returns points"] }, { title: "Loyalty widget", description: "Show points.", acceptanceCriteria: [] }], source: "claude", projectId: "agentProj" };
+  // What the server files (functions/kanban-agent.js), as the Agent Board will hold it.
+  seed.docs.backlogItems = {
+    // Built means the pipeline stamped it (deployCommit / mergeCommit / testVersion), not the status alone.
+    "agent-1": { projectId: "agentProj", title: "Points API", status: "ready-for-testing", deployCommit: "d1a2b3c", testVersion: "1.5.414", kanbanKey: "PH-20", ownerEmail: ROB },
+    "agent-2": { projectId: "agentProj", title: "Loyalty widget", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
+    "agent-3": { projectId: "agentProj", title: "Help article", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
+  };
+  const p = await open(prof, "#staff-kanban", { seed });
+  // Someone else's ticket: no Send to Agent.
+  await press(p, '.kb-card[data-key="PH-21"]');
+  await until(() => p.$("#f-title"), "PH-21's modal");
+  assert.equal(await p.$("#f-agent-send"), null, "not the assignee: no Send to Agent");
+  await press(p, "#f-cancel");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(() => p.$("#f-agent-send"), "Send to Agent on the assignee's ticket");
+  await press(p, "#f-agent-send");
+  await until(() => p.$("#f-agent-split"), "the proposed split");
+  assert.equal(await p.$eval("#f-agent-project", (e) => e.value), "agentProj", "the ticket's project is preselected");
+  assert.deepEqual(await p.$$eval("[data-agent-title]", (e) => e.map((x) => x.value)), ["Points API", "Loyalty widget"]);
+  await press(p, "#f-agent-add");
+  await until(async () => (await p.$$("[data-agent-title]")).length === 3, "a third agent ticket");
+  await p.fill('[data-agent-i="2"] [data-agent-title]', "Help article");
+  await p.fill('[data-agent-i="2"] [data-agent-ac]', "Explains points\nLinks from the widget");
+  assert.match(await p.textContent("#f-agent-create"), /Create 3 agent tickets/);
+  await press(p, "#f-agent-create");
+  await eventually(() => assert.equal(p.agentCalls.filter((c) => c.action === "confirm").length, 1, "one confirm"));
+  const sent = p.agentCalls.find((c) => c.action === "confirm");
+  assert.equal(sent.key, "PH-20"); assert.equal(sent.projectId, "agentProj");
+  assert.deepEqual(sent.tickets.map((x) => x.title), ["Points API", "Loyalty widget", "Help article"]);
+  assert.deepEqual(sent.tickets[2].acceptanceCriteria, ["Explains points", "Links from the widget"]);
+  // The linked agent tickets, with their live Agent Board status.
+  await eventually(async () => assert.equal((await p.$$("#f-agents [data-agent-ticket]")).length, 3));
+  await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /1 of 3 done/));
+  assert.equal(await p.getAttribute('#f-agents [data-agent-ticket="agent-1"] a', "href"), "#item-agent-1", "each links to its Agent Board card");
+  await p.evaluate(() => { const b = globalThis.__fbStub; b.col("backlogItems").set("agent-2", { ...b.col("backlogItems").get("agent-2"), status: "published-live", deployCommit: "e4f5a6b", mergeCommit: "m7n8o9p" }); b.notify(); });
+  await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /2 of 3 done/, "follows the Agent Board live"));
+  await press(p, "#f-cancel");
+  // The server's counts on the ticket and its card: the card shows them.
+  await p.evaluate(() => { const b = globalThis.__fbStub; for (const c of ["kanbanTasks", "kanbanCards"]) b.col(c).set("PH-20", { ...b.col(c).get("PH-20"), agentTotal: 3, agentDone: 2, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000) }); b.notify(); });
+  await eventually(async () => assert.match(await p.textContent('.kb-card[data-key="PH-20"] .kb-agent-chip'), /2\/3/));
+  await p.done();
+});
+
 T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an activity line each, counted on the card, updated live, and saved with a new ticket (PH-22)", async (prof) => {
   const line = (i, done, text) => `crit000${i}\t${done}\t${text}`;
   const texts = ["Field A is required", "Saves on Enter", "Shows an error on 500", "Clears on cancel", "Keyboard reachable"];
@@ -983,7 +1065,7 @@ T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an a
     const list = t.acceptanceCriteria.map((l) => (l.startsWith("crit0000") ? l.replace("\t1\t", "\t0\t") : l));
     b.col("kanbanTasks").set("PH-20", { ...t, acceptanceCriteria: list });
     const c = b.col("kanbanCards").get("PH-20");
-    b.col("kanbanCards").set("PH-20", { ...c, acDone: 1, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000), updatedBy: "other@personalisationhub.com" });
+    b.col("kanbanCards").set("PH-20", { ...c, acDone: 1, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000), updatedBy: "other@ph.example" });
     b.notify();
   });
   await until(async () => !(await p.isChecked('#f-ac [data-ac="crit0000"] [data-ac-tick]')), "the open modal to show the untick");
@@ -1223,7 +1305,7 @@ for (const N of [2000, 5000]) {
       const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub;
       const c = b.col("kanbanTasks"); const key = "PH-1001";
       const t = { ...c.get(key), status: "in-progress", open: true }; c.set(key, t);
-      b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify();
+      b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@ph.example" }); b.notify();
     });
     await eventually(async () => assert.equal((await headers(p))[0].count, seedBacklog - 1, "the Backlog header follows the move"));
     await eventually(async () => assert.equal((await where(p, "PH-1001")).status, "in-progress", "the moved card is in its new column"));
@@ -1373,6 +1455,230 @@ T("KB-C20", "a person with no photo shows their first and last initials on cards
   await p.done();
 });
 
+T("KB-C26", "a staff avatar picked as a filter is about 30% larger than the rest, and goes back when it is switched off", async (prof) => {
+  const p = await open(prof, "#staff-kanban");
+  const size = (who) => p.$eval(`.kb-person-chip[data-person="${who}"] .kb-avatar`, (e) => { const r = e.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  assert.deepEqual(await size(LINH), [28, 28], "not picked: 28px");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  await until(() => p.$(`.kb-person-chip.on[data-person="${LINH}"]`), "Linh's chip to be on");
+  assert.deepEqual(await size(LINH), [36, 36], "picked: 36px, about 30% larger");
+  assert.deepEqual(await size(HUY), [28, 28], "the others keep their size");
+  await press(p, '.kb-person-chip[data-person="none"]');
+  await until(() => p.$('.kb-person-chip.on[data-person="none"]'), "the Unassigned chip to be on");
+  assert.deepEqual(await size("none"), [36, 36], "Unassigned grows too");
+  await press(p, `.kb-person-chip[data-person="${LINH}"]`);
+  await until(async () => !(await p.$(`.kb-person-chip.on[data-person="${LINH}"]`)), "Linh's chip to be off");
+  assert.deepEqual(await size(LINH), [28, 28], "switched off: back to 28px");
+  await p.done();
+});
+
+T("KB-C21", "a field changed before the editor has loaded still switches Save on", async (prof) => {
+  const p = await open(prof);
+  // The editor downloads the first time a ticket opens. Hold it back, as a slow connection or a busy runner does.
+  let release; const held = new Promise((r) => { release = r; });
+  await p.route(/\/quill\/1\.3\.7\/quill\.min\.js$/, async (route) => { await held; await route.fallback(); });
+  await press(p, '.kb-card[data-key="PH-26"]');
+  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title");
+  assert.equal(await p.$("#f-description .ql-editor"), null, "the editor has not arrived");
+  assert.ok(await p.isDisabled("#f-save"), "nothing has changed: Save is off");
+  await p.fill("#f-title", "Changed before the editor loaded");
+  release();
+  await p.waitForSelector("#f-description .ql-editor");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on: the title changed"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal((await stored(p, "PH-26")).title, "Changed before the editor loaded"));
+  // Nothing changed this time, and the editor is already here: Save stays off.
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the saved ticket to close");
+  await press(p, '.kb-card[data-key="PH-27"]');
+  await until(async () => /PH-27/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-27 to open");
+  await p.waitForSelector("#f-description .ql-editor");
+  await sleep(300); // Save's state is re-read every 100 ms: long enough for a wrong "changed" to show
+  assert.ok(await p.isDisabled("#f-save"), "an untouched ticket keeps Save off");
+  await p.done();
+});
+
+T("KB-C22", "the image button opens the computer's file picker at once; choosing files inserts them, with nothing in between", async (prof) => {
+  const p = await open(prof);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor', btn = '[data-field="description"] .ql-image';
+  await p.waitForSelector(ed);
+  // A real PNG (2×2), so the page can shrink it as it does a screenshot.
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFElEQVQIW2P8z8DwnwEImBigAMwAAC0EAgGkP6pJAAAAAElFTkSuQmCC", "base64");
+  const shot = (name) => ({ name, mimeType: "image/png", buffer: png });
+  const before = await p.$$eval(`${ed} img`, (e) => e.length);
+  // One press: the picker is what opens, not a dialog in the editor.
+  const [chooser] = await Promise.all([p.waitForEvent("filechooser", { timeout: 5000 }), press(p, btn)]);
+  assert.equal(await p.$(".kb-ed-panel"), null, "no dialog to click through");
+  assert.ok(chooser.isMultiple(), "several screenshots can be chosen at once");
+  await chooser.setFiles([shot("Checkout error.png"), shot("Basket total.png")]);
+  // Choosing is the last step: both are uploaded under the ticket and are in the description.
+  await eventually(async () => assert.equal(await p.$$eval(`${ed} img`, (e) => e.length), before + 2, "both images are in the description"));
+  const imgs = await p.$$eval(`${ed} img`, (e) => e.slice(-2).map((i) => ({ src: i.getAttribute("src"), alt: i.getAttribute("alt") })));
+  assert.deepEqual(imgs.map((i) => i.alt), ["Checkout error", "Basket total"], "in the order chosen, each named after its file");
+  for (const i of imgs) assert.match(i.src, /firebasestorage.*kanban%2FPH-20%2F/, "held in the ticket's storage, not inline");
+  const up = await p.evaluate(() => Object.keys(globalThis.__fbStub.uploads || {}));
+  assert.equal(up.filter((k) => /^kanban\/PH-20\//.test(k)).length, 2, `two uploads under the ticket: ${up}`);
+  assert.equal(await p.$(`${btn}.kb-ed-busy`), null, "the button is ready again");
+  // Saved with the ticket.
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal(((await stored(p, "PH-20")).description.match(/<img /g) || []).length, before + 2, "the saved description holds both"));
+  // Closing the picker without choosing adds nothing and leaves no dialog.
+  await press(p, '.kb-card[data-key="PH-21"]');
+  await until(async () => /PH-21/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-21 to open");
+  await p.waitForSelector(ed);
+  const had = await p.$$eval(`${ed} img`, (e) => e.length);
+  const [again] = await Promise.all([p.waitForEvent("filechooser", { timeout: 5000 }), press(p, btn)]);
+  await again.setFiles([]);
+  await sleep(200);
+  assert.equal(await p.$$eval(`${ed} img`, (e) => e.length), had, "nothing chosen, nothing added");
+  assert.equal(await p.$(".kb-ed-panel"), null);
+  // An image that is already on the web: Shift-click still opens the link dialog (mouse only).
+  if (!prof.touch) {
+    await p.click(btn, { modifiers: ["Shift"] });
+    await p.waitForSelector('.kb-ed-panel [data-f="url"]');
+    await p.click('.kb-ed-panel [data-x="cancel"]');
+  }
+  await p.done();
+});
+
+T("KB-SEC-1", "stored text never runs as script: a description, a member's photo address, an assignee on the report, an attachment link, a comment", async (prof) => {
+  const hit = `window.__xss = (window.__xss || 0) + 1`;
+  const seed = kanbanSeed();
+  // A description as another writer could have stored it.
+  seed.docs.kanbanTasks["PH-20"].description = `<p>Before</p><img src="x" onerror="${hit}"><svg onload="${hit}"></svg><form action="https://example.test"><input name="password"></form><p style="position:fixed;inset:0">After</p><table><tbody><tr><td><img src="x" onerror="${hit}"></td></tr></tbody></table>`;
+  seed.docs.kanbanTasks["PH-20"].attachments = [{ name: "notes.txt", url: `javascript:${hit}`, size: 10 }, { name: "ok.txt", url: "https://example.test/ok.txt", size: 10 }];
+  seed.docs.kanbanCards["PH-20"].attachmentCount = 2;
+  // A member's own photo address, as that member could have set it.
+  const bad = `https://firebasestorage.googleapis.com/v0/b/x/o/avatars"><img src=x onerror="${hit}">');background:url('https://example.test/x`;
+  seed.docs.memberDirectory[HUY].photoUrl = bad; seed.docs.consoleUsers[HUY].photoUrl = bad;
+  // A ticket in the current release assigned to something that is not an address.
+  const who = `x@x"><img src=x onerror="${hit}">`;
+  seed.docs.kanbanTasks["PH-21"].assignee = who; seed.docs.kanbanCards["PH-21"].assignee = who;
+  seed.docs["kanbanTasks/PH-20/comments"] = { c1: { author: HUY, at: { $ts: Date.parse("2026-10-20T09:00:00Z") }, text: "hello", html: `<p>hello</p><img src=x onerror="${hit}"><iframe src="javascript:${hit}"></iframe><form action="https://example.test"><input type="password"></form><p style="position:fixed;inset:0;z-index:99999">cover</p>` } };
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor';
+  await p.waitForSelector(ed);
+  await until(async () => /Before/.test(await p.textContent(ed)), "the description in the editor");
+  assert.match(await p.textContent(ed), /After/, "the text is kept");
+  assert.equal(await p.$$eval(`${ed} form, ${ed} input, ${ed} svg, ${ed} [style*="fixed"], ${ed} [onerror], ${ed} [onload]`, (e) => e.length), 0, "nothing active is left in the description");
+  // The comment, cleaned the same way.
+  await until(() => p.$(".kb-comment-text"), "the comment");
+  assert.equal(await p.$$eval(".kb-comment-text form, .kb-comment-text input, .kb-comment-text iframe, .kb-comment-text [style], .kb-comment-text [onerror]", (e) => e.length), 0, "nothing active is left in the comment");
+  // The attachment with a script address is listed, not linked.
+  assert.deepEqual(await p.$$eval("#f-attachments a", (e) => e.map((a) => a.getAttribute("href"))), ["https://example.test/ok.txt"]);
+  // The @ list draws every member's picture.
+  await p.click(ed); await p.keyboard.press("Control+End"); await p.keyboard.type(" @hu");
+  await p.waitForSelector(".kb-mention-item");
+  assert.equal(await p.$$eval(".kb-mention-box img, .kb-mention-item img", (e) => e.length), 0, "the photo address added no element");
+  await p.keyboard.press("Escape");
+  await press(p, "#f-cancel");
+  // The board's own avatars and the report's rows.
+  assert.equal(await p.$$eval("#kb-view img[src='x']", (e) => e.length), 0);
+  const q = await open(prof, "#staff-kanban/report?status=all", { seed });
+  await q.waitForSelector("#kb-view .page-header");
+  await until(() => q.$("[data-person]"), "the report's people");
+  assert.equal(await q.$$eval("#kb-view img[src='x']", (e) => e.length), 0, "the assignee added no element to the report");
+  assert.ok((await q.$$eval("[data-person]", (e) => e.map((x) => x.dataset.person))).includes(who), "the assignee is carried as text");
+  // A real photo address is used exactly as it is stored.
+  const real = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fhuy.le%40ph.example.jpg?alt=media&token=0a1b2c3d-0000-4000-8000-123456789abc";
+  assert.equal(await q.evaluate(async (u) => (await import("/js/kanban/kanban-editor.js")).KBEditor.cssUrl(u), real), real);
+  await sleep(300); // long enough for an image that had been added to fail and fire
+  for (const page of [p, q]) assert.equal(await page.evaluate(() => window.__xss || 0), 0, "no stored script ran");
+  // (the harmless <img src="x"> that is left asks the server for /x)
+  const allow = /404 \(Not Found\) \(http:\/\/127\.0\.0\.1:\d+\/x\)/;
+  await q.done({ allow }); await p.done({ allow });
+});
+
+T("KB-R1", "an editor (every team member but the owner) creates, moves, edits, flags and comments under their own name; Kanban settings are read-only for them", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { seed: kanbanSeed({ user: { email: LINH, role: "editor" } }), ...TALL });
+  // Create.
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Raised by an editor");
+  await press(p, "#f-save");
+  const made = await until(async () => (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanTasks")].filter(([, t]) => t.title === "Raised by an editor")))[0], "the new ticket");
+  assert.equal(made[1].createdBy, LINH); assert.equal(made[1].reporter, LINH);
+  await until(() => p.$eval("#task-backdrop", (e) => e.hidden), "the new ticket's modal to close");
+  // Edit, move by the Status menu and flag, in one ticket.
+  await press(p, '.kb-card[data-key="PH-34"]');
+  await until(async () => /PH-34/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-34 to open");
+  assert.ok(await p.isEnabled("#f-title"), "an editor can change a ticket");
+  await p.fill("#f-title", "Edited by an editor");
+  await p.selectOption("#f-status", "ready-for-dev");
+  await press(p, "#task-flag");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save")));
+  await press(p, "#f-save");
+  await eventually(async () => { const t = await stored(p, "PH-34"); assert.deepEqual([t.title, t.status, t.flagged, t.updatedBy], ["Edited by an editor", "ready-for-dev", true, LINH]); });
+  await eventually(async () => assert.equal((await where(p, "PH-34")).status, "ready-for-dev", "the card moved"));
+  // Comment.
+  await press(p, '.kb-card[data-key="PH-34"]');
+  await until(async () => /PH-34/.test(await p.textContent("#task-title-h")) && !(await p.$eval("#task-backdrop", (e) => e.hidden)), "PH-34 to open again");
+  await p.waitForSelector('[data-field="comments"] .ql-editor');
+  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.type("Looked at this today");
+  await press(p, "#f-comment-add");
+  const c = await until(async () => (await writes(p, /^kanbanTasks\/PH-34\/comments\//))[0], "the comment to be written");
+  assert.equal(c.data.author, LINH);
+  await press(p, "#f-cancel");
+  // Everything written to a ticket, its card or its log carries the editor's own address: the rules refuse anything else.
+  const all = await writes(p, /^kanban(Tasks|Cards)\//);
+  assert.ok(all.length >= 4, `${all.length} writes`);
+  for (const w of all) {
+    if (!w.data) continue;
+    if (/\/activity\//.test(w.path)) assert.equal(w.data.who, LINH, `${w.path} who`);
+    else if (/\/comments\//.test(w.path)) assert.equal(w.data.author, LINH, `${w.path} author`);
+    else if ("updatedBy" in w.data) assert.equal(w.data.updatedBy, LINH, `${w.path} updatedBy`);
+  }
+  assert.equal((await writes(p, /^kanban(Settings|Sprints|Notifications)\//)).length, 0, "an editor writes no settings, sprints or notifications");
+  await p.done();
+  // Settings: shown, not changeable.
+  const q = await open(prof, "#staff-kanban/settings", { seed: kanbanSeed({ user: { email: LINH, role: "editor" } }) });
+  await q.waitForSelector("[data-show]");
+  assert.equal(await q.$$eval("[data-show]:not([disabled]), [data-req]:not([disabled])", (e) => e.length), 0, "every field switch is disabled");
+  assert.equal(await q.$("#st-sprint-add"), null, "no Add sprint");
+  await q.done();
+});
+
+T("KB-C24", "typing in a table cell of the description switches Save on, and what was typed is saved", async (prof) => {
+  // A table cell is edited in place: the editor reports no text change for it, so Save has to notice by itself.
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].description = '<p>Steps</p><div class="faq-table"><table><thead><tr><th>Step</th><th>Expected</th></tr></thead><tbody><tr><td>1</td><td>Offer shows</td></tr></tbody></table></div><p>End</p>';
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const cell = '[data-field="description"] .ql-editor td >> nth=1';
+  await p.waitForSelector('[data-field="description"] .ql-editor td');
+  await sleep(350); // Save's state is re-read every 100 ms: it has settled as "nothing changed"
+  assert.ok(await p.isDisabled("#f-save"), "nothing changed yet");
+  await p.locator(cell).click();
+  await p.keyboard.press("End"); await p.keyboard.type(" on the board");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on after typing in the cell"));
+  await press(p, "#f-save");
+  await eventually(async () => assert.match((await stored(p, "PH-20")).description, /Offer shows on the board/));
+  await p.done();
+});
+
+T("KB-C25", "a tag written over MCP shows as a mention in the ticket and survives a save from the board", async (prof) => {
+  // The markup kanban_create_task / kanban_update_task write for `mention` (functions/kanban.js tagPeople).
+  const seed = kanbanSeed();
+  seed.docs.kanbanTasks["PH-20"].description = `<p>Please look at the offer banner.</p><p><span class="kb-mention" data-user="${HUY}" data-name="Huy">@Huy</span></p>`;
+  seed.docs.kanbanTasks["PH-20"].mentions = [HUY];
+  const p = await open(prof, "#staff-kanban", { seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const ed = '[data-field="description"] .ql-editor';
+  await p.waitForSelector(`${ed} .kb-mention`);
+  assert.deepEqual(await p.$$eval(`${ed} .kb-mention`, (e) => e.map((m) => [m.dataset.user, m.textContent.trim()])), [[HUY, "@Huy"]]);
+  await sleep(350);
+  assert.ok(await p.isDisabled("#f-save"), "opening it changes nothing");
+  await p.fill("#f-title", "Offer banner, retitled");
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save")));
+  await press(p, "#f-save");
+  await eventually(async () => assert.equal((await stored(p, "PH-20")).title, "Offer banner, retitled"));
+  const t = await stored(p, "PH-20");
+  assert.deepEqual(t.mentions, [HUY], "the tag is still on the ticket, so nobody is told a second time");
+  assert.match(t.description, new RegExp(`data-user="${HUY.replace(/\./g, "\\.")}"`));
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");
@@ -1483,7 +1789,7 @@ const E = {
   photoError: (p) => p.$eval("#profile-photo-error", (e) => (e.hidden ? "" : e.textContent)).catch(() => ""),
   photoWrites: (p) => p.evaluate(() => JSON.stringify([Object.keys(globalThis.__fbStub.uploads || {}), globalThis.__fbStub.writes.filter((w) => /^(consoleUsers|memberDirectory)\//.test(w.path)).length])),
   // The page crops with avatarBlobFromFile (256 px square JPEG): run it on the same bytes.
-  photoDims: async (p, url) => { const r = await p.evaluate(async () => { const b = (globalThis.__fbStub.uploads || {})[`avatars/rob@offline2online.com.jpg`] || {}; return { type: b.contentType || "", size: b.size || 0 }; }); assert.equal(r.type, "image/jpeg", "uploaded as a JPEG"); assert.ok(r.size > 0, "something was uploaded"); return { w: 1, h: 1 }; },
+  photoDims: async (p, url) => { const r = await p.evaluate(async () => { const b = (globalThis.__fbStub.uploads || {})[`avatars/owner@example.com.jpg`] || {}; return { type: b.contentType || "", size: b.size || 0 }; }); assert.equal(r.type, "image/jpeg", "uploaded as a JPEG"); assert.ok(r.size > 0, "something was uploaded"); return { w: 1, h: 1 }; },
   cropDims: (p, file) => p.evaluate(async ({ b64, type }) => { const m = await import("/js/avatar.js"); const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); const blob = await m.avatarBlobFromFile(new File([bytes], "x", { type })); const bmp = await createImageBitmap(blob); return { w: bmp.width, h: bmp.height }; }, { b64: file.buffer.toString("base64"), type: file.mimeType }),
   profileHasPhoto: async (p) => !!(await p.$("#profile-btn-avatar img.ph-avatar-img")) || !!(await p.$("#profile-photo-face img")),
   // User Management → Users (admins): Manage → Set photo on the member's row.

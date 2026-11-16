@@ -41,7 +41,7 @@ const code = [
 ].map(constant).join("\n") + "\n" + [
   "buildHeartbeat", "buildHeartbeatLabel", "buildBeating", "buildHeartbeatSilent", "notifyRoutineStale",
   "tsMillis", "anyMillis", "perItemBuildFinished", "perItemRoutineFinished", "isTrainLocked", "isProjectFinalised",
-  "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
+  "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "buildOrderNoticeHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
   "trainItemsForProject", "pendingTrainRevertsForProject", "legacyDeployItemsForProject", "deployNotifyButtonHTML",
 ].map(extract).join("\n") + "\nlet timedSpinnerShown = false;";
 
@@ -55,6 +55,12 @@ function board(project, cards) {
     getSelectedSet: () => new Set(),
     isBuildableBacklogItem: (i) => i.status === "backlog" && !(i.blocked && i.blocked.reason) && !i.patchReady,
     waitingOnAnswerChipHTML: () => "",
+    // Owner-only firing for agent tickets (public/js/owner-fire.js): none of
+    // these cards is an agent ticket, so the owner gate never applies here.
+    ticketOwner: (i) => (i && i.ownerEmail) || "",
+    deployOwnerBlock: () => null,
+    viewerFireState: () => ({ email: "", hasBinding: null }),
+    ownerFireInfoHTML: () => "",
     Date,
   };
   vm.createContext(ctx);
@@ -171,6 +177,19 @@ test("a conflicted deploy the pipeline is retrying shows Deploying…, not the b
   const project = { id: P, trainLocked: true, trainStatus: "deploying", trainReady: true };
   const html = board(project, cards).deploy();
   assert.match(html, /Deploying/);
+});
+
+// Build order (ZE8h8cfaezOb0eTsRjSH): what the last click held or queued is
+// said beside Ready for Dev, for two hours, and never in the deploy phase.
+test("a click that held tickets says so beside Ready for Dev", () => {
+  const cards = [{ id: "b", projectId: P, status: "backlog" }];
+  const summary = '2 held: they need "Roles page", which was not sent.';
+  const project = { id: P, notifyRoutine: { status: "error", firedAt: ts(now - 60e3), buildOrder: { summary, at: ts(now - 60e3) } } };
+  assert.match(board(project, cards).html(), /order-chip-click[\s\S]*2 held: they need "Roles page", which was not sent\./);
+  const old = { id: P, notifyRoutine: { buildOrder: { summary, at: ts(now - 3 * 3600e3) } } };
+  assert.doesNotMatch(board(old, cards).html(), /order-chip-click/, "gone after two hours");
+  const locked = { id: P, trainReady: true, notifyRoutine: { buildOrder: { summary, at: ts(now - 60e3) } } };
+  assert.doesNotMatch(board(locked, cards).html(), /order-chip-click/, "not in the deploy phase");
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

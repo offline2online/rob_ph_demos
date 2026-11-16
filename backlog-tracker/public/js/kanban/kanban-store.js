@@ -31,6 +31,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gsta
 import {
   searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
   cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts, linkChanges, inverseOf,
+  setPersonAliases,
 } from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
@@ -81,6 +82,9 @@ export function taskFromDoc(id, d) {
     acDone: Array.isArray(d.acceptanceCriteria) ? acCounts(d.acceptanceCriteria).done : Number.isInteger(d.acDone) ? d.acDone : 0,
     attachmentCount: Array.isArray(d.attachments) ? d.attachments.length : typeof d.attachmentCount === "number" ? d.attachmentCount : 0,
     commentCount: typeof d.commentCount === "number" ? d.commentCount : 0,
+    // Send to Agent (KB-AGENT-1): written by the server only.
+    ...(Array.isArray(d.agentTickets) ? { agentTickets: d.agentTickets.filter((x) => x && typeof x.id === "string") } : {}),
+    ...(Number.isInteger(d.agentTotal) && d.agentTotal > 0 ? { agentTotal: d.agentTotal, agentDone: Number.isInteger(d.agentDone) ? d.agentDone : 0 } : {}),
     created: isoOf(d.createdAt),
     createdBy: d.createdBy || "",
     updated: isoOf(d.updatedAt),
@@ -190,12 +194,15 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     if (releaseWatched) { const r = releaseWatched; releaseWatched = ""; watchRelease(r); }
   }
   const countOf = async (ref) => (await getCountFromServer(ref)).data().count;
-  const cardsBehind = async () => (await countOf(cardsRef)) < (await countOf(tasksRef));
+  // (the two counts are asked for together: the board waits on one round trip, not two)
+  const cardsBehind = async () => { const [cards, tasks] = await Promise.all([countOf(cardsRef), countOf(tasksRef)]); return cards < tasks; };
   // Which collection the board reads. Behind: read the tickets, ask the server
   // to fill the cards, and move to them when they have caught up.
   async function chooseBoard() {
     let behind = false;
-    try { behind = await cardsBehind(); } catch (e) { behind = true; }
+    // A count that can't be read (offline, a dropped connection) says nothing about the cards: stay on them.
+    // Reading every open ticket in full instead is the costly path, for the one case the cards are known behind.
+    try { behind = await cardsBehind(); } catch (e) { behind = false; }
     boardColl = behind ? "kanbanTasks" : "kanbanCards";
     listenBoard();
     if (!behind || !backfill) return;
@@ -217,6 +224,14 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       state.sprints = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
       changed("sprints");
     }, onError));
+    // A second sign-in address of the same person (consoleConfig/identity,
+    // written only by scripts/set-owner-claim.js): folded into its person
+    // everywhere kanban-core's canonicalEmail() is used. No address lives in
+    // the code; a refusal or a missing doc simply means no aliases.
+    unsubs.push(onSnapshot(doc(db, "consoleConfig", "identity"), (snap) => {
+      setPersonAliases(snap.exists() ? (snap.data() || {}).personAliases : null);
+      changed("members");
+    }, () => { /* not readable: no aliases */ }));
     unsubs.push(onSnapshot(collection(db, "memberDirectory"), (snap) => {
       state.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
       state.membersLoaded = true;
@@ -253,14 +268,26 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   }
   // KB-TASK-6: one array-contains query on searchTokens, capped; the page
   // ranks the result together with what it already holds.
-  async function searchServer(q) {
+  // The query is on one word of what was typed, so typing on (or back) often asks for the word just asked for.
+  // An answer is reused for a minute: each one reads up to 200 whole tickets.
+  const SEARCH_REUSE_MS = 60000;
+  const searched = new Map();
+  function searchServer(q) {
     const token = queryToken(q);
-    if (!token) return [];
-    const snap = await getDocs(query(tasksRef, where("searchTokens", "array-contains", token), limit(SERVER_SEARCH_LIMIT)));
-    const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
-    for (const t of list) texts.set(t.key, t.descriptionText);
-    pin(list);
-    return list;
+    if (!token) return Promise.resolve([]);
+    const hit = searched.get(token);
+    if (hit && Date.now() - hit.at < SEARCH_REUSE_MS) return hit.p;
+    const p = (async () => {
+      const snap = await getDocs(query(tasksRef, where("searchTokens", "array-contains", token), limit(SERVER_SEARCH_LIMIT)));
+      const list = snap.docs.map((d) => taskFromDoc(d.id, d.data()));
+      for (const t of list) texts.set(t.key, t.descriptionText);
+      pin(list);
+      return list;
+    })();
+    searched.set(token, { p, at: Date.now() });
+    p.catch(() => { if (searched.get(token) && searched.get(token).p === p) searched.delete(token); });
+    if (searched.size > 200) searched.delete(searched.keys().next().value);
+    return p;
   }
   function watchComments(key, cb) {
     return onSnapshot(collection(db, "kanbanTasks", key, "comments"), (snap) => {
@@ -520,6 +547,17 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     });
   }
 
+  // Send to Agent (KB-AGENT-1): a ticket's agent tickets on the Agent Board,
+  // live, one listener each (a ticket links at most 50). cb(Map id → item|null).
+  function watchAgentTickets(ids, cb) {
+    const found = new Map();
+    const unsubs = [...new Set(ids || [])].slice(0, 50).map((id) => onSnapshot(doc(db, "backlogItems", id), (snap) => {
+      found.set(id, snap.exists() ? { id, ...snap.data() } : null);
+      cb(new Map(found));
+    }, () => { found.set(id, null); cb(new Map(found)); }));
+    return () => unsubs.forEach((u) => { try { u(); } catch (e) { /* already gone */ } });
+  }
+
   async function saveSettings(patch) {
     const b = writeBatch(db);
     b.set(doc(db, "kanbanSettings", "main"), { ...patch, updatedAt: serverTimestamp(), updatedBy: me }, { merge: true });
@@ -533,6 +571,6 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   return {
     state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
-    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, backfill: () => (backfill ? backfill() : Promise.resolve()),
+    createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, watchAgentTickets, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

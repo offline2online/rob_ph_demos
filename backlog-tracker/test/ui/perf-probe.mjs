@@ -14,10 +14,10 @@ P.forEach((pid, pi) => {
 const projects = Object.fromEntries(P.map((id, i) => [id, { name: `Project ${i}`, createdAt: t(T0 + i), deployBranch: `deploy/p${i}`, repoFolder: `p${i}`, description: big(200) }]));
 const kanbanCards = {};
 for (let i = 0; i < 400; i++) kanbanCards[`k${i}`] = { title: `Task ${i}`, status: ["todo", "in-progress", "done"][i % 3], createdAt: t(T0 + i), updatedAt: t(T0 + i), order: i, key: `PH-${i}` };
-const seed = { user: { email: "rob@offline2online.com", role: "admin" }, docs: {
+const seed = { user: { email: "owner@example.com", role: "admin" }, docs: {
   projects, backlogItems: items, kanbanCards,
   roles: { r1: { name: "Admin" }, r2: { name: "Editor" } },
-  consoleUsers: { "rob@offline2online.com": { email: "rob@offline2online.com", role: "admin", roleId: "r1" } },
+  consoleUsers: { "owner@example.com": { email: "owner@example.com", role: "admin", roleId: "r1" } },
 } };
 const h = await startHarness();
 const routes = (process.env.ROUTES || "#,#staff-kanban,#concept-incubator,#faq-management,#settings,#settings/user-management/users").split(",");

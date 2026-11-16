@@ -40,12 +40,16 @@ const verifier = b64url(crypto.randomBytes(32));
 const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
 
 // A signed-in Firebase user the stub's verifyIdToken will accept.
-function signIn(email, uid) {
+// `claims` are custom claims, on both the decoded token and the Auth user —
+// the account owner is { owner: true } (scripts/set-owner-claim.js), never an
+// address the code knows.
+function signIn(email, uid, claims) {
   const token = `idtoken-${email}`;
-  env.authState.idTokens.set(token, { uid: uid || `uid-${email}`, email, email_verified: true });
-  env.authState.users.set(email, { uid: uid || `uid-${email}`, email, customClaims: {} });
+  env.authState.idTokens.set(token, Object.assign({ uid: uid || `uid-${email}`, email, email_verified: true }, claims || {}));
+  env.authState.users.set(email, { uid: uid || `uid-${email}`, email, customClaims: Object.assign({}, claims || {}) });
   return token;
 }
+const OWNER_CLAIMS = { owner: true };
 function addConsoleUser(email, fields) {
   env.store.col("consoleUsers").set(email, Object.assign({ email, role: "editor", displayName: "" }, fields || {}));
 }
@@ -63,7 +67,7 @@ async function rpc(token, method, params, id = 1) {
   let clientId = null;
   let code = null;
   let tokens = null;
-  const TEAMMATE = "sam@personalisationhub.com";
+  const TEAMMATE = "sam@ph.example";
   const teammateIdToken = signIn(TEAMMATE);
 
   // ── discovery ───────────────────────────────────────────────────────────
@@ -366,6 +370,50 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(Array.isArray(payload.steps) && payload.steps.length >= 4);
     assert.match(payload.bootstrapPrompt, /ROUTINE_INSTRUCTIONS\.md/);
     assert.match(payload.bootstrapPrompt, /raw\.githubusercontent\.com\/offline2online\/rob_ph_demos\/main\/backlog-tracker\/ROUTINE_INSTRUCTIONS\.md/);
+  });
+
+  // ── guided Routine setup on connect (BXkUvoayo98j744RUCy8) ─────────────
+  await test("initialize walks an unbound member through Routine setup, and stops once they are bound", async () => {
+    env.store.col("routineBindings").delete(TEAMMATE);
+    const init = async () => (await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} })).body.result.instructions;
+    const unbound = await init();
+    assert.ok(unbound.startsWith(mcp.__test.ROUTINE_SETUP_INSTRUCTIONS), "the setup walkthrough comes first, before other work");
+    assert.ok(unbound.endsWith(mcp.__test.SERVER_INSTRUCTIONS), "the normal instructions still follow");
+    for (const w of ["Before other work", "get_routine_setup_instructions", "agentGuidance", "hasRoutineBinding", "Never repeat the token"]) {
+      assert.ok(unbound.includes(w), `setup instructions mention ${w}`);
+    }
+    assert.ok(unbound.length <= 3700, `an unbound member's instructions are ${unbound.length} characters`);
+    const setup = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_routine_setup_instructions", arguments: {} })).body.result.content[0].text);
+    const guide = setup.agentGuidance.join(" ");
+    for (const w of ["one step at a time", "wait for the person", "fenced code block", "set_my_routine_binding once", "whoami", "Never ask for the token again", "remind them once"]) {
+      assert.ok(guide.includes(w), `agentGuidance mentions ${w}`);
+    }
+    assert.strictEqual(setup.routinesUrl, "https://claude.ai/code/routines");
+    assert.deepStrictEqual(setup.walkthrough.map((s) => s.step), [1, 2, 3, 4]);
+    assert.strictEqual(setup.walkthrough[0].link, "https://claude.ai/code/routines");
+    assert.strictEqual(setup.walkthrough[1].copy, "bootstrapPrompt");
+    assert.match(setup.walkthrough[2].say, /\/fire/);
+    assert.match(setup.walkthrough[3].say, /set_my_routine_binding/);
+
+    await rpc(tokens.access_token, "tools/call", {
+      name: "set_my_routine_binding",
+      arguments: { fireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_setup/fire", token: "sk-ant-setup-walkthrough" },
+    });
+    const who = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "whoami", arguments: {} })).body.result.content[0].text);
+    assert.strictEqual(who.hasRoutineBinding, true);
+    const bound = await init();
+    assert.strictEqual(bound, mcp.__test.SERVER_INSTRUCTIONS, "a bound member's reconnect shows no setup prompt");
+    assert.ok(!bound.includes("sk-ant-setup-walkthrough"));
+    env.store.col("routineBindings").delete(TEAMMATE);
+  });
+
+  await test("a legacy consoleUsers binding also counts as bound at initialize", async () => {
+    const row = env.store.col("consoleUsers").get(TEAMMATE);
+    env.store.col("consoleUsers").set(TEAMMATE, Object.assign({}, row, { routineFireUrl: "https://api.anthropic.com/v1/claude_code/routines/trig_old/fire", routineFireToken: "sk-ant-legacy-token" }));
+    try {
+      const res = await rpc(tokens.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      assert.strictEqual(res.body.result.instructions, mcp.__test.SERVER_INSTRUCTIONS);
+    } finally { env.store.col("consoleUsers").set(TEAMMATE, row); }
   });
 
   await test("set_my_routine_binding is board.write; a viewer is refused", async () => {
@@ -757,7 +805,12 @@ async function rpc(token, method, params, id = 1) {
     }
     for (const t of tools.filter((x) => x.scope === "board.write" || x.role)) assert.ok(text.includes(t.name), `instructions never name ${t.name}`);
     for (const t of tools.filter((x) => x.scope === "board.write" && /deploy|merge/.test(x.name))) assert.ok(who.includes(t.name), `whoami note never names ${t.name}`);
-    assert.ok(text.length <= 3700, `instructions are ${text.length} characters`);
+    // The Routine setup walkthrough is prepended only for an unbound member
+    // (BXkUvoayo98j744RUCy8), so the standing instructions keep their own cap.
+    const base = mcp.__test.SERVER_INSTRUCTIONS;
+    assert.ok(base.length <= 3700, `instructions are ${base.length} characters`);
+    const withSetup = base.length + 1 + mcp.__test.ROUTINE_SETUP_INSTRUCTIONS.length;
+    assert.ok(withSetup <= 3700, `instructions with the Routine setup block are ${withSetup} characters`);
     assert.match(text, /get_ready_for_testing_board/);
     assert.match(text, /startHereDocId/);
     assert.match(text, /project_handover/);
@@ -1014,7 +1067,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can read artifact versions but cannot snapshot", async () => {
-    const VIEWER3 = "artifactviewer@personalisationhub.com";
+    const VIEWER3 = "artifactviewer@ph.example";
     const idToken = signIn(VIEWER3);
     addConsoleUser(VIEWER3, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -1286,7 +1339,7 @@ async function rpc(token, method, params, id = 1) {
   env.store.col("concepts").set("con1", {
     name: "Customer support concept", status: "active",
     readmeMd: "# Support concept\n\nEarly idea.", requirementsMd: "# Requirements\n\nTBD.",
-    comments: [], createdByEmail: "rob@offline2online.com",
+    comments: [], createdByEmail: "owner@example.com",
   });
   env.store.col("concepts").set("con2", {
     name: "Promoted idea", status: "promoted", promotedProjectId: "proj1",
@@ -1579,6 +1632,48 @@ async function rpc(token, method, params, id = 1) {
     assert.strictEqual(res.body.result.isError, true);
   });
 
+  // ── Hidden from the website (3HabqHlC4WwL137CYTv1) ──────────────────────
+  await test("create_faq_article can create a hidden-from-website draft", async () => {
+    const res = await rpc(tokens.access_token, "tools/call", {
+      name: "create_faq_article",
+      arguments: { title: "Run your own retail media: getting set up", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: true },
+    });
+    const payload = JSON.parse(res.body.result.content[0].text);
+    assert.strictEqual(payload.hiddenFromWebsite, true);
+    assert.strictEqual(env.store.col("faqArticles").get(payload.articleId).hiddenFromWebsite, true);
+    const bad = await rpc(tokens.access_token, "tools/call", { name: "create_faq_article", arguments: { title: "Bad flag", categoryId: "cat2", bodyMd: "<p>x</p>", programId: "prog1", hiddenFromWebsite: "yes" } });
+    assert.strictEqual(bad.body.result.isError, true);
+  });
+
+  await test("set_faq_visibility hides articles and categories; showing a live article or a category is a person's job", async () => {
+    const call = (args) => rpc(tokens.access_token, "tools/call", { name: "set_faq_visibility", arguments: args });
+    env.store.col("faqCategories").set("catHid", { name: "Run your own retail media", icon: "storefront", order: 9 });
+    env.store.col("faqCategories").set("catHidSub", { name: "Set up", icon: "folder", order: 0, parentId: "catHid" });
+    const live = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Live one", slug: "live-vis", bodyMd: "<p>x</p>", status: "published" });
+    const draft = await env.db.collection("faqArticles").add({ categoryId: "cat2", title: "Draft one", slug: "draft-vis", bodyMd: "<p>x</p>", status: "draft", hiddenFromWebsite: true });
+    const hideLive = JSON.parse((await call({ articleId: live.id, hiddenFromWebsite: true })).body.result.content[0].text);
+    assert.strictEqual(hideLive.updated, true);
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    const showLive = await call({ articleId: live.id, hiddenFromWebsite: false });
+    assert.strictEqual(showLive.body.result.isError, true, "showing a live article launches it");
+    assert.strictEqual(env.store.col("faqArticles").get(live.id).hiddenFromWebsite, true);
+    JSON.parse((await call({ articleId: draft.id, hiddenFromWebsite: false })).body.result.content[0].text);
+    assert.strictEqual(env.store.col("faqArticles").get(draft.id).hiddenFromWebsite, false, "a draft can be un-hidden");
+    await call({ categoryId: "catHid", hiddenFromWebsite: true });
+    assert.strictEqual(env.store.col("faqCategories").get("catHid").hiddenFromWebsite, true);
+    assert.strictEqual((await call({ categoryId: "catHid", hiddenFromWebsite: false })).body.result.isError, true);
+    assert.strictEqual((await call({ hiddenFromWebsite: true })).body.result.isError, true, "needs an id");
+    assert.strictEqual((await call({ articleId: live.id, categoryId: "catHid", hiddenFromWebsite: true })).body.result.isError, true, "only one id");
+    assert.strictEqual((await call({ categoryId: "nope", hiddenFromWebsite: true })).body.result.isError, true);
+    const cats = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "list_faq_categories", arguments: {} })).body.result.content[0].text);
+    const sub = cats.categories.find((c) => c.id === "catHidSub");
+    assert.deepStrictEqual([sub.hiddenFromWebsite, sub.hiddenFromWebsiteOwnFlag], [true, false], "a folder inherits its category's flag");
+    const got = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_faq_article", arguments: { articleId: live.id } })).body.result.content[0].text);
+    assert.strictEqual(got.hiddenFromWebsite, true);
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "set_faq_visibility").scope, "board.write");
+    assert.strictEqual(mcp.__test.TOOLS.find((t) => t.name === "list_faq_categories").scope, "board.read");
+  });
+
   let liveArticleId = null;
   await test("proposes an update to a live article as a pendingRevision, leaving the live fields untouched", async () => {
     const ref = await env.db.collection("faqArticles").add({
@@ -1727,7 +1822,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can read FAQ revisions but cannot create, update or comment", async () => {
-    const VIEWER2 = "faqviewer@personalisationhub.com";
+    const VIEWER2 = "faqviewer@ph.example";
     const idToken = signIn(VIEWER2);
     addConsoleUser(VIEWER2, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -2107,7 +2202,7 @@ async function rpc(token, method, params, id = 1) {
     docsEnv();
     try {
       env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# R\n\ntext" });
-      const VIEWER = "docsviewer@personalisationhub.com";
+      const VIEWER = "docsviewer@ph.example";
       const idToken = signIn(VIEWER);
       addConsoleUser(VIEWER, { role: "viewer" });
       const v = b64url(crypto.randomBytes(32));
@@ -2128,6 +2223,10 @@ async function rpc(token, method, params, id = 1) {
       const search = await callDocs(tok.body.access_token, "list_project_documents", { projectId: "docsproj", query: "text" });
       assert.strictEqual(search.isError, false);
       assert.strictEqual(env.store.col("mcpAuditLog").size, rowsBefore, "reads write no audit row");
+      // A viewer can't call set_my_routine_binding, so it is never walked
+      // through Routine setup (BXkUvoayo98j744RUCy8).
+      const init = await rpc(tok.body.access_token, "initialize", { protocolVersion: "2025-06-18", capabilities: {} });
+      assert.strictEqual(init.body.result.instructions, mcp.__test.SERVER_INSTRUCTIONS);
     } finally { clearDocs(); }
   });
 
@@ -2262,7 +2361,7 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("backlogItems").set("ft2", {
       projectId: "ftproj", title: "Stale test record", desc: "x", type: "bug", category: "HQ Admin", status: "ready-to-publish",
       previewUrl: null, deployCommit: "sha2", previewState: "ready", previewSha: "abc1234ffff",
-      trainTest: { sha: "OLD", state: "failed", workflows: [] }, approvedByEmail: "rob@offline2online.com", approvedAt: "2026-10-19T02:00:00.000Z",
+      trainTest: { sha: "OLD", state: "failed", workflows: [] }, approvedByEmail: "owner@example.com", approvedAt: "2026-10-19T02:00:00.000Z",
     });
     const rft = (await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "ftproj" } })).body.result;
     assert.match(rft.content[0].text, /1 ticket\(s\) waiting on review; 1 link rebuilding, 1 with tests running\./);
@@ -2279,7 +2378,7 @@ async function rpc(token, method, params, id = 1) {
     const [b] = dep.structuredContent.items;
     assert.strictEqual(b.previewState, "ready");
     assert.strictEqual(b.trainTest, null, "a run recorded for another commit is not this card's");
-    assert.strictEqual(b.approvedByEmail, "rob@offline2online.com");
+    assert.strictEqual(b.approvedByEmail, "owner@example.com");
     assert.strictEqual(b.approvedAt, "2026-10-19T02:00:00.000Z");
     assert.doesNotMatch(dep.content[0].text, /rebuilding|tests running/);
     const detail = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_backlog_item", arguments: { itemId: "ft1" } })).body.result.content[0].text);
@@ -2456,6 +2555,62 @@ async function rpc(token, method, params, id = 1) {
     res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["v1"] });
     assert.strictEqual(res.body.result.isError, true);
     assert.match(res.body.result.content[0].text, /already being built/);
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+  });
+
+  // ── Build order (ZE8h8cfaezOb0eTsRjSH) ───────────────────────────────────
+  await test("create/update take dependsOnItemIds; Dependencies titles are read at intake; a loop is refused", async () => {
+    seedItem("dA00000000000000000a", { title: "Flow 1/9: train tests stop failing" });
+    seedItem("dB00000000000000000b");
+    const call = (name, args) => rpc(tokens.access_token, "tools/call", { name, arguments: args });
+    let res = await call("create_backlog_item", {
+      projectId: "voiceproj", dependsOnItemIds: ["dB00000000000000000b"],
+      desc: '## Outcome\nOrder the builds so dependants never start first.\n\n## Dependencies\nBuild after "Flow 1/9: train tests stop failing".',
+    });
+    assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
+    const created = JSON.parse(res.body.result.content[0].text);
+    assert.deepStrictEqual(created.dependsOn.map((d) => [d.id, d.status]), [["dB00000000000000000b", "backlog"], ["dA00000000000000000a", "backlog"]]);
+    const doc = env.store.col("backlogItems").get(created.itemId);
+    assert.deepStrictEqual(doc.dependsOnItemIds, ["dB00000000000000000b", "dA00000000000000000a"]);
+    assert.strictEqual(doc.dependsOnSource, "manual");
+    // dB waits for the new ticket, which waits for dB: refused, loop named.
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: [created.itemId] });
+    assert.strictEqual(res.body.result.isError, true);
+    assert.match(res.body.result.content[0].text, /That would make a loop: Ticket dB00000000000000000b waits for .* waits for Ticket dB00000000000000000b/);
+    assert.ok(!env.store.col("backlogItems").get("dB00000000000000000b").dependsOnItemIds, "nothing written");
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: ["nope"] });
+    assert.match(res.body.result.content[0].text, /No ticket with id nope/);
+    res = await call("update_backlog_item", { itemId: "dB00000000000000000b", dependsOnItemIds: ["dA00000000000000000a"] });
+    assert.strictEqual(res.body.result.isError, undefined);
+    assert.deepStrictEqual(env.store.col("backlogItems").get("dB00000000000000000b").dependsOnItemIds, ["dA00000000000000000a"]);
+    assert.strictEqual(env.store.col("backlogItems").get("dB00000000000000000b").dependsOnSource, "manual");
+    // get_backlog_item returns each dependency with its title and status.
+    env.store.col("backlogItems").set("dA00000000000000000a", Object.assign({}, env.store.col("backlogItems").get("dA00000000000000000a"), { status: "ready-for-testing" }));
+    const detail = JSON.parse((await call("get_backlog_item", { itemId: "dB00000000000000000b" })).body.result.content[0].text);
+    assert.deepStrictEqual(detail.dependsOn, [{ id: "dA00000000000000000a", title: "Flow 1/9: train tests stop failing", status: "ready-for-testing", statusLabel: detail.dependsOn[0].statusLabel }]);
+    assert.ok(detail.dependsOn[0].statusLabel, "with a readable status");
+    const list = JSON.parse((await call("list_backlog_items", { projectId: "voiceproj", search: "Ticket dB" })).body.result.content[0].text);
+    const row = list.items.find((i) => i.id === "dB00000000000000000b");
+    assert.deepStrictEqual(row.dependsOnItemIds, ["dA00000000000000000a"]);
+    assert.strictEqual(row.dependsOn[0].title, "Flow 1/9: train tests stop failing");
+    for (const id of ["dA00000000000000000a", "dB00000000000000000b", created.itemId]) env.store.col("backlogItems").delete(id);
+  });
+
+  await test("send_to_build returns which tickets were fired, queued and held", async () => {
+    env.store.col("projects").set("voiceproj", { name: "Voice Project" });
+    seedItem("sA", { groomAreas: ["faq"], createdAt: new Date("2026-11-01T00:00:00Z") });
+    seedItem("sB", { groomAreas: ["faq"], createdAt: new Date("2026-11-02T00:00:00Z") });
+    seedItem("sC", { dependsOnItemIds: ["sA"] });
+    seedItem("sD", { dependsOnItemIds: ["sX"] });
+    seedItem("sX", { title: "Not sent" });
+    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sC", "sD"] });
+    assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
+    const out = JSON.parse(res.body.result.content[0].text);
+    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA"]);
+    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sB", "sA"]]);
+    assert.deepStrictEqual(out.held.map((x) => [x.id, x.waitingFor.map((w) => [w.id, w.notSent])]), [["sC", [["sA", false]]], ["sD", [["sX", true]]]]);
+    assert.match(out.summary, /2 held: .*"Not sent", which was not sent/);
+    for (const id of ["sA", "sB", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 
@@ -2752,7 +2907,7 @@ async function rpc(token, method, params, id = 1) {
 
   // ── role and revocation ─────────────────────────────────────────────────
   await test("a viewer gets the tool list but is refused a write", async () => {
-    const VIEWER = "viewer@personalisationhub.com";
+    const VIEWER = "viewer@ph.example";
     const idToken = signIn(VIEWER);
     addConsoleUser(VIEWER, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -2797,7 +2952,7 @@ async function rpc(token, method, params, id = 1) {
   }
 
   await test("list_backlog_items pages through every ticket once, in a fixed order, with ISO and missing timestamps", async () => {
-    const token = await accessTokenFor("pager@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager@ph.example", "editor");
     const base = Date.parse("2026-01-01T00:00:00Z");
     for (let i = 0; i < 250; i += 1) {
       const id = `pg${String(i).padStart(3, "0")}`;
@@ -2834,7 +2989,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a cursor that can't be decoded is a tool error", async () => {
-    const token = await accessTokenFor("pager2@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager2@ph.example", "editor");
     for (const bad of ["nope", Buffer.from("{}").toString("base64url")]) {
       const res = await listItems(token, { cursor: bad });
       assert.strictEqual(res.isError, true);
@@ -2843,7 +2998,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("search reaches archived tickets; includeArchived and status behave as documented", async () => {
-    const token = await accessTokenFor("pager3@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager3@ph.example", "editor");
     env.store.col("backlogItems").set("arch1", { projectId: "arproj", title: "A stale thing", desc: "", type: "bug", category: "HQ Admin", status: "archived", updatedAt: stubTs(1000) });
     env.store.col("backlogItems").set("live1", { projectId: "arproj", title: "Fresh", desc: "", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(2000) });
     let r = await listItems(token, { projectId: "arproj", search: "stale" });
@@ -2862,7 +3017,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("searchIn notes finds a comment, with matchedIn and a snippet; bad values are errors", async () => {
-    const token = await accessTokenFor("pager4@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager4@ph.example", "editor");
     const long = `${"x".repeat(300)} Failed testing [Visual or layout issue]: header overlaps ${"y".repeat(300)}`;
     env.store.col("backlogItems").set("note1", {
       projectId: "nproj", title: "Header", desc: "d", type: "bug", category: "HQ Admin", status: "ready-for-testing", updatedAt: stubTs(5),
@@ -2887,7 +3042,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("get_backlog_item returns lastFailureReason with an ISO at, or null", async () => {
-    const token = await accessTokenFor("pager5@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager5@ph.example", "editor");
     env.store.col("backlogItems").set("lf1", {
       projectId: "lfproj", title: "T", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(1),
       lastFailureReason: { category: "Visual or layout issue", text: "header overlaps", action: "failed-testing", at: stubTs(Date.parse("2026-10-01T10:00:00Z")) },
@@ -2899,7 +3054,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can page with a cursor", async () => {
-    const token = await accessTokenFor("pagerview@personalisationhub.com", "viewer");
+    const token = await accessTokenFor("pagerview@ph.example", "viewer");
     const first = await listItems(token, { projectId: "pgproj", limit: 100 });
     assert.ok(first.nextCursor);
     const second = await listItems(token, { projectId: "pgproj", limit: 100, cursor: first.nextCursor });
@@ -2908,7 +3063,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("reading 1,500 tickets without projectId reports truncated", async () => {
-    const token = await accessTokenFor("pager6@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager6@ph.example", "editor");
     const ids = [];
     for (let i = 0; i < 1501; i += 1) {
       const id = `trunc${i}`;
@@ -2954,8 +3109,8 @@ async function rpc(token, method, params, id = 1) {
     addConsoleUser(TEAMMATE, { role: "editor" });
   });
 
-  await test("a bootstrap admin works even with an empty consoleUsers collection", async () => {
-    const ownerToken = signIn("rob@offline2online.com");
+  await test("the account owner (owner claim) works even with an empty consoleUsers collection", async () => {
+    const ownerToken = signIn("owner@example.com", undefined, OWNER_CLAIMS);
     const v = b64url(crypto.randomBytes(32));
     const ch = b64url(crypto.createHash("sha256").update(v).digest());
     const res = await call({
@@ -2963,6 +3118,17 @@ async function rpc(token, method, params, id = 1) {
       body: { idToken: ownerToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256" },
     });
     assert.strictEqual(res.statusCode, 200);
+  });
+
+  await test("an address alone is never an owner: without the claim, no row means no access", async () => {
+    const token = signIn("owner-lookalike@example.com");
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const res = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken: token, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256" },
+    });
+    assert.strictEqual(res.statusCode, 403);
   });
 
   // ── console-side endpoints ──────────────────────────────────────────────
@@ -2983,7 +3149,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a non-admin cannot revoke someone else's connections", async () => {
-    const res = await call({ method: "POST", path: "/mcp/me/connections", body: { email: "rob@offline2online.com" }, headers: { "X-Firebase-ID-Token": teammateIdToken } });
+    const res = await call({ method: "POST", path: "/mcp/me/connections", body: { email: "owner@example.com" }, headers: { "X-Firebase-ID-Token": teammateIdToken } });
     assert.strictEqual(res.statusCode, 403);
   });
 
@@ -2993,13 +3159,13 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("an admin provisions a password account for a member with no Google login", async () => {
-    const ownerToken = signIn("rob@offline2online.com");
-    addConsoleUser("newhire@personalisationhub.com", { role: "editor", displayName: "New Hire" });
-    const res = await call({ method: "POST", path: "/mcp/admin/provision", body: { email: "newhire@personalisationhub.com" }, headers: { "X-Firebase-ID-Token": ownerToken } });
+    const ownerToken = signIn("owner@example.com", undefined, OWNER_CLAIMS);
+    addConsoleUser("newhire@ph.example", { role: "editor", displayName: "New Hire" });
+    const res = await call({ method: "POST", path: "/mcp/admin/provision", body: { email: "newhire@ph.example" }, headers: { "X-Firebase-ID-Token": ownerToken } });
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.created, true);
-    assert.ok(env.authState.created.includes("newhire@personalisationhub.com"));
-    const user = env.authState.users.get("newhire@personalisationhub.com");
+    assert.ok(env.authState.created.includes("newhire@ph.example"));
+    const user = env.authState.users.get("newhire@ph.example");
     assert.strictEqual(user.customClaims.consoleRole, "editor");
     assert.strictEqual(user.customClaims.consoleEditor, true);
   });
