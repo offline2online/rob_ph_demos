@@ -40,12 +40,16 @@ const verifier = b64url(crypto.randomBytes(32));
 const challenge = b64url(crypto.createHash("sha256").update(verifier).digest());
 
 // A signed-in Firebase user the stub's verifyIdToken will accept.
-function signIn(email, uid) {
+// `claims` are custom claims, on both the decoded token and the Auth user —
+// the account owner is { owner: true } (scripts/set-owner-claim.js), never an
+// address the code knows.
+function signIn(email, uid, claims) {
   const token = `idtoken-${email}`;
-  env.authState.idTokens.set(token, { uid: uid || `uid-${email}`, email, email_verified: true });
-  env.authState.users.set(email, { uid: uid || `uid-${email}`, email, customClaims: {} });
+  env.authState.idTokens.set(token, Object.assign({ uid: uid || `uid-${email}`, email, email_verified: true }, claims || {}));
+  env.authState.users.set(email, { uid: uid || `uid-${email}`, email, customClaims: Object.assign({}, claims || {}) });
   return token;
 }
+const OWNER_CLAIMS = { owner: true };
 function addConsoleUser(email, fields) {
   env.store.col("consoleUsers").set(email, Object.assign({ email, role: "editor", displayName: "" }, fields || {}));
 }
@@ -63,7 +67,7 @@ async function rpc(token, method, params, id = 1) {
   let clientId = null;
   let code = null;
   let tokens = null;
-  const TEAMMATE = "sam@personalisationhub.com";
+  const TEAMMATE = "sam@ph.example";
   const teammateIdToken = signIn(TEAMMATE);
 
   // ── discovery ───────────────────────────────────────────────────────────
@@ -1014,7 +1018,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can read artifact versions but cannot snapshot", async () => {
-    const VIEWER3 = "artifactviewer@personalisationhub.com";
+    const VIEWER3 = "artifactviewer@ph.example";
     const idToken = signIn(VIEWER3);
     addConsoleUser(VIEWER3, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -1286,7 +1290,7 @@ async function rpc(token, method, params, id = 1) {
   env.store.col("concepts").set("con1", {
     name: "Customer support concept", status: "active",
     readmeMd: "# Support concept\n\nEarly idea.", requirementsMd: "# Requirements\n\nTBD.",
-    comments: [], createdByEmail: "rob@offline2online.com",
+    comments: [], createdByEmail: "owner@example.com",
   });
   env.store.col("concepts").set("con2", {
     name: "Promoted idea", status: "promoted", promotedProjectId: "proj1",
@@ -1727,7 +1731,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can read FAQ revisions but cannot create, update or comment", async () => {
-    const VIEWER2 = "faqviewer@personalisationhub.com";
+    const VIEWER2 = "faqviewer@ph.example";
     const idToken = signIn(VIEWER2);
     addConsoleUser(VIEWER2, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -2107,7 +2111,7 @@ async function rpc(token, method, params, id = 1) {
     docsEnv();
     try {
       env.store.col("projects/docsproj/docs").set("requirements", { contentMd: "# R\n\ntext" });
-      const VIEWER = "docsviewer@personalisationhub.com";
+      const VIEWER = "docsviewer@ph.example";
       const idToken = signIn(VIEWER);
       addConsoleUser(VIEWER, { role: "viewer" });
       const v = b64url(crypto.randomBytes(32));
@@ -2262,7 +2266,7 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("backlogItems").set("ft2", {
       projectId: "ftproj", title: "Stale test record", desc: "x", type: "bug", category: "HQ Admin", status: "ready-to-publish",
       previewUrl: null, deployCommit: "sha2", previewState: "ready", previewSha: "abc1234ffff",
-      trainTest: { sha: "OLD", state: "failed", workflows: [] }, approvedByEmail: "rob@offline2online.com", approvedAt: "2026-10-19T02:00:00.000Z",
+      trainTest: { sha: "OLD", state: "failed", workflows: [] }, approvedByEmail: "owner@example.com", approvedAt: "2026-10-19T02:00:00.000Z",
     });
     const rft = (await rpc(tokens.access_token, "tools/call", { name: "get_ready_for_testing_board", arguments: { projectId: "ftproj" } })).body.result;
     assert.match(rft.content[0].text, /1 ticket\(s\) waiting on review; 1 link rebuilding, 1 with tests running\./);
@@ -2279,7 +2283,7 @@ async function rpc(token, method, params, id = 1) {
     const [b] = dep.structuredContent.items;
     assert.strictEqual(b.previewState, "ready");
     assert.strictEqual(b.trainTest, null, "a run recorded for another commit is not this card's");
-    assert.strictEqual(b.approvedByEmail, "rob@offline2online.com");
+    assert.strictEqual(b.approvedByEmail, "owner@example.com");
     assert.strictEqual(b.approvedAt, "2026-10-19T02:00:00.000Z");
     assert.doesNotMatch(dep.content[0].text, /rebuilding|tests running/);
     const detail = JSON.parse((await rpc(tokens.access_token, "tools/call", { name: "get_backlog_item", arguments: { itemId: "ft1" } })).body.result.content[0].text);
@@ -2808,7 +2812,7 @@ async function rpc(token, method, params, id = 1) {
 
   // ── role and revocation ─────────────────────────────────────────────────
   await test("a viewer gets the tool list but is refused a write", async () => {
-    const VIEWER = "viewer@personalisationhub.com";
+    const VIEWER = "viewer@ph.example";
     const idToken = signIn(VIEWER);
     addConsoleUser(VIEWER, { role: "viewer" });
     const v = b64url(crypto.randomBytes(32));
@@ -2853,7 +2857,7 @@ async function rpc(token, method, params, id = 1) {
   }
 
   await test("list_backlog_items pages through every ticket once, in a fixed order, with ISO and missing timestamps", async () => {
-    const token = await accessTokenFor("pager@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager@ph.example", "editor");
     const base = Date.parse("2026-01-01T00:00:00Z");
     for (let i = 0; i < 250; i += 1) {
       const id = `pg${String(i).padStart(3, "0")}`;
@@ -2890,7 +2894,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a cursor that can't be decoded is a tool error", async () => {
-    const token = await accessTokenFor("pager2@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager2@ph.example", "editor");
     for (const bad of ["nope", Buffer.from("{}").toString("base64url")]) {
       const res = await listItems(token, { cursor: bad });
       assert.strictEqual(res.isError, true);
@@ -2899,7 +2903,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("search reaches archived tickets; includeArchived and status behave as documented", async () => {
-    const token = await accessTokenFor("pager3@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager3@ph.example", "editor");
     env.store.col("backlogItems").set("arch1", { projectId: "arproj", title: "A stale thing", desc: "", type: "bug", category: "HQ Admin", status: "archived", updatedAt: stubTs(1000) });
     env.store.col("backlogItems").set("live1", { projectId: "arproj", title: "Fresh", desc: "", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(2000) });
     let r = await listItems(token, { projectId: "arproj", search: "stale" });
@@ -2918,7 +2922,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("searchIn notes finds a comment, with matchedIn and a snippet; bad values are errors", async () => {
-    const token = await accessTokenFor("pager4@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager4@ph.example", "editor");
     const long = `${"x".repeat(300)} Failed testing [Visual or layout issue]: header overlaps ${"y".repeat(300)}`;
     env.store.col("backlogItems").set("note1", {
       projectId: "nproj", title: "Header", desc: "d", type: "bug", category: "HQ Admin", status: "ready-for-testing", updatedAt: stubTs(5),
@@ -2943,7 +2947,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("get_backlog_item returns lastFailureReason with an ISO at, or null", async () => {
-    const token = await accessTokenFor("pager5@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager5@ph.example", "editor");
     env.store.col("backlogItems").set("lf1", {
       projectId: "lfproj", title: "T", desc: "d", type: "bug", category: "HQ Admin", status: "backlog", updatedAt: stubTs(1),
       lastFailureReason: { category: "Visual or layout issue", text: "header overlaps", action: "failed-testing", at: stubTs(Date.parse("2026-10-01T10:00:00Z")) },
@@ -2955,7 +2959,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a viewer can page with a cursor", async () => {
-    const token = await accessTokenFor("pagerview@personalisationhub.com", "viewer");
+    const token = await accessTokenFor("pagerview@ph.example", "viewer");
     const first = await listItems(token, { projectId: "pgproj", limit: 100 });
     assert.ok(first.nextCursor);
     const second = await listItems(token, { projectId: "pgproj", limit: 100, cursor: first.nextCursor });
@@ -2964,7 +2968,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("reading 1,500 tickets without projectId reports truncated", async () => {
-    const token = await accessTokenFor("pager6@personalisationhub.com", "editor");
+    const token = await accessTokenFor("pager6@ph.example", "editor");
     const ids = [];
     for (let i = 0; i < 1501; i += 1) {
       const id = `trunc${i}`;
@@ -3010,8 +3014,8 @@ async function rpc(token, method, params, id = 1) {
     addConsoleUser(TEAMMATE, { role: "editor" });
   });
 
-  await test("a bootstrap admin works even with an empty consoleUsers collection", async () => {
-    const ownerToken = signIn("rob@offline2online.com");
+  await test("the account owner (owner claim) works even with an empty consoleUsers collection", async () => {
+    const ownerToken = signIn("owner@example.com", undefined, OWNER_CLAIMS);
     const v = b64url(crypto.randomBytes(32));
     const ch = b64url(crypto.createHash("sha256").update(v).digest());
     const res = await call({
@@ -3019,6 +3023,17 @@ async function rpc(token, method, params, id = 1) {
       body: { idToken: ownerToken, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256" },
     });
     assert.strictEqual(res.statusCode, 200);
+  });
+
+  await test("an address alone is never an owner: without the claim, no row means no access", async () => {
+    const token = signIn("owner-lookalike@example.com");
+    const v = b64url(crypto.randomBytes(32));
+    const ch = b64url(crypto.createHash("sha256").update(v).digest());
+    const res = await call({
+      method: "POST", path: "/mcp/authorize/complete",
+      body: { idToken: token, clientId, redirectUri: REDIRECT, codeChallenge: ch, codeChallengeMethod: "S256" },
+    });
+    assert.strictEqual(res.statusCode, 403);
   });
 
   // ── console-side endpoints ──────────────────────────────────────────────
@@ -3039,7 +3054,7 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("a non-admin cannot revoke someone else's connections", async () => {
-    const res = await call({ method: "POST", path: "/mcp/me/connections", body: { email: "rob@offline2online.com" }, headers: { "X-Firebase-ID-Token": teammateIdToken } });
+    const res = await call({ method: "POST", path: "/mcp/me/connections", body: { email: "owner@example.com" }, headers: { "X-Firebase-ID-Token": teammateIdToken } });
     assert.strictEqual(res.statusCode, 403);
   });
 
@@ -3049,13 +3064,13 @@ async function rpc(token, method, params, id = 1) {
   });
 
   await test("an admin provisions a password account for a member with no Google login", async () => {
-    const ownerToken = signIn("rob@offline2online.com");
-    addConsoleUser("newhire@personalisationhub.com", { role: "editor", displayName: "New Hire" });
-    const res = await call({ method: "POST", path: "/mcp/admin/provision", body: { email: "newhire@personalisationhub.com" }, headers: { "X-Firebase-ID-Token": ownerToken } });
+    const ownerToken = signIn("owner@example.com", undefined, OWNER_CLAIMS);
+    addConsoleUser("newhire@ph.example", { role: "editor", displayName: "New Hire" });
+    const res = await call({ method: "POST", path: "/mcp/admin/provision", body: { email: "newhire@ph.example" }, headers: { "X-Firebase-ID-Token": ownerToken } });
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(res.body.created, true);
-    assert.ok(env.authState.created.includes("newhire@personalisationhub.com"));
-    const user = env.authState.users.get("newhire@personalisationhub.com");
+    assert.ok(env.authState.created.includes("newhire@ph.example"));
+    const user = env.authState.users.get("newhire@ph.example");
     assert.strictEqual(user.customClaims.consoleRole, "editor");
     assert.strictEqual(user.customClaims.consoleEditor, true);
   });

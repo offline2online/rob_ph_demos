@@ -27,7 +27,7 @@ function fakeDb() {
   return { collection: col, state };
 }
 
-const USERS = { "rob@offline2online.com": { email: "rob@offline2online.com", role: "admin" }, "ed@x.com": { email: "ed@x.com", role: "editor" } };
+const USERS = { "owner@example.com": { email: "owner@example.com", role: "admin" }, "ed@x.example": { email: "ed@x.example", role: "editor" } };
 function makeApi({ db = fakeDb(), enc = KEY_A, fetch } = {}) {
   let encValue = enc;
   const api = createMediaKeysApi({
@@ -69,30 +69,30 @@ check("encrypt/decrypt round-trips, binds the provider, detects tampering and a 
 check("only an admin can see status or save; nobody signed out gets in", async () => {
   const { api } = makeApi();
   assert.strictEqual((await call(api, "GET", "/v1/status")).statusCode, 401);
-  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "ed@x.com" })).statusCode, 403);
-  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "nobody@x.com" })).statusCode, 403);
-  assert.strictEqual((await call(api, "POST", "/v1/keys/gemini", { token: "ed@x.com", body: { value: GEMINI } })).statusCode, 403);
+  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "ed@x.example" })).statusCode, 403);
+  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "nobody@x.example" })).statusCode, 403);
+  assert.strictEqual((await call(api, "POST", "/v1/keys/gemini", { token: "ed@x.example", body: { value: GEMINI } })).statusCode, 403);
   assert.strictEqual((await call(api, "GET", "/v1/status", { board: BOARD })).statusCode, 401, "the board key is not an admin");
 });
 
 check("save stores only ciphertext; status never returns the value", async () => {
   const { api, db } = makeApi();
-  const r = await call(api, "POST", "/v1/keys/gemini", { token: "rob@offline2online.com", body: { value: `  ${GEMINI} ` } });
+  const r = await call(api, "POST", "/v1/keys/gemini", { token: "owner@example.com", body: { value: `  ${GEMINI} ` } });
   assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
   assert.strictEqual(r.body.hint, "…WXYZ");
   const stored = JSON.stringify(db.state.mediaProviderKeys);
   assert.ok(!stored.includes(GEMINI), "plaintext must never reach Firestore");
-  const s = await call(api, "GET", "/v1/status", { token: "rob@offline2online.com" });
+  const s = await call(api, "GET", "/v1/status", { token: "owner@example.com" });
   assert.ok(!JSON.stringify(s.body).includes(GEMINI), "status must never carry the key");
   const g = s.body.providers.find((p) => p.id === "gemini");
-  assert.deepStrictEqual([g.set, g.hint, g.updatedBy, g.readable], [true, "…WXYZ", "rob@offline2online.com", true]);
+  assert.deepStrictEqual([g.set, g.hint, g.updatedBy, g.readable], [true, "…WXYZ", "owner@example.com", true]);
   assert.strictEqual(s.body.providers.find((p) => p.id === "ltx").set, false);
   assert.ok(Object.values(db.state.mediaKeyAudit).some((a) => a.action === "set" && a.provider === "gemini" && !JSON.stringify(a).includes(GEMINI)));
 });
 
 check("validation: short keys, spaces, WordPress format and https site URL", async () => {
   const { api } = makeApi();
-  const admin = { token: "rob@offline2online.com" };
+  const admin = { token: "owner@example.com" };
   assert.strictEqual((await call(api, "POST", "/v1/keys/gemini", { ...admin, body: { value: "short" } })).statusCode, 400);
   assert.strictEqual((await call(api, "POST", "/v1/keys/ltx", { ...admin, body: { value: "has space in the middle of it" } })).statusCode, 400);
   assert.strictEqual((await call(api, "POST", "/v1/keys/wordpress", { ...admin, body: { value: "nocolonhere", siteUrl: "https://wp.test" } })).statusCode, 400);
@@ -105,9 +105,9 @@ check("validation: short keys, spaces, WordPress format and https site URL", asy
 
 check("runtime: board key only, decrypted env names, logged, throttled after 10 misses", async () => {
   const { api, db } = makeApi();
-  await call(api, "POST", "/v1/keys/gemini", { token: "rob@offline2online.com", body: { value: GEMINI } });
-  await call(api, "POST", "/v1/keys/wordpress", { token: "rob@offline2online.com", body: { value: "rob:abcd efgh ijkl", siteUrl: "https://wp.test" } });
-  assert.strictEqual((await call(api, "GET", "/v1/runtime", { token: "rob@offline2online.com" })).statusCode, 401, "an admin's sign-in does not read plaintext");
+  await call(api, "POST", "/v1/keys/gemini", { token: "owner@example.com", body: { value: GEMINI } });
+  await call(api, "POST", "/v1/keys/wordpress", { token: "owner@example.com", body: { value: "rob:abcd efgh ijkl", siteUrl: "https://wp.test" } });
+  assert.strictEqual((await call(api, "GET", "/v1/runtime", { token: "owner@example.com" })).statusCode, 401, "an admin's sign-in does not read plaintext");
   const ok = await call(api, "GET", "/v1/runtime", { board: BOARD });
   assert.strictEqual(ok.statusCode, 200);
   assert.deepStrictEqual(ok.body.env, { GEMINI_API_KEY: GEMINI, WP_AUTH: "rob:abcd efgh ijkl", WP_SITE_URL: "https://wp.test" });
@@ -120,15 +120,15 @@ check("runtime: board key only, decrypted env names, logged, throttled after 10 
 
 check("a replaced encryption key reads as 're-enter', not garbage", async () => {
   const { api, setEnc } = makeApi();
-  await call(api, "POST", "/v1/keys/gemini", { token: "rob@offline2online.com", body: { value: GEMINI } });
+  await call(api, "POST", "/v1/keys/gemini", { token: "owner@example.com", body: { value: GEMINI } });
   setEnc(KEY_B);
-  const s = await call(api, "GET", "/v1/status", { token: "rob@offline2online.com" });
+  const s = await call(api, "GET", "/v1/status", { token: "owner@example.com" });
   assert.strictEqual(s.body.providers.find((p) => p.id === "gemini").readable, false);
   const r = await call(api, "GET", "/v1/runtime", { board: BOARD });
   assert.deepStrictEqual(r.body.env, {});
   assert.match(r.body.problems[0], /re-enter/);
   setEnc("unset");
-  assert.strictEqual((await call(api, "POST", "/v1/keys/gemini", { token: "rob@offline2online.com", body: { value: GEMINI } })).statusCode, 503);
+  assert.strictEqual((await call(api, "POST", "/v1/keys/gemini", { token: "owner@example.com", body: { value: GEMINI } })).statusCode, 503);
 });
 
 check("test: Gemini lists models with the stored key; LTX empty job; WordPress users/me", async () => {
@@ -141,7 +141,7 @@ check("test: Gemini lists models with the stored key; LTX empty job; WordPress u
     throw new Error(url);
   };
   const { api, db } = makeApi({ fetch });
-  const admin = { token: "rob@offline2online.com" };
+  const admin = { token: "owner@example.com" };
   await call(api, "POST", "/v1/keys/gemini", { ...admin, body: { value: GEMINI } });
   await call(api, "POST", "/v1/keys/ltx", { ...admin, body: { value: "ltxv_abcdefghijklmnop" } });
   await call(api, "POST", "/v1/keys/wordpress", { ...admin, body: { value: "rob:abcd efgh", siteUrl: "https://wp.test" } });

@@ -12,10 +12,10 @@ const { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc
 
 const RULES = fs.readFileSync(path.join(__dirname, "..", "firestore.rules"), "utf8");
 
-const OWNER = { uid: "owner", claims: { email: "rob@offline2online.com", email_verified: true } };
-const MEMBER = { uid: "member", claims: { email: "sam@personalisationhub.com", email_verified: true } };
-const VIEWER = { uid: "viewer", claims: { email: "kit@personalisationhub.com", email_verified: true } };
-const ADMIN = { uid: "admin", claims: { email: "ada@personalisationhub.com", email_verified: true } };
+const OWNER = { uid: "owner", claims: { email: "owner@example.com", email_verified: true, owner: true } };
+const MEMBER = { uid: "member", claims: { email: "sam@ph.example", email_verified: true } };
+const VIEWER = { uid: "viewer", claims: { email: "kit@ph.example", email_verified: true } };
+const ADMIN = { uid: "admin", claims: { email: "ada@ph.example", email_verified: true } };
 const STRANGER = { uid: "stranger", claims: { email: "someone@example.com", email_verified: true } };
 const SAM = MEMBER.claims.email;
 
@@ -37,20 +37,20 @@ async function reset() {
   await env.clearFirestore();
   await env.withSecurityRulesDisabled(async (ctx) => {
     const db = ctx.firestore();
-    await setDoc(doc(db, "consoleUsers/sam@personalisationhub.com"), { email: SAM, role: "editor" });
-    await setDoc(doc(db, "consoleUsers/kit@personalisationhub.com"), { email: "kit@personalisationhub.com", role: "viewer" });
-    await setDoc(doc(db, "consoleUsers/ada@personalisationhub.com"), { email: "ada@personalisationhub.com", role: "admin" });
+    await setDoc(doc(db, "consoleUsers/sam@ph.example"), { email: SAM, role: "editor" });
+    await setDoc(doc(db, "consoleUsers/kit@ph.example"), { email: "kit@ph.example", role: "viewer" });
+    await setDoc(doc(db, "consoleUsers/ada@ph.example"), { email: "ada@ph.example", role: "admin" });
     await setDoc(doc(db, "kanbanCounters/main"), { nextNumber: 8 });
     await setDoc(doc(db, "kanbanTasks/PH-7"), task(7, { createdAt: new Date(0), updatedAt: new Date(0) }));
     await setDoc(doc(db, "kanbanCards/PH-7"), { key: "PH-7", type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "", release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0, updatedAt: new Date(0), updatedBy: SAM });
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
-    for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@personalisationhub.com"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
+    for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@ph.example"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
-    await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
-    await setDoc(doc(db, "kanbanNotifications/o1"), { to: "rob@offline2online.com", from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "assigned", read: false, at: new Date(0) });
-    await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@personalisationhub.com", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
-    await setDoc(doc(db, "memberDirectory/sam@personalisationhub.com"), { email: SAM, displayName: "Sam Sample" });
-    await setDoc(doc(db, "kanbanSettings/main"), { tester: "rob@offline2online.com" });
+    await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@ph.example", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
+    await setDoc(doc(db, "kanbanNotifications/o1"), { to: "owner@example.com", from: "ada@ph.example", taskKey: "PH-7", taskTitle: "A task", kind: "assigned", read: false, at: new Date(0) });
+    await setDoc(doc(db, "kanbanNotifications/n3"), { to: SAM, from: "ada@ph.example", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: true, at: new Date(0) });
+    await setDoc(doc(db, "memberDirectory/sam@ph.example"), { email: SAM, displayName: "Sam Sample" });
+    await setDoc(doc(db, "kanbanSettings/main"), { tester: "owner@example.com" });
   });
 }
 
@@ -118,7 +118,7 @@ async function main() {
     return runTransaction(db, async (tx) => {
       await tx.get(doc(db, "kanbanCounters/main"));
       tx.set(doc(db, "kanbanCounters/main"), { nextNumber: 9 });
-      tx.set(doc(db, "kanbanTasks/PH-8"), Object.assign(task(8), { createdBy: "ada@personalisationhub.com", updatedBy: SAM }));
+      tx.set(doc(db, "kanbanTasks/PH-8"), Object.assign(task(8), { createdBy: "ada@ph.example", updatedBy: SAM }));
     });
   });
 
@@ -146,7 +146,7 @@ async function main() {
   await check("An unknown status is refused", "deny", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { status: "shipped", updatedBy: SAM }));
   await check("updatedBy must be the caller", "deny", () =>
-    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { title: "Renamed", updatedBy: "ada@personalisationhub.com" }));
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { title: "Renamed", updatedBy: "ada@ph.example" }));
   await check("A ticket's number can't change", "deny", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7"), { number: 1, updatedBy: SAM }));
   await check("A title can't be emptied", "deny", () =>
@@ -214,7 +214,7 @@ async function main() {
   await check("A card's key must be its id", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(9)));
   await check("A card in Done needs a resolution", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", open: false })));
   await check("A card's open flag follows its status", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { status: "done", resolution: "completed", open: true })));
-  await check("A card can't be written in someone else's name", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { updatedBy: "ada@personalisationhub.com" })));
+  await check("A card can't be written in someone else's name", "deny", () => setDoc(doc(as(MEMBER), "kanbanCards/PH-8"), card(8, { updatedBy: "ada@ph.example" })));
   await check("A move writes the ticket, its card and the activity line together", "allow", () => {
     const db = as(MEMBER), b = writeBatch(db);
     b.update(doc(db, "kanbanTasks/PH-7"), { status: "in-progress", resolution: null, open: true, rank: 5, updatedAt: serverTimestamp(), updatedBy: SAM });
@@ -236,7 +236,7 @@ async function main() {
     return b.commit();
   });
   await check("A comment can't be written in someone else's name", "deny", () =>
-    setDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c2"), { author: "ada@personalisationhub.com", html: "", text: "x", at: serverTimestamp() }));
+    setDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c2"), { author: "ada@ph.example", html: "", text: "x", at: serverTimestamp() }));
   await check("An author edits their own comment (text, mentions, edited-at)", "allow", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c1"), { html: "<p>edited</p>", text: "edited", mentions: [], editedAt: serverTimestamp() }));
   await check("A member can't edit someone else's comment", "deny", () =>
@@ -244,7 +244,7 @@ async function main() {
   await check("An admin can't edit a member's comment", "deny", () =>
     updateDoc(doc(as(ADMIN), "kanbanTasks/PH-7/comments/c4"), { html: "<p>no</p>", text: "no", mentions: [], editedAt: serverTimestamp() }));
   await check("An edit can't change the author or the time", "deny", () =>
-    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { author: "ada@personalisationhub.com", editedAt: serverTimestamp() }));
+    updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { author: "ada@ph.example", editedAt: serverTimestamp() }));
   await check("An edit must stamp editedAt with the server time", "deny", () =>
     updateDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c4"), { html: "<p>y</p>", text: "y", mentions: [], editedAt: new Date(0) }));
   await check("A viewer can't edit a comment", "deny", () =>
@@ -271,9 +271,9 @@ async function main() {
   // Notifications are written by the server's fan-out (functions/kanban-notify.js),
   // never by a browser, so even a well-formed one is refused.
   await check("A member can't create a notification (the server writes them)", "deny", () =>
-    setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: SAM, taskKey: "PH-7", taskTitle: "A task", kind: "comment", read: false, at: serverTimestamp() }));
+    setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@ph.example", from: SAM, taskKey: "PH-7", taskTitle: "A task", kind: "comment", read: false, at: serverTimestamp() }));
   await check("A notification can't claim to be from someone else", "deny", () =>
-    setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@personalisationhub.com", from: "rob@offline2online.com", taskKey: "PH-7", taskTitle: "", kind: "comment", read: false, at: serverTimestamp() }));
+    setDoc(doc(as(MEMBER), "kanbanNotifications/n2"), { to: "ada@ph.example", from: "owner@example.com", taskKey: "PH-7", taskTitle: "", kind: "comment", read: false, at: serverTimestamp() }));
   await check("The person notified reads their mentions (the bell's query)", "allow", () =>
     getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
   await check("Nobody else reads them", "deny", () =>
@@ -287,19 +287,19 @@ async function main() {
     getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", SAM), where("read", "==", true), where("at", "<", new Date(Date.now() - 30 * 86400000)), limit(200))));
 
   // The owner's second address is the same person; notifications are addressed to the first.
-  const ALIAS = { uid: "owner-alias", claims: { email: "rob@personalisationhub.com", email_verified: true } };
+  const ALIAS = { uid: "owner-alias", claims: { email: "owner.alias@example.com", email_verified: true, owner: true, aliasOf: "owner@example.com" } };
   await check("The owner signed in with his second address reads his notifications (the bell's query)", "allow", () =>
-    getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", "rob@offline2online.com"), limit(100))));
+    getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", "owner@example.com"), limit(100))));
   await check("…and marks one read", "allow", () => updateDoc(doc(as(ALIAS), "kanbanNotifications/o1"), { read: true }));
   await check("…but reads nobody else's", "deny", () =>
     getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
   await check("A member can't read the owner's notifications", "deny", () =>
-    getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", "rob@offline2online.com"), limit(100))));
+    getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", "owner@example.com"), limit(100))));
 
   // ── Member directory (written by functions only) ────────────────────────
   await check("A member reads the member directory", "allow", () => getDocs(collection(as(MEMBER), "memberDirectory")));
   await check("Nobody writes the member directory from a browser", "deny", () =>
-    setDoc(doc(as(OWNER), "memberDirectory/x@personalisationhub.com"), { email: "x@personalisationhub.com", displayName: "X" }));
+    setDoc(doc(as(OWNER), "memberDirectory/x@ph.example"), { email: "x@ph.example", displayName: "X" }));
 
   await env.cleanup();
   const failed = results.filter((r) => !r.ok);

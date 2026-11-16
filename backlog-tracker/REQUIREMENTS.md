@@ -360,9 +360,19 @@ in three files to add anyone.
 - `firestore.rules` resolves `isBoardReader` / `isEditor` / `isAdmin` by
   reading this doc, so a change takes effect on the next request — no token
   refresh, no cache.
-- `rob@offline2online.com` and `rob@personalisationhub.com` are hard-coded
-  admins in the rules, so an empty or mis-edited collection can never lock
-  everyone out. `board-automation@…` stays a hard-coded editor.
+- The account owner is an admin by the `owner: true` custom claim on their
+  Firebase Auth user (`isOwnerAccount()` in the rules, `isOwnerEmail()` in
+  `functions/mcp-server.js`, `isOwnerUser()` in `auth-gate.js`), so an empty
+  or mis-edited collection can never lock everyone out. The claim is
+  optional — admins are ordinary `role: "admin"` rows — and is set only if
+  the `CONSOLE_OWNER_EMAIL` / `CONSOLE_OWNER_ALIASES` repository secrets are
+  (`scripts/set-owner-claim.js`). Before every rules deploy that script
+  checks someone can still administer the console (an owner claim or an
+  enabled admin row) and stops the deploy if not. An alias account with the
+  claim also carries `aliasOf: <canonical>`.
+  **No person's address is written anywhere in this repo** (root `CLAUDE.md`;
+  `tools/check-personal-emails.js` enforces it). `board-automation@…` stays a
+  named editor: it is a service identity, not a person.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.

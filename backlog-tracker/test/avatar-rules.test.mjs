@@ -31,16 +31,16 @@ assert.match(checkAvatarFile({ type: "image/png", size: 15 * 1024 * 1024 }), /10
 assert.equal(checkAvatarFile({ type: "image/jpeg", size: 5 * 1024 * 1024 }), "");
 
 // Helper: initial + stable colour; photo wins once the member row has one.
-assert.equal(initialOf("sam@x.com"), "S");
-assert.equal(colourFor("sam@x.com"), colourFor("SAM@x.com"));
-setAvatarMember("duy@x.com", { firstName: "Duy", lastName: "Nguyen" });
-setAvatarMember("duong@x.com", { displayName: "Duong Tran" });
-assert.equal(initialOf("duy@x.com"), "DN");
-assert.equal(initialOf("duong@x.com"), "DT");
-assert.match(avatarHTML("sam@x.com", 28), /ph-avatar-initial/);
-assert.match(avatarHTML("sam@x.com", 28), /--av:28px/);
-setAvatarMember("sam@x.com", { photoUrl: "https://firebasestorage.googleapis.com/v0/b/b/o/avatars%2Fsam.jpg?alt=media", photoUpdatedAt: 1234 });
-assert.match(avatarHTML("sam@x.com", 28), /<img[^>]*&amp;v=1234/);
+assert.equal(initialOf("sam@x.example"), "S");
+assert.equal(colourFor("sam@x.example"), colourFor("SAM@x.example"));
+setAvatarMember("duy@x.example", { firstName: "Duy", lastName: "Nguyen" });
+setAvatarMember("duong@x.example", { displayName: "Duong Tran" });
+assert.equal(initialOf("duy@x.example"), "DN");
+assert.equal(initialOf("duong@x.example"), "DT");
+assert.match(avatarHTML("sam@x.example", 28), /ph-avatar-initial/);
+assert.match(avatarHTML("sam@x.example", 28), /--av:28px/);
+setAvatarMember("sam@x.example", { photoUrl: "https://firebasestorage.googleapis.com/v0/b/b/o/avatars%2Fsam.jpg?alt=media", photoUpdatedAt: 1234 });
+assert.match(avatarHTML("sam@x.example", 28), /<img[^>]*&amp;v=1234/);
 assert.equal(avatarHTML("", 24), "");
 // A member may set their OWN name (first, last, displayName) and nothing more.
 const nameRule = block(fsr, "A member may also set their OWN name");

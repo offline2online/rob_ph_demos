@@ -27,6 +27,7 @@ const { FieldValue, FieldPath } = require("firebase-admin/firestore");
 const crypto = require("crypto");
 const logger = require("firebase-functions/logger");
 const core = require("./kanban-core");
+const identity = require("./identity");
 const notify = require("./kanban-notify");
 const capture = require("./kanban-capture");
 
@@ -88,12 +89,11 @@ async function boardCollection() {
 }
 
 // ── Member directory ──────────────────────────────────────────────────────
-// The console's bootstrap admins (mcp-server.js STATIC_ADMINS, firestore.rules)
-// are members without a consoleUsers row, so the sync below would otherwise
-// leave them off every assignee list. The other owner account,
-// rob@personalisationhub.com, is an alias of this one (core.PERSON_ALIASES):
-// an alias never gets an entry, its owner stands for it on the board.
-const BOOTSTRAP_ADMINS = ["rob@offline2online.com"];
+// Every person on the board is a consoleUsers row, the account owner
+// included: scripts/set-owner-claim.js writes the owner's row alongside the
+// `owner` claim, so no address needs naming here. An alias address
+// (core.PERSON_ALIASES, loaded from consoleConfig/identity by identity.js)
+// never gets an entry: its canonical address stands for it on the board.
 function directoryEntry(email, row) {
   return {
     email,
@@ -110,14 +110,12 @@ function directoryEntry(email, row) {
 async function syncMemberDirectoryWrite(event) {
   const email = String(event.params.userEmail || "").toLowerCase();
   if (!email) return;
+  await identity.refresh(db);
   clearCaches("directory");
   const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
   const ref = db().collection("memberDirectory").doc(email);
   if (core.isAliasEmail(email)) { await ref.delete(); return; }
-  if (!after) {
-    if (BOOTSTRAP_ADMINS.includes(email)) await ref.set(directoryEntry(email, {})); else await ref.delete();
-    return;
-  }
+  if (!after) { await ref.delete(); return; }
   const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
   // A sign-in stamp (lastLoginAt) changes nothing the directory holds.
   const same = before && ["displayName", "firstName", "lastName", "photoUrl", "disabled"].every((k) => before[k] === after[k])
@@ -129,6 +127,7 @@ async function syncMemberDirectoryWrite(event) {
   await ref.set(directoryEntry(email, after));
 }
 async function syncWholeDirectory() {
+  await identity.refresh(db, { force: true });
   const [users, dir] = await Promise.all([db().collection("consoleUsers").get(), db().collection("memberDirectory").get()]);
   const have = new Set(dir.docs.map((d) => d.id));
   const want = new Set();
@@ -141,12 +140,6 @@ async function syncWholeDirectory() {
     b.set(db().collection("memberDirectory").doc(email), directoryEntry(email, d.data() || {}));
     writes++;
   });
-  for (const email of BOOTSTRAP_ADMINS) {
-    if (want.has(email)) continue;
-    want.add(email);
-    b.set(db().collection("memberDirectory").doc(email), directoryEntry(email, {}));
-    writes++;
-  }
   for (const id of have) if (!want.has(id)) { b.delete(db().collection("memberDirectory").doc(id)); writes++; }
   if (writes) await b.commit();
   clearCaches("directory");
@@ -556,13 +549,13 @@ function kanbanTools(h) {
   const projects = () => cached("projects", async () => (await db().collection("projects").get()).docs);
   // The chosen current release, else the earliest one not yet live.
   const currentRelease = (s, relDocs) => core.currentReleaseId(s, relDocs.map((d) => ({ id: d.id, version: d.data().version, released: d.data().status === "live", order: d.data().order })));
-  // The directory, plus the bootstrap admins and the caller when they have no
-  // consoleUsers row (so no directory entry yet).
+  // The directory, plus the caller when they have no consoleUsers row (so no
+  // directory entry yet).
   async function people(session) {
     const docs = await cached("directory", async () => (await db().collection("memberDirectory").get()).docs.map((d) => d.data() || {}));
     const list = docs.filter((m) => !m.disabled && !core.isAliasEmail(m.email));
     const have = new Set(list.map((m) => String(m.email || "").toLowerCase()));
-    for (const email of [...BOOTSTRAP_ADMINS, session && session.email]) {
+    for (const email of [session && session.email]) {
       const e = String(email || "").toLowerCase();
       if (e && !have.has(e)) { have.add(e); list.push(directoryEntry(e, session && e === session.email ? { displayName: session.displayName } : {})); }
     }

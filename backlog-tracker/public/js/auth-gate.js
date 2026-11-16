@@ -45,14 +45,21 @@ import {
 import { firebaseConfig } from "./firebase-config.js";
 import { clearFirestoreLocalCache } from "./local-cache.js";
 
-// The two owner accounts, mirrored from firestore.rules' own bootstrap
-// list. Only used as a fallback when neither membership source can be
-// reached — an owner must never be locked out of the console by an outage
-// in the very function that grants access.
-export const OWNER_ACCOUNTS = [
-  "rob@offline2online.com",
-  "rob@personalisationhub.com",
-];
+// The account owner is whoever carries the `owner: true` custom claim
+// (scripts/set-owner-claim.js) — the same claim firestore.rules'
+// isOwnerAccount() reads. No address is written here. Used as a fallback
+// when neither membership source can be reached: an owner must never be
+// locked out of the console by an outage in the very function that grants
+// access. The claim is on the cached ID token, so reading it needs no network.
+export async function isOwnerUser(user) {
+  if (!user) return false;
+  try {
+    const result = await user.getIdTokenResult();
+    return !!(result && result.claims && result.claims.owner === true);
+  } catch {
+    return false;
+  }
+}
 
 const ROLES = ["admin", "editor", "viewer"];
 
@@ -334,6 +341,7 @@ function withTimeout(promise, ms) {
 async function membershipFromClaims(user) {
   try {
     const result = await user.getIdTokenResult();
+    if (result && result.claims && result.claims.owner === true) return { role: "admin", email: (user.email || "").toLowerCase(), source: "owner" };
     const role = result && result.claims && result.claims.consoleRole;
     if (ROLES.includes(role)) return { role, email: (user.email || "").toLowerCase(), source: "claim" };
   } catch { /* fall through */ }
@@ -350,8 +358,8 @@ async function membershipFromOwnRow(user) {
       headers: { Authorization: `Bearer ${idToken}` },
     });
     if (resp.status === 404) {
-      // No row. The two owners are members by the rules' own bootstrap.
-      return OWNER_ACCOUNTS.includes(email) ? { role: "admin", email, source: "owner" } : null;
+      // No row. The owner is a member by the rules' own claim check.
+      return (await isOwnerUser(user)) ? { role: "admin", email, source: "owner" } : null;
     }
     if (!resp.ok) return undefined;
     const data = await resp.json();
@@ -359,7 +367,7 @@ async function membershipFromOwnRow(user) {
     if (f.disabled && f.disabled.booleanValue === true) return null;
     const role = f.role && f.role.stringValue;
     // Owners are admins whatever their row says (firestore.rules isOwnerAccount).
-    if (OWNER_ACCOUNTS.includes(email)) return { role: "admin", email, source: "owner" };
+    if (await isOwnerUser(user)) return { role: "admin", email, source: "owner" };
     return { role: ROLES.includes(role) ? role : "editor", email, source: "row" };
   } catch {
     return undefined;
@@ -400,7 +408,7 @@ function syncMembershipInBackground(user) {
   membershipFromFunction(user).then(async (m) => {
     if (m === undefined) return; // outage: the rules are still in charge
     if (m === null) {
-      if (OWNER_ACCOUNTS.includes((user.email || "").toLowerCase())) return;
+      if (await isOwnerUser(user)) return;
       writeLocal(REMEMBER_KEY, null); writeLocal(ROLE_KEY, null);
       try { await signOut(auth); } catch { /* ignore */ }
       await clearFirestoreLocalCache();
@@ -435,7 +443,7 @@ async function resolveMembership(user) {
   const second = await withTimeout(fn, MEMBERSHIP_TIMEOUT_MS);
   if (second !== undefined) return second;
   const email = (user.email || "").toLowerCase();
-  if (OWNER_ACCOUNTS.includes(email)) return { role: "admin", email, source: "owner" };
+  if (await isOwnerUser(user)) return { role: "admin", email, source: "owner" };
   return undefined;
 }
 

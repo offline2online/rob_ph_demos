@@ -84,7 +84,7 @@ export async function startHarness() {
       if (url.origin === origin) {
         if (url.pathname.startsWith("/mcp/") && !url.pathname.startsWith("/mcp/kanban/")) {
           // /mcp/claims/sync is the background membership check.
-          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: (seed.user && seed.user.role) || "editor", email: (seed.user && seed.user.email) || "editor@personalisationhub.com", claimUpdated: false }) });
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ role: (seed.user && seed.user.role) || "editor", email: (seed.user && seed.user.email) || "editor@ph.example", claimUpdated: false }) });
         }
         // Staff Kanban's endpoints (functions/kanban.js). The agent fill is
         // unconfigured by default, as in production without a key, so the page

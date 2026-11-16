@@ -102,10 +102,10 @@ test("dependenciesLanded: waits while any dependency is still in Backlog", () =>
 });
 
 test("buildRequestFields: the same project write a Ready for Dev click makes", () => {
-  const f = buildRequestFields({ notifyRequestedByEmail: "rob@offline2online.com" }, ["x", "y"]);
+  const f = buildRequestFields({ notifyRequestedByEmail: "owner@example.com" }, ["x", "y"]);
   assert.ok(f.notifyRequestedAt instanceof Date, "a timestamp, so the trigger's toMillis() guard sees a new value");
   assert.deepStrictEqual(f.notifyItemIds, ["x", "y"]);
-  assert.strictEqual(f.notifyRequestedByEmail, "rob@offline2online.com");
+  assert.strictEqual(f.notifyRequestedByEmail, "owner@example.com");
 });
 
 test("a migration number another ticket already took is a clash (the 4 Oct 0040/0040 case)", () => {

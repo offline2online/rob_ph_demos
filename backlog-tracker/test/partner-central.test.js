@@ -20,7 +20,7 @@ function fakeDb() {
   };
   return { collection: col, state };
 }
-const USERS = { "rob@offline2online.com": { email: "rob@offline2online.com", role: "admin" }, "ed@x.com": { email: "ed@x.com", role: "editor" } };
+const USERS = { "owner@example.com": { email: "owner@example.com", role: "admin" }, "ed@x.example": { email: "ed@x.example", role: "editor" } };
 const STS_OK = `<AssumeRoleWithWebIdentityResponse><AssumeRoleWithWebIdentityResult><Credentials><AccessKeyId>ASIATEST</AccessKeyId><SecretAccessKey>secret</SecretAccessKey><SessionToken>tok</SessionToken><Expiration>2099-01-01T00:00:00Z</Expiration></Credentials></AssumeRoleWithWebIdentityResult></AssumeRoleWithWebIdentityResponse>`;
 
 function makeApi({ awsReply, stsStatus = 200, stsBody = STS_OK } = {}) {
@@ -40,7 +40,7 @@ function makeApi({ awsReply, stsStatus = 200, stsBody = STS_OK } = {}) {
   });
   return { api, db, calls };
 }
-async function call(api, method, path, { token = "rob@offline2online.com", body } = {}) {
+async function call(api, method, path, { token = "owner@example.com", body } = {}) {
   const headers = { "x-firebase-id-token": token ? `tok:${token}` : "" };
   const req = { method, path: `/partnerCentral${path}`, body, get: (h) => headers[h.toLowerCase()] || "" };
   const res = { statusCode: 0, body: null, status(c) { this.statusCode = c; return this; }, set() { return this; }, json(b) { this.body = b; return this; } };
@@ -54,7 +54,7 @@ const check = (n, f) => checks.push([n, f]);
 check("only admins reach any route", async () => {
   const { api } = makeApi();
   assert.strictEqual((await call(api, "GET", "/v1/status", { token: "" })).statusCode, 401);
-  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "ed@x.com" })).statusCode, 403);
+  assert.strictEqual((await call(api, "GET", "/v1/status", { token: "ed@x.example" })).statusCode, 403);
 });
 
 check("before any call the status says not linked yet, catalogue Sandbox", async () => {
@@ -94,7 +94,7 @@ check("status turns connected and every call is audited", async () => {
   assert.strictEqual((await call(api, "GET", "/v1/status")).body.state, "connected");
   const a = (await call(api, "GET", "/v1/audit")).body.entries;
   assert.deepStrictEqual(a.map((e) => e.operation).sort(), ["CreateOpportunity", "ListOpportunities"]);
-  assert.ok(a.every((e) => e.ok && e.by === "rob@offline2online.com" && e.catalog === "Sandbox"));
+  assert.ok(a.every((e) => e.ok && e.by === "owner@example.com" && e.catalog === "Sandbox"));
 });
 
 check("create sends a client token; update names the identifier", async () => {
@@ -184,12 +184,12 @@ check("the ACE rows join the list with each opportunity's detail", () => {
 check("GET /v1/ace is open to editors but not signed-out callers, pages the list and fetches each detail", async () => {
   const { api, calls } = makeApi({ awsReply: (url, init) => (init.headers["x-amz-target"].endsWith("GetOpportunity") ? { status: 200, body: DETAIL } : { status: 200, body: { OpportunitySummaries: [SUMMARY] } }) });
   assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "" })).statusCode, 401);
-  const r = await call(api, "GET", "/v1/ace", { token: "ed@x.com" });
+  const r = await call(api, "GET", "/v1/ace", { token: "ed@x.example" });
   assert.strictEqual(r.statusCode, 200);
   assert.strictEqual(r.body.opportunities.length, 1);
   assert.strictEqual(r.body.opportunities[0].awsSeller.name, "Ann Lee");
   assert.deepStrictEqual(calls.filter((c) => c.url.includes("selling")).map((c) => c.init.headers["x-amz-target"].split(".")[1]), ["ListOpportunities", "GetOpportunity"]);
-  assert.strictEqual((await call(api, "POST", "/v1/opportunities", { token: "ed@x.com", body: {} })).statusCode, 403, "writes stay admin only");
+  assert.strictEqual((await call(api, "POST", "/v1/opportunities", { token: "ed@x.example", body: {} })).statusCode, 403, "writes stay admin only");
 });
 
 check("a detail call that fails leaves the row with what the list gave", async () => {
@@ -223,9 +223,9 @@ check("PATCH /v1/ace/{id} reads, merges, writes UpdateOpportunity, drops the cac
     if (op === "UpdateOpportunity") { score = 75; nextSteps = JSON.parse(init.body).LifeCycle.NextSteps; return { status: 200, body: { Id: "O1" } }; }
     return { status: 200, body: { OpportunitySummaries: [SUMMARY] } };
   } });
-  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.com" })).body.opportunities[0].score, 60);
-  assert.strictEqual((await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.com", body: { name: "" } })).statusCode, 400);
-  const r = await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.com", body: { nextSteps: "Send quote", monthlyAmount: 500 } });
+  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.example" })).body.opportunities[0].score, 60);
+  assert.strictEqual((await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.example", body: { name: "" } })).statusCode, 400);
+  const r = await call(api, "PATCH", "/v1/ace/O1", { token: "ed@x.example", body: { nextSteps: "Send quote", monthlyAmount: 500 } });
   assert.strictEqual(r.statusCode, 200);
   assert.strictEqual(r.body.opportunity.score, 75, "the score is re-read after the write");
   const upd = JSON.parse(calls.find((c) => c.init.headers && c.init.headers["x-amz-target"] === "AWSPartnerCentralSelling.UpdateOpportunity").init.body);
@@ -234,7 +234,7 @@ check("PATCH /v1/ace/{id} reads, merges, writes UpdateOpportunity, drops the cac
   assert.ok(!("ReviewComments" in upd.LifeCycle), "read-only parts are not sent back");
   assert.strictEqual(upd.Project.Title, "Menu boards"); assert.strictEqual(upd.Project.ExpectedCustomerSpend[0].Amount, "500");
   assert.strictEqual(upd.PartnerOpportunityIdentifier, "P1");
-  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.com" })).body.opportunities[0].score, 75, "the table read after a save is not the cached one");
+  assert.strictEqual((await call(api, "GET", "/v1/ace", { token: "ed@x.example" })).body.opportunities[0].score, 75, "the table read after a save is not the cached one");
   assert.strictEqual((await call(api, "PATCH", "/v1/ace/O1", { token: "", body: { nextSteps: "x" } })).statusCode, 401);
 });
 
@@ -244,9 +244,9 @@ check("POST /v1/ace needs title and customer, creates a Prospect and returns the
     if (op === "CreateOpportunity") return { status: 200, body: { Id: "O9" } };
     return { status: 200, body: { ...DETAIL, Id: "O9", LifeCycle: { Stage: "Prospect", ReviewStatus: "Pending Submission" }, Project: { Title: "Totems" }, Customer: { Account: { CompanyName: "Gamma" } } } };
   } });
-  const bad = await call(api, "POST", "/v1/ace", { token: "ed@x.com", body: {} });
+  const bad = await call(api, "POST", "/v1/ace", { token: "ed@x.example", body: {} });
   assert.strictEqual(bad.statusCode, 400); assert.match(bad.body.error, /title is required; customer is required/);
-  const r = await call(api, "POST", "/v1/ace", { token: "ed@x.com", body: { name: "Totems", customer: "Gamma", description: "Needs signage" } });
+  const r = await call(api, "POST", "/v1/ace", { token: "ed@x.example", body: { name: "Totems", customer: "Gamma", description: "Needs signage" } });
   assert.strictEqual(r.statusCode, 200); assert.strictEqual(r.body.id, "O9"); assert.strictEqual(r.body.opportunity.stage, "Prospect");
   const sent = JSON.parse(calls.find((c) => c.init.headers && c.init.headers["x-amz-target"] === "AWSPartnerCentralSelling.CreateOpportunity").init.body);
   assert.strictEqual(sent.Project.Title, "Totems"); assert.strictEqual(sent.Customer.Account.CompanyName, "Gamma"); assert.strictEqual(sent.LifeCycle.Stage, "Prospect"); assert.ok(sent.ClientToken);
@@ -254,7 +254,7 @@ check("POST /v1/ace needs title and customer, creates a Prospect and returns the
 
 check("GET /v1/ace/{id} is open to editors", async () => {
   const { api } = makeApi({ awsReply: () => ({ status: 200, body: DETAIL }) });
-  const r = await call(api, "GET", "/v1/ace/O1", { token: "ed@x.com" });
+  const r = await call(api, "GET", "/v1/ace/O1", { token: "ed@x.example" });
   assert.strictEqual(r.statusCode, 200); assert.strictEqual(r.body.opportunity.customer, "Acme Retail");
 });
 

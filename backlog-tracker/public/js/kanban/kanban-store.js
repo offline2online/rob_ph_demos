@@ -31,6 +31,7 @@ import { ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gsta
 import {
   searchTokens, htmlToText, mentionsIn, keyOf, keyNumber, normaliseSettings, queryToken,
   cardOf, cardPatchOf, externaliseInlineImages, dataUriParts, decodeCriteria, encodeCriteria, acCounts, linkChanges, inverseOf,
+  setPersonAliases,
 } from "./kanban-core.js";
 
 export const CLOSED_LIMIT = 300;
@@ -220,6 +221,14 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       state.sprints = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => String(a.start || "").localeCompare(String(b.start || "")));
       changed("sprints");
     }, onError));
+    // A second sign-in address of the same person (consoleConfig/identity,
+    // written only by scripts/set-owner-claim.js): folded into its person
+    // everywhere kanban-core's canonicalEmail() is used. No address lives in
+    // the code; a refusal or a missing doc simply means no aliases.
+    unsubs.push(onSnapshot(doc(db, "consoleConfig", "identity"), (snap) => {
+      setPersonAliases(snap.exists() ? (snap.data() || {}).personAliases : null);
+      changed("members");
+    }, () => { /* not readable: no aliases */ }));
     unsubs.push(onSnapshot(collection(db, "memberDirectory"), (snap) => {
       state.members = snap.docs.map((d) => ({ email: d.id, ...d.data() })).filter((m) => !m.disabled);
       state.membersLoaded = true;

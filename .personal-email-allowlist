@@ -1,0 +1,24 @@
+# Addresses tools/check-personal-emails.js lets through beyond its built-in
+# rules (reserved domains, service identities, role mailboxes). Only for an
+# address that is NOT a person's: a placeholder, or a fictional fixture
+# identity whose real-looking domain is the thing under test. Never add a
+# real person's address here — use a role/claim, config, or owner@example.com.
+# One address or /regex/ per line.
+
+# Docs/FAQ placeholders the reader replaces with their own domain.
+/@your(company)?domain\.com$/
+
+# Free-mail fixtures: lead/prospect/support logic treats these providers
+# specially (free-mail detection, bounce handling), so the domain must stay.
+/^[a-z]{1,4}@(gmail|googlemail|yahoo|hotmail|outlook|icloud|protonmail|mailinator)\.(com|co\.uk)$/
+owner@gmail.com
+alex.j@gmail.com
+
+# Company-from-domain fixtures (leads, prospects, ACE): fictional people at a
+# company whose domain the code resolves to that company.
+/^(pat|ann|kim|x)@(amazon|aws)\.com$/
+/^(a|jo|p)@greeneking\.co\.uk$/
+/^(sam|rob)@ph\.com$/
+
+# The public website tour's mock UI: Kestrel Mobile is a fictional brand.
+sam.taylor@kestrelmobile.com

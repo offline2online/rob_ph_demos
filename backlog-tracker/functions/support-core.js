@@ -80,7 +80,7 @@ function cleanSettingsInput(input, current) {
 }
 
 // ── Addresses and headers ─────────────────────────────────────────────────
-// '"Ann Lee" <ann@shop.com>' -> { name: "Ann Lee", email: "ann@shop.com" }
+// '"Ann Lee" <ann@shop.example>' -> { name: "Ann Lee", email: "ann@shop.example" }
 function parseAddress(raw) {
   const s = String(raw == null ? "" : raw).trim();
   const m = s.match(/^(.*?)<\s*([^<>\s]+@[^<>\s]+)\s*>\s*$/);

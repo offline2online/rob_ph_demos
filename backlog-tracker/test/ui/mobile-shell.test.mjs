@@ -13,7 +13,7 @@ const items = {};
 const STATUSES = ["backlog", "ready-for-testing", "ready-to-publish", "published-live"];
 for (let i = 0; i < 24; i++) items["i" + i] = { projectId: "p1", title: "Ticket " + i, desc: "A fairly long description of the ticket. ".repeat(6), type: i % 2 ? "bug" : "feature", category: "HQ Admin", status: STATUSES[i % 4], deployCommit: i % 4 === 1 || i % 4 === 2 ? "abc" + i : undefined, createdAt: t(T0 + i), updatedAt: t(T0 + i) };
 const seed = {
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: {
     projects: { p1: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } },
     backlogItems: items,

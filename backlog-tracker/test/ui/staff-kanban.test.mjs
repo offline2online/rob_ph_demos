@@ -744,7 +744,7 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
 
 T("KB-C2f", "notifications bell: the owner signed in with his second address sees the notifications addressed to his first", async (prof) => {
   const seed = bellSeed();
-  seed.user = { email: "rob@personalisationhub.com", role: "admin" };
+  seed.user = { email: "owner.alias@example.com", role: "admin" };
   const p = await open(prof, "#staff-kanban", { seed });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");
@@ -998,7 +998,7 @@ T("TC-68", "acceptance criteria: shown, ticked and edited in the modal with an a
     const list = t.acceptanceCriteria.map((l) => (l.startsWith("crit0000") ? l.replace("\t1\t", "\t0\t") : l));
     b.col("kanbanTasks").set("PH-20", { ...t, acceptanceCriteria: list });
     const c = b.col("kanbanCards").get("PH-20");
-    b.col("kanbanCards").set("PH-20", { ...c, acDone: 1, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000), updatedBy: "other@personalisationhub.com" });
+    b.col("kanbanCards").set("PH-20", { ...c, acDone: 1, updatedAt: new globalThis.__fbStubTimestamp(Date.now() + 5000), updatedBy: "other@ph.example" });
     b.notify();
   });
   await until(async () => !(await p.isChecked('#f-ac [data-ac="crit0000"] [data-ac-tick]')), "the open modal to show the untick");
@@ -1238,7 +1238,7 @@ for (const N of [2000, 5000]) {
       const core = await import("/js/kanban/kanban-core.js"); const b = globalThis.__fbStub;
       const c = b.col("kanbanTasks"); const key = "PH-1001";
       const t = { ...c.get(key), status: "in-progress", open: true }; c.set(key, t);
-      b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@personalisationhub.com" }); b.notify();
+      b.col("kanbanCards").set(key, { ...core.cardOf(t), updatedBy: "other@ph.example" }); b.notify();
     });
     await eventually(async () => assert.equal((await headers(p))[0].count, seedBacklog - 1, "the Backlog header follows the move"));
     await eventually(async () => assert.equal((await where(p, "PH-1001")).status, "in-progress", "the moved card is in its new column"));
@@ -1498,7 +1498,7 @@ T("KB-SEC-1", "stored text never runs as script: a description, a member's photo
   assert.equal(await q.$$eval("#kb-view img[src='x']", (e) => e.length), 0, "the assignee added no element to the report");
   assert.ok((await q.$$eval("[data-person]", (e) => e.map((x) => x.dataset.person))).includes(who), "the assignee is carried as text");
   // A real photo address is used exactly as it is stored.
-  const real = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fhuy.le%40personalisationhub.com.jpg?alt=media&token=0a1b2c3d-0000-4000-8000-123456789abc";
+  const real = "https://firebasestorage.googleapis.com/v0/b/backlog-tracker-e4ed2.firebasestorage.app/o/avatars%2Fhuy.le%40ph.example.jpg?alt=media&token=0a1b2c3d-0000-4000-8000-123456789abc";
   assert.equal(await q.evaluate(async (u) => (await import("/js/kanban/kanban-editor.js")).KBEditor.cssUrl(u), real), real);
   await sleep(300); // long enough for an image that had been added to fail and fire
   for (const page of [p, q]) assert.equal(await page.evaluate(() => window.__xss || 0), 0, "no stored script ran");
@@ -1705,7 +1705,7 @@ const E = {
   photoError: (p) => p.$eval("#profile-photo-error", (e) => (e.hidden ? "" : e.textContent)).catch(() => ""),
   photoWrites: (p) => p.evaluate(() => JSON.stringify([Object.keys(globalThis.__fbStub.uploads || {}), globalThis.__fbStub.writes.filter((w) => /^(consoleUsers|memberDirectory)\//.test(w.path)).length])),
   // The page crops with avatarBlobFromFile (256 px square JPEG): run it on the same bytes.
-  photoDims: async (p, url) => { const r = await p.evaluate(async () => { const b = (globalThis.__fbStub.uploads || {})[`avatars/rob@offline2online.com.jpg`] || {}; return { type: b.contentType || "", size: b.size || 0 }; }); assert.equal(r.type, "image/jpeg", "uploaded as a JPEG"); assert.ok(r.size > 0, "something was uploaded"); return { w: 1, h: 1 }; },
+  photoDims: async (p, url) => { const r = await p.evaluate(async () => { const b = (globalThis.__fbStub.uploads || {})[`avatars/owner@example.com.jpg`] || {}; return { type: b.contentType || "", size: b.size || 0 }; }); assert.equal(r.type, "image/jpeg", "uploaded as a JPEG"); assert.ok(r.size > 0, "something was uploaded"); return { w: 1, h: 1 }; },
   cropDims: (p, file) => p.evaluate(async ({ b64, type }) => { const m = await import("/js/avatar.js"); const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)); const blob = await m.avatarBlobFromFile(new File([bytes], "x", { type })); const bmp = await createImageBitmap(blob); return { w: bmp.width, h: bmp.height }; }, { b64: file.buffer.toString("base64"), type: file.mimeType }),
   profileHasPhoto: async (p) => !!(await p.$("#profile-btn-avatar img.ph-avatar-img")) || !!(await p.$("#profile-photo-face img")),
   // User Management → Users (admins): Manage → Set photo on the member's row.

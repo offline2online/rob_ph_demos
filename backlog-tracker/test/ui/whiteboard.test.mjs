@@ -12,7 +12,7 @@ const T0 = 1_760_000_000_000;
 const t = (ms) => ({ $ts: ms });
 const ID = "Ab3dEf6hIj9lMn2pQr5T";
 const consoleSeed = {
-  user: { email: "editor@personalisationhub.com", role: "editor" },
+  user: { email: "editor@ph.example", role: "editor" },
   docs: { projects: { p1: { name: "Demo Project", createdAt: t(T0), deployBranch: "deploy/demo", repoFolder: "demo" } } },
 };
 const boardSeed = { docs: { whiteboards: { [ID]: { shared: true, createdAt: t(T0) } } } };
