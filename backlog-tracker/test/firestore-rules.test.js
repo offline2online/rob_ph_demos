@@ -647,6 +647,16 @@ async function main() {
     setDoc(doc(as(MEMBER), "backlogItems/iOwned"), Object.assign({}, ITEM, { status: "backlog", ownerEmail: "ada@ph.example" })));
   await check("The automation user can tag a ticket with an owner", "allow", () =>
     setDoc(doc(as(BOT), "backlogItems/i1"), { ownerEmail: "sam@ph.example" }, { merge: true }));
+  // Contract-change review (ZmEWDC40NYOiojehfPjk): the automation flags a
+  // dependent; no browser can set, fake or dismiss the flag.
+  await check("A human editor CANNOT set contractReview", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { contractReview: { status: "needs-review", summary: "x" } }, { merge: true }));
+  await check("A human editor CANNOT file a ticket already carrying contractReview", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/iFlagged"), Object.assign({}, ITEM, { status: "backlog", contractReview: { status: "needs-review" } })));
+  await check("The automation user can flag a dependent (contractReview)", "allow", () =>
+    setDoc(doc(as(BOT), "backlogItems/i1"), { contractReview: { status: "needs-review", upstreamItemId: "up1", summary: "shared/interface-contract.md (+1 −0)" } }, { merge: true }));
+  await check("A human editor CANNOT clear contractReview once set", "deny", () =>
+    setDoc(doc(as(MEMBER), "backlogItems/i1"), { contractReview: null }, { merge: true }));
   // trainTest (19 Oct 2026): the automation records a card's own test result.
   await check("A human editor CANNOT write trainTest", "deny", () =>
     setDoc(doc(as(MEMBER), "backlogItems/i1"), { trainTest: { sha: "a", state: "passed", workflows: [] } }, { merge: true }));

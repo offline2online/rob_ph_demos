@@ -1936,6 +1936,18 @@ in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
 full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their
 owner's own Claude account".
 
+**Owner scoping and contract-change review (ZmEWDC40NYOiojehfPjk)**: every
+member's agent reads every ticket, but over MCP changes (update, archive,
+delete, flag) only its own member's agent tickets (`ownerEditRefusal` in
+`functions/owner-firing.js`); comments stay open. When a ticket's landed
+commit changes an interface contract (`shared/interface-contract.md`,
+`shared/board-interfaces.json` or a file it lists), the tickets that build
+after it get `contractReview` and a **Needs review: upstream contract
+changed** chip; their own next build reviews it, and the flag clears when
+that build lands (`functions/contract-review.js`, `flagContractDependents`
+in `scripts/run-backlog-automation.js`). See `REQUIREMENTS.md` → "Owner
+scoping and contract-change review".
+
 ### The `GH_DISPATCH_TOKEN` secret — waking `backlog-automation.yml` immediately
 
 `backlog-automation.yml` polls every 2 minutes, but GitHub throttles a

@@ -423,6 +423,18 @@ refused for it, and an owner with no binding gets nothing fired. See
 `REQUIREMENTS.md` → "Agent tickets fire under their owner's own Claude
 account".
 
+**Owner scoping**: your agent reads every ticket in full, whoever owns it
+(`get_backlog_item` / `list_backlog_items` return `ownerEmail` and
+`contractReview`), but `update_backlog_item`, `archive_backlog_items`,
+`delete_backlog_items` and `set_blocked` on another member's agent ticket are
+refused with a message naming the owner, and nothing changes. An admin's
+agent is refused too, except releasing a ticket (`ownedByMe: false` alone).
+Untagged tickets stay open to everyone; `add_item_comment` and
+`clear_blocked` stay open on every ticket. A ticket whose upstream changed an
+interface contract carries `contractReview` (`status: "needs-review"`, the
+upstream ticket, commit, files and a summary); its own next build reviews it.
+See `REQUIREMENTS.md` → "Owner scoping and contract-change review".
+
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
 "nothing here deploys" (below), not a loosening of it — and since 27 Sep
 2026 it requires the `admin` role, not just `board.write`: an editor's

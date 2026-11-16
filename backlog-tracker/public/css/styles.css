@@ -2881,6 +2881,8 @@ html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
    a card, the info link beside a control the viewer may not use (it links to
    Settings → My Claude Routine), and that settings page. */
 .owner-badge { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+/* Contract-change review (ZmEWDC40NYOiojehfPjk): the console's warning pill. */
+.contract-review-flag { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
 .owner-fire-gate { display: inline-flex; align-items: center; gap: 4px; }
 .owner-fire-info { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; min-height: 24px; color: var(--text-muted); text-decoration: none; border-radius: 9999px; }
 .owner-fire-info .material-symbols-outlined { font-size: 16px; }

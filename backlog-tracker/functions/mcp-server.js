@@ -1799,6 +1799,21 @@ function itemSummary(id, d, projects) {
     dependsOnItemIds: Array.isArray(d.dependsOnItemIds) ? d.dependsOnItemIds.filter((x) => typeof x === "string") : [],
     dependsOnSource: buildOrder.DEPENDENCY_SOURCES.includes(d.dependsOnSource) ? d.dependsOnSource : null,
     queuedAfter: d.queuedAfter && d.queuedAfter.itemId ? { itemId: d.queuedAfter.itemId, title: d.queuedAfter.title || null } : null,
+    // Owner scoping (ZmEWDC40NYOiojehfPjk): whose agent ticket this is (null =
+    // a shared ticket any editor's agent may change) and, when an upstream
+    // ticket's build changed an interface contract, the review flag.
+    ownerEmail: ownerFiring.ticketOwner(d),
+    contractReview: d.contractReview && d.contractReview.status
+      ? {
+          status: d.contractReview.status,
+          upstreamItemId: d.contractReview.upstreamItemId || null,
+          upstreamTitle: d.contractReview.upstreamTitle || null,
+          commit: d.contractReview.commit || null,
+          files: Array.isArray(d.contractReview.files) ? d.contractReview.files.filter((x) => typeof x === "string") : [],
+          summary: d.contractReview.summary || "",
+          flaggedAt: tsToISO(d.contractReview.flaggedAt) || (typeof d.contractReview.flaggedAt === "string" ? d.contractReview.flaggedAt : null),
+        }
+      : null,
   };
 }
 
@@ -2643,7 +2658,7 @@ const TOOLS = [
   },
   {
     name: "update_backlog_item",
-    description: "Correct a ticket's title, description, type, area, model requirement (standard, or advanced for Claude Opus) or the tickets it builds after (dependsOnItemIds; a loop is refused). Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
+    description: "Correct a ticket's title, description, type, area, model requirement (standard, or advanced for Claude Opus) or the tickets it builds after (dependsOnItemIds; a loop is refused). Another member's agent ticket (ownerEmail set to someone else) is refused, naming its owner: you can read it and comment on it, not change it. Pipeline status, approval and deployment fields are deliberately not writable here — moving a ticket through testing and deployment stays on the board.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2663,6 +2678,15 @@ const TOOLS = [
       const ref = db().collection("backlogItems").doc(String(args.itemId));
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
+      // Owner scoping: another member's agent ticket is read-only to this
+      // agent. The one exception is an admin releasing it (ownedByMe false
+      // alone), which the ownedByMe block below already governs.
+      const onlyRelease = args.ownedByMe === false && ["title", "desc", "type", "category", "model", "dependsOnItemIds"].every((k) => args[k] == null);
+      const ownerRefusal = onlyRelease ? null : ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, "edit");
+      if (ownerRefusal) {
+        await audit(session, "update_backlog_item_refused", { itemId: ref.id, owner: ownerFiring.ticketOwner(snap.data() || {}) });
+        return toolError(ownerRefusal);
+      }
       const fields = {};
       if (args.title != null) {
         const t = String(args.title).trim();
@@ -2725,7 +2749,7 @@ const TOOLS = [
     { name: "delete_backlog_items", verb: "delete", past: "deleted", extra: "Deleting is permanent: prefer archive_backlog_items unless the tickets are junk." },
   ].map((spec) => ({
     name: spec.name,
-    description: `${spec["verb"][0].toUpperCase()}${spec.verb.slice(1)} one or more Backlog tickets by id (a single ticket is a list of one). ${spec.extra} Refuses the whole call, changing nothing, if any ticket is not found or is past Backlog (Ready for Testing, on a train, shipped or already archived). Logged to mcpAuditLog under your email.`,
+    description: `${spec["verb"][0].toUpperCase()}${spec.verb.slice(1)} one or more Backlog tickets by id (a single ticket is a list of one). ${spec.extra} Refuses the whole call, changing nothing, if any ticket is not found, is past Backlog (Ready for Testing, on a train, shipped or already archived), or is another member's agent ticket. Logged to mcpAuditLog under your email.`,
     scope: "board.write",
     destructive: spec.verb === "delete",
     inputSchema: {
@@ -2745,7 +2769,10 @@ const TOOLS = [
       snaps.forEach((snap, i) => {
         if (!snap.exists) { problems.push(`${ids[i]}: no such ticket`); return; }
         const st = (snap.data() || {}).status || "backlog";
-        if (st !== "backlog") problems.push(`${ids[i]}: is in ${st}, not Backlog`);
+        if (st !== "backlog") { problems.push(`${ids[i]}: is in ${st}, not Backlog`); return; }
+        // Owner scoping: never another member's agent ticket.
+        const refusal = ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, spec.verb);
+        if (refusal) problems.push(`${ids[i]}: ${refusal}`);
       });
       if (problems.length) return toolError(`Nothing was ${spec.past}. ${problems.join("; ")}.`);
       const batch = db().batch();
@@ -2761,7 +2788,7 @@ const TOOLS = [
   })),
   {
     name: "set_blocked",
-    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments.",
+    description: "Flag a Backlog ticket as blocked: it cannot be built until a person decides something (reason \"needs-decision\") or supplies input/a file (\"waiting-on-input\"). Blocked tickets are skipped by Notify Claude and the build routine, and show a flag with your one-line note on the board. Put the full detail in a comment. Does not change pipeline status. Clears when the flag is cleared or someone else comments. Refused on another member's agent ticket.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2780,6 +2807,8 @@ const TOOLS = [
       const snap = await ref.get();
       if (!snap.exists) return toolError(`No ticket with id ${args.itemId}.`);
       if ((snap.data() || {}).status !== "backlog") return toolError("Only tickets in Backlog can be flagged as blocked.");
+      const ownerRefusal = ownerFiring.ownerEditRefusal(snap.data() || {}, session.email, "flag");
+      if (ownerRefusal) return toolError(ownerRefusal);
       await ref.update({
         blocked: { reason: args.reason, note: note.slice(0, 200), setBy: session.email, setAt: new Date() },
         updatedAt: FieldValue.serverTimestamp(),

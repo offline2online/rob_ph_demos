@@ -46,6 +46,7 @@ function makeFakeDb(seed) {
         state[collection][id] = opts && opts.merge ? deepMerge(state[collection][id] || {}, data) : data;
       },
       async delete() { writes.push({ collection, id, deleted: true }); if (state[collection]) delete state[collection][id]; },
+      async update(data) { return this.set(data, { merge: true }); },
     };
   }
   function query(name, filters) {
@@ -63,9 +64,18 @@ function makeFakeDb(seed) {
     collection: (name) => ({
       doc: (id) => docRef(name, id),
       where: (f, op, v) => query(name, [[f, op, v]]),
+      async get() { return query(name, []).get().then(({ docs }) => ({ docs, forEach: (fn) => docs.forEach(fn), size: docs.length, empty: !docs.length })); },
       async add(data) { const id = `auto${++auto}`; await docRef(name, id).set(data); return { id }; },
     }),
     async getAll(...refs) { return Promise.all(refs.map((r) => r.get())); },
+    batch() {
+      const ops = [];
+      return {
+        update(ref, data) { ops.push(() => ref.set(data, { merge: true })); },
+        delete(ref) { ops.push(() => ref.delete()); },
+        async commit() { for (const op of ops) await op(); },
+      };
+    },
     __state: state, __writes: writes,
   };
 }
@@ -231,6 +241,16 @@ async function test(name, fn) {
     assert.strictEqual(lf.status, "refused");
     assert.strictEqual(lf.reason, "not-owner");
     assert.match(db.__state.projects[PID].notifyRoutine.errorMessage, /Only owner@example\.com can start/);
+  });
+
+  await test("a refused named fire also leaves a note on the card's comment thread (ZmEWDC40NYOiojehfPjk)", async () => {
+    const db = makeFakeDb(seed());
+    const { index } = loadIndex(db, SECRETS);
+    await withFetch(() => updated(index.notifyOnProjectReadyForReview, { name: "Project", notifyRequestedAt: ts(Date.now()), notifyRequestedByEmail: OTHER, notifyItemIds: ["mine"] }));
+    const notes = db.__state.backlogItems.mine.notes;
+    assert.ok(notes && Array.isArray(notes.items), "appended with arrayUnion, never replacing the thread");
+    assert.match(notes.items[0].text, /^Not built: Only owner@example\.com can start this agent ticket/);
+    assert.strictEqual(notes.items[0].author, "backlog-automation");
   });
 
   await test("an admin's send_to_build-shaped request for someone else's ticket is refused the same way", async () => {
@@ -465,6 +485,85 @@ async function test(name, fn) {
     res = fakeRes();
     await mcp.__test.handleMyRoutineBinding(fakeReq("POST", { fireUrl: OWNER_URL, token: "tokentoken" }), res);
     assert.strictEqual(res.statusCode, 403);
+  });
+
+  await test("a flagged ticket's build fire carries the upstream contract change (ZmEWDC40NYOiojehfPjk)", async () => {
+    const db = makeFakeDb(seed({ extraItems: { flagged: { projectId: PID, status: "backlog", type: "feature", title: "Front end", desc: "Builds after the back end", dependsOnItemIds: ["gone"],
+      contractReview: { status: "needs-review", upstreamItemId: "up1", upstreamTitle: "Back end", commit: "c".repeat(40), files: ["shared/interface-contract.md"], summary: "shared/interface-contract.md (+1 −0; sections: Attribute envelope)" } } } }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => updated(index.notifyOnProjectReadyForReview, { name: "Project", notifyRequestedAt: ts(Date.now()), notifyRequestedByEmail: OTHER, notifyItemIds: ["flagged", "plain"] }));
+    const flaggedFire = stub.calls.find((c) => c.text.includes("ticket flagged)"));
+    assert.ok(flaggedFire, "the flagged ticket fired");
+    assert.match(flaggedFire.text, /=== UPSTREAM CONTRACT CHANGED: REVIEW THIS TICKET ===[\s\S]*Attribute envelope[\s\S]*=== END UPSTREAM CONTRACT CHANGED ===/);
+    const plainFire = stub.calls.find((c) => c.text.includes("ticket plain)"));
+    assert.ok(plainFire && !plainFire.text.includes("UPSTREAM CONTRACT CHANGED"), "an unflagged ticket's fire has no block");
+  });
+
+  // ── Owner scoping over MCP (ZmEWDC40NYOiojehfPjk) ─────────────────────────
+  await test("ownerEditRefusal: another member's agent ticket is refused naming its owner; your own and untagged ones are not", () => {
+    assert.strictEqual(of.ownerEditRefusal({ ownerEmail: OWNER }, OWNER), null);
+    assert.strictEqual(of.ownerEditRefusal({ ownerEmail: OWNER }, " Owner@Example.com "), null, "case and spaces don't matter");
+    assert.strictEqual(of.ownerEditRefusal({}, OTHER), null, "an untagged ticket stays open to every editor");
+    assert.match(of.ownerEditRefusal({ ownerEmail: OWNER }, OTHER, "edit"), /^This is owner@example\.com's agent ticket: only owner@example\.com's own agent can edit it/);
+    assert.match(of.ownerEditRefusal({ ownerEmail: OWNER }, OTHER), /add_item_comment/, "it says how to tell the owner instead");
+  });
+
+  const SESSION = (email, role = "editor") => ({ email, role, clientId: "c1" });
+  const toolNamed = (mcp, name) => mcp.__test.TOOLS.find((t) => t.name === name);
+  const isErr = (r) => !!(r && r.isError);
+  const textOf = (r) => (r && r.content && r.content[0] && r.content[0].text) || "";
+
+  await test("MCP: another member's agent reads the owner's ticket in full, ownerEmail included", async () => {
+    const db = makeFakeDb(seed());
+    const { mcp } = loadIndex(db, SECRETS);
+    const got = await toolNamed(mcp, "get_backlog_item").run({ itemId: "mine" }, SESSION(OTHER));
+    assert.ok(!isErr(got), textOf(got));
+    const d = JSON.parse(textOf(got));
+    assert.strictEqual(d.desc, "Do it");
+    assert.strictEqual(d.ownerEmail, OWNER);
+    assert.strictEqual(d.contractReview, null);
+    const plain = JSON.parse(textOf(await toolNamed(mcp, "get_backlog_item").run({ itemId: "plain" }, SESSION(OTHER))));
+    assert.strictEqual(plain.ownerEmail, null);
+  });
+
+  await test("MCP: update_backlog_item on another member's agent ticket is refused naming the owner, and nothing changes", async () => {
+    const db = makeFakeDb(seed());
+    const { mcp } = loadIndex(db, SECRETS);
+    const r = await toolNamed(mcp, "update_backlog_item").run({ itemId: "mine", title: "Hijacked" }, SESSION(OTHER));
+    assert.ok(isErr(r));
+    assert.match(textOf(r), /owner@example\.com's agent ticket/);
+    assert.strictEqual(db.__state.backlogItems.mine.title, "Owner's agent ticket");
+    const admin = await toolNamed(mcp, "update_backlog_item").run({ itemId: "mine", desc: "Rewritten" }, SESSION(OTHER, "admin"));
+    assert.ok(isErr(admin), "an admin's agent is one owner's session too");
+    assert.strictEqual(db.__state.backlogItems.mine.desc, "Do it");
+    const own = await toolNamed(mcp, "update_backlog_item").run({ itemId: "mine", title: "Clearer title" }, SESSION(OWNER));
+    assert.ok(!isErr(own), textOf(own));
+    assert.strictEqual(db.__state.backlogItems.mine.title, "Clearer title");
+    const shared = await toolNamed(mcp, "update_backlog_item").run({ itemId: "plain", title: "Shared ticket" }, SESSION(OTHER));
+    assert.ok(!isErr(shared), "an untagged ticket is still anyone's to correct");
+    const release = await toolNamed(mcp, "update_backlog_item").run({ itemId: "mine", ownedByMe: false }, SESSION(OTHER, "admin"));
+    assert.ok(!isErr(release), "an admin may still release someone's agent ticket");
+    assert.strictEqual(db.__state.backlogItems.mine.ownerEmail, null);
+  });
+
+  await test("MCP: archive, delete and set_blocked refuse another member's agent ticket; commenting stays open", async () => {
+    const db = makeFakeDb(seed());
+    const { mcp } = loadIndex(db, SECRETS);
+    for (const name of ["archive_backlog_items", "delete_backlog_items"]) {
+      const r = await toolNamed(mcp, name).run({ itemIds: ["plain", "mine"] }, SESSION(OTHER));
+      assert.ok(isErr(r), name);
+      assert.match(textOf(r), /mine: This is owner@example\.com's agent ticket/, name);
+    }
+    assert.strictEqual(db.__state.backlogItems.mine.status, "backlog", "the whole call was refused");
+    assert.strictEqual(db.__state.backlogItems.plain.status, "backlog");
+    const b = await toolNamed(mcp, "set_blocked").run({ itemId: "mine", reason: "needs-decision", note: "Stop" }, SESSION(OTHER));
+    assert.ok(isErr(b));
+    assert.strictEqual(db.__state.backlogItems.mine.blocked, undefined);
+    const c = await toolNamed(mcp, "add_item_comment").run({ itemId: "mine", text: "Heads up: my contract change affects this." }, SESSION(OTHER));
+    assert.ok(!isErr(c), "a comment is how one owner tells another");
+    const own = await toolNamed(mcp, "archive_backlog_items").run({ itemIds: ["mine"] }, SESSION(OWNER));
+    assert.ok(!isErr(own), textOf(own));
+    assert.strictEqual(db.__state.backlogItems.mine.status, "archived");
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

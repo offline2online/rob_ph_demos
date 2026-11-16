@@ -61,6 +61,8 @@ const { hasIntakePlaceholder } = require("../functions/intake");
 const buildOrder = require("../functions/build-order");
 const { modelGuardRefusal } = require("../functions/model-requirement");
 const testRounds = require("../functions/test-rounds");
+// Contract-change review flags (ZmEWDC40NYOiojehfPjk).
+const contractReview = require("../functions/contract-review");
 // Late arrivals, the deploy queue, shared files between trains (wPoSOXfp8Em06Vzp3Cz7).
 const deployQueue = require("../functions/deploy-queue");
 const kanbanHeal = require("./kanban-e2e-heal");
@@ -1521,6 +1523,74 @@ async function sweepDependencyWaits() {
       console.log(`[dependency] ${w.id}: ${err.message}`);
     }
   }
+}
+
+// ── Contract-change review (ZmEWDC40NYOiojehfPjk, 16 Nov 2026) ─────────────
+// A ticket that lands a change to an interface contract (shared/
+// interface-contract.md, shared/board-interfaces.json or a file that manifest
+// lists) flags every open ticket that builds after it — dependsOnItemIds
+// names it — "Needs review: upstream contract changed", with what changed.
+// The upstream ticket's session never edits a dependent: the dependent's own
+// next build fire carries the change (contractReviewBlock in
+// functions/index.js) and its own landing clears the flag.
+//
+// Git only: what `sha` (one train commit) changed in a contract, against its
+// first parent. null when it changed none. The manifest is read on both sides,
+// so a file dropped from it in this very commit still counts.
+function contractChangeOf(sha, opts = {}) {
+  const show = (ref) => { try { return gitText(["show", ref], opts); } catch { return null; } };
+  const paths = [...new Set([
+    ...contractReview.contractPathsFrom(show(`${sha}:${contractReview.CONTRACT_MANIFEST_PATH}`)),
+    ...contractReview.contractPathsFrom(show(`${sha}^:${contractReview.CONTRACT_MANIFEST_PATH}`)),
+  ])];
+  let changed;
+  try { changed = gitText(["diff", "--name-only", "--no-renames", `${sha}^`, sha, "--", ...paths], opts).split("\n").filter(Boolean); }
+  catch { return null; }
+  const files = contractReview.contractFilesIn(changed, paths).map((p) => {
+    let added = 0, removed = 0;
+    try {
+      const [a, r] = gitText(["diff", "--numstat", "--no-renames", `${sha}^`, sha, "--", p], opts).trim().split("\t");
+      added = Number(a) || 0; removed = Number(r) || 0;
+    } catch { /* counts stay 0 */ }
+    let sections = [];
+    if (/\.md$/i.test(p)) {
+      try {
+        const hunks = contractReview.parseHunks(gitText(["diff", "-U0", "--no-renames", `${sha}^`, sha, "--", p], opts));
+        sections = contractReview.sectionsTouched(show(`${sha}:${p}`) || "", hunks);
+      } catch { /* no sections */ }
+    }
+    return { path: p, added, removed, sections };
+  });
+  if (!files.length) return null;
+  return { files, summary: contractReview.summariseContractChange(files) };
+}
+
+// Flags the open dependents of `item` (just landed as `sha`) with `change`
+// (contractChangeOf), notes each, and notes the upstream card with the list.
+// Never edits anything else on a dependent. Returns the flagged tickets.
+async function flagContractDependents(item, sha, change) {
+  if (!change || !Array.isArray(change.files) || !change.files.length) return [];
+  const candidates = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "dependsOnItemIds" }, op: "ARRAY_CONTAINS", value: { stringValue: item.id } } },
+  });
+  const flagged = [];
+  for (const w of contractReview.dependentsToFlag(candidates, item.id)) {
+    try {
+      const record = contractReview.contractReviewRecord({ upstream: { id: item.id, title: item.title }, commit: sha, files: change.files, summary: change.summary });
+      const notes = await appendNote(w, contractReview.dependentNote(record));
+      await patchItem(w.id, { contractReview: record, notes, updatedAt: new Date().toISOString() });
+      flagged.push(w);
+      console.log(`[contract-review] ${w.id}: flagged — upstream ${item.id} changed ${change.files.map((f) => f.path).join(", ")}`);
+    } catch (err) {
+      console.log(`[contract-review] couldn't flag ${w.id}: ${err.message}`);
+    }
+  }
+  if (flagged.length) {
+    const notes = await appendNote(item, contractReview.upstreamNote(flagged, change.summary));
+    await patchItem(item.id, { notes, updatedAt: new Date().toISOString() });
+  }
+  return flagged;
 }
 
 async function releaseDependents(landed) {
@@ -5729,10 +5799,13 @@ async function processApplyPatch(item) {
       const answersRevert = outcome.kind === "already-on-train" && item.revertRequested === true && ON_TRAIN_STATUSES.has(outcome.fields.status || "");
       const revertKey = answersRevert ? revertNoteKey(item) : null;
       if (answersRevert) text += " The revert still pending for those commits is no longer needed and was cleared: nothing was reverted.";
+      if (contractReview.needsContractReview(item)) text += " The upstream contract change this ticket was flagged for was reviewed by this build, which needed no change, so the flag was cleared.";
       const notes = await appendNote(item, text, revertKey ? { key: revertKey } : {});
       await patchItem(item.id, {
         ...outcome.fields, ...(outcome.fields.status === "ready-for-testing" ? testRounds.arrivalFields(item) : {}),
         ...(answersRevert ? { revertRequested: false, revertBlockedBy: [], rebuildAfterRevert: false } : {}),
+        // A no-diff patch is still the review an upstream contract change asked for.
+        ...(item.contractReview ? { contractReview: null } : {}),
         updatedAt: new Date().toISOString(), notes,
       });
       if (outcome.fields.status === "ready-for-testing") noteReadyForTesting(project, item.id);
@@ -5800,7 +5873,8 @@ async function processApplyPatch(item) {
     (testsStarted.length ? ` The ${testsStarted.map((t) => `${t.label} (${t.workflow})`).join(" and ")} ${testsStarted.length === 1 ? "was" : "were"} started on the train; a failure will be noted here.` : "") +
     (workflowPaths.length
       ? ` This ticket changes ${workflowPaths.join(", ")}, so it was pushed with the workflow-push App token and the train's deploy PR will NOT be merged by the pipeline — a person has to review and merge it on GitHub.`
-      : "")
+      : "") +
+    (contractReview.needsContractReview(item) ? " This build answered the upstream contract change it was flagged for, so the review flag was cleared." : "")
   );
   const overlapText = [deployQueue.sharedWithNote(overlap.sharedWith), deployQueue.foreignPathsNote(overlap.foreignPaths)].filter(Boolean).join(" ");
   if (overlapText) await appendNote(item, overlapText);
@@ -5839,11 +5913,22 @@ async function processApplyPatch(item) {
     sharedWith: overlap.sharedWith,
     foreignPaths: overlap.foreignPaths,
     buildAfterTrain: false,
+    // This build was the review an upstream contract change asked for.
+    ...(item.contractReview ? { contractReview: null } : {}),
     ...(testVersion ? { testVersion } : {}),
     ...(workflowPaths.length ? { requiresHumanMerge: true } : {}),
   });
   console.log(`[apply-patch] ${item.id}: committed ${sha.slice(0, 7)} on ${deployBranch}, moved to ready-for-testing${testVersion ? ` (testVersion ${testVersion})` : ""}`);
   noteReadyForTesting(project, item.id);
+  // An interface contract changed: flag the tickets that build after this one
+  // for review by their own sessions (never edited from here). A failure here
+  // never undoes the landing.
+  try {
+    const change = contractChangeOf(sha);
+    if (change) await flagContractDependents(item, sha, change);
+  } catch (err) {
+    console.log(`[contract-review] ${item.id}: couldn't check for a contract change: ${err.message}`);
+  }
   if (rebuilds.length && generatedBuildForLink(previewUrl) && rebuilds.includes(generatedBuildForLink(previewUrl).workflow)) {
     followUpReasons.push(`${item.id}: test link waiting on ${generatedBuildForLink(previewUrl).workflow}`);
   }
@@ -8440,6 +8525,8 @@ if (require.main === module) {
 module.exports = {
   // test/self-heal.test.js — rebuild, wait for the release, or ask a person
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
+  // test/contract-review.test.js — contract-change review flags
+  contractChangeOf, flagContractDependents,
   patchFilesFromCommit,
   patchRefProblem,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,

@@ -138,6 +138,26 @@ const scenarios = [
     },
   },
   {
+    // Contract-change review (ZmEWDC40NYOiojehfPjk): a ticket whose upstream
+    // changed an interface contract shows a warning chip, the summary on hover.
+    name: "contract-change review: a flagged dependent shows Needs review, with what changed",
+    seed: () => {
+      const s = only("b1");
+      s.docs.backlogItems.dep = { projectId: PID, title: "Front end for the attribute envelope", desc: "Builds after the back end", type: "feature", category: "HQ Admin", status: "backlog", dependsOnItemIds: ["b1"],
+        contractReview: { status: "needs-review", upstreamItemId: "b1", upstreamTitle: "Back end for the attribute envelope", commit: "c".repeat(40), files: ["shared/interface-contract.md"], summary: "shared/interface-contract.md (+4 −1; sections: Attribute envelope)", flaggedAt: "2026-11-16T05:00:00.000Z" },
+        createdAt: t(T0 + 9), updatedAt: t(T0 + 9) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const chip = `.card[data-id="dep"] .contract-review-flag`;
+      await c.visible(chip, "the Needs review chip");
+      assert.match(await c.page.textContent(chip), /Needs review: upstream contract changed/);
+      assert.match(await c.page.getAttribute(chip, "title"), /Back end for the attribute envelope.*Attribute envelope/, "the hover says which ticket changed what");
+      assert.strictEqual(await c.page.locator(`.card[data-id="b1"] .contract-review-flag`).count(), 0, "an unflagged ticket has no chip");
+    },
+  },
+  {
     name: "Health strip: Flaky tests shows this week's count and opens the list of cases",
     seed: () => {
       const ago = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();

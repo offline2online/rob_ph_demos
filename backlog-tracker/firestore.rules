@@ -417,7 +417,12 @@ service cloud.firestore {
         // Shared files between trains (wPoSOXfp8Em06Vzp3Cz7): what a landed
         // ticket shares with another project's live train, and the files it
         // changed that another project owns. Written by the automation only.
-        "sharedWith", "foreignPaths"];
+        "sharedWith", "foreignPaths",
+        // Contract-change review (16 Nov 2026, ZmEWDC40NYOiojehfPjk): set on a
+        // dependent when its upstream ticket's build changed an interface
+        // contract, cleared when the dependent's own patch lands. The
+        // automation's alone, so nobody can dismiss or fake it from a tab.
+        "contractReview"];
     }
     function itemPipelineFieldsUnchanged() {
       return !incoming().diff(resource.data).affectedKeys().hasAny(itemPipelineFields());

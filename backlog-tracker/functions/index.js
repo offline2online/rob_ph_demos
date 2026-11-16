@@ -22,6 +22,9 @@ const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+// Contract-change review flags (ZmEWDC40NYOiojehfPjk): a flagged ticket's
+// build fire carries what its upstream changed.
+const { contractReviewBlock } = require("./contract-review");
 const buildOrder = require("./build-order");
 const ownerFiring = require("./owner-firing");
 
@@ -246,7 +249,7 @@ function perItemFireText({ item, siblings, projectId, projectName, prefix = "", 
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${contractReviewBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
@@ -448,7 +451,10 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       for (const r of ownerPlan.refused) {
         try {
           const lastFire = ownerFiring.refusedFireRecord({ reason: r.reason, message: r.message, prior: r.item.lastFire || {}, requestedAt: after.notifyRequestedAt, requestedByEmail: after.notifyRequestedByEmail });
-          await db.collection("backlogItems").doc(r.item.id).set({ lastFire }, { merge: true });
+          // Named in the click: say so on the card's comment thread too, so the
+          // refusal is read where people look (ZmEWDC40NYOiojehfPjk).
+          const note = { author: "backlog-automation", text: `Not built: ${r.message}`, at: new Date() };
+          await db.collection("backlogItems").doc(r.item.id).set({ lastFire, notes: FieldValue.arrayUnion(note) }, { merge: true });
         } catch (err) {
           logger.error("Couldn't record a refused owner fire on the card", { projectId: event.params.projectId, itemId: r.item.id, error: err instanceof Error ? err.message : String(err) });
         }

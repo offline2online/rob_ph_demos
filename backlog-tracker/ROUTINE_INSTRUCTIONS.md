@@ -549,6 +549,29 @@ model is set at claude.ai/code/routines and the fire endpoint takes only
 user writes them, and the card's Advanced badge and the Edit item modal show
 them ("Built on … · reviewed on …").
 
+## Owner scoping and upstream contract changes (16 Nov 2026)
+
+- **Build only the ticket you were fired for, and never edit another ticket.**
+  You may read every ticket, doc and interface contract to understand impact.
+  If your change affects another member's ticket, say so in a comment on it
+  (append a note); don't change its title, description or fields. Over MCP,
+  another member's agent ticket is read-only (`update_backlog_item`,
+  `archive_backlog_items`, `delete_backlog_items` and `set_blocked` are
+  refused naming its owner).
+- **When your build changes an interface contract** (`shared/interface-contract.md`,
+  `shared/board-interfaces.json`, or a file that manifest lists), the
+  automation flags every open ticket that builds after yours when your patch
+  lands. You do nothing extra for that; just describe the contract change
+  clearly in your `[build]` note and `patchCommitMessage`.
+- **When your fire carries `=== UPSTREAM CONTRACT CHANGED: REVIEW THIS TICKET ===`**,
+  a ticket yours builds after changed a contract. Read that commit
+  (`git show <commit> -- <files>`) and the contract as it is now, and build
+  your ticket against the new contract, updating its description if its
+  scope moved. Say in your `[build]` note what you changed because of it, or
+  why nothing needed to change. The flag (`contractReview`) clears when your
+  patch lands, including a no-diff patch.
+- See `REQUIREMENTS.md` → "Owner scoping and contract-change review".
+
 ## PH Website builds: the personalisationhub.com WordPress MCP is the only site connection
 
 For a ticket on the PH Website project (`ph-website/`), the target site is

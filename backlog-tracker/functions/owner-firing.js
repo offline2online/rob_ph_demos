@@ -144,7 +144,24 @@ function planOwnedGroom(items, { requesterEmail = null } = {}) {
   return { keep, excluded, ownOwned: keep.filter((i) => !!ticketOwner(i)) };
 }
 
+// Owner scoping over MCP (ZmEWDC40NYOiojehfPjk, 16 Nov 2026): every member's
+// agent reads the whole project (every ticket, its docs and interface
+// contracts) so it understands cross-cutting impact, but changes only the
+// agent tickets its own member owns. null when `email` may change `item`,
+// else the refusal shown to the agent. An untagged ticket stays open to every
+// editor, as before; an admin's agent is refused like anyone else's (each
+// agent is one owner's session; an admin releases a ticket with ownedByMe
+// false, which the caller allows separately). Commenting is never refused:
+// add_item_comment is how one owner tells another about an impact.
+function ownerEditRefusal(item, email, verb = "change") {
+  const owner = ticketOwner(item);
+  if (!owner) return null;
+  if (normEmail(email) === owner) return null;
+  return `This is ${owner}'s agent ticket: only ${owner}'s own agent can ${verb} it. You can still read it in full, and add_item_comment to tell its owner about an impact on their work.`;
+}
+
 module.exports = {
+  ownerEditRefusal,
   ROUTINE_SETUP_HASH, normEmail, ticketOwner, millisOf, isAutomaticBuildRequest, ownerRefusalMessage,
   planOwnedBuild, refuseUnboundOwners, refusedFireRecord, planOwnedDeploy, planOwnedGroom,
 };

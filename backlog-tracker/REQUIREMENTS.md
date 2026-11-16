@@ -208,6 +208,10 @@ train" → "Deploy queue".
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
   model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
   ownerEmail?: string | null,   // xFzQgynkoMdV33iWJFZq — an agent ticket's owner (lowercased email): it fires only on that member's personal Routine, and only they can start it. Set by the server only (MCP ownedByMe; Send to Agent). Pipeline field — no browser writes it. See "Agent tickets fire under their owner's own Claude account"
+  contractReview?: {            // ZmEWDC40NYOiojehfPjk — set when a ticket this one builds after (dependsOnItemIds) changed an interface contract on landing; cleared (null) when this ticket's own patch lands. Pipeline field (automation only). See "Owner scoping and contract-change review"
+    status: "needs-review", upstreamItemId: string, upstreamTitle: string | null,
+    commit: string, files: string[], summary: string, flaggedAt: string   // ISO
+  } | null,
   builtByModel?: string,        // exact model id that built it (e.g. "claude-opus-5-5"), written by the build session with patchReady. Pipeline field (automation only)
   reviewedByModel?: string,     // exact model id that reviewed it, written by the Review Batch session with its review flag. Pipeline field (automation only)
   testRound?: number, // Testing rounds (hm84opFjizq3vekk0fC1): 1 on first arrival in Ready for Testing, +1 on each later arrival after a counted send-back. Pipeline field — automation only. See "Testing rounds"
@@ -4449,14 +4453,81 @@ never the shared project token, and never on someone else's click.
   own `routineBindings/{email}` through the same `writeRoutineBinding` and
   validation as `set_my_routine_binding`, and is audited in `mcpAuditLog`
   (`via: "console"`). The URL and token are never sent back.
-- **Known limit**: anyone who may edit a ticket can still edit an agent
-  ticket's text, which its owner's Routine then reads. Limiting edits to the
-  owner is ticket ZmEWDC40NYOiojehfPjk ("Owner scoping").
+- **Known limit**: over MCP, only the owner's own agent may change an agent
+  ticket (see "Owner scoping and contract-change review" below). A person
+  editing in the console is not limited yet: any editor can still change an
+  agent ticket's text there, which its owner's Routine then reads.
 - **Tests**: `test/owner-firing.test.js` (the rule, the three fire handlers,
   the endpoint) and `test/owner-fire.test.mjs` (the board's half), both in
   `npm run test:routine-binding`; `firestore-rules.test.js` (`ownerEmail` and
   `notifyAutomationAt` are not a browser's); the console-click scenario
   "agent tickets: owner-only Ready for Dev, set up My Claude Routine".
+
+## Owner scoping and contract-change review
+
+(16 Nov 2026, ticket ZmEWDC40NYOiojehfPjk.) Builds on "Agent tickets fire
+under their owner's own Claude account" above (the owner is
+`backlogItems.ownerEmail`) and on "Build order" (the blocks / blocked-by link
+is `dependsOnItemIds`; there is no second dependency field).
+
+**Read everything, change only your own.** Every member's agent reads the
+whole project over MCP: every ticket in full (`get_backlog_item`,
+`list_backlog_items`, both now returning `ownerEmail` and `contractReview`),
+the project's docs and its interface contracts, so it can see cross-cutting
+impact. It changes only tickets its own member owns:
+
+- `update_backlog_item`, `archive_backlog_items`, `delete_backlog_items` and
+  `set_blocked` on another member's agent ticket are refused with a message
+  naming the owner, and nothing changes (archive and delete refuse the whole
+  call). The rule is `ownerEditRefusal` in `functions/owner-firing.js`.
+- An admin's agent is refused like anyone else's (each agent is one owner's
+  session). The one exception is releasing a ticket (`update_backlog_item`
+  with only `ownedByMe: false`), which an admin may still do.
+- An untagged ticket (no `ownerEmail`) stays open to every editor's agent.
+- `add_item_comment` and `clear_blocked` stay open to every member: a comment
+  is how one owner tells another about an impact on their work.
+- A build fire naming someone else's agent ticket (a click by anyone but its
+  owner) is refused as before, and the refusal is now also appended to the
+  card's comments ("Not built: Only … can start this agent ticket").
+
+**Contract-change review flag.** When a ticket's patch lands on its train
+and that commit changes an interface contract, every open ticket (Backlog,
+Ready for Testing or Approved for Deployment) whose `dependsOnItemIds` names
+it is flagged:
+
+- What counts as a contract: `shared/interface-contract.md`,
+  `shared/board-interfaces.json`, and any file that manifest lists
+  (`interfaces[].path`, read before and after the commit). An edit made
+  straight to an `interfaces` record on the board belongs to no ticket's
+  build and flags nothing.
+- The flag is `backlogItems/{id}.contractReview` (data model below), with a
+  summary such as `shared/interface-contract.md (+4 −1; sections: Attribute
+  envelope)`: line counts and the Markdown headings the change falls under.
+  The dependent also gets a note, and the upstream card a note listing the
+  tickets it flagged. Nothing else on a dependent is touched: the upstream
+  ticket's session never edits it.
+- The card shows a warning chip **Needs review: upstream contract changed**
+  (Material Symbols `sync_problem`; hover = which ticket changed what).
+- The dependent's next build fire carries a block
+  `=== UPSTREAM CONTRACT CHANGED: REVIEW THIS TICKET ===` with the change,
+  so its owner's own session reviews and updates it. The flag clears when
+  that ticket's own patch lands (a commit, or a no-diff patch meaning nothing
+  needed to change), with a note.
+- A dependent already in Ready for Testing keeps the chip until it is sent
+  back and rebuilt; nothing rebuilds it automatically.
+- Code: `functions/contract-review.js` (pure rules, the record, the notes and
+  the fire block), `contractChangeOf` / `flagContractDependents` in
+  `scripts/run-backlog-automation.js` (called after a ticket's commit lands),
+  `contractReviewBlock` in `functions/index.js`'s build fire text.
+  `contractReview` is a pipeline field in `firestore.rules`: no browser can
+  set, fake or dismiss it.
+- **Tests**: `test/contract-review.test.js` (the rules, `contractChangeOf`
+  against a real git repo, `flagContractDependents` against an in-memory
+  Firestore; in `npm run test:routine-binding`), `test/owner-firing.test.js`
+  (the MCP refusals, the refused-fire note, the fire block),
+  `firestore-rules.test.js` (`contractReview` is not a browser's) and the
+  console-click scenario "contract-change review: a flagged dependent shows
+  Needs review".
 
 ## Blocked tickets: answering from the card
 

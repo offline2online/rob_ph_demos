@@ -1046,6 +1046,13 @@ function cardHTML(item) {
   const ownerBadge = ownerOfItem
     ? `<span class="review-flag owner-badge" title="${escapeHTML(`Agent ticket owned by ${ownerOfItem}: it is built, deployed and groomed only under their own Claude account, and only they can start it.`)}"><span class="material-symbols-outlined">person</span>${escapeHTML(ownerOfItem.split("@")[0])}</span>`
     : "";
+  // Contract-change review (ZmEWDC40NYOiojehfPjk): a ticket this one builds
+  // after changed an interface contract when it landed. Set and cleared by the
+  // automation only; this ticket's own next build reviews it. Hover = what changed.
+  const cr = item.contractReview;
+  const contractReviewChip = cr && cr.status === "needs-review" && item.status !== "published-live" && item.status !== "archived"
+    ? `<span class="review-flag contract-review-flag" title="${escapeHTML(`Upstream contract changed: "${cr.upstreamTitle || cr.upstreamItemId || "a ticket this builds after"}" changed ${cr.summary || "an interface contract"}. This ticket's own next build reviews it; the flag clears when that build lands.`)}"><span class="material-symbols-outlined">sync_problem</span>Needs review: upstream contract changed</span>`
+    : "";
   const modelBadge = ticketModel(item) === "advanced"
     ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>Advanced · Opus</span>`
     : "";
@@ -1176,7 +1183,7 @@ function cardHTML(item) {
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
       ${sentBackLastTimeHTML(item)}
-      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
+      ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
         <div class="card-footer-left">
           <span class="card-cat">${escapeHTML(item.category || "Uncategorised")}</span>
