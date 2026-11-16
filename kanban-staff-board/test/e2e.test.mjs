@@ -16,7 +16,7 @@ import { execSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { wantedProfiles, launchEngines, contextOptions } from "./lib/profiles.mjs";
-import { where, press, sleep, moveBy, dragCard, toastText } from "./lib/driver.mjs";
+import { where, press, sleep, moveBy, dragCard, toastText, frames } from "./lib/driver.mjs";
 import { defineNewCases } from "./lib/cases.mjs";
 import { recordFlaky } from "../../backlog-tracker/test/ui/flaky.mjs";
 
@@ -203,7 +203,7 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), true);
   await press(p, "#kb-filter-toggle");
   await p.selectOption("#kb-type", "bug");
-  await p.waitForTimeout(100);
+  await frames(p);
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), false, "menu stays open while adjusting");
   const types = await p.$$eval(".kb-card .kb-type", (e) => e.map((x) => x.title));
   assert.ok(types.length && types.every((t) => t === "Bug"));
@@ -211,10 +211,13 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   assert.match(await p.textContent("#kb-filter-toggle"), /Filters\s*1/);
   await press(p, "#kb-clear");
   await p.selectOption("#kb-release", "4.12");
+  // The redraw puts the old scroll position back on its next frame: scrolling before that frame has run lets it undo
+  // the scroll on a busy runner (flaky on desktop-1024-chromium: "expected 400, actual 0"), so wait for it first.
+  await frames(p);
   const y = await p.evaluate(() => { const y = Math.min(400, document.documentElement.scrollHeight - innerHeight - 40); scrollTo(0, y); return y; });
   assert.ok(y > 100, `the page is tall enough to scroll (${y})`);
   await p.selectOption("#kb-release", "");
-  await p.waitForTimeout(150);
+  await frames(p);
   assert.equal(await p.evaluate(() => scrollY), y);
   await press(p, "#kb-filter-toggle"); await press(p, "#kb-flagged");
   const flagged = await p.$$eval(".kb-card", (e) => e.every((c) => c.classList.contains("kb-flagged")));

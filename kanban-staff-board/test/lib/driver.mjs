@@ -292,6 +292,11 @@ export async function pickUp(p, key, input, o = {}) {
   return P;
 }
 
+// Resolves once the page has drawn `n` more animation frames. A filter change redraws the board and puts the scroll
+// position back on the next frame too (keepPosition); a busy runner can hold that frame back for longer than any fixed
+// sleep, so a case that scrolls or reads the scroll position after a filter change waits for it here first.
+export const frames = (p, n = 2) => p.evaluate((n) => new Promise((r) => { const f = (i) => (i ? requestAnimationFrame(() => f(i - 1)) : r()); f(n); }), n);
+
 // Repeats a check until it passes. The board redraws on the next animation frame (or a 100 ms timer) and a busy
 // runner can hold a frame back for longer than any fixed sleep, so a case waits on what it is about to assert.
 // When time runs out the check's own failure is thrown, so the report says what was wrong, not "timed out".
