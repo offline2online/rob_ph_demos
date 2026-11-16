@@ -4964,7 +4964,10 @@ function repointPreviewUrlRef(url, newRef) {
 async function repointTrainPreviewUrls(projectId, deployBranch, newSha, excludeItemId) {
   let siblings;
   try {
-    siblings = await itemsForTrain(await getProject(projectId));
+    // A release group's train re-points every member's cards; a project that
+    // can't be read falls back to its own cards (the pre-group behaviour).
+    const trainProject = await getProject(projectId).catch(() => null);
+    siblings = trainProject ? await itemsForTrain(trainProject) : await itemsForProject(projectId);
   } catch (err) {
     console.log(`[apply-patch] couldn't list sibling items to re-point preview links (${err.message}) — their links stay as they were until their own next commit`);
     return;
@@ -6044,7 +6047,8 @@ async function detachCarriedCards(revertedItem, shas, deployBranch) {
   if (!shas.length || !revertedItem.projectId) return;
   let riders = [];
   try {
-    riders = carriedCardsOn(await itemsForTrain(await getProject(revertedItem.projectId)), shas).filter((i) => i.id !== revertedItem.id);
+    const trainProject = await getProject(revertedItem.projectId).catch(() => null);
+    riders = carriedCardsOn(trainProject ? await itemsForTrain(trainProject) : await itemsForProject(revertedItem.projectId), shas).filter((i) => i.id !== revertedItem.id);
   } catch (err) {
     console.log(`[train-revert] ${revertedItem.id}: couldn't look for cards riding on ${shas.map((s) => s.slice(0, 7)).join(", ")} (${err.message}) — the next sweep's Deploy verification is the backstop`);
     return;
