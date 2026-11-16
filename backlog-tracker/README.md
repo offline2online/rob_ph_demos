@@ -1930,7 +1930,10 @@ validation as `set_my_routine_binding`; write-only).
 only on its owner's binding — Ready for Dev, Deploy to Main and Groom
 Backlog alike, never the shared secrets, and never on anyone else's click
 (the pipeline's own automatic rebuilds, stamped `notifyAutomationAt`, also
-use the owner's binding). An owner with no binding gets nothing fired, and
+use the owner's binding). Review Batch and the Ready for Testing
+presentation follow the owner too (rFNYoDzDdDtQJpupDNpN): one session per
+owner on that owner's binding, whoever pressed, and untagged tickets as
+before; Run E2E and the release audit name no ticket and are exempt. An owner with no binding gets nothing fired, and
 the board disables the control with an info link to My Claude Routine. Rule
 in `functions/owner-firing.js` (board half: `public/js/owner-fire.js`);
 full behaviour in `REQUIREMENTS.md` → "Agent tickets fire under their

@@ -138,6 +138,47 @@ async function ownerRoutineCredentials(db, ownerEmail) {
   return c.via === "member" && c.fireUrl && c.token ? { fireUrl: c.fireUrl, token: c.token, via: "owner" } : null;
 }
 
+// Review Batch and the Ready for Testing presentation (rFNYoDzDdDtQJpupDNpN):
+// split a batch into the sessions to fire. Untagged tickets are one session on
+// the trigger's own binding, else the shared Routine (as before); each owner's
+// agent tickets are one session on that owner's binding and nothing else. An
+// owner with no usable binding has their tickets refused, with the build's
+// no-binding message (functions/owner-firing.js → planOwnedSessions).
+async function ownerSessionGroups(db, items, triggeredByEmail, sharedFireUrl, sharedToken) {
+  let plan = ownerFiring.planOwnedSessions(items);
+  const credsByOwner = {};
+  for (const owner of Object.keys(plan.byOwner)) credsByOwner[owner] = await ownerRoutineCredentials(db, owner);
+  plan = ownerFiring.refuseUnboundOwners(plan, (owner) => !!credsByOwner[owner]);
+  const groups = [];
+  let sharedVia = "shared";
+  if (plan.shared.length) {
+    const c = await resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken);
+    sharedVia = c.via;
+    groups.push({ owner: null, items: plan.shared, fireUrl: c.fireUrl, token: c.token, via: c.via });
+  }
+  for (const [owner, list] of Object.entries(plan.byOwner)) {
+    groups.push({ owner, items: list, fireUrl: credsByOwner[owner].fireUrl, token: credsByOwner[owner].token, via: "owner" });
+  }
+  const owned = Object.values(plan.byOwner).reduce((n, l) => n + l.length, 0);
+  const refusedNote = plan.refused.map((r) => r.message).filter((m, n, a) => a.indexOf(m) === n).join(" ");
+  return { groups, refused: plan.refused, refusedNote, firedVia: ownerFiring.firedViaOf(sharedVia, { shared: plan.shared.length, owned }) };
+}
+
+// A refused agent ticket says why on its own comment thread, as a refused
+// Ready for Dev does.
+async function noteOwnerRefusals(db, refused, what, logContext) {
+  for (const r of refused) {
+    try {
+      await db.collection("backlogItems").doc(r.item.id).set({
+        notes: FieldValue.arrayUnion({ author: "backlog-automation", text: `${what}: ${r.message}`, at: new Date() }),
+      }, { merge: true });
+    } catch (err) {
+      logger.error("Couldn't record a refused owner fire on the card", { ...logContext, itemId: r.item.id, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  if (refused.length) logger.info("Agent tickets not sent: owner-only firing", { ...logContext, refused: refused.map((r) => ({ itemId: r.item.id, reason: r.reason })) });
+}
+
 // The GitHub token onBacklogItemReadyForAutomation (bottom of this file)
 // uses to dispatch backlog-automation.yml the moment an item is ready for
 // it, instead of that item waiting out the workflow's own schedule. Needs
@@ -1245,90 +1286,79 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
 
     const projectName = after.name || "A project";
 
-    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
-      db, after.reviewRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    // Agent tickets are reviewed under their owner's own Claude account: one
+    // session per owner on that owner's binding, never the clicker's or the
+    // shared token; the untagged tickets are one session as before
+    // (rFNYoDzDdDtQJpupDNpN, ownerSessionGroups above).
+    const { groups, refused, refusedNote, firedVia: routineCredVia } = await ownerSessionGroups(
+      db, items, after.reviewRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
+    await noteOwnerRefusals(db, refused, "Not reviewed", { projectId: event.params.projectId });
+    const fireable = groups.filter((g) => g.fireUrl && g.token);
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
+    const sessions = [];
 
-    if (fireUrl && token) {
-      const itemLines = items
+    const projectPromptBlock = (after.routinePromptMd || "").trim()
+      ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
+      : "";
+    const selfReportHint = `\n\nWhen you finish this run (whether you reviewed every ticket or stopped early on a blocker), PATCH projects/${event.params.projectId} with reviewRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and reviewRoutine.finishedAt set to now — the board shows a working/spinning state on its Review Batch button until it sees this.`;
+    const reviewText = (batch, group) => {
+      const itemLines = batch
         .map((i, idx) => `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title} — deployCommit ${i.deployCommit}${i.carriedByCommit ? " (rides on a sibling's commit)" : ""}${reviewModelTag(i)}`)
         .join("\n");
+      const ownerLine = group.owner
+        ? `These are ${group.owner}'s agent tickets, so this session runs under their own Claude account. Review only the tickets listed here.\n\n`
+        : (fireable.length > 1 ? `Agent tickets in this batch are reviewed by their owners' own sessions; review only the tickets listed here.\n\n` : "");
+      return `${projectPromptBlock}=== REVIEW REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${batch.length} ticket${batch.length === 1 ? "" : "s"} below together as one batch. This gate expects the most capable model (latest Claude Opus): state which model this session runs as in the review log and flag it there if it is a lesser one. Each ticket below carries its own Model requirement: a ticket marked Advanced is reviewed on Claude Opus only (delegate its review to an Opus subagent if this session is not Opus; if none is available, write reviewStatus "blocked" with reviewReason "model-unavailable: needs Claude Opus" and leave it unreviewed), and every reviewed ticket gets reviewedByModel set to the exact model id that reviewed it, as ROUTINE_INSTRUCTIONS.md → "Per-ticket model requirement" says. Test each ticket against its own Outcome and Test steps, check docs against code, and apply the bounce cap, all as set out in the Review Batch flow. Only a kick-back changes a ticket's status, exactly as that flow describes.\n\n` +
+        ownerLine +
+        `${batch.length} built, not-yet-reviewed ticket${batch.length === 1 ? "" : "s"} on ${after.deployBranch || "the integration branch"}:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
+    };
 
-      const projectPromptBlock = (after.routinePromptMd || "").trim()
-        ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
-        : "";
+    for (const group of fireable) {
+      const r = await fireRoutineSession(group.fireUrl, group.token, reviewText(group.items, group), {
+        projectId: event.params.projectId, kind: "review", itemCount: group.items.length, firedVia: group.via,
+      });
+      sessions.push({ owner: group.owner, itemIds: group.items.map((i) => i.id), sessionId: r.sessionId, sessionUrl: r.sessionUrl, error: r.fireError, firedVia: group.via });
+      if (!sessionId && r.sessionId) { sessionId = r.sessionId; sessionUrl = r.sessionUrl; }
+      if (r.fireError && !fireError) fireError = r.fireError;
+    }
 
-      const selfReportHint = `\n\nWhen you finish this run (whether you reviewed every ticket or stopped early on a blocker), PATCH projects/${event.params.projectId} with reviewRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and reviewRoutine.finishedAt set to now — the board shows a working/spinning state on its Review Batch button until it sees this.`;
-
-      const text = `${projectPromptBlock}=== REVIEW REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
-        `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${items.length} ticket${items.length === 1 ? "" : "s"} below together as one batch. This gate expects the most capable model (latest Claude Opus): state which model this session runs as in the review log and flag it there if it is a lesser one. Each ticket below carries its own Model requirement: a ticket marked Advanced is reviewed on Claude Opus only (delegate its review to an Opus subagent if this session is not Opus; if none is available, write reviewStatus "blocked" with reviewReason "model-unavailable: needs Claude Opus" and leave it unreviewed), and every reviewed ticket gets reviewedByModel set to the exact model id that reviewed it, as ROUTINE_INSTRUCTIONS.md → "Per-ticket model requirement" says. Test each ticket against its own Outcome and Test steps, check docs against code, and apply the bounce cap, all as set out in the Review Batch flow. Only a kick-back changes a ticket's status, exactly as that flow describes.\n\n` +
-        `${items.length} built, not-yet-reviewed ticket${items.length === 1 ? "" : "s"} on ${after.deployBranch || "the integration branch"}:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
-
-      try {
-        const res = await fetch(fireUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`,
-            "anthropic-beta": "experimental-cc-routine-2026-04-01",
-            "anthropic-version": "2023-06-01",
-          },
-          body: JSON.stringify({ text }),
-        });
-        if (!res.ok) {
-          fireError = `Routine fire endpoint responded with status ${res.status}`;
-          logger.error("Routine fire endpoint responded with a non-2xx status for review request", {
-            projectId: event.params.projectId,
-            status: res.status,
-            body: await res.text().catch(() => "<unreadable>"),
-          });
-        } else {
-          const body = await res.json().catch(() => null);
-          sessionId = body?.claude_code_session_id || null;
-          sessionUrl = sessionId ? `https://claude.ai/code/${sessionId}` : null;
-          logger.info("Fired Claude Code Routine for review request", {
-            projectId: event.params.projectId,
-            itemCount: items.length,
-            sessionId,
-            firedVia: routineCredVia,
-          });
-        }
-      } catch (err) {
-        fireError = err instanceof Error ? err.message : String(err);
-        logger.error("Failed to call Routine fire endpoint for review request", {
-          projectId: event.params.projectId,
-          error: fireError,
-        });
-      }
-
+    if (fireable.length || refused.length) {
       // Drives the spinner / visible error on the Review Batch button —
-      // read by reviewBatchButtonHTML in public/js/app.js.
+      // read by reviewBatchButtonHTML in public/js/app.js. In progress while
+      // any session started; an error otherwise, with why.
+      const anyStarted = sessions.some((x) => !x.error);
       await db.collection("projects").doc(event.params.projectId).set({
         reviewRoutine: {
-          status: fireError ? "error" : "in-progress",
+          status: anyStarted ? "in-progress" : "error",
           firedAt: new Date(),
           sessionId,
           sessionUrl,
-          itemCount: items.length,
-          errorMessage: fireError,
+          itemCount: sessions.reduce((n, x) => n + (x.error ? 0 : x.itemIds.length), 0),
+          errorMessage: [fireError, refusedNote || null].filter(Boolean).join(" ") || null,
           firedVia: routineCredVia,
+          sessions,
         },
       }, { merge: true });
-    } else {
+    }
+    if (groups.some((g) => !(g.fireUrl && g.token))) {
       logger.warn(
         "No Routine fire credentials available (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set) — skipping Routine fire for review request",
         { projectId: event.params.projectId }
       );
     }
+    const fireUrl = fireable.length ? fireable[0].fireUrl : null;
+    const token = fireable.length ? fireable[0].token : null;
 
     const webhookUrl = NOTIFY_WEBHOOK_URL.value();
     if (webhookUrl) {
-      const trackLine = sessionUrl
-        ? `Click here to track their progress: ${sessionUrl}`
-        : (fireUrl && token ? "(session link unavailable)" : "(Routine fire not configured — no Claude session started)");
+      const trackLine = (sessionUrl
+        ? `Click here to track their progress: ${sessionUrl}${sessions.length > 1 ? ` (one of ${sessions.length} sessions: agent tickets run under their owners' own accounts)` : ""}`
+        : (fireUrl && token ? "(session link unavailable)" : (refusedNote ? "(no Claude session started)" : "(Routine fire not configured — no Claude session started)")))
+        + (refusedNote ? ` ${refusedNote}` : "");
       try {
         const res = await fetch(webhookUrl, {
           method: "POST",
@@ -1615,15 +1645,20 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
       return;
     }
 
-    const { fireUrl, token, via: routineCredVia } = await resolveRoutineCredentials(
-      db, after.readyForTestingNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    // Agent tickets are presented under their owner's own Claude account: one
+    // session per owner on that owner's binding, never the clicker's or the
+    // shared token; the untagged tickets are one session as before
+    // (rFNYoDzDdDtQJpupDNpN, ownerSessionGroups above).
+    const { groups, refused, refusedNote, firedVia: routineCredVia } = await ownerSessionGroups(
+      db, items, after.readyForTestingNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
+    await noteOwnerRefusals(db, refused, "Not presented", { projectId });
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
-
-    if (fireUrl && token) {
-      const itemLines = items.map((i, idx) => {
+    const sessions = [];
+    const presentText = (batch, group, groupCount) => {
+      const itemLines = batch.map((i, idx) => {
         const summary = String(i.testSummary || i.desc || "").replace(/\s+/g, " ").trim();
         return `${idx + 1}. [id: ${i.id}] [${i.type === "bug" ? "Bug" : "Feature"}] ${i.title || "(untitled)"}` +
           `\n   Test link: ${i.previewUrl || "(none yet)"}` +
@@ -1633,33 +1668,50 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
           `\n   Ticket: ${origin}/#item-${i.id}` +
           `\n   ${summary.slice(0, 600)}${summary.length > 600 ? "…" : ""}`;
       }).join("\n");
+      const ownerLine = group.owner
+        ? `These are ${group.owner}'s agent tickets, so this session runs under their own Claude account; present only these.\n\n`
+        : (groupCount > 1 ? "Agent tickets that landed with these are presented by their owners' own sessions; present only these.\n\n" : "");
       const selfReportHint = `\n\nWhen you have presented the column (or if you had to stop early), PATCH projects/${projectId} with readyForTestingRoutine.status set to "done" (or "error" with an errorMessage) and readyForTestingRoutine.finishedAt set to now.`;
-      const text = `=== READY FOR TESTING for "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board ===\n` +
-        `The pipeline just landed ${items.length} ticket${items.length === 1 ? "" : "s"} in this project's Ready for Testing column` +
+      return `=== READY FOR TESTING for "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board ===\n` +
+        `The pipeline just landed ${batch.length} ticket${batch.length === 1 ? "" : "s"} in this project's Ready for Testing column` +
         `${after.deployBranch ? ` (integration branch ${after.deployBranch})` : ""}. ` +
         `Your only job in this run is to PRESENT that column to the person so they can review it — follow ROUTINE_INSTRUCTIONS.md's "Ready for Testing" flow section. ` +
         `Do NOT investigate, build, re-test, approve, reject or move anything.\n\n` +
+        ownerLine +
         `Items:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
-      ({ sessionId, sessionUrl, fireError } = await fireRoutineSession(fireUrl, token, text, {
-        projectId, kind: "ready-for-testing", itemCount: items.length, firedVia: routineCredVia,
-      }));
-    } else {
-      fireError = "Routine fire not configured (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set)";
-      logger.warn("No Routine fire credentials available — skipping the Ready for Testing presentation session", { projectId });
+    };
+
+    for (const group of groups) {
+      if (!(group.fireUrl && group.token)) {
+        const msg = "Routine fire not configured (no member binding and CLAUDE_ROUTINE_FIRE_URL/CLAUDE_ROUTINE_TOKEN not set)";
+        logger.warn("No Routine fire credentials available — skipping the Ready for Testing presentation session", { projectId });
+        sessions.push({ owner: group.owner, itemIds: group.items.map((i) => i.id), sessionId: null, sessionUrl: null, error: msg, firedVia: group.via });
+        if (!fireError) fireError = msg;
+        continue;
+      }
+      const r = await fireRoutineSession(group.fireUrl, group.token, presentText(group.items, group, groups.length), {
+        projectId, kind: "ready-for-testing", itemCount: group.items.length, firedVia: group.via,
+      });
+      sessions.push({ owner: group.owner, itemIds: group.items.map((i) => i.id), sessionId: r.sessionId, sessionUrl: r.sessionUrl, error: r.fireError, firedVia: group.via });
+      if (!sessionId && r.sessionId) { sessionId = r.sessionId; sessionUrl = r.sessionUrl; }
+      if (r.fireError && !fireError) fireError = r.fireError;
     }
+    const anyStarted = sessions.some((x) => !x.error);
 
     // Same record the other fires keep (notifyRoutine/deployRoutine/...):
-    // which session is presenting, or why none is.
+    // which session is presenting, or why none is. sessions[] lists each one
+    // when agent tickets split the presentation by owner.
     await db.collection("projects").doc(projectId).set({
       readyForTestingRoutine: {
-        status: fireError ? "error" : "in-progress",
+        status: anyStarted ? "in-progress" : "error",
         firedAt: new Date(),
         sessionId,
         sessionUrl,
         itemCount: items.length,
-        sentItemIds: items.map((i) => i.id),
-        errorMessage: fireError,
+        sentItemIds: sessions.flatMap((x) => x.itemIds),
+        errorMessage: [fireError, refusedNote || null].filter(Boolean).join(" ") || null,
         firedVia: routineCredVia,
+        sessions,
       },
     }, { merge: true });
 

@@ -566,6 +566,148 @@ async function test(name, fn) {
     assert.strictEqual(db.__state.backlogItems.mine.status, "archived");
   });
 
+  // ── Review Batch, the Ready for Testing presentation, Run E2E and the
+  // release audit (rFNYoDzDdDtQJpupDNpN) ─────────────────────────────────
+  const OTHER_URL = "https://api.anthropic.com/v1/other/fire";
+  function builtSeed({ ownerBound = true, otherBound = false, otherOwned = false, onlyOwned = false } = {}) {
+    const s = seed({ ownerBound });
+    const built = { status: "ready-for-testing", deployCommit: "abc1234" };
+    Object.assign(s.backlogItems.mine, built);
+    Object.assign(s.backlogItems.plain, built);
+    if (onlyOwned) delete s.backlogItems.plain;
+    if (otherOwned) s.backlogItems.theirs = { projectId: PID, type: "bug", title: "Other's agent ticket", desc: "Fix", ownerEmail: OTHER, ...built };
+    if (otherBound) s.routineBindings[OTHER] = { email: OTHER, fireUrl: OTHER_URL, token: "other-token" };
+    return s;
+  }
+  const idsIn = (text) => [...text.matchAll(/\[id: ([^\]]+)\]/g)].map((m) => m[1]).sort();
+  const review = (index, by = OTHER) => updated(index.notifyOnProjectReviewBatch, { name: "Project", reviewRequestedAt: ts(Date.now()), reviewRequestedByEmail: by });
+  const present = (index, ids, by = OTHER) => updated(index.notifyOnItemsReadyForTesting, { name: "Project", readyForTestingNotifyRequestedAt: ts(Date.now()), readyForTestingNotifyItemIds: ids, readyForTestingNotifyRequestedByEmail: by });
+
+  await test("planOwnedSessions groups agent tickets by owner whoever triggered; firedViaOf names the mix", () => {
+    const plan = of.planOwnedSessions([{ id: "m", ownerEmail: OWNER }, { id: "p" }, { id: "t", ownerEmail: "Other@Example.com" }, { id: "m2", ownerEmail: OWNER }]);
+    assert.deepStrictEqual(plan.shared.map((i) => i.id), ["p"]);
+    assert.deepStrictEqual(plan.byOwner[OWNER].map((i) => i.id), ["m", "m2"]);
+    assert.deepStrictEqual(plan.byOwner[OTHER].map((i) => i.id), ["t"]);
+    const unbound = of.refuseUnboundOwners(plan, (o) => o === OWNER);
+    assert.deepStrictEqual(unbound.refused.map((r) => [r.item.id, r.reason]), [["t", "no-binding"]]);
+    assert.strictEqual(of.firedViaOf("shared", { shared: 2 }), "shared");
+    assert.strictEqual(of.firedViaOf("member", { shared: 1, owned: 1 }), "member+owner");
+    assert.strictEqual(of.firedViaOf("shared", { owned: 3 }), "owner");
+  });
+
+  await test("Review Batch: the agent ticket is reviewed on its owner's Routine, the plain one on the shared one, whoever clicked", async () => {
+    const db = makeFakeDb(builtSeed());
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => review(index));
+    assert.strictEqual(stub.calls.length, 2);
+    const own = stub.calls.find((c) => c.url === OWNER_URL);
+    const shared = stub.calls.find((c) => c.url === SHARED_URL);
+    assert.strictEqual(own.auth, "Bearer owner-token");
+    assert.deepStrictEqual(idsIn(own.text), ["mine"], "the owner's session sees only the owner's ticket");
+    assert.deepStrictEqual(idsIn(shared.text), ["plain"], "the shared session never carries the agent ticket");
+    assert.match(own.text, /=== REVIEW REQUEST/);
+    assert.match(own.text, /owner@example\.com's agent tickets/);
+    const rec = db.__state.projects[PID].reviewRoutine;
+    assert.strictEqual(rec.status, "in-progress");
+    assert.strictEqual(rec.firedVia, "shared+owner");
+    assert.strictEqual(rec.sessions.length, 2);
+    assert.deepStrictEqual(rec.sessions.find((x) => x.owner === OWNER).itemIds, ["mine"]);
+  });
+
+  await test("Review Batch: an owner with no binding gets nothing fired for their ticket, and the card says why", async () => {
+    const db = makeFakeDb(builtSeed({ ownerBound: false }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => review(index, OWNER));
+    assert.deepStrictEqual(stub.calls.map((c) => c.url), [SHARED_URL], "no shared-token fallback for the agent ticket");
+    assert.deepStrictEqual(idsIn(stub.calls[0].text), ["plain"]);
+    const notes = db.__state.backlogItems.mine.notes;
+    assert.match(notes.items[0].text, /^Not reviewed: Not started: owner@example\.com has no personal Claude Routine yet/);
+    assert.match(db.__state.projects[PID].reviewRoutine.errorMessage, /My Claude Routine/);
+    assert.strictEqual(db.__state.backlogItems.plain.notes, undefined, "the plain ticket is untouched");
+  });
+
+  await test("Review Batch: only an unbound owner's ticket → nothing fires and the button shows the error", async () => {
+    const db = makeFakeDb(builtSeed({ ownerBound: false, onlyOwned: true }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => review(index));
+    assert.strictEqual(stub.calls.length, 0);
+    assert.strictEqual(db.__state.projects[PID].reviewRoutine.status, "error");
+    assert.match(db.__state.projects[PID].reviewRoutine.errorMessage, /never runs on the shared project token/);
+  });
+
+  await test("Review Batch: two owners' tickets fire one session per owner", async () => {
+    const db = makeFakeDb(builtSeed({ otherBound: true, otherOwned: true, onlyOwned: true }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => review(index, "admin@example.com"));
+    assert.deepStrictEqual(stub.calls.map((c) => c.url).sort(), [OTHER_URL, OWNER_URL].sort());
+    assert.deepStrictEqual(idsIn(stub.calls.find((c) => c.url === OWNER_URL).text), ["mine"]);
+    assert.deepStrictEqual(idsIn(stub.calls.find((c) => c.url === OTHER_URL).text), ["theirs"]);
+    assert.strictEqual(db.__state.projects[PID].reviewRoutine.firedVia, "owner");
+  });
+
+  await test("Review Batch: untagged tickets only → one session on the shared Routine, exactly as before", async () => {
+    const s = builtSeed();
+    delete s.backlogItems.mine.ownerEmail;
+    const db = makeFakeDb(s);
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => review(index));
+    assert.deepStrictEqual(stub.calls.map((c) => c.url), [SHARED_URL]);
+    assert.deepStrictEqual(idsIn(stub.calls[0].text), ["mine", "plain"]);
+    assert.doesNotMatch(stub.calls[0].text, /agent tickets/);
+    assert.strictEqual(db.__state.projects[PID].reviewRoutine.firedVia, "shared");
+  });
+
+  await test("Ready for Testing: the agent ticket is presented on its owner's Routine, the plain one on the shared one", async () => {
+    const db = makeFakeDb(builtSeed());
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => present(index, ["mine", "plain"]));
+    const fires = stub.calls.filter((c) => /\/fire$/.test(c.url));
+    assert.strictEqual(fires.length, 2);
+    assert.deepStrictEqual(idsIn(fires.find((c) => c.url === OWNER_URL).text), ["mine"]);
+    assert.strictEqual(fires.find((c) => c.url === OWNER_URL).auth, "Bearer owner-token");
+    assert.deepStrictEqual(idsIn(fires.find((c) => c.url === SHARED_URL).text), ["plain"]);
+    const rec = db.__state.projects[PID].readyForTestingRoutine;
+    assert.strictEqual(rec.firedVia, "shared+owner");
+    assert.deepStrictEqual(rec.sentItemIds.slice().sort(), ["mine", "plain"]);
+  });
+
+  await test("Ready for Testing: an owner with no binding gets nothing fired, and the card says why", async () => {
+    const db = makeFakeDb(builtSeed({ ownerBound: false }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => present(index, ["mine", "plain"], OWNER));
+    const fires = stub.calls.filter((c) => /\/fire$/.test(c.url));
+    assert.deepStrictEqual(fires.map((c) => c.url), [SHARED_URL]);
+    assert.deepStrictEqual(idsIn(fires[0].text), ["plain"]);
+    assert.match(db.__state.backlogItems.mine.notes.items[0].text, /^Not presented: Not started: owner@example\.com has no personal Claude Routine/);
+    assert.deepStrictEqual(db.__state.projects[PID].readyForTestingRoutine.sentItemIds, ["plain"]);
+  });
+
+  await test("Ready for Testing: two owners' tickets fire one session per owner", async () => {
+    const db = makeFakeDb(builtSeed({ otherBound: true, otherOwned: true }));
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => present(index, ["mine", "theirs"]));
+    const fires = stub.calls.filter((c) => /\/fire$/.test(c.url));
+    assert.deepStrictEqual(fires.map((c) => c.url).sort(), [OTHER_URL, OWNER_URL].sort());
+    assert.strictEqual(db.__state.projects[PID].readyForTestingRoutine.sessions.length, 2);
+    assert.strictEqual(db.__state.projects[PID].readyForTestingRoutine.firedVia, "owner");
+  });
+
+  await test("Run E2E stays one project-level session (documented exemption): it names no ticket", async () => {
+    const db = makeFakeDb(builtSeed());
+    const { index } = loadIndex(db, SECRETS);
+    const stub = await withFetch(() => updated(index.notifyOnProjectRunE2E, { name: "Project", repoFolder: "backlog-tracker", e2eRequestedAt: ts(Date.now()), e2eRequestedMode: "quick", e2eRequestedByEmail: OTHER }));
+    assert.deepStrictEqual(stub.calls.map((c) => c.url), [SHARED_URL]);
+    assert.deepStrictEqual(idsIn(stub.calls[0].text), [], "the E2E session carries no ticket");
+  });
+
+  await test("REQUIREMENTS.md records which sessions follow the owner and why E2E and the release audit don't", () => {
+    const req = require("fs").readFileSync(require("path").join(__dirname, "..", "REQUIREMENTS.md"), "utf8");
+    const section = req.slice(req.indexOf("## Agent tickets fire under their owner's own Claude account"));
+    assert.match(section, /\*\*Review Batch\*\*\s+\(`notifyOnProjectReviewBatch`\)/);
+    assert.match(section, /\*\*Ready for\s+Testing presentation\*\* \(`notifyOnItemsReadyForTesting`\)/);
+    assert.match(section, /\*\*Exempt, on purpose\*\*/);
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) process.exit(1);
 })();

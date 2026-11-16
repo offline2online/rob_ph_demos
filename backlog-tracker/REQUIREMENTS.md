@@ -138,7 +138,8 @@ Cloud Functions, own Hosting site, own IAM/billing; see
     sentItemIds: string[],
     finishedAt?: timestamp,
     errorMessage?: string,
-    firedVia?: "member" | "shared",
+    firedVia?: "member" | "shared" | "owner" | "member+owner" | "shared+owner", // "owner": agent tickets presented on their owner's binding (rFNYoDzDdDtQJpupDNpN)
+    sessions?: { owner: string | null, itemIds: string[], sessionId: string | null, sessionUrl: string | null, error: string | null, firedVia: string }[], // one per session fired; reviewRoutine carries the same (see "Agent tickets fire under their owner's own Claude account")
   },
 }
 ```
@@ -4431,8 +4432,40 @@ never the shared project token, and never on someone else's click.
     agent tickets are left out of the session; the clicker's own are
     included only through their binding, and the session then runs on it.
     What was left out is on `groomRoutine.note`; nothing left fires nothing.
-  - Review Batch, Run E2E, the Ready for Testing presentation and the
-    release audit are unchanged: they build nothing for a ticket.
+  - **Review Batch** (`notifyOnProjectReviewBatch`) and the **Ready for
+    Testing presentation** (`notifyOnItemsReadyForTesting`), ticket
+    rFNYoDzDdDtQJpupDNpN (16 Nov 2026): these are sessions about tickets
+    that are already built, so an agent ticket in the batch is reviewed or
+    presented under its owner's own account too. The batch is split
+    (`planOwnedSessions` in `functions/owner-firing.js`,
+    `ownerSessionGroups` in `functions/index.js`): the untagged tickets are
+    one session on the clicker's (or build requester's) binding, else the
+    shared Routine, exactly as before; each owner's agent tickets are one
+    session on that owner's binding and nothing else, whoever pressed
+    Review Batch, so a batch mixing two owners fires one session per owner.
+    Unlike Ready for Dev, someone else's press is not refused: these steps
+    are pipeline gates on finished work, like the automatic rebuild, and
+    refusing them would leave an agent ticket unreviewable by anyone but
+    its owner. An owner with no usable binding gets nothing fired for their
+    tickets, never the shared token: each such card gets a note "Not
+    reviewed: …" / "Not presented: …" with the build's no-binding message,
+    and `reviewRoutine.errorMessage` / `readyForTestingRoutine.errorMessage`
+    carries it. Both records gain `sessions: [{owner, itemIds, sessionId,
+    sessionUrl, error, firedVia}]` (one per session fired), keep the first
+    session's `sessionId`/`sessionUrl` on top, and `firedVia` reads
+    `"owner"` or `"<member|shared>+owner"` when agent tickets were in it.
+    Known limit: with several sessions, whichever finishes first marks the
+    record `done`.
+  - **Exempt, on purpose**: **Run E2E** (`notifyOnProjectRunE2E`) and the
+    **release audit** (`onReleaseMarkedLive`) still run as one session on
+    the clicker's binding, else the shared Routine. Neither is a session
+    about a ticket: Run E2E names no ticket and runs a project's test
+    suites, writing only `projects/{id}.e2eStatus`; the release audit
+    reviews Help Centre articles against a whole release (every project and
+    owner in it) and writes only proposals on `faqArticles` and the
+    `releaseAudits` record, never a ticket. Splitting either per owner would
+    run the same suite, or audit the same articles, once per owner, with
+    competing results on one shared record.
 - **Board** (`public/js/owner-fire.js`, `app.js`): an agent ticket shows an
   owner chip (`person`). In Backlog, a viewer who may not start it (someone
   else's, or their own with no binding) sees its Ready for Dev checkbox
@@ -4457,8 +4490,9 @@ never the shared project token, and never on someone else's click.
   ticket (see "Owner scoping and contract-change review" below). A person
   editing in the console is not limited yet: any editor can still change an
   agent ticket's text there, which its owner's Routine then reads.
-- **Tests**: `test/owner-firing.test.js` (the rule, the three fire handlers,
-  the endpoint) and `test/owner-fire.test.mjs` (the board's half), both in
+- **Tests**: `test/owner-firing.test.js` (the rule, the Ready for Dev,
+  Deploy, Groom, Review Batch and Ready for Testing handlers, Run E2E's
+  exemption, the endpoint) and `test/owner-fire.test.mjs` (the board's half), both in
   `npm run test:routine-binding`; `firestore-rules.test.js` (`ownerEmail` and
   `notifyAutomationAt` are not a browser's); the console-click scenario
   "agent tickets: owner-only Ready for Dev, set up My Claude Routine".
