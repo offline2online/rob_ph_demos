@@ -41,6 +41,7 @@ const FLAGS = {
   needsDecision: { blocked: { reason: "needs-decision", note: "A or B", setAt: iso(30 * H) } },
   waitingInput: { blocked: { reason: "waiting-on-input", note: "a file", setAt: iso(2 * H) } },
   modelUnavailable: { blocked: { reason: "model-unavailable", setAt: iso(H) } },
+  toolsUnavailable: { blocked: { reason: "tools-unavailable", missing: ["wordpress-mcp"], setAt: iso(H) } },
   waitingDependency: { blocked: { reason: "waiting-on-dependency", note: "Waiting for: Dep" }, dependsOnItemIds: ["dep1"] },
   dependencyStuck: { blocked: { reason: "waiting-on-dependency", note: "Waiting for: Dep", stuckOn: { itemId: "dep1" } }, dependsOnItemIds: ["dep1"] },
   dependsOn: { dependsOnItemIds: ["dep1"] },
@@ -247,6 +248,16 @@ test("statusEnteredPatch: only a real status change, never a loop, a writer's ow
   assert.strictEqual(esm.statusEnteredPatch({ status: "backlog", statusEnteredAt: iso(H) }, { status: "archived", statusEnteredAt: iso(0) }, "now"), null, "stamped by the writer");
   assert.deepStrictEqual(esm.statusEnteredPatch({ status: "backlog", statusEnteredAt: iso(H) }, { status: "archived", statusEnteredAt: iso(H) }, "now"), { statusEnteredAt: "now" });
   assert.strictEqual(esm.statusEnteredPatch({ status: "x" }, undefined, "now"), null, "a delete");
+});
+
+test("tools-unavailable (Flow 8/9): names the missing tool, waits on a decision, and shows on Needs attention", () => {
+  const card = { id: "t1", projectId: "p", status: "backlog", title: "Hero copy", blocked: { reason: "tools-unavailable", missing: ["wordpress-mcp"], setAt: iso(30 * H) } };
+  const st = esm.cardState(card, {}, NOW);
+  assert.strictEqual(st.state, "tools-unavailable");
+  assert.match(st.line, /^Not built: this session has no wordpress-mcp/);
+  assert.strictEqual(st.waitingOn, "decision");
+  assert.ok(esm.needsAttention([card], [{ id: "p", name: "P" }], NOW).some((x) => x.id === "t1"), "listed for a person");
+  assert.match(esm.cardState({ ...card, blocked: { reason: "tools-unavailable", setAt: iso(H) } }, {}, NOW).line, /^Not built: a tool this project needs is missing/);
 });
 
 console.log(`card-state: ${passed} passed`);

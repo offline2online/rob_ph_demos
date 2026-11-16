@@ -285,10 +285,12 @@
         </div>
         <div class="ni-field" data-ni-field="model">
           <label class="field-label" for="ni-model-select">Model</label>
-          <select id="ni-model-select" class="ni-input">
+          <select id="ni-model-select" class="ni-input" aria-describedby="ni-model-suggest">
+            <option value="auto">Auto — suggested from the description</option>
             <option value="standard">Standard — the default build model</option>
             <option value="advanced">Advanced — Claude Opus only</option>
           </select>
+          <p class="field-hint model-suggest" id="ni-model-suggest" aria-live="polite">Suggested: Standard</p>
         </div>
 
         <!-- Attachments — same screenshot/screen-recording flow as the Edit
@@ -659,11 +661,13 @@
         </div>
         <p class="field-hint">Effort/priority (cwehxSMZv8noJQv5kB22): concrete signals for the "Feed in requirements" clustering preview to sort and batch on — set here to override its automatic guess, or leave Unset to keep using that guess.</p>
         <label class="field-label" for="ei-model-select">Model</label>
-        <select id="ei-model-select">
+        <select id="ei-model-select" aria-describedby="ei-model-suggest">
+          <option value="auto">Auto — suggested from the description</option>
           <option value="standard">Standard — the default build model</option>
           <option value="advanced">Advanced — Claude Opus only</option>
         </select>
-        <p class="field-hint">Which Claude model must build and review this ticket. An Advanced ticket is never built on a lesser model: if Claude Opus isn't available it is skipped and flagged instead.</p>
+        <p class="field-hint model-suggest" id="ei-model-suggest" aria-live="polite"></p>
+        <p class="field-hint">Which Claude model must build and review this ticket. Auto follows the suggestion, which is worked out again whenever the description is saved; Standard or Advanced is your choice and is never changed by it. An Advanced ticket is never built on a lesser model: if Claude Opus isn't available it is skipped and flagged instead.</p>
         <p class="field-hint model-log" id="ei-model-log" hidden></p>
         <label class="field-label" for="ei-deps-search">Builds after</label>
         <div class="ei-deps-chips" id="ei-deps-chips"></div>
@@ -876,6 +880,29 @@
         </div>
       </div>
 
+      <div class="docs-block" data-docs-tab="general">
+        <h3>Required tools</h3>
+        <p class="field-hint">Connectors a build of this project needs, one per line (for example <code>wordpress-mcp</code>). Every build session checks it can reach them first; one that can&rsquo;t does not build, and the card reads &ldquo;Not built: this session has no &hellip;&rdquo; until someone adds the tool and clears the flag.</p>
+        <textarea id="docs-connectors-input" rows="3" placeholder="e.g. wordpress-mcp"></textarea>
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-primary" id="docs-connectors-save">Save required tools</button>
+        </div>
+      </div>
+
+      <div class="docs-block" data-docs-tab="general" id="docs-routine-block" hidden>
+        <h3>Project Routine</h3>
+        <p class="field-hint">A Claude Code Routine just for this project&rsquo;s builds, reviews and deploys &mdash; for a project whose builds need tools the shared Routine doesn&rsquo;t have. Paste its API trigger&rsquo;s URL and token. They are stored where nobody, you included, can read them back. Agent tickets still run on their owner&rsquo;s own Routine.</p>
+        <p class="field-hint" id="docs-routine-status" aria-live="polite">No project Routine: fires use the clicker&rsquo;s own Routine, or the shared one.</p>
+        <label class="field-label" for="docs-routine-url">Fire URL</label>
+        <input type="url" id="docs-routine-url" maxlength="2000" placeholder="https://api.anthropic.com/v1/claude_code/routines/&hellip;/fire" autocomplete="off">
+        <label class="field-label" for="docs-routine-token">Token</label>
+        <input type="password" id="docs-routine-token" maxlength="4000" autocomplete="off">
+        <div class="form-row" style="justify-content:flex-end;">
+          <button type="button" class="btn-ghost" id="docs-routine-clear">Remove</button>
+          <button type="button" class="btn-primary" id="docs-routine-save">Save project Routine</button>
+        </div>
+      </div>
+
       <div class="docs-block docs-doc-block" data-docs-tab="readme">
         <h3>README <span id="docs-readme-start"></span></h3>
         <p class="field-hint" id="docs-readme-hint">Keep in sync with this project's README.md in the repo.</p>
@@ -973,6 +1000,14 @@
         <span class="page-header-count" id="testing-loops-count">0 tickets</span>
       </div>
       <div id="testing-loops-grid"></div>
+    </section>
+
+    <section class="archive-page" id="builds-by-model-page" hidden>
+      <div class="page-header">
+        <h2>Builds by model — <span id="builds-by-model-project-name"></span> <span class="material-symbols-outlined page-header-info" title="Tickets built in the last 30 days, grouped by the Claude model that built them. Testing rounds are arrivals in Ready for Testing; rebuilds are send-backs plus automatic rebuilds after a refused patch. Use it to judge whether the automatic Standard / Advanced choice is right." aria-label="About this report">info</span></h2>
+        <span class="page-header-count" id="builds-by-model-count">0 models</span>
+      </div>
+      <div id="builds-by-model-grid"></div>
     </section>
 
     <section class="archive-page" id="archived-projects-page" hidden>

@@ -89,15 +89,27 @@ export function skillRows(skills) {
   }));
 }
 
-// settings/phaseSkillBindings is { build: slug[], deploy: slug[] }; one row per
-// bound skill and phase, with the skill's name when the library has it.
-export function bindingRows(bindings, skills) {
+// settings/phaseSkillBindings is { build: slug[], deploy: slug[] }, plus
+// optional byProject[projectId] and byArea[category] entries (16 Nov 2026,
+// "Flow 8/9"), each { build?: slug[], deploy?: slug[] } or a plain build
+// array, added to the global lists. One row per bound skill, phase and scope,
+// with the skill's name when the library has it.
+export function bindingRows(bindings, skills, projects) {
   const out = [];
-  for (const [phase, label] of [["build", "Build"], ["deploy", "Deploy"]]) {
-    const slugs = bindings && Array.isArray(bindings[phase]) ? bindings[phase] : [];
-    for (const slug of slugs) {
-      const s = (skills || []).find((x) => x.slug === slug);
-      out.push({ id: `${phase}:${slug}`, phase: label, slug, name: s ? s.name : "Not in the library yet", found: !!s });
+  const listFor = (v, phase) => (Array.isArray(v) ? (phase === "build" ? v : []) : (v && Array.isArray(v[phase]) ? v[phase] : []));
+  const scopes = [{ key: "all", label: "", value: bindings }];
+  for (const [pid, v] of Object.entries((bindings && bindings.byProject) || {})) {
+    const p = (projects || []).find((x) => x.id === pid);
+    scopes.push({ key: `project:${pid}`, label: ` · ${p && p.name ? p.name : "project " + pid}`, value: v, list: true });
+  }
+  for (const [area, v] of Object.entries((bindings && bindings.byArea) || {})) scopes.push({ key: `area:${area}`, label: ` · ${area} tickets`, value: v, list: true });
+  for (const scope of scopes) {
+    for (const [phase, label] of [["build", "Build"], ["deploy", "Deploy"]]) {
+      const slugs = scope.list ? listFor(scope.value, phase) : (scope.value && Array.isArray(scope.value[phase]) ? scope.value[phase] : []);
+      for (const slug of slugs) {
+        const s = (skills || []).find((x) => x.slug === slug);
+        out.push({ id: `${scope.key}:${phase}:${slug}`.replace(/^all:/, ""), phase: `${label}${scope.label}`, slug, name: s ? s.name : "Not in the library yet", found: !!s });
+      }
     }
   }
   return out;

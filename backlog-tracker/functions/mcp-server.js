@@ -1016,6 +1016,15 @@ function unauthorized(res, detail) {
 
 const { applyIntake, isIntakeFlag, INTAKE_SETTER, DESC_MAX } = require("./intake");
 const { MODEL_REQUIREMENTS, normaliseModelRequirement } = require("./model-requirement");
+const skillBindings = require("./skill-bindings");
+// "auto" (Flow 8/9): take the classifier's suggestion (model-suggest.js),
+// recomputed on every description save; standard/advanced are a choice that
+// is never overridden.
+const MODEL_CHOICES = [...MODEL_REQUIREMENTS, "auto"];
+function modelChoiceFields(choice) {
+  if (choice === "auto") return { modelAuto: true };
+  return { model: normaliseModelRequirement(choice), modelAuto: false };
+}
 const testRounds = require("./test-rounds");
 // Hidden-from-website rule shared with the export, the live feed and the
 // Support Inbox (3HabqHlC4WwL137CYTv1).
@@ -1806,6 +1815,13 @@ function itemSummary(id, d, projects) {
     comments: Array.isArray(d.notes) ? d.notes.length : 0,
     // Which model the build and review must run on (unset = "standard").
     model: normaliseModelRequirement(d.model),
+    // How the model was chosen (Flow 8/9): the classifier's suggestion and
+    // reasons, whether model follows it, and when failed rounds raised it.
+    modelAuto: d.modelAuto === true,
+    modelSuggested: d.modelSuggested && d.modelSuggested.model
+      ? { model: d.modelSuggested.model, reasons: (Array.isArray(d.modelSuggested.reasons) ? d.modelSuggested.reasons : []).map((r) => (r && r.text) || "").filter(Boolean) }
+      : null,
+    modelEscalatedAt: tsToISO(d.modelEscalatedAt),
     blocked: d.blocked && d.blocked.reason
       ? { reason: d.blocked.reason, note: d.blocked.note || "", setBy: d.blocked.setBy || null, setAt: tsToISO(d.blocked.setAt) }
       : null,
@@ -2632,7 +2648,7 @@ const TOOLS = [
   },
   {
     name: "create_backlog_item",
-    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. model (standard by default, or advanced for Claude Opus) says which model must build and review it. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
+    description: "File a new ticket into a project's Backlog column, attributed to you. The description is structured into the four intake sections (Outcome, Test steps, Dependencies, Spec reference). Only a missing or thin Outcome holds the ticket BLOCKED; any other missing section is left as a placeholder the build session fills in from the code and spec before it builds. A title, type and area are derived when you don't give them. model says which model must build and review it: auto (the default — the board suggests standard or advanced from the description and records why), standard, or advanced (Claude Opus); a model you give is never overridden. Tickets always start in Backlog — nothing here can put work straight into testing or deployment. " + BACKLOG_SCOPE,
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -2642,7 +2658,7 @@ const TOOLS = [
         title: { type: "string", description: "Optional short title; derived from desc when omitted." },
         type: { type: "string", enum: ["feature", "bug"], description: "Default feature." },
         category: { type: "string", enum: CATEGORIES, description: "Area impacted; best-guessed from desc when omitted." },
-        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "Which Claude model must build and review it: standard (default) or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model)." },
+        model: { type: "string", enum: MODEL_CHOICES, description: "Which Claude model must build and review it: auto (the default: the board's classifier suggests one from the description and records why), standard, or advanced (Claude Opus only — it is skipped and flagged rather than built on a lesser model). standard/advanced are your choice and are never overridden." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of tickets (any project) this one must build after. Ticket ids and exact open-ticket titles named in the description's Dependencies section are added automatically." },
         ownedByMe: { type: "boolean", description: "Agent ticket owned by you: it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding). Default false." },
       },
@@ -2662,8 +2678,9 @@ const TOOLS = [
       const title = String(args.title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
       const type = args.type === "bug" || args.type === "feature" ? args.type : intake.type;
       const category = CATEGORIES.includes(args.category) ? args.category : suggestCategory(desc);
-      if (args.model != null && !MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
-      const model = normaliseModelRequirement(args.model);
+      if (args.model != null && !MODEL_CHOICES.includes(args.model)) return toolError(`model must be one of: ${MODEL_CHOICES.join(", ")}.`);
+      // No model, or "auto": the onBacklogItemModelSuggest trigger fills it.
+      const modelFields = args.model != null && args.model !== "auto" ? modelChoiceFields(args.model) : {};
       const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
       // Build order: hand-set dependencies, plus whatever the Dependencies
       // section names (ticket ids, exact titles of open tickets here).
@@ -2694,7 +2711,7 @@ const TOOLS = [
       const ref = await db().collection("backlogItems").add({
         projectId: String(args.projectId),
         title, desc: intake.desc, type, category,
-        ...(model === "advanced" ? { model } : {}),
+        ...modelFields,
         ...(deps.ids.length ? { dependsOnItemIds: deps.ids, dependsOnSource: deps.source } : {}),
         ...(blocked ? { blocked } : {}),
         // Agent ticket owner (functions/owner-firing.js): only ever the caller.
@@ -2711,7 +2728,10 @@ const TOOLS = [
       await audit(session, "create_backlog_item", { itemId: ref.id, projectId: String(args.projectId), title });
       return textResult({
         created: true, itemId: ref.id, projectId: String(args.projectId),
-        title, type, category, model, status: "backlog",
+        title, type, category,
+        // "auto" until the intake trigger has scored it (get_backlog_item then
+        // shows the model and modelSuggested with its reasons).
+        model: modelFields.model || "auto", status: "backlog",
         ownerEmail: args.ownedByMe === true ? session.email : null,
         dependsOn: await dependencyRefsFor(deps.ids),
         intake: intake.blocked
@@ -2733,7 +2753,7 @@ const TOOLS = [
         desc: { type: "string" },
         type: { type: "string", enum: ["feature", "bug"] },
         category: { type: "string", enum: CATEGORIES },
-        model: { type: "string", enum: MODEL_REQUIREMENTS, description: "standard, or advanced (Claude Opus only)." },
+        model: { type: "string", enum: MODEL_CHOICES, description: "auto (follow the board's suggestion), standard, or advanced (Claude Opus only). standard/advanced are kept over any suggestion." },
         dependsOnItemIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Replace the tickets this one builds after (any project; [] clears). A loop is refused." },
         ownedByMe: { type: "boolean", description: "true claims an unowned ticket as your agent ticket (it then fires (build, deploy, groom) only under your own personal Claude Routine, never the shared project token, and only you can start it. Needs a binding (Settings → My Claude Routine in the console, or set_my_routine_binding)); false releases your own (an admin may release anyone's). Another member's agent ticket can't be claimed." },
       },
@@ -2773,8 +2793,8 @@ const TOOLS = [
         fields.category = args.category;
       }
       if (args.model != null) {
-        if (!MODEL_REQUIREMENTS.includes(args.model)) return toolError(`model must be one of: ${MODEL_REQUIREMENTS.join(", ")}.`);
-        fields.model = args.model;
+        if (!MODEL_CHOICES.includes(args.model)) return toolError(`model must be one of: ${MODEL_CHOICES.join(", ")}.`);
+        Object.assign(fields, modelChoiceFields(args.model));
       }
       if (args.dependsOnItemIds != null) {
         const cur = snap.data() || {};
@@ -2885,7 +2905,7 @@ const TOOLS = [
   },
   {
     name: "set_phase_skill_bindings",
-    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. This feeds the Routine's prompt, hence admin-only.",
+    description: "Admin only. Add or remove skills (by slug) bound to the \"build\" or \"deploy\" phase in settings/phaseSkillBindings, which every Notify Claude / Deploy run loads. Without projectId or area this edits the global list every run gets; with projectId it edits that project's own list, with area (a ticket category such as \"PH Website\") that area's list — both are added to the global one for the tickets they match. Existing bindings are kept: pass slugs to add and/or remove. The skill's slug must exist in the skills library. A ticket that changes rendered UI always gets ph-designer whatever is bound. This feeds the Routine's prompt, hence admin-only.",
     scope: "board.write",
     role: "admin",
     inputSchema: {
@@ -2894,11 +2914,20 @@ const TOOLS = [
         phase: { type: "string", enum: ["build", "deploy"] },
         add: { type: "array", items: { type: "string" } },
         remove: { type: "array", items: { type: "string" } },
+        projectId: { type: "string", description: "Edit this project's own list (byProject) instead of the global one." },
+        area: { type: "string", enum: CATEGORIES, description: "Edit this ticket area's own list (byArea) instead of the global one." },
       },
       required: ["phase"], additionalProperties: false,
     },
     async run(args, session) {
       if (!["build", "deploy"].includes(args.phase)) return toolError("phase must be build or deploy.");
+      if (args.projectId != null && args.area != null) return toolError("Pass projectId or area, not both.");
+      if (args.area != null && !CATEGORIES.includes(args.area)) return toolError(`area must be one of: ${CATEGORIES.join(", ")}`);
+      if (args.projectId != null) {
+        const p = await db().collection("projects").doc(String(args.projectId)).get();
+        if (!p.exists) return toolError(`No project with id ${args.projectId}.`);
+      }
+      const target = { phase: args.phase, projectId: args.projectId != null ? String(args.projectId) : null, area: args.area != null ? args.area : null };
       const add = (Array.isArray(args.add) ? args.add : []).map((x) => String(x).trim()).filter(Boolean);
       const remove = new Set((Array.isArray(args.remove) ? args.remove : []).map((x) => String(x).trim()));
       if (!add.length && !remove.size) return toolError("Pass at least one slug in add or remove.");
@@ -2909,13 +2938,12 @@ const TOOLS = [
       }
       const ref = db().collection("settings").doc("phaseSkillBindings");
       const snap = await ref.get();
-      const cur = snap.exists && Array.isArray((snap.data() || {})[args.phase]) ? snap.data()[args.phase].map(String) : [];
-      const next = cur.filter((x) => !remove.has(x));
-      for (const slug of add) if (!next.includes(slug)) next.push(slug);
-      if (next.length > 20) return toolError("At most 20 skills can be bound to a phase.");
-      await ref.set({ [args.phase]: next, updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
-      await audit(session, "set_phase_skill_bindings", { phase: args.phase, added: add, removed: [...remove] });
-      return textResult({ phase: args.phase, bound: next });
+      const current = snap.exists ? (snap.data() || {}) : {};
+      const next = skillBindings.nextBindingList(current, target, add, [...remove]);
+      if (next.length > skillBindings.MAX_PER_LIST) return toolError("At most 20 skills can be bound to a phase.");
+      await ref.set({ ...skillBindings.bindingWrite(current, target, next), updatedAt: FieldValue.serverTimestamp(), updatedByEmail: session.email }, { merge: true });
+      await audit(session, "set_phase_skill_bindings", { phase: args.phase, ...(target.projectId ? { projectId: target.projectId } : {}), ...(target.area ? { area: target.area } : {}), added: add, removed: [...remove] });
+      return textResult({ phase: args.phase, ...(target.projectId ? { projectId: target.projectId } : {}), ...(target.area ? { area: target.area } : {}), bound: next });
     },
   },
   {

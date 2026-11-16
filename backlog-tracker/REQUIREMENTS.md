@@ -212,7 +212,12 @@ train" → "Deploy queue".
   testVersion?: string,         // backlog-tracker's own APP_VERSION, stamped once on first entry to Ready for Testing and carried unchanged through Approved for Deployment, Deployed/Main Branch (Live), and Archived — see "Test version" below
   effort?: "small" | "medium" | "large" | null,     // cwehxSMZv8noJQv5kB22 — real value from the Edit item modal; null/unset falls back to build-batches.js's estimateEffort() guess. See "Feed in requirements → suggested build batches" below
   priority?: "low" | "medium" | "high" | null,      // same ticket — real value from the Edit item modal; null/unset falls back to estimatePriority()
-  model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item. See "Per-ticket model requirement" below
+  model?: "standard" | "advanced" | null,           // t1CU2q6LlxGd5pFB9vwG — which Claude model must build and review it; unset = "standard". "advanced" = Claude Opus only. Set from New item / Edit item, or MCP create_backlog_item / update_backlog_item; when no person chose it, the classifier's suggestion (CCPnRjXOH4YMsfy3C49r). See "Per-ticket model requirement" below
+  modelAuto?: boolean,          // CCPnRjXOH4YMsfy3C49r — true while `model` follows modelSuggested (set by the intake trigger, or by a person picking Auto); false when a person chose Standard/Advanced or an escalation raised it. A `model` with no modelAuto (set before this existed) counts as chosen
+  modelSuggested?: { model: "standard" | "advanced", reasons: [{ key: "security" | "pipeline" | "migration" | "contract" | "multiProject" | "large" | "long", text: string }], version: number }, // the deterministic classifier's verdict (model-suggest.js), on create, every description save and once over the open Backlog. Pipeline field
+  modelEscalatedAt?: timestamp, // when two counted send-backs or two refused patches raised a Standard ticket to Advanced (once). Pipeline field
+  autoReview?: { commit: string, requestedAt: timestamp }, // the landed commit an automatic review was requested for (one per commit). Pipeline field
+  toolsRetries?: number,        // the one automatic retry of a tools-unavailable ticket, after the project got its own Routine. Pipeline field
   ownerEmail?: string | null,   // xFzQgynkoMdV33iWJFZq — an agent ticket's owner (lowercased email): it fires only on that member's personal Routine, and only they can start it. Set by the server only (MCP ownedByMe; Send to Agent). Pipeline field — no browser writes it. See "Agent tickets fire under their owner's own Claude account"
   contractReview?: {            // ZmEWDC40NYOiojehfPjk — set when a ticket this one builds after (dependsOnItemIds) changed an interface contract on landing; cleared (null) when this ticket's own patch lands. Pipeline field (automation only). See "Owner scoping and contract-change review"
     status: "needs-review", upstreamItemId: string, upstreamTitle: string | null,
@@ -4477,6 +4482,99 @@ field.
 - `builtByModel` and `reviewedByModel` are pipeline fields
   (`itemPipelineFields()` in `firestore.rules`): only the automation user
   writes them.
+
+### Chosen per ticket automatically (16 Nov 2026)
+
+Ticket CCPnRjXOH4YMsfy3C49r ("Flow 8/9", 14 Nov 2026 board flow review).
+The Model field was set by hand and nothing chose it, nothing escalated, the
+review had no guard, skills were one global list, and tickets were fired at
+sessions without the tools they needed (7MbGv2fT… "Not built" four times for
+want of the WordPress MCP; v8q30p66… four builds for basic errors).
+
+- **Suggested at intake.** `public/js/model-suggest.js` (ESM, shared with the
+  browser; `functions/model-suggest.js` is its generated CommonJS copy,
+  `scripts/gen-model-suggest-cjs.sh`, and `test/model-suggest.test.js` fails
+  if they drift) is a deterministic classifier, no model call. A ticket is
+  Advanced when its title or description names permission or security code
+  (`firestore.rules`, `storage.rules`, `auth-gate.js`, OAuth/PKCE,
+  `consoleUsers`, access/refresh/ID tokens, secrets), the release pipeline
+  (`run-backlog-automation.js`, `train-lock.js`, `.github/workflows/`), a data
+  migration or backfill, an interface contract (`shared/`, `` `interfaces` ``),
+  files under two or more projects' owned paths (`ownedPaths`, else
+  `repoFolder`), effort Large, or is over 2,500 characters with five or more
+  numbered build items in its Outcome. Otherwise Standard. The verdict and
+  every reason that fired are stored as `modelSuggested`.
+- **Who sets `model`.** The `onBacklogItemModelSuggest` trigger runs on a
+  create and on every save of the title, description, area or effort (Backlog
+  only). If no person chose a model, `model` takes the suggestion with
+  `modelAuto: true`. A person's choice (New item / Edit item Standard or
+  Advanced, MCP `model: "standard" | "advanced"`) writes `modelAuto: false`
+  and is never overridden; picking **Auto** (the default, MCP
+  `model: "auto"`) hands it back. The automation's `sweepModelSuggestions`
+  scores every open Backlog card without a `modelSuggested` once.
+- **Card and forms.** An automatic Advanced chip reads "Advanced · Opus
+  (auto: touches security rules)" (the first reason; all of them on hover);
+  an escalated one "Advanced · Opus (raised after 2 failed rounds)". New item
+  and Edit item show the suggestion beside the select ("Suggested: Advanced —
+  touches security rules"), worked out live from the form.
+- **Escalation.** A Standard ticket with two counted send-backs (Failed
+  testing, a train test ejection, a review kick-back — "Testing rounds") is
+  raised in `processRevertFromTrain`; one whose patch was refused twice
+  (`autoRebuilds`) in `selfHealPlan`. Both happen before the next rebuild
+  fires: `model: "advanced"`, `modelAuto: false`, `modelEscalatedAt`, and the
+  note "Raised to Advanced after 2 failed rounds". Once per ticket
+  (`modelEscalation` in `functions/model-requirement.js`).
+- **Review guard.** An Advanced ticket whose `reviewedByModel` is set and is
+  not an Opus counts as not reviewed (`reviewNeedsOpus` / `reviewedForCommit`):
+  the card's review flag reads "Review blocked: needs Opus", Review Batch
+  picks it up again, and the Ready for Testing hand-off waits for it. A review
+  with no recorded model (older reviews) is not refused.
+- **Review without a click.** When an Advanced ticket, or any ticket scored
+  for `security` or `pipeline`, lands on the train, the automation stamps
+  `autoReview {commit, requestedAt}` and writes the project's
+  `reviewRequestedAt` with `reviewScope {itemIds, requestedAt}` carrying the
+  same timestamp. `notifyOnProjectReviewBatch` reviews only those tickets
+  when the two match; a person's own Review Batch press (a newer
+  `reviewRequestedAt`) reviews the whole batch as before. One automatic
+  review per landed commit; `handOffWaitingOn` holds the Ready for Testing
+  presentation on "review" until it is done (up to the hand-off's usual
+  limit). A kick-back counts as a send-back. Standard tickets keep the
+  manual button.
+- **Skills per project and per kind of work.** `settings/phaseSkillBindings`
+  takes optional `byProject[projectId]` and `byArea[category]` entries, each
+  `{build?: slug[], deploy?: slug[]}` (a plain array is read as `build`),
+  added to the global lists. A ticket that changes rendered UI (a UI area, or
+  its Outcome mentions a page, modal, button, CSS…) always gets
+  `ph-designer`. Each build fire lists the union with the reason for each
+  ("- ph-designer: this ticket changes rendered UI"), and the card records the
+  slugs on `lastFire.skills` (`functions/skill-bindings.js`). MCP
+  `set_phase_skill_bindings` takes `projectId` or `area`; Settings → Skills
+  lists every binding. The old shape is read as before.
+- **Required tools.** `projects/{id}.requiredConnectors` (up to 10 short
+  names, e.g. `["wordpress-mcp"]`; Docs page → Required tools) goes into every
+  build fire as the session's first step: check it can reach them; if not,
+  flag `blocked {reason: "tools-unavailable", missing: [...]}` and stop. The
+  card reads "Not built: this session has no wordpress-mcp" with the clear
+  (×) control and no Answer button, and it shows on Needs attention
+  (`card-state.js`). The automation never answers it as a question; it
+  retries it once by itself only when the project has been given its own
+  Routine since the flag (`toolsRetryPlan`).
+- **A project's own Routine.** `projectRoutineBindings/{projectId}` =
+  `{fireUrl, token, boundAt, boundByEmail}`, set or removed by an admin on the
+  project's Docs page and readable by nobody (`firestore.rules`); the project
+  doc only gets `routineBoundAt`. When set, the project's build, review,
+  deploy and Ready for Testing fires use it before the clicker's own binding
+  or the shared Routine (`resolveProjectRoutineCredentials`); agent tickets
+  still fire on their owner's binding. No read path returns it.
+- **What ran.** Card hover and Edit item: "Built on <model> · reviewed on
+  <model> · skills: <list>". The project's ⋮ menu → **Builds by model** shows
+  the last 30 days of tickets per `builtByModel`: tickets (Advanced among
+  them), testing rounds, rounds per ticket and rebuilds (send-backs plus
+  automatic rebuilds) (`buildsByModel`).
+- **Fields.** `modelSuggested`, `modelEscalatedAt`, `autoReview` and
+  `toolsRetries` are pipeline fields; `modelAuto` is a person's to write
+  (boolean). Project: `requiredConnectors` (members, ≤10), `routineBoundAt`
+  (admin), `reviewScope` (automation only).
 
 ## Agent tickets fire under their owner's own Claude account
 

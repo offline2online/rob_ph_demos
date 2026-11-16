@@ -386,6 +386,17 @@ as text until Anthropic switches on its MCP Apps host.
 | | `upsert_prospects`, leads | `list_prospects`, `list_leads`, `get_lead` | | | |
 | | `add_concept_critique` (a structured review of a concept: verdict, arguments for/against, assumptions, recommended changes, optional free-text `role`) | `list_concept_critiques` (also returns every role already used, to reuse) / `synthesise_concept_critiques` (agreement, disagreement, recommended adjustments; optional `role` filter) | | | |
 
+**Model: chosen for you unless you choose.** `create_backlog_item` and
+`update_backlog_item` take `model`: `auto` (the default on create — the
+board's classifier suggests `standard` or `advanced` from the description and
+records why, and works it out again whenever the description is saved),
+`standard` or `advanced` (Claude Opus). A model you give is never overridden
+by a suggestion; `auto` hands it back. `list_backlog_items` and
+`get_backlog_item` return `model`, `modelAuto`, `modelSuggested`
+(`{model, reasons}`, the reasons in words) and `modelEscalatedAt` (set when
+two failed rounds raised a Standard ticket to Advanced). See
+`REQUIREMENTS.md` → "Chosen per ticket automatically".
+
 **Build order: what a ticket builds after.** `create_backlog_item` takes an
 optional `dependsOnItemIds`: up to 20 ticket ids, from any project, that
 this ticket must build after. An id that names no ticket, or a list that
@@ -847,7 +858,7 @@ sign-in on `/mcp/authorize`.
 ## Blocked flag and phase skill bindings
 
 - `set_blocked` / `clear_blocked` (editor): flag a Backlog ticket as `needs-decision` or `waiting-on-input` with a one-line note. Blocked tickets are skipped by Notify Claude and the build routine, show a flag on the card, and are counted as "need your decision" in the Backlog column header. The flag clears when it is cleared from the card, or when anyone other than whoever set it comments on the ticket. Pipeline status is never touched.
-- `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt).
+- `set_phase_skill_bindings` (admin): add/remove skill slugs bound to the `build` or `deploy` phase in `settings/phaseSkillBindings` (the doc's Firestore rules are admin-only because it feeds the Routine's prompt). With `projectId` it edits that project's own list (`byProject`), with `area` (a ticket category) that area's (`byArea`); both are added to the global list for the tickets they match, and a UI ticket always gets `ph-designer` (16 Nov 2026, "Flow 8/9").
 
 ## Project freeze: `finalise_project` and `unfreeze_project`
 

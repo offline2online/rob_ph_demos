@@ -78,7 +78,30 @@ function modelGuardRefusal(item) {
   };
 }
 
+// Escalate after failed rounds (CCPnRjXOH4YMsfy3C49r, "Flow 8/9"). A Standard
+// ticket that has been sent back twice (countedSendBacks: Failed testing, a
+// train test ejection, a review kick-back — see functions/test-rounds.js), or
+// whose patch was refused twice (autoRebuilds: a conflict, a migration clash,
+// a placeholder left in the description), is raised to Advanced before its
+// next rebuild fires. Once only: modelEscalatedAt marks it, and an escalated
+// model is a choice (modelAuto false), so a later description edit's
+// suggestion never lowers it again. Pure.
+const ESCALATE_AFTER = 2;
+const ESCALATION_NOTE = "Raised to Advanced after 2 failed rounds";
+function modelEscalation(item, { countedSendBacks, autoRebuilds, now = new Date() } = {}) {
+  if (!item || requiresAdvancedModel(item) || item.modelEscalatedAt) return null;
+  const sent = Number(countedSendBacks ?? item.countedSendBacks) || 0;
+  const refused = Number(autoRebuilds ?? item.autoRebuilds) || 0;
+  if (sent < ESCALATE_AFTER && refused < ESCALATE_AFTER) return null;
+  const why = sent >= ESCALATE_AFTER ? `sent back ${sent} times` : `its patch was refused ${refused} times`;
+  return {
+    fields: { model: "advanced", modelAuto: false, modelEscalatedAt: now },
+    note: `${ESCALATION_NOTE} (${why}): its next build runs on Claude Opus. A person can set it back to Standard in Edit item.`,
+  };
+}
+
 module.exports = {
+  ESCALATE_AFTER, ESCALATION_NOTE, modelEscalation,
   MODEL_REQUIREMENTS, DEFAULT_MODEL_REQUIREMENT, MODEL_UNAVAILABLE_REASON, MODEL_LABELS, ADVANCED_AGENT_MODEL,
   normaliseModelRequirement, requiresAdvancedModel, isAdvancedModelId,
   modelRequirementBlock, reviewModelTag, modelGuardRefusal,

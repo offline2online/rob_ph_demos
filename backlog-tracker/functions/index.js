@@ -22,6 +22,8 @@ const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
 const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+const modelSuggest = require("./model-suggest");
+const skillBindings = require("./skill-bindings");
 // Contract-change review flags (ZmEWDC40NYOiojehfPjk): a flagged ticket's
 // build fire carries what its upstream changed.
 const { contractReviewBlock } = require("./contract-review");
@@ -145,7 +147,7 @@ async function ownerRoutineCredentials(db, ownerEmail) {
 // agent tickets are one session on that owner's binding and nothing else. An
 // owner with no usable binding has their tickets refused, with the build's
 // no-binding message (functions/owner-firing.js → planOwnedSessions).
-async function ownerSessionGroups(db, items, triggeredByEmail, sharedFireUrl, sharedToken) {
+async function ownerSessionGroups(db, items, triggeredByEmail, sharedFireUrl, sharedToken, projectId = null) {
   let plan = ownerFiring.planOwnedSessions(items);
   const credsByOwner = {};
   for (const owner of Object.keys(plan.byOwner)) credsByOwner[owner] = await ownerRoutineCredentials(db, owner);
@@ -153,7 +155,7 @@ async function ownerSessionGroups(db, items, triggeredByEmail, sharedFireUrl, sh
   const groups = [];
   let sharedVia = "shared";
   if (plan.shared.length) {
-    const c = await resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken);
+    const c = await resolveProjectRoutineCredentials(db, projectId, triggeredByEmail, sharedFireUrl, sharedToken);
     sharedVia = c.via;
     groups.push({ owner: null, items: plan.shared, fireUrl: c.fireUrl, token: c.token, via: c.via });
   }
@@ -227,15 +229,63 @@ function boardAccessBlock() {
 // by slug; ROUTINE_INSTRUCTIONS.md tells a fired session to fetch each
 // one's real content itself, fresh, via its existing board access, the
 // moment it actually needs it.
-async function phaseSkillsBlock(db, phase, phaseLabel) {
+//
+// 16 Nov 2026 (CCPnRjXOH4YMsfy3C49r, "Flow 8/9"): the doc also takes
+// byProject[projectId] and byArea[category] lists, added to the global one,
+// and a ticket that changes rendered UI always gets ph-designer — see
+// functions/skill-bindings.js. Each listed slug carries why it is there.
+async function loadPhaseSkillBindings(db) {
   const snap = await db.collection("settings").doc("phaseSkillBindings").get().catch(() => null);
-  const slugs = snap && snap.exists ? snap.data()[phase] : null;
-  if (!Array.isArray(slugs) || slugs.length === 0) return "";
-  const list = slugs.map((s) => `- ${s}`).join("\n");
-  return `=== SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n` +
-    `Before finishing this phase's work, fetch each of these from the shared, organisation-wide skills library (skills/{skillId} — query where slug == the name below, via your existing board access) and follow it. See ROUTINE_INSTRUCTIONS.md for exactly when in this phase to apply each one; a slug here that doesn't resolve to a skill yet is not an error, just note it and move on.\n` +
-    `${list}\n` +
-    `=== END SKILLS BOUND TO THE ${phaseLabel} PHASE ===\n\n`;
+  return snap && snap.exists ? (snap.data() || {}) : {};
+}
+async function phaseSkillsBlock(db, phase, phaseLabel, { projectId = null, projectName = null } = {}) {
+  const list = skillBindings.skillsFor(await loadPhaseSkillBindings(db), phase, { projectId, projectName });
+  return skillBindings.skillsBlock(list, phaseLabel);
+}
+
+// Required tools (CCPnRjXOH4YMsfy3C49r): projects/{id}.requiredConnectors
+// names the connectors a build of that project needs (["wordpress-mcp"] for
+// PH Website). The fire text makes checking them the session's first step,
+// and a session without one flags the card tools-unavailable instead of
+// stopping without a patch.
+const TOOLS_UNAVAILABLE_REASON = "tools-unavailable";
+function normaliseConnectors(list) {
+  return (Array.isArray(list) ? list : [])
+    .map((x) => String(x || "").trim())
+    .filter((x) => /^[A-Za-z0-9][A-Za-z0-9 ._-]{0,60}$/.test(x))
+    .filter((x, i, a) => a.indexOf(x) === i)
+    .slice(0, 10);
+}
+function requiredToolsBlock(itemId, connectors) {
+  const list = normaliseConnectors(connectors);
+  if (!list.length) return "";
+  return `\n\nREQUIRED TOOLS — first step, before anything else: check you can reach: ${list.join(", ")}. List your tools and wait for MCP servers that are still connecting. If one is not available, do not build: PATCH backlogItems/${itemId} with blocked {reason: "${TOOLS_UNAVAILABLE_REASON}", missing: [the names you could not reach], note: "Not built: this session has no <names>", setBy: "claude", setAt: <now>}, append a note saying what is missing, and set buildSession.status "error". The automation does not retry it on the same Routine; a person adds the connector (or a project Routine that has it) and clears the flag.`;
+}
+
+// A project's own Routine (CCPnRjXOH4YMsfy3C49r): projectRoutineBindings/
+// {projectId} = {fireUrl, token, boundAt, boundByEmail}, written by an admin
+// from the project's Docs page and never readable by anyone (firestore.rules),
+// so a project that needs special tools can have a Routine that has them.
+// Used for that project's fires when set; an owner-tagged agent ticket still
+// fires on its owner's own binding (functions/owner-firing.js).
+async function projectRoutineCredentials(db, projectId) {
+  if (!projectId) return null;
+  try {
+    const snap = await db.collection("projectRoutineBindings").doc(String(projectId)).get();
+    const b = snap.exists ? snap.data() : null;
+    if (!b || !b.fireUrl || !b.token) return null;
+    if (!routineFireHostAllowed(b.fireUrl)) {
+      logger.warn("project routine binding refused — fire URL host not allowed", { projectId });
+      return null;
+    }
+    return { fireUrl: b.fireUrl, token: b.token, via: "project" };
+  } catch (err) {
+    logger.error("Failed to read the project's routine binding — using the usual credentials", { projectId, error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+async function resolveProjectRoutineCredentials(db, projectId, triggeredByEmail, sharedFireUrl, sharedToken) {
+  return (await projectRoutineCredentials(db, projectId)) || resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken);
 }
 
 // The repo backlog-automation.yml lives in, and the event_type its
@@ -286,12 +336,12 @@ function heartbeatHint(itemId, buildAttemptId) {
   return `\n\nHEARTBEAT — build attempt ${buildAttemptId}. PATCH backlogItems/${itemId} with buildSession.heartbeatAt (timestampValue from \`date -u +%Y-%m-%dT%H:%M:%SZ\`), buildSession.phase ("reading", "building", "testing" or "packaging") and buildSession.attemptId "${buildAttemptId}" — an updateMask of exactly those three field paths — as your first action, at each phase change, and at least every 10 minutes while a long command runs (start the command in the background and beat while you wait). No first heartbeat within 10 minutes, or none for 20, and this session is treated as dead and the ticket is started again; a session that keeps beating is never restarted. Immediately before packaging, read the card again: if its buildAttemptId is no longer "${buildAttemptId}", or it has gained a deployCommit since you started, another session has this ticket — do NOT set patchReady and do NOT write buildSession (not even status "done": the record is that session's now); append what you found as a note and stop. Otherwise send patchAttemptId "${buildAttemptId}" in the same PATCH as patchFiles (a patch from a superseded attempt is refused). ROUTINE_INSTRUCTIONS.md → "Heartbeat and build attempt".`;
 }
 
-function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "", buildAttemptId = null, builtOn = [] }) {
+function perItemFireText({ item, siblings, projectId, projectName, prefix = "", suffix = "", buildAttemptId = null, builtOn = [], requiredConnectors = [] }) {
   const others = siblings.filter((s) => s.id !== item.id);
   const siblingBlock = others.length
     ? `\n\nThis ticket is ONE of ${siblings.length} sent together; each of the others is being built right now by its own parallel session, so do not build, edit or re-title them here:\n${others.map((s) => `- ${s.id}: ${s.title}`).join("\n")}\nIf this ticket genuinely cannot be built until one of them has landed (it needs code that ticket adds), do not leave it in Backlog with only a note: set dependsOnItemIds to those ids and blocked to {reason: "waiting-on-dependency", note: "Waiting for: <ticket titles>"} (plain English, no ticket ids; never use waiting-on-input for a dependency, it is not a question and shows an Answer button) — the automation clears the flag and starts this ticket again by itself the moment they reach Ready for Testing. Read ROUTINE_INSTRUCTIONS.md → "Parallel builds" before packaging.`
     : "";
-  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${contractReviewBlock(item)}${modelRequirementBlock(item)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
+  return `${prefix}Project: "${projectName}" (projectId: ${projectId}) on the Backlog Tracker & FAQs board has 1 item in Backlog for this session (ticket ${item.id}):\n\n1. [${item.type === "bug" ? "Bug" : "Feature"}] ${item.title} — ${item.desc}${itemNotesBlock(item)}${buildOrder.builtOnBlock(builtOn)}${contractReviewBlock(item)}${modelRequirementBlock(item)}${requiredToolsBlock(item.id, requiredConnectors)}${siblingBlock}${heartbeatHint(item.id, buildAttemptId)}${PRE_HANDBACK_TESTS}${perItemSelfReportHint(projectId, item.id)}${suffix}`;
 }
 
 // The rule builds skip most: three of six Retail Media Insights builds on
@@ -361,6 +411,9 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
       ...base, status: "started", sessionId: result.sessionId, sessionUrl: result.sessionUrl || null, error: null, attempts: (prior.attempts || 0) + 1, deferrals: prior.deferrals || 0, nextAttemptAt: null,
       // Marks a fire whose session was told to send heartbeats.
       ...(result.buildAttemptId ? { buildAttemptId: result.buildAttemptId } : {}),
+      // The skills the session was sent (Flow 8/9), for "skills: …" on the card.
+      ...(Array.isArray(result.skills) ? { skills: result.skills } : {}),
+      ...(result.firedVia ? { firedVia: result.firedVia } : {}),
     };
   }
   const deferred = !!result.deferred;
@@ -374,7 +427,7 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
   };
 }
 
-async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor = null, projectId, projectName, prefix, suffix, builtOnById = {}, fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
+async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor = null, projectId, projectName, prefix, suffix, builtOnById = {}, skillsForItem = null, requiredConnectors = [], fetchImpl = fetch, concurrency = FANOUT_CONCURRENCY, spacingMs = Number(process.env.FIRE_SPACING_MS ?? FIRE_SPACING_MS) }) {
   const results = new Array(items.length);
   let next = 0;
   let throttled = false;
@@ -390,7 +443,10 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor 
       if (wait) await new Promise((r) => setTimeout(r, wait));
       if (throttled) { deferNow(); continue; }
       const buildAttemptId = newBuildAttemptId();
-      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix, suffix, buildAttemptId, builtOn: builtOnById[item.id] || [] });
+      // Skills per ticket (Flow 8/9): the global list plus this project's and
+      // this area's, and ph-designer for a UI ticket, each with its reason.
+      const skills = skillsForItem ? skillsForItem(item) : [];
+      const text = perItemFireText({ item, siblings: items, projectId, projectName, prefix: `${prefix || ""}${skillBindings.skillsBlock(skills, "BUILD")}`, suffix, buildAttemptId, builtOn: builtOnById[item.id] || [], requiredConnectors });
       // An owner-tagged ticket fires through its owner's own binding
       // (functions/owner-firing.js); everything else through fireUrl/token.
       const creds = (credentialsFor && credentialsFor(item)) || { fireUrl, token };
@@ -398,7 +454,7 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor 
         const r = await fireRoutine(creds.fireUrl, creds.token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
         if (r.status === 429) throttled = true;
-        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId } : {}) };
+        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId, skills: skills.map((x) => x.slug), firedVia: creds.via || null } : {}) };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         logger.error("Routine fire threw for one ticket", { projectId, itemId: item.id, error });
@@ -602,14 +658,15 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
     // Notify Claude button reads to show a spinner, then itself becomes the
     // session link once a session id resolves — reflects the real outcome
     // of this specific click.
-    const { fireUrl, token, via: sharedCredVia } = await resolveRoutineCredentials(
-      db, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    // A project's own Routine binding (Flow 8/9) comes first when set.
+    const { fireUrl, token, via: sharedCredVia } = await resolveProjectRoutineCredentials(
+      db, event.params.projectId, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
     // Owner-tagged tickets use their owner's binding (looked up above), never
     // fireUrl/token; a ticket with no usable credentials is not sent.
     const credentialsFor = (item) => {
       const owner = ownerFiring.ticketOwner(item);
-      return owner ? credsByOwner[owner] : (fireUrl && token ? { fireUrl, token } : null);
+      return owner ? credsByOwner[owner] : (fireUrl && token ? { fireUrl, token, via: sharedCredVia } : null);
     };
     const withoutCreds = items.filter((i) => !credentialsFor(i));
     if (withoutCreds.length && withoutCreds.length < items.length) {
@@ -634,7 +691,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       const projectPromptBlock = (after.routinePromptMd || "").trim()
         ? `=== PROJECT-SPECIFIC INSTRUCTIONS FOR "${projectName}" (from this project's Docs page) ===\n${after.routinePromptMd.trim()}\n=== END PROJECT-SPECIFIC INSTRUCTIONS ===\n\n`
         : "";
-      const skillsBlock = await phaseSkillsBlock(db, "build", "BUILD");
+      const bindings = await loadPhaseSkillBindings(db);
+      const skillsForItem = (item) => skillBindings.skillsFor(bindings, "build", { projectId: event.params.projectId, projectName, item });
 
       // One session PER TICKET, started in parallel (4 Oct 2026). A click
       // used to start one session holding every selected ticket: it worked
@@ -647,7 +705,8 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       // touch the same file from overwriting each other.
       const fired = await fireBuildSessionsPerItem({
         items, fireUrl, token, credentialsFor, projectId: event.params.projectId, projectName,
-        prefix: `${projectPromptBlock}${skillsBlock}`, suffix: boardAccessBlock(), builtOnById,
+        prefix: projectPromptBlock, suffix: boardAccessBlock(), builtOnById,
+        skillsForItem, requiredConnectors: after.requiredConnectors,
       });
       const carried = ((previous && previous.sessions) || []).filter((x) => x && inFlight.includes(x.itemId));
       const sessions = [...carried, ...fired.map((f) => ({ itemId: f.itemId, sessionId: f.sessionId, sessionUrl: f.sessionUrl, error: f.error }))];
@@ -859,8 +918,8 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       }, { merge: true });
       return;
     }
-    const { fireUrl, token, via: routineCredVia } = ownerDeployCreds || await resolveRoutineCredentials(
-      db, after.deployNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+    const { fireUrl, token, via: routineCredVia } = ownerDeployCreds || await resolveProjectRoutineCredentials(
+      db, event.params.projectId, after.deployNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
     let sessionId = null;
     let sessionUrl = null;
@@ -898,7 +957,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // deploy was actually running or hadn't been requested yet.
       const selfReportHint = `\n\nWhen you finish this run (whether you completed everything or stopped early on a blocker), PATCH projects/${event.params.projectId} with deployRoutine.status set to "done" (or "error" with an errorMessage, if you stopped early) and deployRoutine.finishedAt set to now — the board shows a working/spinning state on its Deploy to Main button until it sees this. Name the sub-fields in the update mask (updateMask.fieldPaths=deployRoutine.status&updateMask.fieldPaths=deployRoutine.finishedAt, plus deployRoutine.errorMessage if set) so the record's firedAt and sessionUrl are kept; do not PATCH the whole deployRoutine map. A "done" report IS the hand-over: the pipeline sets trainReady itself the moment it lands (onDeployRoutineSettled), so do not attempt the trainReady write.`;
 
-      const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY");
+      const skillsBlock = await phaseSkillsBlock(getFirestore(), "deploy", "DEPLOY", { projectId: event.params.projectId, projectName });
 
       const built = buildDeployFireText(items, (itemLines) =>
         `${projectPromptBlock}${skillsBlock}=== DEPLOY REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
@@ -1273,10 +1332,22 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
     const itemsSnap = await db.collection("backlogItems")
       .where("projectId", "==", event.params.projectId)
       .get();
-    const items = itemsSnap.docs
+    // An Advanced ticket reviewed on anything but an Opus counts as not
+    // reviewed (Flow 8/9, model-suggest.js → reviewNeedsOpus).
+    let items = itemsSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((i) => i.status === "ready-for-testing" && i.deployCommit
-        && (!i.reviewStatus || i.reviewedCommit !== i.deployCommit));
+      .filter((i) => i.status === "ready-for-testing" && i.deployCommit && !modelSuggest.reviewedForCommit(i));
+    // An automatic review (Flow 8/9): the automation requested a review of
+    // the tickets that need one without a click, and wrote which ones in
+    // reviewScope with the same timestamp. A person's own Review Batch press
+    // has a newer reviewRequestedAt, so it reviews the whole batch.
+    const scope = after.reviewScope;
+    const scopeMs = scope && scope.requestedAt && typeof scope.requestedAt.toMillis === "function" ? scope.requestedAt.toMillis() : NaN;
+    const automatic = !!(scope && Array.isArray(scope.itemIds) && scope.itemIds.length && scopeMs === afterMs);
+    if (automatic) {
+      const wanted = new Set(scope.itemIds);
+      items = items.filter((i) => wanted.has(i.id));
+    }
 
     if (items.length === 0) {
       logger.info("Review requested but nothing is built and unreviewed — nothing to fire the Routine for", {
@@ -1292,7 +1363,7 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
     // shared token; the untagged tickets are one session as before
     // (rFNYoDzDdDtQJpupDNpN, ownerSessionGroups above).
     const { groups, refused, refusedNote, firedVia: routineCredVia } = await ownerSessionGroups(
-      db, items, after.reviewRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+      db, items, after.reviewRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value(), event.params.projectId
     );
     await noteOwnerRefusals(db, refused, "Not reviewed", { projectId: event.params.projectId });
     const fireable = groups.filter((g) => g.fireUrl && g.token);
@@ -1315,6 +1386,7 @@ exports.notifyOnProjectReviewBatch = onDocumentUpdated(
       return `${projectPromptBlock}=== REVIEW REQUEST for "${projectName}" (projectId: ${event.params.projectId}) on the Backlog Tracker & FAQs board ===\n` +
         `This is the post-build code-review gate, not an investigate-and-fix request. Load the ph-reviewer skill (skills/{skillId} where slug == "ph-reviewer") and follow ROUTINE_INSTRUCTIONS.md's own "Review Batch" flow section. Review the ${batch.length} ticket${batch.length === 1 ? "" : "s"} below together as one batch. This gate expects the most capable model (latest Claude Opus): state which model this session runs as in the review log and flag it there if it is a lesser one. Each ticket below carries its own Model requirement: a ticket marked Advanced is reviewed on Claude Opus only (delegate its review to an Opus subagent if this session is not Opus; if none is available, write reviewStatus "blocked" with reviewReason "model-unavailable: needs Claude Opus" and leave it unreviewed), and every reviewed ticket gets reviewedByModel set to the exact model id that reviewed it, as ROUTINE_INSTRUCTIONS.md → "Per-ticket model requirement" says. Test each ticket against its own Outcome and Test steps, check docs against code, and apply the bounce cap, all as set out in the Review Batch flow. Only a kick-back changes a ticket's status, exactly as that flow describes.\n\n` +
         ownerLine +
+        (automatic ? `This review was requested automatically when these tickets landed (they are Advanced, or touch security or the release pipeline), before the Ready for Testing hand-off presents them. Review only the tickets listed here; a kick-back counts as a send-back.\n\n` : "") +
         `${batch.length} built, not-yet-reviewed ticket${batch.length === 1 ? "" : "s"} on ${after.deployBranch || "the integration branch"}:\n${itemLines}${selfReportHint}${boardAccessBlock()}`;
     };
 
@@ -1651,7 +1723,7 @@ exports.notifyOnItemsReadyForTesting = onDocumentUpdated(
     // shared token; the untagged tickets are one session as before
     // (rFNYoDzDdDtQJpupDNpN, ownerSessionGroups above).
     const { groups, refused, refusedNote, firedVia: routineCredVia } = await ownerSessionGroups(
-      db, items, after.readyForTestingNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
+      db, items, after.readyForTestingNotifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value(), projectId
     );
     await noteOwnerRefusals(db, refused, "Not presented", { projectId });
     let sessionId = null;
@@ -2063,6 +2135,41 @@ exports.onPackageCardSettled = onDocumentWritten("backlogItems/{itemId}", async 
 });
 
 exports.onBacklogItemIntake = onDocumentWritten("backlogItems/{itemId}", runTicketIntake);
+
+// The model suggested at intake (CCPnRjXOH4YMsfy3C49r, "Flow 8/9"). On a
+// create and on every save of the description (or title, area, effort), the
+// deterministic classifier in model-suggest.js scores the ticket and its
+// verdict is stored as modelSuggested {model, reasons, version}. If no person
+// chose a model, model takes the suggestion (modelAuto: true); a person's
+// explicit choice, and an escalation, are never overridden. Backlog only: the
+// model only matters for the next build. Idempotent on its own output, which
+// is what stops it looping. The open Backlog is scored once by the
+// automation's sweepModelSuggestions (scripts/run-backlog-automation.js).
+const MODEL_INPUT_FIELDS = ["desc", "title", "category", "effort", "model", "modelAuto"];
+function modelSuggestNeeded(before, after) {
+  if (!after || (after.status || "backlog") !== "backlog") return false;
+  if (!before) return true;
+  if (MODEL_INPUT_FIELDS.some((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null))) return true;
+  const s = after.modelSuggested;
+  return !s || (Number(s.version) || 0) < modelSuggest.MODEL_SUGGEST_VERSION;
+}
+async function runModelSuggest(event, db = getFirestore()) {
+  const before = event.data?.before?.data();
+  const after = event.data?.after?.data();
+  if (!modelSuggestNeeded(before, after)) return null;
+  let projects = [];
+  try {
+    const snap = await db.collection("projects").get();
+    projects = snap.docs.map((d) => ({ id: d.id, ownedPaths: d.data().ownedPaths || null, repoFolder: d.data().repoFolder || null }));
+  } catch (err) {
+    logger.warn("Model suggestion: couldn't read projects' owned paths; scoring without them", { error: err instanceof Error ? err.message : String(err) });
+  }
+  const upd = modelSuggest.autoModelFields(after, modelSuggest.suggestModel(after, { projects }));
+  if (!Object.keys(upd).length) return null;
+  await event.data.after.ref.update(upd);
+  return upd;
+}
+exports.onBacklogItemModelSuggest = onDocumentWritten("backlogItems/{itemId}", (event) => runModelSuggest(event));
 
 // A build session's own buildSession.finishedAt is its guess at "now" and has
 // been hours wrong (19 Oct 2026), so the moment it reports done/error the
@@ -2782,4 +2889,4 @@ exports.kanbanAgentRollup = mcp.kanbanAgentRollup;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt, stampStatusEnteredAt, postTrainStuck, trainStuckMessage };
+exports.__test = { runModelSuggest, modelSuggestNeeded, requiredToolsBlock, normaliseConnectors, projectRoutineCredentials, resolveProjectRoutineCredentials, loadPhaseSkillBindings, phaseSkillsBlock, ownerSessionGroups, ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt, stampStatusEnteredAt, postTrainStuck, trainStuckMessage };

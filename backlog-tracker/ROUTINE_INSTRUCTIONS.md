@@ -164,6 +164,12 @@ read any other packaged instructions — `SKILL.md` first, then any
 skill (not yet authored) is not an error: note it in your final report and
 move on, don't block the run waiting for it.
 
+- **Each line is `slug: why it is listed`** (16 Nov 2026): the global list,
+  this project's own (`byProject`), this ticket's area's (`byArea`), and
+  `ph-designer` for every ticket that changes rendered UI ("this ticket changes
+  rendered UI"). The list is per ticket, so two tickets of the same click can
+  carry different skills. The slugs you were sent are recorded on the card
+  (`lastFire.skills`).
 - **A `BUILD` block, on the default Backlog flow**: before you package
   `patchFiles` for any item ("For each Backlog item found" → step 3), pull
   and actually apply the named skills — an engineering/build-conventions or
@@ -218,7 +224,10 @@ exist for this file to apply — `settings/phaseSkillBindings` is a plain
 Firestore doc (`{ build: string[], deploy: string[] }`), edited directly
 (no console UI for it yet; see that ticket's own "Keep the board visually
 unchanged" scope) — an empty or missing `build`/`deploy` array simply means
-no block is prepended that run, same as today.
+no block is prepended that run, same as today. Since 16 Nov 2026 it may also
+hold `byProject[projectId]` and `byArea[category]` entries (`{build?, deploy?}`
+lists, added to the global ones), set with the MCP `set_phase_skill_bindings`
+tool's `projectId` / `area` argument (`functions/skill-bindings.js`).
 
 ## Setup (do this first, every time)
 
@@ -547,7 +556,32 @@ model is set at claude.ai/code/routines and the fire endpoint takes only
 
 `builtByModel` and `reviewedByModel` are pipeline fields: only the automation
 user writes them, and the card's Advanced badge and the Edit item modal show
-them ("Built on … · reviewed on …").
+them ("Built on … · reviewed on … · skills: …").
+
+**The model is chosen per ticket automatically (16 Nov 2026, "Flow 8/9").**
+Nothing changes in how you honour the requirement above; what changes is who
+sets it. A deterministic classifier (`public/js/model-suggest.js`) marks a
+ticket Advanced when it touches permission/security code, the release
+pipeline, a data migration or backfill, an interface contract, two projects'
+files, is effort Large, or is long with five or more build items, and records
+why (`modelSuggested`); `model` follows it unless a person chose one. A
+Standard ticket sent back twice, or whose patch was refused twice, is raised
+to Advanced before its next rebuild ("Raised to Advanced after 2 failed
+rounds"). So the requirement in your fire text is the one to follow, even
+when the ticket's own description says otherwise: never write `model`,
+`modelAuto`, `modelSuggested` or `modelEscalatedAt` yourself. An Advanced
+ticket reviewed on a non-Opus model counts as not reviewed (the card reads
+"Review blocked: needs Opus") — record `reviewedByModel` truthfully.
+
+**Required tools.** A fire for a project with `requiredConnectors` carries a
+`REQUIRED TOOLS` line. Do it first: list your tools (wait for MCP servers that
+are still connecting) and check each named one is there. If one is not, do
+not build: PATCH the card with
+`blocked: {reason: "tools-unavailable", missing: [<names>], note: "Not built: this session has no <names>", setBy: "claude", setAt: <now>}`,
+append a note naming what is missing, and report `buildSession.status:
+"error"`. The card shows "Not built: this session has no …" with no Answer
+button; the automation does not retry it on the same Routine. Never set
+`waiting-on-input` for a missing tool.
 
 ## Owner scoping and upstream contract changes (16 Nov 2026)
 
@@ -584,7 +618,11 @@ is only a booking URL.
 
 Before declaring a PH Website ticket unbuildable, unverifiable or "pages
 missing" for lack of site access, check for that MCP (list your tools, wait for
-connecting servers) and use it. Flag the ticket blocked only if the
+connecting servers) and use it. When the project lists it in
+`requiredConnectors`, the fire's `REQUIRED TOOLS` line says so, and a session
+that lacks it flags the card `tools-unavailable` (see "Per-ticket model
+requirement" → "Required tools"); a project can also be given its own Routine
+that has the connector (Docs page → Project Routine). Flag the ticket blocked only if the
 personalisationhub.com WordPress MCP is genuinely unavailable, and say exactly
 that ("personalisationhub.com WordPress MCP not available in this session"),
 never "no personalisationhub.com access" while it is there.
@@ -1534,7 +1572,16 @@ code-review gate: it runs after build and before Approved for Deployment, so
 that gate stays a clean yes/no. The button press is the batch boundary; the
 `text` lists the tickets that were built and unreviewed at that moment
 (re-verify against Firestore: status `ready-for-testing`, a `deployCommit`,
-and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`).
+and no `reviewStatus`, or a `reviewedCommit` that differs from `deployCommit`,
+or an Advanced ticket whose `reviewedByModel` is not an Opus).
+
+**Some reviews start without a click** (16 Nov 2026, "Flow 8/9"): when an
+Advanced ticket, or one the classifier scored for security or the release
+pipeline, lands on the train, the automation requests a review of just those
+tickets, and the fire says "This review was requested automatically". Review
+only the tickets listed; everything below applies unchanged, and a kick-back
+counts as a send-back. The Ready for Testing hand-off waits for your review
+flag on those tickets before it presents them.
 
 1. **Load the `ph-reviewer` skill** (query `skills` where `slug ==
    "ph-reviewer"`, read `SKILL.md`) and follow it. If it does not resolve,

@@ -309,6 +309,18 @@ safe and moving:
   item; `run-backlog-automation.js` refuses an Advanced patch whose
   `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
   requirement".
+- **Model, skills and tools chosen per ticket** (16 Nov 2026, "Flow 8/9") —
+  `public/js/model-suggest.js` (generated CommonJS copy
+  `functions/model-suggest.js`, `scripts/gen-model-suggest-cjs.sh`) suggests
+  the model from the ticket at intake and records why (`modelSuggested`);
+  `model` follows it unless a person chose one. Two failed rounds raise a
+  Standard ticket to Advanced; an Advanced ticket reviewed on a non-Opus is
+  not reviewed; Advanced and security/pipeline tickets are reviewed without a
+  click when they land. Skills come per project and per area
+  (`functions/skill-bindings.js`), `ph-designer` for every UI ticket;
+  `projects/{id}.requiredConnectors` and a project's own Routine
+  (`projectRoutineBindings`, write-only) are on the Docs page; ⋮ → Builds by
+  model. See `REQUIREMENTS.md` → "Chosen per ticket automatically".
 
 Tests: `test/notify-fanout.test.js`, `test/parallel-builds.test.js`.
 `ROUTINE_INSTRUCTIONS.md` → "Parallel builds" is the session side.

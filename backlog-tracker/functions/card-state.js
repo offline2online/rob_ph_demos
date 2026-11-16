@@ -198,6 +198,12 @@ function cardState(item, project, now = Date.now(), ctx = {}) {
     }
     if (blocked.reason === "needs-decision") return result("needs-decision", `Needs your decision${age(since)}`, "decision", since, now, { threshold: "backlog-blocked", action: "answer" });
     if (blocked.reason === "model-unavailable") return result("model-unavailable", `Not built: needs Opus${age(since)}`, "decision", since, now, { threshold: "backlog-blocked" });
+    // Required tools (Flow 8/9): the session lacked a connector the project
+    // needs. A person adds it (or a project Routine) and clears the flag.
+    if (blocked.reason === "tools-unavailable") {
+      const missing = Array.isArray(blocked.missing) && blocked.missing.length ? blocked.missing.join(", ") : "";
+      return result("tools-unavailable", `${missing ? `Not built: this session has no ${missing}` : "Not built: a tool this project needs is missing"}${age(since)}`, "decision", since, now, { threshold: "backlog-blocked" });
+    }
     return result("waiting-input", `Waiting for your answer${age(since)}`, "decision", since, now, { threshold: "backlog-blocked", action: "answer" });
   }
   if (it.patchReady && it.buildAfterTrain) return result("held-patch", "Built · joins the next release", "automation", entered, now);

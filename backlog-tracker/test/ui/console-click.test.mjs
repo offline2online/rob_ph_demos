@@ -976,6 +976,121 @@ const scenarios = [
       await c.visible('.card[data-id="b1"] .blocked-clear-btn', "the clear control");
     },
   },
+  // Model chosen per ticket automatically (CCPnRjXOH4YMsfy3C49r, "Flow 8/9").
+  {
+    name: "Model: an automatically chosen Advanced card says why, Edit item shows the suggestion, and choosing Standard sticks",
+    seed: () => {
+      const s = only("b1");
+      Object.assign(s.docs.backlogItems.b1, {
+        desc: "Let editors write the new field in firestore.rules", model: "advanced", modelAuto: true,
+        modelSuggested: { model: "advanced", reasons: [{ key: "security", text: "touches security rules" }], version: 1 },
+        lastFire: { status: "started", skills: ["ph-designer", "ph-build-agent"] },
+      });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .model-badge', "Advanced · Opus (auto: touches security rules)", "the auto chip with its reason");
+      const tip = await c.page.getAttribute('.card[data-id="b1"] .model-badge', "title");
+      assert.match(tip, /Chosen automatically: touches security rules/);
+      assert.match(tip, /Skills: ph-designer, ph-build-agent/);
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      assert.strictEqual(await c.page.inputValue("#ei-model-select"), "auto", "the select says the model follows the suggestion");
+      await c.waitText("#ei-model-suggest", "Suggested: Advanced — touches security rules", "the suggestion beside the select");
+      await c.page.selectOption("#ei-model-select", "standard");
+      await c.click("#ei-save", "Save changes");
+      const writes = await c.waitWrites(1);
+      const w = writes.find((x) => x.path === "backlogItems/b1");
+      assert.ok(w, JSON.stringify(writes));
+      assert.strictEqual(w.data.model, "standard");
+      assert.strictEqual(w.data.modelAuto, false, "a person's choice is marked so no suggestion overrides it");
+    },
+  },
+  {
+    name: "New backlog item: the model suggestion follows the description, and Auto leaves the choice to it",
+    seed: () => only("r1"),
+    async run(c) {
+      await c.boardReady();
+      await c.click(".new-item-btn", "+ New backlog item");
+      await c.visible("#ni-backdrop");
+      assert.strictEqual(await c.page.inputValue("#ni-model-select"), "auto", "Auto is the default");
+      await c.waitText("#ni-model-suggest", "Suggested: Standard");
+      c.at("type a description that names the security rules", "#ni-desc-input");
+      await c.page.fill("#ni-desc-input", "Let viewers read the new collection in firestore.rules");
+      await c.waitText("#ni-model-suggest", "Suggested: Advanced — touches security rules", "the live suggestion");
+      await c.click("#ni-submit", "Add to backlog");
+      const writes = await c.waitWrites(1);
+      const adds = writes.filter((x) => x.op === "add" && x.path.startsWith("backlogItems/"));
+      assert.strictEqual(adds.length, 1, JSON.stringify(writes));
+      assert.ok(!("model" in adds[0].data) && !("modelAuto" in adds[0].data), "Auto writes no model: the intake trigger sets it");
+    },
+  },
+  {
+    name: "Model: a card whose session lacked a tool names it, with no Answer button, and clears",
+    seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { blocked: { reason: "tools-unavailable", missing: ["wordpress-mcp"], note: "Not built: this session has no wordpress-mcp", setBy: "claude" } }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-tools-unavailable', "Not built: this session has no wordpress-mcp", "the flag");
+      assert.strictEqual(await c.page.locator('.card[data-id="b1"] .blocked-answer-btn').count(), 0, "nothing to answer");
+      await c.visible('.card[data-id="b1"] .blocked-clear-btn', "the clear control");
+    },
+  },
+  {
+    name: "Model: an Advanced ticket reviewed on a lesser model reads Review blocked: needs Opus",
+    seed: () => { const s = only("r1"); Object.assign(s.docs.backlogItems.r1, { model: "advanced", reviewStatus: "passed", reviewedCommit: "abc123", reviewedByModel: "claude-sonnet-5-5" }); return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="r1"] .review-flag-blocked', "Review blocked: needs Opus", "the review guard");
+    },
+  },
+  {
+    name: "Builds by model: the ⋮ menu opens the read-only 30-day table",
+    seed: () => {
+      const s = only("r1", "l1");
+      const now = Date.now();
+      Object.assign(s.docs.backlogItems.r1, { builtByModel: "claude-sonnet-5-5", testRound: 2, sendBackCount: 1, statusEnteredAt: t(now - 86400000) });
+      Object.assign(s.docs.backlogItems.l1, { builtByModel: "claude-opus-5-5", model: "advanced", testRound: 1, statusEnteredAt: t(now - 2 * 86400000) });
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-models-btn", "Builds by model");
+      await c.visible("#builds-by-model-page");
+      await c.waitText("#builds-by-model-count", "2 models");
+      await c.waitText("#builds-by-model-grid", "claude-sonnet-5-5");
+      await c.waitText("#builds-by-model-grid", "claude-opus-5-5");
+      assert.deepStrictEqual(await c.writes(), [], "read-only");
+    },
+  },
+  {
+    name: "Docs page: required tools save on the project; the project Routine is an admin's, write-only",
+    seed: () => {
+      const s = seed();
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin" } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.openMenu();
+      await c.click(".project-docs-btn", "Project Settings");
+      await c.visible("#docs-page");
+      c.at("required tools", "#docs-connectors-input");
+      await c.page.fill("#docs-connectors-input", "wordpress-mcp");
+      await c.click("#docs-connectors-save", "Save required tools");
+      await until(async () => JSON.stringify(await c.page.evaluate((pid) => (globalThis.__fbStub.col("projects").get(pid) || {}).requiredConnectors, PID)) === '["wordpress-mcp"]', "requiredConnectors saved on the project", 5000);
+      c.at("the project Routine, admin only", "#docs-routine-block");
+      await c.visible("#docs-routine-block", "an admin sees the project Routine block");
+      await c.page.fill("#docs-routine-url", "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire");
+      await c.page.fill("#docs-routine-token", "sk-test-token");
+      await c.click("#docs-routine-save", "Save project Routine");
+      await until(async () => !!(await c.page.evaluate((pid) => (globalThis.__fbStub.col("projectRoutineBindings").get(pid) || {}).fireUrl, PID)), "the binding written to projectRoutineBindings", 5000);
+      await until(async () => (await c.page.inputValue("#docs-routine-token")) === "", "the token box clears after saving");
+      await c.waitText("#docs-routine-status", "A project Routine is set", "the status says one is set, without showing it");
+    },
+  },
   {
     name: "New backlog item: a near-copy offers Add as comment, which adds a note only",
     seed: () => only("b1"),
