@@ -51,7 +51,7 @@
       "slices": [
         {
           "start": "### The PH Agent Console is also an MCP server",
-          "end": "## These prototypes run iframed inside the real Personalisation Hub platform"
+          "end": "### Mic dictation (New Item form, and every comment box)"
         }
       ]
     },
@@ -62,7 +62,7 @@
       "prefix": "> Copy of `CLAUDE.md` (part 5 of 5) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
-          "start": "## These prototypes run iframed inside the real Personalisation Hub platform"
+          "start": "### Mic dictation (New Item form, and every comment box)"
         }
       ]
     },
