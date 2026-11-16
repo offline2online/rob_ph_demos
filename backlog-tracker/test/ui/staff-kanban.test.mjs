@@ -718,8 +718,13 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     await dragCard(p, "PH-34", { status: "in-progress" }, { input: prof.touch ? "touch" : "mouse" }).catch((e) => { if (!e.unreachable) throw e; });
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
-  await press(p, '.kb-card[data-key="PH-20"]');
-  // The ticket opens asynchronously: wait for its form before asking what it holds.
+  // Chromium can swallow a touch tap that comes a moment after the drag's finger lifted (no click at all), so tap
+  // until the card has had its click, then wait for the ticket's form before asking what it holds.
+  await p.evaluate(() => { window.__kbC1Click = false; document.addEventListener("click", (e) => { if (e.target.closest('.kb-card[data-key="PH-20"]')) window.__kbC1Click = true; }, true); });
+  await eventually(async () => {
+    if (!(await p.evaluate(() => window.__kbC1Click))) await press(p, '.kb-card[data-key="PH-20"]');
+    assert.ok(await p.evaluate(() => window.__kbC1Click), "the tap reaches the card as a click");
+  });
   await p.waitForSelector("#task-backdrop:not([hidden]) #f-title");
   assert.equal(await p.$("#f-save"), null, "no Save");
   assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
