@@ -56,6 +56,7 @@ import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel
 import { userRows, mountUsersGrid } from "./user-management.js";
 import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel, discoverNavSections } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
+import { withReleaseGroup, trainProjectIdsOf, trainReadiness, shipsWithLine, groupEditRefusal, trainLoad, isValidGroupBranch } from "./release-groups.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -367,6 +368,10 @@ function rebuildAllItems() {
 let items = [];
 let projects = [];
 let projectsLoaded = false;
+// releaseGroups/{id} (release-groups.js): projects that ship in one
+// deployable share one train. Empty until the listener answers, and for a
+// viewer the read is refused to — then every project is its own train.
+let releaseGroupsList = [];
 let latestArtifactVersions = new Map(); // projectId -> newest artifactVersions doc
 let interfaces = [];
 let programs = [];
@@ -1612,9 +1617,19 @@ function archiveSelectedCountForProject(pid) {
 // EVERYTHING on it. With 8 tickets approved and 2 still in Ready for
 // Testing, a merge would carry all 10 — so Deploy to Main is only offered
 // once the branch holds nothing but approved work.
+// A project in a release group shares its train with the group's other
+// projects (release-groups.js): "the train" is then every member's cards.
+function groupedProject(pid) {
+  const project = projects.find((p) => p.id === pid);
+  return withReleaseGroup(project || { id: pid }, releaseGroupsList);
+}
+function trainProjectIdsFor(pid) {
+  return trainProjectIdsOf(groupedProject(pid));
+}
 function trainItemsForProject(pid) {
+  const ids = trainProjectIdsFor(pid);
   return items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.deployCommit &&
+    ids.includes(i.projectId || GENERAL_PROJECT_ID) && i.deployCommit &&
     (i.status === "ready-for-testing" || i.status === "ready-to-publish")
   );
 }
@@ -1628,8 +1643,9 @@ function trainItemsForProject(pid) {
 // trainItemsForProject (its status isn't on the train any more), which is
 // exactly why it needs its own check rather than being folded into that one.
 function pendingTrainRevertsForProject(pid) {
+  const ids = trainProjectIdsFor(pid);
   return items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.revertRequested && i.deployCommit
+    ids.includes(i.projectId || GENERAL_PROJECT_ID) && i.revertRequested && i.deployCommit
   );
 }
 
@@ -2004,8 +2020,30 @@ async function finaliseProject(pid) {
   }, { merge: true });
 }
 
+// A release group's train is one train: the first approval in any member
+// project locks every member's Ready for Dev (deployToFeatureNow writes the
+// lock on all of them; this also reads it from any of them).
 function isTrainLocked(project) {
-  return !!(project && project.trainLocked);
+  if (!project) return false;
+  if (project.trainLocked) return true;
+  return trainProjectIdsFor(project.id).some((id) => id !== project.id && (projects.find((p) => p.id === id) || {}).trainLocked);
+}
+
+// "Ships with Staff Kanban · PH Agent Console" under a member project's
+// header, with the shared train's state on hover.
+function releaseGroupLineHTML(project) {
+  const grouped = groupedProject(project.id);
+  const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+  const line = shipsWithLine(grouped, byId);
+  if (!line) return "";
+  const onTrain = trainItemsForProject(project.id);
+  const testing = onTrain.filter((i) => i.status === "ready-for-testing").length;
+  const state = onTrain.length
+    ? `${onTrain.length} ticket${onTrain.length === 1 ? "" : "s"} on the shared train${testing ? `, ${testing} in Ready for Testing` : ", all approved"}`
+    : "Shared train empty";
+  return `<div class="release-group-line" title="${escapeHTML(`One train for every project in ${grouped.releaseGroup.name}: branch ${grouped.deployBranch}. Approving in any of them locks Ready for Dev in all, and Deploy to Main from any of them ships the whole train as one PR.`)}">
+    <span class="material-symbols-outlined" aria-hidden="true">merge_type</span><span>${escapeHTML(line)}</span><span class="release-group-state">${escapeHTML(state)}</span>
+  </div>`;
 }
 
 // Point 5 of "Ready for Dev CTA stays hidden after all train tickets are
@@ -2321,6 +2359,21 @@ function deployNotifyButtonHTML(project) {
     const deployCount = onTrain.length
       ? (onTrain.every((i) => i.status === "ready-to-publish") ? onTrain.length : 0)
       : legacyDeployItemsForProject(pid).length;
+    // A release group's shared train held only by another member project:
+    // this project's own column is fully approved, so say what it waits for
+    // ("Waiting for Staff Kanban: <title> is in Ready for Testing") instead
+    // of leaving the button silently absent.
+    if (!deployCount && onTrain.length && trainProjectIdsFor(pid).length > 1) {
+      const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+      const readiness = trainReadiness(groupedProject(pid), items, byId);
+      if (readiness.heldByOtherProject && readiness.reason) {
+        return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-held-by-group" disabled aria-disabled="true" title="${escapeHTML(`${readiness.reason}. Deploy to Main ships the whole shared train, so it waits for every project in the group.`)}">
+      <span class="material-symbols-outlined notify-claude-icon">hourglass_top</span>
+      <span class="notify-claude-label">Deploy to Main</span>
+      <span class="notify-claude-count-pill">${onTrain.filter((i) => i.status === "ready-to-publish").length}</span>
+    </button><span class="deploy-held-reason">${escapeHTML(readiness.reason)}</span>`;
+      }
+    }
     if (!deployCount) return "";
     // The train's required check is red (run-backlog-automation.js's
     // reportTrainTestResults sets trainTestsRed): merging would only park
@@ -2822,7 +2875,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
+      ${releaseGroupLineHTML(project)}${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -3884,6 +3937,15 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   renderSystemMap();
 }, onListenerError("projects"));
 
+// Release groups are small and change rarely. A refused or failed read only
+// means every project shows as its own train (what it was before groups
+// existed) — never worth the sign-in reload onListenerError does.
+onSnapshot(collection(db, "releaseGroups"), (snap) => {
+  releaseGroupsList = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  if (projectsLoaded) render();
+  renderSettingsGrids();
+}, (err) => { console.warn("backlog-tracker: releaseGroups listener", err && err.code); });
+
 // Latest signed-off artifact snapshot per project (written by the MCP server,
 // read-only here). One collection-group listener; a failure only hides the
 // "v<n>" line, so it never goes through onListenerError's sign-in reload.
@@ -4608,7 +4670,10 @@ async function deployToFeatureNow(pid) {
   // rather than only on the genuinely-first approval: it's idempotent, and
   // reading "is this the first" from a list the batch above just changed
   // would race its own write.
-  await setDoc(doc(db, "projects", pid), { trainLocked: true }, { merge: true });
+  // A release group shares one train, so the lock goes on every member.
+  for (const lockId of trainProjectIdsFor(pid)) {
+    await setDoc(doc(db, "projects", lockId), { trainLocked: true }, { merge: true });
+  }
 
   getDeploySelectedSet(pid).clear();
 }
@@ -10895,7 +10960,9 @@ function renderSettingsGrids() {
       { key: "type", header: "Type", width: 170, text: (r) => r.type, html: (r) => typeBadgeHTML({ type: r.type }, escapeHTML) },
       { key: "repo", header: "Repository folder", flex: 2, text: (r) => r.repoFolder || r.repoNote,
         html: (r) => r.repoFolder ? `<a href="https://github.com/offline2online/rob_ph_demos/tree/main/${encodeURI(r.repoFolder)}" target="_blank" rel="noopener"><code>${escapeHTML(r.repoFolder)}</code></a>` : sCell(r.repoNote) },
+      { key: "releaseGroup", header: "Release group", width: 170, text: (r) => releaseGroupNameOf(r.id), html: (r) => sCell(releaseGroupNameOf(r.id)) },
     ] }).setRows(rows);
+    renderReleaseGroupsSettings();
   } else if (settingsPage === "releases") {
     const rows = releaseRows(releases, projects, { compare: compareReleases });
     document.getElementById("settings-releases-count").textContent = plural(rows.length, "release");
@@ -10933,6 +11000,138 @@ function renderSettingsGrids() {
     ] }).setRows(automationRows(phaseBindings));
   }
 }
+// ── Settings → Projects: release groups (admin only) ──────────────────────
+// releaseGroups/{id} {name, deployBranch, projectIds[], createdAt} plus each
+// member's projects/{id}.releaseGroupId. Create, add or remove a project —
+// all refused while a train involved has tickets on it (groupEditRefusal),
+// because a move would strand those tickets on the other branch.
+function releaseGroupNameOf(pid) {
+  const g = groupedProject(pid).releaseGroup;
+  return g ? g.name : "";
+}
+function projectNameOf(pid) {
+  return (projects.find((p) => p.id === pid) || {}).name || pid;
+}
+function releaseGroupStatus(text, isError) {
+  const el = document.getElementById("release-group-status");
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || "";
+  el.classList.toggle("release-group-status-error", !!isError);
+}
+function renderReleaseGroupsSettings() {
+  const host = document.getElementById("settings-release-groups");
+  if (!host) return;
+  const admin = isConsoleAdmin();
+  const newBtn = document.getElementById("release-group-new-btn");
+  if (newBtn) newBtn.hidden = !admin;
+  const countEl = document.getElementById("settings-release-groups-count");
+  if (countEl) countEl.textContent = `${releaseGroupsList.length} group${releaseGroupsList.length === 1 ? "" : "s"}`;
+  const firstSel = document.getElementById("release-group-first-project");
+  const ungrouped = projects.filter((p) => !p.archived && !releaseGroupNameOf(p.id));
+  if (firstSel) firstSel.innerHTML = ungrouped.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name || p.id)}</option>`).join("");
+  if (!releaseGroupsList.length) {
+    host.innerHTML = `<p class="release-group-empty">No release groups. Every project has its own train.</p>`;
+    return;
+  }
+  host.innerHTML = releaseGroupsList.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map((g) => {
+    const members = (Array.isArray(g.projectIds) ? g.projectIds : []).map((pid) => `<span class="release-group-member">${escapeHTML(projectNameOf(pid))}${admin
+      ? `<button type="button" class="icon-btn release-group-remove-btn" data-group-id="${escapeHTML(g.id)}" data-project-id="${escapeHTML(pid)}" aria-label="Remove ${escapeHTML(projectNameOf(pid))} from ${escapeHTML(g.name || g.id)}" title="Remove from this group"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>`
+      : ""}</span>`).join("");
+    const add = admin && ungrouped.length
+      ? `<span class="release-group-add"><select class="release-group-add-select" data-group-id="${escapeHTML(g.id)}" aria-label="Project to add to ${escapeHTML(g.name || g.id)}">${ungrouped.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name || p.id)}</option>`).join("")}</select>
+         <button type="button" class="btn-ghost release-group-add-btn" data-group-id="${escapeHTML(g.id)}">Add project</button></span>`
+      : "";
+    return `<div class="release-group-row" data-group-id="${escapeHTML(g.id)}">
+      <div class="release-group-head"><strong>${escapeHTML(g.name || g.id)}</strong> <code>${escapeHTML(g.deployBranch || "")}</code></div>
+      <div class="release-group-members">${members || `<span class="release-group-empty">No projects</span>`}${add}</div>
+    </div>`;
+  }).join("");
+}
+// What a change would move: the group's shared train and the project's own.
+function releaseGroupRefusal(group, pid) {
+  const busy = [];
+  if (group) busy.push({ label: `${group.name || group.id}'s shared train`, count: trainLoad(items, group.projectIds || []) });
+  const project = projects.find((p) => p.id === pid);
+  if (project && !(group && (group.projectIds || []).includes(pid))) {
+    busy.push({ label: `${project.name || pid}'s own train`, count: trainLoad(items, [pid]) });
+  }
+  return groupEditRefusal(busy);
+}
+async function addProjectToReleaseGroup(groupId, pid) {
+  if (!isConsoleAdmin()) return;
+  const group = releaseGroupsList.find((g) => g.id === groupId);
+  if (!group || !pid) return;
+  if (releaseGroupNameOf(pid)) { releaseGroupStatus(`${projectNameOf(pid)} is already in a release group.`, true); return; }
+  const refusal = releaseGroupRefusal(group, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const batch = writeBatch(db);
+  batch.set(doc(db, "releaseGroups", groupId), { projectIds: [...(group.projectIds || []), pid], updatedAt: serverTimestamp() }, { merge: true });
+  batch.set(doc(db, "projects", pid), { releaseGroupId: groupId }, { merge: true });
+  await batch.commit();
+  releaseGroupStatus(`${projectNameOf(pid)} now ships with ${group.name || groupId}.`);
+}
+async function removeProjectFromReleaseGroup(groupId, pid) {
+  if (!isConsoleAdmin()) return;
+  const group = releaseGroupsList.find((g) => g.id === groupId);
+  if (!group) return;
+  const refusal = releaseGroupRefusal(group, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const left = (group.projectIds || []).filter((id) => id !== pid);
+  const batch = writeBatch(db);
+  // Back on its own deployBranch, which was never changed.
+  batch.set(doc(db, "projects", pid), { releaseGroupId: deleteField() }, { merge: true });
+  batch.set(doc(db, "releaseGroups", groupId), { projectIds: left, updatedAt: serverTimestamp() }, { merge: true });
+  await batch.commit();
+  releaseGroupStatus(`${projectNameOf(pid)} has its own train again.`);
+}
+async function createReleaseGroup(name, branch, pid) {
+  if (!isConsoleAdmin()) return;
+  const cleanName = String(name || "").trim();
+  if (!cleanName) { releaseGroupStatus("Give the group a name.", true); return; }
+  if (!isValidGroupBranch(branch)) { releaseGroupStatus("The branch must look like deploy/name (lower case, digits and dashes).", true); return; }
+  if (releaseGroupsList.some((g) => g.deployBranch === branch) || projects.some((p) => p.deployBranch === branch)) {
+    releaseGroupStatus(`${branch} is already another train's branch.`, true); return;
+  }
+  if (!pid) { releaseGroupStatus("Choose the group's first project.", true); return; }
+  const refusal = releaseGroupRefusal(null, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const ref = doc(collection(db, "releaseGroups"));
+  const batch = writeBatch(db);
+  batch.set(ref, { name: cleanName, deployBranch: branch, projectIds: [pid], createdAt: serverTimestamp() });
+  batch.set(doc(db, "projects", pid), { releaseGroupId: ref.id }, { merge: true });
+  await batch.commit();
+  document.getElementById("release-group-new-form").hidden = true;
+  releaseGroupStatus(`Created ${cleanName}. Add the projects that ship with ${projectNameOf(pid)}.`);
+}
+document.getElementById("release-group-new-btn")?.addEventListener("click", () => {
+  const form = document.getElementById("release-group-new-form");
+  form.hidden = !form.hidden;
+  releaseGroupStatus("");
+});
+document.getElementById("release-group-new-cancel")?.addEventListener("click", () => {
+  document.getElementById("release-group-new-form").hidden = true;
+});
+document.getElementById("release-group-new-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  createReleaseGroup(document.getElementById("release-group-name").value, document.getElementById("release-group-branch").value.trim(), document.getElementById("release-group-first-project").value)
+    .catch((err) => releaseGroupStatus(`Couldn't create the group: ${err.message || err}`, true));
+});
+document.getElementById("settings-release-groups")?.addEventListener("click", (e) => {
+  const rm = e.target.closest(".release-group-remove-btn");
+  if (rm) {
+    removeProjectFromReleaseGroup(rm.dataset.groupId, rm.dataset.projectId)
+      .catch((err) => releaseGroupStatus(`Couldn't remove it: ${err.message || err}`, true));
+    return;
+  }
+  const add = e.target.closest(".release-group-add-btn");
+  if (add) {
+    const sel = add.parentElement.querySelector(".release-group-add-select");
+    addProjectToReleaseGroup(add.dataset.groupId, sel && sel.value)
+      .catch((err) => releaseGroupStatus(`Couldn't add it: ${err.message || err}`, true));
+  }
+});
+
 async function loadPhaseBindings() {
   try {
     const snap = await getDoc(doc(db, "settings", "phaseSkillBindings"));

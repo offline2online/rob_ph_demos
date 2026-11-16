@@ -858,6 +858,104 @@ const scenarios = [
     },
   },
   {
+    // Release groups (Flow 9/9): two projects, one deployable, one train.
+    name: "Release group: header says who it ships with, and Deploy to Main names the other project's ticket that holds it",
+    seed: () => {
+      const s = only("d1");
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      s.docs.backlogItems.k1 = { projectId: "p2", title: "Kanban thing", desc: "x", type: "bug", category: "HQ Admin", status: "ready-for-testing", deployCommit: "aaa111", createdAt: t(T0 + 2), updatedAt: t(T0 + 2) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const mine = `.project[data-project-id="${PID}"]`;
+      await c.waitText(`${mine} .release-group-line`, "Ships with Other Project · Console Group");
+      await c.waitText(`${mine} .release-group-line`, "2 tickets on the shared train, 1 in Ready for Testing");
+      await c.waitText(`${mine} .deploy-held-reason`, "Waiting for Other Project: Kanban thing is in Ready for Testing");
+      c.at("held Deploy to Main is disabled");
+      assert.strictEqual(await c.page.locator(`${mine} .deploy-held-by-group`).isDisabled(), true);
+      // The other project's own column holds its card in plain sight: no "Waiting for" there.
+      assert.strictEqual(await c.page.locator(`.project[data-project-id="p2"] .deploy-held-reason`).count(), 0);
+      await c.waitText(`.project[data-project-id="p2"] .release-group-line`, "Ships with Demo Project · Console Group");
+      const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+      assert.ok(sw <= cw, `the header scrolls sideways at ${c.width}px (${sw} > ${cw})`);
+    },
+  },
+  {
+    name: "Release group: approving a card locks every project in the group",
+    seed: () => {
+      const s = only("r1");
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(`.project[data-project-id="${PID}"] .card-deploy-select-cb`, "tick the Ready for Testing card");
+      await c.click(`.project[data-project-id="${PID}"] .deploy-to-feature-btn`, "Approved for Deployment — 1 selected");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === "projects/p2") ? w : null; }, "the lock on the other project");
+      c.at("both projects locked");
+      for (const pid of [PID, "p2"]) assert.strictEqual(writes.find((x) => x.path === `projects/${pid}`).data.trainLocked, true, pid);
+    },
+  },
+  {
+    name: "Release group: Settings → Projects lists it; an admin's edit is refused while the shared train has tickets",
+    seed: () => {
+      const s = only("r1");
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin" } };
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.projects.p3 = { name: "Third Project", createdAt: t(T0 + 2), deployBranch: "deploy/third" };
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#settings/projects"; });
+      await c.waitText("#settings-release-groups .release-group-row", "Console Group");
+      await c.waitText("#settings-release-groups .release-group-row", "deploy/console-group");
+      await c.visible("#release-group-new-btn", "an admin sees New release group");
+      const before = (await c.writes()).length;
+      await c.click(`#settings-release-groups .release-group-remove-btn[data-project-id="p2"]`, "remove Other Project");
+      await c.waitText("#release-group-status", "Not changed: Console Group's shared train has 1 ticket on it");
+      c.at("nothing written");
+      assert.strictEqual((await c.writes()).length, before);
+      // Add Third Project: its own train is empty but the group's is not — refused too.
+      await c.click("#settings-release-groups .release-group-add-btn", "Add project");
+      await c.waitText("#release-group-status", "Not changed:");
+      assert.strictEqual((await c.writes()).length, before);
+    },
+  },
+  {
+    name: "Release group: with empty trains an admin removes a project, and only the pointers are written",
+    seed: () => {
+      const s = only("l1");
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin" } };
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#settings/projects"; });
+      await c.waitText("#settings-release-groups .release-group-row", "Other Project");
+      await c.click(`#settings-release-groups .release-group-remove-btn[data-project-id="p2"]`, "remove Other Project");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === "releaseGroups/g1") ? w : null; }, "the group write");
+      c.at("group and pointer written");
+      assert.deepStrictEqual(writes.find((x) => x.path === "releaseGroups/g1").data.projectIds, [PID]);
+      const pointer = writes.find((x) => x.path === "projects/p2");
+      assert.ok(pointer && "releaseGroupId" in pointer.data, "the project's pointer is removed");
+      assert.ok(!("deployBranch" in pointer.data), "its own deployBranch is never touched");
+      await c.waitText("#release-group-status", "Other Project has its own train again.");
+    },
+  },
+  {
     name: "New backlog item: a new description creates one Backlog card",
     seed: () => only("r1"),
     async run(c) {

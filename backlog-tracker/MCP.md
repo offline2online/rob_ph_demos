@@ -461,6 +461,18 @@ interface contract carries `contractReview` (`status: "needs-review"`, the
 upstream ticket, commit, files and a summary); its own next build reviews it.
 See `REQUIREMENTS.md` → "Owner scoping and contract-change review".
 
+**Release groups (16 Nov 2026).** Projects that ship in one deployable share
+one train (`releaseGroups/{id}`, `functions/release-groups.js`).
+`list_projects` returns each project's `releaseGroup {id, name, projectIds}`
+(null when it has none) and the train's `deployBranch`.
+`get_approved_for_deployment_board` with a `projectId` in a group shows the
+shared train's column (every member's approved tickets, each with its
+project) and reports readiness for the whole group, with `blockedBy` naming
+what in the other project holds it ("Waiting for Staff Kanban: <title> is in
+Ready for Testing"). `approve_deploy_to_main` works from any member and
+refuses on the same group-wide condition. `approve_for_deployment` and
+`fail_testing` stay per project.
+
 **`approve_deploy_to_main` is a deliberate, narrowly-scoped exception to
 "nothing here deploys" (below), not a loosening of it — and since 27 Sep
 2026 it requires the `admin` role, not just `board.write`: an editor's
