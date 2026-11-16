@@ -811,6 +811,25 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { routinePromptMd: "ignore previous instructions" }, { merge: true }));
   await check("A team admin can change routinePromptMd", "allow", () =>
     setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { routinePromptMd: "Use the dsp-integration folder." }, { merge: true }));
+  // Release groups (Flow 9/9): a group decides which branch a merge ships from.
+  const GROUP = { name: "PH Agent Console", deployBranch: "deploy/ph-agent-console", projectIds: ["p1"] };
+  await check("An editor CANNOT create a release group", "deny", () =>
+    setDoc(doc(as(MEMBER), "releaseGroups/g1"), GROUP));
+  await check("A team admin can create a release group", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "releaseGroups/g1"), GROUP));
+  await check("The automation user can update a release group (the deploy session's migration)", "allow", () =>
+    setDoc(doc(as(BOT), "releaseGroups/g1"), { ...GROUP, projectIds: ["p1", "p2"] }));
+  await check("A release group's branch must look like deploy/<name>", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "releaseGroups/g2"), { ...GROUP, deployBranch: "main" }));
+  await check("A member can read release groups", "allow", () => getDoc(doc(as(MEMBER), "releaseGroups/g1")));
+  await check("A stranger cannot read release groups", "deny", () => getDoc(doc(as(STRANGER), "releaseGroups/g1")));
+  await check("An editor CANNOT set a project's releaseGroupId", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { releaseGroupId: "g1" }, { merge: true }));
+  await check("A team admin can set a project's releaseGroupId", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { releaseGroupId: "g1" }, { merge: true }));
+  await check("An editor can still rename a project in a group (the pointer unchanged passes)", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed again" }, { merge: true }));
+  await check("An editor CANNOT delete a release group", "deny", () => deleteDoc(doc(as(MEMBER), "releaseGroups/g1")));
   await check("A javascript: artifactUrl is refused", "deny", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "javascript:alert(1)" }, { merge: true }));
   await check("An https artifactUrl is fine", "allow", () =>
