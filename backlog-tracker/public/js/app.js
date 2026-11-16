@@ -29,6 +29,8 @@ import { INTAKE_SECTIONS, missingSections, applyAnswers } from "./ticket-intake.
 import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, followUpWrites } from "./follow-up.js";
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
+import { suggestModel, suggestionHint, modelChipText, reviewNeedsOpus, reviewedForCommit, buildsByModel } from "./model-suggest.js";
+import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
@@ -153,12 +155,24 @@ const CATEGORIES = [
 function ticketModel(item) {
   return item && item.model === "advanced" ? "advanced" : "standard";
 }
-// "Built on claude-opus-5-5 · reviewed on …" from what the sessions recorded.
+// "Built on claude-opus-5-5 · reviewed on … · skills: ph-designer" from what
+// the sessions recorded and the skills the last build was sent (lastFire.skills).
 function modelLogLine(item) {
   const parts = [];
   if (item && item.builtByModel) parts.push(`Built on ${item.builtByModel}`);
-  if (item && item.reviewedByModel) parts.push(`reviewed on ${item.reviewedByModel}`);
+  if (item && item.reviewedByModel) parts.push(`${parts.length ? "reviewed" : "Reviewed"} on ${item.reviewedByModel}`);
+  const skills = item && item.lastFire && Array.isArray(item.lastFire.skills) ? item.lastFire.skills.filter((x) => typeof x === "string") : [];
+  if (skills.length) parts.push(`${parts.length ? "skills" : "Skills"}: ${skills.join(", ")}`);
   return parts.join(" · ");
+}
+// The Model select's value (Flow 8/9): "auto" while the model follows the
+// classifier's suggestion (or nobody has set one yet), else the person's choice.
+function modelChoiceOf(item) {
+  if (!item || item.modelAuto === true || (item.model !== "standard" && item.model !== "advanced")) return "auto";
+  return item.model;
+}
+function modelSuggestionFor(fields) {
+  return suggestModel(fields, { projects });
 }
 
 const GENERAL_PROJECT_ID = "general";
@@ -456,6 +470,8 @@ let editingDocId = null; // null while adding, an id while editing (Additional d
 let archiveProjectId = null;
 // The Testing loops page's project (null when closed) — see openTestingLoopsPage.
 let testingLoopsProjectId = null;
+// The Builds by model page's project (null when closed) — see openBuildsByModelPage.
+let buildsByModelProjectId = null;
 let archiveSort = { field: "date", dir: "desc" };
 let archiveFilters = { type: "", category: "", search: "" };
 
@@ -566,6 +582,7 @@ function closeAllSubPages() {
   if (deniedPage) deniedPage.hidden = true;
   closeArchivePage();
   closeTestingLoopsPage();
+  closeBuildsByModelPage();
   closeArchivedProjectsPage();
   closeDocsPage();
   closeFaqSettingsPage();
@@ -741,8 +758,38 @@ function ownerFireInfoHTML(block) {
   return `<a class="owner-fire-info" href="${ROUTINE_SETUP_HASH}" title="${escapeHTML(block.message)}" aria-label="${escapeHTML(block.message)}"><span class="material-symbols-outlined" aria-hidden="true">info</span></a>`;
 }
 
+// The card's one status line (card-state.js): what it waits for, on whom and
+// for how long. Shared with the MCP server, so the board and an agent say the
+// same thing.
+const CARD_STATE_ICONS = {
+  "nobody": "radio_button_unchecked", "tester": "fact_check", "approver": "how_to_reg", "decision": "pan_tool",
+  "automation": "autorenew", "another ticket": "link", "another project": "schedule",
+};
+function cardStateContext(projectId) {
+  const itemsById = Object.fromEntries(allItems.map((i) => [i.id, i]));
+  return { itemsById, projectItems: items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === projectId) };
+}
+function cardStateFor(item, now = Date.now()) {
+  const pid = item.projectId || GENERAL_PROJECT_ID;
+  const project = projects.find((p) => p.id === pid) || { id: pid };
+  return cardState(item, project, now, cardStateContext(pid));
+}
+function cardStateLineHTML(st) {
+  const slug = String(st.waitingOn).replace(/\s+/g, "-");
+  return `<p class="card-state-line card-state-${escapeHTML(slug)}${st.warn ? " card-state-warn" : ""}" data-state="${escapeHTML(st.state)}" data-waiting-on="${escapeHTML(st.waitingOn)}" title="${escapeHTML(`Waiting on: ${st.waitingOn}`)}"><span class="material-symbols-outlined" aria-hidden="true">${CARD_STATE_ICONS[st.waitingOn] || "info"}</span><span class="card-state-text">${escapeHTML(st.line)}</span></p>`;
+}
+// Time in column, beside the type badge: quiet, warning-coloured past the
+// column's threshold (AGE_THRESHOLDS in card-state.js).
+function cardAgeHTML(item, st, now = Date.now()) {
+  const entered = statusEnteredMs(item);
+  if (!entered || item.status === "archived") return "";
+  const label = ageLabel(now - entered);
+  return `<span class="card-age${st.warn ? " card-age-warn" : ""}" title="${escapeHTML(`In this column since ${new Date(entered).toLocaleString()}`)}">${escapeHTML(label)}</span>`;
+}
+
 function cardHTML(item) {
   const idx = COL_KEYS.indexOf(item.status);
+  const cardSt = cardStateFor(item);
   // Moving back is a designed, documented flow from ready-to-publish (send
   // back for more work — the first half of pulling a ticket off the train;
   // Failed testing there is the second) but NOT from ready-for-testing
@@ -890,18 +937,9 @@ function cardHTML(item) {
   const failBtn = (isTesting && !noDeploy)
     ? failTestingButtonHTML(item)
     : "";
-  // Deliberately not a button: there used to be a "Merge to main" button
-  // here that just wrote status: "published-live" directly, with zero
-  // connection to whether the PR was actually merged on GitHub — a card
-  // could say "Merged to Main" while its PR sat open. The only honest way
-  // to reach published-live now is the project's own "Notify Claude —
-  // Deploy" action (see deployNotifyButtonHTML), which only advances a
-  // card once backlog-automation.yml has actually merged its PR.
-  const mergeBtn = isLiveBranch && !noDeployPending
-    ? (isDeploying
-        ? `<span class="in-development-hint" title="Claude has confirmed this PR is green and mergeable and told backlog-automation.yml to merge it — it's locked until that merge actually lands and this card moves to Merged to Main (Live)">Deploying — locked</span>`
-        : `<span class="merge-pending-hint" title="Only this project's own Deploy to Main button actually merges this to main">Waiting for Deploy to Main</span>`)
-    : "";
+  // The "Waiting for Deploy to Main" / "Deploying — locked" lines that used to
+  // sit here are now the card's status line (cardStateLineHTML, card-state.js),
+  // and the header says why Deploy to Main is not offered (deployGateHintHTML).
   // Eject from train (FVrOIVAAp46NdcgGovMW) — the explicit, one-click way to
   // pull a stuck Approved for Deployment card off a locked train so the rest
   // of the release can still reach Deploy to Main. Before this, doing the
@@ -936,9 +974,6 @@ function cardHTML(item) {
   const revertBtn = isPublished && !noDeploy && item.mergeCommit && !isReverting
     ? `<button type="button" class="icon-btn revert-btn" data-id="${item.id}" title="Revert this deployment — opens a PR to undo it; still needs testing and Deploy to Main like any other fix">&#8630;</button>`
     : "";
-  const revertingHint = isReverting
-    ? `<span class="in-development-hint" title="A revert PR is being opened for this card — it's locked until backlog-automation.yml pushes the branch and this card moves back to Ready for Testing">Revert requested &mdash; locked</span>`
-    : "";
   const canRight = idx < COL_KEYS.length - 1 && !isTesting && !isLiveBranch && !isInDevelopment && !isSentToClaude;
   const rightBtn = canRight
     ? `<button type="button" class="icon-btn move-btn" data-id="${item.id}" data-dir="1" title="Move forward">&rarr;</button>`
@@ -957,20 +992,9 @@ function cardHTML(item) {
     : (isSentToClaude
         ? sentToClaudeHintHTML(item)
         : "");
-  // Failed testing sends a card back to Backlog AND asks the automation to
-  // revert its commits off the project's integration branch (see
-  // failTesting / processRevertFromTrain). Between those two things the
-  // card is in Backlog with live code still on the train, which is exactly
-  // the state the pipeline must never quietly leave standing — so it says
-  // so on the card. revertBlockedBy means the revert hit a conflict because
-  // a later ticket builds on this one: the board stays honest about it
-  // (and Deploy to Main stays hidden, since the ticket is still on the
-  // branch) until a human sends those tickets back too or fixes the branch.
-  const leavingTrainHint = (isBacklog && item.revertRequested)
-    ? (Array.isArray(item.revertBlockedBy) && item.revertBlockedBy.length
-        ? `<span class="in-development-hint" title="Reverting this ticket off ${escapeHTML(item.deployBranch || "the integration branch")} conflicted because ${escapeHTML(item.revertBlockedBy.join(", "))} build on top of it — send those back too, or fix the branch by hand">Still on the branch &mdash; blocked by ${item.revertBlockedBy.length} later ticket${item.revertBlockedBy.length === 1 ? "" : "s"}</span>`
-        : `<span class="in-development-hint" title="Its commits are being reverted off the project's integration branch so this rejected ticket can't ship in the next deployment">Coming off the branch&hellip;</span>`)
-    : "";
+  // A rejected ticket coming off the branch ("Being taken off the release",
+  // or "… blocked by <title>" when a later ticket builds on it) is said by the
+  // status line now (card-state.js); Deploy to Main stays hidden meanwhile.
   const noDeployBadge = noDeploy
     ? `<span class="no-deploy-badge" title="Live data/config change only — no code to push or deploy">No deployment required</span>`
     : "";
@@ -1033,10 +1057,14 @@ function cardHTML(item) {
   const approvedByHTML = approvedBy ? `<span class="approved-by" title="${escapeHTML(approvedBy.title)}"><span class="material-symbols-outlined">how_to_reg</span>${escapeHTML(approvedBy.text)}</span>` : "";
   // A review held because the ticket needs Claude Opus and the review session
   // had none (reviewReason "model-unavailable: …") is not a red run.
-  const reviewNeedsOpus = item.reviewStatus === "blocked" && /^model-unavailable/.test(item.reviewReason || "");
-  const reviewFlagDef = item.reviewStatus && (reviewNeedsOpus ? ["Review blocked: needs Opus", "block"] : REVIEW_FLAGS[item.reviewStatus]);
+  // An Advanced ticket whose review ran on a lesser model (reviewedByModel
+  // not an Opus) counts as not reviewed either (Flow 8/9, reviewNeedsOpus).
+  const reviewGuarded = reviewNeedsOpus(item);
+  const reviewOpusBlocked = reviewGuarded || (item.reviewStatus === "blocked" && /^model-unavailable/.test(item.reviewReason || ""));
+  const reviewFlagDef = (item.reviewStatus || reviewGuarded) && (reviewOpusBlocked ? ["Review blocked: needs Opus", "block"] : REVIEW_FLAGS[item.reviewStatus]);
+  const reviewFlagTitle = reviewGuarded ? `Reviewed on ${item.reviewedByModel}, but this ticket is Advanced: its review only counts on Claude Opus.` : (item.reviewReason || (reviewFlagDef && reviewFlagDef[0]));
   const reviewFlag = reviewFlagDef && (!item.deployCommit || item.reviewedCommit === item.deployCommit)
-    ? `<span class="review-flag review-flag-${escapeHTML(item.reviewStatus)}" title="${escapeHTML(item.reviewReason || reviewFlagDef[0])}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
+    ? `<span class="review-flag review-flag-${escapeHTML(reviewGuarded ? "blocked" : item.reviewStatus)}" title="${escapeHTML(reviewFlagTitle)}"><span class="material-symbols-outlined">${reviewFlagDef[1]}</span>${reviewFlagDef[0]}</span>`
     : "";
   // Per-ticket model requirement: only Advanced is badged (Standard is the
   // default, and badging every card would be noise). The hover says which
@@ -1053,8 +1081,14 @@ function cardHTML(item) {
   const contractReviewChip = cr && cr.status === "needs-review" && item.status !== "published-live" && item.status !== "archived"
     ? `<span class="review-flag contract-review-flag" title="${escapeHTML(`Upstream contract changed: "${cr.upstreamTitle || cr.upstreamItemId || "a ticket this builds after"}" changed ${cr.summary || "an interface contract"}. This ticket's own next build reviews it; the flag clears when that build lands.`)}"><span class="material-symbols-outlined">sync_problem</span>Needs review: upstream contract changed</span>`
     : "";
-  const modelBadge = ticketModel(item) === "advanced"
-    ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>Advanced · Opus</span>`
+  // "Advanced · Opus (auto: touches security rules)" when the classifier
+  // chose it, "(raised after 2 failed rounds)" after an escalation (Flow 8/9).
+  const modelChip = modelChipText(item);
+  const modelWhy = item.modelEscalatedAt ? " Raised automatically after 2 failed rounds."
+    : (item.modelAuto && item.modelSuggested && Array.isArray(item.modelSuggested.reasons) && item.modelSuggested.reasons.length
+      ? ` Chosen automatically: ${item.modelSuggested.reasons.map((r) => r.text).join(", ")}.` : "");
+  const modelBadge = modelChip
+    ? `<span class="review-flag model-badge" title="${escapeHTML(`Advanced: built and reviewed on Claude Opus only.${modelWhy}${modelLog ? ` ${modelLog}.` : ""}`)}"><span class="material-symbols-outlined">psychology</span>${escapeHTML(modelChip)}</span>`
     : "";
   // Blocked flag: this ticket can't be built until Rob decides something or
   // supplies input. Notify Claude / the build routine skip it; the one-line
@@ -1063,7 +1097,7 @@ function cardHTML(item) {
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason === "waiting-on-dependency")
     ? dependencyFlagHTML(item)
     : (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : "hourglass_top"}</span>${item.blocked.reason === "needs-decision" ? "Needs your decision" : item.blocked.reason === "model-unavailable" ? "Not built: needs Opus" : "Waiting on input"}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : item.blocked.reason === "tools-unavailable" ? "construction" : "hourglass_top"}</span>${escapeHTML(blockedFlagLabel(item.blocked))}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" && item.blocked.reason !== "tools-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
   const e2eFixBadge = item.e2eAutoFix
     ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
@@ -1181,12 +1215,14 @@ function cardHTML(item) {
         <div class="card-top-left">
           ${selectCb}
           <span class="badge badge-${item.type}">${item.type === "bug" ? "Bug" : "Feature"}</span>
+          ${cardAgeHTML(item, cardSt)}
         </div>
         <div class="card-move">${editBtn}${leftBtn}${rightBtn}</div>
       </div>
       ${popText
         ? `<h3 class="card-title card-title-hover" tabindex="0" aria-describedby="desc-pop-${escapeHTML(item.id)}">${escapeHTML(item.title)}<span class="card-desc-pop" id="desc-pop-${escapeHTML(item.id)}" role="tooltip">${escapeHTML(popText)}</span></h3>`
         : `<h3 class="card-title">${escapeHTML(item.title)}</h3>`}
+      ${cardStateLineHTML(cardSt)}
       ${sentBackLastTimeHTML(item)}
       ${roundChipHTML(item, { expanded: expandedRoundChips.has(item.id) })}${noDeployBadge}${carriedBadge}${ownerBadge}${contractReviewChip}${modelBadge}${priorityBadge}${effortBadge}${lastFailureBadge}${blockedFlag}${isBacklog ? buildOrderChipHTML(item) : ""}${reviewFlag}${e2eFixBadge}${trainTestChipHTML(item)}${sharedWithChipsHTML(item)}${foreignPathsChipsHTML(item)}${approvedByHTML}${testVersionBadge}${prBadge}${deployBadge}
       <div class="card-footer">
@@ -1197,7 +1233,7 @@ function cardHTML(item) {
         <div class="card-move">${quickCommentBtn}${revertBtn}${archiveBtn}${deleteBtn}</div>
       </div>
       ${testLinkHTML}
-      ${approveBtn}${failBtn}${mergeBtn}${ejectBtn}${inDevelopmentHint}${revertingHint}${leavingTrainHint}
+      ${approveBtn}${failBtn}${ejectBtn}${inDevelopmentHint}
     </article>`;
 }
 
@@ -1488,7 +1524,22 @@ function groomableCountForProject(pid) {
 function isUnreviewedBuild(item) {
   if (item.status !== "ready-for-testing") return false;
   if (!item.deployCommit) return false;
-  return !item.reviewStatus || item.reviewedCommit !== item.deployCommit;
+  // Same rule as notifyOnProjectReviewBatch: an Advanced ticket reviewed on a
+  // lesser model is not reviewed (model-suggest.js → reviewedForCommit).
+  return !reviewedForCommit(item);
+}
+
+// The blocked chip's words. tools-unavailable (Flow 8/9) names what the build
+// session lacked; it has a clear control and no Answer button, like
+// model-unavailable: nobody can answer it, a person adds the tool.
+function blockedFlagLabel(b) {
+  if (b.reason === "needs-decision") return "Needs your decision";
+  if (b.reason === "model-unavailable") return "Not built: needs Opus";
+  if (b.reason === "tools-unavailable") {
+    const missing = Array.isArray(b.missing) ? b.missing.filter((x) => typeof x === "string" && x.trim()) : [];
+    return missing.length ? `Not built: this session has no ${missing.join(", ")}` : "Not built: a tool this project needs is missing";
+  }
+  return "Waiting on input";
 }
 
 function reviewableCountForProject(pid) {
@@ -1638,6 +1689,9 @@ function optionsMenuHTML(project) {
     </button>
     <button type="button" class="options-menu-item project-loops-btn" data-project-id="${escapeHTML(pid)}">
       Testing loops
+    </button>
+    <button type="button" class="options-menu-item project-models-btn" data-project-id="${escapeHTML(pid)}">
+      Builds by model
     </button>
     <button type="button" class="options-menu-item project-docs-btn${hasReq ? "" : " options-menu-item-empty"}" data-project-id="${escapeHTML(pid)}">
       ${hasReq ? "Project Settings" : "Project Settings — not set yet"}
@@ -1985,6 +2039,27 @@ function kanbanE2eChipHTML(project) {
   const label = k.state === "healing" ? `Kanban E2E healing ${n} bug${n === 1 ? "" : "s"}` : def[0];
   return `<div class="kanban-e2e-chip kanban-e2e-${escapeHTML(k.state)}" title="${escapeHTML(k.detail || label)}">
     <span class="material-symbols-outlined">${def[1]}</span><span>${escapeHTML(label)}</span>
+  </div>`;
+}
+
+// Why Deploy to Main is not offered (RC6wVNJJcPjNTR5hov9W): wherever the
+// button is hidden or disabled the header names the reason and the next
+// action, plus how long a stuck train has been stuck. The queued case already
+// has its own line (deployQueuedHintHTML).
+function deployGateHintHTML(project) {
+  if (!project || project.id === GENERAL_PROJECT_ID) return "";
+  const pid = project.id;
+  const projectItems = items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid);
+  const gate = deployGate(project, projectItems);
+  const train = trainState(project, projectItems, Date.now(), cardStateContext(pid));
+  const stuck = train.stuckReason && train.since;
+  let line = "";
+  let age = "";
+  if (gate && gate.line && gate.kind !== "queued") { line = gate.line; if (stuck) age = ` · stuck ${ageLabel(train.ageMs)}`; }
+  else if (stuck) line = train.line; // already carries its age
+  if (!line) return "";
+  return `<div class="deploy-gate-hint${train.warn ? " deploy-gate-hint-warn" : ""}" data-project-id="${escapeHTML(pid)}" data-gate="${escapeHTML(gate ? gate.kind : train.state)}">
+    <span class="material-symbols-outlined deploy-gate-icon" aria-hidden="true">${train.warn ? "warning" : "info"}</span><span>${escapeHTML(line)}${escapeHTML(age)}</span>
   </div>`;
 }
 
@@ -2747,7 +2822,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
+      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -3022,6 +3097,106 @@ function programGroupHTML(group) {
 // (collapsing a project, selecting cards, etc.) — a one-frame (~16ms)
 // delay there is imperceptible.
 let renderScheduled = false;
+// ── Needs attention (RC6wVNJJcPjNTR5hov9W) ───────────────────────────────
+// One strip above the projects listing, across every project, what waits on
+// a person or is stuck past its threshold, oldest first (needsAttention in
+// card-state.js, the same list get_pipeline_health returns over MCP). Each
+// row has one button for the usual next action. "Waiting on me" narrows it
+// to cards the signed-in member filed, was asked about, or can approve.
+let needsAttentionMineOnly = false;
+let needsAttentionOpen = true;
+const NEEDS_ATTENTION_ACTIONS = {
+  open: ["Open", "open_in_new"], answer: ["Answer", "forum"], test: ["Test", "fact_check"], approve: ["Approve", "how_to_reg"], deploy: ["Deploy", "rocket_launch"],
+};
+function needsAttentionViewer() {
+  const role = currentConsoleRole();
+  return { email: (auth.currentUser && auth.currentUser.email) || "", canApprove: role === "admin" || role === "editor" };
+}
+function needsAttentionEntries(now = Date.now()) {
+  return needsAttention(items, projects, now);
+}
+function renderNeedsAttention() {
+  const el = document.getElementById("needs-attention");
+  if (!el) return;
+  if (!projectsLoaded) { el.hidden = true; return; }
+  const all = needsAttentionEntries();
+  const viewer = needsAttentionViewer();
+  const shown = needsAttentionMineOnly ? all.filter((e) => waitingOnMe(e, viewer)) : all;
+  el.hidden = false;
+  el.classList.toggle("needs-attention-empty", !all.length);
+  const head = `<div class="needs-attention-head">
+      <button type="button" class="needs-attention-toggle" aria-expanded="${all.length && needsAttentionOpen ? "true" : "false"}"${all.length ? "" : " disabled"}>
+        <span class="material-symbols-outlined" aria-hidden="true">${all.length ? "notifications" : "task_alt"}</span>
+        <span class="needs-attention-title">Needs attention</span>
+        <span class="needs-attention-count">${all.length}</span>
+      </button>
+      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : ""}
+    </div>`;
+  if (!all.length || !needsAttentionOpen) { el.innerHTML = head; return; }
+  const rows = shown.map((e) => {
+    const act = NEEDS_ATTENTION_ACTIONS[e.action] || NEEDS_ATTENTION_ACTIONS.open;
+    const age = e.ageMs ? ageLabel(e.ageMs) : "";
+    return `<li class="needs-attention-row${e.warn ? " needs-attention-row-warn" : ""}" data-kind="${e.kind}" data-id="${escapeHTML(e.id)}" data-project-id="${escapeHTML(e.projectId || "")}">
+        <span class="material-symbols-outlined needs-attention-kind" aria-hidden="true">${e.kind === "ticket" ? "description" : (e.escalated ? "notifications" : "rocket_launch")}</span>
+        <span class="needs-attention-main">
+          <span class="needs-attention-name">${escapeHTML(e.title)}${e.kind === "ticket" && e.projectName ? `<span class="needs-attention-project"> · ${escapeHTML(e.projectName)}</span>` : ""}</span>
+          <span class="needs-attention-line">${escapeHTML(e.line)}</span>
+        </span>
+        <span class="needs-attention-meta"><span class="needs-attention-who">${escapeHTML(e.waitingOn)}</span>${age ? `<span class="needs-attention-age">${escapeHTML(age)}</span>` : ""}</span>
+        <button type="button" class="needs-attention-action" data-action="${escapeHTML(e.action)}" data-kind="${e.kind}" data-id="${escapeHTML(e.id)}" data-project-id="${escapeHTML(e.projectId || "")}"><span class="material-symbols-outlined" aria-hidden="true">${act[1]}</span>${act[0]}</button>
+      </li>`;
+  }).join("");
+  el.innerHTML = head + (shown.length
+    ? `<ul class="needs-attention-list">${rows}</ul>`
+    : `<p class="needs-attention-none">Nothing waiting on you.</p>`);
+}
+function gotoCard(id) {
+  const item = allItems.find((i) => i.id === id);
+  const pid = item ? (item.projectId || GENERAL_PROJECT_ID) : null;
+  if (pid && isProjectCollapsed(pid)) toggleProjectCollapsed(pid);
+  requestAnimationFrame(() => {
+    const card = document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);
+    if (!card) return;
+    card.scrollIntoView({ block: "center", behavior: "smooth" });
+    card.classList.add("card-flash");
+    setTimeout(() => card.classList.remove("card-flash"), 1600);
+  });
+}
+function gotoProject(pid) {
+  if (isProjectCollapsed(pid)) toggleProjectCollapsed(pid);
+  requestAnimationFrame(() => {
+    const sec = document.querySelector(`.project[data-project-id="${CSS.escape(pid)}"]`);
+    if (sec) sec.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+}
+async function runNeedsAttentionAction(btn) {
+  const { action, kind, id, projectId } = btn.dataset;
+  if (action === "answer" && kind === "ticket") { openResolveModal(id, { answer: true }); return; }
+  if (action === "test" && kind === "ticket") {
+    const item = allItems.find((i) => i.id === id);
+    const url = item && item.previewUrl ? safeHttpUrl(item.previewUrl) : "";
+    if (url) { window.open(url, "_blank", "noopener"); return; }
+    gotoCard(id); return;
+  }
+  if (action === "deploy") {
+    // Only the project's own header button deploys, and only when it is
+    // offered; otherwise this brings you to the project.
+    const deployBtn = document.querySelector(`.deploy-notify-btn[data-project-id="${CSS.escape(projectId)}"]:not([disabled])`);
+    if (deployBtn) { closeAllOptionMenus(); requestDeployNotify(projectId); return; }
+    gotoProject(projectId); return;
+  }
+  if (kind !== "ticket") { gotoProject(projectId || id); return; }
+  gotoCard(id);
+}
+document.getElementById("needs-attention")?.addEventListener("click", (e) => {
+  const toggle = e.target.closest(".needs-attention-toggle");
+  if (toggle) { needsAttentionOpen = !needsAttentionOpen; renderNeedsAttention(); return; }
+  const mine = e.target.closest(".needs-attention-mine");
+  if (mine) { needsAttentionMineOnly = !needsAttentionMineOnly; renderNeedsAttention(); return; }
+  const act = e.target.closest(".needs-attention-action");
+  if (act) runNeedsAttentionAction(act);
+});
+
 function render() {
   if (renderScheduled) return;
   renderScheduled = true;
@@ -3060,6 +3235,7 @@ function renderNow() {
     if (el.scrollTop) scrollPositions[el.id] = el.scrollTop;
   });
 
+  renderNeedsAttention();
   document.getElementById("projects-root").innerHTML = programs.length
     ? groupProjectsByProgram(renderedProjects).map(programGroupHTML).join("")
     : renderedProjects.map(projectSectionHTML).join("");
@@ -3533,6 +3709,7 @@ function loadArchivedItems() {
     render();
     if (archiveProjectId) renderArchivePage();
     if (testingLoopsProjectId) renderTestingLoopsPage();
+    if (buildsByModelProjectId) renderBuildsByModelPage();
     if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
     if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
     renderHealthStrip();
@@ -3668,6 +3845,7 @@ onSnapshot(query(itemsRef, where("status", "!=", "archived")), (snap) => {
   render();
   if (archiveProjectId) renderArchivePage();
   if (testingLoopsProjectId) renderTestingLoopsPage();
+  if (buildsByModelProjectId) renderBuildsByModelPage();
   if (archivedProjectsPage && !archivedProjectsPage.hidden) renderArchivedProjectsPage();
   // The review page's "goes live when…" hint tracks the source tickets' status.
   if (typeof faqRevisionReviewPage !== "undefined" && faqRevisionReviewPage && !faqRevisionReviewPage.hidden) renderFaqRevisionReviewPage();
@@ -3795,7 +3973,9 @@ lazyStarters.concepts = () => { _primeConcepts(); startConceptsListener(); };
 async function addItem(projectId, title, desc, type, category, extra = {}) {
   const ref = await addDoc(itemsRef, {
     projectId, title, desc, type, category,
-    ...(extra.model === "advanced" ? { model: "advanced" } : {}),
+    // A person's own choice (never overridden). "auto" or nothing: the
+    // onBacklogItemModelSuggest trigger sets it from the description.
+    ...(extra.model === "advanced" || extra.model === "standard" ? { model: extra.model, modelAuto: false } : {}),
     ...(extra.effort ? { effort: extra.effort } : {}),
     ...(extra.priority ? { priority: extra.priority } : {}),
     status: "backlog",
@@ -4090,7 +4270,12 @@ async function updateItemDetails(id, changed) {
   if ("category" in changed) patch.category = changed.category;
   if ("effort" in changed) patch.effort = changed.effort || null;
   if ("priority" in changed) patch.priority = changed.priority || null;
-  if ("model" in changed) patch.model = changed.model === "advanced" ? "advanced" : "standard";
+  if ("model" in changed) {
+    // Auto hands the choice back to the suggestion (the trigger recomputes
+    // it); Standard or Advanced is the person's and is kept.
+    if (changed.model === "auto") patch.modelAuto = true;
+    else { patch.model = changed.model === "advanced" ? "advanced" : "standard"; patch.modelAuto = false; }
+  }
   if ("noDeploymentRequired" in changed) patch.noDeploymentRequired = !!changed.noDeploymentRequired;
   // Build order: the "Builds after" picker. Who set the list is recorded by
   // the intake trigger (dependsOnSource), never by a browser.
@@ -5046,6 +5231,8 @@ projectsRoot.addEventListener("click", async (e) => {
   if (archiveNavBtn) { closeAllOptionMenus(); openArchivePage(archiveNavBtn.dataset.projectId); return; }
   const loopsNavBtn = e.target.closest(".project-loops-btn");
   if (loopsNavBtn) { closeAllOptionMenus(); openTestingLoopsPage(loopsNavBtn.dataset.projectId); return; }
+  const modelsNavBtn = e.target.closest(".project-models-btn");
+  if (modelsNavBtn) { closeAllOptionMenus(); openBuildsByModelPage(modelsNavBtn.dataset.projectId); return; }
   const docsNavBtn = e.target.closest(".project-docs-btn");
   if (docsNavBtn) { closeAllOptionMenus(); openDocsPage(docsNavBtn.dataset.projectId); return; }
   const feedBtn = e.target.closest(".feed-requirements-btn");
@@ -5108,6 +5295,19 @@ const eiEffortSelect = document.getElementById("ei-effort-select");
 const eiPrioritySelect = document.getElementById("ei-priority-select");
 const eiModelSelect = document.getElementById("ei-model-select");
 const eiModelLog = document.getElementById("ei-model-log");
+const eiModelSuggest = document.getElementById("ei-model-suggest");
+let eiSuggestFor = null;
+// The suggestion beside the Model select, worked out from what is in the
+// form now (Flow 8/9). Saved escalations and choices are said too.
+function updateEiModelSuggest() {
+  if (!eiModelSuggest) return;
+  const item = eiSuggestFor || {};
+  const s = modelSuggestionFor({ title: eiTitleInput.value, desc: eiDescInput.value, category: eiCategorySelect.value, effort: eiEffortSelect.value });
+  const extra = item.modelEscalatedAt ? " Raised to Advanced after 2 failed rounds." : "";
+  eiModelSuggest.textContent = `${suggestionHint(s)}.${extra}`;
+}
+[eiDescInput, eiTitleInput].forEach((el) => el && el.addEventListener("input", updateEiModelSuggest));
+[eiCategorySelect, eiEffortSelect].forEach((el) => el && el.addEventListener("change", updateEiModelSuggest));
 const eiNoDeployCheckbox = document.getElementById("ei-no-deploy-checkbox");
 const eiNotesList = document.getElementById("ei-notes-list");
 const eiCommentInput = document.getElementById("ei-comment-input");
@@ -5321,7 +5521,7 @@ function openEditItemModal(id) {
   eiLoadedSnapshot = {
     title: item.title || "", desc: item.desc || "", type: item.type === "bug" ? "bug" : "feature",
     category: item.category || CATEGORIES[0], effort: item.effort || "", priority: item.priority || "",
-    model: ticketModel(item),
+    model: modelChoiceOf(item),
     noDeploymentRequired: !!item.noDeploymentRequired,
   };
   eiTitleInput.value = item.title || "";
@@ -5332,7 +5532,9 @@ function openEditItemModal(id) {
   eiCategorySelect.value = item.category || CATEGORIES[0];
   eiEffortSelect.value = item.effort || "";
   eiPrioritySelect.value = item.priority || "";
-  eiModelSelect.value = ticketModel(item);
+  eiModelSelect.value = modelChoiceOf(item);
+  eiSuggestFor = item;
+  updateEiModelSuggest();
   // Which model actually built / reviewed it, as those sessions recorded.
   const eiModelLine = modelLogLine(item);
   eiModelLog.textContent = eiModelLine ? `${eiModelLine}.` : "";
@@ -5381,7 +5583,7 @@ document.getElementById("ei-save").addEventListener("click", async () => {
   const current = {
     title, desc, type, category: eiCategorySelect.value,
     effort: eiEffortSelect.value, priority: eiPrioritySelect.value,
-    model: eiModelSelect.value === "advanced" ? "advanced" : "standard",
+    model: ["auto", "standard", "advanced"].includes(eiModelSelect.value) ? eiModelSelect.value : "auto",
     noDeploymentRequired: eiNoDeployCheckbox.checked,
   };
   const changed = {};
@@ -5987,6 +6189,17 @@ const niEls = {
 };
 niEls.category.innerHTML = CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join("");
 niEls.category.value = "Uncategorised";
+// The model suggestion beside the select (Flow 8/9), live as the ticket is
+// typed or dictated. Auto (the default) takes it; picking Standard or
+// Advanced is a choice the suggestion never overrides.
+const niModelSuggest = document.getElementById("ni-model-suggest");
+function updateNiModelSuggest() {
+  if (!niModelSuggest) return;
+  niModelSuggest.textContent = suggestionHint(modelSuggestionFor({ title: niEls.title.value, desc: niEls.desc.value, category: niEls.category.value }));
+}
+niEls.desc.addEventListener("input", updateNiModelSuggest);
+niEls.title.addEventListener("input", updateNiModelSuggest);
+niEls.category.addEventListener("change", updateNiModelSuggest);
 
 function getNiType() {
   const active = document.querySelector("#ni-backdrop .type-opt.active");
@@ -6056,7 +6269,7 @@ function applyNiDraft(draft) {
   const mark = (name, ok) => { if (!ok) return; filled.push(name); document.querySelector(`.ni-field[data-ni-field="${name}"]`).classList.add("ni-agent-filled"); };
   clearNiAgentMarks();
   if (draft.title) niEls.title.value = draft.title.slice(0, niEls.title.maxLength);
-  if (draft.desc) { niEls.desc.value = draft.desc.slice(0, niEls.desc.maxLength); autoGrow(niEls.desc); updateNiDescCount(); }
+  if (draft.desc) { niEls.desc.value = draft.desc.slice(0, niEls.desc.maxLength); autoGrow(niEls.desc); updateNiDescCount(); updateNiModelSuggest(); }
   setNiType(draft.type);
   if (draft.category && CATEGORIES.includes(draft.category)) niEls.category.value = draft.category;
   mark("title", !!draft.title); mark("desc", !!draft.desc); mark("type", true); mark("category", !!draft.category);
@@ -6160,9 +6373,10 @@ niEls.category.addEventListener("change", () => clearNiAgentMarks("category"));
 function resetFormFields() {
   niAgentToken++;
   stopNiTimer();
-  if (niEls.model) niEls.model.value = "standard";
+  if (niEls.model) niEls.model.value = "auto";
   niEls.title.value = "";
   niEls.desc.value = "";
+  updateNiModelSuggest();
   niEls.desc.style.height = "";
   updateNiDescCount();
   niEls.transcript.value = "";
@@ -6703,6 +6917,54 @@ function renderTestingLoopsPage() {
   getTestingLoopsList().setRows(rows);
 }
 
+// ── Builds by model page (project ⋮ menu; Flow 8/9, CCPnRjXOH4YMsfy3C49r) ──
+// Read-only: the last 30 days of this project's tickets grouped by the model
+// that built them (builtByModel), with how many testing rounds and rebuilds
+// they took, so the automatic model choice can be judged. Same table
+// component and page shell as Testing loops.
+let buildsByModelList = null;
+const BUILDS_BY_MODEL_DAYS = 30;
+function openBuildsByModelPage(pid) {
+  closeAllSubPages();
+  ensureArchivedItems();
+  buildsByModelProjectId = pid;
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  document.getElementById("builds-by-model-page").hidden = false;
+  renderBuildsByModelPage();
+}
+function closeBuildsByModelPage() {
+  const page = document.getElementById("builds-by-model-page");
+  if (!page || page.hidden) { buildsByModelProjectId = null; return; }
+  buildsByModelProjectId = null;
+  page.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+function getBuildsByModelList() {
+  if (!buildsByModelList) {
+    const pad = (n) => String(n == null ? -1 : Math.round(n * 10)).padStart(14, "0");
+    buildsByModelList = createDocsList(document.getElementById("builds-by-model-grid"), {
+      id: "builds-by-model", searchLabel: "Search model", emptyText: `No ticket here recorded the model that built it in the last ${BUILDS_BY_MODEL_DAYS} days.`,
+      columns: [
+        { key: "model", header: "Built on", flex: 1, minWidth: 200, text: (r) => r.model, html: (r) => `<code>${escapeHTML(r.model)}</code>` },
+        { key: "tickets", header: "Tickets", width: 110, text: (r) => pad(r.tickets), html: (r) => `${r.tickets}${r.advanced ? ` <span class="archive-row-desc">(${r.advanced} Advanced)</span>` : ""}` },
+        { key: "rounds", header: "Testing rounds", width: 150, text: (r) => pad(r.rounds), html: (r) => String(r.rounds) },
+        { key: "perTicket", header: "Rounds per ticket", width: 160, text: (r) => pad(r.roundsPerTicket), html: (r) => String(r.roundsPerTicket) },
+        { key: "rebuilds", header: "Rebuilds", width: 120, text: (r) => pad(r.rebuilds), html: (r) => String(r.rebuilds) },
+      ],
+    });
+  }
+  return buildsByModelList;
+}
+function renderBuildsByModelPage() {
+  if (!buildsByModelProjectId) return;
+  document.getElementById("builds-by-model-project-name").textContent = projectName(buildsByModelProjectId);
+  const rows = buildsByModel(allItems.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === buildsByModelProjectId), Date.now(), BUILDS_BY_MODEL_DAYS);
+  document.getElementById("builds-by-model-count").textContent = `${rows.length} model${rows.length === 1 ? "" : "s"}`;
+  getBuildsByModelList().setRows(rows.map((r) => ({ ...r, id: r.model })));
+}
+
 // ── Archived projects page (top-level — a whole project, not one ticket) ──
 const archivedProjectsPage = document.getElementById("archived-projects-page");
 
@@ -6925,6 +7187,19 @@ function renderDocsPage() {
   if (docsOwnedPathsInput && document.activeElement !== docsOwnedPathsInput) {
     docsOwnedPathsInput.value = Array.isArray(project && project.ownedPaths) ? project.ownedPaths.join("\n") : "";
   }
+  // Required tools and the project's own Routine (Flow 8/9).
+  const docsConnectorsInput = document.getElementById("docs-connectors-input");
+  if (docsConnectorsInput && document.activeElement !== docsConnectorsInput) {
+    docsConnectorsInput.value = Array.isArray(project && project.requiredConnectors) ? project.requiredConnectors.join("\n") : "";
+  }
+  const routineBlock = document.getElementById("docs-routine-block");
+  if (routineBlock) {
+    routineBlock.hidden = !isConsoleAdmin();
+    const boundMs = project && project.routineBoundAt && typeof project.routineBoundAt.toMillis === "function" ? project.routineBoundAt.toMillis() : NaN;
+    document.getElementById("docs-routine-status").textContent = Number.isFinite(boundMs)
+      ? `A project Routine is set (since ${new Date(boundMs).toLocaleString()}). Its builds, reviews and deploys fire on it.`
+      : "No project Routine: fires use the clicker's own Routine, or the shared one.";
+  }
   // Why the board's Requirements/README may be behind the repo, shown on the
   // page the chip opens. Created here so it needs no markup of its own.
   const nameEl = document.getElementById("docs-page-project-name");
@@ -7143,6 +7418,62 @@ document.getElementById("docs-owned-paths-save").addEventListener("click", async
     }, { merge: true });
   } catch (err) {
     await showAlert(describeSaveError(err, [{ label: "Owned paths", value: parsed.paths.join("\n"), max: 30 }]));
+  }
+});
+
+// Required tools (Flow 8/9): connector names, one per line. They go into
+// every build fire as the session's first check (functions/index.js →
+// requiredToolsBlock).
+function parseConnectorLines(text) {
+  const names = String(text || "").split(/\r?\n|,/).map((x) => x.trim()).filter(Boolean);
+  const bad = names.find((x) => !/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,60}$/.test(x));
+  if (bad) return { error: `"${bad}" isn't a tool name: use letters, digits, spaces, dots, dashes or underscores.` };
+  const list = names.filter((x, i, a) => a.indexOf(x) === i);
+  if (list.length > 10) return { error: "At most 10 required tools." };
+  return { list };
+}
+document.getElementById("docs-connectors-save").addEventListener("click", async () => {
+  if (!docsProjectId) return;
+  const input = document.getElementById("docs-connectors-input");
+  const parsed = parseConnectorLines(input.value);
+  if (parsed.error) { await showAlert(parsed.error); input.focus(); return; }
+  try {
+    await setDoc(doc(db, "projects", docsProjectId), {
+      requiredConnectors: parsed.list.length ? parsed.list : deleteField(), updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, [{ label: "Required tools", value: parsed.list.join("\n"), max: 10 }]));
+  }
+});
+
+// The project's own Routine (Flow 8/9): write-only. The URL and token go to
+// projectRoutineBindings/{projectId}, which firestore.rules lets an admin set
+// or delete and nobody read; the project doc only records when it was set.
+document.getElementById("docs-routine-save").addEventListener("click", async () => {
+  if (!docsProjectId || !isConsoleAdmin()) return;
+  const urlEl = document.getElementById("docs-routine-url");
+  const tokenEl = document.getElementById("docs-routine-token");
+  const fireUrl = urlEl.value.trim();
+  const token = tokenEl.value.trim();
+  if (!/^https:\/\/api\.anthropic\.com\/./.test(fireUrl)) { await showAlert("The fire URL must be a Routine API trigger on https://api.anthropic.com/."); urlEl.focus(); return; }
+  if (!token) { await showAlert("Paste the trigger's token too."); tokenEl.focus(); return; }
+  try {
+    await setDoc(doc(db, "projectRoutineBindings", docsProjectId), { fireUrl, token, boundAt: serverTimestamp(), boundByEmail: (auth.currentUser && auth.currentUser.email) || null });
+    await setDoc(doc(db, "projects", docsProjectId), { routineBoundAt: serverTimestamp(), updatedAt: serverTimestamp() }, { merge: true });
+    urlEl.value = "";
+    tokenEl.value = "";
+  } catch (err) {
+    await showAlert(describeSaveError(err, []));
+  }
+});
+document.getElementById("docs-routine-clear").addEventListener("click", async () => {
+  if (!docsProjectId || !isConsoleAdmin()) return;
+  if (!(await showConfirmDialog("Its builds, reviews and deploys go back to the clicker's own Routine, or the shared one.", { title: "Remove the project Routine?", okLabel: "Remove", danger: true }))) return;
+  try {
+    await deleteDoc(doc(db, "projectRoutineBindings", docsProjectId));
+    await setDoc(doc(db, "projects", docsProjectId), { routineBoundAt: deleteField(), updatedAt: serverTimestamp() }, { merge: true });
+  } catch (err) {
+    await showAlert(describeSaveError(err, []));
   }
 });
 
@@ -10581,7 +10912,7 @@ function renderSettingsGrids() {
       { key: "phase", header: "Phase", width: 120, text: (r) => r.phase, html: (r) => escapeHTML(r.phase) },
       { key: "skill", header: "Skill", flex: 2, text: (r) => r.name, html: (r) => `<strong>${escapeHTML(r.name)}</strong>` },
       { key: "slug", header: "Identifier", flex: 2, text: (r) => r.slug, html: (r) => `<code>${escapeHTML(r.slug)}</code>` },
-    ] }).setRows(bindingRows(phaseBindings, skills));
+    ] }).setRows(bindingRows(phaseBindings, skills, projects));
     const rows = skillRows(skills);
     document.getElementById("settings-skills-count").textContent = plural(rows.length, "skill");
     settingsGrid("skills", { searchLabel: "Filter skills", emptyText: "No skills yet.", columns: [

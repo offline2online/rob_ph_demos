@@ -215,9 +215,15 @@ T("TC-07", "My tasks shows only the signed-in person's tasks", async (prof) => {
 T("TC-08", "secondary filters live in the Filters menu; a filter change keeps the scroll position", async (prof) => {
   const p = await open(prof, "#kanban", { height: Math.min(prof.height, 700) });
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), true);
+  // A filter change redraws the board and then puts the scroll back once more on the next
+  // animation frame (keepPosition in prototype/js/kanban.js). Wait for that frame, never a fixed
+  // time: when the frame from the 4.12 change lands after this case has scrolled to y, it puts the
+  // page back to 0 and the final check reads "0 !== 400" (the Nov 2026 CI flake, reproduced by
+  // delaying that frame).
+  const redrawn = () => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   await press(p, "#kb-filter-toggle");
   await p.selectOption("#kb-type", "bug");
-  await p.waitForTimeout(100);
+  await redrawn();
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), false, "menu stays open while adjusting");
   const types = await p.$$eval(".kb-card .kb-type", (e) => e.map((x) => x.title));
   assert.ok(types.length && types.every((t) => t === "Bug"));
@@ -225,10 +231,12 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   assert.match(await p.textContent("#kb-filter-toggle"), /Filters\s*1/);
   await press(p, "#kb-clear");
   await p.selectOption("#kb-release", "4.12");
+  await redrawn();
   const y = await p.evaluate(() => { const y = Math.min(400, document.documentElement.scrollHeight - innerHeight - 40); scrollTo(0, y); return y; });
   assert.ok(y > 100, `the page is tall enough to scroll (${y})`);
+  assert.equal(await p.evaluate(() => scrollY), y, "the page is at y before the filter changes");
   await p.selectOption("#kb-release", "");
-  await p.waitForTimeout(150);
+  await redrawn();
   assert.equal(await p.evaluate(() => scrollY), y);
   await press(p, "#kb-filter-toggle"); await press(p, "#kb-flagged");
   const flagged = await p.$$eval(".kb-card", (e) => e.every((c) => c.classList.contains("kb-flagged")));
