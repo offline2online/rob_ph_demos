@@ -210,7 +210,8 @@ width header (photo, first name, count, remaining effort) that expands or
 collapses its row; Expand all / Collapse all. The header of the lane being
 scrolled through is pinned under the column headers. Dragging a card into
 another person's lane reassigns it. On a phone every lane shows the current
-column and swiping changes it for all lanes.
+column and swiping changes it for all lanes; collapsing a lane (or Collapse
+all) hides its cards on a phone exactly as on a wider screen.
 
 ## 6. Tasks
 
