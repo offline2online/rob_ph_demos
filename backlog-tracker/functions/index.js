@@ -16,7 +16,6 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { applyIntake, isIntakeFlag, INTAKE_SETTER } = require("./intake");
 const { isTrainRelevantItem, trainLockShouldClear, trainHandoverReason } = require("./train-lock");
-const { withReleaseGroup, trainProjectIdsOf } = require("./release-groups");
 const { shouldStampReportedAt, inFlightItemIds } = require("./notify-routine");
 const { auditLogEntry, buildAuditRequestText, zeroResultQueries } = require("./release-audit");
 const { createHelpApi } = require("./help-search");
@@ -773,22 +772,11 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
     }
 
     const db = getFirestore();
-    // A project in a release group (functions/release-groups.js) deploys the
-    // group's shared train: its branch, and every member project's approved
-    // tickets, so the Routine verifies the whole train it is about to merge.
-    let trainProject = withReleaseGroup({ id: event.params.projectId, ...after }, []);
-    if (after.releaseGroupId) {
-      const groupSnap = await db.collection("releaseGroups").doc(String(after.releaseGroupId)).get();
-      if (groupSnap.exists) trainProject = withReleaseGroup({ id: event.params.projectId, ...after }, [{ id: groupSnap.id, ...groupSnap.data() }]);
-    }
-    const items = [];
-    for (const pid of trainProjectIdsOf(trainProject)) {
-      const itemsSnap = await db.collection("backlogItems")
-        .where("projectId", "==", pid)
-        .where("status", "==", "ready-to-publish")
-        .get();
-      items.push(...itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    }
+    const itemsSnap = await db.collection("backlogItems")
+      .where("projectId", "==", event.params.projectId)
+      .where("status", "==", "ready-to-publish")
+      .get();
+    const items = itemsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (items.length === 0) {
       logger.info("Deploy notify requested but nothing is Approved for Deployment — nothing to notify or fire the Routine for", {
@@ -846,10 +834,7 @@ exports.notifyOnProjectReadyToDeploy = onDocumentUpdated(
       // find: every ticket this project has built is a commit on ONE
       // integration branch, and deploying means merging that branch once.
       // The Routine's job is to verify the train, not to match N PRs.
-      const trainLine = `Integration branch (the deployment train): ${trainProject.deployBranch || "(not set yet — this project has never built a ticket)"}\n` +
-        (trainProject.releaseGroup
-          ? `Release group: "${trainProject.releaseGroup.name}" — this project shares that one train with ${trainProject.releaseGroup.projectIds.filter((id) => id !== event.params.projectId).join(", ")}; the items below are every member project's, and the deploy merges them all as one PR.\n`
-          : "");
+      const trainLine = `Integration branch (the deployment train): ${after.deployBranch || "(not set yet — this project has never built a ticket)"}\n`;
 
       // Same per-project addendum mechanism as the Backlog notify fire above
       // (a project's own Docs page can hand the Routine extra context either
@@ -2093,30 +2078,13 @@ exports.onBacklogItemTrainLockRecompute = onDocumentWritten(
     const project = projectSnap.data();
     if (!project.trainLocked) return; // nothing to clear
 
-    // A release group's train is shared (functions/release-groups.js): it is
-    // empty only when no member project has a ticket on it, and emptying it
-    // unlocks every member.
-    let trainProjectIds = [projectId];
-    if (project.releaseGroupId) {
-      const groupSnap = await db.collection("releaseGroups").doc(String(project.releaseGroupId)).get();
-      const grouped = withReleaseGroup({ id: projectId, ...project }, groupSnap.exists ? [{ id: groupSnap.id, ...groupSnap.data() }] : []);
-      trainProjectIds = trainProjectIdsOf(grouped);
-    }
-    const items = [];
-    for (const pid of trainProjectIds) {
-      const itemsSnap = await db.collection("backlogItems").where("projectId", "==", pid).get();
-      items.push(...itemsSnap.docs.map((d) => d.data()));
-    }
+    const itemsSnap = await db.collection("backlogItems").where("projectId", "==", projectId).get();
+    const items = itemsSnap.docs.map((d) => d.data());
     if (!trainLockShouldClear(project, items)) return;
 
     logger.info("Train emptied by a backlogItems write — clearing trainLocked", {
-      projectId, itemId: event.params.itemId, trainProjectIds,
+      projectId, itemId: event.params.itemId,
     });
-    for (const otherId of trainProjectIds.filter((id) => id !== projectId)) {
-      await db.collection("projects").doc(otherId).set({
-        trainLocked: false, trainStatus: "idle", trainNote: null, updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true });
-    }
     await projectRef.set({
       trainLocked: false,
       trainStatus: "idle",

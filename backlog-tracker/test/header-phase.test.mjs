@@ -14,7 +14,6 @@ import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
-import * as releaseGroups from "../public/js/release-groups.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = fs.readFileSync(path.join(here, "..", "public", "js", "app.js"), "utf8");
@@ -43,16 +42,13 @@ const code = [
   "buildHeartbeat", "buildHeartbeatLabel", "buildBeating", "buildHeartbeatSilent", "notifyRoutineStale",
   "tsMillis", "anyMillis", "perItemBuildFinished", "perItemRoutineFinished", "isTrainLocked", "isProjectFinalised",
   "projectInDeployPhase", "deployHandedOver", "stalledSentIds", "sentTicketStateLines", "notifyStalledChipHTML", "buildOrderNoticeHTML", "notifyClaudeButtonCore", "notifyClaudeButtonHTML",
-  "groupedProject", "trainProjectIdsFor", "trainItemsForProject", "pendingTrainRevertsForProject", "legacyDeployItemsForProject", "deployNotifyButtonHTML",
+  "trainItemsForProject", "pendingTrainRevertsForProject", "legacyDeployItemsForProject", "deployNotifyButtonHTML",
 ].map(extract).join("\n") + "\nlet timedSpinnerShown = false;";
 
 function board(project, cards) {
   const ctx = {
     GENERAL_PROJECT_ID: "general",
     items: cards, allItems: cards,
-    // Release groups (release-groups.js): none here, so every project is its own train.
-    projects: [project], releaseGroupsList: [],
-    withReleaseGroup: releaseGroups.withReleaseGroup, trainProjectIdsOf: releaseGroups.trainProjectIdsOf, trainReadiness: releaseGroups.trainReadiness,
     notifyOptimisticClicks: {}, deployOptimisticClicks: {},
     escapeHTML: (s) => String(s), safeHttpUrl: (s) => s,
     backlogCountForProject: (pid) => cards.filter((c) => c.projectId === pid && c.status === "backlog").length,

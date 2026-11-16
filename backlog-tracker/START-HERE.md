@@ -96,9 +96,7 @@ Functions) unless a file is named.
    leave the card itself via `backlog-tracker/functions/patch-offload.js`.
    The session never pushes.
 5. **Train commit**: `processApplyPatch()` lands it as one commit on the
-   project's `deploy/<folder>` branch (for a project in a release group, the
-   group's shared branch — `releaseGroups/{id}.deployBranch`, see
-   `backlog-tracker/functions/release-groups.js`), after `syncTrainWithMain()` brings
+   project's `deploy/<folder>` branch, after `syncTrainWithMain()` brings
    the branch up to date with main and `rebasePatchFilesOnto()` carries the
    patch onto the synced files by a three-way merge.
 6. **Train tests**: `trainTestsFor()` picks the workflows for the paths the
@@ -113,9 +111,7 @@ Functions) unless a file is named.
 8. **Approve, or Failed testing**: ticking the cards and approving is the
    only gate. Failed testing writes `revertRequested`, and the automation
    reverts that card's commits.
-9. **Deploy to Main**: shown only when the whole train is approved (in a
-   release group, every member project's tickets on the shared train; one
-   PR and one version bump for the group).
+9. **Deploy to Main**: shown only when the whole train is approved.
    `notifyOnProjectReadyToDeploy()` fires the Deploy Routine, which verifies
    the train. (The help centre is no longer reviewed per deploy: marking a release Live on AWS Marketplace starts a Release Audit.)
 10. **Merge**: `processDeployTrain()` merges the train PR once its checks

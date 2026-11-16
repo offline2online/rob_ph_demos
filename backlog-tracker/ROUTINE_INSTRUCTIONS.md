@@ -619,11 +619,7 @@ ticket once automatically.
    integration branch (its "deployment train"), never on `main`.** Read
    the project's `deployBranch` off its Firestore doc
    (`projects/{projectId}.deployBranch`, e.g. `deploy/backlog-tracker-faqs`)
-   — **unless the project has a `releaseGroupId`**: then its train is the
-   release group's, and the branch is `releaseGroups/{releaseGroupId}.deployBranch`
-   (e.g. `deploy/ph-agent-console`, shared by every project in the group;
-   the project's own `deployBranch` is then unused). Read each file you are
-   about to overwrite from
+   and read each file you are about to overwrite from
 
    ```
    https://raw.githubusercontent.com/offline2online/rob_ph_demos/<deployBranch>/<path>

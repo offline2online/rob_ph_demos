@@ -54,9 +54,6 @@ const { buildIndexFromArticleFiles, validateIndexAgainstArticleFiles, serializeI
 // runs main() for real the moment it's required (see the bottom of this
 // file).
 const { trainLockShouldClear, trainHandoverReason } = require("../functions/train-lock");
-// Release groups (Flow 9/9): projects that ship in one deployable share one
-// train — the group's deployBranch, lock, tests, PR and version bump.
-const releaseGroups = require("../functions/release-groups");
 const { syncProjectDocs, syncAllProjectDocs, resolveRepoFolder } = require("./docs-sync-lib");
 const { syncMirroredInterfaces } = require("./interface-mirror-lib");
 const { hasIntakePlaceholder } = require("../functions/intake");
@@ -502,45 +499,7 @@ async function getProject(projectId) {
   const res = await fetch(`${FIRESTORE_BASE}/projects/${projectId}`, { headers: await firestoreHeaders() });
   if (!res.ok) throw new Error(`GET projects/${projectId} failed: ${res.status} ${await res.text()}`);
   const json = await res.json();
-  return withGroup({ id: projectId, ...fdoc(json.fields) });
-}
-
-// ── Release groups ─────────────────────────────────────────────────────────
-// A project in a release group (projects/{id}.releaseGroupId, listed back in
-// releaseGroups/{id}.projectIds) builds onto the GROUP's deployBranch, and
-// everything that reads "this project's train" reads the group's: its items
-// come from every member project (itemsForTrain), its state is written to
-// every member (patchTrainProjects), and a run processes it once however many
-// members carry the flag (trainKeyOf). A project with no group is unchanged:
-// withGroup() gives it trainProjectIds [its own id] and its own deployBranch.
-// Read once per run; a grouped project whose group cannot be read throws
-// rather than silently building onto its old branch.
-let releaseGroupCache = null;
-async function loadReleaseGroups() {
-  if (!releaseGroupCache) {
-    const list = await runQuery({ from: [{ collectionId: "releaseGroups" }] });
-    releaseGroupCache = new Map(list.map((g) => [g.id, g]));
-  }
-  return releaseGroupCache;
-}
-async function withGroup(project) {
-  if (!project) return project;
-  if (!project.releaseGroupId) return releaseGroups.withReleaseGroup(project, new Map());
-  const grouped = releaseGroups.withReleaseGroup(project, await loadReleaseGroups());
-  if (!grouped.releaseGroup) console.log(`[release-group] ${project.id}: releaseGroupId ${project.releaseGroupId} does not list this project (or has no deployBranch) — using the project's own train`);
-  return grouped;
-}
-async function patchTrainProjects(project, fields) {
-  for (const id of releaseGroups.trainProjectIdsOf(project)) await patchProject(id, fields);
-}
-// id → { id, name } for every project on this project's train.
-async function trainProjectsById(project) {
-  const out = { [project.id]: project };
-  for (const id of releaseGroups.trainProjectIdsOf(project)) {
-    if (out[id]) continue;
-    out[id] = await getProject(id).catch(() => ({ id, name: id }));
-  }
-  return out;
+  return { id: projectId, ...fdoc(json.fields) };
 }
 
 async function patchProject(projectId, fields) {
@@ -681,18 +640,6 @@ async function itemsForProject(projectId, fields) {
     from: [{ collectionId: "backlogItems" }],
     ...(fields ? { select: selectFields(fields) } : {}),
     where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: projectId } } },
-  });
-}
-
-// Every card on this project's train's projects: its own, or every member's
-// of its release group (see withGroup).
-async function itemsForTrain(project, fields) {
-  const ids = releaseGroups.trainProjectIdsOf(project);
-  if (ids.length <= 1) return itemsForProject(ids[0] || project.id, fields);
-  return runQuery({
-    from: [{ collectionId: "backlogItems" }],
-    ...(fields ? { select: selectFields(fields) } : {}),
-    where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "IN", value: { arrayValue: { values: ids.map((id) => ({ stringValue: id })) } } } },
   });
 }
 
@@ -4433,8 +4380,7 @@ async function reportTrainTestResults() {
       spellChanged = true;
     }
     if (project && (redChanged || spellChanged)) {
-      // A release group's train is one train: every member shows its state.
-      await patchTrainProjects(project, {
+      await patchProject(project.id, {
         ...(redChanged ? { trainTestsRed: Object.keys(red).length ? red : null } : {}),
         ...(spellChanged ? { trainRedSpell: spell } : {}),
         updatedAt: new Date().toISOString(),
@@ -4964,10 +4910,7 @@ function repointPreviewUrlRef(url, newRef) {
 async function repointTrainPreviewUrls(projectId, deployBranch, newSha, excludeItemId) {
   let siblings;
   try {
-    // A release group's train re-points every member's cards; a project that
-    // can't be read falls back to its own cards (the pre-group behaviour).
-    const trainProject = await getProject(projectId).catch(() => null);
-    siblings = trainProject ? await itemsForTrain(trainProject) : await itemsForProject(projectId);
+    siblings = await itemsForProject(projectId);
   } catch (err) {
     console.log(`[apply-patch] couldn't list sibling items to re-point preview links (${err.message}) — their links stay as they were until their own next commit`);
     return;
@@ -5608,7 +5551,7 @@ async function processApplyPatch(item) {
   // (see processDeployTrain): flag the project so the Deploy step leaves the
   // PR open for a person instead of attempting a merge that would be refused.
   if (workflowPaths.length && !project.needsHumanMerge) {
-    await patchTrainProjects(project, { needsHumanMerge: true, updatedAt: new Date().toISOString() });
+    await patchProject(projectId, { needsHumanMerge: true, updatedAt: new Date().toISOString() });
   }
 
   const deployCommits = (Array.isArray(item.deployCommits) ? item.deployCommits.slice() : []).concat([sha]);
@@ -5780,25 +5723,11 @@ function staleRevertRequest(item) {
 // through a main merge belongs to another project's ticket, which nobody on
 // this train can send back, so it is not named as a blocker. A ticket that
 // can't be looked up is kept rather than hidden. Pure.
-// `projectId` may be a list: a release group's train carries every member
-// project's tickets, and any of them can block a revert.
 function sameProjectIds(ids, itemsById, projectId) {
-  const allowed = Array.isArray(projectId) ? projectId.filter(Boolean) : (projectId ? [projectId] : []);
-  if (!allowed.length) return ids.slice();
+  if (!projectId) return ids.slice();
   return ids.filter((id) => {
     const it = itemsById.get(id);
-    return !it || !it.projectId || allowed.includes(it.projectId);
-  });
-}
-
-// "abc123 (Staff Kanban: Fix the filter)" for a blocker in another project of
-// the same release group; just the id for one in the ticket's own project. Pure.
-function blockerLabels(ids, itemsById, ownProjectId, projectsById = {}) {
-  return ids.map((id) => {
-    const it = itemsById.get(id);
-    if (!it || !it.projectId || it.projectId === ownProjectId) return id;
-    const name = (projectsById[it.projectId] && projectsById[it.projectId].name) || it.projectId;
-    return `${id} (${name}: ${it.title || "untitled"})`;
+    return !it || !it.projectId || it.projectId === projectId;
   });
 }
 
@@ -5929,9 +5858,7 @@ async function processRevertFromTrain(item) {
       const later = itemIdsInRange(`${sha}..HEAD`).filter((id) => id !== item.id);
       const laterItems = new Map();
       for (const id of later) laterItems.set(id, await getItem(id).catch(() => null));
-      const revertProject = await getProject(item.projectId).catch(() => null);
-      const blockedBy = sameProjectIds(later, laterItems, revertProject ? releaseGroups.trainProjectIdsOf(revertProject) : item.projectId);
-      const blockerNames = blockerLabels(blockedBy, laterItems, item.projectId, revertProject ? await trainProjectsById(revertProject) : {});
+      const blockedBy = sameProjectIds(later, laterItems, item.projectId);
       discardWorkingTree();
       const previousBlock = Array.isArray(item.revertBlockedBy) ? item.revertBlockedBy : [];
       const sameBlock = previousBlock.length === blockedBy.length && previousBlock.every((id) => blockedBy.includes(id));
@@ -5953,7 +5880,7 @@ async function processRevertFromTrain(item) {
           item,
           `Could not take this ticket off the train automatically: reverting ${sha.slice(0, 7)} from \`${deployBranch}\` conflicted, because ` +
           (blockedBy.length
-            ? `later ticket(s) on the same branch build on top of it — ${blockerNames.join(", ")}. `
+            ? `later ticket(s) on the same branch build on top of it — ${blockedBy.join(", ")}. `
             : `later work on the same branch touches the same lines. `) +
           `The card has still been sent back, but its code is still on the branch, so Deploy to Main stays hidden until this is cleared. ` +
           `Resolve it by sending the later ticket(s) back too (Failed testing on each), or by fixing \`${deployBranch}\` by hand. Nothing was force-pushed.\n\nDetails:\n${scrubSecrets(err.message)}`,
@@ -6047,8 +5974,7 @@ async function detachCarriedCards(revertedItem, shas, deployBranch) {
   if (!shas.length || !revertedItem.projectId) return;
   let riders = [];
   try {
-    const trainProject = await getProject(revertedItem.projectId).catch(() => null);
-    riders = carriedCardsOn(trainProject ? await itemsForTrain(trainProject) : await itemsForProject(revertedItem.projectId), shas).filter((i) => i.id !== revertedItem.id);
+    riders = carriedCardsOn(await itemsForProject(revertedItem.projectId), shas).filter((i) => i.id !== revertedItem.id);
   } catch (err) {
     console.log(`[train-revert] ${revertedItem.id}: couldn't look for cards riding on ${shas.map((s) => s.slice(0, 7)).join(", ")} (${err.message}) — the next sweep's Deploy verification is the backstop`);
     return;
@@ -6811,13 +6737,9 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
   }
   run("git", ["checkout", "main", "--quiet"]);
 
-  // Each member project of a release group keeps its own docs: sync every one.
-  for (const pid of releaseGroups.trainProjectIdsOf(project)) {
-    const member = pid === project.id ? project : await getProject(pid).catch(() => null);
-    if (member) await syncDocsAfterMerge(member, mergeCommit);
-  }
+  await syncDocsAfterMerge(project, mergeCommit);
 
-  await patchTrainProjects(project, {
+  await patchProject(project.id, {
     trainReady: false,
     trainLocked: false,
     trainStatus: "idle",
@@ -6837,22 +6759,20 @@ async function finishTrain(project, deployBranch, prNumber, trainItems, { touche
 // REQUEST really is on the branch and nothing on the branch is still in
 // testing; this merges the whole branch to main as ONE PR.
 async function processDeployTrain(project) {
-  project = await withGroup(project);
-  console.log(`[deploy-train] ${project.id}: ${project.name}${project.releaseGroup ? ` (release group ${project.releaseGroup.name}: ${project.trainProjectIds.join(", ")})` : ""}`);
+  console.log(`[deploy-train] ${project.id}: ${project.name}`);
   // This Deploy to Main click is consumed here, whatever the outcome. The
   // stamp is what stops trainHandoverReason (train-lock.js) handing the
   // same request over again after it was merged or refused — without it,
   // an old click would keep re-arming the train and a newly approved
   // ticket could merge with nobody having clicked for it.
-  await patchTrainProjects(project, { deployRequestHandledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  await patchProject(project.id, { deployRequestHandledAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
   const deployBranch = project.deployBranch || deployBranchForName(project.name);
-  const allItems = await itemsForTrain(project);
+  const allItems = await itemsForProject(project.id);
   const onTrain = onTrainItems(allItems);
-  const projectsById = project.releaseGroup ? await trainProjectsById(project) : { [project.id]: project };
 
   if (!onTrain.length) {
     console.log(`[deploy-train] ${project.id}: nothing on the train — clearing trainReady`);
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainReady: false, trainStatus: "idle",
       // Nothing left on the branch means nothing left to gate Backlog on
       // either — without this, a Deploy to Main click on an already-empty
@@ -6873,16 +6793,16 @@ async function processDeployTrain(project) {
     // something raced it (a card sent back between the click and this run).
     // Merging anyway would ship untested work — refuse.
     console.log(`[deploy-train] ${project.id}: ${stillTesting.length} ticket(s) still in Ready for Testing — refusing to merge the train`);
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainReady: false, trainStatus: "idle",
-      trainNote: `Not merged: ${stillTesting.length} ticket(s) on ${deployBranch} are still in Ready for Testing (${stillTesting.map((i) => (i.projectId && i.projectId !== project.id ? `${i.id} in ${(projectsById[i.projectId] && projectsById[i.projectId].name) || i.projectId}` : i.id)).join(", ")}). ` +
+      trainNote: `Not merged: ${stillTesting.length} ticket(s) on ${deployBranch} are still in Ready for Testing (${stillTesting.map((i) => i.id).join(", ")}). ` +
         `Merging the branch would ship them too. Approve or reject them, then click Deploy to Main again.`,
       updatedAt: new Date().toISOString(),
     });
     return;
   }
   if (!remoteBranchExists(deployBranch)) {
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainReady: false, trainStatus: "idle",
       trainNote: `Not merged: the integration branch ${deployBranch} doesn't exist on origin.`,
       updatedAt: new Date().toISOString(),
@@ -6890,7 +6810,7 @@ async function processDeployTrain(project) {
     return;
   }
 
-  await patchTrainProjects(project, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
+  await patchProject(project.id, { trainStatus: "deploying", trainNote: null, updatedAt: new Date().toISOString() });
 
   // 0. The Deploy Routine's step 1, done here as well so the pipeline can
   //    hand a train over without it (trainHandoverReason): every ticket's
@@ -6905,7 +6825,7 @@ async function processDeployTrain(project) {
   if (offBranch.length) {
     discardWorkingTree();
     console.log(`[deploy-train] ${project.id}: ${offBranch.length} ticket(s) claim a commit that is not on ${deployBranch} — refusing to merge the train`);
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainReady: false, trainStatus: "idle",
       trainNote: `Not merged: ${offBranch.map((i) => `${i.id} (${String(i.deployCommit).slice(0, 7)})`).join(", ")} ${offBranch.length === 1 ? "claims a commit that is" : "claim commits that are"} not on ${deployBranch}. ` +
         `Either it was reverted off the train or never pushed — check the card's notes, send it back or re-stamp it, then click Deploy to Main again.`,
@@ -6944,7 +6864,7 @@ async function processDeployTrain(project) {
           dispatchTrainTests(deployBranch, redWorkflows.map((w) => TRAIN_TEST_WORKFLOWS.find((t) => t.workflow === w.workflow).prefix + "x"), "deploy-train");
           console.log(`[deploy-train] ${project.id}: main is green again at ${plan.resync.slice(0, 7)} — took it onto ${deployBranch} and re-testing`);
           followUpReasons.push(`${project.id}: deploy re-testing after taking main`);
-          await patchTrainProjects(project, {
+          await patchProject(project.id, {
             trainStatus: "deploying",
             trainHold: "tests-running",
             trainMainResyncedTo: plan.resync,
@@ -6957,7 +6877,7 @@ async function processDeployTrain(project) {
       }
       if (plan.mainRed) redNote = heldDeployMainRedNote(what, String(state.baseSha).slice(0, 7));
     }
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainStatus: "deploying",
       trainHold: red ? "tests-red" : "tests-running",
       trainNote: red
@@ -6967,7 +6887,7 @@ async function processDeployTrain(project) {
     });
     return;
   }
-  if (project.trainHold) await patchTrainProjects(project, { trainHold: null, updatedAt: new Date().toISOString() });
+  if (project.trainHold) await patchProject(project.id, { trainHold: null, updatedAt: new Date().toISOString() });
 
   // 1. Bring main in. This used to be the only remaining conflict path, and
   //    still is for anything other than the files
@@ -6990,7 +6910,7 @@ async function processDeployTrain(project) {
       try { run("git", ["merge", "--abort"]); } catch { /* nothing in progress */ }
       discardWorkingTree();
       console.log(`[deploy-train] ${project.id}: merging main into ${deployBranch} ${resolution.detail}`);
-      await patchTrainProjects(project, {
+      await patchProject(project.id, {
         trainReady: false,
         trainStatus: "conflict",
         trainConflictAt: trainConflictKey(deployBranch),
@@ -7045,16 +6965,17 @@ async function processDeployTrain(project) {
     if (own && own.state === "OPEN") prNumber = Number(own.number);
   }
   if (!prNumber) {
-    // One PR for a release group too: titled after the group, tickets listed by project.
-    const body = releaseGroups.trainPrBody(project, onTrain, projectsById, deployBranch);
+    const body = `Deployment train for **${project.name}** — ${onTrain.length} ticket(s) built on top of each other on \`${deployBranch}\` and tested together.\n\n` +
+      onTrain.map((i) => `- ${i.title || i.desc || i.id}\n  Backlog item: ${i.id}`).join("\n") +
+      `\n\nOpened by the backlog automation. Merging this ships every ticket listed above.`;
     const prUrl = run("gh", ["pr", "create", "--base", "main", "--head", deployBranch,
-      "--title", releaseGroups.trainPrTitle(project, onTrain.length),
+      "--title", `Deploy ${project.name} — ${onTrain.length} ticket${onTrain.length === 1 ? "" : "s"}`,
       "--body", body]);
     prNumber = Number((String(prUrl).match(/\/pull\/(\d+)/) || [])[1]) || null;
     if (!prNumber) throw new Error(`couldn't parse a PR number out of ${prUrl}`);
     console.log(`[deploy-train] ${project.id}: opened ${String(prUrl).trim()}`);
   }
-  await patchTrainProjects(project, { trainPrNumber: prNumber, updatedAt: new Date().toISOString() });
+  await patchProject(project.id, { trainPrNumber: prNumber, updatedAt: new Date().toISOString() });
   // Every card on the train gets the PR badge, same as a per-ticket PR used
   // to give it — "which PR is this card" stays answerable from the board.
   for (const item of onTrain) {
@@ -7088,7 +7009,7 @@ async function processDeployTrain(project) {
         const n = rerunInfraChecks(pr.statusCheckRollup);
         console.log(`[deploy-train] ${project.id}: PR #${prNumber} has check(s) GitHub never finished running — re-ran ${n} workflow run(s) (attempt ${reruns + 1}/${TRAIN_CI_INFRA_RERUNS}); trainReady stays set`);
         followUpReasons.push(`${project.id}: PR #${prNumber} checks re-run after a GitHub-side cancellation`);
-        await patchTrainProjects(project, {
+        await patchProject(project.id, {
           trainStatus: "deploying",
           trainNote: `GitHub cancelled or never started a check on PR #${prNumber} (not a test failure) — re-running it (attempt ${reruns + 1} of ${TRAIN_CI_INFRA_RERUNS}). It merges by itself once the checks pass.`,
           trainCiRerunSha: sha,
@@ -7103,7 +7024,7 @@ async function processDeployTrain(project) {
     }
     if (checks === "failure") {
       const red = (pr.statusCheckRollup || []).filter((c) => !["SUCCESS", "NEUTRAL", "SKIPPED", ""].includes(String(c.conclusion || c.state || "").toUpperCase()) && String(c.status || "COMPLETED").toUpperCase() === "COMPLETED");
-      await patchTrainProjects(project, {
+      await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
         // resumeRedTrains() picks the deploy back up by itself once this PR
         // is green again (a re-run, or a fix pushed to the train) — the
@@ -7133,7 +7054,7 @@ async function processDeployTrain(project) {
       } catch { mainMoved = true; }
       if (mainMoved && raceRetries < TRAIN_MAIN_MOVED_RETRIES) {
         followUpReasons.push(`${project.id}: main moved while PR #${prNumber} was being checked`);
-        await patchTrainProjects(project, {
+        await patchProject(project.id, {
           trainStatus: "deploying",
           trainMainMovedRetries: raceRetries + 1,
           trainNote: `main changed while PR #${prNumber} was being checked, so it no longer merges cleanly — bringing main into ${deployBranch} again (attempt ${raceRetries + 1} of ${TRAIN_MAIN_MOVED_RETRIES}). It merges by itself; no need to click again.`,
@@ -7142,7 +7063,7 @@ async function processDeployTrain(project) {
         console.log(`[deploy-train] ${project.id}: PR #${prNumber} is CONFLICTING because main moved — merging main in again on the next run (attempt ${raceRetries + 1}/${TRAIN_MAIN_MOVED_RETRIES})`);
         return;
       }
-      await patchTrainProjects(project, {
+      await patchProject(project.id, {
         trainReady: false, trainStatus: "conflict",
         trainCiRedPr: null, trainCiRedSha: null, // a merge conflict needs a person, not a green check
         trainMainMovedRetries: null,
@@ -7167,7 +7088,7 @@ async function processDeployTrain(project) {
     const samePr = Number(project.trainCiWaitingPr) === Number(prNumber);
     const waitingSince = (samePr && Date.parse(project.trainCiWaitingSince || "")) || Date.now();
     if (followUpDue(waitingSince)) followUpReasons.push(`${project.id}: PR #${prNumber} waiting on CI`);
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainStatus: "deploying",
       trainNote: `Waiting on CI for PR #${prNumber} (${REQUIRED_TRAIN_CHECKS.join(", ")} must pass before it merges). It merges by itself within a few minutes of going green.`,
       trainCiWaitingPr: Number(prNumber),
@@ -7188,7 +7109,7 @@ async function processDeployTrain(project) {
       // train has had is its own CI — a person merges it on GitHub, and
       // reconcileMergedTrains records it as live on a later run.
       console.log(`[deploy-train] ${project.id}: PR #${prNumber} changes ${WORKFLOW_PATH_PREFIX} — leaving the merge to a human`);
-      await patchTrainProjects(project, {
+      await patchProject(project.id, {
         trainReady: false,
         trainStatus: "awaiting-human-merge",
         trainNote: `PR #${prNumber} changes files under ${WORKFLOW_PATH_PREFIX}, which the automation never merges on its own. ` +
@@ -7219,7 +7140,6 @@ async function reconcileMergedTrains() {
     select: selectFields(["trainPrNumber"]),
     where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "awaiting-human-merge" } } },
   });
-  const doneTrains = new Set();
   for (const waitingProject of waiting) {
     let project = waitingProject;
     const prNumber = Number(project.trainPrNumber) || null;
@@ -7238,14 +7158,10 @@ async function reconcileMergedTrains() {
     if (pr.state === "OPEN") { approveHeldRuns(pr.headRefOid); continue; }
     if (pr.state !== "MERGED") continue;
     project = await getProject(project.id);
-    // Every member of a release group mirrors the train's state: finish it once.
-    const trainKey = releaseGroups.trainKeyOf(project);
-    if (doneTrains.has(trainKey)) continue;
-    doneTrains.add(trainKey);
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
-    const onTrain = onTrainItems(await itemsForTrain(project));
+    const onTrain = onTrainItems(await itemsForProject(project.id));
     if (!onTrain.length) {
-      await patchTrainProjects(project, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, trainHold: null, trainMainMovedRetries: null, updatedAt: new Date().toISOString() });
+      await patchProject(project.id, { trainStatus: "idle", trainReady: false, trainLocked: false, trainPrNumber: null, trainTestsRed: null, trainHold: null, trainMainMovedRetries: null, updatedAt: new Date().toISOString() });
       continue;
     }
     console.log(`[deploy-train] ${project.id}: PR #${prNumber} was merged outside the pipeline — recording ${onTrain.length} ticket(s) as live`);
@@ -7377,24 +7293,16 @@ function trainSweepPlan(items, liveCommits) {
 async function reconcileLockedTrains() {
   const locked = await runQuery({
     from: [{ collectionId: "projects" }],
-    select: selectFields(["trainLocked", "trainStatus", "deployBranch", "name", "releaseGroupId"]),
+    select: selectFields(["trainLocked", "trainStatus", "deployBranch", "name"]),
     where: { fieldFilter: { field: { fieldPath: "trainLocked" }, op: "EQUAL", value: { booleanValue: true } } },
   });
-  const sweptTrains = new Set();
-  for (const lockedProject of locked) {
+  for (const project of locked) {
     // Mid-deploy / awaiting a human merge are their own lifecycles (handled
     // above by processDeployTrain / reconcileMergedTrains) — never race
     // those by unlocking underneath them.
-    if (lockedProject.trainStatus === "deploying" || lockedProject.trainStatus === "awaiting-human-merge") continue;
-    // A release group's train is swept once, on every member's tickets: a
-    // member whose own tickets are all gone must never reset a branch the
-    // other member's tickets are still on.
-    const project = await withGroup(lockedProject);
-    const trainKey = releaseGroups.trainKeyOf(project);
-    if (sweptTrains.has(trainKey)) continue;
-    sweptTrains.add(trainKey);
+    if (project.trainStatus === "deploying" || project.trainStatus === "awaiting-human-merge") continue;
 
-    const items = await itemsForTrain(project, [...TRAIN_LOCK_ITEM_FIELDS, "projectId"]);
+    const items = await itemsForProject(project.id, TRAIN_LOCK_ITEM_FIELDS);
     if (!trainLockShouldClear(project, items)) continue;
 
     const deployBranch = project.deployBranch || deployBranchForName(project.name);
@@ -7438,7 +7346,7 @@ async function reconcileLockedTrains() {
         }
       }
     }
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainLocked: false,
       trainReady: false,
       // Whatever trainStatus/trainNote said before — including a stale
@@ -7890,7 +7798,7 @@ async function resumeConflictedTrain(project) {
   const key = trainConflictKey(deployBranch);
   if (!key || key === project.trainConflictAt) return;
   console.log(`[resume-train] ${project.id}: ${deployBranch} or main moved since the merge conflict — retrying the approved deploy`);
-  await patchTrainProjects(project, {
+  await patchProject(project.id, {
     trainReady: true,
     trainStatus: "deploying",
     trainConflictAt: key,
@@ -7913,27 +7821,21 @@ async function resumeRedTrains() {
     from: [{ collectionId: "projects" }],
     where: { fieldFilter: { field: { fieldPath: "trainStatus" }, op: "EQUAL", value: { stringValue: "conflict" } } },
   });
-  const resumed = new Set();
-  for (const parkedProject of parked) {
-    if (parkedProject.trainReady === true) continue;
-    // Read through the release group (its branch, its members), once per train.
-    const project = await withGroup(parkedProject);
-    const trainKey = releaseGroups.trainKeyOf(project);
-    if (resumed.has(trainKey)) continue;
-    resumed.add(trainKey);
+  for (const project of parked) {
     const prNumber = Number(project.trainCiRedPr) || null;
+    if (project.trainReady === true) continue;
     if (!prNumber) { await resumeConflictedTrain(project); continue; }
     let pr;
     try { pr = viewTrainPr(prNumber); }
     catch (err) { console.log(`[resume-train] ${project.id}: couldn't read PR #${prNumber} (${scrubSecrets(err.message)}) — trying again next run`); continue; }
     if (pr.state === "CLOSED") {
-      await patchTrainProjects(project, { trainCiRedPr: null, trainCiRedSha: null, updatedAt: new Date().toISOString() });
+      await patchProject(project.id, { trainCiRedPr: null, trainCiRedSha: null, updatedAt: new Date().toISOString() });
       continue;
     }
     const checks = pr.state === "MERGED" ? "success" : trainChecksState(pr.statusCheckRollup);
     if (checks === "failure") continue; // still red on the same evidence
     console.log(`[resume-train] ${project.id}: PR #${prNumber} is no longer red (${checks}) — resuming the approved deploy`);
-    await patchTrainProjects(project, {
+    await patchProject(project.id, {
       trainReady: true,
       trainStatus: "deploying",
       trainCiRedPr: null,
@@ -8157,19 +8059,8 @@ async function main() {
       }
     }
   }
-  const deployedTrains = new Set();
-  for (const readyProject of trainReadyProjects) {
-    let project = readyProject;
+  for (const project of trainReadyProjects) {
     try {
-      // A release group's members all carry the train's state; one Deploy to
-      // Main from any of them deploys the group's train, once per run.
-      project = await withGroup(readyProject);
-      const trainKey = releaseGroups.trainKeyOf(project);
-      if (deployedTrains.has(trainKey)) {
-        console.log(`[deploy-train] ${project.id}: shares its train with a project already deployed this run — skipped`);
-        continue;
-      }
-      deployedTrains.add(trainKey);
       await processDeployTrain(project);
     } catch (err) {
       console.error(`[deploy-train] ${project.id} failed: ${err.stack || err.message}`);
@@ -8178,7 +8069,7 @@ async function main() {
       // trainReady is cleared so a permanent failure can't retry every two
       // minutes with nothing visible anywhere.
       try {
-        await patchTrainProjects(project, {
+        await patchProject(project.id, {
           trainReady: false,
           trainStatus: "conflict",
           trainNote: `The deploy run failed and nothing was merged: ${scrubSecrets(err.message || String(err))}`,
@@ -8286,9 +8177,7 @@ module.exports = {
   dependencyIdsOf, dependencyMigration, dependencyNote, DEPENDENCY_REASON, sweepDependencyWaits, releaseDependents, sweepBuildQueue,
   patchFilesFromCommit,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
-  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, blockerLabels,
-  // test/release-groups.test.js — projects in one deployable share one train
-  withGroup, itemsForTrain, patchTrainProjects, processDeployTrain, finishTrain, reconcileMergedTrains, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
+  resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, retestPlan, retestUnrunWorkflows, flushBuildRequests, gateRunFor,
   closeNotifyRoutines,
   // test/train-rejudge.test.js — a ticket left with no verdict by a revert is re-tested
   scanRedTrain, rejudgeReverts, rejudgeKey, rejudgeShaOf, rejudgeRef, rejudgeCards, buildRejudgeCommit, pruneRejudgeRefs, evidenceRunsFor, laterPassFor,

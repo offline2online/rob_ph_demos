@@ -33,14 +33,7 @@ and `storage.rules`, and the server and MCP tools are `backlog-tracker/functions
 (see `backlog-tracker/README.md` → "Staff Kanban"). It passes the whole test plan
 against the console: [`docs/E2E-REPORT-2026-10-21-console.md`](docs/E2E-REPORT-2026-10-21-console.md).
 It ships on the board project `New5VKTF2QBqT3T4YEla` (deploy branch
-`deploy/kanban-staff-board`) and goes live when that train merges.
-Staff Kanban and Backlog Tracker & FAQs are one deployable (the console), so
-they are to share one train in the release group "PH Agent Console"
-(`deploy/ph-agent-console`, `backlog-tracker/functions/release-groups.js`):
-once the deploy session has migrated them, Staff Kanban tickets land on that
-branch, are tested with the console's, and ship in the same PR.
-`deploy/kanban-staff-board` is then left in place, unused (not deleted). This
-project keeps its own Backlog, columns, docs and archive. This folder keeps
+`deploy/kanban-staff-board`) and goes live when that train merges. This folder keeps
 the spec, the signed-off prototype (the reference behaviour) and its tests.
 [`board-docs.json`](board-docs.json) mirrors the test plan and run reports onto the
 project's Docs page.
