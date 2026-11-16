@@ -212,6 +212,8 @@ The board reads a light card per ticket (`kanbanCards/{PH-n}`, the fields a card
 
 Every member is on the board, including the bootstrap admins, who have no `consoleUsers` row. Anywhere a person is named (`assignee`, `reporter`) `me` means the authenticated member. An alias address (`PERSON_ALIASES` in `public/js/kanban/kanban-core.js`: `rob@personalisationhub.com` is Rob, `rob@offline2online.com`) is never listed as a person: naming it, mentioning it, or connecting an agent signed in as it all resolve to its owner.
 
+### Ticket history, agent instructions, test and link state
+
 **Reading ticket history.** `list_backlog_items` pages: it returns at most
 100 tickets per call (default 25), newest-updated first and then by id, plus
 `matched` (the total) and `nextCursor` — pass that back as `cursor` until it
@@ -252,6 +254,19 @@ delivers whole).
   rebuilding, 1 with tests running." The MCP App card shows a link pill ("Test
   link rebuilding — don't test yet", "Test link ready · build abc1234", "Test
   link may be out of date") and "Test this (previous build)" while rebuilding.
+- **Testing rounds** (15 Nov 2026; `REQUIREMENTS.md` → "Testing rounds").
+  `get_ready_for_testing_board` also returns, per card, `testRound` (at least
+  1), `sendBackCount` (every send-back ever, counted or not), `inTestingLoop`
+  (`true` from round 3, `FIRST_CAP` in `functions/test-rounds.js`) and
+  `lastSendBack` (`{at, by, who, category, line}` of the last counted
+  send-back, `by` being `"person"`, `"tests"` or `"review"`, or `null`).
+  Tickets in a testing loop are listed first, highest round first; the rest
+  stay newest first. The first text line then starts its counts with "N in a
+  testing loop (round 3 or later, listed first)". The MCP App card shows a
+  "Round N" pill from round 2 (warning colour from round 3) and, from round
+  2, "Sent back last time: <line>" under the title. The rounds are read with
+  `loopState`, so a card written before the fields existed is read from its
+  notes.
 - `get_backlog_item`'s `train` block adds `previewState`, `previewSha`,
   `previewUpdatedAt`.
 - `list_projects` adds per project `trainTestsRed` (workflow → `{sha, url, at}`
@@ -470,12 +485,19 @@ logged to `mcpAuditLog` under the caller's email.**
   it back"**, admin only like the two above. Each named Ready for Testing
   ticket goes to Backlog with `revertRequested: true` (the automation reverts
   its commits off the train), `lastFailureReason` `{category, text, action:
-  "failed-testing", at}` and a note, and `rebuildAfterRevert: true`, so a
+  "failed-testing", at, who}` and a note, and `rebuildAfterRevert: true`, so a
   rebuild is queued by itself once the revert has landed (the board button
   leaves that to a later Ready for Dev). `category` is one of the board's
   failure categories, default `Other`. It refuses the whole call if a ticket
   is not in this project's Ready for Testing or is already marked for revert,
-  and logs to `mcpAuditLog` with the reason. It does not offer the dialog's
+  and logs to `mcpAuditLog` with the reason. It records the send-back on the
+  card at once (`recordSendBack` in `functions/test-rounds.js`: a `sendBacks`
+  entry by `"person"`, `who` the caller's email, and `sendBackCount` /
+  `countedSendBacks` raised; category "Blocking a release, not a rebuild" is
+  recorded uncounted), so the automation does not record it again when it
+  reverts the ticket, and applies the loop cap there: the 3rd counted
+  send-back leaves the ticket in Backlog flagged needs-decision instead of
+  rebuilding it. It does not offer the dialog's
   "it works, but I want something more" choice; file that with
   `create_backlog_item`.
 
