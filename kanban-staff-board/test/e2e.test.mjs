@@ -249,10 +249,14 @@ T("TC-09", "filter bar and column headers stay pinned; filter bar fits one line 
   await press(p, "#kb-mine");
   for (const id of ["rob", "minh", "linh", "huy", "thao", "duc", "none"]) await press(p, `.kb-person-chip[data-person="${id}"]`);
   await p.selectOption("#kb-release", "4.12");
+  // A filter change redraws the board and puts the old scroll position back on the next frame (keepPosition).
+  // On a busy runner that frame came after the scroll below and undid it, so wait for it to have run first.
+  await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const rows = await p.$$eval(".kb-filters > *", (e) => new Set(e.map((x) => Math.round(x.getBoundingClientRect().top))).size);
   assert.equal(rows, 1, `one line at ${prof.width}`);
   await p.evaluate(() => scrollTo(0, 800));
-  await p.waitForTimeout(100);
+  // Wait until the bar is pinned (the condition asserted next), not a fixed time; the assert reports it if it never is.
+  await p.waitForFunction(() => Math.round(document.getElementById("kb-sticky").getBoundingClientRect().top) === 0, null, { timeout: 5000 }).catch(() => {});
   assert.equal(await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().top)), 0);
   const head = await p.$$eval("#kb-lanes-head .kb-lanes-head", (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));
   const cells = await p.$$eval('.kb-lane-cell[data-lane="rob"]', (e) => e.map((x) => Math.round(x.getBoundingClientRect().left)));

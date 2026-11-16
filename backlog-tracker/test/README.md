@@ -143,6 +143,12 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   second tap or a second open could change it between two separate lookups
   (KB-C1, "Failed to find element matching selector #f-title" right after
   the modal was seen open).
+- A case that scrolls the prototype board right after a filter change waits
+  two animation frames first: the prototype's `keepPosition` puts the old
+  scroll position back on the next frame, and on a busy runner that frame
+  came after the case's own `scrollTo` and undid it. It then waits until the
+  bar is pinned rather than for a fixed time (TC-09, "Expected values to be
+  strictly equal").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.
