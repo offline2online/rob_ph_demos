@@ -732,7 +732,15 @@ was dropped.
   and no version is bumped. At the head of the queue the order is: merge
   main (resolvers below), push, the train's tests on that head, then the
   bump. So the long suites run **once, on the final head**, and the bump
-  (which starts no tests) is computed from main once.
+  is computed from main once. Pushing the bump does make GitHub start the
+  same suites again on the train PR (a `pull_request` path filter looks at
+  the PR's whole diff, not at the push), on a head that differs by
+  `version.js` alone. The deploy does not wait for that repeat
+  (`withoutGateTestedChecks`, 16 Nov 2026; PR #613 was green at 19:44 and
+  merged at 20:04 after a 30-minute repeat): when the only change since the
+  head the gate passed is `version.js`, the PR's checks from the gate's own
+  workflows are left out of the wait, pass or fail. Every other check on the
+  PR, and every required check (`REQUIRED_TRAIN_CHECKS`), still has to pass.
 - **A stalled head is passed over.** A queue head with no progress (its
   status, hold, PR or branch head unchanged) for 60 minutes, or parked on a
   conflict, is passed over: related trains behind it go, it keeps its place
@@ -890,19 +898,32 @@ and `test/build-order.test.js`):
   `{summary, heldItemIds, queuedItemIds, notSent, at}` ("2 held: they need
   "X", which was not sent"), shown beside the Ready for Dev button for two
   hours; when nothing could start, `notifyRoutine` is an error saying that.
-- **Same-area tickets go one at a time; different areas stay parallel.**
+- **Same-area tickets go three at a time; different areas stay parallel.**
   Tickets that share a groom area (`groomAreas`), a file path (by file name;
   `index.js` and the like keep their folder; Markdown files don't count), a
   named function (camelCase, eight characters or more) or a quoted spec
   section (`→ "Section"`) in their Outcome or Spec reference form a lane.
-  A lane fires its first ticket (priority high → medium/unset → low, then
-  oldest first) and queues the rest (`queuedAfter`; the card shows "Queued:
-  builds after <title>", not blocked, no Answer button). A ticket sharing a
-  lane with a build an earlier click is still running queues behind it.
+  A lane fires its first three tickets (`LANE_WIDTH` in
+  `functions/build-order.js`; priority high → medium/unset → low, then
+  oldest first) and queues the rest, each behind the ticket three places
+  ahead of it (`queuedAfter`; the card shows "Queued: builds after <title>",
+  not blocked, no Answer button). Builds an earlier click is still running
+  count towards the three. Until 16 Nov 2026 a lane built one at a time:
+  seven flaky-test tickets sent in one click were a six-hour chain, although
+  each changed a different test case. Two lane-mates built side by side
+  collide only when they change the same lines (a patch is carried onto the
+  train by a three-way merge); that ticket is rebuilt automatically against
+  the train as it then is, which takes no longer than the wait it replaced.
+  Order that matters is a dependency, not a lane.
   `sweepBuildQueue` (every automation run) starts a queued ticket when the
   one ahead of it lands, fails (its current attempt reports error or done
   without a patch, its fire failed, or it is blocked), is archived or
-  deleted, or after three hours; it builds on the train tip after that.
+  deleted, or after three hours; it builds on the train tip after that. A
+  report from before the ticket's latest fire is the previous attempt's and
+  does not count: the ticket is being rebuilt, so the one behind it keeps
+  waiting (16 Nov 2026: it was let go and queued again every run, 139 notes
+  in three hours and no build). The queue writes one note per card, replaced
+  each time.
   Lanes are decided without a model call. `FANOUT_CONCURRENCY` (4) still
   caps how many fire at once.
 - **Deadlock check.** `sweepDependencyWaits` rewrites a waiter's flag when a
@@ -964,7 +985,14 @@ re-run of everything. The rules now:
 - **Each test file runs in exactly one job of one workflow per train.** The
   console workflow runs as five parallel jobs, each with a time limit:
   `rules` (emulator), `offline` (unit, MCP, train, docs), `ui-console`,
-  `ui-touch`, `ui-kanban`. The train still reads the workflow's one
+  `ui-touch`, `ui-kanban`. `ui-touch` runs as three parts and `ui-kanban`
+  as four, side by side (16 Nov 2026: the run took 28 minutes because
+  `ui-kanban` did, and one deploy waited for it up to four times). A part is
+  every n-th file (`UI_SHARD=i/n`, `test/ui/run-ui.mjs`) or every n-th
+  profile of the viewport matrix (`KB_SHARD=i/n`, `profiles.mjs`), so the
+  parts together run every file and every case in every profile exactly
+  once; `test/ui-shards.test.js` fails if the workflow's part count and its
+  `i/n` disagree. The train still reads the workflow's one
   conclusion. `firestore-rules-test.yml` owns the console's Staff Kanban
   suite (`test/ui/staff-kanban.test.mjs`); `kanban-staff-board-tests.yml`
   owns the prototype suite (`kanban-staff-board/test`) and starts only for a

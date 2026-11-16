@@ -6,6 +6,8 @@
 //   KB_PROFILES=phone-390-chromium,tablet-l-webkit   run only those
 //   KB_PROFILES=quick                                 desktop 1440 + phone 390, Chromium
 //   KB_ENGINES=chromium                               drop Firefox and WebKit
+//   KB_SHARD=1/4                                      the second of four equal parts of the list
+//                                                     (CI runs the parts as jobs side by side)
 //
 // An engine that isn't installed is reported and skipped, never silently
 // treated as a pass: the run summary names every profile that did not run.
@@ -43,7 +45,19 @@ export function wantedProfiles(env = process.env) {
   else if (sel) { const ids = sel.split(",").map((s) => s.trim()); list = list.filter((p) => ids.includes(p.id)); }
   const engines = (env.KB_ENGINES || "").trim();
   if (engines) { const e = engines.split(",").map((s) => s.trim()); list = list.filter((p) => e.includes(p.engine)); }
-  return list;
+  return shardOf(list, env.KB_SHARD);
+}
+
+// "i/n" → every n-th entry starting at i (0-based), so the n parts together
+// are the whole list, each entry in exactly one. Empty or unset → the whole
+// list. Anything else throws: a mistyped shard must never run nothing and pass.
+export function shardOf(list, spec) {
+  const s = String(spec || "").trim();
+  if (!s) return list;
+  const m = /^(\d+)\/(\d+)$/.exec(s);
+  const i = m ? +m[1] : NaN, n = m ? +m[2] : NaN;
+  if (!m || n < 1 || i >= n) throw new Error(`Bad shard "${s}": use i/n with 0 <= i < n, e.g. 0/4`);
+  return list.filter((_, k) => k % n === i);
 }
 
 // Launches each engine once; returns { launched: Map(engine → browser), missing: [{engine, reason}] }.
