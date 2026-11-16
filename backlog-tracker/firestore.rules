@@ -46,11 +46,16 @@ service cloud.firestore {
     function callerEmail() {
       return signedIn() ? request.auth.token.email.lower() : "";
     }
+    // The owner's two sign-in addresses, as the lowercase hex SHA-256 of each
+    // (first: the primary address, second: the alias), so this public file does
+    // not carry them. To check or change one: printf %s '<address>' | sha256sum.
+    function ownerPrimaryHash() { return "fadd70513e4bd7b7e55b7015ce0bccf7a75cd193f4db5aef4cbd670a1528417f"; }
+    function ownerAliasHash() { return "a4218ed5bce172a7c5fe4f7f8c38d5f02ea398937875ebb2e2b368c90c2f4cfe"; }
+    function emailHash(e) {
+      return e is string ? hashing.sha256(e).toHexString().lower() : "";
+    }
     function isOwnerAccount() {
-      return callerEmail() in [
-        "rob@offline2online.com",
-        "rob@personalisationhub.com"
-      ];
+      return signedIn() && emailHash(callerEmail()) in [ownerPrimaryHash(), ownerAliasHash()];
     }
     function isAutomationAccount() {
       return callerEmail() == "board-automation@backlog-tracker-e4ed2.firebaseapp.com";
@@ -644,8 +649,10 @@ service cloud.firestore {
       // "tour" or "").
       return d.keys().hasOnly(["company", "contacts", "stage", "source", "assignee", "customerAccount", "prospectId", "enrichment", "test", "sourcePage", "sourceIndustry",
           "sourceLabel", "sourceDetail", "websiteActivity", "history", "archivedAt", "archivedByEmail", "inboundCount",
-          "leadType", "operator", "tam",
+          "leadType", "operator", "tam", "rank",
           "createdAt", "updatedAt", "stageChangedAt", "createdByEmail", "updatedByEmail"])
+        // `rank`: its priority within its lane, lower is higher (set by dragging it up or down the lane).
+        && (d.get("rank", null) == null || d.get("rank", null) is number)
         // `tam`: a readable copy of the linked TAM record's own fields, written by
         // the function that keeps the two in step (lead-enrich.js); an editor's save keeps it.
         && (d.get("tam", null) == null || d.get("tam", null) is map)
@@ -1314,7 +1321,7 @@ service cloud.firestore {
     // signed in with the second he reads and clears those.
     function kanbanNotifiedIs(to) {
       return to == callerEmail()
-        || (callerEmail() == "rob@personalisationhub.com" && to == "rob@offline2online.com");
+        || (signedIn() && emailHash(callerEmail()) == ownerAliasHash() && emailHash(to) == ownerPrimaryHash());
     }
     match /kanbanNotifications/{noteId} {
       allow read: if signedIn() && kanbanNotifiedIs(resource.data.to);

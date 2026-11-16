@@ -2547,6 +2547,8 @@ body { overflow-x: clip; }
 .lead-card[draggable="true"] { cursor: grab; }
 .lead-card:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .lead-card.lead-dragging { opacity: .45; }
+/* Where a dragged card will land in a lane (its priority order, top = deal with next). */
+.lead-drop-marker { height: 3px; margin: -2px 4px; border-radius: 2px; background: var(--primary); pointer-events: none; }
 .lead-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .lead-logo { width: 32px; height: 32px; flex: none; box-sizing: border-box; border-radius: 8px; object-fit: contain; background: #fff; box-shadow: 0 0 0 .5px var(--ap-divider); }
 .lead-logo-fallback { display: inline-flex; align-items: center; justify-content: center; background: rgba(120, 120, 128, .14); box-shadow: none; color: var(--text-muted); font-size: 12px; font-weight: 600; }
@@ -2603,6 +2605,14 @@ body { overflow-x: clip; }
 .lead-sum-stage-ro { display: none; }
 html[data-console-role="viewer"] .lead-sum-stage-ro { display: inline; }
 .lead-sum-stage { min-height: 36px; font: inherit; max-width: 100%; }
+/* Priority: its place in the lane, and Move to top / up / down (44px targets for touch). */
+.lead-prio { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.lead-prio-tools { display: inline-flex; gap: 4px; }
+.lead-prio-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: rgba(120, 120, 128, .12); color: var(--primary); cursor: pointer; font: inherit; }
+.lead-prio-btn .material-symbols-outlined { font-size: 20px; }
+.lead-prio-btn:disabled { color: var(--text-muted); opacity: .45; cursor: default; }
+.lead-prio-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .lead-sum-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 8px; }
 /* The lead detail view: logo header, then grouped sections on the grouped background. */
 .lead-detail.lead-drawer { width: min(480px, 100%); border-top: 0; }

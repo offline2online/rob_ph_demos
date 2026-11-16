@@ -128,4 +128,31 @@ t("mergeInbound adds new contacts once, fills blanks and counts every arrival", 
   assert.equal(L.inboundLabel({ inboundCount: 2 }), "2 inbound"); assert.equal(L.inboundLabel({ inboundCount: 0 }), "");
   assert.equal(L.normaliseLead("x", { inboundCount: 5 }).inboundCount, 5);
 });
+t("a lane lists ranked leads first in rank order, then unranked ones newest first", () => {
+  const mk = (id, rank, updatedAt) => L.normaliseLead(id, { company: { name: id }, stage: "lead", rank, updatedAt });
+  const lanes = L.groupByStage([mk("old", undefined, 1000), mk("new", undefined, 5000), mk("second", 20), mk("first", -5)]);
+  assert.deepEqual(lanes.lead.map((l) => l.id), ["first", "second", "new", "old"]);
+  assert.equal(L.normaliseLead("x", { rank: "3" }).rank, null, "a non-number rank is ignored");
+  assert.equal(L.normaliseLead("x", { rank: 7 }).rank, 7);
+});
+t("planLaneOrder: between two ranked neighbours it is one midpoint write", () => {
+  const lane = [{ id: "a", rank: 1024 }, { id: "b", rank: 2048 }, { id: "c", rank: 3072 }];
+  assert.deepEqual(L.planLaneOrder(lane, "c", 1), [{ id: "c", rank: 1536 }], "c moves between a and b");
+  assert.deepEqual(L.planLaneOrder(lane, "c", 0), [{ id: "c", rank: 0 }], "to the top");
+  assert.deepEqual(L.planLaneOrder(lane, "a", 2), [{ id: "a", rank: 4096 }], "to the bottom");
+  assert.deepEqual(L.planLaneOrder(lane, "x", 1), [{ id: "x", rank: 1536 }], "a card from another lane");
+  assert.deepEqual(L.planLaneOrder(lane, "b", 1), [], "dropped where it already is: nothing to write");
+});
+t("planLaneOrder: an unranked lane (or no room left) is renumbered in its new order", () => {
+  const lane = [{ id: "a", rank: null }, { id: "b", rank: null }, { id: "c", rank: null }];
+  assert.deepEqual(L.planLaneOrder(lane, "c", 0), [{ id: "c", rank: 1024 }, { id: "a", rank: 2048 }, { id: "b", rank: 3072 }]);
+  const tight = [{ id: "a", rank: 1 }, { id: "b", rank: 1 + 1e-9 }, { id: "c", rank: 5 }];
+  const w = L.planLaneOrder(tight, "c", 1);
+  assert.deepEqual(w, [{ id: "a", rank: 1024 }, { id: "c", rank: 2048 }, { id: "b", rank: 3072 }]);
+  assert.deepEqual(L.planLaneOrder([], "z", 4), [{ id: "z", rank: 0 }], "an empty lane");
+});
+t("topRank puts a lead above every ranked lead in the lane", () => {
+  assert.equal(L.topRank([{ id: "a", rank: 100 }, { id: "b", rank: null }], "z"), 100 - L.RANK_STEP);
+  assert.equal(L.topRank([{ id: "b", rank: null }], "z"), 0);
+});
 console.log(`${n} passed (with inbound merge)`);

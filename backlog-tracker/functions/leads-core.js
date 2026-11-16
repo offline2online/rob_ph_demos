@@ -371,6 +371,8 @@ function normaliseLead(id, d) {
     customerAccount: x.customerAccount && typeof x.customerAccount === "object" ? { id: String(x.customerAccount.id || ""), name: String(x.customerAccount.name || "") } : null,
     enrichment: x.enrichment && typeof x.enrichment === "object" ? x.enrichment : null,
     tam: x.tam && typeof x.tam === "object" && !Array.isArray(x.tam) ? x.tam : null, // read-only: no TAM data model yet
+    // Priority within its lane (lower is higher up); null until someone orders the lane by dragging.
+    rank: typeof x.rank === "number" && Number.isFinite(x.rank) ? x.rank : null,
     updatedAtMs: ms(x.updatedAt), createdAtMs: ms(x.createdAt), stageChangedAtMs: ms(x.stageChangedAt),
   };
 }
@@ -389,8 +391,58 @@ function groupByStage(leads, type = DEFAULT_LEAD_TYPE) {
   const keys = stagesFor(type).map((s) => s.key);
   const lanes = Object.fromEntries(keys.map((k) => [k, []]));
   for (const l of leads || []) (lanes[l.stage] || lanes[defaultStageFor(type)]).push(l);
-  for (const k of keys) lanes[k].sort((a, b) => (b.updatedAtMs - a.updatedAtMs) || leadName(a).localeCompare(leadName(b)));
+  for (const k of keys) lanes[k].sort(compareInLane);
   return lanes;
+}
+
+// ── Priority within a lane (15 Nov 2026) ─────────────────────────────────
+// A lane reads top to bottom as the order to deal with its leads: the top
+// card is the one to work next. Dragging a card up or down its lane (or
+// Move up / Move down / Move to top in its summary) sets `rank`, a number,
+// lower is higher. Ranked leads come first in rank order; a lead nobody has
+// ranked yet (a new one, or every lead before this existed) follows them,
+// newest change first, which is how every lane was ordered before.
+function compareInLane(a, b) {
+  const ra = typeof a.rank === "number" ? a.rank : null;
+  const rb = typeof b.rank === "number" ? b.rank : null;
+  if (ra != null && rb != null && ra !== rb) return ra - rb;
+  if (ra != null && rb == null) return -1;
+  if (ra == null && rb != null) return 1;
+  return (b.updatedAtMs - a.updatedAtMs) || leadName(a).localeCompare(leadName(b));
+}
+const RANK_STEP = 1024;
+// The rank writes that put lead `id` at position `index` of `lane` (the lane
+// it is going to, in its displayed order; it may or may not already hold the
+// lead). Returns [{id, rank}], only for leads whose rank changes. When the
+// new place sits between two ranked neighbours it takes the midpoint (one
+// write); otherwise (an unranked neighbour, or no room left between two
+// ranks) the whole lane is renumbered in steps of RANK_STEP.
+function planLaneOrder(lane, id, index) {
+  const rest = (lane || []).filter((l) => l && l.id !== id);
+  const at = Math.max(0, Math.min(Number.isFinite(index) ? Math.floor(index) : 0, rest.length));
+  const moving = (lane || []).find((l) => l && l.id === id) || { id, rank: null };
+  const order = [...rest.slice(0, at), moving, ...rest.slice(at)];
+  const num = (l) => (l && typeof l.rank === "number" && Number.isFinite(l.rank) ? l.rank : null);
+  const prev = at > 0 ? rest[at - 1] : null;
+  const next = at < rest.length ? rest[at] : null;
+  const pr = prev ? num(prev) : null, nr = next ? num(next) : null;
+  const ranked = (!prev || pr != null) && (!next || nr != null);
+  if (ranked) {
+    let rank;
+    if (prev && next) rank = (pr + nr) / 2;
+    else if (prev) rank = pr + RANK_STEP;
+    else if (next) rank = nr - RANK_STEP;
+    else rank = 0;
+    const roomy = (!prev || rank > pr) && (!next || rank < nr) && (!prev || !next || nr - pr > 1e-6);
+    if (roomy) return num(moving) === rank ? [] : [{ id, rank }];
+  }
+  return order.map((l, i) => ({ id: l.id, rank: (i + 1) * RANK_STEP })).filter((w) => num(order.find((l) => l.id === w.id)) !== w.rank);
+}
+// The rank that puts a lead at the top of `lane` (a lead moved to another
+// stage without a drop position lands at the top, as it did before ranks).
+function topRank(lane, id) {
+  const ranks = (lane || []).filter((l) => l && l.id !== id && typeof l.rank === "number").map((l) => l.rank);
+  return ranks.length ? Math.min(...ranks) - RANK_STEP : 0;
 }
 
 // One line of a lead's history, and the list after adding it (newest last, capped).
@@ -466,4 +518,4 @@ function companyLine(l) {
   return parts.join(" · ");
 }
 
-module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, OPERATOR_FORMS, operatorFormKey, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };
+module.exports = { STAGES, STAGE_KEYS, DEFAULT_STAGE, LEAD_TYPES, LEAD_TYPE_KEYS, DEFAULT_LEAD_TYPE, OPERATOR_STAGES, OPERATOR_STAGE_KEYS, OPERATOR_DEFAULT_STAGE, ALL_STAGE_KEYS, BACKGROUNDS, AUDIENCES, OPERATOR_SOURCE_LABEL, OPERATOR_FORMS, operatorFormKey, BUYING_ROLES, BUYING_ROLE_KEYS, HISTORY_LIMIT, NOTE_MAX, LIMITS, stageLabel, roleLabel, isStage, isClosed, leadTypeOf, leadTypeLabel, stagesFor, defaultStageFor, isStageFor, backgroundKey, backgroundLabel, audienceKey, audienceLabel, leadName, parseCountries, parseStoreCount, normaliseUrl, normaliseAwsAccountId, newContactId, blankContact, blankLead, leadFromForm, truthy, leadFromWebsite, operatorFromWebsite, normaliseLead, groupByStage, compareInLane, RANK_STEP, planLaneOrder, topRank, historyEntry, appendHistory, conversionFields, mergeCompanyEnrichment, mergeInbound, inboundLabel, companyLine };

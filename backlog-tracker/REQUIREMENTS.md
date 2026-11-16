@@ -360,9 +360,12 @@ in three files to add anyone.
 - `firestore.rules` resolves `isBoardReader` / `isEditor` / `isAdmin` by
   reading this doc, so a change takes effect on the next request — no token
   refresh, no cache.
-- `rob@offline2online.com` and `rob@personalisationhub.com` are hard-coded
-  admins in the rules, so an empty or mis-edited collection can never lock
-  everyone out. `board-automation@…` stays a hard-coded editor.
+- The owner's two sign-in addresses are hard-coded admins in the rules
+  (`isOwnerAccount`), so an empty or mis-edited collection can never lock
+  everyone out. The rules hold each address as its SHA-256 (lowercase hex,
+  `ownerPrimaryHash` / `ownerAliasHash`), not in plain text, so this public
+  repository does not carry them; `printf %s '<address>' | sha256sum` gives
+  the value to check or change one. `board-automation@…` stays a hard-coded editor.
 - **A signed-in person may always read their OWN row.** `auth-gate.js` has
   to check membership before it can know whether the caller is a member;
   without that self-read every new member sees "not on the list" forever.
@@ -4528,7 +4531,23 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   editors write (`firestore.rules` → `isLead`, with the cases in
   `test/firestore-rules.test.js`).
 - **Moving a card**: drag it to another lane, or use its "Move to" select
-  (touch). The write is live for every open tab. Over MCP an agent manages
+  (touch). The write is live for every open tab.
+- **Priority within a lane (15 Nov 2026)**: a lane reads top to bottom as the
+  order to deal with its leads, so the top card is the one to work next. An
+  editor drags a card up or down its own lane (a line shows where it will land),
+  or drops it at a chosen place in another lane; the lead summary's **Priority**
+  row says "N of M in <stage>" with **Move to top / Move up / Move down**
+  (44px buttons, the touch and keyboard route), and Alt+Arrow Up/Down on a
+  focused card does the same. The order is `leads/{id}.rank`, a number, lower
+  is higher (`firestore.rules` → `isLead` allows it, number or absent).
+  `leads-core.js` → `compareInLane` sorts ranked leads first by rank, then
+  unranked ones newest change first (the order every lane had before);
+  `planLaneOrder` writes one midpoint rank when both neighbours are ranked and
+  otherwise renumbers that lane in steps of 1024, in one batch, writing only
+  the leads whose rank changes. A lead moved to another stage with the Stage
+  select (or no drop position) goes to the top of that lane (`topRank`). An
+  agent's `update_lead_stage` leaves `rank` alone. Tests: `test/leads.test.mjs`
+  and the "drag a lead up its lane" scenario in `test/ui/console-click.test.mjs`, and the `rank` rule in `test/leads-rules.test.js` (emulator, `npm run test:rules`). Over MCP an agent manages
   the whole pipeline with the board's permissions (editor writes, viewer reads),
   each write attributed to the member's email: `list_leads` (filters stage,
   company, assignee, source, industry, free text `q`; `limit`/`offset`; archived

@@ -24,7 +24,7 @@
     "test:ready-for-testing": "node ready-for-testing-trigger.test.js && node notify-fanout.test.js && node build-heartbeat.test.js",
     "test:build-batches": "node whiteboard-core.test.mjs && node kanban-core.test.mjs && node build-batches.test.mjs && node groom-packages.test.mjs && node promote-plan.test.mjs && node ticket-intake.test.mjs",
     "test:faq-index": "node faq-index.test.js",
-    "test:rules": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js && node notes-append-emulator.test.js && node kanban-rules.test.js && node whiteboard-rules.test.js'",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-backlog-tracker 'node firestore-rules.test.js && node notes-append-emulator.test.js && node kanban-rules.test.js && node whiteboard-rules.test.js && node leads-rules.test.js'",
     "test:editor": "node ui/run-ui.mjs faq-editor-load.test.mjs",
     "test:preview-url": "node preview-url-page.test.js",
     "test:preview-url-pin": "node preview-url-pin.test.js",

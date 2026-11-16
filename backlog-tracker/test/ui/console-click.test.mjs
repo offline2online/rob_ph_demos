@@ -1412,6 +1412,55 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Leads - drag a lead up its lane to set its priority; the summary's Move up / down / to top reorder it too",
+    seed: () => seed({ leads: {
+      la: { company: { name: "Alpha Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 3000) },
+      lb: { company: { name: "Bravo Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 2000) },
+      lc: { company: { name: "Charlie Co", website: "", industry: "", countries: [], storeCount: null }, contacts: [], stage: "lead", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0 + 1000) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-leads-btn", "leads-page");
+      await c.visible('.lead-lane[data-stage="lead"] .lead-card', "the seeded leads are in the Lead lane");
+      const order = () => c.page.evaluate(() => [...document.querySelectorAll('.lead-lane[data-stage="lead"] .lead-card')].map((e) => e.dataset.leadId));
+      assert.deepStrictEqual(await order(), ["la", "lb", "lc"], "unranked leads: newest change first, as before");
+      const wide = c.page.viewportSize().width > 1000;
+      if (wide) {
+        // Drag Charlie onto the top half of Alpha: it lands first in the lane.
+        const top = await c.page.locator('.lead-card[data-lead-id="la"]').boundingBox();
+        await c.page.dragAndDrop('.lead-card[data-lead-id="lc"]', '.lead-card[data-lead-id="la"]', { targetPosition: { x: top.width / 2, y: 4 } });
+      } else {
+        await c.page.click('.lead-card[data-lead-id="lc"] .lead-card-name');
+        await c.visible('#lead-sum-body .lead-prio-btn[data-prio="top"]', "the summary shows the Priority buttons");
+        await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="top"]');
+        await c.page.keyboard.press("Escape");
+      }
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["lc", "la", "lb"]), "Charlie to move to the top of the lane", 5000);
+      const ranks = await c.page.evaluate(() => ["la", "lb", "lc"].map((id) => globalThis.__fbStub.col("leads").get(id).rank));
+      assert.ok(ranks.every((r) => typeof r === "number") && ranks[2] < ranks[0] && ranks[0] < ranks[1], `ranks persisted in the new order: ${ranks}`);
+      // The summary says where it sits, and Move down / Move up move it one place.
+      await c.page.click('.lead-card[data-lead-id="lc"] .lead-card-name');
+      await c.visible("#lead-sum-priority", "the Priority row");
+      assert.ok((await c.text("#lead-sum-priority")).startsWith("1 of 3"), "it is first of three");
+      assert.ok(await c.page.locator('#lead-sum-body .lead-prio-btn[data-prio="up"]').isDisabled(), "the top lead can't move up");
+      await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="down"]');
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["la", "lc", "lb"]), "Move down to swap it with Alpha", 5000);
+      assert.ok((await c.text("#lead-sum-priority")).startsWith("2 of 3"));
+      await c.page.click('#lead-sum-body .lead-prio-btn[data-prio="up"]');
+      await until(async () => JSON.stringify(await order()) === JSON.stringify(["lc", "la", "lb"]), "Move up to put it back", 5000);
+      await c.page.keyboard.press("Escape");
+      // A lead moved to another stage by the Stage select lands at the top of that lane.
+      await c.page.click('.lead-card[data-lead-id="lb"] .lead-card-name');
+      await c.page.selectOption("#lead-sum-stage", "hot-lead");
+      await c.page.keyboard.press("Escape");
+      await c.visible('.lead-lane[data-stage="hot-lead"] .lead-card[data-lead-id="lb"]', "Bravo is in Hot Lead");
+      await c.page.click('.lead-card[data-lead-id="la"] .lead-card-name');
+      await c.page.selectOption("#lead-sum-stage", "hot-lead");
+      await c.page.keyboard.press("Escape");
+      await until(async () => (await c.page.evaluate(() => [...document.querySelectorAll('.lead-lane[data-stage="hot-lead"] .lead-card')].map((e) => e.dataset.leadId).join(","))) === "la,lb", "the newly moved lead to be on top of Hot Lead", 5000);
+    },
+  },
+  {
     name: "Promote: Leads - network operator inquiries are their own pipeline: filter by type, add a person with no company, move them",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [], stage: "demo", source: "Manual", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },
@@ -1973,7 +2022,7 @@ const scenarios = [
       pb: { name: "Beta Pharmacy", country: "Germany", industry: "Pharmacy", hqCountry: "Germany", markets: ["Germany"], awsRegion: "eu-central-1", storeCount: 40, sizeBand: "small", vendors: [], campaigns: ["Autumn"], status: "targeted", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
       pc: { name: "Gamma Fashion", industry: "Fashion", hqCountry: "France", markets: ["France", "Ireland"], awsRegion: "eu-west-3", storeCount: null, vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
     }, prospectCompanies: {
-      alphagrocer: { name: "Alpha Grocer", profile: { summary: "A UK grocery chain.", techStack: ["SAP"], primaryCloud: "AWS", emailFormats: ["first.last@alpha.example"], staffOwner: "rob@offline2online.com", lastResearchedAt: "2026-11-01" },
+      alphagrocer: { name: "Alpha Grocer", profile: { summary: "A UK grocery chain.", techStack: ["SAP"], primaryCloud: "AWS", emailFormats: ["first.last@alpha.example"], staffOwner: "owner@example.com", lastResearchedAt: "2026-11-01" },
         people: [
           { id: "ceo", name: "Carol Chief", title: "CEO", reportsTo: "", buyingRole: "decision-maker", email: "carol@alpha.example" },
           { id: "cio", name: "Ian Tech", title: "CIO", reportsTo: "ceo", buyingRole: "champion", email: "ian@alpha.example", engagement: ["demo"] },

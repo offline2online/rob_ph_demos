@@ -2602,8 +2602,10 @@ every destination already existed.
   `leads/{id}` holds `company {name, website, industry, countries[],
   storeCount}`, `contacts[] {id, name, jobTitle, buyingRole, email,
   linkedin, enrichment?}`, `stage`, `source`, `assignee`, `customerAccount
-  {id, name}`, `enrichment`. Cards drag between lanes or use their "Move to"
-  select (the way on a tablet). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
+  {id, name}`, `enrichment`, `rank`. Cards drag between lanes or use their "Move to"
+  select (the way on a tablet), and drag up or down their own lane to set
+  priority (`rank`, top = deal with next; the summary's Move to top / up / down
+  and Alt+Arrow do the same — REQUIREMENTS.md → "Priority within a lane"). **Enrichment** (`functions/lead-enrich.js`, 10 Nov
   2026) is agent-led and uses no paid data provider: Claude with web search and web
   fetch (the `ANTHROPIC_API_KEY` secret Staff Kanban already uses) researches the
   company by name (website optional, no email needed) for industry, countries, HQ,
@@ -2844,7 +2846,7 @@ The code is here:
 | `public/js/kanban/kanban-page.js` | The page: board, filters, swimlanes, drag and drop, task modal, voice capture, release report, settings. Loaded by `app.js` (`loadStaffKanban`) the first time the page opens, so the Agent Board's load is unchanged |
 | `public/js/kanban/kanban-store.js` | Firestore and Storage: listeners on `kanbanCards` (open, the 300 most recently closed, the picked release; `kanbanTasks` until the cards are backfilled), the full ticket read when a modal opens, writes (each also writes the card in the same batch), the PH-n counter transaction, comments, activity (one line per changed field, `editActivity` in `kanban-core.js`), the Watch toggle, uploads, inline screenshots moved to Storage; links are written on both tickets in the same batch (`/mcp/kanban/backfill-links` makes older one-sided links two-sided and stamps `kanbanSettings/main.linksTwoSidedAt`) on save |
 | `public/js/kanban/kanban-bell.js` | The Notifications bell in the console topbar on every page: one `limit(30)` listener ordered by `at` plus a `count()` of unread, grouped by ticket, Mark all as read (clears the badge at once, re-counts, shows an error if the write fails), click to open the ticket (loaded by `app.js` at sign-in) |
-| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: `rob@personalisationhub.com` → `rob@offline2online.com`) |
+| `public/js/kanban/kanban-core.js` | The rules shared by the page, the MCP tools and the tests: statuses, the testing hand-off, durations, search tokens and ranking, the release report, the local agent fill, and `PERSON_ALIASES` (a second sign-in address that is the same person: the owner's alias → their primary address) |
 | `public/js/kanban/kanban-editor.js` | The rich-text editor (the FAQ editor's toolbar, plus @mentions, screenshots, screen recording) |
 | `public/css/kanban.css` | Its styles; anything that would reach the rest of the console is scoped to `html[data-page="staff-kanban"]` |
 | `functions/kanban.js` | `syncMemberDirectory` (names and photos for every member), `/mcp/kanban/agent-fill` (Claude writes the ticket from a voice note), `/mcp/kanban/directory-sync`, `/mcp/kanban/backfill` (fills `kanbanCards` from `kanbanTasks`, moves inline screenshots to Storage; idempotent, called by the board when the cards are behind), and the thirteen `kanban_*` MCP tools (including `kanban_list_notifications` and `kanban_mark_notifications_read`) |
