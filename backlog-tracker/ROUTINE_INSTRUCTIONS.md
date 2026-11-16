@@ -678,7 +678,13 @@ ticket once automatically.
    wrong (see `CATEGORIES` in `backlog-tracker/public/js/app.js` for the
    fixed list), bump `updatedAt`, and — this is the part that replaces
    "push + open a PR" — set:
-   - **Hand the patch over as a commit, first choice (14 Nov 2026).** Commit
+   - **A commit hand-over exists but is OFF for build sessions (16 Nov
+     2026).** The rule at the top of this file stands: a build session never
+     pushes, and its stored prompt forbids it. Use `patchFiles` (next item):
+     the repository holds no personal address any more, so it no longer
+     stops on one. The commit route below is only for a session the owner
+     has explicitly allowed to push its own `claude/` branch; until then,
+     skip it. For reference: commit
      your change on the branch this session was given (one commit or
      several, on top of your `patchBaseSha`), `git push` it, and set on the
      card `patchCommit` (the full 40-character id of your last commit),
@@ -696,9 +702,7 @@ ticket once automatically.
      hard-code a person's address" — so `patchFiles` works again as the
      fallback). Text files only. Do not
      open a pull request, and do not push to `main` or a `deploy/` branch:
-     the automation puts the ticket on the train. Use `patchFiles` (next
-     item) only when the push is refused, or for the "already built" case
-     below, which changes nothing and so has no commit to hand over.
+     the automation puts the ticket on the train.
    - `patchFiles`: an array of `{path, content}` objects (write it on the
      card as shown; within seconds a Cloud Function moves it to
      `backlogItems/<ITEM_ID>/pipeline/patch` to keep it out of every open
