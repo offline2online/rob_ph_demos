@@ -965,7 +965,8 @@ T("TC-71", "Send to Agent: only the assignee sees it; the proposed split is edit
   seed.agentSplit = { proposal: [{ title: "Points API", description: "Expose points.", acceptanceCriteria: ["GET returns points"] }, { title: "Loyalty widget", description: "Show points.", acceptanceCriteria: [] }], source: "claude", projectId: "agentProj" };
   // What the server files (functions/kanban-agent.js), as the Agent Board will hold it.
   seed.docs.backlogItems = {
-    "agent-1": { projectId: "agentProj", title: "Points API", status: "ready-for-testing", kanbanKey: "PH-20", ownerEmail: ROB },
+    // Built means the pipeline stamped it (deployCommit / mergeCommit / testVersion), not the status alone.
+    "agent-1": { projectId: "agentProj", title: "Points API", status: "ready-for-testing", deployCommit: "d1a2b3c", testVersion: "1.5.414", kanbanKey: "PH-20", ownerEmail: ROB },
     "agent-2": { projectId: "agentProj", title: "Loyalty widget", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
     "agent-3": { projectId: "agentProj", title: "Help article", status: "backlog", kanbanKey: "PH-20", ownerEmail: ROB },
   };
@@ -996,7 +997,7 @@ T("TC-71", "Send to Agent: only the assignee sees it; the proposed split is edit
   await eventually(async () => assert.equal((await p.$$("#f-agents [data-agent-ticket]")).length, 3));
   await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /1 of 3 done/));
   assert.equal(await p.getAttribute('#f-agents [data-agent-ticket="agent-1"] a', "href"), "#item-agent-1", "each links to its Agent Board card");
-  await p.evaluate(() => { const b = globalThis.__fbStub; b.col("backlogItems").set("agent-2", { ...b.col("backlogItems").get("agent-2"), status: "published-live" }); b.notify(); });
+  await p.evaluate(() => { const b = globalThis.__fbStub; b.col("backlogItems").set("agent-2", { ...b.col("backlogItems").get("agent-2"), status: "published-live", deployCommit: "e4f5a6b", mergeCommit: "m7n8o9p" }); b.notify(); });
   await eventually(async () => assert.match(await p.textContent("#f-agent-count"), /2 of 3 done/, "follows the Agent Board live"));
   await press(p, "#f-cancel");
   // The server's counts on the ticket and its card: the card shows them.

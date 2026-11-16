@@ -326,7 +326,12 @@ more agent tickets on the Agent Board (ticket VlBatzRVbPt6heAEp5mu, 15 Nov 2026)
   progress bar; its board card shows a `smart_toy` chip "x/y". Each agent ticket's
   card on the Agent Board shows a chip with this ticket's key that opens it.
 - **Built and the roll-up:** an agent ticket counts as done once it reaches Ready for
-  Testing on the Agent Board, or anything after it. A trigger on `backlogItems`
+  Testing on the Agent Board, or anything after it, **and** the pipeline has stamped it
+  (`deployCommit`, `mergeCommit` or `testVersion`, which only the automation can write):
+  a status alone is not proof, since an editor can write one from a browser
+  (`agentBuilt` in `kanban-core.js`). An archived one counts only with a `mergeCommit`
+  or `deployCommit`, and the automatic move needs every linked ticket to still exist.
+  A trigger on `backlogItems`
   (`kanbanAgentRollup`) recounts `agentDone` / `agentTotal` whenever a linked agent
   ticket changes status or is deleted, and when every one is built it moves this
   ticket to **Ready for Testing** (if it is still in Backlog, Ready for Dev or In
