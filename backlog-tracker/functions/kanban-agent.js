@@ -219,7 +219,9 @@ async function recountAgentTickets(key, opts = {}) {
   if (!linked.length) return { key, skipped: "no-agent-tickets" };
   const docs = await Promise.all(linked.map((x) => db().collection(ITEMS).doc(x.id).get()));
   const { total, done } = core.agentRollup(docs.map((d) => (d.exists ? d.data() : null)));
-  const allBuilt = total > 0 && done === total;
+  // Every linked agent ticket must still exist: deleting the unbuilt ones
+  // would otherwise "complete" the split and move the ticket automatically.
+  const allBuilt = total > 0 && done === total && total === linked.length;
   const moveNow = allBuilt && BEFORE_TESTING.includes(t.status);
   if (total !== t.agentTotal || done !== t.agentDone || moveNow) {
     const b = db().batch();

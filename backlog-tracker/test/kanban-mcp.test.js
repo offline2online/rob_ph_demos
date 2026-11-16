@@ -1806,9 +1806,15 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       assert.strictEqual(kanbanAgent.rollupChanged({ status: "backlog" }, { status: "ready-for-testing" }), null);
       assert.strictEqual(kanbanAgent.rollupChanged({ kanbanKey: key, status: "backlog", title: "a" }, { kanbanKey: key, status: "backlog", title: "b" }), null);
       const items = env.store.col("backlogItems");
-      const move = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status })); return written(id, before, items.get(id)); };
+      // The pipeline stamps what it moves (deployCommit / mergeCommit); a status alone is not "built".
+      const STAMP = { "ready-for-testing": { deployCommit: "d" }, "ready-to-publish": { deployCommit: "d" }, "published-live": { mergeCommit: "m" } };
+      const move = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status }, STAMP[status] || {})); return written(id, before, items.get(id)); };
+      const bare = async (id, status) => { const before = Object.assign({}, items.get(id)); items.set(id, Object.assign({}, before, { status })); return written(id, before, items.get(id)); };
       kanban.clearCaches();
-      let r = await move(ids[0], "ready-for-testing");
+      // A browser-written status with no pipeline stamp is not built.
+      let r = await bare(ids[0], "ready-for-testing");
+      assert.strictEqual(r.done, 0, "status alone is not proof");
+      r = await move(ids[0], "ready-for-testing");
       assert.strictEqual(r.done, 1); assert.strictEqual(r.moved, false);
       assert.strictEqual(task(key).agentDone, 1); assert.strictEqual(env.store.col("kanbanCards").get(key).agentDone, 1);
       assert.strictEqual(task(key).status, "backlog");

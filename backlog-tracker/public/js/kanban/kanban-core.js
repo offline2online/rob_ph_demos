@@ -819,15 +819,22 @@ export function cardOf(t) {
 // the server as the agent tickets move. An agent ticket counts as built once
 // it reaches Ready for Testing, or anything after it on the Agent Board.
 export const AGENT_MAX_TICKETS = 10;
+// Below the board's 10,000-character description limit, with room for intake.
+export const AGENT_DESC_MAX = 9500;
 export const AGENT_BUILT = ["ready-for-testing", "ready-to-publish", "published-live"];
 export const AGENT_STATUS_LABEL = {
   backlog: "Backlog", "ready-for-testing": "Ready for Testing", "ready-to-publish": "Approved for Deployment",
   "published-live": "Merged to Main (Live)", archived: "Archived",
 };
-// An Agent Board ticket (its stored fields) → built or not.
+// An Agent Board ticket (its stored fields) → built or not. A status alone is
+// not proof: any editor can write status from a browser, and this decides an
+// automatic move of the Kanban ticket under its assignee's name. Built means
+// the pipeline itself stamped it — deployCommit, mergeCommit or testVersion,
+// which firestore.rules lets only the automation write.
 export function agentBuilt(item) {
   if (!item) return false;
-  if (AGENT_BUILT.includes(item.status)) return true;
+  const stamped = !!(item.deployCommit || item.mergeCommit || item.testVersion);
+  if (AGENT_BUILT.includes(item.status)) return stamped;
   return item.status === "archived" && !!(item.mergeCommit || item.deployCommit);
 }
 // The agent tickets that still exist → { total, done }.
@@ -857,6 +864,11 @@ export function cleanAgentSplit(list) {
       .map((c) => String(c && typeof c === "object" ? c.text || "" : c || "").replace(/^\s*[-*•]\s*/, "").replace(/\s+/g, " ").trim()).filter(Boolean);
     if (ac.length > 20) return { error: `Agent ticket ${i + 1} has more than 20 acceptance criteria.` };
     if (ac.some((c) => c.length > 500)) return { error: `An acceptance criterion on agent ticket ${i + 1} is over 500 characters.` };
+    // The written description repeats the criteria (Outcome and Test steps); the
+    // board saves at most 10,000 characters, so a longer one could never be edited,
+    // approved or archived there. Measured with the longest Kanban title and link.
+    const longest = agentTicketDesc({ title, description, acceptanceCriteria: ac }, { key: "PH-99999", title: "x".repeat(200), url: "x".repeat(200) }).length;
+    if (longest > AGENT_DESC_MAX) return { error: `Agent ticket ${i + 1} is too long for the Agent Board: shorten its description or criteria by about ${longest - AGENT_DESC_MAX} characters.` };
     out.push({ title, description, acceptanceCriteria: ac });
   }
   return { tickets: out };

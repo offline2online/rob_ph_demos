@@ -155,7 +155,15 @@ t("acceptance criteria: cleaned, stored as id/done/text lines, counted, diffed a
   assert.ok(!("agentTotal" in k.cardOf({ key: "PH-1" })) && !("agentDone" in k.cardOf({ key: "PH-1", agentDone: 2 })));
   assert.deepEqual([k.cardOf({ key: "PH-1", agentTotal: 3, agentDone: 1 }).agentTotal, k.cardOf({ key: "PH-1", agentTotal: 3 }).agentDone], [3, 0]);
   assert.ok(!("agentTotal" in k.cardPatchOf({ title: "x", agentTotal: 3 })), "only the server writes the counts");
-  assert.deepEqual(k.agentRollup([{ status: "backlog" }, { status: "ready-for-testing" }, { status: "archived", mergeCommit: "abc" }, { status: "archived" }, null]), { total: 4, done: 2 });
+  assert.deepEqual(k.agentRollup([{ status: "backlog" }, { status: "ready-for-testing", deployCommit: "d1" }, { status: "archived", mergeCommit: "abc" }, { status: "archived" }, null]), { total: 4, done: 2 });
+  // A status a browser wrote is not proof: only a pipeline stamp is.
+  assert.equal(k.agentBuilt({ status: "ready-for-testing" }), false, "status alone, no stamp");
+  assert.equal(k.agentBuilt({ status: "ready-to-publish", testVersion: "1.5.414" }), true);
+  assert.equal(k.agentBuilt({ status: "published-live", mergeCommit: "m" }), true);
+  // What the server writes must stay editable on the board (10,000 characters).
+  const long = { title: "t", description: "d".repeat(6000), acceptanceCriteria: Array.from({ length: 20 }, () => "c".repeat(400)) };
+  assert.match(k.cleanAgentSplit([long]).error, /too long for the Agent Board/);
+  assert.ok(k.cleanAgentSplit([{ title: "t", description: "d".repeat(3000), acceptanceCriteria: ["a", "b"] }]).tickets, "an ordinary one passes");
   assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "A@x.example"), true);
   assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "a@x.example", status: "in-progress" }, "b@x.example"), false);
   assert.equal(k.canSendToAgent({ key: "PH-1", assignee: "", status: "backlog" }, "a@x.example"), false);

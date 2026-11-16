@@ -357,6 +357,9 @@ service cloud.firestore {
       return ["patchFiles", "patchBranch", "patchReady", "mergeReady",
         "deployCommit", "deployCommits", "carriedByCommit", "carriedByItem",
         "mergeCommit", "mergedAt", "prNumber", "prUrl", "deployBranch", "testVersion",
+        // Send to Agent (kanban-agent.js): the link back to the Kanban ticket
+        // and where a ticket came from, written by the server only.
+        "kanbanKey", "createdVia",
         "reviewStatus", "reviewReason", "reviewedAt", "reviewedCommit", "reviewBounceCount",
         // Parallel builds (4 Oct 2026): the commit a patch was written
         // against (the automation merges from it) and its rebuild counter.
