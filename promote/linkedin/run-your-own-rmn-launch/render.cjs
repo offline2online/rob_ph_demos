@@ -1,15 +1,15 @@
 // Captures renderAt(t) frame by frame at 30 fps and encodes a LinkedIn-ready MP4 (H.264, yuv420p,
-// 1080x1350, or 1080x1920 with the ratio argument 9x16; silent AAC track, faststart). Also writes a cover frame for the post thumbnail.
+// 1080x1350, or 1080x1920 / 1920x1080 with the ratio argument 9x16 / 16x9; silent AAC track, faststart). Also writes a cover frame for the post thumbnail.
 const { chromium } = require('playwright');
 const { spawn } = require('child_process');
 const path = require('path');
 (async () => {
   const [file, outMp4, coverPng, coverAt, ratio] = process.argv.slice(2);
-  const H = ratio === '9x16' ? 1920 : 1350;
+  const W = ratio === '16x9' ? 1920 : 1080, H = ratio === '9x16' ? 1920 : ratio === '16x9' ? 1080 : 1350;
   const FPS = 30;
   const browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1080, height: H }, deviceScaleFactor: 1 });
-  await page.goto('file://' + path.resolve(file) + '?render' + (ratio === '9x16' ? '&ratio=9x16' : ''));
+  const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
+  await page.goto('file://' + path.resolve(file) + '?render' + (ratio ? '&ratio=' + ratio : ''));
   await page.evaluate(() => document.fonts.ready);
   const dur = await page.evaluate(() => window.DURATION);
   const frames = Math.round(dur * FPS);

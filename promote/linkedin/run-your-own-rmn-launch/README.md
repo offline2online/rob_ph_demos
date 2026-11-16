@@ -8,6 +8,7 @@ and its only call to action is **"Link in comments"**. Each slide carries one sh
 build and own, not just run).
 
 - **Video, feed**: `dist/run-your-own-rmn-launch.mp4` (1080×1350, 4:5 for the LinkedIn feed, H.264, 30 fps, silent audio track)
+- **Video, 16:9 (Product Hunt / YouTube)**: `dist/run-your-own-rmn-launch-16x9.mp4` (1920×1080) with `dist/run-your-own-rmn-launch-16x9-cover.png`. The loop sits beside the sentence on slide 5.
 - **Video, stories**: `dist/run-your-own-rmn-launch-9x16.mp4` (1080×1920, 9:16, same slides and timing) with `dist/run-your-own-rmn-launch-9x16-cover.png`
 - **Thumbnail**: `dist/run-your-own-rmn-launch-cover.png` (the "Why not build and own a retail media network?" slide)
 - **Post copy**: `LINKEDIN-POST.md` (the refined post and the first comment that carries the link)
@@ -29,7 +30,7 @@ next wipe covers it. Each slide's type is sized to fit the width, so sizes vary 
 
 ## Formats
 
-One source renders both. The page is 4:5 by default and 9:16 with `?ratio=9x16`:
+One source renders all three. The page is 4:5 by default, 9:16 with `?ratio=9x16` and 16:9 with `?ratio=16x9` (`npm run render:16x9`, `check:16x9`):
 - In 9:16 the logo moves down to y 270, so it sits below the stories progress bar and profile name.
 - Each slide centres on y 940, keeping every line between y 360 and 1540, clear of the top UI and the reply bar.
 

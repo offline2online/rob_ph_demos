@@ -7,6 +7,8 @@
     "check": "node check.cjs dist/run-your-own-rmn-launch.html check",
     "check:9x16": "node check.cjs dist/run-your-own-rmn-launch.html check-9x16 9x16",
     "render": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch.mp4 dist/run-your-own-rmn-launch-cover.png 7.7",
+    "check:16x9": "node check.cjs dist/run-your-own-rmn-launch.html check-16x9 16x9",
+    "render:16x9": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch-16x9.mp4 dist/run-your-own-rmn-launch-16x9-cover.png 7.7 16x9",
     "render:9x16": "node render.cjs dist/run-your-own-rmn-launch.html dist/run-your-own-rmn-launch-9x16.mp4 dist/run-your-own-rmn-launch-9x16-cover.png 7.7 9x16"
   },
   "devDependencies": {

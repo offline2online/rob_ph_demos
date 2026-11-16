@@ -19,7 +19,7 @@ html,body{margin:0}
 body{background:#070a14;font-family:var(--font);-webkit-font-smoothing:antialiased;color:#E9EDF6}
 body.render{background:#0F1424}
 
-/* Fixed design size: 1080 x 1350 (4:5, feed) by default, 1080 x 1920 (9:16, stories) with ?ratio=9x16 */
+/* Fixed design size: 1080 x 1350 (4:5, feed) by default; 1080 x 1920 (9:16, stories) with ?ratio=9x16; 1920 x 1080 (16:9, Product Hunt / YouTube) with ?ratio=16x9 */
 #stage{position:relative;width:1080px;height:1350px;overflow:hidden;background:var(--paper,#0F1424);color:var(--ink,#E9EDF6)}
 .bar{position:absolute;left:0;top:0;width:100%;height:12px;background:var(--bar,#169BC2);z-index:5}
 .logo{position:absolute;left:88px;top:92px;height:64px;width:auto;z-index:5}
@@ -38,6 +38,9 @@ body.render{background:#0F1424}
 /* Slide 5: the brand infinity loop draws itself */
 .loop{width:600px;height:317px;margin-top:64px;transform-origin:0 50%}
 .loop svg{display:block;width:600px;height:317px;overflow:visible}
+/* 16:9: the loop sits beside the sentence instead of under it */
+.r169 .loop{position:absolute;right:80px;top:50%;translate:0 -50%;margin-top:0;transform-origin:50% 50%;width:520px;height:275px}
+.r169 .loop svg{width:520px;height:275px}
 
 /* Slide 6: the only call to action */
 .ctaRow{margin-top:72px}
@@ -125,10 +128,17 @@ body.render .frame{border-radius:0;box-shadow:none}
 
   var stage = document.getElementById('stage'), wipe = document.getElementById('wipe');
   /* 9:16 keeps the logo and every line clear of the stories UI (top ~270px, bottom ~380px) */
-  var RATIO = /[?&]ratio=9x16\b/.test(location.search) ? '9x16' : '4x5';
-  var W = 1080, H = RATIO === '9x16' ? 1920 : 1350, MID = RATIO === '9x16' ? 940 : 665;
+  var RATIO = /[?&]ratio=9x16\b/.test(location.search) ? '9x16' : /[?&]ratio=16x9\b/.test(location.search) ? '16x9' : '4x5';
+  var W = RATIO === '16x9' ? 1920 : 1080, H = RATIO === '9x16' ? 1920 : RATIO === '16x9' ? 1080 : 1350;
+  var MID = RATIO === '9x16' ? 940 : RATIO === '16x9' ? 560 : 665;
+  if (RATIO === '16x9') FITW = 1100;
   var R = Math.ceil(Math.sqrt(W*W/4 + H*H/4)) + 10;
-  stage.style.height = H + 'px';
+  stage.style.width = W + 'px'; stage.style.height = H + 'px';
+  if (RATIO === '16x9'){
+    stage.classList.add('r169');
+    Array.prototype.forEach.call(document.querySelectorAll('.logo'), function(lg){ lg.style.left = '140px'; lg.style.top = '80px'; });
+    Array.prototype.forEach.call(document.querySelectorAll('.slide'), function(sl){ sl.style.left = '140px'; sl.style.width = '1640px'; });
+  }
   if (RATIO === '9x16') Array.prototype.forEach.call(document.querySelectorAll('.logo'), function(lg){ lg.style.top = '270px'; });
   var logoDark = document.getElementById('logoDark'), logoLight = document.getElementById('logoLight');
 
