@@ -692,13 +692,15 @@ T("TC-24", "completed vs withdrawn via the Status menu; epic progress ignores wi
   await p.waitForSelector("#task-backdrop:not([hidden]) #f-description .ql-editor");
   const opts = await p.$$eval("#f-status option", (o) => o.map((x) => x.textContent));
   assert.ok(opts.includes("Completed") && opts.includes("Withdrawn") && !opts.some((t) => /Completed \//.test(t)));
-  // Choose Withdrawn and wait for Save to switch on. A form redrawn meanwhile (the ticket re-read) shows the
-  // ticket's status again, so the choice is made again on the form that is there.
+  // Choose Withdrawn, wait for Save to switch on, and press it, as one step. A form redrawn meanwhile (the ticket
+  // re-read) shows the ticket's status again and switches Save off, and that can happen after Save was seen on and
+  // before the tap lands: the tap then waited 30 s for a Save that stayed off (TC-24's flake on phone-360). So the
+  // press only waits briefly, and a redrawn form gets the choice made again on the form that is there.
   await eventually(async () => {
-    if ((await p.inputValue("#f-status")) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn");
-    assert.ok(await p.isEnabled("#f-save"), "Save is on: the status changed");
-  });
-  await press(p, "#f-save");
+    if ((await p.inputValue("#f-status", { timeout: 2000 })) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn", { timeout: 2000 });
+    assert.ok(await p.isEnabled("#f-save", { timeout: 2000 }), "Save is on: the status changed");
+    await press(p, "#f-save", { timeout: 2000 });
+  }, 20000);
   await eventually(async () => assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" }));
   await eventually(async () => assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn"))));
   const t = await stored(p, "PH-26");

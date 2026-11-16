@@ -133,6 +133,10 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   the board starts a touch drag from a 260 ms long-press timer and drops it
   if the finger moves 8 px first, so a late timer on a busy runner used to
   cancel the drag (TC-65, "Expected values to be strictly equal").
+- A change made on a ticket's form is made, checked and saved as one retried
+  step: the form can be redrawn (the ticket re-read) after Save was seen on,
+  which puts the old value back and switches Save off, and a tap on Save then
+  waited 30 s for it (TC-24, "waiting for locator('#f-save')").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.
