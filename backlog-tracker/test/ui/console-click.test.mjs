@@ -2756,6 +2756,122 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Prospects (TAM) Contacts tab - spreadsheet contacts imported and matched, add by hand, add from a URL, extension hand-over without duplicates",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", hqCountry: "United Kingdom", industry: "Grocery", contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }, { name: "Sam Lee", role: "CIO", lastContact: "" }], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Pharmacy", country: "Germany", hqCountry: "Germany", industry: "Pharmacy", contacts: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    }, prospectContacts: {
+      "tam-pa-samlee": { name: "Sam Lee", role: "CIO", companyName: "Alpha Grocer", prospectId: "pa", companyKey: "alphagrocer", linkedinUrl: "", email: "", notes: "", source: "TAM spreadsheet", removed: true, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      const col = () => c.page.evaluate(() => Object.fromEntries([...globalThis.__fbStub.col("prospectContacts").entries()]));
+      // Two tabs; Companies first.
+      assert.deepStrictEqual(await c.page.locator("#prospects-tabs [role=tab]").allTextContents(), ["Companies", "Contacts"]);
+      assert.strictEqual(await c.page.getAttribute("#prospects-tab-companies", "aria-selected"), "true");
+      await c.visible("#prospects-grid", "Companies shows the company grid");
+      // The spreadsheet's contacts on the company records are copied in once; a removed one stays removed.
+      await until(async () => !!(await col())["tam-pa-jobloggs"], "Jo Bloggs to be imported from the TAM record", 8000);
+      const all = await col();
+      assert.deepStrictEqual(Object.keys(all).sort(), ["tam-pa-jobloggs", "tam-pa-samlee"], "nothing else imported");
+      assert.strictEqual(all["tam-pa-jobloggs"].prospectId, "pa"); assert.strictEqual(all["tam-pa-jobloggs"].companyKey, "alphagrocer");
+      assert.strictEqual(all["tam-pa-jobloggs"].source, "TAM spreadsheet"); assert.strictEqual(all["tam-pa-samlee"].removed, true);
+      // The Contacts tab: its own URL, the company grid gone, the columns asked for.
+      await c.click("#prospects-tab-contacts", "the Contacts tab");
+      await until(async () => new URL(c.page.url()).hash === "#promote/prospects?tab=contacts", "the tab to have its own URL", 5000);
+      await c.visible("#pct-grid .ag-row", "the contacts list");
+      assert.strictEqual(await c.page.locator("#prospects-grid:visible, #prospects-tools:visible").count(), 0, "the company grid and its tools are hidden");
+      const cRows = () => c.page.evaluate(() => [...document.querySelectorAll("#pct-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
+      assert.strictEqual(await cRows(), "tam-pa-jobloggs");
+      assert.strictEqual((await c.text("#pct-count")).replace(/\s+/g, " ").trim(), "1 Contact");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#pct-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id"))), ["name", "role", "company", "linkedin", "createdAt"]);
+      assert.strictEqual((await c.text('#pct-grid .ag-row[row-id="tam-pa-jobloggs"] [col-id="company"]')).trim(), "Alpha Grocer", "matched to its TAM company");
+      // Add by hand, Unmatched.
+      await c.click("#pct-add", "Add contact");
+      await c.visible("#pct-drawer", "the contact form");
+      await c.click("#pct-save", "Save with no name");
+      assert.ok((await c.text("#pct-drawer-status")).includes("name"), "a name is required");
+      await c.page.fill("#pctf-name", "Pat Kim");
+      await c.page.fill("#pctf-role", "Buyer");
+      await c.page.fill("#pctf-email", "pat@acme.example");
+      await c.page.fill("#pctf-notes", "Met at the expo");
+      await c.click("#pct-save", "Save Pat");
+      await until(async () => Object.values(await col()).some((x) => x.name === "Pat Kim"), "Pat to be saved", 5000);
+      const pat = Object.values(await col()).find((x) => x.name === "Pat Kim");
+      assert.strictEqual(pat.prospectId, ""); assert.strictEqual(pat.email, "pat@acme.example"); assert.strictEqual(pat.source, "Added by hand");
+      await until(async () => (await cRows()).split(",").length === 2, "Pat to be listed", 5000);
+      // The Unmatched filter and the search.
+      await c.page.selectOption("#pct-company", "__unmatched__");
+      await until(async () => (await c.text("#pct-grid .ag-center-cols-container")).includes("Pat Kim") && !(await c.text("#pct-grid .ag-center-cols-container")).includes("Jo Bloggs"), "Unmatched to show only Pat", 5000);
+      assert.ok((await c.text("#pct-count")).includes("1 of 2"));
+      await c.page.selectOption("#pct-company", "");
+      await c.page.fill("#pct-q", "cmo");
+      await until(async () => (await cRows()) === "tam-pa-jobloggs", "the search to find Jo by role", 5000);
+      await c.page.fill("#pct-q", "");
+      // Paste a LinkedIn URL: the link is kept, the name guessed; pick the company and save.
+      await c.page.fill("#pct-url", "https://www.linkedin.com/search/results/people/?keywords=x");
+      await c.click("#pct-url-btn", "Add from a search URL");
+      assert.ok((await c.text("#prospects-status")).includes("LinkedIn profile"), "a search URL is refused");
+      await c.page.fill("#pct-url", "https://uk.linkedin.com/in/ann-smith-77a1b2/");
+      await c.click("#pct-url-btn", "Add from URL");
+      await c.visible("#pct-drawer", "the form opens prefilled");
+      assert.strictEqual(await c.page.inputValue("#pctf-name"), "Ann Smith");
+      assert.strictEqual(await c.page.inputValue("#pctf-linkedin"), "https://www.linkedin.com/in/ann-smith-77a1b2/");
+      await c.page.selectOption("#pctf-company", "pb");
+      await c.page.fill("#pctf-role", "Head of Retail Media");
+      await c.click("#pct-save", "Save Ann");
+      await until(async () => !!(await col())["li-ann-smith-77a1b2"], "Ann to be saved under her profile's id", 5000);
+      assert.strictEqual((await col())["li-ann-smith-77a1b2"].prospectId, "pb");
+      assert.strictEqual((await col())["li-ann-smith-77a1b2"].source, "LinkedIn URL");
+      await c.visible('#pct-grid .ag-row[row-id="li-ann-smith-77a1b2"] [col-id="linkedin"] a[href="https://www.linkedin.com/in/ann-smith-77a1b2/"]', "the LinkedIn link");
+      // Pasting the same profile again opens the existing contact instead of a new one.
+      await c.page.fill("#pct-url", "linkedin.com/in/Ann-Smith-77a1b2");
+      await c.click("#pct-url-btn", "Add the same URL");
+      await c.visible("#pct-drawer", "the existing contact opens");
+      assert.strictEqual((await c.text("#pct-drawer-title")).trim(), "Ann Smith");
+      await c.click("#pct-cancel", "Cancel");
+      // The Chrome extension's hand-over: matched to the TAM company, then the same profile updates, never duplicates.
+      const hand = (p) => c.page.evaluate((x) => window.__phAddProspectContact(x), p);
+      const r1 = await hand({ name: "Jo Bloggs", headline: "Chief Marketing Officer at Alpha Grocer", company: "Alpha Grocer PLC", url: "https://www.linkedin.com/in/jo-bloggs-1a2b3c/" });
+      assert.deepStrictEqual([r1.ok, r1.outcome, r1.company], [true, "updated", "Alpha Grocer"], `the spreadsheet's Jo gets the profile (${JSON.stringify(r1)})`);
+      assert.strictEqual((await col())["tam-pa-jobloggs"].linkedinUrl, "https://www.linkedin.com/in/jo-bloggs-1a2b3c/");
+      assert.strictEqual((await col())["tam-pa-jobloggs"].role, "Chief Marketing Officer at Alpha Grocer");
+      const r2 = await hand({ name: "Lee Park", headline: "Store design", company: "Gamma Fashion", url: "https://www.linkedin.com/in/lee-park/" });
+      assert.deepStrictEqual([r2.ok, r2.outcome, r2.company], [true, "added", "Unmatched"]);
+      const r3 = await hand({ name: "Lee Park", headline: "Head of store design", company: "Gamma Fashion", url: "https://de.linkedin.com/in/lee-park?trk=x" });
+      assert.deepStrictEqual([r3.ok, r3.outcome], [true, "updated"], "the second click updates");
+      const live = Object.entries(await col()).filter(([, x]) => !x.removed);
+      assert.strictEqual(live.length, 4, "Jo, Pat, Ann, Lee: no duplicates");
+      assert.strictEqual((await col())["li-lee-park"].role, "Head of store design");
+      assert.strictEqual((await col())["li-lee-park"].source, "Chrome extension");
+      const bad = await hand({ name: "X", url: "https://www.linkedin.com/company/x/" });
+      assert.strictEqual(bad.ok, false, "a page that isn't a profile is refused");
+      // The company record shows its contacts.
+      await until(async () => (await cRows()).split(",").length === 4, "four contacts listed", 5000);
+      await c.page.click('#pct-grid .ag-row[row-id="tam-pa-jobloggs"] [col-id="company"] button');
+      await c.visible("#prospect-detail .pd-name", "the company opens on its Contacts tab");
+      assert.strictEqual(await c.page.getAttribute("#pd-tab-contacts", "aria-selected"), "true");
+      assert.strictEqual(await c.page.locator("#prospect-detail .pd-contact").count(), 1, "Alpha Grocer's one live contact");
+      assert.strictEqual(await c.page.locator('#prospect-detail .pd-contact a[href="https://www.linkedin.com/in/jo-bloggs-1a2b3c/"]').count(), 1);
+      assert.ok(new URL(c.page.url()).hash === "#promote/prospects", "back on the Companies tab");
+      await c.page.click('#prospect-detail [data-act="contact-add"]');
+      await c.visible("#pct-drawer", "Add contact from the company");
+      assert.strictEqual(await c.page.inputValue("#pctf-company"), "pa", "the company is picked");
+      await c.click("#pct-cancel", "Cancel");
+      // Remove: kept as removed, so the import never brings it back.
+      await c.page.click('#prospect-detail [data-act="contact-open"]');
+      await c.visible("#pct-drawer", "Jo's record");
+      await c.click("#pct-remove", "Remove");
+      await c.click("#pct-remove", "Click again to remove");
+      await until(async () => (await col())["tam-pa-jobloggs"].removed === true, "Jo to be removed", 5000);
+      await until(async () => (await c.page.locator("#prospect-detail .pd-contact").count()) === 0, "the company shows no contacts", 5000);
+      assert.ok((await col())["tam-pa-jobloggs"], "the record stays as removed");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide})`);
+    },
+  },
+  {
     name: "FAQ article editor: SEO & agents group counts, limits and completeness",
     seed: () => seed({ faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } } }),
     async run(c) {

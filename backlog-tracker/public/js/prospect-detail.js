@@ -1,5 +1,6 @@
 // Promote › Prospects (TAM) › company detail view (#promote/prospects, a company
-// name opens it). Four tabs on one company: Profile, Org chart (reporting tree
+// name opens it). Five tabs on one company: Profile, Contacts (its people from
+// the Contacts tab, prospect-contacts.js), Org chart (reporting tree
 // with buying-role badges and the lead overlay), AWS team (with one-click email)
 // and Documents (versioned library). The data rules are in prospect-detail-core.js.
 // The org chart, AWS team, ACE opportunity and documents belong to the COMPANY:
@@ -26,12 +27,12 @@ import { sizeBandLabel, statusLabel } from "./prospects-core.js";
 import { enrichmentHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus } from "./enrichment-view.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-const TABS = [["profile", "Profile"], ["org", "Org chart"], ["aws", "AWS account team"], ["docs", "Documents"]];
+const TABS = [["profile", "Profile"], ["contacts", "Contacts"], ["org", "Org chart"], ["aws", "AWS account team"], ["docs", "Documents"]];
 const fmtDate = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? "" : new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }); };
 const icon = (n) => `<span class="material-symbols-outlined" aria-hidden="true">${n}</span>`;
 const val = (form, name) => (form.elements[name] ? form.elements[name].value : "");
 
-export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyRows, onClose, onAllFields, say, apiHeaders }) {
+export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyRows, onClose, onAllFields, say, apiHeaders, getContacts, onAddContact, onOpenContact }) {
   let id = "";          // the country record that was opened
   let ckey = "";        // its company's shared-detail document id
   let data = null;      // the company's detail, null until the first snapshot
@@ -200,6 +201,23 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
       ${formButtons(m ? "remove" : "")}</form>`;
   }
 
+  // ── Contacts (the Contacts tab's records for this company, prospect-contacts.js) ──
+  function contactsHTML() {
+    const list = getContacts ? getContacts(ckey) : [];
+    const add = canEdit() && onAddContact ? `<button type="button" class="btn-ghost pd-edit" data-act="contact-add">${icon("add")}Add contact</button>` : "";
+    return `<div class="pd-card">
+      <div class="pd-card-head"><h3>Contacts (${list.length})</h3>${add}</div>
+      ${list.length ? `<ul class="pd-aws pd-contacts">${list.map((c) => `<li class="pd-aws-row pd-contact" data-contact="${esc(c.id)}">
+        <span class="pd-photo pd-photo-fallback" aria-hidden="true">${esc(initials(c.name))}</span>
+        <div class="pd-person-body">
+          <button type="button" class="prospect-name-btn pd-person-name" data-act="contact-open" data-id="${esc(c.id)}">${esc(c.name)}</button>
+          ${c.role ? `<span class="pd-person-title">${esc(c.role)}</span>` : ""}
+        </div>
+        <div class="pd-person-actions">${c.linkedinUrl ? `<a class="pd-mail" href="${esc(c.linkedinUrl)}" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile of ${esc(c.name)}" title="Open the LinkedIn profile">${icon("person")}</a>` : ""}${c.email ? mailBtn(c.email, c.name, `${(row() || {}).name || "Personalisation Hub"}`) : ""}</div>
+      </li>`).join("")}</ul>` : '<p class="pd-none">No contacts yet.</p>'}
+    </div>`;
+  }
+
   // ── Document library ───────────────────────────────────────────────────────
   function docsHTML(d) {
     const groups = groupDocuments(d.documents);
@@ -254,7 +272,7 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     let body;
     if (editing && canEdit()) {
       body = editing.kind === "profile" ? profileForm(r, d) : editing.kind === "person" ? personForm(d, editing.id) : editing.kind === "aws" ? awsForm(d, editing.id) : docForm(d, editing.id, editing.base);
-    } else body = tab === "profile" ? profileHTML(r, d) : tab === "org" ? orgHTML(d) : tab === "aws" ? awsHTML(d) : docsHTML(d);
+    } else body = tab === "profile" ? profileHTML(r, d) : tab === "contacts" ? contactsHTML() : tab === "org" ? orgHTML(d) : tab === "aws" ? awsHTML(d) : docsHTML(d);
     root.hidden = false;
     root.innerHTML = `<div class="pd-toprow"><button type="button" class="btn-ghost pd-back" data-act="back">${icon("arrow_back")}All prospects</button>${onAllFields ? `<button type="button" class="btn-ghost pd-edit" data-act="allfields">${icon("list_alt")}All fields</button>` : ""}${canEdit() && apiHeaders ? `<button type="button" class="btn-ghost pd-edit" data-act="enrich"${enrichmentRunning(r.enrichment) ? " disabled" : ""}>${icon("auto_awesome")}${esc(enrichButtonLabel(r.enrichment))}</button>` : ""}</div>
       ${enrichNote || enrichmentStatus(r.enrichment) ? `<p class="pd-enrich-status field-hint" role="status">${esc(enrichmentStatus(r.enrichment) || enrichNote)}</p>` : ""}
@@ -362,6 +380,8 @@ export function mountProspectDetail({ db, root, canEdit, me, getRow, getCompanyR
     if (act === "allfields") { if (onAllFields) onAllFields(id); return; }
     if (act === "enrich" && canEdit() && apiHeaders) { enrich(); return; }
     if (act === "tab") { tab = b.dataset.tab; editing = null; render(); return; }
+    if (act === "contact-add" && canEdit() && onAddContact) { onAddContact(id, b); return; }
+    if (act === "contact-open" && onOpenContact) { onOpenContact(b.dataset.id, b); return; }
     if (act === "toggle") { if (collapsed.has(b.dataset.id)) collapsed.delete(b.dataset.id); else collapsed.add(b.dataset.id); render(); const t = root.querySelector(`[data-act="toggle"][data-id="${CSS.escape(b.dataset.id)}"]`); if (t) t.focus(); return; }
     if (act === "cancel") { editing = null; render(); return; }
     if (act === "edit" && canEdit()) { editing = { kind: b.dataset.kind, id: b.dataset.id || "" }; render(); const f = root.querySelector("form input, form textarea"); if (f) f.focus(); return; }

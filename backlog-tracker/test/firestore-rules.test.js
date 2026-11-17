@@ -488,6 +488,19 @@ async function main() {
   await check("The 10th org chart person's AWS account ID is checked too", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi5"), { ...COMPANY, people: Array.from({ length: 100 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, awsAccountId: i === 9 ? "x" : "" })) }));
   await check("An org chart holds at most 100 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi6"), { ...COMPANY, people: Array.from({ length: 101 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })) }));
   await check("A company's AWS team holds at most 30 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi7"), { ...COMPANY, awsTeam: Array.from({ length: 31 }, (_, i) => ({ id: `a${i}`, name: `A${i}` })) }));
+  // Prospects (TAM) › Contacts: prospectContacts/{id}
+  const CONTACT = { name: "Jo Bloggs", role: "CMO", companyName: "ALDI", prospectId: "aldi-australia", companyKey: "aldi", linkedinUrl: "https://www.linkedin.com/in/jo-bloggs/", email: "jo@aldi.example", notes: "", lastContact: "", source: "Chrome extension", removed: false };
+  await check("An editor can add a contact", "allow", () => setDoc(doc(as(MEMBER), "prospectContacts/li-jo-bloggs"), CONTACT));
+  await check("An editor can add an unmatched contact with no profile", "allow", () => setDoc(doc(as(MEMBER), "prospectContacts/AbCd0123456789xyzQrs"), { ...CONTACT, prospectId: "", companyKey: "", linkedinUrl: "", email: "" }));
+  await check("An editor can remove a contact (kept as removed)", "allow", () => updateDoc(doc(as(MEMBER), "prospectContacts/li-jo-bloggs"), { removed: true }));
+  await check("A viewer may read a contact", "allow", () => getDoc(doc(as(VIEWER), "prospectContacts/li-jo-bloggs")));
+  await check("A stranger cannot read a contact", "deny", () => getDoc(doc(as(STRANGER), "prospectContacts/li-jo-bloggs")));
+  await check("A viewer cannot write a contact", "deny", () => setDoc(doc(as(VIEWER), "prospectContacts/li-x"), CONTACT));
+  await check("A contact needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-y"), { ...CONTACT, name: "" }));
+  await check("A contact's LinkedIn link must be a profile", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-z"), { ...CONTACT, linkedinUrl: "https://www.linkedin.com/company/aldi/" }));
+  await check("A contact takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-w"), { ...CONTACT, patchFiles: [] }));
+  await check("A contact's company key is letters and digits", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-v"), { ...CONTACT, companyKey: "ALDI Australia" }));
+  await check("A contact's id is a plain id", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li jo"), CONTACT));
   await check("A prospect no longer holds the company's org chart itself", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { people: [] }));
   await check("A lead may carry the prospect it came from", "allow", () => setDoc(doc(as(MEMBER), "leads/prospect-p1"), { ...LEAD, prospectId: "p1" }));
   await check("An editor can delete a prospect", "allow", () => deleteDoc(doc(as(MEMBER), "prospects/p1")));

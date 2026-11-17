@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "PH Agent Console: add LinkedIn contact",
+  "version": "1.0.0",
+  "description": "One click on a LinkedIn profile adds the person to Prospects (TAM) › Contacts in the PH Agent Console.",
+  "action": { "default_title": "Add this LinkedIn profile to Prospects (TAM) contacts" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": [
+    "https://backlog-tracker-e4ed2.web.app/*",
+    "https://backlog-tracker-e4ed2.firebaseapp.com/*"
+  ]
+}

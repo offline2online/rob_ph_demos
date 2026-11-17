@@ -14,6 +14,11 @@
 // two leads, and links the two both ways (lead.prospectId, prospect.leadId).
 // Saved filters (grid filter model + sort) are per browser
 // (localStorage, bt-prospect-grid-filters).
+//
+// Two tabs (17 Nov 2026): Companies (all of the above) and Contacts
+// (#promote/prospects?tab=contacts, prospect-contacts.js): every person at the
+// TAM companies. The Chrome extension adds a LinkedIn profile through
+// window.__phAddProspectContact, which this page defines once it is mounted.
 import {
   collection, doc, getDoc, getDocs, setDoc, updateDoc, onSnapshot, serverTimestamp, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
@@ -24,6 +29,7 @@ import {
 } from "./prospects-core.js";
 import { SEED_PROSPECTS, SEED_SOURCE } from "./prospects-seed.js";
 import { mountProspectDetail } from "./prospect-detail.js";
+import { mountProspectContacts } from "./prospect-contacts.js";
 
 const $ = (id) => document.getElementById(id);
 const SAVED_KEY = "bt-prospect-grid-filters";
@@ -464,15 +470,71 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   }
 
   // ── Company detail view ──────────────────────────────────────────────────
+  let contactsUi = null;
   const detailUi = mountProspectDetail({
     db, root: $("prospect-detail"), canEdit, me, say, apiHeaders,
     getRow: (id) => rows.find((x) => x.id === id) || null,
     getCompanyRows: (key) => rows.filter((x) => slugId(x.name) === key),
     onAllFields: (id) => openDrawer(id, null),
     onClose: () => { page.classList.remove("is-detail"); closePop(); },
+    getContacts: (key) => (contactsUi ? contactsUi.forCompany(key) : []),
+    onAddContact: (id, from) => contactsUi && contactsUi.openForm({ prospectId: id }, from),
+    onOpenContact: (cid, from) => contactsUi && contactsUi.openForm({ id: cid }, from),
   });
-  function openDetail(id, tab) { closePop(); page.classList.add("is-detail"); detailUi.open(id, tab); window.scrollTo(0, 0); }
-  window.addEventListener("hashchange", () => { if (detailUi.isOpen() && window.location.hash !== "#promote/prospects") { detailUi.close(); page.classList.remove("is-detail"); } });
+  function openDetail(id, tab) {
+    closePop();
+    if (currentTab === "contacts") { history.replaceState(null, "", "#promote/prospects"); showTab("companies"); }
+    page.classList.add("is-detail"); detailUi.open(id, tab); window.scrollTo(0, 0);
+  }
+
+  // ── Tabs: Companies | Contacts ───────────────────────────────────────────
+  let currentTab = "companies";
+  const tabFromHash = () => (new URLSearchParams(String(window.location.hash).split("?")[1] || "").get("tab") === "contacts" ? "contacts" : "companies");
+  const tabHash = (t) => (t === "contacts" ? "#promote/prospects?tab=contacts" : "#promote/prospects");
+  function showTab(t) {
+    currentTab = t;
+    page.classList.toggle("is-contacts", t === "contacts");
+    document.querySelectorAll("[data-prospects-tab]").forEach((b) => {
+      const on = b.dataset.prospectsTab === t;
+      b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1;
+    });
+    $("prospects-contacts").hidden = t !== "contacts";
+    if (t === "contacts") { closePop(); if (contactsUi) contactsUi.show(); }
+    else if (contactsUi) contactsUi.hide();
+  }
+  document.querySelectorAll("[data-prospects-tab]").forEach((b) => b.addEventListener("click", () => {
+    const t = b.dataset.prospectsTab;
+    if (t === currentTab && !detailUi.isOpen()) return;
+    if (detailUi.isOpen()) { detailUi.close(); page.classList.remove("is-detail"); }
+    if (window.location.hash !== tabHash(t)) window.location.hash = tabHash(t);
+    else showTab(t);
+  }));
+  $("prospects-tabs").addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const next = currentTab === "contacts" ? "companies" : "contacts";
+    const b = document.querySelector(`[data-prospects-tab="${next}"]`);
+    if (b) { b.click(); b.focus(); }
+  });
+  window.addEventListener("hashchange", () => {
+    const base = String(window.location.hash).split("?")[0];
+    if (detailUi.isOpen() && (base !== "#promote/prospects" || tabFromHash() === "contacts")) { detailUi.close(); page.classList.remove("is-detail"); }
+    if (base === "#promote/prospects" && tabFromHash() !== currentTab) showTab(tabFromHash());
+  });
+
+  // ── Contacts ─────────────────────────────────────────────────────────────
+  contactsUi = mountProspectContacts({
+    db, canEdit, me, say,
+    getProspects: () => rows,
+    openCompany: (id) => openDetail(id, "contacts"),
+    onChange: () => detailUi.refresh(),
+  });
+  // The Chrome extension's entry point: it runs this in the console's tab with what it read off a LinkedIn profile.
+  window.__phAddProspectContact = async (payload) => {
+    await prospectsReady; // so the company can be matched
+    if (detailUi.isOpen()) { detailUi.close(); page.classList.remove("is-detail"); }
+    if (currentTab !== "contacts") { history.replaceState(null, "", tabHash("contacts")); showTab("contacts"); }
+    return contactsUi.addFromExtension(payload);
+  };
 
   // ── Starter set ──────────────────────────────────────────────────────────
   $("prospects-seed-btn").addEventListener("click", async () => {
@@ -779,13 +841,19 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
   }
 
   let regionKey = "";
+  let prospectsLoaded = null;
+  const prospectsReady = new Promise((r) => { prospectsLoaded = r; });
   function start() {
     if (started) return;
     started = true;
     updateCount();
+    contactsUi.start();
+    showTab(tabFromHash());
     unsub = onSnapshot(collection(db, "prospects"), (snap) => {
       rows = snap.docs.map((d) => normaliseProspect(d.id, d.data({ serverTimestamps: "estimate" })));
       updateCount();
+      prospectsLoaded();
+      contactsUi.refresh();
       if (drawerId) renderDrawer();
       detailUi.refresh();
       if (grid) {
@@ -795,9 +863,10 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       } else if (rows.length) ensureGrid();
     }, () => { say("Prospects could not be loaded. Reload the page to try again.", true); });
   }
-  function stop() { closePop(); closeDrawer(false); detailUi.close(); page.classList.remove("is-detail"); if (unsub) unsub(); unsub = null; started = false; }
+  function stop() { closePop(); closeDrawer(false); detailUi.close(); page.classList.remove("is-detail"); contactsUi.stop(); if (unsub) unsub(); unsub = null; started = false; }
   function render() {
     updateCount();
+    contactsUi.refresh();
     if (drawerId) renderDrawer();
     if (grid) { grid.api.setColumnsVisible(["select"], canEdit()); updateBulk(); }
     else if (rows.length) ensureGrid();

@@ -6010,6 +6010,72 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
 
+### Prospects (TAM): Contacts tab and the LinkedIn extension (17 Nov 2026)
+
+Ticket OGwD3FC6iThTwMpsCKic. Companies and contacts, the usual CRM model.
+
+- **Two tabs** under the page title: **Companies** (`#promote/prospects`, the grid,
+  drawer and detail view above, unchanged) and **Contacts**
+  (`#promote/prospects?tab=contacts`). The same `prospects` permission section
+  covers both.
+- **Data**: `prospectContacts/{id}` = `name` (required), `role` (the role or LinkedIn
+  headline), `companyName`, `prospectId` and `companyKey` (the TAM record and its
+  company key; both empty = **Unmatched**), `linkedinUrl` (a person's profile,
+  normalised to `https://www.linkedin.com/in/<slug>/`; company pages and searches
+  are refused), `email`, `notes`, `lastContact`, `source` (TAM spreadsheet, Added by
+  hand, LinkedIn URL, Chrome extension), `removed`, and the usual stamps. **One
+  person, one record**: a contact with a profile is stored under `li-<slug>`, and
+  an add is matched to an existing contact by the profile URL, else (for a contact
+  with no profile yet) by the same name at the same company; a match is updated,
+  never duplicated. Removing a contact sets `removed: true` and keeps the record.
+  Rules: `public/js/prospect-contacts-core.js`; `firestore.rules` →
+  `isProspectContact` (members read, editors write, unknown fields refused, the id
+  `^[A-Za-z0-9_-]{1,220}$`, the URL a profile URL).
+- **The list**: an AG Grid like the Companies grid (`ag-theme-alpine um-grid`, 50
+  rows a page, whole-page scroll). Columns: Name (opens the contact), Role,
+  Company (opens the company's detail on its Contacts tab; an unmatched contact
+  shows an **Unmatched** pill and the company as written), LinkedIn (an icon link to
+  the profile), Added (newest first). Every column sorts. Above it: the count
+  ("12 Contacts", "3 of 12 Contacts"), a search box (name, role, company, email), a
+  company filter (All companies, **Unmatched**, then each company with contacts),
+  **Add from URL** and **Add contact** (editors).
+- **The company record shows its contacts**: the company detail view has a
+  **Contacts** tab (Profile, Contacts, Org chart, AWS account team, Documents)
+  listing that company's contacts (every country record of a company shares them,
+  by company key) with LinkedIn and email links, **Add contact** (company
+  preselected) and each name opening the contact.
+- **Initial seed: the TAM spreadsheet.** Its contacts were imported onto the
+  company records (`prospects/{id}.contacts[]`, 361 people on 146 records on 17
+  Nov 2026). They are copied into `prospectContacts` under
+  `tam-<prospectId>-<name key>`, matched to that record, the first time an editor
+  opens Prospects (TAM), and any added to a record later are copied the next time;
+  ids already there (removed ones included) are skipped, so nothing is copied
+  twice or brought back.
+- **Adding later**: (1) **Add contact**: name, role, company (a TAM company, or
+  Unmatched), LinkedIn URL, email, notes. (2) **Add from URL**: a pasted profile
+  URL opens the same form with the link saved and the name guessed from it, to
+  confirm the company and role; a URL already on file opens that contact. (3) the
+  **Chrome extension** (`chrome-extension/`, loaded unpacked; only the account
+  owner installs it): on a LinkedIn profile, one click reads the name, headline,
+  current company and profile URL from the page (`linkedin-reader.js`) and hands
+  them to a signed-in console tab (an open one is reused, else one opens behind)
+  by calling `window.__phAddProspectContact`, which `prospects-page.js` defines. The
+  console saves it with that person's own sign-in and permissions, matched to a
+  TAM company by name (exact, without legal or filler words such as PLC, Ltd,
+  Group, Retail, or one name inside the other; of several country records, the
+  head-office one), else Unmatched; clicking again on the same profile updates
+  the contact. An existing contact keeps a company someone linked by hand. One
+  profile per click, only on a click: no background or bulk reading, no
+  scrolling or opening other pages (LinkedIn's terms). The extension holds no
+  credential; its permissions are `activeTab`, `scripting` and the console's two
+  addresses. A green ✓ and a note on the LinkedIn page say Added / Updated and the
+  company; a red ! says why not (not a profile, console not signed in, view-only role).
+- Not done: MCP tools for contacts (agents still see the record's own
+  `contacts[]` through `list_prospects` / `upsert_prospects`).
+- Tests: `test/prospect-contacts.test.mjs` (the rules, the import, matching,
+  dedupe, the extension's reader on saved markup and its manifest) and the
+  Contacts scenario in `test/ui/console-click.test.mjs`.
+
 ### Leads: Apple-style board, form and detail view (10 Nov 2026)
 
 Ticket iAY4X9RF5K16vLEGYswi applies the console's design rules 1-11 (ticket
