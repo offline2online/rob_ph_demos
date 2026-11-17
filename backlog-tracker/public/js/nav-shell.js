@@ -22,6 +22,7 @@ function writeCollapsed(v) {
 // Which sidebar entry is "you are here", from the URL hash app.js maintains.
 function activeNavId(hash) {
   const h = (hash || "").split("?")[0];
+  if (h === "#dashboard") return "dashboard-btn";
   if (h === "#skills" || h === "#releases") return "faq-settings-btn";
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";

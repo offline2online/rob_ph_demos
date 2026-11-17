@@ -38,6 +38,8 @@ assert.throws(() => setLevel(engineer, "nope", "view"));
 assert.throws(() => setLevel(engineer, "concepts", "owner"));
 
 assert.strictEqual(sectionForHash(""), "agent-board");
+assert.strictEqual(sectionForHash("#board"), "agent-board", "#board is the Agent Board's own address");
+assert.strictEqual(sectionForHash("#dashboard"), null, "the Dashboard is open to every member");
 assert.strictEqual(sectionForHash("#concept-incubator"), "concepts");
 assert.strictEqual(sectionForHash("#concept-abc"), "concepts");
 assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
