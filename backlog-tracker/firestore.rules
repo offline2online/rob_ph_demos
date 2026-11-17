@@ -841,6 +841,32 @@ service cloud.firestore {
       allow delete: if isEditor();
     }
 
+    // Prospects (TAM) › Contacts (public/js/prospect-contacts.js, rules in prospect-contacts-core.js): one person
+    // per document, linked to a TAM company (prospectId, companyKey) or unmatched (both empty). A contact with a
+    // LinkedIn profile is stored under "li-<slug>" so the same profile is one document. Members read; editors write.
+    // Removing one sets removed: true (the spreadsheet import never brings it back).
+    function isProspectContact(d) {
+      return d.keys().hasOnly(["name", "role", "companyName", "prospectId", "companyKey", "linkedinUrl", "email", "notes", "lastContact",
+          "source", "removed", "createdAt", "updatedAt", "createdByEmail", "updatedByEmail"])
+        && isNonEmptyBoundedString(d.get("name", null), 120)
+        && d.get("role", "") is string && d.get("role", "").size() <= 200
+        && d.get("companyName", "") is string && d.get("companyName", "").size() <= 120
+        && d.get("prospectId", "") is string && d.get("prospectId", "").size() <= 100
+        && d.get("companyKey", "") is string && d.get("companyKey", "").matches("^[a-z0-9]{0,60}$")
+        && d.get("linkedinUrl", "") is string && d.get("linkedinUrl", "").size() <= 300
+        && (d.get("linkedinUrl", "") == "" || d.get("linkedinUrl", "").matches("^https://www[.]linkedin[.]com/in/[^/?#]+/$"))
+        && d.get("email", "") is string && d.get("email", "").size() <= 200
+        && d.get("notes", "") is string && d.get("notes", "").size() <= 2000
+        && d.get("lastContact", "") is string && d.get("lastContact", "").size() <= 80
+        && d.get("source", "") is string && d.get("source", "").size() <= 80
+        && d.get("removed", false) is bool;
+    }
+    match /prospectContacts/{contactId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor() && contactId.matches("^[A-Za-z0-9_-]{1,220}$") && isProspectContact(incoming());
+      allow delete: if isEditor();
+    }
+
     match /concepts/{conceptId} {
       allow read: if isBoardReader();
 
