@@ -2748,8 +2748,13 @@ every destination already existed.
   Releases and Skills have a Manage button that opens the existing page.
   Phase bindings are read from `settings/phaseSkillBindings`. The settings
   page stays reachable by every role; admin-only blocks keep `[data-admin-only]`.
-- **Breakpoints**: 1024px and up, a persistent sidebar you can collapse (state
-  in `localStorage` `bt-nav-collapsed`); 641 to 1023px, the overlay drawer;
+- **Breakpoints**: 1024px and up, a persistent sidebar that works like Gmail's
+  (17 Nov 2026): the menu button at its top left folds it to a 70px icon rail
+  and back (state in `localStorage` `bt-nav-collapsed`), and resting the mouse
+  on the rail for 150ms, or tabbing into it, opens it over the page at full
+  width until the pointer leaves (`data-nav-peek`, `nav-shell.js`); the page
+  does not move for that, and a touch on a rail icon just goes there. The
+  topbar hamburger is not shown at this width. 641 to 1023px, the overlay drawer;
   640px and down, a bottom tab bar (Build, Promote, Publish, Settings, Search, Profile) that opens
   one section at a time. The Board's columns stay stacked top to bottom on a
   phone (tap a column header to collapse it); a swipe-one-column-at-a-time

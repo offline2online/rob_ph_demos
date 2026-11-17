@@ -290,7 +290,7 @@ const scenarios = [
       await check("sidebar open");
       c.at("sidebar collapsed");
       await c.click("#nav-collapse-btn");
-      await c.hidden("#nav-drawer", "sidebar hides");
+      await until(() => c.page.evaluate(() => document.getElementById("nav-drawer").getBoundingClientRect().width === 70), "sidebar folds to the icon rail");
       await check("sidebar collapsed");
     },
   },
@@ -338,11 +338,47 @@ const scenarios = [
       await c.boardReady();
       await overflow("board");
       if (persistent) {
-        c.at("sidebar collapses and the content reflows");
-        await c.click("#nav-collapse-btn");
-        await c.hidden("#nav-drawer", "sidebar hides");
-        await c.click("#nav-open-btn", "reopen");
-        await c.visible("#nav-drawer", "sidebar returns");
+        // Gmail-style (mUjtN0QWAnN9J3kK3LZC): the menu button folds the
+        // sidebar to an icon rail, the page reflows to it, and resting the
+        // mouse on the rail opens it over the page without moving the page.
+        c.at("sidebar collapses to the icon rail and the content reflows");
+        const nav = () => c.page.evaluate(() => {
+          const d = document.getElementById("nav-drawer");
+          const item = document.getElementById("staff-kanban-btn");
+          return {
+            width: Math.round(d.getBoundingClientRect().width),
+            pad: getComputedStyle(document.querySelector(".app")).paddingLeft,
+            label: getComputedStyle(item).color,
+            iconX: Math.round(item.querySelector(".material-symbols-outlined").getBoundingClientRect().left),
+            peek: document.documentElement.hasAttribute("data-nav-peek"),
+            hamburger: getComputedStyle(document.getElementById("nav-open-btn")).display,
+          };
+        });
+        const open = await nav();
+        assert.strictEqual(open.hamburger, "none", "the topbar hamburger is not shown beside the persistent sidebar");
+        await c.click("#nav-collapse-btn", "fold the sidebar");
+        await c.page.mouse.move(c.width - 20, 400);
+        await until(async () => (await nav()).width === 70, "sidebar folds to a 70px icon rail");
+        const rail = await nav();
+        assert.strictEqual(rail.pad, "94px", "the page reflows to the rail");
+        assert.strictEqual(rail.label, "rgba(0, 0, 0, 0)", "rail shows icons only");
+        assert.strictEqual(rail.iconX, open.iconX, "icons keep their place when the sidebar folds");
+        assert.strictEqual(await c.page.evaluate(() => localStorage.getItem("bt-nav-collapsed")), "1", "the folded state is remembered");
+        c.at("resting the mouse on the rail opens it over the page");
+        await c.page.mouse.move(35, 400);
+        await until(async () => (await nav()).width === 248, "rail opens over the page on hover");
+        const peek = await nav();
+        assert.ok(peek.peek, "peek state is set");
+        assert.strictEqual(peek.pad, "94px", "the page does not move while the rail is open over it");
+        assert.notStrictEqual(peek.label, "rgba(0, 0, 0, 0)", "labels show while it is open over the page");
+        await c.click("#concept-incubator-btn", "a destination opens from the open rail");
+        await c.visible("#concept-incubator-page", "Concepts shows");
+        await c.page.mouse.move(c.width - 20, 400);
+        await until(async () => { const n = await nav(); return n.width === 70 && !n.peek; }, "rail folds again when the mouse leaves");
+        c.at("the menu button expands it again");
+        await c.click("#nav-collapse-btn", "expand the sidebar");
+        await until(async () => (await nav()).width === 248 && (await nav()).pad === "272px", "sidebar returns at full width");
+        assert.strictEqual(await c.page.evaluate(() => document.documentElement.hasAttribute("data-nav-collapsed")), false, "not collapsed");
       }
     },
   },

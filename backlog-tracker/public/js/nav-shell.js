@@ -10,6 +10,9 @@ import { installTouchTaps } from "./touch-click.js";
 import { promoteNavId } from "./promote-section.js";
 
 const COLLAPSE_KEY = "bt-nav-collapsed";
+// How long the pointer rests on the icon rail before it opens over the page,
+// so sweeping the mouse past it on the way to the page does nothing.
+const PEEK_DELAY_MS = 150;
 const root = document.documentElement;
 
 function readCollapsed() {
@@ -71,7 +74,34 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
   const mqPhone = window.matchMedia("(max-width: 640px)");
 
   // ── Sidebar: persistent + collapsible on wide screens ──────────────────
+  // Like Gmail's: the menu button folds the sidebar to an icon rail and back
+  // (remembered per browser), and while it is a rail, pointing at it with a
+  // mouse (or tabbing into it) opens it over the page until the pointer
+  // leaves. The page itself never moves for that peek. Touch never peeks: a
+  // tap on a rail icon just goes there.
+  let peekTimer = 0;
+  const keyboardFocus = (el) => { try { return !!el && el.matches(":focus-visible"); } catch { return false; } };
+  function setPeek(v) {
+    clearTimeout(peekTimer);
+    if (v && root.hasAttribute("data-nav-collapsed") && mqPersistent.matches) root.setAttribute("data-nav-peek", "");
+    else root.removeAttribute("data-nav-peek");
+  }
+  drawer.addEventListener("pointerenter", (e) => {
+    if (e.pointerType !== "mouse" || !root.hasAttribute("data-nav-collapsed")) return;
+    clearTimeout(peekTimer);
+    peekTimer = setTimeout(() => setPeek(true), PEEK_DELAY_MS);
+  });
+  drawer.addEventListener("pointerleave", (e) => {
+    if (e.pointerType !== "mouse") return;
+    if (drawer.contains(document.activeElement) && keyboardFocus(document.activeElement)) { clearTimeout(peekTimer); return; }
+    setPeek(false);
+  });
+  drawer.addEventListener("focusin", (e) => { if (keyboardFocus(e.target)) setPeek(true); });
+  drawer.addEventListener("focusout", (e) => {
+    if (!drawer.contains(e.relatedTarget) && !drawer.matches(":hover")) setPeek(false);
+  });
   function applyCollapsed(v) {
+    setPeek(false);
     if (v) root.setAttribute("data-nav-collapsed", ""); else root.removeAttribute("data-nav-collapsed");
     collapseBtn.setAttribute("aria-expanded", String(!v));
     collapseBtn.setAttribute("aria-label", v ? "Expand sidebar" : "Collapse sidebar");
@@ -83,8 +113,9 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     writeCollapsed(next);
     applyCollapsed(next);
   });
-  // The hamburger on a wide screen re-opens a collapsed sidebar rather than
-  // sliding an overlay over it.
+  // The topbar hamburger is not shown from 1024px (the rail's own menu
+  // button takes its place); if it is ever clicked there, it re-opens a
+  // collapsed sidebar rather than sliding an overlay over it.
   document.getElementById("nav-open-btn").addEventListener("click", () => {
     if (mqPersistent.matches && root.hasAttribute("data-nav-collapsed")) {
       writeCollapsed(false); applyCollapsed(false);
@@ -101,7 +132,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     backdrop.classList.remove("open");
     setTab(null);
   }
-  [mqPersistent, mqPhone].forEach((mq) => mq.addEventListener("change", () => { resetOverlay(); syncActive(); }));
+  [mqPersistent, mqPhone].forEach((mq) => mq.addEventListener("change", () => { resetOverlay(); setPeek(false); syncActive(); }));
 
   // On a phone the Build / Promote / Support tabs open the same list, filtered.
   function showSection(which) {
