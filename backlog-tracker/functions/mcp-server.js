@@ -50,6 +50,7 @@ const kanban = require("./kanban");
 const identity = require("./identity");
 const leads = require("./leads");
 const prospects = require("./prospects");
+const releaseGroups = require("./release-groups");
 // Staff Kanban's voice agent fill (functions/kanban.js). "unset" until the
 // ANTHROPIC_API_KEY repo secret is added (the deploy workflow writes the
 // placeholder so the deploy never fails on a missing secret).
@@ -2152,15 +2153,40 @@ function safeHref(url) {
 // the two can never disagree about whether the console's own Deploy to Main
 // button would be showing right now.
 async function deployGuardForProject(pid) {
-  const snap = await db().collection("backlogItems").where("projectId", "==", pid).get();
+  // A project in a release group (functions/release-groups.js) shares its
+  // train with the group's other projects: readiness is the whole group's,
+  // and a hold names what in the other project blocks it.
+  const projSnap = await db().collection("projects").doc(pid).get();
+  const projectData = projSnap.exists ? (projSnap.data() || {}) : {};
+  let project = releaseGroups.withReleaseGroup({ id: pid, ...projectData }, []);
+  if (projectData.releaseGroupId) {
+    const gSnap = await db().collection("releaseGroups").doc(String(projectData.releaseGroupId)).get();
+    if (gSnap.exists) project = releaseGroups.withReleaseGroup({ id: pid, ...projectData }, [{ id: gSnap.id, ...gSnap.data() }]);
+  }
+  const trainIds = releaseGroups.trainProjectIdsOf(project);
+  const projectsById = { [pid]: { id: pid, name: projectData.name || pid } };
   const items = [];
-  snap.forEach((doc) => items.push(Object.assign({ id: doc.id }, doc.data())));
+  for (const id of trainIds) {
+    if (!projectsById[id]) {
+      const s = await db().collection("projects").doc(id).get();
+      projectsById[id] = { id, name: (s.exists && (s.data() || {}).name) || id };
+    }
+    const snap = await db().collection("backlogItems").where("projectId", "==", id).get();
+    snap.forEach((doc) => items.push(Object.assign({ id: doc.id }, doc.data())));
+  }
+  const group = project.releaseGroup
+    ? { id: project.releaseGroup.id, name: project.releaseGroup.name, projectIds: project.releaseGroup.projectIds, deployBranch: project.releaseGroup.deployBranch }
+    : null;
+  const whose = (i) => (i.projectId && i.projectId !== pid ? ` in ${projectsById[i.projectId] ? projectsById[i.projectId].name : i.projectId}` : "");
+  const trainWord = group ? `the ${group.name} release group's shared deployment train` : "this project's deployment train";
+  const readiness = releaseGroups.trainReadiness(project, items, projectsById);
+  const blockedBy = readiness.blockers.map((b) => ({ id: b.id, title: b.title, projectId: b.projectId, projectName: b.projectName, why: b.why }));
 
   const pendingReverts = items.filter((i) => i.revertRequested === true && i.deployCommit);
   if (pendingReverts.length) {
     return {
-      ok: false, deployItems: [],
-      reason: `${pendingReverts.length} ticket(s) on this project's deployment train have a pending revert not yet resolved (e.g. "${pendingReverts[0].title}"). The board's own Deploy to Main button is hidden for the same reason — resolve it there first.`,
+      ok: false, deployItems: [], releaseGroup: group, blockedBy,
+      reason: `${pendingReverts.length} ticket(s) on ${trainWord} have a pending revert not yet resolved (e.g. "${pendingReverts[0].title}"${whose(pendingReverts[0])}). The board's own Deploy to Main button is hidden for the same reason — resolve it there first.`,
     };
   }
 
@@ -2169,28 +2195,28 @@ async function deployGuardForProject(pid) {
     const stillTesting = trainItems.filter((i) => i.status !== "ready-to-publish");
     if (stillTesting.length) {
       return {
-        ok: false, deployItems: [],
-        reason: `${stillTesting.length} ticket(s) on this project's deployment train are still in Ready for Testing (e.g. "${stillTesting[0].title}") — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for this project.`,
+        ok: false, deployItems: [], releaseGroup: group, blockedBy,
+        reason: (readiness.reason ? `${readiness.reason}. ` : "") +
+          `${stillTesting.length} ticket(s) on ${trainWord} are still in Ready for Testing (e.g. "${stillTesting[0].title}"${whose(stillTesting[0])}) — merging now would ship them untested too. The board's own Deploy to Main button is hidden until Ready for Testing is empty for ${group ? "every project in the group" : "this project"}.`,
       };
     }
     // Same gate as app.js's "Tests failing" button: the train's required
     // check is red, so a deploy would only park on a red PR (PR #335).
-    const projSnap = await db().collection("projects").doc(pid).get();
-    const red = Object.keys((projSnap.exists && (projSnap.data() || {}).trainTestsRed) || {});
+    const red = Object.keys(projectData.trainTestsRed || {});
     if (red.length) {
       return {
-        ok: false, deployItems: [],
-        reason: `The tests on this project's deployment train are failing (${red.join(" and ")}), so the board shows "Tests failing" instead of Deploy to Main. Each ticket's notes link the failing run; fix it or send the ticket that broke it back with Failed testing.`,
+        ok: false, deployItems: [], releaseGroup: group, blockedBy,
+        reason: `The tests on ${trainWord} are failing (${red.join(" and ")}), so the board shows "Tests failing" instead of Deploy to Main. Each ticket's notes link the failing run; fix it or send the ticket that broke it back with Failed testing.`,
       };
     }
-    return { ok: true, deployItems: trainItems, reason: null };
+    return { ok: true, deployItems: trainItems, reason: null, releaseGroup: group, blockedBy: [] };
   }
 
   const legacyItems = items.filter((i) => i.status === "ready-to-publish" && !i.deployCommit && !i.noDeploymentRequired);
   if (!legacyItems.length) {
-    return { ok: false, deployItems: [], reason: "Nothing is Approved for Deployment for this project yet — the board's own Deploy to Main button is hidden for the same reason." };
+    return { ok: false, deployItems: [], releaseGroup: group, blockedBy: [], reason: `Nothing is Approved for Deployment for ${group ? "any project in the group" : "this project"} yet — the board's own Deploy to Main button is hidden for the same reason.` };
   }
-  return { ok: true, deployItems: legacyItems, reason: null };
+  return { ok: true, deployItems: legacyItems, reason: null, releaseGroup: group, blockedBy: [] };
 }
 
 // What happens to a Requirements/README write, from the project's own fields:
@@ -2445,6 +2471,10 @@ const TOOLS = [
         byStatus[d.status || "backlog"] = (byStatus[d.status || "backlog"] || 0) + 1;
         counts.set(d.projectId, byStatus);
       });
+      // Release groups (functions/release-groups.js): projects that ship in one
+      // deployable share one train. deployBranch is the train's (the group's).
+      const groups = [];
+      (await db().collection("releaseGroups").get()).forEach((d) => groups.push({ id: d.id, ...(d.data() || {}) }));
       const latestVersions = new Map();
       for (const p of projects.values()) {
         if (!p.artifactUrl || (p.archived === true && !(args && args.includeArchived))) continue;
@@ -2454,6 +2484,7 @@ const TOOLS = [
       const out = [];
       projects.forEach((p) => {
         if (p.archived === true && !(args && args.includeArchived)) return;
+        const grouped = releaseGroups.withReleaseGroup({ ...p, id: p.id }, groups);
         out.push({
           id: p.id,
           name: p.name || "",
@@ -2461,7 +2492,8 @@ const TOOLS = [
           type: ENTITY_TYPES.includes(p.type) ? p.type : null,
           program: p.programId ? (programs.get(p.programId) || null) : null,
           archived: p.archived === true,
-          deployBranch: p.deployBranch || null,
+          deployBranch: grouped.deployBranch || null,
+          releaseGroup: grouped.releaseGroup ? { id: grouped.releaseGroup.id, name: grouped.releaseGroup.name, projectIds: grouped.releaseGroup.projectIds } : null,
           trainStatus: p.trainStatus || null,
           trainLocked: p.trainLocked === true,
           finalised: finalisedOut(p),
@@ -3082,7 +3114,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Approved for Deployment column at once — deploy-readiness can only be reported with a projectId, since it's a per-project question." },
+        projectId: { type: "string", description: "Restrict to one project (from list_projects). Omit to see every project's Approved for Deployment column at once — deploy-readiness can only be reported with a projectId, since it's a per-train question. For a project in a release group the column and the readiness are the shared train's (every member project), and blockedBy names what holds it." },
       },
       additionalProperties: false,
     },
@@ -3090,18 +3122,22 @@ const TOOLS = [
       const a = args || {};
       const projects = await loadProjectsById();
       if (a.projectId && !projects.has(String(a.projectId))) return toolError(`No project with id ${a.projectId}. Call list_projects first.`);
-      let q = db().collection("backlogItems").where("status", "==", "ready-to-publish");
-      if (a.projectId) q = q.where("projectId", "==", String(a.projectId));
-      const snap = await q.limit(MAX_READ_DOCS).get();
-      const rows = [];
-      snap.forEach((doc) => {
-        const d = doc.data() || {};
-        if ((d.status || "backlog") !== "ready-to-publish") return;
-        rows.push({ doc, d });
-      });
-      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
-
+      // With a projectId in a release group, the column is the shared train's:
+      // every member project's approved tickets, each tagged with its project.
       const guard = a.projectId ? await deployGuardForProject(String(a.projectId)) : null;
+      const scopeIds = a.projectId ? (guard && guard.releaseGroup ? guard.releaseGroup.projectIds : [String(a.projectId)]) : [null];
+      const rows = [];
+      for (const pid of scopeIds) {
+        let q = db().collection("backlogItems").where("status", "==", "ready-to-publish");
+        if (pid) q = q.where("projectId", "==", pid);
+        const snap = await q.limit(MAX_READ_DOCS).get();
+        snap.forEach((doc) => {
+          const d = doc.data() || {};
+          if ((d.status || "backlog") !== "ready-to-publish") return;
+          rows.push({ doc, d });
+        });
+      }
+      rows.sort((x, y) => (y.d.updatedAt?.toMillis?.() || 0) - (x.d.updatedAt?.toMillis?.() || 0));
 
       const cards = rows.map(({ doc, d }) => {
         const project = projects.get(d.projectId);
@@ -3119,7 +3155,7 @@ const TOOLS = [
           onTrain: !!d.deployCommit,
           deployCommit: d.deployCommit || null,
           prNumber: d.prNumber || null,
-          deployBranch: (project && project.deployBranch) || null,
+          deployBranch: (guard && guard.releaseGroup && guard.releaseGroup.projectIds.includes(d.projectId) ? guard.releaseGroup.deployBranch : (project && project.deployBranch)) || null,
           ...previewStateFields(d),
           trainTest: trainTestOut(d),
           ...approverOut(d),
@@ -3129,7 +3165,9 @@ const TOOLS = [
 
       const projectLabel = a.projectId ? ((projects.get(String(a.projectId)) || {}).name || a.projectId) : "every project";
       const readyLine = guard ? (guard.ok
-        ? "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main."
+        ? (guard.releaseGroup
+          ? `The ${guard.releaseGroup.name} release group's whole shared train is Approved for Deployment — ask your agent to call approve_deploy_to_main (from any project in the group) to fire Deploy to Main.`
+          : "This project's whole train is Approved for Deployment — ask your agent to call approve_deploy_to_main to fire Deploy to Main.")
         : guard.reason) : null;
       const headline = `Approved for Deployment — ${projectLabel}`;
       const rebuilding = cards.filter((c) => c.previewState === "rebuilding").length;
@@ -3138,6 +3176,8 @@ const TOOLS = [
       const payload = {
         kind: "approved-for-deployment", projectId: a.projectId || null, projectLabel, count: cards.length,
         readyToDeploy: guard ? guard.ok : null, readyLine, items: cards,
+        releaseGroup: guard ? (guard.releaseGroup || null) : null,
+        blockedBy: guard ? (guard.blockedBy || []) : [],
       };
       return boardToolResult(
         `${headline}: ${cards.length} ticket(s) waiting to ship${counts ? `; ${counts}` : ""}.${readyLine ? ` ${readyLine}` : ""}`,
@@ -3162,7 +3202,7 @@ const TOOLS = [
   {
     name: "approve_deploy_to_main",
     role: "admin",
-    description: "ADMIN ONLY. Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. Logged to mcpAuditLog under your email.",
+    description: "ADMIN ONLY. Fire this project's Deploy to Main trigger — exactly the same action as clicking the board's own 'Deploy to Main' button. It does not merge anything itself: it only fires the existing Routine, which verifies the train and the existing pipeline then merges it. Only offered when every ticket on this project's deployment train is already Approved for Deployment and Ready for Testing is empty for it — the same condition that shows the console's own button — and refuses otherwise, naming what's blocking it. A project in a release group shares one train with the group's other projects: this works from any member, and readiness is the whole group's. Logged to mcpAuditLog under your email.",
     scope: "board.write",
     inputSchema: {
       type: "object",
@@ -3194,6 +3234,7 @@ const TOOLS = [
 
       return textResult({
         fired: true, projectId, deployCount: guard.deployItems.length,
+        ...(guard.releaseGroup ? { releaseGroup: guard.releaseGroup } : {}),
         itemIds: guard.deployItems.map((i) => i.id),
         note: "This fires the same Routine the console's own Deploy to Main button fires — it verifies the train and merges it. This call returns before that finishes; check the project's trainStatus (list_projects) or the board itself afterward.",
       });
@@ -3416,8 +3457,16 @@ const TOOLS = [
         }, email ? { approvedByEmail: email, approvedAt: FieldValue.serverTimestamp() } : {}, { approvedVia: "mcp" }));
       });
       await batch.commit();
-      // The first approval closes the train, as the board's click does.
-      await projectRef.set({ trainLocked: true }, { merge: true });
+      // The first approval closes the train, as the board's click does — for
+      // every member of a release group, which shares the one train
+      // (otherwise the other member's late patches would land on a closing train).
+      const projectData = projectSnap.data() || {};
+      let lockIds = [projectId];
+      if (projectData.releaseGroupId) {
+        const gSnap = await db().collection("releaseGroups").doc(String(projectData.releaseGroupId)).get();
+        if (gSnap.exists) lockIds = releaseGroups.trainProjectIdsOf(releaseGroups.withReleaseGroup({ id: projectId, ...projectData }, [{ id: gSnap.id, ...gSnap.data() }]));
+      }
+      for (const lockId of lockIds) await db().collection("projects").doc(lockId).set({ trainLocked: true }, { merge: true });
 
       await audit(session, "approve_for_deployment", { projectId, itemIds: ids, count: ids.length, testsAcknowledged: warnings.length > 0 });
 

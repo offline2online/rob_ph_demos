@@ -188,6 +188,7 @@ service cloud.firestore {
         && (!changed.hasAny(["trainLocked"]) || incoming().trainLocked == true)
         && (!changed.hasAny(["routinePromptMd"]) || isAdmin())
         && (!changed.hasAny(["finalised", "finalisedLog"]) || isAdmin())
+        && (!changed.hasAny(["releaseGroupId"]) || isAdmin())
         && (!changed.hasAny(["notifyRequestedByEmail"]) || requesterIsCaller(incoming().notifyRequestedByEmail))
         // A person's click is stamped with the server's clock (app.js writes
         // serverTimestamp()). Without this, a member could write back the
@@ -251,6 +252,7 @@ service cloud.firestore {
         && projectDocsBounded()
         && (isBoardAutomation() || (
           (!("routinePromptMd" in incoming()) || isAdmin())
+          && (!("releaseGroupId" in incoming()) || isAdmin())
           && (!("notifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().notifyRequestedByEmail))
           && (!("deployNotifyRequestedByEmail" in incoming()) || requesterIsCaller(incoming().deployNotifyRequestedByEmail))
           && (!("groomRequestedByEmail" in incoming()) || requesterIsCaller(incoming().groomRequestedByEmail))
@@ -351,6 +353,25 @@ service cloud.firestore {
         && (!("checked" in incoming()) || incoming().checked is list && incoming().checked.size() <= 1000)
         && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 6000);
       allow delete: if false;
+    }
+
+    // Release groups (Flow 9/9, functions/release-groups.js): projects that
+    // ship in one deployable share one train — the group's deployBranch, one
+    // lock, one Deploy to Main, one PR. A group decides which branch a merge
+    // ships from, so only an admin (Settings → Projects → Release groups)
+    // writes it, plus the automation user, the same principal that already
+    // writes a project's train fields (the deploy session does the one-off
+    // migration). projects/{id}.releaseGroupId, the pointer back, is guarded
+    // the same way in humanProjectUpdateOk. Members read.
+    function isValidReleaseGroup() {
+      return isNonEmptyBoundedString(incoming().name, 80)
+        && isValidNewDeployBranch(incoming().deployBranch)
+        && incoming().projectIds is list && incoming().projectIds.size() <= 10;
+    }
+    match /releaseGroups/{groupId} {
+      allow read: if isBoardReader();
+      allow create, update: if (isAdmin() || isBoardAutomation()) && isValidReleaseGroup();
+      allow delete: if isAdmin() || isBoardAutomation();
     }
 
     match /releases/{releaseId} {

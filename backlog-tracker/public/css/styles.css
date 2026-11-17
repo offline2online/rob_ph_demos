@@ -618,6 +618,34 @@ textarea.dialog-field-input { resize: vertical; min-height: 70px; }
 .train-overlap-chip { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-size: 11px; font-weight: 500; line-height: 1.6; padding: 1px 8px 1px 5px; margin: 0 4px 4px 0; border-radius: 9999px; border: 1px solid #d9d9d9; background: #fafafa; color: #333333; cursor: default; overflow-wrap: anywhere; }
 .train-overlap-chip .material-symbols-outlined { font-size: 14px; flex-shrink: 0; }
 .train-overlap-chip-warn, .train-overlap-chip-owned { color: #ad6800; background: #fffbe6; border-color: #ffe58f; }
+/* Release groups (Flow 9/9) — see releaseGroupLineHTML() in js/app.js. A
+   neutral info line, not a warning: sharing a train is a setting, not a
+   problem. Primary tint, the platform's "active/selected" family. */
+.project.collapsed .release-group-line { display: none; }
+.release-group-line {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -2px 0 10px; box-sizing: border-box;
+  background: var(--primary-tint); color: var(--text); border: 1px solid rgba(22, 155, 194, .35); border-radius: 6px;
+  padding: 6px 10px; font-size: 12px; min-width: 0;
+}
+.release-group-line .material-symbols-outlined { font-size: 16px; color: var(--primary-text); flex-shrink: 0; }
+.release-group-state { color: var(--text-muted); }
+.release-group-state::before { content: "·"; margin-right: 6px; }
+.deploy-held-reason { flex-basis: 100%; font-size: 12px; color: var(--text-muted); text-align: right; overflow-wrap: anywhere; }
+/* Settings → Projects → Release groups */
+.release-group-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0 0 12px; }
+.release-group-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); min-width: 0; }
+.release-group-form input, .release-group-form select, .release-group-add-select { font: inherit; font-size: 14px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; min-width: 0; max-width: 100%; }
+.release-group-status { margin: 0 0 10px; font-size: 13px; color: var(--text); }
+.release-group-status-error { color: var(--danger); }
+.release-group-row { padding: 10px 0; border-top: 1px solid rgba(5, 5, 5, .06); }
+.release-group-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+.release-group-head code { font-size: 12px; overflow-wrap: anywhere; }
+.release-group-members { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.release-group-member { display: inline-flex; align-items: center; gap: 2px; padding: 2px 4px 2px 10px; border-radius: 999px; background: var(--primary-tint); font-size: 13px; }
+.release-group-member .icon-btn { width: 24px; height: 24px; }
+.release-group-member .material-symbols-outlined { font-size: 16px; }
+.release-group-add { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.release-group-empty { color: var(--text-muted); font-size: 13px; }
 
 /* "Docs behind main" — see docsBehindChipHTML() in js/app.js. Amber, same
    warning family as the train-locked hint; a button, since it opens the Docs

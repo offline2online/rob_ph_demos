@@ -181,7 +181,8 @@ test("the queue gate comes before main is merged in, the train tests and the ver
 test("finishTrain takes the train off the queue and asks for the next run", () => {
   const src = fs.readFileSync(path.join(__dirname, "../scripts/run-backlog-automation.js"), "utf8");
   const body = src.slice(src.indexOf("async function finishTrain("), src.indexOf("async function processDeployTrain(project)"));
-  assert.ok(body.includes("await leaveDeployQueue(project.id)"));
+  // Every member of a release group leaves the queue (just the project itself without one).
+  assert.ok(/for \(const pid of releaseGroups\.trainProjectIdsOf\(project\)\)[^\n]*await leaveDeployQueue\(pid\)/.test(body));
   assert.ok(body.includes("followUpReasons.push"));
 });
 

@@ -692,13 +692,15 @@ T("TC-24", "completed vs withdrawn via the Status menu; epic progress ignores wi
   await p.waitForSelector("#task-backdrop:not([hidden]) #f-description .ql-editor");
   const opts = await p.$$eval("#f-status option", (o) => o.map((x) => x.textContent));
   assert.ok(opts.includes("Completed") && opts.includes("Withdrawn") && !opts.some((t) => /Completed \//.test(t)));
-  // Choose Withdrawn and wait for Save to switch on. A form redrawn meanwhile (the ticket re-read) shows the
-  // ticket's status again, so the choice is made again on the form that is there.
+  // Choose Withdrawn, wait for Save to switch on, and press it, as one step. A form redrawn meanwhile (the ticket
+  // re-read) shows the ticket's status again and switches Save off, and that can happen after Save was seen on and
+  // before the tap lands: the tap then waited 30 s for a Save that stayed off (TC-24's flake on phone-360). So the
+  // press only waits briefly, and a redrawn form gets the choice made again on the form that is there.
   await eventually(async () => {
-    if ((await p.inputValue("#f-status")) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn");
-    assert.ok(await p.isEnabled("#f-save"), "Save is on: the status changed");
-  });
-  await press(p, "#f-save");
+    if ((await p.inputValue("#f-status", { timeout: 2000 })) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn", { timeout: 2000 });
+    assert.ok(await p.isEnabled("#f-save", { timeout: 2000 }), "Save is on: the status changed");
+    await press(p, "#f-save", { timeout: 2000 });
+  }, 20000);
   await eventually(async () => assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" }));
   await eventually(async () => assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn"))));
   const t = await stored(p, "PH-26");
@@ -751,17 +753,29 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
   // A viewer's touch drag above never starts a card drag, so Chromium treats it as a pan and flings; the next tap
-  // only stops the fling and produces no click. Tap until the modal opens (it opens on the first tap when nothing
-  // was flung), then wait for it properly.
-  for (let i = 0; i < 4; i++) {
-    await press(p, '.kb-card[data-key="PH-20"]');
-    if (await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 1500 }).then(() => true, () => false)) break;
+  // only stops the fling and produces no click. So tap until PH-20's modal is open, tapping again only while it is
+  // shut: the modal opens after an async read of the ticket, and a tap sent while that read was still in flight could
+  // land on the backdrop the read had just put up (closing it), or a second open could redraw the form between two
+  // separate lookups. KB-C1 flaked on exactly that, on tablet-l-chromium ("page.$eval: Failed to find element
+  // matching selector #f-title" right after the modal was seen open). The modal is read in ONE evaluate and the case
+  // waits until that read shows PH-20 open, so nothing can change between the check and the assertions.
+  const modal = () => p.evaluate(() => {
+    const b = document.getElementById("task-backdrop"), t = document.getElementById("f-title"), st = document.getElementById("f-status");
+    const open = !!(b && !b.hidden && t && b.contains(t));
+    return { open, key: open ? document.getElementById("task-title-h").textContent.trim() : "", save: !!document.getElementById("f-save"), titleDisabled: !!(t && t.disabled), statusDisabled: !!(st && st.disabled), del: !!document.getElementById("f-delete") };
+  });
+  const ph20Open = () => { const b = document.getElementById("task-backdrop"), t = document.getElementById("f-title"); return !!(b && !b.hidden && t && b.contains(t) && document.getElementById("task-title-h").textContent.trim() === "PH-20"); };
+  let m = await modal();
+  for (let i = 0; i < 6 && !(m.open && m.key === "PH-20"); i++) {
+    if (!m.open) await press(p, '.kb-card[data-key="PH-20"]', { timeout: 5000 }).catch(() => {});
+    await p.waitForFunction(ph20Open, null, { timeout: 4000 }).catch(() => {});
+    m = await modal();
   }
-  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 5000 });
-  assert.equal(await p.$("#f-save"), null, "no Save");
-  assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
-  assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");
-  assert.equal(await p.$("#f-delete"), null);
+  assert.deepEqual([m.open, m.key], [true, "PH-20"], "PH-20's modal opens");
+  assert.equal(m.save, false, "no Save");
+  assert.equal(m.titleDisabled, true);
+  assert.equal(m.statusDisabled, true, "the Status menu is locked");
+  assert.equal(m.del, false);
   assert.equal((await writes(p, /^kanban/)).length, 0, "nothing written");
   await p.evaluate(() => { location.hash = "#staff-kanban/settings"; }); await p.waitForSelector(".kb-readonly-note");
   assert.equal(await p.$eval('[data-show="sprint"]', (e) => e.disabled), true);

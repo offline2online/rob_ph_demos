@@ -57,8 +57,12 @@ function docCandidates(folder, name) {
 // disagree (1 Oct 2026: the sync read repoFolder alone and skipped the DSP
 // project, whose folder projectFolderOf() had been finding via the branch).
 // `exists` (optional) filters candidates to folders present in a checkout.
+// A project in a release group carries the group's deployBranch (e.g.
+// deploy/ph-agent-console, run-backlog-automation.js's withGroup) and keeps
+// its own as ownDeployBranch: the folder is always derived from its own.
 function resolveRepoFolder(project, exists) {
-  const slug = String(project?.deployBranch || "").replace(/^deploy\//, "");
+  const ownBranch = project && Object.prototype.hasOwnProperty.call(project, "ownDeployBranch") ? project.ownDeployBranch : project?.deployBranch;
+  const slug = String(ownBranch || "").replace(/^deploy\//, "");
   for (const c of [project?.repoFolder, slug]) {
     const folder = String(c || "").trim().replace(/^\/+|\/+$/g, "");
     if (folder && !folder.includes("..") && (!exists || exists(folder))) return folder;
