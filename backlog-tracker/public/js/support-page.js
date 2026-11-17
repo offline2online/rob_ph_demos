@@ -11,7 +11,6 @@ import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -22,16 +21,6 @@ const SYNC_EVERY_MS = 3 * 60 * 1000;
 const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); return `<span class="support-conf support-conf-${b}" title="How sure the AI is that this reply is correct and complete">${short ? `AI draft · ${pct(c)}` : `${CONFIDENCE_LABEL[b]} · ${pct(c)}`}</span>`; };
 const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
 const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
-// Aidan, the agent mailbox (aidan@): its state on a ticket, and the reply it sent to everyone on the email.
-const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting" };
-const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>` : ""; };
-const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>` : ""; };
-function aidanMessageHtml(m, at) {
-  const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
-  return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
-    <div class="support-msg-addr">To ${esc((m.to || []).join(", "))}${(m.cc || []).length ? ` · Cc ${esc(m.cc.join(", "))}` : ""}</div>
-    <div class="support-msg-body">${esc(m.text)}</div>${files}</li>`;
-}
 
 async function api(apiHeaders, path, { method = "POST", body } = {}) {
   const resp = await fetch(`/supportMail/v1/${path}`, { method, headers: await apiHeaders(), ...(method === "GET" ? {} : { body: JSON.stringify(body || {}) }) });
@@ -164,7 +153,6 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (t.aiDraft && t.status === "open") out.push(confidenceHtml(t.aiDraft.confidence, { short: true }));
     if (t.resolvedBy === "ai" && !t.humanInvolved && t.status === "resolved") out.push(`<span class="badge badge-feature">Answered by AI</span>`);
     if (t.triagePending) out.push(`<span class="badge badge-status-draft">Sorting…</span>`);
-    if (t.aidan) out.push(aidanBadge(t));
     return out.join("");
   }
 
@@ -198,7 +186,6 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const at = toMs(m.at);
     if (m.direction === "event") return `<li class="support-event">${icon("history")}<span>${esc(m.text)} <small>${esc(m.by === "ai" ? "AI" : m.by || "")} · ${esc(fullDate(at))}</small></span></li>`;
     if (m.direction === "note") return `<li class="support-msg support-msg-note"><div class="support-msg-head"><b>Internal note</b> · ${esc(m.by || "")}<small>${esc(fullDate(at))}</small></div><div class="support-msg-body">${esc(m.text)}</div></li>`;
-    if (m.direction === "out" && m.source === "aidan") return aidanMessageHtml(m, at);
     const out = m.direction === "out";
     const who = out ? (m.auto ? "AI reply" : m.sentBy === "gmail" ? "Sent from Gmail" : `${m.sentBy || "Support"}`) : (m.fromName || m.from);
     const tag = out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
@@ -254,7 +241,6 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           ${t.account ? `<span class="support-account">${icon("apartment")}${esc(t.account.name)} · ${esc(t.account.reason)}</span>` : ""}
           ${t.kanbanKey ? `<button type="button" class="support-link" data-support-act="open-kanban">${icon("view_kanban")}${esc(t.kanbanKey)}</button>` : ""}</div>
         ${t.summary ? `<p class="support-summary">${icon("auto_awesome")}${esc(t.summary)}</p>` : ""}
-        ${aidanLine(t)}
         ${t.escalationError ? `<p class="support-problem">The Staff Kanban ticket couldn't be raised: ${esc(t.escalationError)}</p>` : ""}
       </div>
       ${actions}
@@ -425,26 +411,6 @@ const CALLBACK_ERRORS = {
   exchange: "Google refused the sign-in. Check the OAuth client ID, secret and redirect address.",
   access_denied: "The Google sign-in was cancelled.",
 };
-// Aidan's block in Settings › Support inbox. The allowed senders are kept on
-// the server and never shown in full: an admin sees them masked and replaces
-// the whole list by pasting it; everyone else sees how many there are.
-function aidanSettingsHtml(aidan, admin) {
-  const a = aidan || { enabled: false, switchedOn: true, senderCount: 0, sendersMasked: [] };
-  const dis = admin ? "" : " disabled";
-  const state = a.senderCount
-    ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
-    : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
-  return `<div class="docs-block" id="support-aidan-settings"><div class="docs-block-header"><h3>Aidan
-      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction: it writes the documentation with the matching skill and replies to everyone on the email with it attached, or keeps the email and its attachments as reference material for a skill. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
-      ${state}
-      <div class="support-set-grid">
-        <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>
-        ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
-        <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
-      </div>
-      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan">Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
-    </div>`;
-}
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
   // `returned` is the query Google's sign-in came back with ("connected=1" or "error=…").
@@ -506,8 +472,7 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <textarea id="support-vip" rows="3" placeholder="bigretailer.com, another.co.uk"${dis}>${esc(set.vipDomains.join(", "))}</textarea>
         </div>
         ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings">Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
-      </div>
-      ${aidanSettingsHtml(s.aidan, admin)}`;
+      </div>`;
   }
   host.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-ss-act]");
@@ -536,10 +501,6 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         } });
         await load();
         host.querySelector("#support-settings-status").textContent = "Saved.";
-      } else if (a === "save-aidan") {
-        await api(apiHeaders, "aidan", { body: { enabled: host.querySelector("#support-aidan-on").checked, allowedSenders: val("support-aidan-senders") } });
-        await load();
-        host.querySelector("#support-aidan-status").textContent = "Saved.";
       }
     } catch (err) { await alert(err.message); }
     if (b.isConnected) b.disabled = false;

@@ -91,9 +91,6 @@ async function reset() {
     await setDoc(doc(db, "supportSettings/main"), { connectedEmail: "support@ph.example", autoReply: false });
     await setDoc(doc(db, "supportSecrets/gmail"), { refresh: { v: 1, ct: "x" }, client: { v: 1, ct: "y" } });
     await setDoc(doc(db, "supportCounters/main"), { nextNumber: 2 });
-    // Aidan (functions/aidan.js): its configuration and one kept reference.
-    await setDoc(doc(db, "supportSecrets/aidan"), { allowedSenders: ["owner@example.com"], enabled: true });
-    await setDoc(doc(db, "skillReferences/r1"), { skillId: "s1", subject: "Onboarding notes", text: "Notes", files: [] });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -594,12 +591,6 @@ async function main() {
   await check("Not even an owner can read the support mailbox's encrypted sign-in", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/gmail")));
   await check("Nobody can write the support mailbox's sign-in from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/gmail"), { refresh: null }));
   await check("Nobody can read the support ticket counter from a client", "deny", () => getDoc(doc(as(TEAM_ADMIN), "supportCounters/main")));
-  // Aidan: the allowed senders are server-only; kept reference material is member-readable, server-written.
-  await check("Not even an owner can read Aidan's allowed senders", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/aidan")));
-  await check("A team admin cannot write Aidan's allowed senders from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/aidan"), { allowedSenders: ["x@ph.example"] }));
-  await check("A member may read Aidan's reference material", "allow", () => getDoc(doc(as(MEMBER), "skillReferences/r1")));
-  await check("A stranger cannot read Aidan's reference material", "deny", () => getDoc(doc(as(STRANGER), "skillReferences/r1")));
-  await check("An editor cannot write reference material from a client", "deny", () => setDoc(doc(as(MEMBER), "skillReferences/r2"), { skillId: "s1", text: "x" }));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 
