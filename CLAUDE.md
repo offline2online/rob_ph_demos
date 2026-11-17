@@ -442,6 +442,12 @@ board:
   **Failed testing**; tick it (or the column select-all) and click
   **"Approved for Deployment — N selected"**. The old per-card "Confirm
   tested" button and its `testPassed` flag are gone.
+- **A ticket that changes only test files approves itself** (17 Nov 2026,
+  `autoApprovePlan`): once its own train tests have passed on its commit it
+  moves to Approved for Deployment with a note, without locking the train.
+  Any product file in its commits and it waits for a person as before. A
+  flaky-test ticket the build found already fixed (no commit) closes itself.
+  Deploy to Main is still a click.
 - **Failed testing also takes the ticket off the branch** — it writes
   `revertRequested`, and the automation reverts that card's commits. A card
   in Backlog must never have live commits on a train. If a later ticket

@@ -547,6 +547,29 @@ busy. Now:
   (`selfAnswering` in `card-state.js`, which also holds the limits). A build
   that never ran (`blocked.kind "never-ran"`) keeps its own 12 tries. A flag a
   person set (`setBy` an email address) is never answered for them.
+- **A ticket that changes only test files approves itself (17 Nov 2026).**
+  A flaky-test fix has nothing a person can try, yet seven of them sat in
+  Ready for Testing for three hours waiting for a tick. `sweepAutoApprovals`
+  (every automation run, after the cards' test results are recorded) moves a
+  Ready for Testing ticket to Approved for Deployment when every file its
+  commits changed is a test file (under a `test`, `tests`, `__tests__` or
+  `e2e` folder, or named `*.test.*` / `*.spec.*`; `isTestOnlyChange`) and its
+  own `trainTest` is `passed` for its `deployCommit`: not running, not
+  borrowed from an older commit, not "not-applicable". It writes
+  `approvedVia: "auto-test-only"` and a note saying why, and does **not** set
+  `trainLocked`: more test fixes may still be building, and a lock would hold
+  them for the next release. One product file in the ticket and it waits for
+  a person as before. Deploy to Main is still a click, and Failed testing
+  still takes it off the release. A flaky-test ticket the ledger raised and
+  the build found already fixed (`noDeploymentRequired`, no commit,
+  `autoRaised`, `flakyCaseId`) is closed the same way instead of waiting for
+  "Confirm tested" (`autoConfirmNoChangePlan`). Tests: `test/auto-approve.test.js`.
+- **One flaky-test ticket per case, by id, not by title (17 Nov 2026).** A
+  build renames its ticket, so matching the open ticket by its "Flaky test:
+  <case>" title filed a duplicate the moment each fix reached Ready for
+  Testing (six in one morning). `casesNeedingTicket` matches by the ledger's
+  `ticketId`, the ticket's `flakyCaseId` or the title, and once a case's fix
+  has shipped only flakes seen after that count towards a new ticket.
 - **A question that does reach a person is one sentence with options to
   click (16 Nov 2026).** Only when the senior model's tries are used up does
   the card wait on a person ("Needs your pick"). The Answer dialog then shows
