@@ -114,6 +114,7 @@ async function reset() {
     await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@ph.example", type: "access" });
     await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@ph.example" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@ph.example", tool: "create_backlog_item" });
+    await setDoc(doc(db, "scriptRuns/r1"), { email: "sam@ph.example", kind: "run_script", scriptSource: "return 1;", outcome: "ok" });
     await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
     await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
     await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
@@ -341,6 +342,14 @@ async function main() {
 
   await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
+  // Code Mode's execution log (functions/code-mode): readable by members, written only by the server.
+  await check("A member may read the script execution log", "allow", () => getDoc(doc(as(MEMBER), "scriptRuns/r1")));
+  await check("A signed-in non-member may NOT read the script execution log", "deny", () => getDoc(doc(as(STRANGER), "scriptRuns/r1")));
+  await check("An admin may NOT edit a script execution log entry", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "scriptRuns/r1"), { outcome: "error" }, { merge: true }));
+  await check("A member may NOT add a script execution log entry", "deny", () =>
+    setDoc(doc(as(MEMBER), "scriptRuns/r2"), { email: "x@ph.example", kind: "run_script" }));
+  await check("An admin may NOT delete a script execution log entry", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "scriptRuns/r1")));
   await check("Nobody can edit the agent audit log", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1"), { tool: "something else" }, { merge: true }));
 

@@ -1,0 +1,313 @@
+// Code Mode for the PH Agent Console's MCP server.
+//
+// Four tools, registered from mcp-server.js exactly like the Kanban and Leads
+// tool sets:
+//
+//   run_script             run a short JavaScript program in the sandbox
+//   describe_script_tools  the tools a script may call, as TypeScript signatures
+//   get_insight            run a named, pre-written script from ./insights
+//   list_insights          the insight library
+//
+// A script reaches the board only through `tools.<name>(args)`, and each of
+// those is the EXISTING read tool, run with the caller's own session — the
+// same function tools/call would run, so a script can read exactly what its
+// caller could read one call at a time, and nothing else. Nothing here writes
+// to the board; the only write is one audit entry per execution
+// (scriptRuns).
+"use strict";
+
+const crypto = require("crypto");
+const sandbox = require("./sandbox");
+const makeLib = require("./insights/_lib");
+
+// ── The allow-list ───────────────────────────────────────────────────────
+// Read-only tools a script may call. Adding a name here is the whole act of
+// exposing it — and it is refused at load time unless that tool is a
+// board.read tool with no role requirement (assertAllowList below).
+// `args` / `returns` are the compact signatures describe_script_tools prints;
+// test/code-mode.test.js checks every argument named here exists in the real
+// tool's inputSchema, so a signature cannot drift from the tool.
+const SCRIPT_TOOLS = [
+  // Agent board
+  { name: "list_projects", args: "{ includeArchived?: boolean }",
+    returns: "{ projects: Array<{ id: string; name: string; description: string | null; type: string | null; program: string | null; archived: boolean; deployBranch: string | null; releaseGroup: { id: string; name: string; projectIds: string[] } | null; trainStatus: string | null; trainLocked: boolean; artifactUrl: string | null; counts: Record<Status, number> }>; statusKeys: Record<Status, string> }",
+    note: "Every project with ticket counts per stage." },
+  { name: "list_backlog_items", args: "{ projectId?: string; status?: Status; type?: \"feature\" | \"bug\"; category?: string; search?: string; searchIn?: Array<\"title\" | \"desc\" | \"notes\">; includeArchived?: boolean; cursor?: string; limit?: number /* max 100, default 25 */ }",
+    returns: "{ matched: number; returned: number; nextCursor: string | null; items: ItemSummary[]; truncated?: boolean }",
+    note: "Newest-updated first. Page with nextCursor until it is null." },
+  { name: "get_backlog_item", args: "{ itemId: string }",
+    returns: "ItemSummary & { desc: string; previewUrl: string | null; testVersion: string | null; lastFailureReason: { category: string | null; summary: string | null; text: string; at: string | null } | null; train: { deployBranch: string | null; deployCommit: string | null; mergeCommit: string | null; prNumber: number | null; deployConclusion: string | null; deployRuns: Array<{ workflow: string | null; dispatchedAt: string | null; conclusion: string | null }> | null }; notes: Array<{ author: string; text: string; at: string | null }> }",
+    note: "One ticket in full, with every comment (notes)." },
+  { name: "get_pipeline_health", args: "{ projectId?: string }",
+    returns: "{ generatedAt: string; trains: Array<{ projectId: string; project: string; state: string; line: string; waitingOn: string | null; stuckReason: string | null; ageHours: number; overdue: boolean; onTrain: number }>; needsAttention: Array<{ kind: string; id: string; projectId: string; project: string; title: string; line: string; waitingOn: string | null; since: string | null; ageHours: number; overdue: boolean; nextAction: string | null }>; truncated?: boolean }",
+    note: "Each project's train in one line, and everything waiting on a person." },
+  // Concept Incubator
+  { name: "list_concepts", args: "{ status?: \"active\" | \"promoted\"; type?: string }",
+    returns: "{ concepts: Array<{ id: string; name: string; description: string | null; type: string | null; status: \"active\" | \"promoted\"; promotedProjectId: string | null; hasReadme: boolean; hasRequirements: boolean; artifactUrl: string | null; commentCount: number; createdByEmail: string | null; updatedAt: string | null }> }" },
+  { name: "get_concept", args: "{ conceptId: string }",
+    returns: "{ id: string; name: string; description: string | null; type: string | null; status: string; interfaces: Array<{ id: string; name: string; endpoints: Array<{ type: \"project\" | \"concept\"; id: string }>; contentMd: string }>; documents: Array<{ name: string; contentMd: string }>; readmeMd: string; requirementsMd: string; docsUrl: string; artifactUrl: string | null; comments: Array<{ author: string; text: string; at: string | null }>; promotedProjectId: string | null; promotedAt: string | null; createdByEmail: string | null; createdAt: string | null; updatedAt: string | null }" },
+  // Leads
+  { name: "list_leads", args: "{ leadType?: \"company\" | \"operator\"; stage?: string; audience?: string; networkIndustry?: string; company?: string; assignee?: string; source?: string; industry?: string; q?: string; includeArchived?: boolean; limit?: number /* max 200, default 100 */; offset?: number }",
+    returns: "{ count: number; total: number; nextOffset?: number; leads: Array<{ id: string; leadType: string; leadTypeLabel: string; name: string; company: string; website: string | null; industry: string | null; countries: string[]; stage: string; stageLabel: string; source: string | null; assignee: string | null; contacts: Array<{ name: string; jobTitle: string | null; buyingRole: string | null; email: string | null }>; updatedAt: string | null; archived: boolean; historyCount: number }> }",
+    note: "Page with offset = nextOffset." },
+  { name: "get_lead", args: "{ leadId?: string; company?: string }",
+    returns: "the list_leads entry plus { createdAt: string | null; history: Array<{ at: string; by: string; kind: string; text: string }>; research: object | null }",
+    note: "By leadId, or by company name." },
+  // Staff Kanban and releases
+  { name: "kanban_list_people", args: "{}",
+    returns: "{ people: Array<{ email: string; name: string; fullName: string | null }>; releases: Array<{ id: string; name: string; version: string | null; live: boolean; date: string | null }>; sprints: Array<{ id: string; name: string; start: string | null; end: string | null }>; projects: Array<{ id: string; name: string }>; currentRelease: string | null; statuses: string[]; resolutions: string[] }",
+    note: "The Kanban board's people, releases, sprints and projects." },
+  { name: "kanban_list_tasks", args: "{ assignee?: string /* email, \"me\" or \"none\" */; release?: string; project?: string; status?: string; type?: \"task\" | \"bug\" | \"epic\"; priority?: string; sprint?: string; label?: string; flagged?: boolean; search?: string; limit?: number /* max 200, default 100 */; cursor?: string }",
+    returns: "{ matched: number; returned: number; truncated: boolean; nextCursor: string | null; tasks: KanbanTask[] }",
+    note: "Open tickets unless a release or a done status is given." },
+  { name: "kanban_get_task", args: "{ key: string /* PH-36 */ }",
+    returns: "KanbanTask & { description: string; reporter: string | null; acceptanceCriteria: Array<{ text: string; done: boolean }>; links: Array<{ type: string; key: string }>; comments: Array<{ id: string; author: string; at: string | null; text: string }>; activity: Array<{ who: string; at: string | null; text: string }>; created: string | null; updated: string | null }" },
+  { name: "kanban_search_tickets", args: "{ query: string }",
+    returns: "{ matched: number; results: Array<{ key: string; title: string; type: string; status: string; matchedIn: \"title\" | \"description\" }> }" },
+  { name: "kanban_release_report", args: "{ release?: string /* id or \"all\"; default the current release */; assignee?: string; status?: string }",
+    returns: "{ release: string; releaseName: string; releaseDate: string | null; workingDaysLeft: number | null; outstanding: number; completed: number; withdrawn: number; flagged: number; remaining: string; logged: string; estimate: string; withoutEstimate: number; capacityPerPerson: string | null; byPerson: Array<{ assignee: string | null; name: string; tasks: number; outstanding: number; remaining: string; overCapacity: boolean | null }>; truncated: boolean }" },
+  // Help centre
+  { name: "search_faq", args: "{ query: string; limit?: number /* max 25, default 8 */; includeDrafts?: boolean; release?: string }",
+    returns: "{ matched: number; results: Array<{ id: string; title: string; summary: string; docType: string | null; category: string | null; slug: string | null; status: string; hiddenFromWebsite: boolean }> }" },
+  { name: "get_faq_article", args: "{ articleId?: string; slug?: string; release?: string }",
+    returns: "{ id: string; title: string; slug: string; docType: string | null; category: string | null; status: string | null; summary: string; keywords: string[]; bodyMd: string; directAnswer: string | null; hiddenFromWebsite: boolean; appliesToRelease: boolean }" },
+  { name: "list_faq_categories", args: "{}",
+    returns: "{ matched: number; categories: Array<{ id: string; name: string; parentId: string | null; order: number; hiddenFromWebsite: boolean }> }" },
+];
+const SCRIPT_TOOL_NAMES = SCRIPT_TOOLS.map((t) => t.name);
+
+const SHARED_TYPES = [
+  "type Status = \"backlog\" | \"ready-for-testing\" | \"ready-to-publish\" | \"published-live\" | \"archived\";",
+  "type ItemSummary = { id: string; projectId: string | null; project: string | null; title: string; type: \"feature\" | \"bug\"; category: string; status: Status; statusLabel: string; updatedAt: string | null; createdAt: string | null; comments: number; blocked: { reason: string; note: string; setBy: string | null; setAt: string | null } | null; ownerEmail: string | null; state?: string; stateLine?: string; waitingOn?: string | null; ageHours?: number; overdue?: boolean };",
+  "type KanbanTask = { key: string; type: string; title: string; status: string; statusLabel: string; resolution: string | null; priority: string | null; flagged: boolean; assignee: string | null; assigneeName: string | null; release: string | null; sprint: string | null; project: string | null; epic: string | null; estimate: string | null; logged: string | null; remaining: string | null; due: string | null; labels: string[] };",
+];
+
+function describeText() {
+  const L = sandbox.LIMITS;
+  const lines = [
+    "// run_script: `code` is the body of an async function (tools, params). Use await; `return` a",
+    "// JSON-serialisable value — only that value comes back, never the raw tool outputs.",
+    `// Limits: ${L.DEFAULT_TIMEOUT_MS / 1000} s wall clock (timeoutMs up to ${L.MAX_TIMEOUT_MS / 1000} s), ${L.MEMORY_MB} MB memory, ${L.MAX_TOOL_CALLS} tool calls,`,
+    `// ${L.MAX_RESULT_BYTES / 1024} KB returned value, ${L.MAX_SOURCE_BYTES / 1024} KB source. Over a limit is an error, never a silent cut.`,
+    "// No network, files, timers, require, process or environment. Read-only: there are no write tools.",
+    "// A tool that fails throws an Error (name \"ToolError\", .tool = its name); try/catch it if a miss is fine.",
+    "// All times are ISO 8601 strings.",
+    "",
+    ...SHARED_TYPES,
+    "",
+    "declare const tools: {",
+  ];
+  for (const t of SCRIPT_TOOLS) {
+    if (t.note) lines.push(`  /** ${t.note} */`);
+    lines.push(`  ${t.name}(args${t.args === "{}" ? "?" : /^\{ \w+: /.test(t.args) ? "" : "?"}: ${t.args}): Promise<${t.returns}>;`);
+  }
+  lines.push("};", "",
+    "// Example — open bugs per project:",
+    "// const { projects } = await tools.list_projects({});",
+    "// const out = {};",
+    "// for (const p of projects) {",
+    "//   const r = await tools.list_backlog_items({ projectId: p.id, type: \"bug\", status: \"backlog\", limit: 1 });",
+    "//   if (r.matched) out[p.name] = r.matched;",
+    "// }",
+    "// return out;");
+  return lines.join("\n");
+}
+
+// ── Insight library ──────────────────────────────────────────────────────
+// One file per insight in ./insights. To add one: add the file, add its name
+// here, add a test to test/code-mode.test.js. See MCP.md → "Code Mode".
+const INSIGHT_NAMES = ["pipeline_status", "what_changed", "project_status", "concept_status", "leads_summary", "release_status"];
+const INSIGHTS = new Map(INSIGHT_NAMES.map((name) => {
+  const def = require(`./insights/${name}.js`);
+  if (def.name !== name) throw new Error(`insights/${name}.js exports name "${def.name}"`);
+  return [name, def];
+}));
+const INSIGHT_TIMEOUT_MS = sandbox.LIMITS.MAX_TIMEOUT_MS;
+
+function insightSource(def) {
+  return [
+    `// insight ${def.name} v${def.version}`,
+    `const lib = (${makeLib.toString()})(tools);`,
+    `return await (${def.run.toString()})(tools, params, lib);`,
+  ].join("\n");
+}
+function insightParams(def, given) {
+  const input = given === undefined || given === null ? {} : given;
+  if (typeof input !== "object" || Array.isArray(input)) return { error: "params must be an object." };
+  const known = new Map(def.params.map((p) => [p.name, p]));
+  const out = {};
+  for (const [k, v] of Object.entries(input)) {
+    const p = known.get(k);
+    if (!p) return { error: `${def.name} has no parameter "${k}". It takes: ${def.params.map((x) => x.name).join(", ") || "none"}.` };
+    if (v === undefined || v === null || v === "") continue;
+    if (p.type === "number") {
+      const n = typeof v === "number" ? v : Number(v);
+      if (!Number.isFinite(n)) return { error: `${k} must be a number.` };
+      out[k] = n;
+    } else if (typeof v === "string" || typeof v === "number") out[k] = String(v);
+    else return { error: `${k} must be a string.` };
+  }
+  for (const p of def.params) if (p.required && out[p.name] === undefined) return { error: `${def.name} needs ${p.name}: ${p.description}` };
+  return { params: out };
+}
+
+// ── The tools ────────────────────────────────────────────────────────────
+// deps: { textResult, toolError, db, FieldValue, logger, getTool(name) }
+function codeModeTools(deps) {
+  const { textResult, toolError, db, FieldValue, logger, getTool } = deps;
+
+  // Refuse to expose anything that is not a plain read tool. Called on first
+  // use (the registry is still being built when this module loads).
+  let checked = false;
+  function assertAllowList() {
+    if (checked) return;
+    for (const name of SCRIPT_TOOL_NAMES) {
+      const tool = getTool(name);
+      if (!tool) throw new Error(`Code Mode allow-list names ${name}, which is not a tool.`);
+      if (tool.scope !== "board.read" || tool.role || tool.destructive) throw new Error(`Code Mode allow-list names ${name}, which is not a plain read-only tool.`);
+    }
+    checked = true;
+  }
+
+  // One proxied call: the existing tool's own run(), with the caller's own
+  // session. Returns the tool's JSON payload; throws an Error whose message
+  // is safe to hand to the script.
+  async function callAsCaller(session, name, args) {
+    const tool = getTool(name);
+    if (!tool || !SCRIPT_TOOL_NAMES.includes(name) || tool.scope !== "board.read" || tool.role) throw new Error(`${name} is not available to scripts.`);
+    let result;
+    try {
+      result = await tool.run(args, session);
+    } catch (err) {
+      // The detail goes to the server log, never into the sandbox.
+      logger.error("code-mode tool failed", { tool: name, email: session.email, error: String(err && err.stack ? err.stack : err) });
+      throw new Error(`${name} failed on the server.`);
+    }
+    const text = result && Array.isArray(result.content) && result.content[0] && typeof result.content[0].text === "string" ? result.content[0].text : "";
+    if (result && result.isError) throw new Error(text || `${name} failed.`);
+    try { return JSON.parse(text); } catch (_) { return text; }
+  }
+
+  async function record(session, entry) {
+    try {
+      await db().collection("scriptRuns").add(Object.assign({
+        at: FieldValue.serverTimestamp(),
+        email: session.email,
+        clientId: session.clientId || null,
+        role: session.role || null,
+      }, entry));
+    } catch (err) {
+      logger.warn("code-mode audit write failed", { error: String(err) });
+    }
+  }
+
+  async function execute(session, kind, source, opts, auditExtra) {
+    assertAllowList();
+    const outcome = await sandbox.runInSandbox(source, Object.assign({
+      toolNames: SCRIPT_TOOL_NAMES,
+      callTool: (name, args) => callAsCaller(session, name, args),
+    }, opts));
+    const max = sandbox.LIMITS.MAX_SOURCE_BYTES;
+    const tooLong = Buffer.byteLength(source, "utf8") > max * 2;
+    await record(session, Object.assign({
+      kind,
+      scriptHash: crypto.createHash("sha256").update(source, "utf8").digest("hex"),
+      // A rejected oversized script is kept in part: enough to see what it was.
+      scriptSource: tooLong ? source.slice(0, max) : source,
+      scriptSourceTruncated: tooLong,
+      toolsCalled: outcome.toolCalls.map((c) => ({ name: c.name, durationMs: c.durationMs })),
+      toolCallCount: outcome.toolCalls.length,
+      durationMs: outcome.durationMs,
+      outcome: outcome.ok ? "ok" : "error",
+      errorKind: outcome.ok ? null : outcome.error.kind,
+      errorMessage: outcome.ok ? null : String(outcome.error.message).slice(0, 500),
+    }, auditExtra || {}));
+    return outcome;
+  }
+
+  const calls = (outcome) => outcome.toolCalls.map((c) => ({ name: c.name, durationMs: c.durationMs }));
+  function errorResult(outcome, extra) {
+    return toolError(JSON.stringify(Object.assign({ error: outcome.error }, extra || {}, { toolCalls: calls(outcome), durationMs: outcome.durationMs }), null, 2));
+  }
+
+  const L = sandbox.LIMITS;
+  return [
+    {
+      name: "run_script",
+      description: `Run a short JavaScript program on the server to answer a question that would otherwise take many tool calls — counts, joins, roll-ups across tickets, projects, concepts, leads, Staff Kanban and the help centre. The code is the body of an async function: call the read-only tools as \`await tools.<name>(args)\`, compute, and \`return\` a compact JSON value. Only that value comes back. Call describe_script_tools first for the tools and their signatures. Read-only; limits: ${L.DEFAULT_TIMEOUT_MS / 1000} s (up to ${L.MAX_TIMEOUT_MS / 1000} s), ${L.MAX_TOOL_CALLS} tool calls, ${L.MAX_RESULT_BYTES / 1024} KB result, ${L.MAX_SOURCE_BYTES / 1024} KB source. For the common questions, get_insight is quicker.`,
+      scope: "board.read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "The body of an async function (tools, params). Use await and return." },
+          timeoutMs: { type: "integer", minimum: L.MIN_TIMEOUT_MS, maximum: L.MAX_TIMEOUT_MS, description: `Wall-clock limit. Default ${L.DEFAULT_TIMEOUT_MS}.` },
+        },
+        required: ["code"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const a = args || {};
+        if (typeof a.code !== "string") return toolError("code must be a string of JavaScript.");
+        if (a.timeoutMs !== undefined && (typeof a.timeoutMs !== "number" || !Number.isFinite(a.timeoutMs))) return toolError("timeoutMs must be a number of milliseconds.");
+        const outcome = await execute(session, "run_script", a.code, { timeoutMs: a.timeoutMs === undefined ? L.DEFAULT_TIMEOUT_MS : a.timeoutMs, filename: "script.js" });
+        if (!outcome.ok) return errorResult(outcome);
+        return textResult({ result: outcome.result, toolCalls: calls(outcome), durationMs: outcome.durationMs });
+      },
+    },
+    {
+      name: "describe_script_tools",
+      description: "The tools a run_script program may call, as compact TypeScript signatures, with the sandbox's limits and an example. Read this before writing a script instead of loading every tool's schema.",
+      scope: "board.read",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      async run() {
+        assertAllowList();
+        return textResult(describeText());
+      },
+    },
+    {
+      name: "list_insights",
+      description: "The insight library: pre-written summaries get_insight can run in one call — each with its name, what it answers, and its parameters.",
+      scope: "board.read",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+      async run() {
+        return textResult({
+          insights: [...INSIGHTS.values()].map((d) => ({
+            name: d.name, version: d.version, description: d.description,
+            params: d.params.map((p) => ({ name: p.name, type: p.type, required: !!p.required, description: p.description })),
+          })),
+          note: "Project, concept and release parameters take an id or a name; names are matched case-insensitively.",
+        });
+      },
+    },
+    {
+      name: "get_insight",
+      description: `One compact, ready-to-say summary in a single call: ${INSIGHT_NAMES.join(", ")}. Use this for "where are we", "what changed", "how is project X / concept Y / release Z", "how are leads". Project, concept and release parameters take an id or a name (matched case-insensitively, so a spoken name works). list_insights gives each one's parameters.`,
+      scope: "board.read",
+      inputSchema: {
+        type: "object",
+        properties: {
+          name: { type: "string", enum: INSIGHT_NAMES, description: "Which insight." },
+          params: { type: "object", description: "That insight's parameters (list_insights). Omit when it needs none." },
+        },
+        required: ["name"], additionalProperties: false,
+      },
+      async run(args, session) {
+        const a = args || {};
+        const def = INSIGHTS.get(String(a.name || ""));
+        if (!def) return toolError(`No insight called "${a.name}". There are: ${INSIGHT_NAMES.join(", ")}.`);
+        const p = insightParams(def, a.params);
+        if (p.error) return toolError(p.error);
+        const outcome = await execute(session, "get_insight", insightSource(def),
+          { params: p.params, timeoutMs: INSIGHT_TIMEOUT_MS, filename: `insight-${def.name}.js`, maxSourceBytes: 0 },
+          { insight: def.name, insightVersion: def.version, params: p.params });
+        if (!outcome.ok) {
+          // An insight's own code is not the caller's to debug: no line numbers.
+          const { kind, name, message, tool } = outcome.error;
+          return errorResult({ error: { kind, name, message, ...(tool ? { tool } : {}) }, toolCalls: outcome.toolCalls, durationMs: outcome.durationMs }, { insight: def.name });
+        }
+        return textResult(outcome.result);
+      },
+    },
+  ];
+}
+
+module.exports = { codeModeTools, SCRIPT_TOOLS, SCRIPT_TOOL_NAMES, INSIGHT_NAMES, INSIGHTS, insightSource, insightParams, describeText, sandbox };
