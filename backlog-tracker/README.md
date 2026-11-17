@@ -1098,6 +1098,9 @@ typed fallback, the denied-microphone error and the pinned action bar.
   inside the Firestore emulator and asserts what each principal may and may
   not write, including the membership model (`consoleUsers`) and the fact
   that nobody may read the MCP credential store.
+- **`claude-plugin.test.js`** checks the Claude plugin that packages the MCP
+  server (`claude-plugin/`, offered by the repository's
+  `.claude-plugin/marketplace.json`). See `MCP.md` → "Install it as a plugin".
 - **`mcp-server.test.js`** drives `functions/mcp-server.js` in-process —
   client registration, sign-in, PKCE code exchange, `tools/list`,
   `tools/call`, and every refusal that matters. It stubs the Firebase SDKs
