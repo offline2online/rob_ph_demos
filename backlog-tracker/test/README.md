@@ -133,6 +133,9 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   the board starts a touch drag from a 260 ms long-press timer and drops it
   if the finger moves 8 px first, so a late timer on a busy runner used to
   cancel the drag (TC-65, "Expected values to be strictly equal").
+  TC-65 also reads the open form (title, estimate, description) in one
+  snapshot after each rotation and waits on it, since the resize can redraw
+  the modal after it was first seen open.
 - A change made on a ticket's form is made, checked and saved as one retried
   step: the form can be redrawn (the ticket re-read) after Save was seen on,
   which puts the old value back and switches Save off, and a tap on Save then
