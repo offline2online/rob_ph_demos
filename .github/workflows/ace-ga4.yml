@@ -1,0 +1,44 @@
+# ACE opportunity stages → GA4 (Measurement Protocol), hourly.
+#
+# Calls the console's `aceToGa4` Cloud Function (backlog-tracker/functions/ace-ga4.js)
+# with the board key. The function does the work: it matches website leads that carry
+# a GA4 client_id to their ACE opportunity and sends ace_opportunity_qualified /
+# _launched / _won once each. It sends for real only while Partner Central's catalogue
+# is "AWS"; in Sandbox it only calls GA4's validation endpoint.
+#
+# Why a workflow and not Cloud Scheduler: backlog-tracker-e4ed2 has no scheduler jobs
+# on purpose. The deploy service account can't enable Cloud Scheduler, so one
+# onSchedule function would fail the whole console deploy (Rob, 29 Oct 2026;
+# backlog-tracker/test/kanban-mcp.test.js "no scheduled function").
+name: ACE stages to GA4
+
+on:
+  schedule:
+    - cron: '17 * * * *'   # hourly, off the top of the hour
+  workflow_dispatch:
+
+concurrency:
+  group: ace-ga4
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Send ACE stage changes to GA4
+        env:
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+          URL: https://us-central1-backlog-tracker-e4ed2.cloudfunctions.net/aceToGa4
+        run: |
+          if [ -z "$BOARD_API_KEY" ]; then echo "::error title=BOARD_API_KEY not set::the function refuses every call without it"; exit 1; fi
+          code=$(curl -sS -o out.json -w '%{http_code}' -X POST -H "X-Board-Key: $BOARD_API_KEY" -H 'Content-Type: application/json' --max-time 320 "$URL" || echo 000)
+          cat out.json 2>/dev/null; echo
+          if [ "$code" = "404" ]; then echo "::warning title=aceToGa4 not deployed yet::merge PR #554 and let deploy-backlog-tracker.yml run"; exit 0; fi
+          if [ "$code" != "200" ]; then echo "::error title=aceToGa4 answered $code::see the function logs"; exit 1; fi
+          {
+            echo "### ACE stages to GA4"
+            echo '```json'; cat out.json; echo; echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
