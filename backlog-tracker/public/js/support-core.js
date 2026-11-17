@@ -10,6 +10,21 @@ export const CATEGORY_LABEL = {
   sales: "Sales", feedback: "Feedback", automated: "Automated", unrelated: "Not about PH", other: "Other",
 };
 
+// The inboxes, one tab each. The mailbox is reached through three addresses
+// and a ticket is filed under each one its emails were written to (`inboxes`
+// on the ticket, set by functions/support-core.js; the keys must match it).
+// A ticket with none recorded (filed before the tabs existed, or written to
+// no alias) is the Support Inbox's.
+export const INBOXES = [
+  { key: "support", label: "Support Inbox", address: "support@" },
+  { key: "hello", label: "Hello", address: "hello@" },
+  { key: "aidan", label: "Aidan", address: "aidan@" },
+];
+export const DEFAULT_INBOX = "support";
+const INBOX_KEYS = INBOXES.map((i) => i.key);
+export const inboxOf = (key) => INBOXES.find((i) => i.key === key) || INBOXES[0];
+export const inInbox = (t, key) => (t.inboxes && t.inboxes.length ? t.inboxes : [DEFAULT_INBOX]).includes(inboxOf(key).key);
+
 const open = (t) => t.status === "open";
 // The queues down the left of the inbox, in working order. A ticket is in
 // exactly one of the first six.
@@ -24,10 +39,11 @@ export const QUEUES = [
 ];
 export const DEFAULT_QUEUE = "needs-person";
 export const queueOf = (key) => QUEUES.find((q) => q.key === key) || QUEUES[0];
-export function queueCounts(tickets) {
+// `inbox`: count that inbox's tickets only (every ticket when left out).
+export function queueCounts(tickets, inbox) {
   const out = {};
   for (const q of QUEUES) out[q.key] = 0;
-  for (const t of tickets || []) for (const q of QUEUES) if (q.test(t)) out[q.key] += 1;
+  for (const t of tickets || []) if (!inbox || inInbox(t, inbox)) for (const q of QUEUES) if (q.test(t)) out[q.key] += 1;
   return out;
 }
 
@@ -46,7 +62,8 @@ export function toMs(v) {
 export function normaliseTicket(id, d) {
   const t = d || {};
   return {
-    id, key: t.key || id, subject: t.subject || "(no subject)", customerEmail: t.customerEmail || "", customerName: t.customerName || "",
+    id, inboxes: (() => { const own = INBOX_KEYS.filter((k) => Array.isArray(t.inboxes) && t.inboxes.includes(k)); return own.length ? own : [DEFAULT_INBOX]; })(),
+    key: t.key || id, subject: t.subject || "(no subject)", customerEmail: t.customerEmail || "", customerName: t.customerName || "",
     status: STATUSES.includes(t.status) ? t.status : "open", needsHuman: !!t.needsHuman, triagePending: !!t.triagePending,
     automated: t.automated || "", unrelated: !!t.unrelated || t.category === "unrelated", highValue: !!t.highValue, account: t.account || null, category: t.category || "", summary: t.summary || "",
     triageReason: t.triageReason || "", spamLikely: !!t.spamLikely, snippet: t.snippet || "", assignee: t.assignee || "", kanbanKey: t.kanbanKey || "",
@@ -59,28 +76,41 @@ export function normaliseTicket(id, d) {
 
 // Queue + free-text filter, newest activity first (high-value first inside
 // "Needs a person", so the ticket that matters most is at the top).
-export function filterTickets(tickets, queueKey, search) {
+// `inbox`: that inbox's tickets only (every ticket when left out).
+export function filterTickets(tickets, queueKey, search, inbox) {
   const q = queueOf(queueKey);
   const s = String(search || "").trim().toLowerCase();
-  const rows = (tickets || []).filter((t) => q.test(t) && (!s || [t.key, t.subject, t.customerEmail, t.customerName, t.snippet, t.account && t.account.name].some((v) => String(v || "").toLowerCase().includes(s))));
+  const rows = (tickets || []).filter((t) => (!inbox || inInbox(t, inbox)) && q.test(t) && (!s || [t.key, t.subject, t.customerEmail, t.customerName, t.snippet, t.account && t.account.name].some((v) => String(v || "").toLowerCase().includes(s))));
   return rows.sort((a, b) => (q.key === "needs-person" ? Number(b.highValue) - Number(a.highValue) : 0) || b.lastMessageAt - a.lastMessageAt);
 }
 
-// "#support", "#support?queue=spam", "#support/stats", "#support/ticket/<id>"
-// -> { view, queue, ticketId }, or null when the hash is not a Support Inbox route.
+// "#support", "#support?queue=spam", "#support/hello", "#support/aidan?queue=spam",
+// "#support/stats", "#support/ticket/<id>", "#support/hello/ticket/<id>"
+// -> { view, inbox, queue, ticketId }, or null when the hash is not a Support Inbox route.
+// The Support Inbox's own routes carry no inbox name, so links made before the
+// Hello and Aidan tabs existed still open.
 export function supportRoute(hash) {
   const [path, qs] = String(hash || "").split("?");
   if (path !== "#support" && !path.startsWith("#support/")) return null;
-  const rest = path.slice("#support".length).replace(/^\//, "");
-  if (rest === "stats") return { view: "stats", queue: "", ticketId: "" };
-  if (rest === "try") return { view: "try", queue: "", ticketId: "" };
+  let rest = path.slice("#support".length).replace(/^\//, "");
+  if (rest === "stats") return { view: "stats", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
+  if (rest === "try") return { view: "try", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
+  let inbox = DEFAULT_INBOX;
+  const named = INBOX_KEYS.find((k) => k !== DEFAULT_INBOX && (rest === k || rest.startsWith(`${k}/`)));
+  if (named) { inbox = named; rest = rest.slice(named.length).replace(/^\//, ""); }
   const m = rest.match(/^ticket\/(.+)$/);
-  if (m) return { view: "ticket", queue: "", ticketId: decodeURIComponent(m[1]) };
+  if (m) return { view: "ticket", inbox, queue: "", ticketId: decodeURIComponent(m[1]) };
   const queue = new URLSearchParams(qs || "").get("queue");
-  return { view: "inbox", queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
+  return { view: "inbox", inbox, queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
-export const supportHash = ({ view = "inbox", queue = "", ticketId = "" } = {}) =>
-  view === "stats" ? "#support/stats" : view === "try" ? "#support/try" : view === "ticket" ? `#support/ticket/${encodeURIComponent(ticketId)}` : queue && queue !== DEFAULT_QUEUE ? `#support?queue=${queue}` : "#support";
+export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "" } = {}) {
+  if (view === "stats") return "#support/stats";
+  if (view === "try") return "#support/try";
+  const key = inboxOf(inbox).key;
+  const base = key === DEFAULT_INBOX ? "#support" : `#support/${key}`;
+  if (view === "ticket") return `${base}/ticket/${encodeURIComponent(ticketId)}`;
+  return queue && queue !== DEFAULT_QUEUE ? `${base}?queue=${queue}` : base;
+}
 
 // ── Stats ─────────────────────────────────────────────────────────────────
 const median = (list) => {
@@ -94,8 +124,10 @@ const dayOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${Str
 // Everything the Stats tab shows, for tickets received between `from` and
 // `to` (ms, inclusive). Spam and machine-sent mail are counted on their own
 // and left out of the customer figures, so they cannot flatter the rates.
+// The figures are the Support Inbox's (mail written to support@): Hello and
+// Aidan are separate inboxes and are not counted.
 export function supportStats(tickets, { from = 0, to = Infinity } = {}) {
-  const inRange = (tickets || []).filter((t) => t.createdAt >= from && t.createdAt <= to);
+  const inRange = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && t.createdAt >= from && t.createdAt <= to);
   const spam = inRange.filter((t) => t.status === "spam");
   const automated = inRange.filter((t) => t.status !== "spam" && t.automated);
   const unrelated = inRange.filter((t) => t.status !== "spam" && !t.automated && t.unrelated);

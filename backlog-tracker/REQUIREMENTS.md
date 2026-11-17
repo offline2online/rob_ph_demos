@@ -6285,6 +6285,41 @@ retailers on the Staff Kanban, and track it all on one stats page.
 - **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
   Every member can read it; only an admin can change it.
 
+### Inboxes (17 Nov 2026)
+
+Mail reaches the one connected mailbox through three addresses: support@,
+hello@ and aidan@personalisationhub.com. Each has its own tab.
+
+- **SUP-INB-1** The page has three inbox tabs, named exactly **Support
+  Inbox**, **Hello** and **Aidan**, in that order. Support Inbox is the one
+  the page opens on (`#support`); the others are `#support/hello` and
+  `#support/aidan`.
+- **SUP-INB-2** An email is filed by the address it was written to, read
+  from its own To and Cc headers, and from Delivered-To / X-Original-To
+  where the mail server recorded one (a Bcc). The connected mailbox's own
+  address is never used: every message is delivered to it. support@ files
+  under Support Inbox, hello@ under Hello, aidan@ (To or Cc) under Aidan.
+  The alias must be on personalisationhub.com or the connected mailbox's
+  domain; a `+tag` after the name is ignored.
+- **SUP-INB-3** An email written to more than one alias is in each of those
+  tabs (support@ with aidan@ in Cc is in Support Inbox and Aidan). It is one
+  ticket: a reply, note or status change made in one tab shows in the other.
+  The ticket's header names the inboxes it is in.
+- **SUP-INB-4** An email that names none of the three is in Support Inbox.
+  So is every ticket filed before the tabs existed.
+- **SUP-INB-5** A ticket keeps its inboxes for the life of the thread. A
+  later customer email that names another alias adds that inbox; one that
+  names none changes nothing.
+- **SUP-INB-6** Each tab is a separate inbox: its own queues and counts, its
+  own list and search, and its own ticket view (`#support/<inbox>/ticket/<id>`,
+  Back returns to that inbox). The header line counts the inbox on show.
+  `#support/ticket/<id>` still opens any ticket, under its own inbox's tab.
+- **SUP-INB-7** The stats, and the Dashboard's Support tile, count the
+  Support Inbox only. Mail written only to hello@ or aidan@ is in neither.
+- **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
+  person. With sending switched on, a draft for mail written only to hello@
+  or aidan@ still waits for a person to approve it.
+
 ### Connecting
 
 - **SUP-CON-1** An admin saves a Google OAuth client and signs in as the
@@ -6332,7 +6367,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
   (50% to 99%, default 80%).
 - **SUP-AI-3** Never sent automatically: machine-sent mail, a high-value
   sender, a thread already answered automatically once, a ticket a person
-  has replied to or noted, and anything the model marks as spam.
+  has replied to or noted, anything the model marks as spam, and mail not
+  written to the support address (SUP-INB-8).
 - **SUP-AI-4** An automatic reply is marked `Auto-Submitted: auto-replied`,
   resolves the ticket as answered by AI, and is shown as such.
 - **SUP-AI-5** If the model fails or is not configured, the ticket still
@@ -6407,7 +6443,9 @@ retailers on the Staff Kanban, and track it all on one stats page.
 `highValue`, `account {kind, id, name, reason}`, `category`, `summary`,
 `triageReason`, `spamLikely`, `aiDraft {text, confidence, answerable,
 articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
-`reopenCount`, `resolvedBy`, `createdAt`, `lastMessageAt`, `lastInboundAt`,
+`reopenCount`, `resolvedBy`, `inboxes` (array of `support` | `hello` |
+`aidan`; unset on tickets from before 17 Nov 2026, read as `["support"]`),
+`createdAt`, `lastMessageAt`, `lastInboundAt`,
 `firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
 (`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
@@ -6421,6 +6459,10 @@ server-only.
 Email is shown as text; attachments are named, not stored. The list and
 stats cover the 500 most recently active tickets. There are no MCP tools
 for the inbox yet. The five-minute sync depends on GitHub's schedule.
+Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
+that was written to hello@ or aidan@ before then stays in Support Inbox.
+Every reply goes out from the connected mailbox's address, whichever alias
+the customer wrote to.
 
 ## Dashboard — the console's landing page (17 Nov 2026)
 

@@ -4,7 +4,7 @@
 import assert from "node:assert";
 import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, supportStats, fmtDuration, fmtPct, toMs,
-  searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange,
+  searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
@@ -45,13 +45,13 @@ check("the list: queue and search filter, high-value first where a person is nee
 check("routes round-trip and belong to the Support Inbox section", () => {
   assert.strictEqual(supportRoute("#promote/leads"), null);
   assert.strictEqual(supportRoute("#supporters"), null);
-  assert.deepStrictEqual(supportRoute("#support"), { view: "inbox", queue: "needs-person", ticketId: "" });
-  assert.deepStrictEqual(supportRoute("#support?queue=spam"), { view: "inbox", queue: "spam", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support"), { view: "inbox", inbox: "support", queue: "needs-person", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support?queue=spam"), { view: "inbox", inbox: "support", queue: "spam", ticketId: "" });
   assert.strictEqual(supportRoute("#support?queue=bogus").queue, "needs-person");
-  assert.deepStrictEqual(supportRoute("#support/stats"), { view: "stats", queue: "", ticketId: "" });
-  assert.deepStrictEqual(supportRoute("#support/try"), { view: "try", queue: "", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/stats"), { view: "stats", inbox: "support", queue: "", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/try"), { view: "try", inbox: "support", queue: "", ticketId: "" });
   assert.strictEqual(supportHash({ view: "try" }), "#support/try");
-  assert.deepStrictEqual(supportRoute("#support/ticket/19a%2Fb"), { view: "ticket", queue: "", ticketId: "19a/b" });
+  assert.deepStrictEqual(supportRoute("#support/ticket/19a%2Fb"), { view: "ticket", inbox: "support", queue: "", ticketId: "19a/b" });
   for (const r of [{ view: "inbox", queue: "spam" }, { view: "stats" }, { view: "ticket", ticketId: "19a/b" }, {}]) {
     const back = supportRoute(supportHash(r));
     assert.strictEqual(back.view, r.view || "inbox");
@@ -64,6 +64,50 @@ check("routes round-trip and belong to the Support Inbox section", () => {
   assert.strictEqual(storedLevel({ name: "Agent", permissions: { faq: "view" } }, "support-inbox"), "view", "follows the Help Centre grant until set");
   assert.strictEqual(settingsPageFromHash("#settings/support?connected=1"), "support");
   assert.ok(SETTINGS_PAGES.some((p) => p.key === "support"));
+});
+
+check("three inboxes, each with its own route, list and counts; a ticket written to two aliases is in both", () => {
+  assert.deepStrictEqual(INBOXES.map((i) => i.label), ["Support Inbox", "Hello", "Aidan"]);
+  const rows = [
+    tk("s1", { needsHuman: true, inboxes: ["support"] }),
+    tk("old", { needsHuman: true }),
+    tk("h1", { needsHuman: true, inboxes: ["hello"] }),
+    tk("h2", { status: "resolved", inboxes: ["hello"] }),
+    tk("a1", { aiDraft: { text: "Hi" }, inboxes: ["aidan"] }),
+    tk("sa", { needsHuman: true, inboxes: ["support", "aidan"], lastMessageAt: new Date(T0 + H) }),
+    tk("odd", { needsHuman: true, inboxes: ["bogus"] }),
+  ];
+  assert.deepStrictEqual(rows.find((t) => t.id === "old").inboxes, ["support"], "a ticket with none recorded is the Support Inbox's");
+  assert.deepStrictEqual(rows.find((t) => t.id === "odd").inboxes, ["support"]);
+  const ids = (inbox, queue = "all") => filterTickets(rows, queue, "", inbox).map((t) => t.id).sort();
+  assert.deepStrictEqual(ids("support"), ["odd", "old", "s1", "sa"]);
+  assert.deepStrictEqual(ids("hello"), ["h1", "h2"]);
+  assert.deepStrictEqual(ids("aidan"), ["a1", "sa"]);
+  assert.deepStrictEqual(ids("aidan", "needs-person"), ["sa"]);
+  assert.deepStrictEqual(filterTickets(rows, "all", "").length, 7, "no inbox named: every ticket");
+  const c = (inbox) => { const q = queueCounts(rows, inbox); return [q["needs-person"], q["ai-drafts"], q.resolved, q.all]; };
+  assert.deepStrictEqual([c("support"), c("hello"), c("aidan"), c()], [[4, 0, 0, 4], [1, 0, 1, 2], [1, 1, 0, 2], [5, 1, 1, 7]]);
+  assert.strictEqual(inInbox(rows[0], "nonsense"), true, "an unknown inbox is the Support Inbox");
+  assert.strictEqual(inboxOf("aidan").label, "Aidan");
+  // Routes: the Support Inbox keeps its old addresses; Hello and Aidan have their own.
+  assert.deepStrictEqual(supportRoute("#support/hello"), { view: "inbox", inbox: "hello", queue: "needs-person", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/aidan?queue=resolved"), { view: "inbox", inbox: "aidan", queue: "resolved", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/aidan/ticket/19a%2Fb"), { view: "ticket", inbox: "aidan", queue: "", ticketId: "19a/b" });
+  assert.strictEqual(supportRoute("#support/helloworld").inbox, "support");
+  assert.deepStrictEqual([supportHash({ inbox: "support" }), supportHash({ inbox: "hello" }), supportHash({ inbox: "aidan", queue: "spam" }), supportHash({ view: "ticket", inbox: "hello", ticketId: "t1" }), supportHash({ view: "ticket", ticketId: "t1" }), supportHash({ inbox: "bogus" })],
+    ["#support", "#support/hello", "#support/aidan?queue=spam", "#support/hello/ticket/t1", "#support/ticket/t1", "#support"]);
+  for (const r of [{ inbox: "hello" }, { inbox: "aidan", queue: "pending" }, { view: "ticket", inbox: "aidan", ticketId: "x/y" }]) {
+    const back = supportRoute(supportHash(r));
+    assert.deepStrictEqual([back.inbox, back.view, back.ticketId], [r.inbox, r.view || "inbox", r.ticketId || ""]);
+  }
+  assert.strictEqual(sectionForHash("#support/hello"), "support-inbox");
+  assert.strictEqual(sectionForHash("#support/aidan/ticket/x"), "support-inbox");
+});
+
+check("stats count the Support Inbox only: mail written to hello@ or aidan@ alone is not in them", () => {
+  const rows = [tk("s", { status: "resolved", resolvedBy: "ai" }), tk("h", { status: "resolved", inboxes: ["hello"] }), tk("a", { inboxes: ["aidan"], needsHuman: true }), tk("sa", { inboxes: ["support", "aidan"], needsHuman: true })];
+  const s = supportStats(rows, {});
+  assert.deepStrictEqual([s.received, s.resolved, s.needsPerson], [2, 1, 1]);
 });
 
 check("stats: spam and machine mail are left out, AI-only resolutions are separated from people's, times are medians", () => {

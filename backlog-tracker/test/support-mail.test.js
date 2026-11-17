@@ -456,6 +456,50 @@ check("the scheduled sync uses the board key, with a brake on guessing; not conn
   assert.strictEqual((await call(t.api, "POST", "/v1/cron", { board: BOARD, ip: "9.9.9.9" })).statusCode, 429);
 });
 
+check("inboxes: a ticket is filed under each alias its emails were written to; a later Cc adds one; no alias means Support", async () => {
+  const to = (id, headers, extra = {}) => gmailMessage({ id, threadId: `t-${id}`, date: 1759990000000, headers, ...extra });
+  const t = make({ mail: [
+    to("sup", { To: "support@ph.example" }),
+    to("hel", { To: "Hello <hello@ph.example>" }),
+    to("aid", { To: "someone@shop.example", Cc: "aidan@ph.example" }),
+    to("both", { To: "support@ph.example", Cc: "aidan@ph.example" }),
+    to("none", { To: "someone@shop.example" }),
+  ] });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  const inboxes = (id) => ticketOf(t, `t-${id}`).inboxes;
+  assert.deepStrictEqual([inboxes("sup"), inboxes("hel"), inboxes("aid"), inboxes("both"), inboxes("none")], [["support"], ["hello"], ["aidan"], ["support", "aidan"], ["support"]]);
+  // The customer writes again on the Hello thread, now copying aidan@: it is in both.
+  t.mail.push(gmailMessage({ id: "hel2", threadId: "t-hel", date: 1760000500000, headers: { To: "hello@ph.example", Cc: "aidan@ph.example" } }));
+  // And again on the Aidan thread with no alias at all: it stays where it was.
+  t.mail.push(gmailMessage({ id: "aid2", threadId: "t-aid", date: 1760000600000, headers: { To: "someone@shop.example" } }));
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual([inboxes("hel"), inboxes("aid")], [["hello", "aidan"], ["aidan"]]);
+});
+
+check("a ticket filed before the inboxes existed is Support's, and a later alias is added to that", async () => {
+  const t = make({ mail: [gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000 })] });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  delete t.db.state.supportTickets.t1.inboxes;
+  t.mail.push(gmailMessage({ id: "m2", threadId: "t1", date: 1760000500000, headers: { To: "someone@shop.example", Cc: "aidan@ph.example" } }));
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual(ticketOf(t, "t1").inboxes, ["support", "aidan"]);
+});
+
+check("with sending switched on, mail to hello@ or aidan@ alone is drafted but never sent by itself", async () => {
+  const t = make({ mail: [
+    gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000, headers: { To: "hello@ph.example" } }),
+    gmailMessage({ id: "m2", threadId: "t2", date: 1759990001000, headers: { To: "support@ph.example", Cc: "aidan@ph.example" } }),
+  ], settings: { autoReply: true, autoReplyThreshold: 0.8 } });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual(t.google.calls.sent.map((x) => x.threadId), ["t2"], "only the one written to support@");
+  const hello = ticketOf(t, "t1");
+  assert.deepStrictEqual([hello.status, hello.needsHuman, Boolean(hello.aiDraft)], ["open", false, true]);
+  assert.ok(/support address/.test(hello.triageReason), hello.triageReason);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

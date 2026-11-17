@@ -218,6 +218,51 @@ check("the page's copy of the statuses matches the server's", () => {
   assert.deepStrictEqual(JSON.parse(m[1]), core.STATUSES);
 });
 
+check("inboxes: an email is filed under each alias it was written to (To, Cc, Delivered-To, X-Original-To), and under Support when it names none", () => {
+  const BOX = "support@personalisationhub.com";
+  const al = (headers) => core.parseGmailMessage(gmailMsg({ headers }), BOX).aliases;
+  assert.deepStrictEqual(al({ To: "support@personalisationhub.com" }), ["support"]);
+  assert.deepStrictEqual(al({ To: "Hello <Hello@PersonalisationHub.com>" }), ["hello"], "the alias is read from the To header, not the mailbox it was delivered to");
+  assert.deepStrictEqual(al({ To: "aidan@personalisationhub.com" }), ["aidan"]);
+  assert.deepStrictEqual(al({ To: "support@personalisationhub.com", Cc: "Aidan <aidan@personalisationhub.com>, someone@shop.example" }), ["support", "aidan"], "support@ with aidan@ in Cc is in both");
+  assert.deepStrictEqual(al({ To: "hello@personalisationhub.com, aidan@personalisationhub.com, support@personalisationhub.com" }), ["support", "hello", "aidan"]);
+  assert.deepStrictEqual(al({ To: "someone@shop.example" }), [], "no alias named");
+  assert.deepStrictEqual(core.mergeInboxes([], []), ["support"], "which falls back to the Support Inbox");
+  assert.deepStrictEqual(al({ To: "aidan@elsewhere.example", Cc: "hello@gmail.com" }), [], "the same name at another company is not ours");
+  assert.deepStrictEqual(al({ To: "hello+newsletter@personalisationhub.com" }), ["hello"], "a +tag still names the alias");
+  // A Bcc leaves no To or Cc: the delivery headers are all there is.
+  const raw = gmailMsg({ headers: { To: "undisclosed-recipients:;" } });
+  raw.payload.headers.push({ name: "Delivered-To", value: BOX }, { name: "Delivered-To", value: "hello@personalisationhub.com" }, { name: "X-Original-To", value: "aidan@personalisationhub.com" });
+  assert.deepStrictEqual(core.parseGmailMessage(raw, BOX).aliases, ["hello", "aidan"], "every Delivered-To line is read; the mailbox's own address is on every message and says nothing");
+  // A mailbox on another domain (a test or staging mailbox) still has its aliases.
+  assert.deepStrictEqual(core.parseGmailMessage(gmailMsg({ headers: { To: "hello@ph.example" } }), "support@ph.example").aliases, ["hello"]);
+  // Mail the mailbox sent names no inbox.
+  assert.deepStrictEqual(core.parseGmailMessage(gmailMsg({ headers: { From: `Support <${BOX}>`, To: "hello@personalisationhub.com" }, labels: ["SENT"] }), BOX).aliases, []);
+  // A ticket keeps its inboxes and gains the ones a later email names; an email naming none adds nothing.
+  assert.deepStrictEqual(core.mergeInboxes(["hello"], []), ["hello"]);
+  assert.deepStrictEqual(core.mergeInboxes(["hello"], ["aidan"]), ["hello", "aidan"]);
+  assert.deepStrictEqual(core.mergeInboxes(["aidan", "bogus"], ["support"]), ["support", "aidan"]);
+  assert.deepStrictEqual(Object.values(core.INBOX_LABEL), ["Support Inbox", "Hello", "Aidan"]);
+});
+
+check("decideAction: only mail written to the support address is answered by itself", () => {
+  const good = { relevant: true, answerable: true, reply: "Do this.", confidence: 0.95, articleIds: ["a1"], spamLikely: false };
+  const on = core.normaliseSettings({ autoReply: true });
+  assert.strictEqual(core.decideAction({ triage: good, settings: on, inboxes: ["support"] }).action, "send");
+  assert.strictEqual(core.decideAction({ triage: good, settings: on, inboxes: ["support", "aidan"] }).action, "send");
+  const hello = core.decideAction({ triage: good, settings: on, inboxes: ["hello"] });
+  assert.deepStrictEqual([hello.action, hello.needsHuman], ["review", false]);
+  assert.strictEqual(core.decideAction({ triage: good, settings: on, inboxes: ["aidan"] }).action, "review");
+  assert.strictEqual(core.decideAction({ triage: good, settings: on }).action, "send", "a ticket from before the inboxes existed is Support's");
+});
+
+check("the page's inbox keys match the server's", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "public", "js", "support-core.js"), "utf8");
+  const keys = [...src.slice(src.indexOf("export const INBOXES"), src.indexOf("export const DEFAULT_INBOX")).matchAll(/key: "([a-z]+)", label: "([^"]+)"/g)];
+  assert.deepStrictEqual(keys.map((m) => m[1]), core.INBOXES);
+  assert.deepStrictEqual(keys.map((m) => m[2]), core.INBOXES.map((k) => core.INBOX_LABEL[k]));
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

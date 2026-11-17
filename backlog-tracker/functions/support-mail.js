@@ -11,6 +11,10 @@
 //   • Sync: every five minutes (and on "Sync now") new mail is read and filed
 //     as supportTickets/{threadId} + messages. Members read tickets straight
 //     from Firestore; every write goes through this function.
+//   • Inboxes: the mailbox is reached through support@, hello@ and aidan@.
+//     Each ticket records which of them its emails were written to
+//     (`inboxes`, from To / Cc / Delivered-To / X-Original-To), and the page
+//     shows one tab per address. Mail naming none of them is Support's.
 //   • Triage: each new customer message is drafted an answer from the
 //     published help-centre articles (Claude). support-core.js decides
 //     whether it is sent by itself, waits for approval, or needs a person.
@@ -320,6 +324,8 @@ function createSupportMail({
       await ref.set({
         key: core.ticketKey(number), number, threadId: m.threadId, subject: m.subject,
         customerEmail, fromEmail: m.from, customerName: m.fromName || "", status: "open", needsHuman: false, triagePending: true,
+        // Which tabs it is filed under (Support Inbox, Hello, Aidan), from the address it was written to.
+        inboxes: core.mergeInboxes([], m.aliases),
         automated: m.automated || "", highValue: Boolean(account), account: account || null,
         category: m.automated ? "automated" : "", summary: "", triageReason: "",
         createdAt: at, updatedAt: now(), lastMessageAt: at, lastInboundAt: at, snippet: m.snippet,
@@ -333,6 +339,8 @@ function createSupportMail({
     if (ms(at) >= ms(cur.lastMessageAt)) { patch.lastMessageAt = at; patch.snippet = m.snippet; }
     if (m.direction === "in") {
       patch.inboundCount = (cur.inboundCount || 0) + 1;
+      // A later email on the thread that names another alias (say aidan@ in Cc) files it there too.
+      patch.inboxes = core.mergeInboxes(Array.isArray(cur.inboxes) ? cur.inboxes : [core.DEFAULT_INBOX], m.aliases);
       patch.lastInboundAt = at;
       if (cur.status !== "spam") {
         // A customer wrote again: back to the open queue, whatever it was.
@@ -433,7 +441,7 @@ function createSupportMail({
       }
     }
     const decision = core.decideAction({ triage, settings, highValue: ticket.highValue, automated: ticket.automated, autoRepliesSent: ticket.autoRepliesSent || 0, humanInvolved: ticket.humanInvolved,
-      replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail) });
+      replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail), inboxes: ticket.inboxes });
     const cited = triage ? triage.articleIds.map((id) => all.find((a) => a.id === id)).filter(Boolean).map((a) => ({ id: a.id, title: a.title, url: a.url })) : [];
     // Every draft opens "Hi <first name>, / Thanks for your email." (added here, not by the model).
     const draftText = triage && triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, ticket.fromEmail || ticket.customerEmail), triage.reply) : "";

@@ -3501,6 +3501,46 @@ const scenarios = [
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "still the board after a reload");
     },
   },
+  {
+    // 0h1DqL6eKnNH58h2yiiY: mail reaches the mailbox through support@, hello@
+    // and aidan@, and each address has its own inbox tab.
+    name: "Support Inbox: three tabs by alias (Support Inbox, Hello, Aidan), each its own list",
+    hash: "#support",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: `c${n}@shop.example`, status: "open", needsHuman: true, createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        s1: tk(1, { subject: "To support", inboxes: ["support"] }),
+        n1: tk(2, { subject: "No alias" }),
+        h1: tk(3, { subject: "To hello", inboxes: ["hello"] }),
+        a1: tk(4, { subject: "To aidan", inboxes: ["aidan"] }),
+        sa: tk(5, { subject: "To support, Cc aidan", inboxes: ["support", "aidan"] }),
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      const subjects = () => c.page.locator(".support-row-subject").allTextContents();
+      const selected = () => c.page.$$eval("#support-page .support-tab[aria-selected=true]", (els) => els.map((b) => b.textContent));
+      c.at("the tab names read exactly Support Inbox, Hello, Aidan");
+      assert.deepStrictEqual((await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent))).slice(0, 3), ["Support Inbox", "Hello", "Aidan"]);
+      assert.deepStrictEqual(await selected(), ["Support Inbox"]);
+      assert.deepStrictEqual(await subjects(), ["To support, Cc aidan", "No alias", "To support"], "support@ mail, and mail naming no alias");
+      await c.click('[data-support-tab="hello"]', "the Hello tab");
+      await until(async () => (await selected())[0] === "Hello", "Hello selected");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/hello");
+      assert.deepStrictEqual(await subjects(), ["To hello"]);
+      assert.strictEqual(await c.text('[data-support-queue="needs-person"] .support-queue-count'), "1", "its own counts");
+      await c.click('[data-support-tab="aidan"]', "the Aidan tab");
+      await until(async () => (await selected())[0] === "Aidan", "Aidan selected");
+      assert.deepStrictEqual(await subjects(), ["To support, Cc aidan", "To aidan"], "an email to support@ with aidan@ in Cc is in both");
+      c.at("a reload stays in the inbox");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.visible("#support-page .support-row");
+      assert.deepStrictEqual(await selected(), ["Aidan"]);
+      assert.strictEqual((await subjects()).length, 2);
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

@@ -1,4 +1,6 @@
 // Support › Support Inbox (#support) and Settings › Support inbox.
+// Three inboxes, one tab each (Support Inbox, Hello, Aidan): the address an
+// email was written to decides which it is filed under (support-core.js).
 // Tickets are read straight from Firestore (supportTickets + messages); every
 // change goes through the supportMail function (/supportMail/v1/**), which
 // sends the email, keeps Gmail in step and records who did what. Rules are in
@@ -7,7 +9,7 @@ import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } fr
 import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, supportStats, toMs,
   fmtDuration, fmtPct, fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource,
-  confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct,
+  confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -33,7 +35,18 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   const $ = (id) => document.getElementById(id);
   const view = $("support-view");
   let tickets = [], loaded = false, listError = "";
-  let route = { view: "inbox", queue: DEFAULT_QUEUE, ticketId: "" };
+  let route = { view: "inbox", inbox: DEFAULT_INBOX, queue: DEFAULT_QUEUE, ticketId: "" };
+  // The inbox on show: Support Inbox, Hello or Aidan, each with its own tab,
+  // queues, counts and tickets. An open ticket shows under the tab it was
+  // opened from, or under its own first inbox when it isn't in that one
+  // (a link made elsewhere, such as the Staff Kanban ticket's).
+  const inboxKey = () => {
+    const key = inboxOf(route.inbox).key;
+    const t = route.view === "ticket" ? tickets.find((x) => x.id === route.ticketId) : null;
+    return t && !inInbox(t, key) ? t.inboxes[0] : key;
+  };
+  // The Support Inbox tab keeps its first name ("inbox"); the others are named after their inbox.
+  const tabOf = (key) => (key === DEFAULT_INBOX ? "inbox" : key);
   let search = "", range = 30;
   let status = null, statusError = "";
   let messages = [], messagesFor = "", unsubMessages = null, unsubTickets = null;
@@ -94,7 +107,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (statusError) { el.textContent = `The mailbox status didn't load: ${statusError}`; return; }
     if (!status) { el.textContent = ""; return; }
     if (!status.connected) { el.textContent = "No mailbox is connected."; return; }
-    const c = queueCounts(tickets);
+    const c = queueCounts(tickets, inboxKey());
     const problem = status.connectionError || (!status.lastSyncOk && status.lastSyncError ? `Last sync failed: ${status.lastSyncError}` : "");
     el.innerHTML = `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve · ${esc(status.connectedEmail)}`
       + (status.lastSyncAt ? ` · synced ${esc(fmtWhen(Date.parse(status.lastSyncAt)))}` : " · not synced yet")
@@ -111,7 +124,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (!force && typing()) { stale = true; return; }
     stale = false;
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
-      const on = b.dataset.supportTab === (route.view === "stats" || route.view === "try" ? route.view : "inbox");
+      const on = b.dataset.supportTab === (route.view === "stats" || route.view === "try" ? route.view : tabOf(inboxKey()));
       b.classList.toggle("active", on);
       b.setAttribute("aria-selected", String(on));
     });
@@ -143,10 +156,10 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   }
 
   function renderInbox() {
-    const counts = queueCounts(tickets);
+    const counts = queueCounts(tickets, route.inbox);
     const rail = QUEUES.map((q) => `<button type="button" class="support-queue${q.key === route.queue ? " active" : ""}" data-support-queue="${q.key}" ${q.key === route.queue ? 'aria-current="true"' : ""}>
       ${icon(q.icon)}<span class="support-queue-label">${esc(q.label)}</span><span class="support-queue-count">${counts[q.key]}</span></button>`).join("");
-    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="Queues">${rail}</nav>
+    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="${esc(inboxOf(route.inbox).label)} queues">${rail}</nav>
       <div class="support-list-wrap">
         <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
@@ -158,7 +171,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   function renderList() {
     const box = $("support-list");
     if (!box) return;
-    const rows = filterTickets(tickets, route.queue, search);
+    const rows = filterTickets(tickets, route.queue, search, route.inbox);
     box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
           <span class="support-row-from">${esc(t.customerName || t.customerEmail)}${t.account && t.account.name ? ` · ${esc(t.account.name)}` : ""}</span>
@@ -187,7 +200,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
 
   function renderTicket() {
     const t = tickets.find((x) => x.id === route.ticketId);
-    if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} Inbox</button>`; return; }
+    if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>`; return; }
     watchMessages(t.id);
     if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
     const edit = canEdit();
@@ -218,10 +231,11 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           <button type="button" class="btn-ghost" data-support-act="send-resolve">Send and resolve</button>
           <button type="button" class="btn-ghost" data-support-act="note">Save as internal note</button></div></div>`;
     view.innerHTML = `<div class="support-ticket">
-      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} Inbox</button>
+      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>
       <div class="support-ticket-head">
         <h3><span class="support-row-key">${esc(t.key)}</span> ${esc(t.subject)}</h3>
         <div class="support-ticket-meta"><span class="badge support-status-${t.status}">${esc(STATUS_LABEL[t.status])}</span>${badges(t)}
+          ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span>
           ${t.account ? `<span class="support-account">${icon("apartment")}${esc(t.account.name)} · ${esc(t.account.reason)}</span>` : ""}
           ${t.kanbanKey ? `<button type="button" class="support-link" data-support-act="open-kanban">${icon("view_kanban")}${esc(t.kanbanKey)}</button>` : ""}</div>
@@ -361,8 +375,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   view.addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b || !view.contains(b)) return;
-    if (b.dataset.supportQueue) return go(supportHash({ queue: b.dataset.supportQueue }));
-    if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", ticketId: b.dataset.supportTicket }));
+    if (b.dataset.supportQueue) return go(supportHash({ inbox: route.inbox, queue: b.dataset.supportQueue }));
+    if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", inbox: route.inbox, ticketId: b.dataset.supportTicket }));
     if (b.dataset.supportRange) { range = Number(b.dataset.supportRange); return renderStats(); }
     const t = current();
     if (b.dataset.supportArticle) {
@@ -375,11 +389,11 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (b.dataset.supportStatus && t) {
       const to = b.dataset.supportStatus;
       if (to === "spam" && !(await confirm(`Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the stats.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
-      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ queue: route.queue })); }, "The ticket wasn't changed");
+      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, "The ticket wasn't changed");
     }
     const a = b.dataset.supportAct;
     if (a === "open-settings") return openSettings();
-    if (a === "back") return go(supportHash({}));
+    if (a === "back") return go(supportHash({ inbox: inboxKey() }));
     if (a === "try") return runTry();
     if (!t) return;
     if (a === "open-kanban") return openKanbanTicket(t.kanbanKey);
@@ -394,7 +408,11 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/note`, { body: { text } }); composer.text = ""; }, "The note wasn't saved");
     }
   });
-  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => go(supportHash({ view: b.dataset.supportTab }))));
+  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => {
+    const tab = b.dataset.supportTab;
+    const inbox = INBOXES.find((i) => tabOf(i.key) === tab);
+    go(supportHash(inbox ? { inbox: inbox.key } : { view: tab }));
+  }));
   $("support-sync-btn").addEventListener("click", () => sync());
 
   return {

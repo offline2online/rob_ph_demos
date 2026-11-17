@@ -133,6 +133,9 @@ const tickets = [
   t("5", { status: "resolved", resolvedAt: at(16, 16) }),
   t("6", { status: "resolved", resolvedAt: at(15, 16) }),
   t("7", { status: "open" }),
+  // Hello and Aidan are separate inboxes: the Dashboard counts the Support Inbox only.
+  t("8", { status: "open", needsHuman: true, inboxes: ["hello"], lastMessageAt: at(14, 9) }),
+  t("9", { status: "resolved", resolvedAt: at(16, 12), inboxes: ["aidan"] }),
 ];
 const sk = supportKpi(tickets, NOW);
 assert.deepStrictEqual(sk.needsPerson.map((w) => w.id), ["2", "1"], "longest-waiting first");

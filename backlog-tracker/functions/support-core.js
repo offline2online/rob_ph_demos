@@ -100,6 +100,11 @@ function parseAddressList(raw) {
 }
 const domainOf = (email) => { const m = lower(email).match(/@([a-z0-9.-]+)$/); return m ? m[1].replace(/^www\./, "") : ""; };
 
+// Every value of one header, in order (a message can carry several Delivered-To lines).
+function headerAll(headers, name) {
+  const want = lower(name);
+  return (headers || []).filter((h) => lower(h && h.name) === want).map((h) => String(h.value == null ? "" : h.value));
+}
 function headerMap(headers) {
   const out = {};
   for (const h of headers || []) {
@@ -107,6 +112,44 @@ function headerMap(headers) {
     if (k && !(k in out)) out[k] = String(h.value == null ? "" : h.value);
   }
   return out;
+}
+
+// ── Which inbox an email belongs in ───────────────────────────────────────
+// Mail reaches the one connected mailbox through three addresses, and each
+// has its own tab on the page: support@ (Support Inbox), hello@ (Hello) and
+// aidan@ (Aidan). The address a message was written to is read from its own
+// To and Cc headers, and from Delivered-To / X-Original-To where the mail
+// server recorded one (a Bcc has no other trace). The connected mailbox's own
+// address in Delivered-To says nothing: every message carries it.
+// The keys are repeated in public/js/support-core.js; test/support-core.test.js
+// fails if the two lists drift apart.
+const INBOXES = ["support", "hello", "aidan"];
+const INBOX_LABEL = { support: "Support Inbox", hello: "Hello", aidan: "Aidan" };
+const DEFAULT_INBOX = "support";
+const ALIAS_DOMAIN = "personalisationhub.com";
+// The inboxes a message was addressed to, in INBOXES order. Empty when it
+// names none of them. `mailbox` is the connected address: its domain counts
+// as ours too, and it is ignored in the delivery headers.
+function aliasesOf({ to = [], cc = [], deliveredTo = [] } = {}, mailbox = "") {
+  const box = lower(mailbox);
+  const domains = new Set([ALIAS_DOMAIN, domainOf(box)].filter(Boolean));
+  const hit = new Set();
+  const add = (address) => {
+    const m = lower(address).match(/^([^@+\s]+)(?:\+[^@\s]*)?@([a-z0-9.-]+)$/);
+    if (m && INBOXES.includes(m[1]) && domains.has(m[2])) hit.add(m[1]);
+  };
+  for (const a of [...(to || []), ...(cc || [])]) add(a);
+  for (const a of deliveredTo || []) if (lower(a) !== box) add(a);
+  return INBOXES.filter((k) => hit.has(k));
+}
+// A ticket's inboxes: what it has, plus what a new message adds. Mail that
+// names no alias lands in the Support Inbox; it never adds one to a ticket
+// that already has a home.
+function mergeInboxes(current, aliases) {
+  const have = (Array.isArray(current) ? current : []).filter((k) => INBOXES.includes(k));
+  const all = new Set([...have, ...((Array.isArray(aliases) ? aliases : []).filter((k) => INBOXES.includes(k)))]);
+  const out = INBOXES.filter((k) => all.has(k));
+  return out.length ? out : [DEFAULT_INBOX];
 }
 
 // ── Bodies ────────────────────────────────────────────────────────────────
@@ -173,14 +216,20 @@ function parseGmailMessage(msg, mailbox) {
   const { text, attachments } = bodyOf(msg && msg.payload);
   const ms = Number(msg && msg.internalDate);
   const out = from.email === lower(mailbox) || labels.includes("SENT");
+  const to = parseAddressList(h.to).map((a) => a.email);
+  const cc = parseAddressList(h.cc).map((a) => a.email);
+  const raw = msg && msg.payload && msg.payload.headers;
+  const deliveredTo = [...headerAll(raw, "delivered-to"), ...headerAll(raw, "x-original-to")].flatMap((v) => parseAddressList(v).map((a) => a.email));
   return {
     gmailId: String((msg && msg.id) || ""),
     threadId: String((msg && msg.threadId) || ""),
     direction: out ? "out" : "in",
     from: from.email, fromName: clip(from.name, 200),
     replyTo: parseAddress(h["reply-to"]).email,
-    to: parseAddressList(h.to).map((a) => a.email).slice(0, 30),
-    cc: parseAddressList(h.cc).map((a) => a.email).slice(0, 30),
+    to: to.slice(0, 30),
+    cc: cc.slice(0, 30),
+    // The inboxes this message was addressed to (empty when none): see aliasesOf.
+    aliases: out ? [] : aliasesOf({ to, cc, deliveredTo }, mailbox),
     subject: clip(h.subject || "(no subject)", 500),
     messageId: clip(h["message-id"] || "", 500),
     references: clip(h.references || "", 4000),
@@ -430,7 +479,7 @@ function composeReply(firstName, body) {
 //   review  a draft waits for a person to approve, edit or discard
 //   human   a person has to answer (and, for a high-value sender, a Staff
 //           Kanban ticket is raised)
-function decideAction({ triage, settings, highValue, automated, autoRepliesSent = 0, humanInvolved = false, replyToDiffers = false }) {
+function decideAction({ triage, settings, highValue, automated, autoRepliesSent = 0, humanInvolved = false, replyToDiffers = false, inboxes = null }) {
   if (automated) return { action: "human", needsHuman: false, reason: `Sent by a machine (${automated}): never answered automatically.` };
   if (highValue) return { action: "human", needsHuman: true, escalate: true, reason: "High-value sender: a person answers." };
   if (!triage) return { action: "human", needsHuman: true, reason: "No draft could be written." };
@@ -441,6 +490,8 @@ function decideAction({ triage, settings, highValue, automated, autoRepliesSent 
   if (humanInvolved) return { action: "review", needsHuman: false, reason: "A person is already on this ticket." };
   // A Reply-To that isn't the sender could point an automatic answer at someone who never wrote in.
   if (replyToDiffers) return { action: "review", needsHuman: false, reason: "The reply address is not the sender's, so a person sends it." };
+  // Only mail written to the support address is answered as Support by itself; Hello and Aidan wait for a person.
+  if (Array.isArray(inboxes) && inboxes.length && !inboxes.includes(DEFAULT_INBOX)) return { action: "review", needsHuman: false, reason: "Not written to the support address, so a person sends it." };
   if (autoRepliesSent > 0) return { action: "review", needsHuman: false, reason: "Already answered automatically once on this thread." };
   if (!settings.autoReply) return { action: "review", needsHuman: false, reason: "Sending by itself is switched off." };
   if (triage.confidence < settings.autoReplyThreshold) return { action: "review", needsHuman: false, reason: `Confidence ${Math.round(triage.confidence * 100)}% is under the ${Math.round(settings.autoReplyThreshold * 100)}% needed to send.` };
@@ -484,7 +535,8 @@ const ticketKey = (n) => `SUP-${n}`;
 
 module.exports = {
   STATUSES, STATUS_LABEL, CATEGORIES, TEXT_MAX, DRAFT_MAX, NOTE_MAX, DEFAULT_SETTINGS, clip, lower,
-  cleanDomain, normaliseSettings, cleanSettingsInput, parseAddress, parseAddressList, domainOf, headerMap,
+  cleanDomain, normaliseSettings, cleanSettingsInput, parseAddress, parseAddressList, domainOf, headerMap, headerAll,
+  INBOXES, INBOX_LABEL, DEFAULT_INBOX, ALIAS_DOMAIN, aliasesOf, mergeInboxes,
   b64urlDecode, htmlToText, bodyOf, stripQuoted, parseGmailMessage, automatedReason, sameDomain, hostOf, matchAccount,
   SCOPE, MAX_ARTICLES, CONFIDENCE_BOOST_BELOW, cleanSteps, termsOf, rankArticles, articleIndexLine, SELECT_SCHEMA, SELECT_SYSTEM, cleanSelection, TRIAGE_SCHEMA, TRIAGE_SYSTEM, cleanTriage,
   firstNameOf, stripOpening, composeReply, decideAction,

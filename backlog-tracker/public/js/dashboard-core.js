@@ -17,7 +17,7 @@
 
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
-import { QUEUES } from "./support-core.js";
+import { QUEUES, inInbox, DEFAULT_INBOX } from "./support-core.js";
 
 export const HOURS_PER_DAY = 8;
 
@@ -206,7 +206,8 @@ const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
 // tickets: normalised supportTickets (support-core's normaliseTicket).
 export function supportKpi(tickets, now = Date.now()) {
   const y = localDayRange(1, now), p = localDayRange(2, now);
-  const list = tickets || [];
+  // The Support Inbox's tickets only (mail written to support@), not Hello's or Aidan's.
+  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX));
   const waiting = (t) => ({ id: t.id, customer: t.customerName || t.customerEmail || "Unknown sender", subject: t.subject || "", waitedMs: Math.max(0, now - (t.lastMessageAt || t.createdAt || now)) });
   const longest = (a, b) => b.waitedMs - a.waitedMs;
   const needsPerson = list.filter(queueTest("needs-person")).map(waiting).sort(longest);

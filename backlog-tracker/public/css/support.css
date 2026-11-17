@@ -135,7 +135,7 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-search .material-symbols-outlined, .support-faq .um-search .material-symbols-outlined { width: 18px; }
 
 /* Inbox / Stats tabs: the User Management tab look, under their own class (app.js drives every .um-tab). */
-.support-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; }
+.support-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; }
 .support-tab { font: inherit; font-size: 14px; background: none; border: 0; border-bottom: 2px solid transparent; min-height: 44px; padding: 0 16px; color: var(--text-muted); cursor: pointer; margin-bottom: -1px; border-radius: 10px 10px 0 0; }
 .support-tab:hover { color: var(--primary-text); }
 .support-tab.active { color: var(--primary); background: var(--primary-tint); border-bottom-color: var(--primary); font-weight: 500; }

@@ -3,7 +3,8 @@
 // 390, 820 and 1280 px, light and dark: the menu item sits above Help Centre,
 // the queues and their counts, a ticket's conversation, using the AI draft,
 // inserting a Help Centre article, sending (what the server is asked to do),
-// marking spam, the Stats tab's figures, the Settings page, a viewer getting
+// marking spam, the Stats tab's figures, the three inbox tabs (Support Inbox,
+// Hello, Aidan) each with its own list, the Settings page, a viewer getting
 // no write controls, no sideways scroll and 44px touch targets.
 // Run with:  cd backlog-tracker/test && node ui/support-inbox.test.mjs
 // SHOTS=1 also saves screenshots to ui/out/.
@@ -192,6 +193,68 @@ try {
     assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
     assert.deepStrictEqual(a.small, [], "touch targets under 44px");
     await shot(page, `settings-${width}`);
+  });
+
+  // Three inboxes, one tab each: the address an email was written to decides the tab.
+  const inboxDocs = { ...docs, supportTickets: {
+    s1: ticket(1, { subject: "Written to support", needsHuman: true, inboxes: ["support"] }),
+    s2: ticket(2, { subject: "From before the tabs", needsHuman: true }),
+    h1: ticket(3, { subject: "Written to hello", needsHuman: true, inboxes: ["hello"] }),
+    h2: ticket(4, { subject: "Hello, resolved", status: "resolved", resolvedBy: "editor@ph.example", humanInvolved: true, inboxes: ["hello"] }),
+    a1: ticket(5, { subject: "Written to aidan", aiDraft: DRAFT, inboxes: ["aidan"] }),
+    sa: ticket(6, { subject: "Support with aidan in Cc", needsHuman: true, inboxes: ["support", "aidan"] }),
+  }, "supportTickets/sa/messages": { m1: { direction: "in", from: "c6@shop.example", fromName: "Customer 6", text: "For you both.", at: t(T0) } } };
+  for (const width of [390, 820, 1280]) await run(`three inboxes by alias @${width}px`, { seed: { ...seedFor("editor"), docs: inboxDocs }, width, height: 900, hash: "#support" }, async (page) => {
+    await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
+    const tabs = () => page.evaluate(() => [...document.querySelectorAll("#support-page .support-tab")].filter((b) => b.getClientRects().length).map((b) => [b.textContent, b.getAttribute("aria-selected")]));
+    assert.deepStrictEqual((await tabs()).slice(0, 3), [["Support Inbox", "true"], ["Hello", "false"], ["Aidan", "false"]], "the tab names, exactly, Support Inbox first");
+    const subjects = () => page.locator(".support-row-subject").allTextContents();
+    const counts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-queue")].map((b) => [b.dataset.supportQueue, b.querySelector(".support-queue-count").textContent])));
+    // Support Inbox: mail to support@, mail from before the tabs, and the one that copied aidan@.
+    assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc", "From before the tabs", "Written to support"]);
+    assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).all], ["3", "3"]);
+    assert.ok((await page.textContent("#support-count")).startsWith("3 need a person · 0 AI drafts"));
+    // Hello: its own list and counts.
+    await page.click('[data-support-tab="hello"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/hello", "the Hello route");
+    assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
+    assert.deepStrictEqual(await subjects(), ["Written to hello"]);
+    assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).resolved, (await counts()).all], ["1", "1", "2"]);
+    assert.ok((await page.textContent("#support-count")).startsWith("1 need a person"));
+    await page.click('[data-support-queue="resolved"]');
+    assert.strictEqual(await page.evaluate(() => location.hash), "#support/hello?queue=resolved", "a queue stays in its inbox");
+    assert.deepStrictEqual(await subjects(), ["Hello, resolved"]);
+    let a = await audit(page, "#support-page");
+    assert.ok(a.overflow <= 0, `no sideways scroll on Hello (${a.overflow}px)`);
+    assert.deepStrictEqual(a.small, [], "touch targets under 44px on Hello");
+    const strip = await page.evaluate(() => { const n = document.querySelector(".support-tabs"); return n.scrollWidth - n.clientWidth; });
+    assert.ok(strip <= 0, `the tabs are not in a sideways-scrolling strip (${strip}px)`);
+    await shot(page, `hello-${width}`);
+    // Aidan: the AI draft written to aidan@, and (needing a person) the support@ email that copied aidan@.
+    await page.click('[data-support-tab="aidan"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "the Aidan route");
+    assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc"]);
+    assert.deepStrictEqual([(await counts())["needs-person"], (await counts())["ai-drafts"], (await counts()).all], ["1", "1", "2"]);
+    // Its thread opens inside Aidan, says it is in both, and Back returns to Aidan.
+    await page.click('[data-support-ticket="sa"]');
+    await until(() => page.locator(".support-msg-in").count(), "the conversation");
+    assert.strictEqual(await page.evaluate(() => location.hash), "#support/aidan/ticket/sa");
+    assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "false", "true"]);
+    assert.ok((await page.textContent(".support-ticket-meta")).includes("In Support Inbox, Aidan"));
+    assert.strictEqual((await page.textContent(".support-back")).replace("arrow_back", "").trim(), "Aidan");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "back in Aidan");
+    // The same ticket by its old address opens under Support Inbox; a Hello ticket by that address opens under Hello.
+    await page.evaluate(() => { location.hash = "#support/ticket/sa"; });
+    await until(() => page.locator(".support-msg-in").count(), "the conversation again");
+    assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["true", "false", "false"]);
+    await page.evaluate(() => { location.hash = "#support/ticket/h1"; });
+    await until(async () => (await page.textContent(".support-ticket-head h3")).includes("Written to hello"), "the Hello ticket");
+    assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
+    assert.strictEqual((await page.textContent(".support-back")).replace("arrow_back", "").trim(), "Hello");
+    await page.click('[data-support-tab="inbox"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support", "the Support Inbox route");
+    assert.strictEqual((await subjects()).length, 3);
   });
 
   await run("settings as an editor: read-only", { seed: seedFor("editor"), width: 1280, hash: "#settings/support" }, async (page) => {

@@ -3180,9 +3180,22 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, spam, notes, assignment, Staff Kanban escalation |
-| `public/js/support-core.js` | The page's rules, pure: queues, routes, the stats |
-| `public/js/support-page.js`, `public/css/support.css` | The page (Inbox, one ticket, Stats) and Settings › Support inbox |
+| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, the stats |
+| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, Stats) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
+
+**Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
+support@, hello@ and aidan@personalisationhub.com, all delivered to the one
+connected mailbox. The page has a tab for each: **Support Inbox**, **Hello**
+and **Aidan**, each with its own queues, counts, list and ticket view
+(`#support`, `#support/hello`, `#support/aidan`). `aliasesOf` in
+`functions/support-core.js` reads the address an email was written to from
+its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
+from the mailbox it landed in, and the ticket keeps the result in `inboxes`.
+An email to two aliases is in both tabs; one that names none, and every
+ticket from before the tabs, is in Support Inbox. The stats and the
+Dashboard's Support tile count the Support Inbox only, and only a Support
+Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
