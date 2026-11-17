@@ -105,7 +105,7 @@ export function firstAllowedSection(levels) {
 // not a section and are never blocked.
 export function sectionForHash(hash) {
   const h = String(hash || "").split("?")[0];
-  if (h === "" || h === "#") return "agent-board";
+  if (h === "" || h === "#" || h === "#board") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
   if (h === "#support" || h.startsWith("#support/")) return "support-inbox";
   if (h === "#promote/prospects") return "prospects";
