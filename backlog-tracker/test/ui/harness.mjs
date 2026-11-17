@@ -67,7 +67,9 @@ export async function startHarness() {
 
   // seed: { docs: { collection: { id: fields } }, user: { email, role } }
   // init: { fn, arg } — an extra init script (e.g. a speech-recognition stub).
-  async function open({ seed = {}, width = 1280, height = 900, hash = "", colorScheme, contextOptions = {}, init, engine: engineName = "chromium", waitForApp = true } = {}) {
+  // hash defaults to "#board", the Agent Board: a load with no hash lands on the
+  // Dashboard (dashboard-page.js), so a case that wants it passes hash: "".
+  async function open({ seed = {}, width = 1280, height = 900, hash = "#board", colorScheme, contextOptions = {}, init, engine: engineName = "chromium", waitForApp = true } = {}) {
     const context = await (engines.get(engineName) || browser).newContext({ viewport: { width, height }, ...(colorScheme ? { colorScheme } : {}), ...contextOptions });
     const problems = [];
     const refused = [];

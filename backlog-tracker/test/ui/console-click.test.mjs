@@ -3256,6 +3256,112 @@ const scenarios = [
       assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
+  {
+    // The console opens on the Dashboard (yYzYdxqAdI5KTdqZXs3C): five KPI
+    // tiles for yesterday in three sections, the breakdown on hover/focus,
+    // and a click through to each section. "#board" keeps the Agent Board.
+    name: "Dashboard: the landing page, five tiles for yesterday, breakdowns on hover, click through",
+    hash: "",
+    seed: () => {
+      const yday = (h, m = 0) => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.getTime(); };
+      const before = (h) => { const d = new Date(yday(h)); d.setDate(d.getDate() - 1); return d.getTime(); };
+      const dayStr = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+      const s = only("b1", "l1");
+      s.docs.backlogItems.l1.mergedAt = t(yday(15));
+      s.docs.backlogItems.l1.statusEnteredAt = t(yday(15));
+      s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Needs a logo" };
+      s.docs.releases = { r2: { name: "Release 1.6", version: "1.6.0", order: 1, status: "draft", createdAt: t(T0) } };
+      s.docs.kanbanSettings = { main: { currentRelease: "r2" } };
+      s.docs.kanbanCards = {
+        "PH-1": { key: "PH-1", title: "Menu import", release: "r2", status: "todo", open: true, assignee: "ana@ph.example", estimate: 16, logged: 4 },
+        "PH-2": { key: "PH-2", title: "Price rules", release: "r2", status: "in-progress", open: true, assignee: "ana@ph.example", estimate: 8 },
+        "PH-3": { key: "PH-3", title: "Help text", release: "r2", status: "todo", open: true, assignee: "ben@ph.example" },
+        "PH-4": { key: "PH-4", title: "Done already", release: "r2", status: "done", open: false, assignee: "ben@ph.example", estimate: 40 },
+      };
+      s.docs.memberDirectory = { "ana@ph.example": { email: "ana@ph.example", displayName: "Ana Lopes" }, "ben@ph.example": { email: "ben@ph.example", displayName: "Ben Okafor" } };
+      s.docs.leads = {
+        L1: { leadType: "company", company: { name: "Burger Co" }, source: "Website form", stage: "lead", createdAt: t(yday(9)), updatedAt: t(yday(9)) },
+        L2: { leadType: "operator", contacts: [{ id: "c1", name: "Sam Jones" }], sourcePage: "/run-your-own-rmn/", stage: "applied", createdAt: t(yday(18)), updatedAt: t(yday(18)) },
+        L3: { leadType: "company", company: { name: "Old Grocer" }, stage: "lead", createdAt: t(before(10)), updatedAt: t(before(10)) },
+      };
+      s.docs.funnelDaily = {
+        f1: { date: dayStr(yday(12)), channel: "Organic", industry: "", visits: 400 },
+        f2: { date: dayStr(yday(12)), channel: "Organic", industry: "Grocery", visits: 120, demoRequests: 3, downloads: 2 },
+        f3: { date: dayStr(yday(12)), channel: "Google Ads", industry: "QSR", visits: 80, demoRequests: 1, downloads: 4 },
+        f4: { date: dayStr(before(12)), channel: "Organic", industry: "", visits: 500 },
+      };
+      s.docs.supportTickets = {
+        s1: { subject: "Can't log in", customerName: "Priya", customerEmail: "priya@shop.example", status: "open", needsHuman: true, createdAt: t(yday(8)), lastMessageAt: t(yday(8)) },
+        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9 }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)) },
+        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
+      };
+      return s;
+    },
+    async run(c) {
+      c.at("a load with no hash lands on the Dashboard");
+      await c.visible("#dashboard-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "the Dashboard has its own URL");
+      assert.ok(await c.page.locator("#projects-root").isHidden(), "the board is not drawn under it");
+      assert.deepStrictEqual(await c.page.$$eval(".dash-group-title", (els) => els.map((e) => e.textContent)), ["Internal", "External", "Support"]);
+      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.map((e) => e.dataset.tile)), ["agent", "kanban", "leads", "funnel", "support"]);
+      const value = (k) => c.page.locator(`.dash-tile-wrap[data-tile="${k}"] .dash-value`).first().innerText();
+      await until(async () => (await value("support")) !== "…" && (await value("funnel")) !== "…" && (await value("kanban")) !== "…" && (await value("leads")) !== "…", "every tile to load", 8000);
+      assert.strictEqual(await value("agent"), "1", "one ticket deployed yesterday");
+      assert.strictEqual(await value("kanban"), "20h (2.5d)", "remaining effort (12h + 8h) in hours with days at 8h a day");
+      const kanbanText = await c.text('.dash-tile-wrap[data-tile="kanban"] .dash-tile');
+      assert.ok(kanbanText.includes("1 task unestimated") && kanbanText.includes("Release 1.6"), `the unestimated flag and the release: ${kanbanText}`);
+      assert.strictEqual(await value("leads"), "2", "two leads yesterday");
+      assert.strictEqual(await value("funnel"), "600", "website visitors yesterday");
+      assert.deepStrictEqual(await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-value', (els) => els.map((e) => e.textContent)), ["1", "1", "1"], "need a person, AI drafts, resolved yesterday");
+      assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles");
+      const tip = (k) => `.dash-tile-wrap[data-tile="${k}"] .dash-tip`;
+      const showTip = async (k) => {
+        c.at(`the ${k} breakdown`, tip(k));
+        if (c.width >= 1024) {
+          // Off the last tooltip first: a hover card stays open while the pointer is on it.
+          await c.page.mouse.move(2, 2);
+          await c.page.hover(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
+        } else {
+          // :focus-visible: reach the tile from the keyboard, as a keyboard user would.
+          await c.page.evaluate((sel) => { const all = [document.getElementById("dash-refresh"), ...document.querySelectorAll(".dash-tile")]; all[all.indexOf(document.querySelector(sel)) - 1].focus(); }, `.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
+          await c.page.keyboard.press("Tab");
+        }
+        await until(async () => c.page.locator(tip(k)).isVisible(), `the ${k} tooltip`, 3000);
+        return c.text(tip(k));
+      };
+      const kTip = await showTip("kanban");
+      assert.ok(kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)"), `remaining effort by assignee: ${kTip}`);
+      assert.ok(kTip.includes("No estimate: PH-3"), `missing estimates named: ${kTip}`);
+      const aTip = await showTip("agent");
+      assert.ok(aTip.includes("Demo Project") && /Blocked\s*1/.test(aTip), `per project, with blocked: ${aTip}`);
+      const lTip = await showTip("leads");
+      assert.ok(lTip.includes("Burger Co") && lTip.includes("Sam Jones") && !lTip.includes("Old Grocer"), `companies and operators by name: ${lTip}`);
+      const fTip = await showTip("funnel");
+      assert.ok(/Grocery[\s\S]*QSR/.test(fTip), `industries ranked, peak first: ${fTip}`);
+      assert.ok(fTip.includes("Drop-off"), `drop-off at each step: ${fTip}`);
+      const sTip = await showTip("support");
+      assert.ok(sTip.includes("Priya") && sTip.includes("Tom"), `waiting tickets with customers: ${sTip}`);
+      const box = await c.page.locator(tip("support")).boundingBox();
+      const vw = await c.page.evaluate(() => window.innerWidth);
+      assert.ok(box && box.x >= 0 && box.x + box.width <= vw + 1, `the tooltip stays inside the viewport: ${JSON.stringify(box)}`);
+
+      c.at("a tile opens its section");
+      await c.page.mouse.move(2, 2);
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the Leads tile");
+      await c.visible("#leads-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/leads");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
+      await c.click('.dash-tile-wrap[data-tile="agent"] .dash-tile', "the Agent board tile");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      c.at("a reload on the board stays on the board");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.boardReady();
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "still the board after a reload");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────
@@ -3318,7 +3424,7 @@ async function main() {
         const label = `${s.name} @${width}px`;
         // One attempt: a fresh page, the scenario, and what the page reported.
         const attempt = async () => {
-          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
+          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900, ...(s.hash !== undefined ? { hash: s.hash } : {}) });
           const ctx = makeCtx(o, width);
           try {
             await s.run(ctx);

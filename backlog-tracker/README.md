@@ -3312,3 +3312,17 @@ holds it to them:
   `node test/support-page-core.test.mjs`, `node test/ui/support-inbox.test.mjs`
   (the page in Chromium at 390, 820 and 1280 px, light and dark) and
   `node test/ui/support-touch.test.mjs` (the iPad, above).
+
+## Dashboard — the landing page (17 Nov 2026)
+
+The console opens on **Dashboard** (`#dashboard`): five KPI tiles for
+yesterday (the viewer's local day) in three sections. Internal: Agent board
+(tickets deployed) and Staff Kanban (remaining effort on the release selected
+for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
+Leads and Conversion funnel (website visitors). Support: needs a person, AI
+drafts, resolved. Each tile's breakdown is a hover/focus tooltip and a click
+opens the section. The Agent Board's own address is now `#board`. Rules in
+`public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
+spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
+`node test/dashboard.test.mjs` and the Dashboard scenario in
+`test/ui/console-click.test.mjs`.
