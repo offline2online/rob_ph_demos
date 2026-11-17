@@ -70,10 +70,44 @@ export function normaliseTicket(id, d) {
     aiDraft: t.aiDraft && t.aiDraft.text ? { text: t.aiDraft.text, confidence: Number(t.aiDraft.confidence) || 0, confidenceSteps: Array.isArray(t.aiDraft.confidenceSteps) ? t.aiDraft.confidenceSteps : [], answerable: !!t.aiDraft.answerable, articles: Array.isArray(t.aiDraft.articles) ? t.aiDraft.articles : [] } : null,
     messageCount: t.messageCount || 0, humanInvolved: !!t.humanInvolved, autoRepliesSent: t.autoRepliesSent || 0, reopenCount: t.reopenCount || 0,
     resolvedBy: t.resolvedBy || "", escalationError: t.escalationError || "",
+    // What Aidan (the agent mailbox, aidan@) did with this ticket's tagged request; null when nothing.
+    aidan: t.aidan && typeof t.aidan === "object" && AIDAN_STATES[t.aidan.status] ? t.aidan : null,
     createdAt: toMs(t.createdAt), lastMessageAt: toMs(t.lastMessageAt), firstResponseAt: toMs(t.firstResponseAt), resolvedAt: toMs(t.resolvedAt),
     // The customer's latest email and our latest reply to them (0 on tickets filed before these were recorded).
     lastInboundAt: toMs(t.lastInboundAt), lastReplyAt: toMs(t.lastReplyAt),
   };
+}
+
+// ── Aidan, the agent mailbox ──────────────────────────────────────────────
+// An email in the Aidan tab from an allowed sender that tags "@Aidan" with an
+// instruction is answered by Aidan (functions/aidan.js). `aidan.status` on
+// the ticket says how far it got; this is how the page words it.
+// tone: "done" | "working" | "attention"
+const AIDAN_STATES = {
+  queued: { badge: "Aidan: queued", tone: "working" },
+  working: { badge: "Aidan: working", tone: "working" },
+  replied: { badge: "Aidan replied", tone: "done" },
+  ingested: { badge: "Ingested", tone: "done" },
+  ignored: { badge: "Aidan: no action", tone: "attention" },
+  "needs-person": { badge: "Aidan: needs a person", tone: "attention" },
+  error: { badge: "Aidan: failed", tone: "attention" },
+};
+// { badge, tone, line } for a ticket's Aidan state, or null when Aidan has nothing to say.
+export function aidanView(aidan) {
+  const a = aidan && AIDAN_STATES[aidan.status] ? aidan : null;
+  if (!a) return null;
+  const s = AIDAN_STATES[a.status];
+  const skill = a.skillName ? ` with the ${a.skillName} skill` : "";
+  const line = {
+    queued: `Aidan was asked to ${a.kind === "store" ? "keep this email for a skill" : "write documentation"}: "${a.instruction || ""}". It runs at the next scheduled sync.`,
+    working: `Aidan is working on: "${a.instruction || ""}".`,
+    replied: `Aidan wrote ${a.document && a.document.name ? a.document.name : "the documentation"}${skill} and replied to ${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"} on this email.`,
+    ingested: `Ingested: kept as reference material for the ${a.skillName || "named"} skill${a.files && a.files.length ? ` (${a.files.length} attachment${a.files.length === 1 ? "" : "s"})` : ""}.`,
+    ignored: `Aidan did nothing: ${a.reason || "the request wasn't accepted."}`,
+    "needs-person": `Aidan needs a person: ${a.reason || ""}`,
+    error: a.reason || "Aidan couldn't finish.",
+  }[a.status];
+  return { badge: s.badge, tone: s.tone, line };
 }
 
 // Queue + free-text filter, newest activity first (high-value first inside

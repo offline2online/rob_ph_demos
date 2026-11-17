@@ -3180,6 +3180,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), store or write (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
@@ -3196,6 +3198,90 @@ An email to two aliases is in both tabs; one that names none, and every
 ticket from before the tabs, is in Support Inbox. The Dashboard's Support
 tile counts the Support Inbox only, and only a Support
 Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
+
+**Aidan, the agent mailbox (17 Nov 2026).** aidan@ acts as Rob's assistant.
+An email in the Aidan tab starts a run only when all three hold: it is in
+the Aidan tab (aidan@ in To or Cc), it was written by one of the **allowed
+senders**, and its new text tags `@Aidan` with an instruction ("@Aidan, send
+the AWS onboarding pack for client X"). The new text is read strictly
+(`splitQuoted` in `functions/aidan-core.js`), and everything from the first
+sign of quoted or forwarded history on is dropped: an attribution line ("On
+… wrote:", "Am … schrieb …:", "Le … a écrit :" and the other languages in
+`QUOTE_MARKERS`, or any line ending ":" whose paragraph has someone's
+address or a date and time), dropped back to the line where it starts
+however many lines a long display name wraps it over; a ">" quote with its
+attribution paragraph above it; Outlook's "From: / Sent:" block in any listed
+language, on one line or several; "-----Original Message-----", "Forwarded
+message", "Begin forwarded message:" and their translations. format=flowed
+text is un-wrapped first, and an HTML body is cut at its first quote
+container (`<blockquote>`, `.gmail_quote`, `#divRplyFwdMsg`,
+`#appendonsend`, `<hr>` and similar) before it is read as text. When an email
+has both a plain-text and an HTML body, the tag has to be new text in both.
+An email with no new text (a blank reply-all, an attachment-only reply, a
+forward with no comment) has no tag. **Defence in depth**, for a quote
+format none of these rules knows: an instruction is refused when its text
+(ignoring case, spacing and punctuation) is in a display name or address on
+the email, or, together with a tag, in a reply's subject or an earlier email
+on the thread that someone who is not allowed wrote (an earlier email counts
+as the allowed sender's own only if Gmail verified it, and even then not its
+quoted part). This is checked when the email is filed and again when the run
+starts. "@Aidan thanks, looks great" is a tag but not an instruction, and so
+is "@Aidan thanks, the pack was great, I'll check it again tomorrow": text
+that opens with thanks counts only when one of its clauses opens with a
+request to write or keep something ("thanks, now send the summary").
+"@Aidan's" is not a tag. A plain Cc, a tag from anyone else, a tag with no
+instruction, an email with more than one From address and machine-sent mail
+do nothing: the email just sits in the tab (a refused tag shows "Aidan: no
+action" and why). Only the author of the tag counts, never who started the
+thread. A run:
+
+- checks again that the sender is allowed (and the defence in depth above,
+  against the thread as it is then), and that Gmail verified the From
+  address: only the **topmost** `Authentication-Results` header is read (the
+  one Gmail adds above everything the email arrived with), and it is parsed
+  as RFC 8601 says (`parseAuthResults`): comments and quoted strings are
+  removed first, so a "dmarc=pass" inside one is never a result, and anything
+  unbalanced or unreadable is refused. Its authserv-id must be exactly
+  `mx.google.com`. More than one DMARC result is refused. A DMARC result must
+  be for exactly the From domain; pass passes, and any result other than pass
+  or none is final. With DMARC none (no policy) or no DMARC result, a DKIM
+  pass signed by exactly the From domain (`header.d`, or the domain of
+  `header.i`) or an SPF pass for exactly the From domain (`smtp.mailfrom`)
+  passes. Domains match exactly: a parent or child domain is a different
+  domain. A header further down is never read, so a forged From with a
+  forged header does nothing;
+- picks the skill from the skills library (named in the instruction, or
+  chosen by Claude from the list; none fitting goes to a person);
+- **write** (any request to send, write, draft, prepare … something, even
+  one that also says "keep" or "add"): writes the documentation with that
+  skill from the email, its attachments (text, PDF and images are read; up
+  to 8 files, 20 MB) and the skill's kept reference material, and replies to
+  everyone on the email from the mailbox as "Aidan", with the document
+  attached as a Markdown file: **To** the sender's verified From address
+  plus everyone else in the original To, **Cc** the original Cc. A Reply-To
+  header is not verified, so it is ignored. Our own addresses (the mailbox,
+  support@, hello@, aidan@) never receive it. No approval step. The reply is
+  on the thread in the Aidan tab;
+- **store** ("store / save / remember …", or "keep / add / file … for the X
+  skill / for later"): keeps the email and its attachments as reference
+  material for that skill (`skillReferences`, PDFs and images in Storage
+  under `skill-references/`), used by every later run of the skill, and
+  marks the ticket **Ingested**. It emails no one.
+
+Runs happen in the scheduled sync, not in "Sync now": one per sync, before
+triage, and only in the sync's first two minutes, with no model retries
+(skill choice 1 minute, document 4 minutes), so a whole run fits inside the
+function's 540 seconds; a sync that ran Aidan leaves triage to the next
+sync. A run still "working" 15 minutes after it started was cut off: the
+next sync moves it to **Needs a person** with that reason. Queueing is
+idempotent: each email is decided once (`aidanSeen`, in a transaction), a
+job is claimed by one instance only (a transaction), and while a run is
+queued or working on a thread a new request there is noted on the ticket,
+not queued. **The allowed senders are configuration, never the repository**:
+an admin sets them in Settings › Support inbox › Aidan; they are stored in
+`supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
+only ever shown masked. With none set, Aidan acts on nothing. Requirements:
+SUP-AID-1 to 13.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

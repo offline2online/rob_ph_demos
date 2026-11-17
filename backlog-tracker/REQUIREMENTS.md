@@ -6323,6 +6323,163 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
 
+### Aidan, the agent mailbox (17 Nov 2026)
+
+Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
+assistant: tagged requests from Rob run a skill and are answered with the
+documentation, by reply-all.
+
+- **SUP-AID-1** An email starts a run only when all three hold: it is in
+  the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
+  allowed senders, and its new text tags `@Aidan` with an instruction. The
+  tag is a word (`@Aidan`, any case), not an address, not a longer name and
+  not a possessive (`@Aidan's`). It is read only from the email's new text
+  (`splitQuoted`), which ends at the first sign of quoted or forwarded
+  history; the markers are data (`QUOTE_MARKERS`), one row per language or
+  mail app:
+  - an attribution line: one ending "wrote:" or a listed translation
+    ("schrieb", "a écrit", "escribió" …), or any line ending ":" whose
+    paragraph carries an address other than our own aliases, or a year and
+    a time. The
+    cut goes back to the nearest earlier line that starts like an
+    attribution ("On", "Am", "Le", "El" …), however far, and at least to
+    the start of that line's paragraph, so an attribution wrapped over any
+    number of lines is dropped whole;
+  - a ">" quote line (also "&gt;" or a full-width "＞"), dropped wherever it
+    is; when the paragraph just above it ends ":" or carries an address other
+    than our own aliases, that paragraph is an attribution and history starts there;
+  - Outlook's header block: a "From:" line (or a listed translation, "Von:",
+    "De :" …) with "Sent:", "Date:", "To:", "Subject:" or "Cc:" (or a
+    translation) on the same line or within the next four; or any
+    "Label: Name <address>" line with another "Label: …" line within four;
+  - a separator ("-----Original Message-----", "Forwarded message" and their
+    translations), a forward opener ("Begin forwarded message:" and
+    translations) or a line of ten or more underscores.
+  Lines are compared without zero-width characters, with any Unicode space
+  as a space and any line ending (CRLF, CR, LF, Unicode separators) as one.
+  format=flowed text is un-wrapped first. An HTML body is cut at its first
+  quote container (`<blockquote>`, `<hr>`, `.gmail_quote`, `.gmail_attr`,
+  `#divRplyFwdMsg`, `#appendonsend`, `type=cite`, Apple, Yahoo, Thunderbird,
+  ProtonMail and Outlook mobile containers) before it is read as text, and
+  then the same line rules apply. When an email has both a plain-text and an
+  HTML body, the tag must be new text with an instruction in both, or
+  nothing runs. An email with no new text (a blank reply-all, an
+  attachment-only reply, a forward with no comment) has no tag: it never
+  falls back to the whole text. A tag below an attribution, a header
+  block or a separator is history too; one below a bare ">" quote with no
+  attribution above it is new text (an inline answer). A tag is an instruction only when
+  what follows it asks for something. Text that opens with an
+  acknowledgement ("thanks", "great", "hi" …) is an instruction only when one
+  of its clauses opens with a request to write or keep something ("thanks,
+  now send the summary"); "@Aidan thanks, the AWS onboarding pack was great,
+  I'll check it again tomorrow" is not one. Other text is an instruction when
+  it has an action verb (send, write, draft, store, keep …) or is three or
+  more words. A tag that is not an instruction is recorded as "Aidan: no
+  action" with that reason and does not run. Where a quote format is not
+  recognised at all, SUP-AID-12 is the safeguard.
+- **SUP-AID-2** Only the author of the tagged email counts. A tag written by
+  someone who is not allowed does nothing, even on a thread an allowed
+  sender started; an allowed sender may tag Aidan on a thread someone else
+  started.
+- **SUP-AID-3** A plain Cc with no tag, a tag from anyone else, a tag with
+  no instruction, an email with more than one From address (or more than one
+  From header), machine-sent mail and mail the mailbox sent never start a run and never get a reply.
+  The email stays in the Aidan tab. A refused tag is shown on the ticket
+  ("Aidan: no action") with the reason.
+- **SUP-AID-4** Before a run, the sender is checked again against the
+  current allowed list (and SUP-AID-1 and SUP-AID-12 are decided again from
+  Gmail's own copy of the email and the thread as it is then), and Gmail must
+  have verified the From address. Only the topmost `Authentication-Results`
+  header is read (Gmail adds its own above every header the email arrived
+  with; the Gmail API's `payload.headers` keeps that order and the run passes
+  them through untouched). It is parsed as RFC 8601 says
+  (`parseAuthResults`): comments, nested and with escapes, are removed and
+  quoted strings, with escapes, are one value before the header is split on
+  ";", so a "dmarc=pass" or ";" inside either is never a result; a method
+  result counts only at the start of a resinfo element; a property value
+  (`smtp.mailfrom`, `header.from`, `header.d`, `header.i`) is one whole
+  value; an unbalanced comment or quote, a malformed element or a repeated
+  property refuses the email. The verdict (`authVerdict`): the authserv-id
+  must be exactly `mx.google.com` (no other host, no `*.google.com`); more
+  than one DMARC result is refused; a DMARC result whose `header.from` is
+  not exactly the From domain is refused; DMARC pass passes; any DMARC
+  result other than pass or none (fail, quarantine, reject, temperror,
+  permerror …) is final. With DMARC none (the domain publishes no policy) or
+  no DMARC result, a DKIM pass whose signing domain (`header.d`, else the
+  domain of `header.i`) is exactly the From domain, or an SPF pass whose
+  `smtp.mailfrom` domain is exactly the From domain, passes. Domains match
+  exactly: a parent or child domain never does. Headers further down are
+  never read. Otherwise nothing is done.
+- **SUP-AID-5** The skill is the one the instruction names (by slug or
+  name), or else the one Claude picks from the skills library. With no
+  matching skill, nothing is sent and the ticket goes to Needs a person.
+- **SUP-AID-6** A request to write produces the documentation with that
+  skill from the email, its attachments (text, PDF and images; at most 8
+  files and 20 MB) and the skill's kept reference material. Any instruction
+  with a verb to send, write, draft, create, prepare, produce, generate,
+  build, make, reply, email, share, forward, summarise, revise or redo is a
+  write, even when it also says "keep" or "add" ("send the pack, keep it
+  short for the skill reviewers"). It is sent at once, with no approval
+  step, as a reply on the same thread to everyone on the email: the
+  sender's verified From address and the rest of To in To, the original Cc
+  in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
+  is not verified, so it is ignored: it neither replaces the sender nor adds
+  anyone. It comes from the connected mailbox as
+  "Aidan", signed as Rob's assistant, with the document attached as a
+  Markdown file, and is marked `Auto-Submitted: auto-generated`.
+- **SUP-AID-7** The sent reply is filed on the ticket and shown in the Aidan
+  tab with who it went to and the file attached. The ticket is resolved by
+  Aidan.
+- **SUP-AID-8** A request to store (with no write verb: starting "store",
+  "save", "ingest", "remember" or "contribute"; or "keep", "add" or "file"
+  with a skill, references, a library or "for later"; or "store / keep /
+  save this … for the X skill") keeps the email and its attachments as reference
+  material for that skill (`skillReferences`); PDFs and images are kept in
+  Storage. Later runs of the skill read it. The ticket is marked
+  **Ingested** and no email is sent.
+- **SUP-AID-9** The allowed senders are runtime configuration only: they are
+  never in the repository, its tests, fixtures, docs or commit messages. An
+  admin sets them in Settings › Support inbox › Aidan; they are kept in
+  `supportSecrets/aidan`, which no client can read or write, and are only
+  ever shown masked to an admin (members see how many there are). With none
+  set, or Aidan switched off, nothing runs.
+- **SUP-AID-10** Runs happen in the scheduled sync, one per sync; "Sync now"
+  files and queues but does not run. A thread runs Aidan five times at most.
+  A whole run fits inside the `supportMail` function's 540 seconds: it runs
+  before triage and only in the sync's first two minutes (otherwise it waits
+  for the next sync), the skill choice has one minute and the document four,
+  neither model call is retried, and a sync that ran Aidan leaves triage to
+  the next sync. A run still `working` 15 minutes after it started was cut
+  off: the next sync (scheduled or "Sync now") moves it to Needs a person
+  with that reason, and it is never started again.
+- **SUP-AID-11** Queueing is idempotent. Each email is decided once per
+  ticket, in a transaction (`aidanSeen` keeps the last 50 decided ids), so
+  the schedule and "Sync now" on another instance filing the same email
+  can't queue it twice. A job is claimed by moving it from queued to
+  working in a transaction, so only one instance runs it and sends. While a
+  run is queued or working on a thread, a new request there is not queued
+  (a note on the ticket says to send it again once Aidan has answered), and
+  a refused tag doesn't overwrite the run's status.
+- **SUP-AID-12** Defence in depth, for quoted text in a format SUP-AID-1
+  doesn't recognise: an instruction is refused when its text, compared
+  ignoring case, spacing, punctuation, zero-width characters and Unicode
+  lookalike forms (NFKC), appears in a display name or address in the
+  email's From, To, Cc, Reply-To or Sender headers (RFC 2047 encoded names
+  decoded), or appears in a text that also tags Aidan: the subject of a
+  reply or forward, or an earlier inbound email on the thread that someone
+  who is not allowed wrote. An earlier email is the allowed sender's own
+  only when it came from an allowed address and Gmail verified it when it
+  was filed (`senderVerified` on the message, SUP-AID-4); even then its
+  quoted part is someone else's. Mail the mailbox sent is not compared.
+  This is decided when the email is filed and again when the run starts.
+  The refusal says why, so an owner asking for something a client asked
+  for in the same words can rephrase it.
+- **SUP-AID-13** The tag, the From address and the defence in depth are
+  read from Gmail's own copy of the email (`mailFacts`: every body, every
+  From header, the address headers), not from the stored text, both when
+  the email is filed and when the run starts. A From header that holds more
+  than one address, or an email with more than one From header, never runs.
+
 ### Connecting
 
 - **SUP-CON-1** An admin saves a Google OAuth client and signs in as the
@@ -6466,13 +6623,26 @@ articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
 `lastReplyAt` (the latest reply sent to them, by a person, the AI or from
 Gmail itself; unset on tickets last replied to before 17 Nov 2026),
 `firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`, `startedBy` (who
-wrote it, on a ticket that began as a new email from the console).
+wrote it, on a ticket that began as a new email from the console),
+and for Aidan `aidanPending`, `aidanRuns`, `aidanSeen` (the gmail ids of
+the last 50 tagged emails decided on the thread) and `aidan {status (queued |
+working | replied | ingested | ignored | needs-person | error), kind
+(generate | store), gmailId, instruction, reason, skillId, skillName, client,
+document {name, title, size}, recipients, referenceId, files[], at,
+startedAt, finishedAt}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
-(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
+(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`,
+`senderVerified` (inbound mail filed since 17 Nov 2026: whether Gmail's
+Authentication-Results verified the From address, SUP-AID-4), and for sent
 mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
 | `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
-server-only.
+server-only. Aidan's sent reply has `source: "aidan"`, `cc`, `attachments`
+and `skillName`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
+`enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
+`skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
+`text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
+`source`, `createdAt` (members read; only the function writes).
 
 ### Known gaps
 
@@ -6484,7 +6654,29 @@ for the inbox yet. The five-minute sync depends on GitHub's schedule.
 Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
 that was written to hello@ or aidan@ before then stays in Support Inbox.
 Every reply goes out from the connected mailbox's address, whichever alias
-the customer wrote to.
+the customer wrote to. Aidan's reply waits for the next scheduled sync (five
+minutes, or longer when GitHub's schedule is busy). Aidan's document is a
+Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+spreadsheets) are named to the model, not read. Kept reference material has
+no page of its own yet. The sender check trusts Gmail's own
+`Authentication-Results` (authserv-id `mx.google.com`); if mail ever
+reaches the mailbox through another gateway that adds its own header on
+top, every tagged request is refused until the check is changed. A second
+tagged request on a thread while Aidan is working on the first is not
+queued; it has to be sent again. A run cut off after its email was sent is
+moved to a person, whose reason says to check the thread first. Aidan's
+quote reading (SUP-AID-1) knows the formats in `QUOTE_MARKERS`: a reply
+written in a mail app and language it doesn't list, plain text only, with
+no address or date in the attribution, could still leave a stranger's words
+in the new text; SUP-AID-12 then refuses them only when the stranger is on
+the email or their tagged email is on the thread, so a stranger who wrote
+only to the owner and is not copied on the owner's reply is not covered by
+it (they receive nothing either way). A tag written below an attribution line
+(a bottom-posted reply) is not read: write above the quote. An instruction in
+the same words as an earlier tagged email from someone who is not allowed is
+refused, even when the owner meant it. Earlier emails filed before 17 Nov
+2026 have no `senderVerified`, so their whole text is treated as someone
+else's.
 
 ## Dashboard — the console's landing page (17 Nov 2026)
 
