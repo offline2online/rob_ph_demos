@@ -61,7 +61,21 @@ jobs:
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate -q '.[].filename')
+          # GitHub's API timed out here once (17 Nov 2026, "dial tcp … i/o
+          # timeout") and that alone turned a console train's PR red and
+          # parked its deploy. Three tries; if the list still can't be read,
+          # run the suite rather than fail or skip it.
+          files=""; listed=0
+          for attempt in 1 2 3; do
+            if files=$(gh api "repos/${{ github.repository }}/pulls/$PR/files" --paginate -q '.[].filename'); then listed=1; break; fi
+            echo "::warning::Couldn't list this PR's files (attempt $attempt of 3)."
+            sleep 10
+          done
+          if [ "$listed" != "1" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::The PR's file list could not be read, so e2e-quick runs in full."
+            exit 0
+          fi
           if ! echo "$files" | grep -qE '^(dsp-integration/|\.github/workflows/e2e-quick\.yml$)'; then
             echo "run=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No dsp-integration/ changes in this PR, so e2e-quick passes without running."
