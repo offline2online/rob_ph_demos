@@ -67,6 +67,7 @@ const ownerFiring = require("./owner-firing");
 const buildOrder = require("./build-order");
 const cardState = require("./card-state");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
+const codeMode = require("./code-mode");
 
 // initializeApp() runs in index.js before this module is required; resolve
 // the SDK singletons lazily so require order can never bite.
@@ -5604,6 +5605,10 @@ TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit, checkInterface,
 TOOLS.push(...leads.leadsTools({ textResult, toolError, audit }));
 // Promote › Prospects (TAM): read the database, add and enrich companies (functions/prospects.js).
 TOOLS.push(...prospects.prospectsTools({ textResult, toolError, audit }));
+// Code Mode (functions/code-mode): run_script / describe_script_tools /
+// get_insight / list_insights. A script calls the read tools above through
+// getTool, each with the caller's own session; nothing above is changed.
+TOOLS.push(...codeMode.codeModeTools({ textResult, toolError, db, FieldValue, logger, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) }));
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // ══════════════════════════════════════════════════════════════════════════
