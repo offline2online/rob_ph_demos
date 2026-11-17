@@ -1325,6 +1325,10 @@
         <h2>Prospects (TAM) <span class="material-symbols-outlined prospects-info" id="prospects-info" tabindex="0" role="img" aria-label="About Prospects (TAM)" title="Every company that could buy Personalisation Hub, one record per company per country (the total addressable market). Filter in the column filters under each heading (the × clears one), click a company for every field, and use Convert to lead in a row's ⋯ menu to start working it on the Leads board. Export for LinkedIn downloads a Matched Audiences company list. Agents add and enrich records over MCP.">info</span></h2>
         <button type="button" class="btn-primary" id="prospects-seed-btn" data-editor-only hidden>Load starter set</button>
       </div>
+      <nav class="pd-tabs prospects-tabs" id="prospects-tabs" role="tablist" aria-label="Prospects (TAM) views">
+        <button type="button" role="tab" class="pd-tab" id="prospects-tab-companies" aria-selected="true" aria-controls="prospects-grid" data-prospects-tab="companies">Companies</button>
+        <button type="button" role="tab" class="pd-tab" id="prospects-tab-contacts" aria-selected="false" aria-controls="prospects-contacts" tabindex="-1" data-prospects-tab="contacts">Contacts</button>
+      </nav>
       <div class="um-count" id="prospects-count" role="status" aria-live="polite"></div>
       <div class="um-toolbar" id="prospects-tools" role="group" aria-label="Prospects tools">
         <div class="prospects-actions">
@@ -1346,7 +1350,51 @@
       <div id="prospects-grid" class="ag-theme-alpine um-grid prospects-grid" aria-label="Prospects" hidden></div>
       <div class="prospects-pop" id="prospects-pop" role="menu" hidden></div>
       <div class="prospect-detail" id="prospect-detail" hidden></div>
+      <!-- Contacts tab (#promote/prospects?tab=contacts, js/prospect-contacts.js): every person at the TAM companies. -->
+      <div class="prospects-contacts" id="prospects-contacts" role="tabpanel" aria-labelledby="prospects-tab-contacts" hidden>
+        <div class="um-count" id="pct-count" role="status" aria-live="polite"></div>
+        <div class="um-toolbar pc-toolbar" role="group" aria-label="Contacts tools">
+          <div class="pc-filters">
+            <label class="pc-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="pct-q" placeholder="Search contacts" aria-label="Search contacts" autocomplete="off"></label>
+            <select id="pct-company" class="pc-select" aria-label="Filter by company"><option value="">All companies</option></select>
+          </div>
+          <div class="prospects-actions">
+            <form class="pct-url" id="pct-url-form" novalidate data-editor-only hidden>
+              <input type="url" id="pct-url" placeholder="Paste a LinkedIn profile URL" aria-label="LinkedIn profile URL" autocomplete="off">
+              <button type="submit" class="btn-ghost" id="pct-url-btn">Add from URL</button>
+            </form>
+            <button type="button" class="btn-primary" id="pct-add" data-editor-only hidden>Add contact</button>
+          </div>
+        </div>
+        <p class="promote-empty" id="pct-empty" hidden>No contacts yet.</p>
+        <div id="pct-grid" class="ag-theme-alpine um-grid prospects-grid pct-grid" aria-label="Contacts"></div>
+      </div>
     </section>
+
+    <div class="modal-backdrop lead-drawer-backdrop" id="pct-drawer-backdrop" hidden>
+      <aside class="modal-panel lead-drawer prospect-drawer" id="pct-drawer" role="dialog" aria-modal="true" aria-labelledby="pct-drawer-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="pct-drawer-title">Add contact</h2><p class="field-hint" id="pct-meta"></p></div>
+          <button type="button" class="modal-close" id="pct-drawer-close" aria-label="Close">&times;</button>
+        </div>
+        <form class="prospect-form lead-sum-body" id="pct-form" novalidate>
+          <label for="pctf-name">Name</label><input type="text" id="pctf-name" maxlength="120" autocomplete="off" required>
+          <label for="pctf-role">Role</label><input type="text" id="pctf-role" maxlength="200" autocomplete="off">
+          <label for="pctf-company">Company</label><select id="pctf-company"></select>
+          <p class="field-hint" id="pctf-company-hint"></p>
+          <label for="pctf-linkedin">LinkedIn URL</label><input type="url" id="pctf-linkedin" maxlength="300" autocomplete="off" placeholder="https://www.linkedin.com/in/their-name/">
+          <label for="pctf-email">Email</label><input type="text" id="pctf-email" maxlength="200" autocomplete="off" inputmode="email">
+          <label for="pctf-notes">Notes</label><textarea id="pctf-notes" rows="4" maxlength="2000"></textarea>
+          <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+        </form>
+        <p class="field-hint" id="pct-drawer-status" role="status" aria-live="polite"></p>
+        <div class="lead-sum-actions">
+          <button type="button" class="btn-primary" id="pct-save" data-editor-only>Save</button>
+          <button type="button" class="btn-ghost" id="pct-cancel">Cancel</button>
+          <button type="button" class="btn-ghost pd-danger" id="pct-remove" data-editor-only hidden><span class="material-symbols-outlined" aria-hidden="true">delete</span>Remove</button>
+        </div>
+      </aside>
+    </div>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="prospect-drawer-backdrop" hidden>
       <aside class="modal-panel lead-drawer prospect-drawer" id="prospect-drawer" role="dialog" aria-modal="true" aria-labelledby="prospect-drawer-title">
