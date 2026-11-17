@@ -48,7 +48,8 @@ const MENU = [
   ["support-inbox-btn", "#support", "#support-page"],
   ["faq-articles-btn", "#faq-management", "#faq-articles-page"],
   ["faq-settings-btn", "#settings", "#faq-settings-page"],
-  ["nav-ph-console-btn", "", "#projects-root"],
+  // The Agent Board's own address is #board since the Dashboard became the landing page (17 Nov 2026).
+  ["nav-ph-console-btn", "#board", "#projects-root"],
 ];
 
 const h = await startHarness();
@@ -131,7 +132,7 @@ try {
         const p = await tap(`#${id}`, { scroll: false });
         try {
           // Settings opens on its first tab, so its route is "#settings/…".
-          await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash || "(board)"}`, 5000);
+          await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash}`, 5000);
           // And the page it came from is gone: "nothing happened" and "both pages showing" both fail here.
           const others = await page.evaluate((q) => ["#staff-kanban-page", "#concept-incubator-page", "#leads-page", "#support-page", "#faq-articles-page", "#faq-settings-page"].filter((x) => x !== q && !document.querySelector(x).hidden), section);
           assert.deepStrictEqual(others, [], "another page is still on screen");
