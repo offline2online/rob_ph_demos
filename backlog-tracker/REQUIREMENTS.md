@@ -5091,6 +5091,16 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Started fro
   table with a count line; explanations are info tooltips, not text under a
   table. No internal project names appear in UI copy.
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.
+- **The sidebar opens and closes like Gmail's** (1024px and up, 17 Nov 2026,
+  mUjtN0QWAnN9J3kK3LZC). The menu button at the sidebar's top left folds it to
+  a 70px icon rail and expands it again; the page reflows to the rail, the
+  icons keep their place, and the choice is remembered in that browser
+  (`bt-nav-collapsed`). While it is a rail, resting the mouse on it (150ms) or
+  tabbing into it opens it over the page at full width with a shadow, without
+  moving the page, and it folds back when the pointer leaves. Touch never
+  opens it this way: a tap on a rail icon goes to that page. The topbar
+  hamburger is not shown at this width. Below 1024px the overlay drawer and
+  the phone tab bar are unchanged.
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
 

@@ -156,14 +156,17 @@
 
     <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
     <!-- Sidebar: Build (internal) and Publish (external-facing). Persistent
-         and collapsible from 1024px, an overlay below that, and on a phone
-         the Build / Publish tabs open one section at a time. Admin lives in
-         the profile menu (#profile-menu), not here. Ids are unchanged from
-         the old drawer: app.js binds each destination by id. -->
+         from 1024px, where its menu button (#nav-collapse-btn) folds it to a
+         70px icon rail and back, and pointing at the rail opens it over the
+         page until the pointer leaves (the Gmail sidebar). An overlay below
+         1024px, and on a phone the Build / Publish tabs open one section at a
+         time. Admin lives in the profile menu (#profile-menu), not here. Ids
+         are unchanged from the old drawer: app.js binds each destination by
+         id. -->
     <nav class="nav-drawer" id="nav-drawer" aria-label="Main navigation">
       <div class="nav-drawer-header">
         <span class="nav-drawer-title">Menu</span>
-        <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
+        <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">menu</span></button>
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
       <!-- Dashboard (#dashboard, js/dashboard-page.js): the landing page. Outside every nav-group on
