@@ -43,6 +43,9 @@ export function mountDashboard(ctx) {
   const src = { kanban: { status: "idle" }, leads: { status: "idle" }, funnel: { status: "idle" }, support: { status: "idle" } };
   let loadedAt = 0;
   let members = null;
+  // Per tile key: the parts render() last wrote ({ inner, busy, tip }). Compared
+  // with the new ones, not with the DOM's serialisation, which can differ.
+  let lastParts = new Map();
 
   root.innerHTML = `
     <div class="page-header dash-header">
@@ -213,36 +216,65 @@ export function mountDashboard(ctx) {
   function loadingBody(metric) { return { metric, value: "…", extra: "", tip: `<p class="dash-tip-empty">Loading…</p>`, loading: true }; }
   function errorBody(metric, message) { return { metric, value: "—", extra: `<span class="dash-flag">${icon("error")}Couldn't load</span>`, tip: `<p class="dash-tip-empty">Couldn't load: ${esc(message)}</p>` }; }
 
-  function tileHtml(t) {
+  // A tile's three parts: the button's contents, whether it is still loading, and its tooltip.
+  function tileParts(t) {
     const b = tileBody(t);
-    const tipId = `dash-tip-${t.key}`;
     const main = b.trio
       ? `<span class="dash-trio">${b.trio.map((x) => `<span class="dash-trio-cell"><span class="dash-metric">${esc(x.label)}</span><span class="dash-value">${x.value}</span></span>`).join("")}</span>`
       : `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-value">${b.value}</span>`;
+    const inner = `<span class="dash-tile-head"><span class="dash-tile-icon">${icon(t.icon)}</span><span class="dash-tile-title">${esc(t.title)}</span>${icon("open_in_new")}</span>`
+      + main
+      + `<span class="dash-extra">${b.extra || ""}</span>`;
+    return { inner, busy: !!b.loading, tip: b.tip };
+  }
+  function tileHtml(t, parts = tileParts(t)) {
+    const tipId = `dash-tip-${t.key}`;
     // The tooltip sits beside the button, not in it, so it is not part of the button's name.
     return `<div class="dash-tile-wrap" data-tile="${t.key}">`
-      + `<button type="button" class="dash-tile" data-target="${esc(t.target)}" aria-describedby="${tipId}"${b.loading ? ' aria-busy="true"' : ""}>`
-      + `<span class="dash-tile-head"><span class="dash-tile-icon">${icon(t.icon)}</span><span class="dash-tile-title">${esc(t.title)}</span>${icon("open_in_new")}</span>`
-      + main
-      + `<span class="dash-extra">${b.extra || ""}</span>`
+      + `<button type="button" class="dash-tile" data-target="${esc(t.target)}" aria-describedby="${tipId}"${parts.busy ? ' aria-busy="true"' : ""}>`
+      + parts.inner
       + `</button>`
-      + `<div class="dash-tip" role="tooltip" id="${tipId}">${b.tip}</div>`
+      + `<div class="dash-tip" role="tooltip" id="${tipId}">${parts.tip}</div>`
       + `</div>`;
   }
 
+  // render() runs on every backlogItems snapshot (app.js renderNow), so it
+  // updates the tiles already on the page in place: replacing them would drop
+  // the keyboard focus on a tile and close its tooltip every time the
+  // automation writes a card. The page is rebuilt only when the set of
+  // visible tiles changes (a role change), and a part is written only when
+  // its content changed, so an open hover or focus is never disturbed.
   function render() {
     if (root.hidden) return;
     const n = now();
     const y = localDayRange(1, n);
-    root.querySelector("#dash-day").textContent = `Yesterday, ${fmtDayLabel(y.from)}`;
-    const html = GROUPS.map((g) => {
-      const tiles = TILES.filter((t) => t.group === g.key && allowed(t));
-      if (!tiles.length) return "";
-      return `<section class="dash-group" data-group="${g.key}" aria-labelledby="dash-group-${g.key}">`
-        + `<h3 class="dash-group-title" id="dash-group-${g.key}">${esc(g.label)}</h3>`
-        + `<div class="dash-tiles">${tiles.map(tileHtml).join("")}</div></section>`;
-    }).join("");
-    root.querySelector("#dash-groups").innerHTML = html || `<p class="promote-empty">Your role doesn't include any of the sections this dashboard summarises.</p>`;
+    const dayText = `Yesterday, ${fmtDayLabel(y.from)}`;
+    const dayEl = root.querySelector("#dash-day");
+    if (dayEl.textContent !== dayText) dayEl.textContent = dayText;
+    const groups = GROUPS.map((g) => ({ g, tiles: TILES.filter((t) => t.group === g.key && allowed(t)) })).filter((x) => x.tiles.length);
+    const host = root.querySelector("#dash-groups");
+    const layout = groups.map((x) => `${x.g.key}:${x.tiles.map((t) => t.key).join(",")}`).join("|") || "none";
+    if (host.dataset.layout === layout) {
+      for (const { tiles } of groups) for (const t of tiles) patchTile(host, t, tileParts(t));
+      return;
+    }
+    const written = new Map();
+    const html = groups.map(({ g, tiles }) => `<section class="dash-group" data-group="${g.key}" aria-labelledby="dash-group-${g.key}">`
+      + `<h3 class="dash-group-title" id="dash-group-${g.key}">${esc(g.label)}</h3>`
+      + `<div class="dash-tiles">${tiles.map((t) => { const parts = tileParts(t); written.set(t.key, parts); return tileHtml(t, parts); }).join("")}</div></section>`).join("");
+    host.innerHTML = html || `<p class="promote-empty">Your role doesn't include any of the sections this dashboard summarises.</p>`;
+    host.dataset.layout = layout;
+    lastParts = written;
+  }
+  function patchTile(host, t, parts) {
+    const wrap = host.querySelector(`.dash-tile-wrap[data-tile="${t.key}"]`);
+    if (!wrap) return;
+    const prev = lastParts.get(t.key) || {};
+    const btn = wrap.querySelector(".dash-tile");
+    if (prev.inner !== parts.inner) btn.innerHTML = parts.inner;
+    if (prev.busy !== parts.busy) { if (parts.busy) btn.setAttribute("aria-busy", "true"); else btn.removeAttribute("aria-busy"); }
+    if (prev.tip !== parts.tip) wrap.querySelector(".dash-tip").innerHTML = parts.tip;
+    lastParts.set(t.key, parts);
   }
 
   return { refresh, render };

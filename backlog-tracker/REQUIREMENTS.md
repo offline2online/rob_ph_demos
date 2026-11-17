@@ -6455,6 +6455,11 @@ Rules:
   and redraws with the board. The other four read their collections once when
   the page opens, again on Refresh, or when reopened after five minutes. The
   page keeps no listeners.
+- **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
+  tiles already on the page rather than replacing them, so a tile reached with
+  Tab keeps its keyboard focus and its open tooltip when tickets change (the
+  automation writes cards every few minutes), and only the figures that moved
+  change. The tiles are rebuilt only when the set the viewer may see changes.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`

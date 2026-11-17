@@ -3454,6 +3454,27 @@ const scenarios = [
       const vw = await c.page.evaluate(() => window.innerWidth);
       assert.ok(box && box.x >= 0 && box.x + box.width <= vw + 1, `the tooltip stays inside the viewport: ${JSON.stringify(box)}`);
 
+      // 7Pq6sqazzDyqvzWmh3Sg: every backlogItems snapshot re-renders the
+      // Dashboard; the tile a keyboard user is on keeps its focus and tooltip.
+      c.at("a board update keeps the focused tile and its open tooltip", tip("agent"));
+      await c.page.mouse.move(2, 2);
+      await c.page.evaluate(() => document.getElementById("dash-refresh").focus());
+      await c.page.keyboard.press("Tab");
+      const onAgent = () => c.page.evaluate(() => { const a = document.activeElement; return !!a && a.matches('.dash-tile-wrap[data-tile="agent"] .dash-tile') && a.__sameTile === true; });
+      await c.page.evaluate(() => { const a = document.activeElement; if (a) a.__sameTile = true; });
+      assert.ok(await onAgent(), "Tab from Refresh reaches the Agent board tile");
+      await until(async () => c.page.locator(tip("agent")).isVisible(), "the agent tooltip on focus", 3000);
+      await c.page.evaluate(() => {
+        const b = globalThis.__fbStub; const col = b.col("backlogItems"); const l1 = col.get("l1");
+        col.set("b1", { ...col.get("b1"), status: l1.status, mergedAt: l1.mergedAt, statusEnteredAt: l1.statusEnteredAt, blocked: null });
+        b.notify();
+      });
+      await until(async () => (await value("agent")) === "2", "the Agent board figure to update after the write", 5000);
+      assert.ok(await onAgent(), `focus stays on the same Agent board tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
+      assert.ok(await c.page.locator(tip("agent")).isVisible(), "its tooltip stays open");
+      assert.ok(/Blocked\s*0/.test(await c.text(tip("agent"))), "the open tooltip shows the new figures");
+      await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
+
       c.at("a tile opens its section");
       await c.page.mouse.move(2, 2);
       await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the Leads tile");
