@@ -230,6 +230,10 @@ input[type="checkbox"]:not(.no-switch):checked::after { transform: translateX(20
 .ap-icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 44px; height: 44px; border-radius: 50%; color: var(--primary-text); }
 .ap-group a.ap-icon-btn:hover { background: var(--primary-tint); text-decoration: none; }
 .ap-icon-btn .material-symbols-outlined { font-size: 20px; }
+/* LinkedIn's own mark in LinkedIn blue (#0a66c2), a lighter blue on dark so it keeps 3:1 against the card. */
+.ap-icon-btn .ap-brand-icon { display: block; width: 20px; height: 20px; }
+.ap-linkedin-btn { color: #0a66c2; }
+:root[data-theme="dark"] .ap-linkedin-btn { color: #70b5f9; }
 .ap-pill { display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; background: rgba(120, 120, 128, .14); color: var(--text); font-size: 12px; font-weight: 500; line-height: 20px; white-space: nowrap; }
 .ap-status { margin: var(--ap-s1) var(--ap-s2) 0; font-size: 13px; color: var(--text-muted); }
 .ap-status:empty { display: none; }

@@ -30,5 +30,14 @@ export function iconLink(href, icon, label, external = false) {
   return `<a class="ap-icon-btn" href="${esc(href)}" aria-label="${esc(label)}" title="${esc(label)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ""}><span class="material-symbols-outlined" aria-hidden="true">${esc(icon)}</span></a>`;
 }
 
+// A round 44px link to a person's LinkedIn profile, showing LinkedIn's own "in"
+// mark so it reads as LinkedIn at a glance. Material Symbols has no brand logos,
+// so this one mark is an inline SVG drawn the size of the symbols beside it.
+const LINKEDIN_MARK = '<svg class="ap-brand-icon ap-brand-linkedin" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M20.45 20.45h-3.56v-5.57c0-1.33-.02-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.35V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46v6.28zM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>';
+export function linkedinLink(href, label) {
+  if (!href) return "";
+  return `<a class="ap-icon-btn ap-linkedin-btn" href="${esc(href)}" aria-label="${esc(label)}" title="${esc(label)}" target="_blank" rel="noopener noreferrer">${LINKEDIN_MARK}</a>`;
+}
+
 // A neutral pill (a role, a count).
 export const pill = (text, cls = "") => (text ? `<span class="ap-pill ${cls}">${esc(text)}</span>` : "");

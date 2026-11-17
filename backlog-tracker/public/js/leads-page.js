@@ -39,7 +39,7 @@ import { mountAceDetail } from "./ace-detail.js";
 import { normaliseDetail, compactSummary, mailto, companyDocId, COMPANY_COLLECTION, AWS_ROLES, withAwsPerson, detailForSave, awsTeamWithAce, awsRoleLabel } from "./prospect-detail-core.js";
 import { leadIndustryEntry, industryChipText, industryStyle } from "./industry-palette.js";
 import { researchGroupsHTML, enrichmentRunning, enrichmentSkipped, enrichButtonLabel, enrichmentStatus, logoHTML, wireLogoFallback } from "./enrichment-view.js";
-import { group, row, stackRow, lineRow, iconLink, pill, tip } from "./ap-components.js";
+import { group, row, stackRow, lineRow, iconLink, linkedinLink, pill, tip } from "./ap-components.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 // Addresses come from Firestore, which an agent can write: http(s) only.
@@ -444,7 +444,7 @@ export function mountLeadsPage({ db, auth, canEdit, apiHeaders }) {
         ${c.jobTitle ? `<p class="ap-row-sub">${esc(c.jobTitle)}</p>` : ""}
         ${c.email ? `<p class="ap-row-sub">${esc(c.email)}</p>` : ""}
         ${c.awsAccountId ? `<p class="ap-row-sub">AWS account ${esc(c.awsAccountId)}</p>` : ""}`,
-      iconLink(c.email ? `mailto:${c.email}` : "", "mail", `Email ${c.name}`) + iconLink(safeUrl(c.linkedin), "open_in_new", `${c.name} on LinkedIn`, true),
+      iconLink(c.email ? `mailto:${c.email}` : "", "mail", `Email ${c.name}`) + linkedinLink(safeUrl(c.linkedin), `Open ${c.name}'s LinkedIn profile`),
       "lead-sum-contact")).join("");
     const empty = lineRow("No contacts yet") + (canEdit() ? '<button type="button" class="ap-row-btn" id="lead-sum-add-contact"><span class="material-symbols-outlined" aria-hidden="true">add</span>Add contact</button>' : "");
     const inbound = l.inboundCount ? `<span class="lead-inbound">${esc(inboundLabel(l))}</span>${tip("Inbound contacts and submissions from this company and country", "About inbound")}` : "";
