@@ -313,8 +313,8 @@
           <h3>Attachments</h3>
           <div id="ni-pending-attachments-list" class="ei-attachments-list"></div>
           <div class="ei-attachments-actions">
-            <label class="btn-attach ei-attach-screenshot-label" for="ni-attach-screenshot-input">&#128206; Attach screenshot</label>
-            <input type="file" id="ni-attach-screenshot-input" accept="image/*" hidden>
+            <label class="btn-attach ei-attach-screenshot-label" for="ni-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+            <input type="file" id="ni-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
             <button type="button" class="btn-attach" id="ni-record-screen-btn">&#9210; Record screen</button>
           </div>
           <p class="field-hint" id="ni-attach-hint" hidden></p>
@@ -695,7 +695,8 @@
           </div>
         </div>
 
-        <!-- Attachments — a screenshot (plain file picker) or a screen
+        <!-- Attachments — any image, video or document (a file picker that
+             takes several at once; item-attachments.js lists the types) or a screen
              recording (captured in-browser via getDisplayMedia +
              MediaRecorder, no separate app needed), both uploaded to
              Firebase Storage the moment they're ready. See app.js's
@@ -709,8 +710,8 @@
           <h3>Attachments</h3>
           <div id="ei-attachments-list" class="ei-attachments-list"></div>
           <div class="ei-attachments-actions">
-            <label class="btn-attach ei-attach-screenshot-label" for="ei-attach-screenshot-input">&#128206; Attach screenshot</label>
-            <input type="file" id="ei-attach-screenshot-input" accept="image/*" hidden>
+            <label class="btn-attach ei-attach-screenshot-label" for="ei-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+            <input type="file" id="ei-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
             <button type="button" class="btn-attach" id="ei-record-screen-btn">&#9210; Record screen</button>
           </div>
           <p class="field-hint" id="ei-attach-hint" hidden></p>
@@ -760,7 +761,7 @@
         </div>
         <p class="listening-hint" id="qc-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="qc-mic-error"></p>
-        <!-- Attaching a screenshot/recording from here too — this comment
+        <!-- Attaching a file/recording from here too — this comment
              icon is the affordance most people actually tap on a card, and
              it used to have no mention of attachments at all, so nobody
              found the Attachments block buried at the bottom of the full
@@ -769,8 +770,8 @@
              targeting whichever item this quick-comment dialog is open
              for — see app.js's createAttachmentController. -->
         <div class="ei-attachments-actions qc-attachments-actions" id="qc-attachments-actions">
-          <label class="btn-attach" for="qc-attach-screenshot-input">&#128206; Attach screenshot</label>
-          <input type="file" id="qc-attach-screenshot-input" accept="image/*" hidden>
+          <label class="btn-attach" for="qc-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+          <input type="file" id="qc-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
           <button type="button" class="btn-attach" id="qc-record-screen-btn">&#9210; Record screen</button>
         </div>
         <p class="field-hint" id="qc-attach-hint" hidden></p>

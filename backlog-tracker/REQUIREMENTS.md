@@ -204,7 +204,7 @@ copy `public/js/release-groups.js`).
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp, key?: string, firstAt?: string }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array; only a keyed backlog-automation note is ever replaced (one note per event, "Comments and notes")
-  attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
+  attachments?: [{ type: "image" | "video" | "file", contentType?: string, url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
@@ -3054,23 +3054,40 @@ else about their control flow changed, since each wrapper's resolved value
 matches its native counterpart's return contract exactly (`showConfirmDialog`
 → boolean, `showPromptDialog` → string-or-null).
 
-### Attachments (screenshots & screen recordings)
+### Attachments (files, videos & screen recordings)
 
-The Edit item modal's own **Attachments** block (below Comments) lets
-anyone attach a screenshot or a screen recording directly to a ticket:
+The Edit item modal's own **Attachments** block (below Comments), the
+quick-comment modal and the New Item form let anyone attach files or a
+screen recording directly to a ticket:
 
-- **Attach screenshot** — a plain `<input type="file" accept="image/*">`,
-  uploaded to Firebase Storage the instant a file is chosen.
+- **Attach file** — a file picker that takes several files at once: any
+  image (PNG, JPEG, GIF, WebP, HEIC…), any video (MP4, MOV, WebM…), PDF,
+  text (TXT, CSV, Markdown, logs), zip, JSON and Word/Excel/PowerPoint
+  files. Each is uploaded to Firebase Storage the instant it is chosen.
+  Images are capped at 15 MB, everything else at 100 MB. A file of another
+  type, or over its cap, is named in a message and skipped; the others
+  still upload. Where the browser leaves a file's type empty, it is read
+  off the extension. The list of types and caps is
+  `public/js/item-attachments.js`, kept in step with `storage.rules`
+  (ticket AveRUvb8zcijYoamN2RN, 17 Nov 2026 — it used to take images only,
+  so a screen recording saved as an MP4 could not be picked).
 - **Record screen** — captures the browser's own share-picker via
   `navigator.mediaDevices.getDisplayMedia` and records it with
-  `MediaRecorder` (webm/vp9, falling back to plain webm); clicking **Stop
-  recording** (or ending the share from the browser's own "Stop sharing"
-  bar) finalizes and uploads the clip the same way. No third-party
-  recording library or separate screen-capture tool needed.
+  `MediaRecorder`, in the first format the browser can make (WebM/VP9,
+  WebM, then MP4 — Safari makes only MP4, and asking it for WebM used to
+  make the button do nothing); clicking **Stop recording** (or ending the
+  share from the browser's own "Stop sharing" bar) finalizes and uploads
+  the clip the same way. No third-party recording library or separate
+  screen-capture tool needed. Where a browser can't record a page's screen
+  (iPhone and iPad), it says so and suggests recording with the device's
+  own screen recorder and adding the video with **Attach file**.
 
 Both write to Storage under `attachments/{itemId}/{fileName}` and append
-`{type, url, path, name, size, uploadedAt}` (see the `backlogItems` schema
-above) onto the item — the file itself never touches Firestore, only its
+`{type, contentType, url, path, name, size, uploadedAt}` (see the
+`backlogItems` schema above; `type` is `"image"`, `"video"` or `"file"`,
+and older entries have no `contentType`) onto the item. An image shows as a
+thumbnail, a video as an inline player and any other file as a file icon
+that opens it — the file itself never touches Firestore, only its
 resulting metadata does, the same "small bounded value on the doc, real
 payload elsewhere" split every Firestore-backed app needs past a few
 hundred KB. Removing an attachment deletes both the Storage object and its
@@ -3088,7 +3105,8 @@ one-time manual step, same as Cloud Functions needed — see README.md's
 `--only` list alongside `firestore:rules`; without either, uploads fail
 until fixed. `storage.rules` mirrors `firestore.rules`' open-but-validated
 posture: open read, write gated on size (< 100MB) and content-type
-(`image/*`/`video/*`) rather than by who's writing — same prototype-stage,
+(`image/*`, `video/*`, `text/*`, PDF, zip, JSON and Office files) rather
+than by who's writing — same prototype-stage,
 no-auth caveat as everything else in this app.
 
 ### Skills page: change history (eKFIGtskqbnUTqUTBFBl)

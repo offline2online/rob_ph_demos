@@ -56,6 +56,7 @@ import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel
 import { userRows, mountUsersGrid } from "./user-management.js";
 import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel, discoverNavSections } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
+import { ATTACHMENT_ACCEPT, checkAttachmentFile, attachmentContentType, attachmentKind, kindLabel, pickRecordingType, recordingExtension } from "./item-attachments.js";
 import { withReleaseGroup, trainProjectIdsOf, trainReadiness, shipsWithLine, groupEditRefusal, trainLoad, isValidGroupBranch } from "./release-groups.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
@@ -1192,18 +1193,18 @@ function cardHTML(item) {
     ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
     : (item.desc || "").trim();
 
-  // A screenshot or screen recording attached via uploadItemAttachment.
+  // A file (image, video, PDF, document…) attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
   // already had an attachment, which meant nothing on the card itself
   // hinted that attaching was even possible (DrIEsKsdi3WrwXbUdMH6 and its
   // duplicates: "it's not possible to attach anything to a ticket" was a
   // findability problem, not a real bug). Clicking it opens the same
   // quick-comment modal the comment icon does, which now has its own
-  // Attach screenshot / Record screen controls.
+  // Attach file / Record screen controls.
   const attachmentCount = (item.attachments || []).length;
   const attachmentBadge =
     `<button type="button" class="icon-btn attachment-btn" data-id="${item.id}"${isLocked ? ' data-readonly="1"' : ""} title="${
-      attachmentCount ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : "Attach a screenshot or screen recording"
+      attachmentCount ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : "Attach a file or a screen recording"
     }">&#128206;${attachmentCount ? ` <span class="options-menu-count">${attachmentCount}</span>` : ""}</button>`;
   // Bottom-right of the tile, alongside archive/delete — not the plain
   // left-aligned icon-row spot it used to share with the category badge,
@@ -4396,16 +4397,15 @@ async function setItemPreviewUrl(id, url) {
   });
 }
 
-// Attachments (screenshots & screen recordings) — see the Edit item
-// modal's own Attachments block below. Stored in Firebase Storage under
+// Attachments (images, videos, screen recordings and documents — which
+// types, and the size ceilings, are in item-attachments.js) — see the Edit
+// item modal's own Attachments block below. Stored in Firebase Storage under
 // attachments/{itemId}/{fileName}, with only the resulting metadata (not
 // the file itself) written onto the backlogItems doc, same "small,
 // bounded value on the doc, real payload elsewhere" split Firestore
 // already forces for anything past a few hundred KB. storage.rules caps
 // size/content-type at the Storage layer, matching firestore.rules'
 // existing open-but-validated posture — see that file's own comments.
-const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
-const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
 
 function sanitizeAttachmentFileName(name) {
   return String(name || "attachment").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-120);
@@ -4434,25 +4434,30 @@ function describeAttachmentUploadError(err) {
     return "Upload was canceled.";
   }
   if (code === "storage/invalid-argument" || code === "storage/invalid-format" || code === "storage/invalid-checksum") {
-    return "This file couldn't be uploaded — check it's a valid image or video and try again.";
+    return "This file couldn't be uploaded — check it's a valid file and try again.";
   }
   return (err && err.message) || String(err);
 }
 
 // `uploadedAt` is a plain client Date, not serverTimestamp(), for the same
 // reason addItemComment's `at` is — see that function's own comment.
+// The content type is the file's own, or one read off its extension when the
+// browser left it empty (attachmentContentType) — Storage would otherwise
+// store it as application/octet-stream, which storage.rules refuses.
 async function uploadItemAttachment(id, file, type) {
   const path = `attachments/${id}/${Date.now()}-${sanitizeAttachmentFileName(file.name)}`;
   const fileRef = storageRef(storage, path);
+  const contentType = attachmentContentType(file);
   try {
-    await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+    await uploadBytes(fileRef, file, { contentType: contentType || undefined });
   } catch (err) {
     throw new Error(describeAttachmentUploadError(err));
   }
   const url = await getDownloadURL(fileRef);
   await updateDoc(doc(db, "backlogItems", id), {
     attachments: arrayUnion({
-      type, url, path, name: file.name || sanitizeAttachmentFileName(file.name), size: file.size || 0, uploadedAt: new Date(),
+      type: type || attachmentKind(contentType), contentType: contentType || null,
+      url, path, name: file.name || sanitizeAttachmentFileName(file.name), size: file.size || 0, uploadedAt: new Date(),
     }),
     updatedAt: serverTimestamp(),
   });
@@ -5555,16 +5560,20 @@ function renderEiNotes() {
   document.getElementById("ei-rejection-summary").innerHTML = rejectionSummaryHTML(item);
 }
 
-// Attachments (screenshots & screen recordings) — see uploadItemAttachment/
-// removeItemAttachment above. Image attachments render as a clickable
-// thumbnail (opens the full-size file in a new tab); a video attachment
-// gets an inline <video> with native controls instead, since a still
-// thumbnail wouldn't convey much for a screen recording.
+// Attachments — see uploadItemAttachment/removeItemAttachment above. Image
+// attachments render as a clickable thumbnail (opens the full-size file in a
+// new tab); a video attachment gets an inline <video> with native controls
+// instead, since a still thumbnail wouldn't convey much for a screen
+// recording; any other file (PDF, document, zip…) gets a file icon that
+// opens it.
 function eiAttachmentItemHTML(att, idx) {
-  const label = escapeHTML(att.name || (att.type === "video" ? "Screen recording" : "Screenshot"));
-  const preview = att.type === "video"
-    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted></video>`
-    : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
+  const kind = att.type === "video" || att.type === "image" ? att.type : "file";
+  const label = escapeHTML(att.name || (kind === "video" ? "Screen recording" : kind === "image" ? "Screenshot" : "Attachment"));
+  const preview = kind === "video"
+    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted playsinline preload="metadata"></video>`
+    : kind === "image"
+      ? `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`
+      : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener" class="ei-attachment-thumb ei-attachment-file-icon" aria-label="Open ${label}"><span class="material-symbols-outlined" aria-hidden="true">description</span></a>`;
   return `<div class="ei-attachment-item">
     ${preview}
     <div class="ei-attachment-meta">
@@ -5738,6 +5747,10 @@ eiAttachmentsList.addEventListener("click", async (e) => {
 //   as-is) once it has a real item id back from creating the item.
 function createAttachmentController({ getItemId, screenshotInput, recordBtn, hintEl, mode = "upload", onPendingFile }) {
   let recorder = null;
+  // The picker's accepted types and multi-select come from one list
+  // (item-attachments.js), so index.html's three inputs can't drift from it.
+  screenshotInput.accept = ATTACHMENT_ACCEPT;
+  screenshotInput.multiple = true;
 
   function setHint(msg) {
     if (!hintEl) return;
@@ -5761,30 +5774,39 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
     }
     const id = idOverride !== undefined ? idOverride : getItemId();
     if (!id) return;
-    setHint(type === "video" ? "Uploading screen recording…" : "Uploading screenshot…");
+    const name = file.name || "file";
+    setHint(`Uploading ${name}…`);
     try {
       await uploadItemAttachment(id, file, type);
     } catch (err) {
-      await showAlert(`Couldn't upload that ${type === "video" ? "screen recording" : "screenshot"}: ` + (err && err.message ? err.message : err));
+      await showAlert(`Couldn't upload ${name}: ` + (err && err.message ? err.message : err));
     } finally {
       setHint("");
     }
   }
 
+  // Any image, video, PDF, text, zip or Office file — several at once
+  // (item-attachments.js checkAttachmentFile). A file that can't be attached
+  // is named and skipped; the rest still go.
   screenshotInput.addEventListener("change", async () => {
-    const file = screenshotInput.files[0];
+    const files = Array.from(screenshotInput.files || []);
     screenshotInput.value = "";
-    if (!file) return;
+    if (!files.length) return;
     if (mode === "upload" && !getItemId()) return;
-    if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
-    if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
-    await handleFile(file, "image");
+    const refused = [];
+    for (const file of files) {
+      const check = checkAttachmentFile(file);
+      if (!check.ok) { refused.push(`${file.name || "That file"}: ${check.error}`); continue; }
+      await handleFile(file, check.kind);
+    }
+    if (refused.length) await showAlert(refused.join("\n"));
   });
 
   async function startRecording() {
     if (mode === "upload" && !getItemId()) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      await showAlert("Screen recording isn't supported in this browser.");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder) {
+      // iPhone and iPad browsers can't record the screen from a web page.
+      await showAlert("Screen recording isn't supported in this browser. Record it with your device's own screen recorder, then use Attach file to add the video.");
       return;
     }
     const targetItemId = mode === "upload" ? getItemId() : null;
@@ -5796,20 +5818,32 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
       return;
     }
     const chunks = [];
-    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))
-      ? "video/webm;codecs=vp9" : "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType });
+    // Safari's MediaRecorder makes only MP4 and throws on a WebM request,
+    // which is what left Record screen doing nothing there (ticket
+    // AveRUvb8zcijYoamN2RN): ask for the first format this browser can make,
+    // or let it choose.
+    const askFor = window.MediaRecorder ? pickRecordingType((t) => MediaRecorder.isTypeSupported(t)) : "";
+    let rec;
+    try {
+      rec = new MediaRecorder(stream, askFor ? { mimeType: askFor } : undefined);
+    } catch (err) {
+      stream.getTracks().forEach((t) => t.stop());
+      await showAlert("This browser can't record the screen. Record it with your device's own screen recorder, then use Attach file to add the video.");
+      return;
+    }
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
       setRecordButtonState(false);
+      const mimeType = (rec.mimeType || askFor || "video/webm").split(";")[0];
       const blob = new Blob(chunks, { type: mimeType });
-      if (blob.size > MAX_RECORDING_BYTES) {
+      const file = new File([blob], `screen-recording-${Date.now()}.${recordingExtension(mimeType)}`, { type: mimeType });
+      const check = checkAttachmentFile(file);
+      if (!check.ok) {
         setHint("");
-        await showAlert("That recording is too large (max 100MB) — try a shorter one.");
+        await showAlert(blob.size ? "That recording is too large (max 100 MB) — try a shorter one." : "The recording came out empty — try again.");
         return;
       }
-      const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
       await handleFile(file, "video", targetItemId);
     };
     // The user can also end the capture from the browser's own "Stop
@@ -6152,7 +6186,7 @@ function formatAttachmentSize(bytes) {
 }
 
 function niPendingAttachmentRowHTML(pending) {
-  const kind = pending.type === "video" ? "Screen recording" : "Screenshot";
+  const kind = kindLabel(pending.type);
   const label = escapeHTML(pending.file.name || kind);
   const size = formatAttachmentSize(pending.file.size);
   return `<div class="ei-attachment-item">
@@ -6616,7 +6650,7 @@ async function submitNewItem() {
         try {
           await uploadItemAttachment(dup.item.id, pending.file, pending.type);
         } catch (err) {
-          const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+          const label = pending.file.name || kindLabel(pending.type);
           await showAlert(`The comment was added, but "${label}" couldn't be uploaded: ${err && err.message ? err.message : err}`);
         }
       }
@@ -6651,7 +6685,7 @@ async function submitNewItem() {
       try {
         await uploadItemAttachment(newItemId, pending.file, pending.type);
       } catch (err) {
-        const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+        const label = pending.file.name || kindLabel(pending.type);
         failures.push(`${label}: ${err && err.message ? err.message : err}`);
       }
     }

@@ -2,7 +2,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // Backs the Edit item modal's Attachments block (screenshots & screen
+    // Backs the Edit item modal's Attachments block (files & screen
     // recordings — see public/js/app.js uploadItemAttachment). Same
     // signed-in-member posture as firestore.rules, with a size/content-type
     // check instead of per-field validation, since Storage has no way to
@@ -87,12 +87,22 @@ service firebase.storage {
       allow delete: if isEditor();
     }
 
+    // Ticket attachments: images, video (MP4, MOV, WebM…), text, PDFs, zips,
+    // JSON and Office files, up to 100 MB — the same list as
+    // public/js/item-attachments.js (DOCUMENT_CONTENT_TYPES), which the
+    // console checks before it uploads. Images and video only until ticket
+    // AveRUvb8zcijYoamN2RN (17 Nov 2026).
     match /attachments/{itemId}/{fileName} {
       allow read: if isEditor();
-      allow write: if isEditor() &&
-        request.resource.size < 100 * 1024 * 1024 &&
-        (request.resource.contentType.matches('image/.*') ||
-         request.resource.contentType.matches('video/.*'));
+      allow write: if isEditor()
+        && request.resource.size < 100 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*')
+            || request.resource.contentType.matches('text/.*')
+            || request.resource.contentType in ['application/pdf', 'application/zip', 'application/x-zip-compressed', 'application/json',
+                 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']);
       allow delete: if isEditor();
     }
 
