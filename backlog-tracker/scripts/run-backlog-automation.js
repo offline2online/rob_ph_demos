@@ -3174,6 +3174,77 @@ async function recordCardTrainTests(runsFor = memoByKey(fetchWorkflowRunsOnSha),
   }
 }
 
+// ── A ticket that changes only tests approves itself (17 Nov 2026) ─────────
+// Rob: "auto-approve test-only tickets when tests pass". A flaky-test fix
+// changes test files and nothing a person can try, yet it sat in Ready for
+// Testing until someone ticked it (seven of them for three hours). When
+// every file a Ready for Testing ticket's commits changed is a test file and
+// its own train tests have PASSED on its commit, it moves to Approved for
+// Deployment by itself. Not "not-applicable" (no suite covers it) and not a
+// borrowed or running result: `trainTest.state` must be "passed" for the
+// card's deployCommit. It does not lock the train (the board's own approval
+// does, to close a release): more test fixes may still be building, and a
+// lock would hold them for the next release. Deploy to Main stays a click.
+//
+// A test file: under a test, tests, __tests__ or e2e folder, or named
+// *.test.* / *.spec.*. Pure.
+const TEST_PATH_RE = /(^|\/)(test|tests|__tests__|e2e)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
+function isTestOnlyChange(paths) {
+  const list = (paths || []).filter((p) => typeof p === "string" && p);
+  return list.length > 0 && list.every((p) => TEST_PATH_RE.test(p));
+}
+// → null, or { fields, note } to write. `files` are the paths the card's
+// commits changed (null when they could not be read: never approves).
+function autoApprovePlan(card, files, nowIso = new Date().toISOString()) {
+  if (!card || card.status !== "ready-for-testing" || !card.deployCommit || card.revertRequested) return null;
+  const t = card.trainTest;
+  if (!t || t.sha !== card.deployCommit || t.state !== "passed") return null;
+  if (!isTestOnlyChange(files)) return null;
+  return {
+    fields: { status: "ready-to-publish", approvedVia: "auto-test-only", approvedAt: nowIso, approvedByEmail: null },
+    note: `Approved for deployment automatically: this ticket changes only test files (${files.length} file${files.length === 1 ? "" : "s"}) and its train tests passed on ${String(card.deployCommit).slice(0, 7)}. There is nothing for a person to try. To take it off the release, use Failed testing.`,
+  };
+}
+// A flaky-test ticket the build found already fixed has no commit and nothing
+// to deploy (noDeploymentRequired). It waited for a person's "Confirm tested"
+// with nothing to test. Only for tickets the flake ledger raised itself.
+function autoConfirmNoChangePlan(card) {
+  if (!card || card.status !== "ready-for-testing" || card.deployCommit || !card.noDeploymentRequired || card.revertRequested) return null;
+  if (card.autoRaised !== true || !card.flakyCaseId) return null;
+  return {
+    fields: { status: "published-live" },
+    note: "Closed automatically: the build found this flaky test already fixed, so there was no change to deploy and nothing for a person to test.",
+  };
+}
+async function sweepAutoApprovals(filesFor = memoByKey(fetchCommitFiles)) {
+  const cards = await runQuery({
+    from: [{ collectionId: "backlogItems" }],
+    where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "ready-for-testing" } } },
+  });
+  for (const card of cards) {
+    try {
+      let plan = autoConfirmNoChangePlan(card);
+      if (!plan && card.deployCommit && !card.revertRequested) {
+        const shas = [...new Set([...(Array.isArray(card.deployCommits) ? card.deployCommits : []), card.deployCommit].filter(Boolean))];
+        const files = [];
+        for (const sha of shas) files.push(...(await filesFor(sha)));
+        const all = [...new Set(files)];
+        // The board reads testOnly to say "approves itself" instead of
+        // listing the card under Needs attention while its tests run.
+        const testOnly = isTestOnlyChange(all);
+        if (card.testOnly !== testOnly) await patchItem(card.id, { testOnly });
+        plan = autoApprovePlan(card, all);
+      }
+      if (!plan) continue;
+      const notes = await appendNote(card, plan.note);
+      await patchItem(card.id, { ...plan.fields, notes, updatedAt: new Date().toISOString() });
+      console.log(`[auto-approve] ${card.id}: ${plan.fields.status}`);
+    } catch (err) {
+      console.log(`[auto-approve] ${card.id}: ${scrubSecrets(err.message)}`);
+    }
+  }
+}
+
 // ── A test run that never reached a result is started again ──────────────
 // A card whose run was cancelled (a timeout, the concurrency group, GitHub
 // itself) or never started read "not-run" for good: nothing re-ran it, the
@@ -4071,7 +4142,7 @@ async function sweepFlakyTests(gh = (args) => run("gh", args)) {
       openTickets: () => runQuery({
         from: [{ collectionId: "backlogItems" }],
         where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: FLAKY_LEDGER_PROJECT_ID } } },
-        select: { fields: ["title", "status"].map((fieldPath) => ({ fieldPath })) },
+        select: { fields: ["title", "status", "flakyCaseId", "statusEnteredAt", "updatedAt"].map((fieldPath) => ({ fieldPath })) },
       }),
       createTicket: createFixTicket,
       now: () => Date.now(),
@@ -8838,6 +8909,11 @@ async function main() {
     console.log(`[card-tests] failed: ${err.message}`);
   }
   try {
+    await sweepAutoApprovals();
+  } catch (err) {
+    console.log(`[auto-approve] failed: ${err.message}`);
+  }
+  try {
     await processKanbanE2eHeal();
   } catch (err) {
     console.log(`[kanban-e2e] failed: ${err.message}`);
@@ -8924,6 +9000,7 @@ module.exports = {
   contractChangeOf, flagContractDependents,
   patchFilesFromCommit,
   patchRefProblem,
+  isTestOnlyChange, autoApprovePlan, autoConfirmNoChangePlan, sweepAutoApprovals,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, MAX_AUTO_RETRIES, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, blockerLabels,
   // test/release-groups.test.js — projects in one deployable share one train

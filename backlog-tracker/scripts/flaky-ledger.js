@@ -83,9 +83,27 @@ const flakesThisWeek = (ledger, now) => ((ledger && ledger.cases) || []).reduce(
 // The cases that need a ticket filed now: at the threshold within the
 // window, and no "Flaky test: <case>" ticket open. `openTickets` is the
 // project's tickets as [{ id, title, status }].
+//
+// A ticket belongs to a case by the ledger's own ticketId, its flakyCaseId
+// field, or its title. The title alone was not enough (17 Nov 2026): a build
+// renames its ticket ("Stabilise flaky … test TC-68"), so the moment a fix
+// reached Ready for Testing the case looked ticketless and a second "Flaky
+// test: TC-68" was filed: six duplicates in one morning. And once a case's
+// fix has shipped, only flakes seen AFTER it shipped count: the ones that
+// raised the first ticket are what it fixed.
 function casesNeedingTicket(ledger, { now, openTickets = [] }) {
-  const open = new Set(openTickets.filter((t) => t && OPEN_STATUSES.includes(t.status)).map((t) => String(t.title || "").trim().toLowerCase()));
-  return ((ledger && ledger.cases) || []).filter((c) => flakesInWindow(c, now) >= FLAKE_TICKET_THRESHOLD && !open.has(flakyTicketTitle(c.id).toLowerCase()));
+  const tickets = (openTickets || []).filter(Boolean);
+  const ticketsOf = (c) => {
+    const title = flakyTicketTitle(c.id).toLowerCase();
+    return tickets.filter((t) => (c.ticketId && t.id === c.ticketId) || (t.flakyCaseId && t.flakyCaseId === c.id) || String(t.title || "").trim().toLowerCase() === title);
+  };
+  return ((ledger && ledger.cases) || []).filter((c) => {
+    const mine = ticketsOf(c);
+    if (mine.some((t) => OPEN_STATUSES.includes(t.status))) return false;
+    const fixedAt = Math.max(0, ...mine.map((t) => ms(t.statusEnteredAt) || ms(t.updatedAt)));
+    const since = (c.seenAt || []).filter((t) => ms(t) > fixedAt);
+    return flakesInWindow({ ...c, seenAt: since }, now) >= FLAKE_TICKET_THRESHOLD;
+  });
 }
 
 // The ticket's description, in the four intake sections.

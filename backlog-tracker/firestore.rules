@@ -418,6 +418,10 @@ service cloud.firestore {
         // Each train card's own test result (19 Oct 2026): only
         // run-backlog-automation.js records it, from the card's own runs.
         "trainTest",
+        // Whether the ticket's commits change only test files (17 Nov 2026):
+        // stamped by the automation; the board reads it to say "approves
+        // itself" on a Ready for Testing card.
+        "testOnly",
         // Per-ticket model requirement (13 Nov 2026): which model actually
         // built and reviewed the ticket, written by the build and review
         // sessions (automation user) — never a browser's to claim.

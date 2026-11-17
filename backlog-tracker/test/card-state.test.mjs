@@ -121,6 +121,23 @@ test("the lines the ticket names", () => {
   const stopped = auto({ blocked: raised, autoAnswers: 2, autoRetries: 2 });
   assert.deepStrictEqual([stopped.line, stopped.waitingOn, stopped.action], ["Needs your pick: one question, options to click · 2 d", "decision", "answer"]);
   assert.strictEqual(auto({ blocked: { ...raised, kind: "never-ran" }, neverRanRetries: 12 }).waitingOn, "decision");
+  // Ready for Testing with nothing for a person (17 Nov 2026): tests-only tickets and already-fixed flaky tickets wait on the automation.
+  const rft = (flags) => esm.cardState({ id: "i", projectId: "p1", status: "ready-for-testing", statusEnteredAt: iso(5 * H), ...flags }, PROJECTS.idle, NOW, ctx);
+  const only = { deployCommit: "c0", testOnly: true };
+  assert.deepStrictEqual([rft({ ...only, trainTest: { sha: "c0", state: "running" } }).line, rft({ ...only, trainTest: { sha: "c0", state: "running" } }).waitingOn], ["Tests only · approves itself when its tests pass", "automation"]);
+  assert.strictEqual(rft({ ...only, trainTest: { sha: "c0", state: "passed" } }).line, "Tests only · tests passed · approving by itself");
+  for (const state of ["failed", "not-run"]) assert.strictEqual(rft({ ...only, trainTest: { sha: "c0", state } }).waitingOn, "tester", `tests ${state}: a person's again`);
+  assert.strictEqual(rft({ deployCommit: "c0", testOnly: false, trainTest: { sha: "c0", state: "passed" } }).waitingOn, "tester", "a product change still waits for its tester");
+  assert.strictEqual(rft({ ...only, revertRequested: true }).waitingOn !== "automation" || rft({ ...only, revertRequested: true }).state !== "auto-approving", true);
+  const fixed = { noDeploymentRequired: true, autoRaised: true, flakyCaseId: "TC-68" };
+  assert.deepStrictEqual([rft(fixed).line, rft(fixed).waitingOn], ["Already fixed · closes by itself", "automation"]);
+  assert.strictEqual(rft({ ...fixed, autoRaised: false }).waitingOn, "tester", "a person's own no-deploy ticket still needs confirming");
+  const listed = esm.needsAttention([
+    { id: "t1", projectId: "p1", status: "ready-for-testing", statusEnteredAt: iso(5 * H), ...only, trainTest: { sha: "c0", state: "running" } },
+    { id: "t2", projectId: "p1", status: "ready-for-testing", statusEnteredAt: iso(5 * H), ...fixed },
+    { id: "t3", projectId: "p1", status: "ready-for-testing", statusEnteredAt: iso(5 * H), deployCommit: "c1" },
+  ], [{ id: "p1", ...PROJECTS.idle }], NOW);
+  assert.deepStrictEqual(listed.filter((x) => x.kind === "ticket").map((x) => x.id), ["t3"], "only the ticket a person has to test is listed");
   // The question a person gets: the senior model's own, recommended first, at most four choices…
   const asked = esm.personQuestion({ autoAnswers: 2, autoRetries: 2, blocked: { ...raised, question: "  Ship the export as CSV or as XLSX? ", options: ["XLSX", { label: "CSV", recommended: true }, "CSV", "", "Both", "Neither", "Later"] } });
   assert.deepStrictEqual(asked, { question: "Ship the export as CSV or as XLSX?", fromBuild: true, options: [

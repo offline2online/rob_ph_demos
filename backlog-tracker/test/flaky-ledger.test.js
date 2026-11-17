@@ -67,6 +67,14 @@ const row = (id, profile = "desktop-1280", at = T0) => ({ suite: "staff-kanban-c
   assert.strictEqual(title, "Flaky test: TC-55");
   for (const status of L.OPEN_STATUSES) assert.deepStrictEqual(L.casesNeedingTicket(ledger, { now: T0, openTickets: [{ id: "t", title, status }] }), [], `an open ticket (${status}) stops a second`);
   for (const status of ["published-live", "archived"]) assert.strictEqual(L.casesNeedingTicket(ledger, { now: T0, openTickets: [{ id: "t", title, status }] }).length, 1, `a ${status} ticket does not`);
+  // A build renames its ticket: the case is still matched, by flakyCaseId or by the ledger's own ticketId (17 Nov 2026).
+  assert.deepStrictEqual(L.casesNeedingTicket(ledger, { now: T0, openTickets: [{ id: "t", title: "Stabilise flaky test TC-55", status: "ready-for-testing", flakyCaseId: "TC-55" }] }), [], "a renamed open ticket still stops a second");
+  const withId = { ...ledger, cases: ledger.cases.map((c) => ({ ...c, ticketId: "t9" })) };
+  assert.deepStrictEqual(L.casesNeedingTicket(withId, { now: T0, openTickets: [{ id: "t9", title: "Renamed", status: "ready-to-publish" }] }), []);
+  // Once its fix has shipped, only flakes seen after that count.
+  const shipped = (at) => [{ id: "t", title: "Renamed", status: "published-live", flakyCaseId: "TC-55", statusEnteredAt: new Date(at).toISOString() }];
+  assert.deepStrictEqual(L.casesNeedingTicket(ledger, { now: T0 + 1000, openTickets: shipped(T0 + 500) }), [], "the flakes the fix was raised for do not raise it again");
+  assert.strictEqual(L.casesNeedingTicket(ledger, { now: T0, openTickets: shipped(T0 - 5 * DAY) }).length, 1, "three flakes since the fix shipped do");
   const desc = L.flakyTicketDesc(ledger.cases[0], T0);
   for (const h of ["## Outcome", "## Test steps", "## Dependencies", "## Spec reference"]) assert.ok(desc.includes(h), `the ticket has ${h}`);
   assert.ok(!/To be completed by the build session|Not provided/.test(desc), "no intake placeholder");

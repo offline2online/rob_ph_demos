@@ -230,6 +230,20 @@ export function cardState(item, project, now = Date.now(), ctx = {}) {
   }
 
   if (status === "ready-for-testing") {
+    // Nothing here for a person (17 Nov 2026): a ticket that changes only
+    // test files approves itself once its tests pass (the automation stamps
+    // testOnly when it lands), and a flaky-test ticket with nothing to deploy
+    // closes itself. Neither is listed under Needs attention. A red or unrun
+    // test result is a person's again.
+    if (!it.revertRequested) {
+      if (!it.deployCommit && it.noDeploymentRequired && it.autoRaised === true && it.flakyCaseId) {
+        return result("auto-closing", "Already fixed · closes by itself", "automation", entered, now);
+      }
+      const tt = it.trainTest && it.trainTest.sha === it.deployCommit ? it.trainTest.state : null;
+      if (it.testOnly === true && it.deployCommit && tt !== "failed" && tt !== "not-run") {
+        return result("auto-approving", tt === "passed" ? "Tests only · tests passed · approving by itself" : "Tests only · approves itself when its tests pass", "automation", entered, now);
+      }
+    }
     const round = Number(it.testRound) || 0;
     const r = round >= 2 ? ` · round ${round}` : "";
     return result("testing", `Ready to test${r}${age(entered)}`, "tester", entered, now, { threshold: "ready-for-testing", action: "test" });

@@ -3610,7 +3610,7 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   "notes", "attachments",
   // Each train card's own test result and who approved it (19 Oct 2026) —
   // drawn on the card, so on the REST-primed first paint too.
-  "trainTest", "approvedByEmail", "approvedAt", "approvedVia",
+  "trainTest", "approvedByEmail", "approvedAt", "approvedVia", "testOnly", "autoRaised", "flakyCaseId",
   // Parallel builds (4 Oct 2026): the blocked flag, what a blocked ticket
   // waits for, and each ticket's own build-session report — the Ready for
   // Dev spinner reads the last one (perItemRoutineFinished).
