@@ -1176,15 +1176,18 @@ This is a genuinely separate project, not a subfolder sharing infrastructure:
 The only thing shared with the rest of `rob_ph_demos` is the git repo
 itself — plain files, no build coupling, no shared runtime.
 
-## Attachments (screenshots & screen recordings)
+## Attachments (files, videos & screen recordings)
 
-The Edit item modal has its own **Attachments** block, below Comments:
-**Attach screenshot** (a plain image file picker) and **Record screen**
+The Edit item modal has its own **Attachments** block, below Comments (the
+quick-comment modal and New Item form have the same two buttons):
+**Attach file** (a file picker for images, videos such as MP4/MOV, PDFs,
+text, zip and Office files, several at once; the list is
+`public/js/item-attachments.js`) and **Record screen**
 (captures the browser's own screen-share picker via `getDisplayMedia` +
 `MediaRecorder`, no third-party library or separate app) — both upload
 straight to Firebase Storage the moment a file is ready
 (`uploadItemAttachment` in `public/js/app.js`) and append
-`{type, url, path, name, size, uploadedAt}` onto the item's own
+`{type, contentType, url, path, name, size, uploadedAt}` onto the item's own
 `attachments` array. A card with at least one attachment shows a small
 📎N count next to its comment icon on the board itself.
 
@@ -1195,8 +1198,8 @@ if Storage was never explicitly enabled for this project (Firebase Console
 `storage.rules` overrides them on the next deploy), uploads fail outright
 until it is. `storage.rules` mirrors `firestore.rules`' own open-but-
 validated posture (no auth yet — same prototype-stage caveat) — open read,
-and write gated on size (< 100MB) and content-type (`image/*` or
-`video/*`) rather than by who's writing. The deploy workflow's `--only`
+and write gated on size (< 100MB) and content-type (`image/*`, `video/*`,
+`text/*`, PDF, zip, JSON or Office) rather than by who's writing. The deploy workflow's `--only`
 list includes `storage:rules` alongside `firestore:rules`; if you ever see
 an upload fail with a permissions error after a deploy, check that flag is
 still there before assuming the rules file itself is wrong — a `storage`

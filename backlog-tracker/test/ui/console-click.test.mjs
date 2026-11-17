@@ -1040,6 +1040,38 @@ const scenarios = [
     },
   },
   {
+    // Ticket AveRUvb8zcijYoamN2RN: Attach file takes any image, video or document
+    // (an MP4 screen recording and a PDF here), several at once, and names a
+    // file it can't take instead of silently ignoring it.
+    name: "Edit item: Attach file uploads an MP4 and a PDF together, refuses an .exe by name",
+    seed: () => only("b1"),
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.waitText(".ei-attach-screenshot-label[for='ei-attach-screenshot-input']", "Attach file", "the button says Attach file");
+      const accept = await c.page.getAttribute("#ei-attach-screenshot-input", "accept");
+      for (const t of ["image/*", "video/*", "application/pdf", ".mp4", ".mov"]) assert.ok(accept.split(",").includes(t), `the picker accepts ${t}: ${accept}`);
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("ei-attach-screenshot-input").multiple), true, "several files at once");
+      c.at("pick an MP4 and a PDF", "#ei-attach-screenshot-input");
+      await c.page.setInputFiles("#ei-attach-screenshot-input", [
+        { name: "screen-recording.mp4", mimeType: "video/mp4", buffer: Buffer.from("fake mp4 bytes") },
+        { name: "spec.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") },
+      ]);
+      await until(async () => (await c.page.locator("#ei-attachments-list .ei-attachment-item").count()) === 2, "both attachments listed", 6000);
+      assert.strictEqual(await c.page.locator("#ei-attachments-list video.ei-attachment-thumb").count(), 1, "the MP4 shows as a video");
+      assert.strictEqual(await c.page.locator("#ei-attachments-list .ei-attachment-file-icon").count(), 1, "the PDF shows as a file icon");
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("backlogItems").get("b1").attachments);
+      assert.deepStrictEqual(stored.map((a) => [a.name, a.type, a.contentType]), [["screen-recording.mp4", "video", "video/mp4"], ["spec.pdf", "file", "application/pdf"]]);
+      c.at("pick an .exe", "#ei-attach-screenshot-input");
+      await c.page.setInputFiles("#ei-attach-screenshot-input", { name: "run.exe", mimeType: "application/x-msdownload", buffer: Buffer.from("MZ") });
+      await c.visible("#dialog-backdrop", "a message about the refused file");
+      await c.waitText("#dialog-message", "run.exe", "it names the file");
+      await c.click("#dialog-ok", "dismiss");
+      assert.strictEqual(await c.page.locator("#ei-attachments-list .ei-attachment-item").count(), 2, "nothing else was attached");
+    },
+  },
+  {
     name: "Model: an Advanced card shows its chip and build log; Edit item switches it back to Standard",
     seed: () => { const s = only("b1"); Object.assign(s.docs.backlogItems.b1, { model: "advanced", builtByModel: "claude-opus-5-5", reviewedByModel: "claude-opus-5-5" }); return s; },
     async run(c) {
