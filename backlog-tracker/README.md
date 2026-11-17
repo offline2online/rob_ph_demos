@@ -2894,6 +2894,10 @@ every destination already existed.
   the archive has been loaded.
 - Tests: `npm run test:ui` now runs at 1440, 1180, 820 and 390px and includes
   nav reachability, no sideways scroll and Command-K.
+- **Versioned asset URLs** (17 Nov 2026): the deployed copy stamps `?v=<build
+  id>` on every script, stylesheet and relative import
+  (`scripts/build-console.js`), so a page always runs its own scripts.
+  `test/ui/minified.test.mjs` checks it.
 - **Stale page after a release** (6 Nov 2026): the real cause of the dead
   iPad menu. `/` now has a no-cache header in `firebase.json`, and a failed
   start reloads once by itself (`auth-gate.js`). `test/ui/stale-page.test.mjs`
