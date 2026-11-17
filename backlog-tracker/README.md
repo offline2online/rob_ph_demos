@@ -838,8 +838,9 @@ Each card's first row under its title is one status line from
 answer · 2 d", "Approved · waits for <title> to be approved"), with its time
 in column beside the type badge (warning colour past `AGE_THRESHOLDS`). A
 project header says why Deploy to Main is missing, and **Needs attention**
-at the top of the board lists everything waiting on a person or stuck, oldest
-first, with one action button and a "Waiting on me" filter. Over MCP the same
+on the Dashboard (and nowhere else, since 17 Nov 2026) lists everything
+waiting on a person or stuck, oldest first, with one action button and a
+"Waiting on me" filter. Over MCP the same
 answer is `get_pipeline_health`.
 
 - `functions/card-state.js` is a generated CommonJS copy: edit
@@ -3329,7 +3330,8 @@ yesterday (the viewer's local day) in three sections. Internal: Agent board
 for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
 Leads and Conversion funnel (website visitors). Support: needs a person, AI
 drafts, resolved. Each tile's breakdown is a hover/focus tooltip and a click
-opens the section. The Agent Board's own address is now `#board`. Rules in
+opens the section. Above the tiles sits **Needs attention**, which is on the
+Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
 `node test/dashboard.test.mjs` and the Dashboard scenario in

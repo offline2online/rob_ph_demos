@@ -1312,7 +1312,15 @@
 
     <!-- Dashboard (#dashboard): the page the console opens on. KPI tiles for yesterday, drawn by
          js/dashboard-page.js (rules in js/dashboard-core.js). -->
-    <section class="faq-admin-page dash-page" id="dashboard-page" aria-label="Dashboard" hidden></section>
+    <section class="faq-admin-page dash-page" id="dashboard-page" aria-label="Dashboard" hidden>
+      <!-- Needs attention (RC6wVNJJcPjNTR5hov9W): everything across projects
+           waiting on a person or stuck past its threshold, oldest first.
+           On the Dashboard only (kBJU2GCKW9S6XGWTwK8T), above the KPI tiles:
+           dashboard-page.js keeps this element when it draws the page.
+           Normal flow, collapsed to a count when empty; rendered by
+           renderNeedsAttention in app.js. -->
+      <section class="needs-attention" id="needs-attention" aria-label="Needs attention" hidden></section>
+    </section>
 
     <!-- Support › Support Inbox (#support): the support mailbox as tickets (js/support-page.js,
          rules in js/support-core.js, server in functions/support-mail.js). Help lives in the info tooltips. -->
@@ -2136,12 +2144,6 @@
          viewer (see styles.css "Roles"); firestore.rules refuses their
          writes, so saying so up front beats letting clicks fail. -->
     <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in User Management &rarr; Users.</div>
-
-    <!-- Needs attention (RC6wVNJJcPjNTR5hov9W): everything across projects
-         waiting on a person or stuck past its threshold, oldest first.
-         Normal flow above the projects, collapsed to a count when empty;
-         rendered by renderNeedsAttention in app.js. -->
-    <section class="needs-attention" id="needs-attention" aria-label="Needs attention" hidden></section>
 
     <div id="projects-root"></div>
 
