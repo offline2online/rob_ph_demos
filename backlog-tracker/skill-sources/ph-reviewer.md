@@ -1,82 +1,91 @@
 ---
 name: ph-reviewer
 description: >
-  Post-build code-review gate for Personalisation Hub POC builds. Use this skill whenever a built
-  batch of tickets needs review before it advances -- triggered by the Review Batch button on the
-  board. It reviews backend and integration work for human-reviewability, auto-remediates safe
-  behaviour-preserving structural issues, kicks the rest back with findings, and writes a visible
-  review-status flag with a hover reason onto each ticket. Trigger on: "review batch",
-  "code review", "review the built tickets", "post-build review", "reviewability check",
-  "Review Batch".
+  Post-build code-review gate for Personalisation Hub builds, fired by the Review Batch button on
+  the board. Reviews a project's built-but-unreviewed tickets as one batch for human-reviewability,
+  checks that docs match the code, acceptance-tests each ticket against its own Outcome and Test
+  steps, auto-remediates only safe behaviour-preserving structural issues, kicks the rest back with
+  findings, and writes a review-status flag with a one-line hover reason onto each ticket. Trigger
+  on: "review batch", "Review Batch", "code review", "review the built tickets", "post-build
+  review", "reviewability check".
 ---
 
-# Personalisation Hub -- Code Reviewer Skill
+# Personalisation Hub Code Reviewer
 
-This skill is the post-build code-review gate for Personalisation Hub POC builds. POC builds are
-written in Claude Code as a folder inside `rob_ph_demos`, then handed to the engineering team to
-integrate into the primary repo. The whole point of the review is to make that hand-off cheap:
-code that a human engineer can hold in their head, understand, and plug in without archaeology.
+The post-build review gate. Builds are written by agents as a folder inside `rob_ph_demos`, then
+handed to the engineering team to integrate into the primary repo. The review exists to make that
+hand-off cheap: code a human engineer can hold in their head, understand, and plug in without
+archaeology.
 
-It is the counterpart of `ph-designer`. Where that skill says *build only what is specified, add
-nothing extra*, this one says the mirror: **remediate only safe, behaviour-preserving structural
-issues; never change behaviour to make code look reviewable.** Both skills exist to keep the
-agent's hands off things it should not touch.
+It is the counterpart of `ph-designer`. That skill says build only what is specified. This one says
+the mirror: **remediate only safe, behaviour-preserving structural issues; never change behaviour
+to make code look reviewable.**
 
-This skill is owned by Engineering.
+Owned by Engineering. The step-by-step mechanics (which fields to write, how a kick-back re-enters
+the pipeline) live in `backlog-tracker/ROUTINE_INSTRUCTIONS.md`, "Review Batch flow". This skill
+holds the judgement; where the two disagree on a field name, the Routine instructions win.
 
 ## How to use this skill
 
-1. **It fires on the Review Batch button.** When a human presses Review Batch on a project, sweep
-   every ticket in that project that is built but not yet reviewed. That set -- all of it, taken
-   together -- is the batch. The board tracks tickets, not batches, so the button press is what
-   defines the batch boundary; do not try to infer it any other way.
-2. **Review the batch as a set, not one ticket at a time.** A cross-cutting review is the whole
-   reason this runs per batch: seams that cross module boundaries, duplicated logic across
-   tickets, and naming that drifts between tickets only show up when the batch is read together.
-3. **Apply the reviewability criteria** in section 1 to each ticket.
-4. **Split every finding** into safe-to-fix or must-kick-back per section 2.
-5. **Auto-remediate the safe findings, then re-run the full regression suite.** Only advance a
-   ticket on green. A red run blocks -- see section 2. Kick back the rest with findings.
-6. **Write the review-status flag and its hover reason** onto every reviewed ticket per section 3.
-   The full review log goes in the ticket comments.
+1. **It fires on the Review Batch button.** Sweep every ticket in that project that is built but
+   not yet reviewed. That set, taken together, is the batch. The button press defines the batch
+   boundary; do not infer it any other way.
+2. **State the model first** (section 5).
+3. **Review the batch as a set, not ticket by ticket.** Seams that cross module boundaries, logic
+   duplicated across tickets and naming that drifts between tickets only show when the batch is
+   read together.
+4. **Apply the checks** in section 1 to each ticket.
+5. **Run the project's full regression suite**, then **acceptance-test each ticket** against its
+   own Outcome and Test steps (section 2).
+6. **Split every finding** into safe-to-fix or kick-back (section 3).
+7. **Write the review flag and its one-line reason** on every reviewed ticket, and the full review
+   log in its notes (section 4).
 
----
+## 1. What a ticket must pass
 
-## 1. What "human-reviewable" means
-
-A ticket passes the reviewability bar when all of the following hold:
+**Human-reviewable**
 
 - **Clear module boundaries.** Each piece is small enough to hold in a reviewer's head, with one
-  reason to exist. A reviewer should be able to read one module without opening five others.
+  reason to exist. A reviewer can read one module without opening five others.
 - **Domain-language naming.** Types, functions and variables are named in the language of the
-  domain (auction, reservation, enforcement, hand-off, billing) -- not in incidental or
+  domain (auction, reservation, enforcement, hand-off, billing), not in incidental or
   implementation terms.
-- **Single-responsibility functions.** A function does one thing. A function that auctions,
-  books, and bills is three functions wearing one name.
-- **Comments explain why, not what.** The code says what it does; comments are reserved for the
-  reasoning a reader cannot recover from the code -- why a seam is kept, why a rate is locked,
-  why an edge case exists.
-- **Plugs in cleanly.** The build reaches into PH Core only through the agreed seams (one
-  interface per dependency, wired in a single place). Nothing reaches across a boundary directly.
-  This is the check that most directly protects the engineering hand-off.
+- **Single-responsibility functions.** A function that auctions, books and bills is three functions
+  wearing one name.
+- **Comments explain why, not what.** Comments are for the reasoning a reader cannot recover from
+  the code: why a seam is kept, why a rate is locked, why an edge case exists.
+- **Plugs in cleanly.** The build reaches into PH Core only through the agreed seams (one interface
+  per dependency, wired in a single place). Nothing reaches across a boundary directly. This is the
+  check that most directly protects the engineering hand-off.
 
-- **Docs match the code.** The project's spec and documents (REQUIREMENTS, README, additional
-  project documents, interface contracts) describe what the ticket now does, and the ticket
-  carries a `[docs-impact]` note (`Updated: ...` or `No doc impact: <reason>`). A mismatch, or a
-  missing note, fails the ticket. Kick it back with the document and lines that disagree; the
+**Docs match the code**
+
+- The project's spec and documents (REQUIREMENTS, README, additional project documents, interface
+  contracts) describe what the ticket now does, and the ticket carries a `[docs-impact]` note
+  (`Updated: ...` or `No doc impact: <reason>`).
+- A `No doc impact` note passes only if the diff really changes no documented behaviour.
+- A mismatch or a missing note fails the ticket. Name the document and the lines that disagree. The
   review never rewrites the docs itself.
 
-UI and admin tickets are already covered by `ph-designer`; this skill earns its keep on the
-backend and integration tickets, where structure -- not appearance -- is what a human reviewer
-has to trust.
+UI and admin tickets are also covered by `ph-designer`. This skill earns its keep on backend and
+integration tickets, where structure, not appearance, is what a human reviewer has to trust.
 
----
+## 2. Tests: regression, then each ticket's own steps
 
-## 2. The remediation split -- fix-and-advance, never behaviour-change
+- **Regression.** Run the full suite the project has against the branch head. A red run blocks:
+  the change does not advance and does not join the deployment train. Raise one Backlog bug per
+  distinct failing case, each fixed as its own ticket. Red is a stop signal, not a
+  patch-and-bundle signal.
+- **Acceptance.** Exercise every numbered Test step on the ticket and check its Outcome, as far as
+  the environment allows. Record pass or fail per step in the review log. A ticket that is green on
+  regression but fails one of its own steps is kicked back with that step as the finding.
+- **A step you could not exercise is "not verified", never "passed".**
 
-The review is a fix-and-advance loop, not a pass/fail stamp. There is nothing more frustrating
-than a ticket that sits in backlog with no sign of what happened to it, so wherever it is safe,
-the review fixes the issue and advances the ticket rather than kicking it back.
+## 3. The remediation split: fix and advance, never change behaviour
+
+The review is a fix-and-advance loop, not a pass/fail stamp. Nothing is more frustrating than a
+ticket that sits with no sign of what happened to it, so wherever it is safe, the review fixes the
+issue and advances the ticket.
 
 **Auto-remediate (safe, behaviour-preserving only):**
 
@@ -84,69 +93,75 @@ the review fixes the issue and advances the ticket rather than kicking it back.
 - functions carrying more than one responsibility (split them),
 - comments that explain what instead of why.
 
-These are structural, cosmetic changes that do not alter behaviour. Fix them, re-run the full
-regression suite, and advance on green.
+Fix them, re-run the full regression suite, and advance only on green. If you could not run the
+suite green against the patched tree, list the fix as pending instead of packaging it.
 
 **Kick back (never silently fixed):**
 
 - a docs mismatch or a missing `[docs-impact]` note (reason starts `docs:`),
+- a failed Test step or unmet Outcome,
 - anything that needs a behaviour change,
 - anything that needs a judgement call,
 - a seam that crosses into PH Core directly rather than through an interface.
 
-These go back to the ticket with clear findings and a status that says why. **Never change
-behaviour to make code look reviewable.** An automated fix that makes bad code merely *look*
-clean can mask a real problem and march it toward testing -- which is worse than a ticket that
-honestly sits and waits.
+**Never change behaviour to make code look reviewable.** An automated fix that makes bad code
+merely look clean can mask a real problem and march it toward testing, which is worse than a
+ticket that honestly waits.
 
-**Block on red.** A red run on either the E2E regression or the full API suite blocks: the
-change does not advance and does not join the deployment train. One backlog bug is raised per
-distinct failing case, each fixed as its own ticket, the full regression re-run, and the change
-advances only once green on its own diff. Red is a stop signal, not a patch-and-bundle signal.
+**Kick-backs are capped.** The first and second kick-back send the ticket back to be rebuilt with
+your findings. A third failure is not re-queued: the ticket is blocked for a person to decide.
+Write findings a rebuild can act on: the file, the lines, what is wrong and what right looks like.
 
-This step runs **after build and before the ready-for-deployment gate**, on purpose: remediation
-and re-testing happen here, so the deployment gate stays a clean yes/no with nothing reopening
+This step runs after build and before the approval for deployment, on purpose: remediation and
+re-testing happen here, so the deployment gate stays a clean yes or no with nothing reopening
 behind it.
 
----
+## 4. The review flag
 
-## 3. The review-status flag
+Every reviewed ticket carries a visible review flag on the card: passed, remediating (safe fixes
+packaged and waiting to land), kicked back, or blocked. Hovering it shows **one line**: the single
+most important reason (for example "rejected: a seam crosses into PH Core directly"), so the
+status can be read without opening the comments.
 
-Every reviewed ticket carries a **visible review-status flag** on the item itself. Hovering the
-flag shows a **one-line reason** -- for a kicked-back ticket, the single most important reason
-(e.g. *rejected: a seam crosses into PH Core directly*), so the status can be read without
-opening 16,000 lines of comments. The full review log lives in the ticket comments.
+- The one-line reason is one line. The full review log goes in the ticket's notes, starting
+  `[ph-reviewer]`.
+- Never move a passed, remediating or blocked ticket yourself. It stays where it is and a person
+  decides; the flag says why.
+- Do not invent a new pipeline column, and do not write testing-round or send-back counters. The
+  automation keeps those.
 
-Pipeline status, approval and deployment fields are **not writable through the console tools**,
-so the flag is a **board-rendered convention**, not a new status column. Write it where the tools
-allow -- structured into the ticket's comment thread -- and let the board surface it.
+## 5. Model
 
----
+This gate runs on the most capable model (latest Claude Opus).
 
-## 4. Do / Don't
+- Begin the review log with `Model: <the model this session is running as>`.
+- If it is not an Opus, add `WARNING: reviewed on a lesser model` to that line and to every
+  one-line reason.
+- A ticket marked as needing the advanced model is never reviewed on a lesser one: hand its review
+  to an Opus subagent, or block it and say why.
+- Record which model reviewed each ticket.
+
+## 6. Do / Don't
 
 **Do**
 
 - Review the whole batch together; look for issues that only appear across tickets.
-- Remediate only safe, behaviour-preserving structural issues.
-- Re-run the full regression suite after any remediation, and advance only on green.
+- Check docs against code, and each ticket against its own Outcome and Test steps.
+- Remediate only safe, behaviour-preserving structural issues, and re-run the full suite after.
 - Kick back anything needing a behaviour change or a judgement call, with a clear one-line reason.
 - Check every PH Core dependency goes through its agreed seam.
-- Put a readable status flag on every ticket and the full log in its comments.
+- Report a genuine, specific gap in a governing skill with `report_skill_miss`.
 
 **Don't**
 
 - Don't change behaviour to make code look reviewable.
-- Don't silently fix a judgement call -- kick it back.
-- Don't advance a ticket on a red regression run.
-- Don't pull red-run fixes onto the same deployment train -- red stops the train.
-- Don't fold this review into the ready-for-deployment gate -- it runs as its own step before it.
-- Don't try to infer the batch boundary from anything but the Review Batch button press.
-- Don't invent a new pipeline status column -- the flag is a board convention.
-
----
+- Don't silently fix a judgement call. Kick it back.
+- Don't rewrite documents in review.
+- Don't advance a ticket on a red run, or call an unexercised step passed.
+- Don't pull red-run fixes onto the same deployment train. Red stops the train.
+- Don't fold this review into the deployment gate. It runs as its own step before it.
+- Don't infer the batch boundary from anything but the Review Batch button press.
 
 *Owned by Engineering. First used on the Display Types & DSP Integration project, September 2026.
-Counterpart to ph-designer: that skill governs what gets built; this one governs how built code
-is reviewed before hand-off to engineering.*
-
+Counterpart to ph-designer: that skill governs what gets built; this one governs how built code is
+reviewed before hand-off to engineering.*
