@@ -11,8 +11,8 @@
     {
       "key": "claude-md-1",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (1/6): site, WordPress MCP, deploys, help centre",
-      "prefix": "> Copy of `CLAUDE.md` (part 1 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (1/7): site, WordPress MCP, deploys, help centre",
+      "prefix": "> Copy of `CLAUDE.md` (part 1 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "end": "## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo"
@@ -22,8 +22,8 @@
     {
       "key": "claude-md-2",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (2/6): two projects, one repo; board basics",
-      "prefix": "> Copy of `CLAUDE.md` (part 2 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (2/7): two projects, one repo; board basics",
+      "prefix": "> Copy of `CLAUDE.md` (part 2 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "## Live Visitor Profile and Display Types & DSP Integration — two separate projects, one repo",
@@ -34,8 +34,8 @@
     {
       "key": "claude-md-3",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (3/6): linking projects, columns",
-      "prefix": "> Copy of `CLAUDE.md` (part 3 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (3/7): linking projects, columns",
+      "prefix": "> Copy of `CLAUDE.md` (part 3 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Linking a new project to GitHub — do it when the project is created",
@@ -46,8 +46,8 @@
     {
       "key": "claude-md-3b",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (4/6): the train, release groups, board access",
-      "prefix": "> Copy of `CLAUDE.md` (part 4 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (4/7): the train, release groups, board access",
+      "prefix": "> Copy of `CLAUDE.md` (part 4 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### The deployment train — one branch and one PR per project",
@@ -58,11 +58,23 @@
     {
       "key": "claude-md-4",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (5/6): MCP server, project header, Docs page, archive",
-      "prefix": "> Copy of `CLAUDE.md` (part 5 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (5/7): MCP server, Support Inbox, project header",
+      "prefix": "> Copy of `CLAUDE.md` (part 5 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### The PH Agent Console is also an MCP server",
+          "end": "### iPad menu dead after a release — the real cause was a cached page (6 Nov 2026)"
+        }
+      ]
+    },
+    {
+      "key": "claude-md-4b",
+      "path": "CLAUDE.md",
+      "name": "1 — Project rules, CLAUDE.md (6/7): iPad rules, Docs page, archive, categories",
+      "prefix": "> Copy of `CLAUDE.md` (part 6 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "### iPad menu dead after a release — the real cause was a cached page (6 Nov 2026)",
           "end": "### Mic dictation (New Item form, and every comment box)"
         }
       ]
@@ -70,8 +82,8 @@
     {
       "key": "claude-md-5",
       "path": "CLAUDE.md",
-      "name": "1 — Project rules, CLAUDE.md (6/6): iframed prototypes, ph-designer, docs in step, secrets",
-      "prefix": "> Copy of `CLAUDE.md` (part 6 of 6) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "1 — Project rules, CLAUDE.md (7/7): iframed prototypes, ph-designer, docs in step, secrets",
+      "prefix": "> Copy of `CLAUDE.md` (part 7 of 7) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Mic dictation (New Item form, and every comment box)"
