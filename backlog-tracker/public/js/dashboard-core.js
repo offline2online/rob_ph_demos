@@ -15,7 +15,7 @@
 //   Conversion      funnelDaily rows for the day (GA4) plus website leads
 //   Support         supportTickets (needsHuman, aiDraft, resolvedAt)
 
-import { remaining } from "./kanban/kanban-core.js";
+import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
 import { QUEUES } from "./support-core.js";
 
@@ -141,15 +141,17 @@ export function kanbanKpi(release, tasks, nameOf = (e) => e || "Unassigned") {
     people: list,
   };
 }
-// The release Staff Kanban is working towards: the one picked in its settings,
-// else the earliest release not yet live (the same rule as kanban-core's
-// currentReleaseId).
+// The release Staff Kanban is working towards. Which one is Staff Kanban's
+// own rule, kanban-core's currentReleaseId (the one picked in its settings,
+// else the earliest release not yet live by version, then order), so the tile
+// and Staff Kanban's report always name the same release. This only turns the
+// id into a release to show.
 export function dashboardRelease(settings, releases) {
   const list = (releases || []).slice();
   const chosen = settings && typeof settings.currentRelease === "string" ? settings.currentRelease : "";
-  if (chosen) return list.find((r) => r.id === chosen) || { id: chosen, name: chosen };
-  const open = list.filter((r) => !r.released).sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
-  return open[0] || null;
+  const id = currentReleaseId({ currentRelease: chosen }, list);
+  if (!id) return null;
+  return list.find((r) => r.id === id) || { id, name: id };
 }
 
 // ── Leads ────────────────────────────────────────────────────────────────

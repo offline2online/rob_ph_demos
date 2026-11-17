@@ -11587,7 +11587,9 @@ onAuthStateChanged(auth, (user) => {
 document.getElementById("access-denied-go")?.addEventListener("click", (e) => {
   const h = e.currentTarget.dataset.hash;
   document.getElementById("access-denied-page").hidden = true;
-  if (h) window.location.hash = h; else returnToBoard();
+  // "#board" goes through returnToBoard, which shows the board and keeps that
+  // address (a plain hash change to #board only closes an open sub-page).
+  if (h && h !== "#board") window.location.hash = h; else returnToBoard();
 });
 
 // The console-side endpoints on mcp-server.js authenticate with a Firebase
