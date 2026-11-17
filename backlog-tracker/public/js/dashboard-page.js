@@ -1,8 +1,9 @@
 // Dashboard (#dashboard): the page the console opens on. Five KPI tiles in
 // three sections (Internal, External, Support), each a headline figure for
 // yesterday in the viewer's local time, its breakdown in a tooltip on hover or
-// focus, and a click through to the full section. The rules live in
-// dashboard-core.js; this file reads the data and draws the tiles.
+// focus, and a click through to the full section. The Support tile is the
+// exception: three figures for the support@ inbox as it stands now and today.
+// The rules live in dashboard-core.js; this file reads the data and draws the tiles.
 //
 // The Agent board tile uses the tickets app.js already holds. The other four
 // read their collections once when the page opens (and again on Refresh, or
@@ -16,6 +17,7 @@ import { normaliseTicket } from "./support-core.js";
 
 const STALE_MS = 5 * 60 * 1000;
 const SUPPORT_LIMIT = 300;
+const SUPPORT_TIP_ROWS = 10;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 // key: tile id; section: permission section (permissions.js); target: where a click goes.
@@ -197,20 +199,22 @@ export function mountDashboard(ctx) {
     }
     // support
     const s = src.support;
-    if (pending(s)) return loadingBody("Need a person");
-    if (s.status === "error") return errorBody("Need a person", s.error);
+    if (pending(s)) return loadingBody("Awaiting a reply");
+    if (s.status === "error") return errorBody("Awaiting a reply", s.error);
     const k = supportKpi(s.data, n);
     const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${esc(w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
+    const shown = k.waiting.slice(0, SUPPORT_TIP_ROWS);
     return {
       metric: "", value: "",
+      // Exactly three figures, all of the support@ inbox (never Hello's or Aidan's).
       trio: [
-        { label: "Need a person", value: fmtCount(k.needsPerson.length) },
-        { label: "AI drafts to approve", value: fmtCount(k.aiDrafts.length) },
-        { label: "Resolved", value: fmtCount(k.resolved) },
+        { label: "Awaiting a reply", value: fmtCount(k.open) },
+        { label: "Oldest waiting", value: k.oldestMs == null ? "None" : esc(fmtWait(k.oldestMs)) },
+        { label: "Replied or resolved today", value: fmtCount(k.doneToday) },
       ],
-      extra: trendHtml(k.trend),
-      tip: `<p class="dash-tip-title">Needs a person (${k.needsPerson.length}) · waiting</p>${tipList(k.needsPerson.map(waitRow), "None waiting.")}`
-        + `<p class="dash-tip-title">AI drafts to approve (${k.aiDrafts.length}) · waiting</p>${tipList(k.aiDrafts.map(waitRow), "None waiting.")}`,
+      extra: `<span class="dash-sub">Now, support@ only</span>`,
+      tip: `<p class="dash-tip-title">Open and awaiting a reply (${k.open}) · waiting</p>${tipList(shown.map(waitRow), "None waiting.")}`
+        + (k.waiting.length > shown.length ? `<p class="dash-tip-empty">And ${k.waiting.length - shown.length} more in the Support Inbox.</p>` : ""),
     };
   }
   function loadingBody(metric) { return { metric, value: "…", extra: "", tip: `<p class="dash-tip-empty">Loading…</p>`, loading: true }; }

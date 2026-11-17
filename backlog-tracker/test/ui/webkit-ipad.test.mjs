@@ -15,7 +15,7 @@
 //   2. every sidebar item opens its page by a finger tap (the route changes and
 //      the page's own section is on screen);
 //   3. the Support Inbox journey: a queue, a ticket, the suggested reply, Send,
-//      the Stats tab, and Settings › Support inbox.
+//      the email icon, and Settings › Support inbox.
 // Run with:  cd backlog-tracker/test && node ui/webkit-ipad.test.mjs
 import assert from "node:assert";
 import { devices } from "playwright-core";
@@ -168,9 +168,11 @@ try {
       await until(() => o.supportCalls.some((c) => c.path === "tickets/t1/reply"), "the reply call", 5000);
       await page.waitForTimeout(500);
       assert.strictEqual(o.supportCalls.filter((c) => c.path === "tickets/t1/reply").length, 1, "Send fired more than once");
-      at = "Support Inbox: Stats";
-      await tap('[data-support-tab="stats"]');
-      await until(() => page.locator(".support-tile").count(), "the stats", 5000);
+      at = "Support Inbox: the email icon";
+      await page.evaluate(() => { location.hash = "#support"; });
+      await until(() => page.locator("#support-compose-btn").isVisible(), "the email icon", 5000);
+      await tap("#support-compose-btn");
+      await until(() => page.locator("#support-compose-to").count(), "the new email form", 5000);
       at = "Settings › Support inbox";
       await page.evaluate(() => { location.hash = "#settings/projects"; });
       await until(() => page.locator('[data-settings-page="support"]').count(), "the Settings tabs", 8000);

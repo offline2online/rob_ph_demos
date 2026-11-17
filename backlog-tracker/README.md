@@ -3179,10 +3179,109 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | File | What it does |
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
-| `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, spam, notes, assignment, Staff Kanban escalation |
-| `public/js/support-core.js` | The page's rules, pure: queues, routes, the stats |
-| `public/js/support-page.js`, `public/css/support.css` | The page (Inbox, one ticket, Stats) and Settings › Support inbox |
+| `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), store or write (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
+| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
+
+**Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
+support@, hello@ and aidan@ (at personalisationhub.com), all delivered to the one
+connected mailbox. The page has a tab for each: **Support Inbox**, **Hello**
+and **Aidan**, each with its own queues, counts, list and ticket view
+(`#support`, `#support/hello`, `#support/aidan`). `aliasesOf` in
+`functions/support-core.js` reads the address an email was written to from
+its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
+from the mailbox it landed in, and the ticket keeps the result in `inboxes`.
+An email to two aliases is in both tabs; one that names none, and every
+ticket from before the tabs, is in Support Inbox. The Dashboard's Support
+tile counts the Support Inbox only, and only a Support
+Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
+
+**Aidan, the agent mailbox (17 Nov 2026).** aidan@ acts as Rob's assistant.
+An email in the Aidan tab starts a run only when all three hold: it is in
+the Aidan tab (aidan@ in To or Cc), it was written by one of the **allowed
+senders**, and its new text tags `@Aidan` with an instruction ("@Aidan, send
+the AWS onboarding pack for client X"). The new text is read strictly
+(`splitQuoted` in `functions/aidan-core.js`), and everything from the first
+sign of quoted or forwarded history on is dropped: an attribution line ("On
+… wrote:", "Am … schrieb …:", "Le … a écrit :" and the other languages in
+`QUOTE_MARKERS`, or any line ending ":" whose paragraph has someone's
+address or a date and time), dropped back to the line where it starts
+however many lines a long display name wraps it over; a ">" quote with its
+attribution paragraph above it; Outlook's "From: / Sent:" block in any listed
+language, on one line or several; "-----Original Message-----", "Forwarded
+message", "Begin forwarded message:" and their translations. format=flowed
+text is un-wrapped first, and an HTML body is cut at its first quote
+container (`<blockquote>`, `.gmail_quote`, `#divRplyFwdMsg`,
+`#appendonsend`, `<hr>` and similar) before it is read as text. When an email
+has both a plain-text and an HTML body, the tag has to be new text in both.
+An email with no new text (a blank reply-all, an attachment-only reply, a
+forward with no comment) has no tag. **Defence in depth**, for a quote
+format none of these rules knows: an instruction is refused when its text
+(ignoring case, spacing and punctuation) is in a display name or address on
+the email, or, together with a tag, in a reply's subject or an earlier email
+on the thread that someone who is not allowed wrote (an earlier email counts
+as the allowed sender's own only if Gmail verified it, and even then not its
+quoted part). This is checked when the email is filed and again when the run
+starts. "@Aidan thanks, looks great" is a tag but not an instruction, and so
+is "@Aidan thanks, the pack was great, I'll check it again tomorrow": text
+that opens with thanks counts only when one of its clauses opens with a
+request to write or keep something ("thanks, now send the summary").
+"@Aidan's" is not a tag. A plain Cc, a tag from anyone else, a tag with no
+instruction, an email with more than one From address and machine-sent mail
+do nothing: the email just sits in the tab (a refused tag shows "Aidan: no
+action" and why). Only the author of the tag counts, never who started the
+thread. A run:
+
+- checks again that the sender is allowed (and the defence in depth above,
+  against the thread as it is then), and that Gmail verified the From
+  address: only the **topmost** `Authentication-Results` header is read (the
+  one Gmail adds above everything the email arrived with), and it is parsed
+  as RFC 8601 says (`parseAuthResults`): comments and quoted strings are
+  removed first, so a "dmarc=pass" inside one is never a result, and anything
+  unbalanced or unreadable is refused. Its authserv-id must be exactly
+  `mx.google.com`. More than one DMARC result is refused. A DMARC result must
+  be for exactly the From domain; pass passes, and any result other than pass
+  or none is final. With DMARC none (no policy) or no DMARC result, a DKIM
+  pass signed by exactly the From domain (`header.d`, or the domain of
+  `header.i`) or an SPF pass for exactly the From domain (`smtp.mailfrom`)
+  passes. Domains match exactly: a parent or child domain is a different
+  domain. A header further down is never read, so a forged From with a
+  forged header does nothing;
+- picks the skill from the skills library (named in the instruction, or
+  chosen by Claude from the list; none fitting goes to a person);
+- **write** (any request to send, write, draft, prepare … something, even
+  one that also says "keep" or "add"): writes the documentation with that
+  skill from the email, its attachments (text, PDF and images are read; up
+  to 8 files, 20 MB) and the skill's kept reference material, and replies to
+  everyone on the email from the mailbox as "Aidan", with the document
+  attached as a Markdown file: **To** the sender's verified From address
+  plus everyone else in the original To, **Cc** the original Cc. A Reply-To
+  header is not verified, so it is ignored. Our own addresses (the mailbox,
+  support@, hello@, aidan@) never receive it. No approval step. The reply is
+  on the thread in the Aidan tab;
+- **store** ("store / save / remember …", or "keep / add / file … for the X
+  skill / for later"): keeps the email and its attachments as reference
+  material for that skill (`skillReferences`, PDFs and images in Storage
+  under `skill-references/`), used by every later run of the skill, and
+  marks the ticket **Ingested**. It emails no one.
+
+Runs happen in the scheduled sync, not in "Sync now": one per sync, before
+triage, and only in the sync's first two minutes, with no model retries
+(skill choice 1 minute, document 4 minutes), so a whole run fits inside the
+function's 540 seconds; a sync that ran Aidan leaves triage to the next
+sync. A run still "working" 15 minutes after it started was cut off: the
+next sync moves it to **Needs a person** with that reason. Queueing is
+idempotent: each email is decided once (`aidanSeen`, in a transaction), a
+job is claimed by one instance only (a transaction), and while a run is
+queued or working on a thread a new request there is noted on the ticket,
+not queued. **The allowed senders are configuration, never the repository**:
+an admin sets them in Settings › Support inbox › Aidan; they are stored in
+`supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
+only ever shown masked. With none set, Aidan acts on nothing. Requirements:
+SUP-AID-1 to 13.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
@@ -3208,9 +3307,7 @@ Every draft opens "Hi <first name>," and "Thanks for your email." (or
 "Hi there," when the name isn't clear, e.g. a role mailbox such as Legal).
 This is added in code (`composeReply`), not left to the model. The
 confidence is shown beside every suggested reply as a word and a number
-(High from 80%, Medium from 60%, Low below). **Try an email** (an editor's
-tab in the Support Inbox) runs any subject and text through all of this
-without filing, saving or sending anything.
+(High from 80%, Medium from 60%, Low below).
 
 `scripts/support-eval.js` (Actions → "Support Inbox matching check",
 `support-eval.yml`) runs 33 made-up emails with known right answers
@@ -3244,11 +3341,20 @@ board's own `kanban_create_task`, assigned to the person chosen in Settings
 Resolving the support ticket comments on the Kanban ticket. Any ticket can
 also be raised by hand ("Raise on Staff Kanban").
 
-**Stats** (`#support/stats`): tickets received, resolved, answered by AI
-alone, needed a person, median first response, median time to resolution,
-high-value, reopened, tickets per day by how they ended, and what customers
-asked about. Spam and machine-sent mail are counted separately and left out
-of every rate.
+**Writing a new email (17 Nov 2026).** The small email icon beside Sync now
+(editors, mailbox connected) opens a form at `#support/compose`: To (one
+address), Subject and Message. Send posts to `/supportMail/v1/compose`, which
+sends it from the connected mailbox with the signature from Settings and
+files it as a Support Inbox ticket under Waiting on customer, with who sent
+it. The answer arrives on that ticket and reopens it. An empty or invalid To,
+subject or message is refused with a message, in the page and again by the
+server (`composeProblem` in both `support-core.js` files); a member can send
+30 new emails an hour.
+
+**No Stats tab, no Try an email (17 Nov 2026).** Both tabs were removed, with
+`supportStats`, the `/v1/preview` route and their styles. `#support/stats`
+and `#support/try` open the inbox. The support figures are the three on the
+Dashboard's Support tile (below).
 
 ### Connecting the mailbox (once, by an admin)
 
@@ -3332,8 +3438,10 @@ The console opens on **Dashboard** (`#dashboard`): five KPI tiles for
 yesterday (the viewer's local day) in three sections. Internal: Agent board
 (tickets deployed) and Staff Kanban (remaining effort on the release selected
 for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
-Leads and Conversion funnel (website visitors). Support: needs a person, AI
-drafts, resolved. Each tile's breakdown is a hover/focus tooltip and a click
+Leads and Conversion funnel (website visitors). Support: exactly three
+figures for the support@ inbox as it stands now (never hello@ or aidan@
+mail): open and awaiting a reply, the age of the oldest unanswered email, and
+tickets replied to or resolved today. Each tile's breakdown is a hover/focus tooltip and a click
 opens the section. Above the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full

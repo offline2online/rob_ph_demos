@@ -4,7 +4,8 @@
 // and the reads.
 //
 // Every tile reports "yesterday" as the viewer's local calendar day, compared
-// with the local day before it. Nothing here formats or compares a UTC day.
+// with the local day before it, except Support, which reports the inbox as it
+// stands now and today. Nothing here formats or compares a UTC day.
 //
 // Tiles and where their numbers come from:
 //   Agent board     backlogItems the console already holds (mergedAt, lastFire,
@@ -13,11 +14,12 @@
 //                   status, assignee); kanbanSettings/main picks the release
 //   Leads           leads (createdAt, leadType, test, archivedAt)
 //   Conversion      funnelDaily rows for the day (GA4) plus website leads
-//   Support         supportTickets (needsHuman, aiDraft, resolvedAt)
+//   Support         supportTickets written to support@ (status, lastInboundAt,
+//                   lastReplyAt, resolvedAt): three figures, as things stand now
 
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
-import { QUEUES } from "./support-core.js";
+import { inInbox, DEFAULT_INBOX } from "./support-core.js";
 
 export const HOURS_PER_DAY = 8;
 
@@ -202,16 +204,21 @@ export function funnelKpi(rows, leads, now = Date.now()) {
 }
 
 // ── Support ──────────────────────────────────────────────────────────────
-const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
 // tickets: normalised supportTickets (support-core's normaliseTicket).
+// Exactly three figures, all of the Support Inbox (mail written to support@;
+// Hello's and Aidan's tickets are never counted), all as things stand now:
+//   open        tickets that are open, so the customer's last email has no reply
+//   oldestMs    how long the oldest of those has waited (null when none wait)
+//   doneToday   tickets replied to or resolved since the start of today (local)
+// `waiting` lists the open tickets, longest wait first, for the tooltip.
 export function supportKpi(tickets, now = Date.now()) {
-  const y = localDayRange(1, now), p = localDayRange(2, now);
-  const list = tickets || [];
-  const waiting = (t) => ({ id: t.id, customer: t.customerName || t.customerEmail || "Unknown sender", subject: t.subject || "", waitedMs: Math.max(0, now - (t.lastMessageAt || t.createdAt || now)) });
-  const longest = (a, b) => b.waitedMs - a.waitedMs;
-  const needsPerson = list.filter(queueTest("needs-person")).map(waiting).sort(longest);
-  const aiDrafts = list.filter(queueTest("ai-drafts")).map(waiting).sort(longest);
-  const resolved = list.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, y)).length;
-  const prevResolved = list.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, p)).length;
-  return { needsPerson, aiDrafts, resolved, prevResolved, trend: trend(resolved, prevResolved) };
+  const today = localDayRange(0, now);
+  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX));
+  const waiting = list.filter((t) => t.status === "open")
+    .map((t) => ({ id: t.id, customer: t.customerName || t.customerEmail || "Unknown sender", subject: t.subject || "", waitedMs: Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now)) }))
+    .sort((a, b) => b.waitedMs - a.waitedMs);
+  // A ticket filed before lastReplyAt was recorded has only its first reply's time.
+  const repliedToday = (t) => inRange(t.lastReplyAt || t.firstResponseAt, today);
+  const doneToday = list.filter((t) => t.status !== "spam" && ((t.status === "resolved" && inRange(t.resolvedAt, today)) || repliedToday(t))).length;
+  return { open: waiting.length, oldestMs: waiting.length ? waiting[0].waitedMs : null, doneToday, waiting };
 }

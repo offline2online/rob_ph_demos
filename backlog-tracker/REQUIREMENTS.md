@@ -6273,7 +6273,10 @@ overlay. Presentation only: every field, action and datum is still there.
 Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
 see every incoming email as a ticket, answer what can be answered from the
 Help Centre automatically, involve a person when it can't, flag high-value
-retailers on the Staff Kanban, and track it all on one stats page.
+retailers on the Staff Kanban, and track it all on one stats page. (17 Nov
+2026, Rob: the stats page and Try an email were removed; three figures for
+support@ are on the Dashboard, and an email icon writes a new email. See
+"Stats", "Writing a new email" and SUP-AI-11.)
 
 ### Where it is
 
@@ -6284,6 +6287,198 @@ retailers on the Staff Kanban, and track it all on one stats page.
   no write controls.
 - **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
   Every member can read it; only an admin can change it.
+
+### Inboxes (17 Nov 2026)
+
+Mail reaches the one connected mailbox through three addresses: support@,
+hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
+
+- **SUP-INB-1** The page has three inbox tabs, named exactly **Support
+  Inbox**, **Hello** and **Aidan**, in that order. Support Inbox is the one
+  the page opens on (`#support`); the others are `#support/hello` and
+  `#support/aidan`.
+- **SUP-INB-2** An email is filed by the address it was written to, read
+  from its own To and Cc headers, and from Delivered-To / X-Original-To
+  where the mail server recorded one (a Bcc). The connected mailbox's own
+  address is never used: every message is delivered to it. support@ files
+  under Support Inbox, hello@ under Hello, aidan@ (To or Cc) under Aidan.
+  The alias must be on personalisationhub.com or the connected mailbox's
+  domain; a `+tag` after the name is ignored.
+- **SUP-INB-3** An email written to more than one alias is in each of those
+  tabs (support@ with aidan@ in Cc is in Support Inbox and Aidan). It is one
+  ticket: a reply, note or status change made in one tab shows in the other.
+  The ticket's header names the inboxes it is in.
+- **SUP-INB-4** An email that names none of the three is in Support Inbox.
+  So is every ticket filed before the tabs existed.
+- **SUP-INB-5** A ticket keeps its inboxes for the life of the thread. A
+  later customer email that names another alias adds that inbox; one that
+  names none changes nothing.
+- **SUP-INB-6** Each tab is a separate inbox: its own queues and counts, its
+  own list and search, and its own ticket view (`#support/<inbox>/ticket/<id>`,
+  Back returns to that inbox). The header line counts the inbox on show.
+  `#support/ticket/<id>` still opens any ticket, under its own inbox's tab.
+- **SUP-INB-7** The Dashboard's Support tile counts the Support Inbox
+  only. Mail written only to hello@ or aidan@ is in none of its figures.
+- **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
+  person. With sending switched on, a draft for mail written only to hello@
+  or aidan@ still waits for a person to approve it.
+
+### Aidan, the agent mailbox (17 Nov 2026)
+
+Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
+assistant: tagged requests from Rob run a skill and are answered with the
+documentation, by reply-all.
+
+- **SUP-AID-1** An email starts a run only when all three hold: it is in
+  the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
+  allowed senders, and its new text tags `@Aidan` with an instruction. The
+  tag is a word (`@Aidan`, any case), not an address, not a longer name and
+  not a possessive (`@Aidan's`). It is read only from the email's new text
+  (`splitQuoted`), which ends at the first sign of quoted or forwarded
+  history; the markers are data (`QUOTE_MARKERS`), one row per language or
+  mail app:
+  - an attribution line: one ending "wrote:" or a listed translation
+    ("schrieb", "a écrit", "escribió" …), or any line ending ":" whose
+    paragraph carries an address other than our own aliases, or a year and
+    a time. The
+    cut goes back to the nearest earlier line that starts like an
+    attribution ("On", "Am", "Le", "El" …), however far, and at least to
+    the start of that line's paragraph, so an attribution wrapped over any
+    number of lines is dropped whole;
+  - a ">" quote line (also "&gt;" or a full-width "＞"), dropped wherever it
+    is; when the paragraph just above it ends ":" or carries an address other
+    than our own aliases, that paragraph is an attribution and history starts there;
+  - Outlook's header block: a "From:" line (or a listed translation, "Von:",
+    "De :" …) with "Sent:", "Date:", "To:", "Subject:" or "Cc:" (or a
+    translation) on the same line or within the next four; or any
+    "Label: Name <address>" line with another "Label: …" line within four;
+  - a separator ("-----Original Message-----", "Forwarded message" and their
+    translations), a forward opener ("Begin forwarded message:" and
+    translations) or a line of ten or more underscores.
+  Lines are compared without zero-width characters, with any Unicode space
+  as a space and any line ending (CRLF, CR, LF, Unicode separators) as one.
+  format=flowed text is un-wrapped first. An HTML body is cut at its first
+  quote container (`<blockquote>`, `<hr>`, `.gmail_quote`, `.gmail_attr`,
+  `#divRplyFwdMsg`, `#appendonsend`, `type=cite`, Apple, Yahoo, Thunderbird,
+  ProtonMail and Outlook mobile containers) before it is read as text, and
+  then the same line rules apply. When an email has both a plain-text and an
+  HTML body, the tag must be new text with an instruction in both, or
+  nothing runs. An email with no new text (a blank reply-all, an
+  attachment-only reply, a forward with no comment) has no tag: it never
+  falls back to the whole text. A tag below an attribution, a header
+  block or a separator is history too; one below a bare ">" quote with no
+  attribution above it is new text (an inline answer). A tag is an instruction only when
+  what follows it asks for something. Text that opens with an
+  acknowledgement ("thanks", "great", "hi" …) is an instruction only when one
+  of its clauses opens with a request to write or keep something ("thanks,
+  now send the summary"); "@Aidan thanks, the AWS onboarding pack was great,
+  I'll check it again tomorrow" is not one. Other text is an instruction when
+  it has an action verb (send, write, draft, store, keep …) or is three or
+  more words. A tag that is not an instruction is recorded as "Aidan: no
+  action" with that reason and does not run. Where a quote format is not
+  recognised at all, SUP-AID-12 is the safeguard.
+- **SUP-AID-2** Only the author of the tagged email counts. A tag written by
+  someone who is not allowed does nothing, even on a thread an allowed
+  sender started; an allowed sender may tag Aidan on a thread someone else
+  started.
+- **SUP-AID-3** A plain Cc with no tag, a tag from anyone else, a tag with
+  no instruction, an email with more than one From address (or more than one
+  From header), machine-sent mail and mail the mailbox sent never start a run and never get a reply.
+  The email stays in the Aidan tab. A refused tag is shown on the ticket
+  ("Aidan: no action") with the reason.
+- **SUP-AID-4** Before a run, the sender is checked again against the
+  current allowed list (and SUP-AID-1 and SUP-AID-12 are decided again from
+  Gmail's own copy of the email and the thread as it is then), and Gmail must
+  have verified the From address. Only the topmost `Authentication-Results`
+  header is read (Gmail adds its own above every header the email arrived
+  with; the Gmail API's `payload.headers` keeps that order and the run passes
+  them through untouched). It is parsed as RFC 8601 says
+  (`parseAuthResults`): comments, nested and with escapes, are removed and
+  quoted strings, with escapes, are one value before the header is split on
+  ";", so a "dmarc=pass" or ";" inside either is never a result; a method
+  result counts only at the start of a resinfo element; a property value
+  (`smtp.mailfrom`, `header.from`, `header.d`, `header.i`) is one whole
+  value; an unbalanced comment or quote, a malformed element or a repeated
+  property refuses the email. The verdict (`authVerdict`): the authserv-id
+  must be exactly `mx.google.com` (no other host, no `*.google.com`); more
+  than one DMARC result is refused; a DMARC result whose `header.from` is
+  not exactly the From domain is refused; DMARC pass passes; any DMARC
+  result other than pass or none (fail, quarantine, reject, temperror,
+  permerror …) is final. With DMARC none (the domain publishes no policy) or
+  no DMARC result, a DKIM pass whose signing domain (`header.d`, else the
+  domain of `header.i`) is exactly the From domain, or an SPF pass whose
+  `smtp.mailfrom` domain is exactly the From domain, passes. Domains match
+  exactly: a parent or child domain never does. Headers further down are
+  never read. Otherwise nothing is done.
+- **SUP-AID-5** The skill is the one the instruction names (by slug or
+  name), or else the one Claude picks from the skills library. With no
+  matching skill, nothing is sent and the ticket goes to Needs a person.
+- **SUP-AID-6** A request to write produces the documentation with that
+  skill from the email, its attachments (text, PDF and images; at most 8
+  files and 20 MB) and the skill's kept reference material. Any instruction
+  with a verb to send, write, draft, create, prepare, produce, generate,
+  build, make, reply, email, share, forward, summarise, revise or redo is a
+  write, even when it also says "keep" or "add" ("send the pack, keep it
+  short for the skill reviewers"). It is sent at once, with no approval
+  step, as a reply on the same thread to everyone on the email: the
+  sender's verified From address and the rest of To in To, the original Cc
+  in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
+  is not verified, so it is ignored: it neither replaces the sender nor adds
+  anyone. It comes from the connected mailbox as
+  "Aidan", signed as Rob's assistant, with the document attached as a
+  Markdown file, and is marked `Auto-Submitted: auto-generated`.
+- **SUP-AID-7** The sent reply is filed on the ticket and shown in the Aidan
+  tab with who it went to and the file attached. The ticket is resolved by
+  Aidan.
+- **SUP-AID-8** A request to store (with no write verb: starting "store",
+  "save", "ingest", "remember" or "contribute"; or "keep", "add" or "file"
+  with a skill, references, a library or "for later"; or "store / keep /
+  save this … for the X skill") keeps the email and its attachments as reference
+  material for that skill (`skillReferences`); PDFs and images are kept in
+  Storage. Later runs of the skill read it. The ticket is marked
+  **Ingested** and no email is sent.
+- **SUP-AID-9** The allowed senders are runtime configuration only: they are
+  never in the repository, its tests, fixtures, docs or commit messages. An
+  admin sets them in Settings › Support inbox › Aidan; they are kept in
+  `supportSecrets/aidan`, which no client can read or write, and are only
+  ever shown masked to an admin (members see how many there are). With none
+  set, or Aidan switched off, nothing runs.
+- **SUP-AID-10** Runs happen in the scheduled sync, one per sync; "Sync now"
+  files and queues but does not run. A thread runs Aidan five times at most.
+  A whole run fits inside the `supportMail` function's 540 seconds: it runs
+  before triage and only in the sync's first two minutes (otherwise it waits
+  for the next sync), the skill choice has one minute and the document four,
+  neither model call is retried, and a sync that ran Aidan leaves triage to
+  the next sync. A run still `working` 15 minutes after it started was cut
+  off: the next sync (scheduled or "Sync now") moves it to Needs a person
+  with that reason, and it is never started again.
+- **SUP-AID-11** Queueing is idempotent. Each email is decided once per
+  ticket, in a transaction (`aidanSeen` keeps the last 50 decided ids), so
+  the schedule and "Sync now" on another instance filing the same email
+  can't queue it twice. A job is claimed by moving it from queued to
+  working in a transaction, so only one instance runs it and sends. While a
+  run is queued or working on a thread, a new request there is not queued
+  (a note on the ticket says to send it again once Aidan has answered), and
+  a refused tag doesn't overwrite the run's status.
+- **SUP-AID-12** Defence in depth, for quoted text in a format SUP-AID-1
+  doesn't recognise: an instruction is refused when its text, compared
+  ignoring case, spacing, punctuation, zero-width characters and Unicode
+  lookalike forms (NFKC), appears in a display name or address in the
+  email's From, To, Cc, Reply-To or Sender headers (RFC 2047 encoded names
+  decoded), or appears in a text that also tags Aidan: the subject of a
+  reply or forward, or an earlier inbound email on the thread that someone
+  who is not allowed wrote. An earlier email is the allowed sender's own
+  only when it came from an allowed address and Gmail verified it when it
+  was filed (`senderVerified` on the message, SUP-AID-4); even then its
+  quoted part is someone else's. Mail the mailbox sent is not compared.
+  This is decided when the email is filed and again when the run starts.
+  The refusal says why, so an owner asking for something a client asked
+  for in the same words can rephrase it.
+- **SUP-AID-13** The tag, the From address and the defence in depth are
+  read from Gmail's own copy of the email (`mailFacts`: every body, every
+  From header, the address headers), not from the stored text, both when
+  the email is filed and when the run starts. A From header that holds more
+  than one address, or an email with more than one From header, never runs.
 
 ### Connecting
 
@@ -6303,7 +6498,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
 
 - **SUP-TKT-1** One ticket per Gmail thread, keyed `SUP-n`. Reading the same
   mail twice never creates a second ticket or message.
-- **SUP-TKT-2** Mail the mailbox itself started is not a ticket.
+- **SUP-TKT-2** Mail the mailbox itself started is not a ticket, unless it
+  was written from the console's new email form (SUP-NEW-3).
 - **SUP-TKT-3** Statuses: Open, Waiting on customer, Resolved, Spam. A new
   customer email on a Waiting or Resolved ticket reopens it. It never
   reopens Spam.
@@ -6332,7 +6528,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
   (50% to 99%, default 80%).
 - **SUP-AI-3** Never sent automatically: machine-sent mail, a high-value
   sender, a thread already answered automatically once, a ticket a person
-  has replied to or noted, and anything the model marks as spam.
+  has replied to or noted, anything the model marks as spam, and mail not
+  written to the support address (SUP-INB-8).
 - **SUP-AI-4** An automatic reply is marked `Auto-Submitted: auto-replied`,
   resolves the ticket as answered by AI, and is shown as such.
 - **SUP-AI-5** If the model fails or is not configured, the ticket still
@@ -6357,10 +6554,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
   articles combined and the higher-scoring reply is kept. The confidence is
   shown beside every suggested reply as a word and a number (High ≥ 80%,
   Medium ≥ 60%, Low), with the change when answers were combined.
-- **SUP-AI-11** An editor can try any email (Support Inbox → Try an email)
-  and see whether it counts as about Personalisation Hub, the articles
-  matched, the confidence, what would happen and the draft, with nothing
-  filed, saved or sent (40 tries an hour each).
+- **SUP-AI-11** Removed 17 Nov 2026: there is no "Try an email" tab and no
+  `/v1/preview` route. `#support/try` opens the inbox.
 - **SUP-AI-12** `support-eval.yml` checks the matching against the real
   model with made-up emails whose right answers are known. Its log never
   shows a real ticket's subject, sender or text.
@@ -6380,15 +6575,30 @@ retailers on the Staff Kanban, and track it all on one stats page.
 
 ### Stats
 
-- **SUP-STAT-1** One Stats tab for the last 7, 30 or 90 days: tickets
-  received, resolved, answered by AI alone (share of resolved), needed a
-  person, median first response, median time to resolution, high-value,
-  reopened, tickets per day by how they ended, and by category.
-- **SUP-STAT-2** Spam and machine-sent mail are counted on their own and
-  excluded from every other figure.
-- **SUP-STAT-3** "Answered by AI alone" means resolved by the automatic
-  reply with no person replying, noting or closing it.
-- **SUP-STAT-4** The chart has a legend and a table of the same figures.
+- **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
+  `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
+- **SUP-STAT-5** The support figures are the Dashboard's Support tile:
+  exactly three, all of the support@ inbox (SUP-INB-7). See "Dashboard —
+  the console's landing page".
+
+### Writing a new email (17 Nov 2026)
+
+- **SUP-NEW-1** A small email icon in the Support Inbox header, beside Sync
+  now, opens a form with To, Subject and Message (`#support/compose`). It is
+  shown to editors while a mailbox is connected.
+- **SUP-NEW-2** Send sends the email from the connected mailbox, with the
+  sender name and signature from Settings, and shows a confirmation naming
+  the recipient. To takes one email address. An empty or invalid To, an
+  empty subject or an empty message is refused with a message and nothing is
+  sent; the server checks the same. A message is at most 8,000 characters and
+  a member can send 30 new emails an hour.
+- **SUP-NEW-3** The sent email is filed as a Support Inbox ticket under
+  Waiting on customer, with who sent it on its timeline. The answer arrives
+  on the same ticket and reopens it. A recipient who is a high-value sender
+  (SUP-HV-1) is marked high value, so their answer is never replied to
+  automatically.
+- **SUP-NEW-4** A new email is not a reply: it is not counted in the
+  Dashboard's "Replied or resolved today".
 
 ### iPad
 
@@ -6407,20 +6617,66 @@ retailers on the Staff Kanban, and track it all on one stats page.
 `highValue`, `account {kind, id, name, reason}`, `category`, `summary`,
 `triageReason`, `spamLikely`, `aiDraft {text, confidence, answerable,
 articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
-`reopenCount`, `resolvedBy`, `createdAt`, `lastMessageAt`, `lastInboundAt`,
-`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
+`reopenCount`, `resolvedBy`, `inboxes` (array of `support` | `hello` |
+`aidan`; unset on tickets from before 17 Nov 2026, read as `["support"]`),
+`createdAt`, `lastMessageAt`, `lastInboundAt` (the customer's latest email),
+`lastReplyAt` (the latest reply sent to them, by a person, the AI or from
+Gmail itself; unset on tickets last replied to before 17 Nov 2026),
+`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`, `startedBy` (who
+wrote it, on a ticket that began as a new email from the console),
+and for Aidan `aidanPending`, `aidanRuns`, `aidanSeen` (the gmail ids of
+the last 50 tagged emails decided on the thread) and `aidan {status (queued |
+working | replied | ingested | ignored | needs-person | error), kind
+(generate | store), gmailId, instruction, reason, skillId, skillName, client,
+document {name, title, size}, recipients, referenceId, files[], at,
+startedAt, finishedAt}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
-(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
+(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`,
+`senderVerified` (inbound mail filed since 17 Nov 2026: whether Gmail's
+Authentication-Results verified the From address, SUP-AID-4), and for sent
 mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
-| `manual`). `supportSettings/main`: connection status and settings
+| `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
-server-only.
+server-only. Aidan's sent reply has `source: "aidan"`, `cc`, `attachments`
+and `skillName`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
+`enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
+`skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
+`text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
+`source`, `createdAt` (members read; only the function writes).
 
 ### Known gaps
 
-Email is shown as text; attachments are named, not stored. The list and
-stats cover the 500 most recently active tickets. There are no MCP tools
+Email is shown as text; attachments are named, not stored. The list covers
+the 500 most recently active tickets, and the Dashboard's Support tile the
+300 most recently active. A new email goes to one address, as text, with no
+Cc and no attachment. There are no MCP tools
 for the inbox yet. The five-minute sync depends on GitHub's schedule.
+Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
+that was written to hello@ or aidan@ before then stays in Support Inbox.
+Every reply goes out from the connected mailbox's address, whichever alias
+the customer wrote to. Aidan's reply waits for the next scheduled sync (five
+minutes, or longer when GitHub's schedule is busy). Aidan's document is a
+Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+spreadsheets) are named to the model, not read. Kept reference material has
+no page of its own yet. The sender check trusts Gmail's own
+`Authentication-Results` (authserv-id `mx.google.com`); if mail ever
+reaches the mailbox through another gateway that adds its own header on
+top, every tagged request is refused until the check is changed. A second
+tagged request on a thread while Aidan is working on the first is not
+queued; it has to be sent again. A run cut off after its email was sent is
+moved to a person, whose reason says to check the thread first. Aidan's
+quote reading (SUP-AID-1) knows the formats in `QUOTE_MARKERS`: a reply
+written in a mail app and language it doesn't list, plain text only, with
+no address or date in the attribution, could still leave a stranger's words
+in the new text; SUP-AID-12 then refuses them only when the stranger is on
+the email or their tagged email is on the thread, so a stranger who wrote
+only to the owner and is not copied on the owner's reply is not covered by
+it (they receive nothing either way). A tag written below an attribution line
+(a bottom-posted reply) is not read: write above the quote. An instruction in
+the same words as an earlier tagged email from someone who is not allowed is
+refused, even when the owner meant it. Earlier emails filed before 17 Nov
+2026 have no `senderVerified`, so their whole text is treated as someone
+else's.
 
 ## Dashboard — the console's landing page (17 Nov 2026)
 
@@ -6435,7 +6691,8 @@ attention" above): it is shown here and on no other page.
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local
-day before it. Times are never shown or compared in UTC. Each tile's breakdown
+day before it (the Support tile is the exception: it shows the inbox as it
+stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
 is a tooltip shown on hover or keyboard focus, with no explanatory copy under
 the tiles. Clicking a tile opens its section.
 
@@ -6445,10 +6702,19 @@ the tiles. Clicking a tile opens its section.
 | Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
 | External | Leads | New leads yesterday (test and archived leads left out), with the change | Companies and network operators, by name | `#promote/leads` |
 | External | Conversion funnel | Unique website visitors yesterday (personalisationhub.com, GA4 via `funnelDaily`), with the change | Funnel steps with count and drop-off: unique visitors → industry page → walkthrough or calculator → lead; industries ranked by visitors, peak first | `#promote/conversion-funnel` |
-| Support | Support | Three figures: tickets that need a person, AI drafts to approve, tickets resolved yesterday (with the change) | The needs-a-person tickets and pending AI drafts, each with the customer and how long it has waited, longest first | `#support` |
+| Support | Support | Exactly three figures, all of the support@ inbox (the Support Inbox tab) and never of mail written only to hello@ or aidan@: **Awaiting a reply** (open tickets, so the customer's last email has no reply); **Oldest waiting** (the age of the oldest of those, from when the customer wrote, "None" when nothing waits); **Replied or resolved today** (tickets replied to or resolved since the start of the viewer's local day; spam left out) | The tickets awaiting a reply, each with the customer and how long it has waited, longest first (the first 10) | `#support` |
 
 Rules:
 
+- **Support figures** (17 Nov 2026): "open" is the ticket's status, so
+  Needs a person, AI drafts to approve and Automated & not about PH all
+  count as awaiting a reply, and the first figure equals those three queue
+  counts on the Support Inbox tab added together. The wait runs from
+  `lastInboundAt` (else the last message). "Replied" reads `lastReplyAt`
+  (else `firstResponseAt` on a ticket last replied to before that was
+  recorded); "resolved" reads `resolvedAt` on a ticket that is still
+  resolved. A ticket is counted once. A new email written from the console
+  is not a reply.
 - **Remaining effort** is a task's estimate minus time logged, for outstanding
   tasks of that release; epics and done tasks are left out (the same as the
   release report).

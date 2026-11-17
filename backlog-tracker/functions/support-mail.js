@@ -11,6 +11,10 @@
 //   • Sync: every five minutes (and on "Sync now") new mail is read and filed
 //     as supportTickets/{threadId} + messages. Members read tickets straight
 //     from Firestore; every write goes through this function.
+//   • Inboxes: the mailbox is reached through support@, hello@ and aidan@.
+//     Each ticket records which of them its emails were written to
+//     (`inboxes`, from To / Cc / Delivered-To / X-Original-To), and the page
+//     shows one tab per address. Mail naming none of them is Support's.
 //   • Triage: each new customer message is drafted an answer from the
 //     published help-centre articles (Claude). support-core.js decides
 //     whether it is sent by itself, waits for approval, or needs a person.
@@ -19,6 +23,10 @@
 //   • High-value senders (Prospects (TAM), Leads, or a domain in Settings) are
 //     never answered automatically: a flagged Staff Kanban ticket is raised
 //     for the person named in Settings.
+//   • Aidan (aidan@, functions/aidan.js): an email in the Aidan tab from an
+//     allowed sender that tags "@Aidan" with an instruction is answered by
+//     Aidan instead of a Help Centre draft: documentation written with a skill
+//     and sent to everyone on the email, or the email kept for a skill.
 //
 // Routes (Hosting rewrite /supportMail/** → this function):
 //   GET  /v1/status                    member  connection + settings (no secrets)
@@ -27,8 +35,9 @@
 //   GET  /v1/oauth/callback            Google redirects here (state-checked)
 //   POST /v1/disconnect                admin
 //   POST /v1/settings                  admin
+//   POST /v1/aidan                     admin   Aidan's allowed senders and switch (never read back unmasked)
 //   POST /v1/sync                      editor  read new mail now
-//   POST /v1/preview                   editor  what would happen to an email (nothing saved or sent)
+//   POST /v1/compose                   editor  {to, subject, text}: a new email from the mailbox
 //   POST /v1/cron                      board key  the same, for the five-minute workflow
 //   POST /v1/tickets/{id}/reply        editor  {text, resolve, draft}
 //   POST /v1/tickets/{id}/draft        editor  write a fresh AI draft
@@ -43,6 +52,7 @@
 
 const crypto = require("crypto");
 const core = require("./support-core");
+const { createAidan } = require("./aidan");
 const faqFeed = require("./faq-feed");
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
 
@@ -66,7 +76,9 @@ const TRIAGE_PER_PAGE_SYNC = 2;
 const CACHE_MS = 5 * 60 * 1000;
 const DRAFT_MODEL = "claude-opus-5-5";
 const DRAFT_TIMEOUT_MS = 40000;
-const PREVIEWS_PER_HOUR = 40;
+const COMPOSED_PER_HOUR = 30;      // new emails one member may send from the mailbox
+// Aidan runs per scheduled sync: one writes a whole document (minutes).
+const AIDAN_PER_RUN = 1;
 
 // An article as triage uses it. `hidden` (hiddenFromWebsite on the article or
 // its category/folder, see functions/faq-feed.js) keeps it in the catalogue
@@ -81,10 +93,10 @@ function articleView(a, categoryName = "", hidden = false) {
 }
 
 // One structured call to the model. Returns the parsed JSON, or throws.
-async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000 }) {
+async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000, timeout = DRAFT_TIMEOUT_MS, maxRetries = 1 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = require("./lead-enrich").workspaceHeaders(workspaceId);
-  const client = new Client({ apiKey, timeout: DRAFT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
+  const client = new Client({ apiKey, timeout, maxRetries, ...(headers ? { defaultHeaders: headers } : {}) });
   const res = await client.beta.messages.create({
     model: DRAFT_MODEL,
     max_tokens: maxTokens,
@@ -161,9 +173,10 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
+  aidan: aidanImpl = null, bucket = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
-  const previewCalls = new Map(); // member -> recent "Try an email" times
+  const composeCalls = new Map(); // member -> when they last sent new emails
   const redirectUri = `${baseUrl}/supportMail/v1/oauth/callback`;
   const tickets = () => db.collection(TICKETS);
   const settingsRef = () => db.collection(SETTINGS).doc("main");
@@ -310,6 +323,9 @@ function createSupportMail({
     const messageDoc = {
       direction: m.direction, from: m.from, fromName: m.fromName, to: m.to, cc: m.cc, subject: m.subject, text: m.text, snippet: m.snippet,
       messageId: m.messageId, references: m.references, attachments: m.attachments, at, gmailId: m.gmailId, automated: m.automated || "",
+      // Whether Gmail verified the From address (functions/aidan-core.js →
+      // senderAuthenticated): Aidan trusts an earlier email's own text only then.
+      ...(m.aidanMail ? { senderVerified: Boolean(m.aidanMail.verified) } : {}),
     };
     if (!cur) {
       if (m.direction === "out") return "skipped"; // mail the mailbox started is not a ticket
@@ -320,6 +336,8 @@ function createSupportMail({
       await ref.set({
         key: core.ticketKey(number), number, threadId: m.threadId, subject: m.subject,
         customerEmail, fromEmail: m.from, customerName: m.fromName || "", status: "open", needsHuman: false, triagePending: true,
+        // Which tabs it is filed under (Support Inbox, Hello, Aidan), from the address it was written to.
+        inboxes: core.mergeInboxes([], m.aliases),
         automated: m.automated || "", highValue: Boolean(account), account: account || null,
         category: m.automated ? "automated" : "", summary: "", triageReason: "",
         createdAt: at, updatedAt: now(), lastMessageAt: at, lastInboundAt: at, snippet: m.snippet,
@@ -333,6 +351,8 @@ function createSupportMail({
     if (ms(at) >= ms(cur.lastMessageAt)) { patch.lastMessageAt = at; patch.snippet = m.snippet; }
     if (m.direction === "in") {
       patch.inboundCount = (cur.inboundCount || 0) + 1;
+      // A later email on the thread that names another alias (say aidan@ in Cc) files it there too.
+      patch.inboxes = core.mergeInboxes(Array.isArray(cur.inboxes) ? cur.inboxes : [core.DEFAULT_INBOX], m.aliases);
       patch.lastInboundAt = at;
       if (cur.status !== "spam") {
         // A customer wrote again: back to the open queue, whatever it was.
@@ -348,6 +368,7 @@ function createSupportMail({
       patch.triagePending = false;
       patch.aiDraft = null;
       if (!cur.firstResponseAt) patch.firstResponseAt = at;
+      if (ms(at) >= ms(cur.lastReplyAt)) patch.lastReplyAt = at;
       if (cur.status === "open") patch.status = "pending";
       messageDoc.sentBy = "gmail";
     }
@@ -433,7 +454,7 @@ function createSupportMail({
       }
     }
     const decision = core.decideAction({ triage, settings, highValue: ticket.highValue, automated: ticket.automated, autoRepliesSent: ticket.autoRepliesSent || 0, humanInvolved: ticket.humanInvolved,
-      replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail) });
+      replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail), inboxes: ticket.inboxes });
     const cited = triage ? triage.articleIds.map((id) => all.find((a) => a.id === id)).filter(Boolean).map((a) => ({ id: a.id, title: a.title, url: a.url })) : [];
     // Every draft opens "Hi <first name>, / Thanks for your email." (added here, not by the model).
     const draftText = triage && triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, ticket.fromEmail || ticket.customerEmail), triage.reply) : "";
@@ -448,7 +469,7 @@ function createSupportMail({
         await sendReply({ ticketId, ticket, text: draftText, auto: true, by: "ai", source: "ai-auto", settings, extra: { confidence: triage.confidence, articles: cited } });
         Object.assign(patch, {
           aiDraft: null, status: "resolved", resolvedBy: "ai", resolvedAt: now(), autoRepliesSent: (ticket.autoRepliesSent || 0) + 1,
-          firstResponseAt: ticket.firstResponseAt || now(), lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1,
+          firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1,
         });
       } catch (err) {
         // Not sent: a person takes it, with the draft still there to use.
@@ -463,37 +484,59 @@ function createSupportMail({
     return { ok: true, action: patch.status === "resolved" ? "send" : decision.action === "send" ? "human" : decision.action, reason: patch.triageReason };
   }
 
-  // What triage would do with one email, nothing stored or sent.
-  async function preview({ subject, text, fromName, fromEmail }) {
-    const t = core.clip(String(text || "").trim(), core.TEXT_MAX);
-    const subj = core.clip(String(subject || "").trim(), 500);
-    if (!t && !subj) return { ok: false, error: "Give the email a subject or some text." };
-    const key = String(anthropicKey() || "");
-    if (!triageImpl && (!key || key === "unset")) return { ok: false, error: "No drafting model is configured (ANTHROPIC_API_KEY)." };
+  // A new email from the support mailbox (the email icon in the Support
+  // Inbox). It is filed as a Support Inbox ticket waiting on the customer, so
+  // who sent it is on record and the answer joins the same conversation.
+  async function compose({ to, subject, text, by }) {
+    const problem = core.composeProblem({ to, subject, text });
+    if (problem) return { ok: false, status: 400, error: problem };
     const settings = await readSettings();
-    const email = core.lower(fromEmail) || "customer@example.com";
-    const ticket = { subject: subj || "(no subject)", customerEmail: email, fromEmail: email, customerName: core.clip(String(fromName || "").trim(), 200) };
-    const all = await articles();
-    const acct = await accounts();
-    const account = core.matchAccount(email, { prospects: acct.prospects, leads: acct.leads, vipDomains: settings.vipDomains, freeDomains });
-    let triage;
+    if (!settings.connectedEmail) return { ok: false, status: 409, error: "The support mailbox isn't connected." };
+    const addr = core.lower(to);
+    const subj = core.clip(String(subject).replace(/\s+/g, " ").trim(), core.SUBJECT_MAX);
+    const body = String(text).trim();
+    const full = core.withSignature(body, settings.signature);
+    let sent;
     try {
-      triage = core.cleanTriage(await (triageImpl || runTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages: [{ direction: "in", text: t }], articles: all }), all.map((a) => a.id));
-    } catch (err) { return { ok: false, error: `The draft couldn't be written: ${core.clip(String(err && err.message ? err.message : err), 200)}` }; }
-    const decision = core.decideAction({ triage, settings, highValue: Boolean(account) });
-    const draft = triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, email), triage.reply) : "";
-    const view = (id) => { const a = all.find((x) => x.id === id); return a ? { id, title: a.title, url: a.url } : null; };
-    return {
-      ok: true, relevant: triage.relevant, category: triage.category, summary: triage.summary, spamLikely: triage.spamLikely,
-      answerable: triage.answerable, confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: triage.articleIds.map(view).filter(Boolean),
-      highValue: account ? { name: account.name, reason: account.reason } : null,
-      decision: { action: decision.action, reason: decision.reason }, draft,
-    };
+      const raw = core.buildReplyRaw({ fromName: settings.fromName, fromEmail: settings.connectedEmail, to: addr, subject: subj, text: full, isNew: true });
+      sent = await gmail("messages/send", { method: "POST", body: { raw } });
+    } catch (err) { return { ok: false, status: 502, error: `The email wasn't sent: ${core.clip(String(err && err.message ? err.message : err), 200)}` }; }
+    const threadId = String((sent && sent.threadId) || "");
+    // Sent, but Gmail named no thread to file it under: say so rather than fail a sent email.
+    if (!threadId || !/^[A-Za-z0-9_-]{1,80}$/.test(threadId)) return { ok: true, to: addr, ticketId: "", key: "" };
+    const id = String(sent.id || eventId());
+    const at = now();
+    const acct = await accounts();
+    const account = core.matchAccount(addr, { prospects: acct.prospects, leads: acct.leads, vipDomains: settings.vipDomains, freeDomains });
+    const number = await nextNumber();
+    const ref = tickets().doc(threadId);
+    const snippet = core.clip(body.replace(/\s+/g, " "), 240);
+    await ref.set({
+      key: core.ticketKey(number), number, threadId, subject: subj,
+      customerEmail: addr, fromEmail: addr, customerName: "", status: "pending", needsHuman: false, triagePending: false,
+      inboxes: [core.DEFAULT_INBOX], automated: "", highValue: Boolean(account), account: account || null,
+      category: "", summary: "", triageReason: "",
+      createdAt: at, updatedAt: at, lastMessageAt: at, lastInboundAt: null, lastReplyAt: null, snippet,
+      messageCount: 1, inboundCount: 0, humanInvolved: true, autoRepliesSent: 0, reopenCount: 0,
+      firstResponseAt: null, resolvedAt: null, resolvedBy: "", assignee: "", kanbanKey: "", aiDraft: null, startedBy: by,
+    });
+    await ref.collection("messages").doc(id).set({
+      direction: "out", from: settings.connectedEmail, fromName: settings.fromName, to: [addr], cc: [], subject: subj,
+      text: full, snippet, at, gmailId: id, auto: false, sentBy: by, source: "compose",
+    });
+    await logEvent(threadId, by, "Wrote a new email from the support mailbox.");
+    return { ok: true, to: addr, ticketId: threadId, key: core.ticketKey(number) };
   }
+
+  // ── Aidan, the agent mailbox (functions/aidan.js) ──
+  const aidan = createAidan({
+    db, tickets, secretsRef: (name) => db.collection(SECRETS).doc(name), gmail, readSettings, logEvent, now, logger,
+    callJson, apiKey: anthropicKey, workspaceId: anthropicWorkspace, Anthropic, run: aidanImpl, bucket,
+  });
 
   // ── Sync ──
   let syncing = null;
-  async function runSync(maxTriage) {
+  async function runSync(maxTriage, maxAidan = 0) {
     const started = now();
     const settings = await readSettings();
     if (!settings.connectedEmail) return { ok: false, error: "The support mailbox isn't connected." };
@@ -518,18 +561,38 @@ function createSupportMail({
       const parsed = [];
       for (let i = 0; i < fresh.length; i += 10) {
         const full = await Promise.all(fresh.slice(i, i + 10).map((m) => gmail(`messages/${encodeURIComponent(m.id)}?format=full`)));
-        for (const m of full) parsed.push(core.parseGmailMessage(m, settings.connectedEmail));
+        for (const m of full) {
+          const p = core.parseGmailMessage(m, settings.connectedEmail);
+          // What Aidan reads of Gmail's copy (every body, the From count, the
+          // address headers, whether Gmail verified the sender).
+          p.aidanMail = aidan.factsOf(m);
+          parsed.push(p);
+        }
       }
       parsed.sort((a, b) => ms(a.at) - ms(b.at));
+      const aidanConfig = await aidan.readConfig();
       for (const m of parsed) {
         const r = await ingest(m, settings);
         if (r !== "skipped") result.newMessages += 1;
         if (r === "new-ticket") result.newTickets += 1;
+        // An email in the Aidan tab that tags Aidan is queued for Aidan instead of triage.
+        if (r !== "skipped") {
+          try { await aidan.afterIngest(m, aidanConfig); }
+          catch (err) { logger.error("support: Aidan check failed", { threadId: m.threadId, error: core.clip(String(err && err.message ? err.message : err), 300) }); }
+        }
       }
-      const pending = await tickets().where("triagePending", "==", true).limit(maxTriage).get();
-      const ids = [];
-      pending.forEach((d) => ids.push(d.id));
-      for (const id of ids) { await triageTicket(id); result.triaged += 1; }
+      // Aidan before triage, so a run starts early in the function's budget
+      // (functions/aidan.js → LATEST_START_MS). Its runs take minutes, so only
+      // the scheduled sync works them; every sync sweeps a run that was cut off.
+      result.aidanRuns = await aidan.runQueued(maxAidan, { startedAt: started });
+      // A sync that ran Aidan leaves triage to the next one (five minutes), so
+      // the two together can't outlast the function.
+      if (!result.aidanRuns) {
+        const pending = await tickets().where("triagePending", "==", true).limit(maxTriage).get();
+        const ids = [];
+        pending.forEach((d) => ids.push(d.id));
+        for (const id of ids) { await triageTicket(id); result.triaged += 1; }
+      }
       await settingsRef().set({ lastSyncAt: started, lastSyncOk: true, lastSyncError: "", lastSyncNew: result.newMessages, connectionError: "" }, { merge: true });
     } catch (err) {
       const message = core.clip(String(err && err.message ? err.message : err), 300);
@@ -540,8 +603,8 @@ function createSupportMail({
     return result;
   }
   // One sync at a time in this instance: the schedule and "Sync now" can overlap.
-  function sync({ maxTriage = TRIAGE_PER_RUN } = {}) {
-    if (!syncing) syncing = runSync(maxTriage).finally(() => { syncing = null; });
+  function sync({ maxTriage = TRIAGE_PER_RUN, maxAidan = AIDAN_PER_RUN } = {}) {
+    if (!syncing) syncing = runSync(maxTriage, maxAidan).finally(() => { syncing = null; });
     return syncing;
   }
 
@@ -596,7 +659,7 @@ function createSupportMail({
       const resolve = body.resolve === true;
       await ref.set({
         status: resolve ? "resolved" : "pending", resolvedAt: resolve ? now() : null, resolvedBy: resolve ? by : "",
-        humanInvolved: true, needsHuman: false, aiDraft: null, triagePending: false, firstResponseAt: ticket.firstResponseAt || now(),
+        humanInvolved: true, needsHuman: false, aiDraft: null, triagePending: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(),
         lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1, updatedAt: now(), snippet: core.clip(text.replace(/\s+/g, " "), 240),
       }, { merge: true });
       if (resolve) {
@@ -685,7 +748,7 @@ function createSupportMail({
       const who = await requireRole(req, "viewer");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "GET") return send(res, 405, { error: "GET only" });
-      return send(res, 200, await status());
+      return send(res, 200, Object.assign(await status(), { aidan: await aidan.status({ admin: who.user.role === "admin" }) }));
     }
 
     const t = /^\/v1\/tickets\/([A-Za-z0-9_-]{1,80})\/(reply|draft|status|note|assign|escalate)$/.exec(path);
@@ -711,31 +774,32 @@ function createSupportMail({
       return send(res, r.ok || /isn't connected/.test(r.error || "") ? 200 : 502, r);
     }
 
-    // "Try an email" (Support Inbox): what the inbox would do with an email,
-    // without filing, saving or sending anything.
-    if (path === "/v1/preview") {
+    // The email icon in the Support Inbox: a new email, sent from the mailbox.
+    if (path === "/v1/compose") {
       const who = await requireRole(req, "editor");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "POST") return send(res, 405, { error: "POST only" });
-      const hit = previewCalls.get(who.user.email) || [];
-      const recent = hit.filter((t) => now().getTime() - t < 3600000);
-      if (recent.length >= PREVIEWS_PER_HOUR) return send(res, 429, { error: `At most ${PREVIEWS_PER_HOUR} tries an hour. Try again later.` });
-      previewCalls.set(who.user.email, [...recent, now().getTime()]);
       const body = req.body && typeof req.body === "object" ? req.body : {};
-      const r = await preview({ subject: body.subject, text: body.text, fromName: body.fromName, fromEmail: body.fromEmail });
-      return send(res, r.ok ? 200 : 400, r);
+      const problem = core.composeProblem(body);
+      if (problem) return send(res, 400, { error: problem });
+      const recent = (composeCalls.get(who.user.email) || []).filter((t) => now().getTime() - t < 3600000);
+      if (recent.length >= COMPOSED_PER_HOUR) return send(res, 429, { error: `At most ${COMPOSED_PER_HOUR} new emails an hour. Try again later.` });
+      const r = await compose({ to: body.to, subject: body.subject, text: body.text, by: who.user.email });
+      if (!r.ok) return send(res, r.status, { error: r.error });
+      composeCalls.set(who.user.email, [...recent, now().getTime()]);
+      return send(res, 200, r);
     }
 
     if (path === "/v1/sync") {
       const who = await requireRole(req, "editor");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "POST") return send(res, 405, { error: "POST only" });
-      const r = await sync({ maxTriage: TRIAGE_PER_PAGE_SYNC });
+      const r = await sync({ maxTriage: TRIAGE_PER_PAGE_SYNC, maxAidan: 0 });
       return send(res, r.ok ? 200 : 502, r);
     }
 
     // ── Admin: connection and settings ──
-    if (!["/v1/oauth/client", "/v1/oauth/start", "/v1/disconnect", "/v1/settings"].includes(path)) return send(res, 404, { error: "not found" });
+    if (!["/v1/oauth/client", "/v1/oauth/start", "/v1/disconnect", "/v1/settings", "/v1/aidan"].includes(path)) return send(res, 404, { error: "not found" });
     const who = await requireRole(req, "admin");
     if (!who.ok) return send(res, who.status, { error: who.error });
     if (req.method !== "POST") return send(res, 405, { error: "POST only" });
@@ -774,6 +838,11 @@ function createSupportMail({
       tokenCache = null;
       return send(res, 200, { ok: true });
     }
+    // Aidan's allowed senders: configuration, never in the repository and never read back unmasked.
+    if (path === "/v1/aidan") {
+      const r = await aidan.saveConfig(body, who.user.email);
+      return send(res, r.ok ? 200 : 400, r);
+    }
     // /v1/settings
     const cur = await readSettings();
     const { value, errors } = core.cleanSettingsInput(body, cur);
@@ -783,7 +852,7 @@ function createSupportMail({
     return send(res, 200, { ok: true, settings: value });
   }
 
-  return { handle, sync, status, triageTicket, ingest };
+  return { handle, sync, status, triageTicket, ingest, aidan };
 }
 
 module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL };
