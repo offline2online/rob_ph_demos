@@ -5146,7 +5146,19 @@ Rules:
   and `**/`** as well as for `.html`, `.js` and `.css`. The page and its
   scripts are revalidated together on every load. Never let a page that
   loads module scripts be cached on its own.
-- **A failed start reloads once by itself** (`reloadOnceAfterBootFailure` in
+- **Every script and stylesheet URL carries the build's id** (17 Nov 2026,
+  after Dashboard and Support Inbox did nothing on the iPad while the menu
+  items from before that release worked, and a fresh tab didn't help: the
+  iPad was running the new page with old scripts). `scripts/build-console.js`
+  stamps `?v=<id>` (a hash of the files being deployed) onto every
+  `src`/`href` to `js/` and `css/` in the pages and onto every relative
+  `import` in the scripts, in the uploaded copy only. A page can then only
+  load the scripts it was built with. The build fails if any relative
+  import is left unstamped, since a module loaded under two URLs would run
+  twice. `test/ui/minified.test.mjs` checks every first-party file the
+  console requests carries the stamp and none loads twice. A lazily loaded
+  module is matched in tests by its path, never by the full URL.
+ (`reloadOnceAfterBootFailure` in
   `auth-gate.js`): when `app.js` fails to load, the console reloads the page
   once, stamped in `sessionStorage` so that a real fault (a bad deploy, no
   network) shows "The console didn't finish loading" after one try instead

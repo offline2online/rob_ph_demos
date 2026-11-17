@@ -21,7 +21,7 @@ try {
     const o = await h.open({ seed, width: 1180, height: 820, contextOptions: { hasTouch: true, isMobile: true } });
     const { page } = o;
     let broken = true;
-    await page.route("**/js/" + file, (r) => (broken
+    await page.route((u) => u.pathname.endsWith("/js/" + file), (r) => (broken
       ? r.fulfill({ status: 200, contentType: "text/javascript", body: "throw new TypeError('simulated device failure');" })
       : r.fallback()));
     await until(() => page.locator(".project-options-btn").count(), "board");

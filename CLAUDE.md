@@ -823,6 +823,15 @@ page's markup, the new `app.js` ran on the old page, reached for a menu
 button that wasn't there, and stopped. The board still showed; the menu was
 dead. A reload fixed it, and Chromium tests (always fresh files) never could.
 
+- **17 Nov 2026, the same symptom again (Dashboard, Support Inbox): the iPad
+  ran the new page with OLD scripts.** Menu items from before the release
+  worked; the new ones did nothing; a fresh tab didn't help. In real WebKit
+  on GitHub (`.github/workflows/console-webkit.yml`) the code passed. The
+  deployed copy now stamps `?v=<build id>` on every script, stylesheet and
+  relative import (`backlog-tracker/scripts/build-console.js`), so a page
+  can only load its own scripts. Never remove that, and never load a
+  first-party script by a hand-written URL that the build can't stamp.
+  The symptom "old menu items work, new ones don't" means old scripts.
 - `/` and `**/` are now no-cache, and a failed start reloads once by itself
   (`reloadOnceAfterBootFailure` in `auth-gate.js`). `test/ui/stale-page.test.mjs`
   reproduces the iPad failure and must stay green.
