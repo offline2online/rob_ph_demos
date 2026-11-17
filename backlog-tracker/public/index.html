@@ -1758,7 +1758,17 @@
                      server and the same sign-in, installed in one step.
                      test/claude-plugin.test.js keeps these commands in step
                      with the plugin's real names. -->
-                <span class="field-label" style="margin-top:0;">Install the Claude plugin <span class="mcp-recommended">Recommended</span></span>
+                <!-- The PH mark: the same icon the server announces to MCP
+                     clients (SERVER_ICONS in functions/mcp-server.js), so this
+                     is what the connector looks like once it is added. -->
+                <div class="mcp-connector-id">
+                  <img src="img/ph-mark.svg" alt="" width="32" height="32" class="mcp-connector-icon">
+                  <div>
+                    <div class="mcp-connector-name">PH Agent Console</div>
+                    <div class="mcp-connector-sub">Look for this icon in your agent's list of connectors.</div>
+                  </div>
+                </div>
+                <span class="field-label">Install the Claude plugin <span class="mcp-recommended">Recommended</span></span>
                 <code id="mcp-plugin-commands">/plugin marketplace add offline2online/rob_ph_demos<br>/plugin install ph-agent-console@personalisation-hub</code>
                 <p class="field-hint">Run both in Claude Code, then <code>/mcp</code> to sign in. The plugin adds this connection and a <code>/ph-agent-console:status</code> command.</p>
                 <span class="field-label">Or add the server by hand</span>

@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "description": "Connects Claude to the PH Agent Console: the backlog board, Staff Kanban, concepts, leads and the help centre. You sign in with your own Personalisation Hub account; there is no API key.",
   "author": { "name": "Personalisation Hub" },
+  "icon": "./icon.png",
   "homepage": "https://backlog-tracker-e4ed2.web.app/",
   "repository": "https://github.com/offline2online/rob_ph_demos",
   "keywords": ["personalisation-hub", "backlog", "kanban", "mcp"]

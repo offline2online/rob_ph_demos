@@ -67,6 +67,8 @@ test("the plugin holds no credential and nothing that runs on the person's machi
   const files = walk(PLUGIN);
   for (const dir of ["bin", "hooks", "agents"]) assert.ok(!fs.existsSync(path.join(PLUGIN, dir)), `${dir}/ is not part of this plugin`);
   for (const f of files) {
+    // The one binary is the icon, checked on its own below.
+    if (path.relative(PLUGIN, f) === "icon.png") continue;
     const text = fs.readFileSync(f, "utf8");
     assert.ok(!/authorization|bearer |api[_-]?key\s*[:=]|client_secret|password\s*[:=]|BOARD_API_KEY|X-Board-Key/i.test(text), `${path.relative(PLUGIN, f)} looks like it carries a credential`);
     assert.ok(/\.(json|md)$/.test(f), `${path.relative(PLUGIN, f)}: only JSON and Markdown ship in the plugin`);
@@ -118,11 +120,49 @@ test("the console's Connect your AI agent screen shows and copies the same insta
   assert.ok(html.includes(`<code>/${manifest.name}:status</code>`));
   assert.ok(html.includes(`<code id="mcp-url">${servers.console.url}</code>`), "the by-hand URL is the plugin's URL");
   assert.ok(html.includes('id="mcp-plugin-copy-btn"') && html.includes('id="mcp-copy-btn"'));
+  // The screen shows the PH mark, and it is the very file the server announces as its icon.
+  const shownIcon = /<img src="(img\/[^"]+)"[^>]*class="mcp-connector-icon">/.exec(html);
+  assert.ok(shownIcon, "the screen shows the connector's icon");
+  assert.strictEqual(shownIcon[1], "img/ph-mark.svg", "the PH mark, not the wordmark");
+  assert.ok(fs.existsSync(path.join(BT, "public", shownIcon[1])));
+  assert.ok(mcp.__test.SERVER_ICONS.some((i) => i.src === `${new URL(servers.console.url).origin}/${shownIcon[1]}`), "the same icon MCP clients are given");
   const js = fs.readFileSync(path.join(BT, "public", "js", "app.js"), "utf8");
   const copied = /const MCP_PLUGIN_COMMANDS = "([^"]+)";/.exec(js);
   assert.ok(copied, "app.js has the commands the button copies");
   assert.deepStrictEqual(copied[1].split("\\n"), [add, installCmd]);
   assert.ok(js.includes('getElementById("mcp-plugin-copy-btn")'));
+});
+
+test("the plugin's own icon is the PH mark: a PNG inside the plugin, identical to the one the server serves", () => {
+  assert.strictEqual(manifest.icon, "./icon.png", "a path inside the plugin");
+  const mine = fs.readFileSync(path.join(PLUGIN, manifest.icon));
+  assert.strictEqual(mine.subarray(1, 4).toString(), "PNG");
+  assert.strictEqual(mine.readUInt32BE(16), 512);
+  assert.strictEqual(mine.readUInt32BE(20), 512);
+  assert.ok(mine.equals(fs.readFileSync(path.join(BT, "public", "img", "ph-mark-512.png"))), "icon.png is a copy of public/img/ph-mark-512.png; copy it again if the mark changes");
+  assert.strictEqual(market.plugins[0].icon, undefined, "icon is not a marketplace entry field");
+});
+
+test("the server announces the PH mark as its icon, from its own origin, and every file exists", () => {
+  const icons = mcp.__test.SERVER_ICONS;
+  const origin = new URL(servers.console.url).origin;
+  assert.ok(icons.length >= 2);
+  assert.ok(icons.some((i) => i.mimeType === "image/png"), "a PNG, for clients that do not render SVG");
+  assert.ok(icons.some((i) => i.mimeType === "image/svg+xml"));
+  for (const i of icons) {
+    const u = new URL(i.src);
+    assert.strictEqual(u.origin, origin, `${i.src} is served from the server's own origin`);
+    assert.strictEqual(u.protocol, "https:");
+    const file = path.join(BT, "public", u.pathname);
+    assert.ok(fs.existsSync(file), `${u.pathname} is a deployed file`);
+    assert.match(path.basename(file), /^ph-mark/, "the mark, not the wordmark");
+    const head = fs.readFileSync(file);
+    if (i.mimeType === "image/png") {
+      assert.strictEqual(head.subarray(1, 4).toString(), "PNG");
+      const w = head.readUInt32BE(16), h = head.readUInt32BE(20);
+      assert.deepStrictEqual(i.sizes, [`${w}x${h}`], `${u.pathname} is the size it claims`);
+    } else assert.ok(head.toString("utf8").includes("<svg"));
+  }
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

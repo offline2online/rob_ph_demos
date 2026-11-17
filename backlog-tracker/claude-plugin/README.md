@@ -8,6 +8,7 @@ member installs one thing instead of adding a connector by hand.
 | --- | --- |
 | `.claude-plugin/plugin.json` | the plugin's name, version and description |
 | `.mcp.json` | the connection: one remote HTTP server, no key |
+| `icon.png` | the PH mark, a copy of `public/img/ph-mark-512.png`, for the plugin's listing |
 | `skills/console/SKILL.md` | how an agent should use the console's tools |
 | `skills/status/SKILL.md` | `/ph-agent-console:status`, a short read-only status report |
 

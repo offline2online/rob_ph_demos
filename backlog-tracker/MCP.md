@@ -70,6 +70,21 @@ What the plugin contains:
 | The console skill | Tells the agent how to use the tools: check who it is acting as, read before it writes, comment after work, and treat release tools as admin actions a person must ask for. |
 | `/ph-agent-console:status` | A short, read-only status report: what is waiting on a person, what is blocked, tickets per stage, each release train. Add a project name for one project. |
 
+**The icon.** The connector's icon is the PH mark (the four coloured bars,
+`public/img/ph-mark.svg`), and it reaches a client two ways:
+
+- The server announces it. `serverInfo.icons` in the `initialize` answer lists
+  the mark as an SVG and as 512, 192 and 64 pixel PNGs, all served from the
+  server's own address. This is the same whether the server was added through
+  the plugin or by hand, because the plugin only supplies the URL.
+- The plugin carries it. `icon` in `plugin.json` points at `icon.png`, a copy
+  of the 512 pixel PNG, which is what a plugin listing shows.
+
+Whether a given Claude screen draws either one is the client's decision, and
+Claude's documentation does not say which screens show a connector's icon.
+The console's own Connect your AI agent screen shows the same mark, so people
+know what to look for.
+
 Things to know:
 
 - **Tool names change.** Installed through the plugin, a tool is named with
