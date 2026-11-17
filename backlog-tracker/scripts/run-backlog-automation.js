@@ -2351,6 +2351,20 @@ function unionMergeNote(unioned) {
     `(JavaScript is checked to parse). Check the order there when reviewing.`;
 }
 
+// A conflicted package.json in a patch, merged as parsed JSON (see
+// mergeJsonThreeWay): → { text, hunks } or null when it is not a package.json,
+// a side is not valid JSON, or both sides changed something other than a
+// script's command chain differently. Pure.
+function mergePackageJsonPatch(p, currentText, baseText, patchText) {
+  if (!isPackageJsonPath(p)) return null;
+  let base, ours, theirs;
+  try { base = JSON.parse(baseText); ours = JSON.parse(currentText); theirs = JSON.parse(patchText); } catch { return null; }
+  const r = mergeJsonThreeWay(base, ours, theirs, "");
+  if (!r.ok) return null;
+  const indent = (/^(\s+)"/m.exec(currentText) || [null, "  "])[1];
+  return { text: `${JSON.stringify(r.value, null, indent)}${currentText.endsWith("\n") ? "\n" : ""}`, hunks: 1 };
+}
+
 function rebasePatchFilesOnto(patchFiles, baseRef) {
   const files = [];
   const rebased = [];
@@ -2392,7 +2406,13 @@ function rebasePatchFilesOnto(patchFiles, baseRef) {
       // git merge-file exits with the number of conflicts (1..127); anything
       // else is a real error.
       if (!(typeof err.status === "number" && err.status > 0 && err.status < 128)) throw err;
-      const union = unionMergePatchFile(f.path, oursPath, basePath, theirsPath);
+      // package.json: every ticket that adds a test appends to the same
+      // script line, so two tickets built side by side always conflict there.
+      // Merged key by key (both commands kept), as a train's merge with main
+      // already is. 17 Nov 2026: a finished 78-minute build of the Dashboard
+      // page was thrown away and rebuilt over one line of test/package.json.
+      const pkg = mergePackageJsonPatch(f.path, current, base, f.content);
+      const union = pkg || unionMergePatchFile(f.path, oursPath, basePath, theirsPath);
       if (union) {
         files.push({ ...f, content: union.text });
         rebased.push(f.path);
@@ -9000,7 +9020,7 @@ module.exports = {
   contractChangeOf, flagContractDependents,
   patchFilesFromCommit,
   patchRefProblem,
-  isTestOnlyChange, autoApprovePlan, autoConfirmNoChangePlan, sweepAutoApprovals,
+  mergePackageJsonPatch, isTestOnlyChange, autoApprovePlan, autoConfirmNoChangePlan, sweepAutoApprovals,
   autoAnswerPlan, sweepAutoAnswers, MAX_AUTO_ANSWERS, MAX_AUTO_RETRIES, selfHealPlan, escalationBlock, buildNeverRanBlock, MAX_AUTO_REBUILDS, latePatchFromDuplicateSession, deferredBuildOutcome, provenGreenMain,
   resolveRevertDocConflict, tryAutoResolveRevertConflict, processRevertFromTrain, staleRevertRequest, sameProjectIds, blockerLabels,
   // test/release-groups.test.js — projects in one deployable share one train

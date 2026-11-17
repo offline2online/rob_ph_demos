@@ -46,3 +46,20 @@ assert.strictEqual(autoConfirmNoChangePlan({ ...noChange, deployCommit: SHA }), 
 assert.strictEqual(autoConfirmNoChangePlan({ ...noChange, noDeploymentRequired: false }), null);
 assert.strictEqual(autoConfirmNoChangePlan({ ...noChange, status: "backlog" }), null);
 console.log("auto-approve: ok");
+
+// Two tickets built side by side each add a test to the same package.json
+// script line: the patch is merged, not thrown away and rebuilt (17 Nov 2026).
+{
+  const { mergePackageJsonPatch } = require("../scripts/run-backlog-automation.js");
+  const pkg = (chain, extra = {}) => `${JSON.stringify({ name: "t", scripts: { "test:train-lock": chain, other: "node x.js" }, ...extra }, null, 2)}\n`;
+  const base = pkg("node a.test.js && node b.test.js");
+  const train = pkg("node a.test.js && node release-groups.test.js && node b.test.js");
+  const patch = pkg("node a.test.js && node b.test.js && node dashboard.test.mjs");
+  const out = mergePackageJsonPatch("backlog-tracker/test/package.json", train, base, patch);
+  assert.strictEqual(JSON.parse(out.text).scripts["test:train-lock"], "node a.test.js && node release-groups.test.js && node b.test.js && node dashboard.test.mjs", "both tickets' tests are kept");
+  assert.ok(out.text.endsWith("}\n") && out.text.includes('\n  "name"'), "formatting is kept");
+  assert.strictEqual(mergePackageJsonPatch("backlog-tracker/public/js/app.js", train, base, patch), null, "only package.json");
+  assert.strictEqual(mergePackageJsonPatch("package.json", train, base, "{ not json"), null);
+  assert.strictEqual(mergePackageJsonPatch("package.json", pkg("node a.test.js", { version: "2.0.0" }), pkg("node a.test.js", { version: "1.0.0" }), pkg("node a.test.js", { version: "3.0.0" })), null, "a version both changed is a person's");
+  console.log("package.json patch merge: ok");
+}
