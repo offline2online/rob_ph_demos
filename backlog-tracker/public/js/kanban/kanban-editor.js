@@ -309,7 +309,8 @@ export const KBEditor = (function () {
       if (!state) return;
       const { start, query } = state;
       q.deleteText(start, query.length + 1, "user");
-      q.insertEmbed(start, "mention", { id: u.id, name: u.first }, "user");
+      // The chip carries the full name (first name, last name), as everywhere else on the board.
+      q.insertEmbed(start, "mention", { id: u.id, name: u.full || u.first }, "user");
       q.insertText(start + 1, " ", "user");
       q.setSelection(start + 2, 0, "user");
       close();
@@ -317,7 +318,7 @@ export const KBEditor = (function () {
     };
     const fold = (x) => String(x).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
     const draw = () => {
-      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}">${cssUrl(u.photo) ? `<span class="kb-avatar kb-avatar-img" style="background-image:url('${cssUrl(u.photo)}')"></span>` : `<span class="kb-avatar" style="background:${u.color}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`}${esc(u.first)}<span class="kb-mention-full">${esc(u.full || "")}</span></button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
+      box.innerHTML = state.items.map((u, i) => `<button type="button" class="kb-mention-item${i === state.active ? " on" : ""}" data-i="${i}">${cssUrl(u.photo) ? `<span class="kb-avatar kb-avatar-img" style="background-image:url('${cssUrl(u.photo)}')"></span>` : `<span class="kb-avatar" style="background:${u.color}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`}${esc(u.full || u.first)}</button>`).join("") || '<div class="kb-mention-empty">No one matches</div>';
     };
     q.on("editor-change", () => {
       const sel = q.getSelection();
@@ -326,7 +327,7 @@ export const KBEditor = (function () {
       const m = /(?:^|\s)@([^\s@]*)$/.exec(before);
       if (!m) { close(); return; }
       const query = m[1];
-      // First names that start with what's typed come first, then other name matches.
+      // Short (first) names that start with what's typed come first, then other name matches. The list shows full names.
       const fq = fold(query);
       const items = users.filter((u) => fold(u.first).startsWith(fq) || fold(u.full || "").includes(fq))
         .sort((a, b) => (fold(b.first).startsWith(fq) ? 1 : 0) - (fold(a.first).startsWith(fq) ? 1 : 0));

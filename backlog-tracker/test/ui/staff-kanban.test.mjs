@@ -45,6 +45,8 @@ if (!process.env.KB_WORKER && !process.env.KB_SERIAL) {
 
 const LINH = emailOf("Linh"), HUY = emailOf("Huy"), MINH = emailOf("Minh");
 const NAMES = { rob: "Rob", minh: "Minh", linh: "Linh", huy: "Huy", thao: "Thảo", duc: "Đức" };
+// The name the board shows for each of them: first name + last name as saved, else the display name.
+const FULL = { rob: "Rob", minh: "Nguyễn Văn Minh", linh: "Trần Thị Linh", huy: "Lê Quang Huy", thao: "Phạm Thu Thảo", duc: "Đỗ Minh Đức" };
 const pid = (id) => (id === "none" ? "none" : id === "rob" ? ROB : emailOf(NAMES[id]));
 
 const h = await startHarness();
@@ -260,7 +262,7 @@ T("TC-03", "Ready for Testing asks who tests (never Rob by default); moving back
   if (m === "status") {
     // The edit form has its own Assignee field: the status change alone assigns nobody.
     w = await where(p, "PH-19");
-    assert.equal(w.status, "ready-for-testing"); assert.equal(w.avatar, "Đức", "no automatic tester");
+    assert.equal(w.status, "ready-for-testing"); assert.equal(w.avatar, FULL.duc, "no automatic tester");
     assert.equal((await stored(p, "PH-19")).assignee, emailOf("Đức"));
     await moveBy(p, m, "PH-19", "in-progress");
     assert.equal((await where(p, "PH-19")).status, "in-progress");
@@ -272,14 +274,14 @@ T("TC-03", "Ready for Testing asks who tests (never Rob by default); moving back
   await p.selectOption("#kb-tester-pick", emailOf("Huy")); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150);
   w = await where(p, "PH-19");
   assert.equal(w.status, "ready-for-testing");
-  assert.equal(w.avatar, "Huy");
-  assert.match(await p.textContent("#kb-toast"), /reassigned to Huy for testing/);
-  assert.match(await p.textContent('.kb-card[data-key="PH-19"] .kb-handoff'), /From Đức/);
+  assert.equal(w.avatar, FULL.huy);
+  assert.match(await p.textContent("#kb-toast"), /reassigned to Lê Quang Huy for testing/);
+  assert.match(await p.textContent('.kb-card[data-key="PH-19"] .kb-handoff'), /From Đỗ Minh Đức/);
   assert.equal((await stored(p, "PH-19")).previousAssignee, emailOf("Đức"));
   await moveBy(p, m, "PH-19", "in-progress");
   w = await where(p, "PH-19");
   assert.equal(w.status, "in-progress");
-  assert.equal(w.avatar, "Đức");
+  assert.equal(w.avatar, FULL.duc);
   await p.done();
 });
 
@@ -492,7 +494,7 @@ T("TC-14", "comments: rich comment with @mention, and a dictated comment via the
   const last = await p.$$eval(".kb-comment-text", (e) => e[e.length - 1].innerHTML);
   assert.match(last, /Checked this on the Covent Garden store and it is fixed/);
   assert.match(last, new RegExp(`data-user="${HUY.replace(/\./g, "\\.")}"`));
-  assert.match(await p.textContent("#kb-toast"), /Huy notified/);
+  assert.match(await p.textContent("#kb-toast"), /Lê Quang Huy notified/);
   const c = await writes(p, /^kanbanTasks\/PH-23\/comments\//);
   assert.equal(c.length, 1); assert.equal(c[0].data.author, ROB); assert.match(c[0].data.text, /Covent Garden/);
   assert.deepEqual(c[0].data.mentions, [HUY], "the comment lists who it tags: the server notifies from that");
@@ -615,7 +617,7 @@ T("TC-19", "settings: hide or require an optional field", async (prof) => {
   assert.match(await p.textContent("#f-error"), /Sprint is required/);
   await press(p, "#f-cancel");
   await moveBy(p, methodOf(p), "PH-19", "ready-for-testing");
-  if (methodOf(p) !== "status") { await p.selectOption("#kb-tester-pick", MINH); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150); assert.equal((await where(p, "PH-19")).avatar, "Minh"); }
+  if (methodOf(p) !== "status") { await p.selectOption("#kb-tester-pick", MINH); await press(p, "#kb-tester-ok"); await p.waitForTimeout(150); assert.equal((await where(p, "PH-19")).avatar, FULL.minh); }
   await p.done();
 });
 
@@ -787,7 +789,7 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   const p = await open(prof, "#staff-kanban", { seed: bellSeed() });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");
-  assert.match(await p.textContent("#kb-bell-panel"), /PH-20[\s\S]*Huy mentioned you in a comment/);
+  await until(async () => /PH-20[\s\S]*Lê Quang Huy mentioned you in a comment/.test(await p.textContent("#kb-bell-panel")), "the sender's full name in the notification");
   await press(p, ".kb-bell-item");
   await p.waitForSelector("#task-backdrop:not([hidden])");
   assert.equal(await p.textContent("#task-title-h"), "PH-20");
@@ -801,7 +803,7 @@ T("KB-C2f", "notifications bell: the owner signed in with his second address see
   const p = await open(prof, "#staff-kanban", { seed });
   await until(async () => (await p.textContent("#kb-bell")).includes("1"), "the unread count");
   await press(p, "#kb-bell");
-  assert.match(await p.textContent("#kb-bell-panel"), /PH-20[\s\S]*Huy mentioned you in a comment/);
+  await until(async () => /PH-20[\s\S]*Lê Quang Huy mentioned you in a comment/.test(await p.textContent("#kb-bell-panel")), "the sender's full name in the notification");
   await press(p, ".kb-bell-item");
   await p.waitForSelector("#task-backdrop:not([hidden])");
   await eventually(async () => assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, true, "opening it marks it read"));
@@ -816,7 +818,7 @@ T("KB-C2c", "notifications bell: the newest 30 of 150, the badge counts them all
   await until(async () => (await p.textContent("#kb-bell")).includes("150"), "the unread count, on the Agent Board");
   await press(p, "#kb-bell");
   assert.equal((await p.$$(".kb-bell-item")).length, 30, "the newest 30");
-  assert.match(await p.textContent(".kb-bell-item"), /Huy assigned this to you/, "newest first");
+  await until(async () => /Lê Quang Huy assigned this to you/.test(await p.textContent(".kb-bell-item")), "newest first, from Lê Quang Huy by full name");
   assert.equal((await p.$$(".kb-bell-ticket")).length, 2, "grouped by ticket");
   await press(p, "#kb-bell-read");
   await until(async () => !/\d/.test(await p.textContent("#kb-bell")), "Mark all as read");
@@ -1864,7 +1866,7 @@ const E = {
   T, on, assert, open, TALL, speechStub, methodOf,
   isConsole: true,
   sel: { title: "#kb-view .page-header h2", count: "#kb-view .page-header-count" },
-  pid, person: (id) => NAMES[id] || id, rel: (id) => id.replace(".", "-"),
+  pid, person: (id) => FULL[id] || id, rel: (id) => id.replace(".", "-"),
   hash: (route, q) => (route === "kanban" ? "#staff-kanban" : `#staff-kanban/${route}`) + (q ? "?" + q : ""),
   go: async (p, route, q) => { await p.evaluate((h) => { location.hash = h; }, E.hash(route, q)); await sleep(250); },
   stored, writes, viewerSeed,

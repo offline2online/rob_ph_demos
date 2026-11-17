@@ -561,7 +561,10 @@ function kanbanTools(h) {
     }
     return list;
   }
-  // The board's first name for someone, as the page shows it.
+  // Someone's short name: the admin's "Short name" in Kanban settings, else the
+  // first word of their name. Agents get it as `name` (spelling, pronunciation).
+  // The board shows, and every note and notification uses, fullOf.
+  const fullOf = (p) => [p.firstName, p.lastName].map((x) => String(x || "").trim()).filter(Boolean).join(" ") || String(p.displayName || "").trim() || String(p.email).split("@")[0];
   const firstOf = (p, s) => String((s.firstNames || {})[p.email] || "").trim() || String(p.displayName || "").trim().split(/\s+/)[0] || String(p.email).split("@")[0];
   // ── Staff names and pronunciation (agents only) ──────────────────────────
   // staffPronunciations/{email} = { pronunciation, updatedBy, updatedAt } is
@@ -585,7 +588,7 @@ function kanbanTools(h) {
   async function staffNames(session) {
     const [ppl, s, stored] = await Promise.all([people(session), settings(), pronunciations()]);
     const staff = [];
-    for (const p of ppl) staff.push({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null, pronunciation: await pronunciationOf(p, s, stored) });
+    for (const p of ppl) staff.push({ email: p.email, name: firstOf(p, s), fullName: fullOf(p), pronunciation: await pronunciationOf(p, s, stored) });
     const needed = staff.filter((x) => !x.pronunciation).map((x) => ({ email: x.email, name: x.name }));
     const out = { staff, rule: NAME_RULE };
     if (needed.length) {
@@ -602,9 +605,11 @@ function kanbanTools(h) {
     for (const k of ["assignee", "reporter"]) if (k in out) out[k] = meOr(out[k], session);
     return out;
   };
-  async function firstNamer() {
-    const [ppl, s] = await Promise.all([people(), settings()]);
-    const map = new Map(ppl.map((p) => [p.email, firstOf(p, s)]));
+  // email → the full name (first name, last name) the board shows. Callers
+  // keep it in a variable called `first` from when it gave first names.
+  async function fullNamer() {
+    const ppl = await people();
+    const map = new Map(ppl.map((p) => [p.email, fullOf(p)]));
     return (e) => (e ? map.get(core.canonicalEmail(e)) || String(e).split("@")[0] : "Unassigned");
   }
   // Tags people in a description (the `mention` argument of the create and update tools): each named member the
@@ -621,7 +626,7 @@ function kanbanTools(h) {
     const have = new Set(core.mentionsIn(html).map((e) => core.canonicalEmail(String(e).toLowerCase())));
     const tagged = want.filter((e) => !have.has(e));
     if (!tagged.length) return { html, tagged, errors: [] };
-    const first = await firstNamer();
+    const first = await fullNamer();
     const chips = tagged.map((e) => `<span class="kb-mention" data-user="${esc(e)}" data-name="${esc(first(e))}">@${esc(first(e))}</span>`);
     return { html: `${html}<p>${chips.join(" ")}</p>`, tagged, errors: [] };
   }
@@ -1053,7 +1058,7 @@ function kanbanTools(h) {
   const tools = [
     {
       name: "kanban_list_people",
-      description: "Staff Kanban: who's on the board (email, the first name the board shows, full name and pronunciation), the releases, sprints and console projects tickets can belong to, and the current release.",
+      description: "Staff Kanban: who's on the board (email, short name, the full name the board shows, and pronunciation), the releases, sprints and console projects tickets can belong to, and the current release.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) {
@@ -1061,7 +1066,7 @@ function kanbanTools(h) {
         const rel = { docs: relDocs }, spr = { docs: sprDocs }, prj = { docs: prjDocs };
         const pron = new Map(names.staff.map((x) => [x.email, x.pronunciation]));
         return textResult({
-          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: p.displayName || null, pronunciation: pron.get(p.email) || null })),
+          people: ppl.map((p) => ({ email: p.email, name: firstOf(p, s), fullName: fullOf(p), pronunciation: pron.get(p.email) || null })),
           nameRule: NAME_RULE,
           ...(names.pronunciationNeeded ? { pronunciationNeeded: names.pronunciationNeeded, prompt: names.prompt } : {}),
           releases: rel.docs.map((d) => ({ id: d.id, name: d.data().name, version: d.data().version || null, live: d.data().status === "live", date: s.releaseDates[d.id] || null })),
@@ -1074,7 +1079,7 @@ function kanbanTools(h) {
     },
     {
       name: "kanban_get_staff_names",
-      description: "Staff Kanban: every member's correct spelling (the first name the board shows), full name and pronunciation. Use these spellings and pronunciations whenever you write or speak about staff; voice agents say names as the pronunciation says. The pronunciation is for agents only and is never shown on the board. Members with none recorded are listed under pronunciationNeeded with a prompt to ask the admin.",
+      description: "Staff Kanban: every member's correct spelling (their short name), the full name the board shows, and pronunciation. Use these spellings and pronunciations whenever you write or speak about staff; voice agents say names as the pronunciation says. The pronunciation is for agents only and is never shown on the board. Members with none recorded are listed under pronunciationNeeded with a prompt to ask the admin.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       async run(args, session) { return textResult(await staffNames(session)); },
@@ -1128,7 +1133,7 @@ function kanbanTools(h) {
         const loaded = await loadTasks(Object.assign({}, f, { assignee: who }), { cursor: typeof args.cursor === "string" ? args.cursor : "" });
         const list = core.filterTasks(loaded.list, { assignees: who ? [who] : [], release: f.release || "", type: f.type || "", priority: f.priority || "", sprint: f.sprint || "", project: f.project || "", label: f.label || "", flagged: !!f.flagged, status: f.status || "", q: f.search || "" });
         list.sort((a, b) => core.STATUS_KEYS.indexOf(a.status) - core.STATUS_KEYS.indexOf(b.status) || (a.rank || 0) - (b.rank || 0));
-        const first = await firstNamer();
+        const first = await fullNamer();
         const n = Math.min(args.limit || 100, 200);
         return textResult({ matched: list.length, returned: Math.min(n, list.length), truncated: loaded.truncated, nextCursor: loaded.nextCursor, tasks: list.slice(0, n).map((t) => summary(t, first)) });
       },
@@ -1145,7 +1150,7 @@ function kanbanTools(h) {
         // The newest 100 of each, and how many were left out.
         const newest = (sub) => tasks().doc(key).collection(sub).orderBy("at", "desc").limit(SUB_LIMIT).get();
         const total = async (sub) => (await tasks().doc(key).collection(sub).count().get()).data().count;
-        const [cs, act, nCs, nAct, first] = await Promise.all([newest("comments"), newest("activity"), total("comments"), total("activity"), firstNamer()]);
+        const [cs, act, nCs, nAct, first] = await Promise.all([newest("comments"), newest("activity"), total("comments"), total("activity"), fullNamer()]);
         const iso = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : v || null);
         const kidDocs = (await (await board()).where("epic", "==", key).limit(EPIC_CHILDREN + 1).get()).docs.filter((d) => d.data().type !== "epic");
         const level = await levelOfKey(key, t);
@@ -1197,7 +1202,7 @@ function kanbanTools(h) {
         // A release's tickets, a page of 500 at a time (cards are light); more than 5,000 are cut off and said so.
         const loaded = await loadTasks({ release: release === "all" ? "" : release }, { pages: 10 });
         const all = loaded.list;
-        const first = await firstNamer();
+        const first = await fullNamer();
         const r = core.releaseReport(all, { release, assignee: args.assignee || "", status: args.status || "" }, { people: (await people(session)).map((p) => p.email), releaseDate: s.releaseDates[release] || "", released: !!(relDoc && relDoc.exists && relDoc.data().status === "live") });
         return textResult({
           truncated: loaded.truncated,
@@ -1553,7 +1558,7 @@ function kanbanTools(h) {
         errors.push(...await checkRefs(v, key, session));
         if ("links" in v) errors.push(...await checkLinks(v.links, key));
         if (errors.length) return toolError(errors.join("; "));
-        const first = await firstNamer();
+        const first = await fullNamer();
         const lines = [];
         if ("assignee" in v && v.assignee !== core.canonicalEmail(cur.assignee || "")) lines.push(`reassigned ${first(cur.assignee)} → ${first(v.assignee)}`);
         if ("flagged" in v && v.flagged !== !!cur.flagged) lines.push(v.flagged ? "flagged this ticket" : "removed the flag");
@@ -1627,7 +1632,7 @@ function kanbanTools(h) {
         const key = normKey(args.key);
         const cur = key && await getTask(key);
         if (!cur) return toolError(`No ticket ${args.key}.`);
-        const [s, first] = await Promise.all([settings(), firstNamer()]);
+        const [s, first] = await Promise.all([settings(), fullNamer()]);
         const ch = core.statusChange(cur, args.status, { resolution: args.resolution, tester: args.tester ? core.canonicalEmail(meOr(args.tester, session)) : "", firstName: first });
         if (!ch) return textResult({ moved: false, key, status: cur.status, note: "Already there." });
         const rank = await nextRank(args.status);
@@ -1660,7 +1665,7 @@ function kanbanTools(h) {
         if (errors.length) return toolError(errors.join("; "));
         const refErrs = await checkRefs(v, null, session);
         if (refErrs.length) return toolError(refErrs.join("; "));
-        const first = await firstNamer();
+        const first = await fullNamer();
         const same = first(cur.assignee) === first(v.assignee) && core.canonicalEmail(cur.assignee) === v.assignee;
         const b = db().batch();
         b.update(tasks().doc(key), Object.assign({ assignee: v.assignee, previousAssignee: "" }, stamp(session.email)));
@@ -2018,7 +2023,7 @@ function kanbanTools(h) {
       async run(args, session) {
         const n = Math.min(args.limit || 30, 100);
         const mine = db().collection("kanbanNotifications").where("to", "==", session.email);
-        const [snap, unread, first] = await Promise.all([mine.orderBy("at", "desc").limit(n).get(), mine.where("read", "==", false).count().get(), firstNamer()]);
+        const [snap, unread, first] = await Promise.all([mine.orderBy("at", "desc").limit(n).get(), mine.where("read", "==", false).count().get(), fullNamer()]);
         const at = (d) => { const t = d.at; return t && t.toDate ? t.toDate().toISOString() : t || null; };
         let list = snap.docs.map((d) => Object.assign({ id: d.id }, d.data()));
         if (args.unread_only) list = list.filter((x) => !x.read);
@@ -2037,7 +2042,7 @@ function kanbanTools(h) {
       async run(args, session) {
         const [loaded, first, unread] = await Promise.all([
           loadTasks({ assignee: session.email }),
-          firstNamer(),
+          fullNamer(),
           db().collection("kanbanNotifications").where("to", "==", session.email).where("read", "==", false).count().get(),
         ]);
         const mine = loaded.list.filter((t) => t.open !== false && core.canonicalEmail(t.assignee || "") === session.email);

@@ -432,9 +432,11 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-report-block h3 { display: flex; align-items: center; }
 .kb-h-count { font-size: 13px; font-weight: 600; color: var(--primary); background: var(--primary-tint); border-radius: 9999px; padding: 1px 9px; margin-left: 8px; }
 .kb-bars { display: flex; flex-direction: column; gap: 2px; margin-top: 10px; }
-.kb-bar-row { display: grid; grid-template-columns: 120px minmax(0, 1fr) 64px; align-items: center; gap: 12px; min-height: 40px; border: 0; background: transparent; padding: 0 6px; border-radius: 8px; cursor: pointer; font: inherit; color: var(--text); text-align: left; }
+.kb-bar-row { display: grid; grid-template-columns: 184px minmax(0, 1fr) 64px; align-items: center; gap: 12px; min-height: 40px; border: 0; background: transparent; padding: 0 6px; border-radius: 8px; cursor: pointer; font: inherit; color: var(--text); text-align: left; }
 .kb-bar-row:hover { background: var(--surface-2); }
 .kb-bar-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
+/* Full names (first name, last name): room for one line on a desktop; the photo never shrinks when a name wraps on a phone. */
+.kb-bar-name .kb-avatar { flex: none; }
 .kb-bar-track { position: relative; height: 16px; }
 .kb-bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--primary); border-radius: 0 4px 4px 0; min-width: 2px; }
 .kb-bar-cap { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); opacity: .55; border-radius: 1px; z-index: 1; }
@@ -509,7 +511,7 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
   .modal-backdrop#task-backdrop { align-items: flex-end; padding: 0; }
   .modal-backdrop#task-backdrop .modal-panel { max-width: 100%; border-radius: 16px 16px 0 0; max-height: 94vh; }
   .kb-kpi-value { font-size: 24px; }
-  .kb-bar-row { grid-template-columns: 92px minmax(0, 1fr) 56px; gap: 8px; }
+  .kb-bar-row { grid-template-columns: 128px minmax(0, 1fr) 56px; gap: 8px; }
   .kb-set-row { grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; }
   .kb-set-name { grid-column: 1 / -1; }
   .kb-team-email { display: none; }

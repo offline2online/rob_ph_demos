@@ -169,7 +169,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(r.json.assignee, ROB); assert.match(r.json.note, /reassigned to Rob for testing/);
     assert.strictEqual(task("PH-1").previousAssignee, HUY);
     const back = await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
-    assert.match(back.json.note, /returned to Huy/);
+    assert.match(back.json.note, /returned to Lê Quang Huy/);
     assert.strictEqual(task("PH-1").assignee, HUY);
     assert.ok(activity("PH-1").includes("In Progress → Ready for Testing · reassigned to Rob for testing"));
   });
@@ -222,7 +222,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
       await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" });
       const r = await tool(sam, "kanban_move_task", { key: "PH-1", status: "ready-for-testing" });
       assert.strictEqual(r.json.assignee, HUY);
-      assert.match((await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" })).json.note, /returned to Huy/);
+      assert.match((await tool(sam, "kanban_move_task", { key: "PH-1", status: "in-progress" })).json.note, /returned to Lê Quang Huy/);
     } finally {
       env.store.col("kanbanSettings").set("main", saved);
       env.store.col("releases").delete("r409");
@@ -245,7 +245,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(task("PH-3").searchTokens.includes("renamed"));
     const a = await tool(sam, "kanban_assign_task", { key: "PH-3", assignee: HUY });
     assert.ok(!a.isError, a.text);
-    assert.ok(activity("PH-3").includes("reassigned Unassigned → Huy"));
+    assert.ok(activity("PH-3").includes("reassigned Unassigned → Lê Quang Huy"));
     const n = await tool(sam, "kanban_assign_task", { key: "PH-3", assignee: "stranger@example.com" });
     assert.ok(n.isError); assert.match(n.text, /isn't a member/);
     await tool(sam, "kanban_flag_task", { key: "PH-3", flagged: true });
@@ -342,7 +342,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(env.store.col("kanbanNotifications").size, 0);
     const got = await tool(sam, "kanban_get_task", { key: "PH-1" });
     assert.strictEqual(got.json.comments[0].text, "Fix in review.");
-    assert.strictEqual(got.json.assigneeName, "Huy");
+    assert.strictEqual(got.json.assigneeName, "Lê Quang Huy", "the full name, not the short name in Kanban settings");
   });
 
   await test("kanban_list_tasks / kanban_search_tickets / kanban_release_report read the board", async () => {
@@ -357,9 +357,9 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(rep.json.release, "r412"); assert.strictEqual(rep.json.releaseName, "PH 4.12");
     assert.ok(rep.json.outstanding >= 2);
     const huy = rep.json.byPerson.find((p) => p.assignee === HUY);
-    assert.strictEqual(huy.name, "Huy");
+    assert.strictEqual(huy.name, "Lê Quang Huy");
     const people = await tool(kit, "kanban_list_people", {});
-    assert.ok(people.json.people.some((p) => p.email === HUY && p.name === "Huy"));
+    assert.ok(people.json.people.some((p) => p.email === HUY && p.name === "Huy" && p.fullName === "Lê Quang Huy"));
     assert.strictEqual(people.json.tester, undefined);
   });
 
@@ -1405,7 +1405,7 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.strictEqual(l.json.unreadCount, 149); assert.strictEqual(l.json.returned, 30);
     assert.ok(l.json.notifications.every((n) => n.id !== "other"));
     assert.strictEqual(l.json.notifications[0].read, false, "unread first");
-    assert.match(l.json.notifications[0].message, /Huy commented on PH-1 Sweep/);
+    assert.match(l.json.notifications[0].message, /Lê Quang Huy commented on PH-1 Sweep/);
     const u = await tool1(sam, "kanban_list_notifications", { unread_only: true, limit: 5 });
     assert.ok(u.json.notifications.length <= 5 && u.json.notifications.every((n) => !n.read));
     const some = await tool1(sam, "kanban_mark_notifications_read", { ids: ["n0", "other"] });
