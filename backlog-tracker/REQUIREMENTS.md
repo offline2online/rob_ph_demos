@@ -168,6 +168,27 @@ progressAt, passedOverAt }], updatedAt }`, written by the automation's
 service account only (no browser, an admin included). See "The deployment
 train" → "Deploy queue".
 
+### `releaseGroups/{groupId}` — projects that ship in one deployable (Flow 9/9, 16 Nov 2026)
+```
+{
+  name: string,             // "PH Agent Console"
+  deployBranch: string,     // "deploy/ph-agent-console" — the shared train's branch
+  projectIds: string[],     // the member projects, in the order the train PR lists them
+  createdAt: Timestamp,
+}
+```
+Plus `projects/{id}.releaseGroupId` on each member, pointing back. Membership
+needs both pointers (a group that doesn't list the project back doesn't
+count). A member keeps its own Backlog, columns, docs, archive and owner, and
+its own `deployBranch` stays on its doc, unused while it is in the group
+(`run-backlog-automation.js`'s `withGroup()` overlays the group's branch and
+keeps the project's own as `ownDeployBranch`, which is also what the repo
+folder is derived from). Written only by an admin (Settings → Projects →
+Release groups) or the board automation user (`firestore.rules`); members
+read. See "Release groups — one deployable, one train" under "The deployment
+train" for the behaviour; the logic is `functions/release-groups.js` (browser
+copy `public/js/release-groups.js`).
+
 ### `backlogItems/{itemId}`
 ```
 {
@@ -1506,6 +1527,83 @@ rebuilt with no cap at all. The loop is now stored and shown.
   once: run it from the deploy session of the train that ships this
   (`BOARD_API_KEY=… node backlog-tracker/scripts/backfill-test-rounds.js
   --apply`; without `--apply` it only counts).
+
+### Release groups — one deployable, one train (Flow 9/9, 16 Nov 2026)
+
+**Rule of thumb: one deployable, one train.** Staff Kanban and Backlog
+Tracker & FAQs were two projects on the board but one deployable — the
+console: same Hosting site, same `deploy-backlog-tracker.yml`, same
+`version.js`, same test suites. On two trains they were tested apart and met
+for the first time on main (14 Nov 2026: both trains carried a bump to
+1.5.398 and both changed `public/index.html` and `MCP.md`). A release group
+joins such projects' trains and nothing else. Projects that are merely
+related (shared docs, an interface contract) are not grouped; they rely on
+the deploy queue and shared-file warnings. PH Website (its own WordPress
+deploy) and Display Types, Retail Media Insights and the archived projects
+stay on their own trains.
+
+For a project in a group, everything that read the train "for a project"
+reads it for the group (`functions/release-groups.js`):
+- **One branch**: a patch from any member lands on the group's
+  `deployBranch` (`withGroup()` in `run-backlog-automation.js`), and test
+  links are re-pointed across every member's Ready for Testing cards.
+- **One lock**: the first approval in any member locks Ready for Dev in all
+  of them (`deployToFeatureNow` writes `trainLocked` on every member;
+  `isTrainLocked` reads any). The lock clears when the shared train is empty
+  (`onBacklogItemTrainLockRecompute`, `reconcileLockedTrains` — which sweeps
+  the group once, on every member's tickets, so a member whose own tickets
+  are gone never resets the branch the other member's tickets are on).
+- **One Deploy to Main**: offered on every member when every ticket on the
+  shared train, in every member, is approved and no member has one in Ready
+  for Testing. When only the other project holds it, the member's header
+  shows a disabled Deploy to Main with the reason ("Waiting for Staff Kanban:
+  <title> is in Ready for Testing"). From either member it does the same
+  thing; a run processes the group's train once (`trainKeyOf`).
+- **One PR, one bump**: `processDeployTrain` opens one PR titled
+  "Deploy <group name> — N tickets", listing tickets by project, and bumps
+  `version.js` once. `finishTrain` flips cards in every member, syncs each
+  member's docs and clears every member's train state. All train state
+  (`trainStatus`, `trainNote`, `trainTestsRed`, `trainPrNumber`, …) is written
+  to every member (`patchTrainProjects`), so each header shows the shared
+  train.
+- **Reverts**: `revertBlockedBy` may name a ticket in the other member; the
+  note says which project ("k (Staff Kanban: <title>)").
+- **Deploy queue, late arrivals and shared files** (see "Deploy queue",
+  "Late arrivals", "Shared files between trains"): a group is one entry in
+  `settings/deployQueue` — a click on the other member drops its group-mate's
+  entry (`withoutGroupMates`), so a group never queues behind itself — and
+  the queued, deploying and conflict states are written to every member.
+  `finishTrain` takes every member off the queue and lands patches held for
+  the next release ("Built — joins the next release") from every member.
+  `trainOverlapFor` never names a group-mate in "Also changed on …" or
+  "Changes <project>'s files", and compares other projects on the branch
+  they really build on (their group's, when they have one).
+  `sweepStuckTrains` reads every member's cards for a grouped train.
+- **Unchanged per project**: approve_for_deployment and fail_testing, each
+  project's Backlog, columns, docs and archive. (approve_for_deployment's
+  lock, like the board's click, is written to every member.)
+
+**Board.** Each member's header shows "Ships with <other project(s)> ·
+<group name>" and the shared train's state. **Settings → Projects → Release
+groups** (admin only): create a group (name, branch, first project), add or
+remove a project — refused while the group's train or the project's own
+train has tickets on it. Removing a project puts it back on its own
+`deployBranch`, which was never changed.
+
+**MCP.** `list_projects` returns `releaseGroup {id, name, projectIds}` and
+the train's `deployBranch`; `get_approved_for_deployment_board` with a
+`projectId` shows the shared train's column and reports readiness for the
+whole group, with `blockedBy` naming what in the other project holds it;
+`approve_deploy_to_main` works from any member. The Deploy Routine's fire
+text names the group's branch and lists every member's approved tickets.
+
+**Migration (done by the deploy session once this is live and both trains
+are empty):** create "PH Agent Console" (`deploy/ph-agent-console`) with
+Backlog Tracker & FAQs (`oTcLAbnhUUO2S7NkbsuV`) and Staff Kanban
+(`New5VKTF2QBqT3T4YEla`). The old branches `deploy/backlog-tracker-faqs`
+and `deploy/kanban-staff-board` are left in place, unused — not deleted. If
+either train is not empty, it is not migrated and the ticket says what is on
+it.
 
 ## The single Deploy CTA, and closing the train
 

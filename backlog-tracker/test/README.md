@@ -133,6 +133,22 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   the board starts a touch drag from a 260 ms long-press timer and drops it
   if the finger moves 8 px first, so a late timer on a busy runner used to
   cancel the drag (TC-65, "Expected values to be strictly equal").
+- A change made on a ticket's form is made, checked and saved as one retried
+  step: the form can be redrawn (the ticket re-read) after Save was seen on,
+  which puts the old value back and switches Save off, and a tap on Save then
+  waited 30 s for it (TC-24, "waiting for locator('#f-save')").
+- A case that opens a ticket by tapping its card waits until that ticket's
+  modal is open, tapping again only while it is shut, and reads the modal in
+  one `evaluate`: the modal opens after an async read of the ticket, so a
+  second tap or a second open could change it between two separate lookups
+  (KB-C1, "Failed to find element matching selector #f-title" right after
+  the modal was seen open).
+- A case that scrolls the prototype board right after a filter change waits
+  two animation frames first: the prototype's `keepPosition` puts the old
+  scroll position back on the next frame, and on a busy runner that frame
+  came after the case's own `scrollTo` and undid it. It then waits until the
+  bar is pinned rather than for a fixed time (TC-09, "Expected values to be
+  strictly equal").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.
