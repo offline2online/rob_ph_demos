@@ -289,29 +289,5 @@ try {
     assert.strictEqual(await page.locator("[data-ss-act]").count(), 0);
     assert.ok(await page.locator("#support-auto").isDisabled());
   });
-  // Aidan (EeAljfWIiY8SOPsKXlXD): the allowed senders are set here by an admin, shown masked, never in full.
-  const aidanStatus = (aidan) => ({ ...connected, aidan });
-  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
-    await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
-    const text = await page.textContent("#support-aidan-settings");
-    assert.ok(text.includes("2 allowed senders: o***@example.com, o***@example.com"), text);
-    assert.strictEqual(await page.inputValue("#support-aidan-senders"), "", "the addresses are never put back in the box");
-    assert.strictEqual(await page.isChecked("#support-aidan-on"), true);
-    await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
-    await page.click('[data-ss-act="save-aidan"]');
-    await until(() => o.supportCalls.some((c) => c.path === "aidan"), "the Aidan call");
-    const saved = o.supportCalls.find((c) => c.path === "aidan").body;
-    assert.deepStrictEqual([saved.enabled, saved.allowedSenders], [true, "owner@example.com, owner.alias@example.com"]);
-    const a = await audit(page, "#support-settings");
-    assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
-    assert.deepStrictEqual(a.small, [], "touch targets under 44px");
-    await shot(page, `aidan-settings-${width}`);
-  });
-  await run("Aidan's settings as an editor: a count, no addresses, no controls", { seed: seedFor("editor", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan" }) }), width: 1280, hash: "#settings/support" }, async (page) => {
-    await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
-    assert.ok((await page.textContent("#support-aidan-settings")).includes("2 allowed senders"));
-    assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
-    assert.ok(await page.locator("#support-aidan-on").isDisabled());
-  });
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);

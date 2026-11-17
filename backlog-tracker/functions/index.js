@@ -2790,8 +2790,6 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
       freeDomains: require("./prospects-core").FREE_EMAIL_DOMAINS,
       createKanbanTask: async (task, actor) => (await supportKanbanCall("kanban_create_task", task, actor)).key,
       commentKanbanTask: (key, text, actor) => supportKanbanCall("kanban_comment", { key, text }, actor),
-      // Aidan keeps PDFs and images sent "for a skill" here (skill-references/…, no client access in storage.rules).
-      bucket: () => require("firebase-admin/storage").getStorage().bucket("backlog-tracker-e4ed2.firebasestorage.app"),
       logger,
     });
   }

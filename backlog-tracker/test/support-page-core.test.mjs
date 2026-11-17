@@ -6,7 +6,6 @@ import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, composeProblem, COMPOSE_MAX, toMs,
   searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
-import { aidanView } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
 
@@ -152,18 +151,6 @@ check("confidence reads as a word and a number, and shows what combining answers
   assert.strictEqual(confidenceChange([{ articles: 1, confidence: 0.55 }, { articles: 3, confidence: 0.82 }]), "55% from 1 article, 82% with 3 combined");
   assert.strictEqual(confidenceChange([{ articles: 1, confidence: 0.9 }]), "");
   assert.deepStrictEqual(normaliseTicket("x", { aiDraft: { text: "Hi", confidence: 0.8, confidenceSteps: [{ articles: 1, confidence: 0.5 }] } }).aiDraft.confidenceSteps, [{ articles: 1, confidence: 0.5 }]);
-});
-
-check("Aidan's state on a ticket reads as a badge and one line; nothing when Aidan has nothing to say", () => {
-  assert.strictEqual(normaliseTicket("x", {}).aidan, null);
-  assert.strictEqual(normaliseTicket("x", { aidan: { status: "made-up" } }).aidan, null, "an unknown state is not shown");
-  const replied = aidanView(normaliseTicket("x", { aidan: { status: "replied", skillName: "AWS onboarding pack", document: { name: "pack.md" }, recipients: 3 } }).aidan);
-  assert.deepStrictEqual([replied.badge, replied.tone, replied.line], ["Aidan replied", "done", "Aidan wrote pack.md with the AWS onboarding pack skill and replied to 3 people on this email."]);
-  const ingested = aidanView({ status: "ingested", skillName: "AWS onboarding pack", files: [{ name: "a.pdf" }] });
-  assert.deepStrictEqual([ingested.badge, ingested.line], ["Ingested", "Ingested: kept as reference material for the AWS onboarding pack skill (1 attachment)."]);
-  assert.strictEqual(aidanView({ status: "ignored", reason: "The sender is not allowed to instruct Aidan." }).tone, "attention");
-  assert.ok(aidanView({ status: "queued", kind: "generate", instruction: "send the pack" }).line.includes("next scheduled sync"));
-  assert.strictEqual(aidanView(null), null);
 });
 
 let failed = 0;
