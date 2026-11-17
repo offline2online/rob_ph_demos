@@ -23,6 +23,10 @@
 //   • High-value senders (Prospects (TAM), Leads, or a domain in Settings) are
 //     never answered automatically: a flagged Staff Kanban ticket is raised
 //     for the person named in Settings.
+//   • Aidan (aidan@, functions/aidan.js): an email in the Aidan tab from an
+//     allowed sender that tags "@Aidan" with an instruction is answered by
+//     Aidan instead of a Help Centre draft: documentation written with a skill
+//     and sent to everyone on the email, or the email kept for a skill.
 //
 // Routes (Hosting rewrite /supportMail/** → this function):
 //   GET  /v1/status                    member  connection + settings (no secrets)
@@ -31,6 +35,7 @@
 //   GET  /v1/oauth/callback            Google redirects here (state-checked)
 //   POST /v1/disconnect                admin
 //   POST /v1/settings                  admin
+//   POST /v1/aidan                     admin   Aidan's allowed senders and switch (never read back unmasked)
 //   POST /v1/sync                      editor  read new mail now
 //   POST /v1/compose                   editor  {to, subject, text}: a new email from the mailbox
 //   POST /v1/cron                      board key  the same, for the five-minute workflow
@@ -47,6 +52,7 @@
 
 const crypto = require("crypto");
 const core = require("./support-core");
+const { createAidan } = require("./aidan");
 const faqFeed = require("./faq-feed");
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
 
@@ -71,6 +77,8 @@ const CACHE_MS = 5 * 60 * 1000;
 const DRAFT_MODEL = "claude-opus-5-5";
 const DRAFT_TIMEOUT_MS = 40000;
 const COMPOSED_PER_HOUR = 30;      // new emails one member may send from the mailbox
+// Aidan runs per scheduled sync: one writes a whole document (minutes).
+const AIDAN_PER_RUN = 1;
 
 // An article as triage uses it. `hidden` (hiddenFromWebsite on the article or
 // its category/folder, see functions/faq-feed.js) keeps it in the catalogue
@@ -85,10 +93,10 @@ function articleView(a, categoryName = "", hidden = false) {
 }
 
 // One structured call to the model. Returns the parsed JSON, or throws.
-async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000 }) {
+async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000, timeout = DRAFT_TIMEOUT_MS, maxRetries = 1 }) {
   const Client = Anthropic || require("@anthropic-ai/sdk").default || require("@anthropic-ai/sdk");
   const headers = require("./lead-enrich").workspaceHeaders(workspaceId);
-  const client = new Client({ apiKey, timeout: DRAFT_TIMEOUT_MS, maxRetries: 1, ...(headers ? { defaultHeaders: headers } : {}) });
+  const client = new Client({ apiKey, timeout, maxRetries, ...(headers ? { defaultHeaders: headers } : {}) });
   const res = await client.beta.messages.create({
     model: DRAFT_MODEL,
     max_tokens: maxTokens,
@@ -165,6 +173,7 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
+  aidan: aidanImpl = null, bucket = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -516,9 +525,15 @@ function createSupportMail({
     return { ok: true, to: addr, ticketId: threadId, key: core.ticketKey(number) };
   }
 
+  // ── Aidan, the agent mailbox (functions/aidan.js) ──
+  const aidan = createAidan({
+    db, tickets, secretsRef: (name) => db.collection(SECRETS).doc(name), gmail, readSettings, logEvent, now, logger,
+    callJson, apiKey: anthropicKey, workspaceId: anthropicWorkspace, Anthropic, run: aidanImpl, bucket,
+  });
+
   // ── Sync ──
   let syncing = null;
-  async function runSync(maxTriage) {
+  async function runSync(maxTriage, maxAidan = 0) {
     const started = now();
     const settings = await readSettings();
     if (!settings.connectedEmail) return { ok: false, error: "The support mailbox isn't connected." };
@@ -546,15 +561,29 @@ function createSupportMail({
         for (const m of full) parsed.push(core.parseGmailMessage(m, settings.connectedEmail));
       }
       parsed.sort((a, b) => ms(a.at) - ms(b.at));
+      const aidanConfig = await aidan.readConfig();
       for (const m of parsed) {
         const r = await ingest(m, settings);
         if (r !== "skipped") result.newMessages += 1;
         if (r === "new-ticket") result.newTickets += 1;
+        // An email in the Aidan tab that tags Aidan is queued for Aidan instead of triage.
+        if (r !== "skipped") {
+          try { await aidan.afterIngest(m, aidanConfig); }
+          catch (err) { logger.error("support: Aidan check failed", { threadId: m.threadId, error: core.clip(String(err && err.message ? err.message : err), 300) }); }
+        }
       }
-      const pending = await tickets().where("triagePending", "==", true).limit(maxTriage).get();
-      const ids = [];
-      pending.forEach((d) => ids.push(d.id));
-      for (const id of ids) { await triageTicket(id); result.triaged += 1; }
+      // Aidan before triage, so a run starts early in the function's budget
+      // (functions/aidan.js → LATEST_START_MS). Its runs take minutes, so only
+      // the scheduled sync works them; every sync sweeps a run that was cut off.
+      result.aidanRuns = await aidan.runQueued(maxAidan, { startedAt: started });
+      // A sync that ran Aidan leaves triage to the next one (five minutes), so
+      // the two together can't outlast the function.
+      if (!result.aidanRuns) {
+        const pending = await tickets().where("triagePending", "==", true).limit(maxTriage).get();
+        const ids = [];
+        pending.forEach((d) => ids.push(d.id));
+        for (const id of ids) { await triageTicket(id); result.triaged += 1; }
+      }
       await settingsRef().set({ lastSyncAt: started, lastSyncOk: true, lastSyncError: "", lastSyncNew: result.newMessages, connectionError: "" }, { merge: true });
     } catch (err) {
       const message = core.clip(String(err && err.message ? err.message : err), 300);
@@ -565,8 +594,8 @@ function createSupportMail({
     return result;
   }
   // One sync at a time in this instance: the schedule and "Sync now" can overlap.
-  function sync({ maxTriage = TRIAGE_PER_RUN } = {}) {
-    if (!syncing) syncing = runSync(maxTriage).finally(() => { syncing = null; });
+  function sync({ maxTriage = TRIAGE_PER_RUN, maxAidan = AIDAN_PER_RUN } = {}) {
+    if (!syncing) syncing = runSync(maxTriage, maxAidan).finally(() => { syncing = null; });
     return syncing;
   }
 
@@ -710,7 +739,7 @@ function createSupportMail({
       const who = await requireRole(req, "viewer");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "GET") return send(res, 405, { error: "GET only" });
-      return send(res, 200, await status());
+      return send(res, 200, Object.assign(await status(), { aidan: await aidan.status({ admin: who.user.role === "admin" }) }));
     }
 
     const t = /^\/v1\/tickets\/([A-Za-z0-9_-]{1,80})\/(reply|draft|status|note|assign|escalate)$/.exec(path);
@@ -756,12 +785,12 @@ function createSupportMail({
       const who = await requireRole(req, "editor");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "POST") return send(res, 405, { error: "POST only" });
-      const r = await sync({ maxTriage: TRIAGE_PER_PAGE_SYNC });
+      const r = await sync({ maxTriage: TRIAGE_PER_PAGE_SYNC, maxAidan: 0 });
       return send(res, r.ok ? 200 : 502, r);
     }
 
     // ── Admin: connection and settings ──
-    if (!["/v1/oauth/client", "/v1/oauth/start", "/v1/disconnect", "/v1/settings"].includes(path)) return send(res, 404, { error: "not found" });
+    if (!["/v1/oauth/client", "/v1/oauth/start", "/v1/disconnect", "/v1/settings", "/v1/aidan"].includes(path)) return send(res, 404, { error: "not found" });
     const who = await requireRole(req, "admin");
     if (!who.ok) return send(res, who.status, { error: who.error });
     if (req.method !== "POST") return send(res, 405, { error: "POST only" });
@@ -800,6 +829,11 @@ function createSupportMail({
       tokenCache = null;
       return send(res, 200, { ok: true });
     }
+    // Aidan's allowed senders: configuration, never in the repository and never read back unmasked.
+    if (path === "/v1/aidan") {
+      const r = await aidan.saveConfig(body, who.user.email);
+      return send(res, r.ok ? 200 : 400, r);
+    }
     // /v1/settings
     const cur = await readSettings();
     const { value, errors } = core.cleanSettingsInput(body, cur);
@@ -809,7 +843,7 @@ function createSupportMail({
     return send(res, 200, { ok: true, settings: value });
   }
 
-  return { handle, sync, status, triageTicket, ingest };
+  return { handle, sync, status, triageTicket, ingest, aidan };
 }
 
 module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL };

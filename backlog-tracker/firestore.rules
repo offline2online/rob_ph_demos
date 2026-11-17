@@ -1069,8 +1069,20 @@ service cloud.firestore {
       allow read: if isBoardReader();
       allow write: if false;
     }
+    // supportSecrets/aidan is Aidan's configuration (functions/aidan.js): the
+    // allowed senders who may instruct the agent mailbox. They are personal
+    // addresses, so they live only here, written by an admin through
+    // /supportMail/v1/aidan and never returned unmasked.
     match /supportSecrets/{doc} {
       allow read, write: if false;
+    }
+    // skillReferences/{id}: material Aidan was asked by email to keep for a
+    // skill ("@Aidan, keep this for the … skill"), read by later Aidan runs
+    // with that skill. Members may read it, like the skills themselves; only
+    // the supportMail function writes it.
+    match /skillReferences/{refId} {
+      allow read: if isBoardReader();
+      allow write: if false;
     }
     match /supportCounters/{doc} {
       allow read, write: if false;

@@ -6323,6 +6323,100 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
 
+### Aidan, the agent mailbox (17 Nov 2026)
+
+Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
+assistant: tagged requests from Rob run a skill and are answered with the
+documentation, by reply-all.
+
+- **SUP-AID-1** An email starts a run only when all three hold: it is in
+  the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
+  allowed senders, and its new text tags `@Aidan` with an instruction. The
+  tag is a word (`@Aidan`, any case), not an address, not a longer name and
+  not a possessive (`@Aidan's`). It is read only from the email's new text
+  (`stripQuotedStrict`): everything from Gmail's "On … wrote:" (on one line
+  or wrapped), Outlook's "From:" followed within four lines by "Sent:",
+  "Date:", "To:" or "Subject:", "-----Original Message-----",
+  "---------- Forwarded message", "Begin forwarded message:" or a line of
+  underscores on is dropped, and so is every ">" line. An email with no new
+  text (a blank reply-all, an attachment-only reply, a forward with no
+  comment) has no tag: it never falls back to the whole text, so neither a
+  quoted earlier request nor someone else's quoted tag ever runs. A tag is
+  an instruction only when what follows it asks for something: it has an
+  action verb (send, write, draft, store, keep …), or it is three or more
+  words that don't open with an acknowledgement ("thanks", "great",
+  "looks good" …). "@Aidan thanks for this, looks great" is recorded as
+  "Aidan: no action" with that reason and does not run.
+- **SUP-AID-2** Only the author of the tagged email counts. A tag written by
+  someone who is not allowed does nothing, even on a thread an allowed
+  sender started; an allowed sender may tag Aidan on a thread someone else
+  started.
+- **SUP-AID-3** A plain Cc with no tag, a tag from anyone else, a tag with
+  no instruction, machine-sent mail and mail the mailbox sent never start a run and never get a reply.
+  The email stays in the Aidan tab. A refused tag is shown on the ticket
+  ("Aidan: no action") with the reason.
+- **SUP-AID-4** Before a run, the sender is checked again against the
+  current allowed list, and Gmail must have verified the From address. Only
+  the topmost `Authentication-Results` header is read (Gmail adds its own
+  above every header the email arrived with; the Gmail API's
+  `payload.headers` keeps that order and the run passes them through
+  untouched), and its authserv-id must be exactly `mx.google.com` (no other
+  host, no `*.google.com`). In it, a DMARC result other than pass for the
+  From domain, or a DMARC verdict for another From domain, is final;
+  otherwise a DMARC pass, a DKIM pass (`header.d`/`header.i`) or an SPF pass
+  (`smtp.mailfrom`) for the From domain is needed. Headers further down are
+  never read. Otherwise nothing is done.
+- **SUP-AID-5** The skill is the one the instruction names (by slug or
+  name), or else the one Claude picks from the skills library. With no
+  matching skill, nothing is sent and the ticket goes to Needs a person.
+- **SUP-AID-6** A request to write produces the documentation with that
+  skill from the email, its attachments (text, PDF and images; at most 8
+  files and 20 MB) and the skill's kept reference material. Any instruction
+  with a verb to send, write, draft, create, prepare, produce, generate,
+  build, make, reply, email, share, forward, summarise, revise or redo is a
+  write, even when it also says "keep" or "add" ("send the pack, keep it
+  short for the skill reviewers"). It is sent at once, with no approval
+  step, as a reply on the same thread to everyone on the email: the
+  sender's verified From address and the rest of To in To, the original Cc
+  in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
+  is not verified, so it is ignored: it neither replaces the sender nor adds
+  anyone. It comes from the connected mailbox as
+  "Aidan", signed as Rob's assistant, with the document attached as a
+  Markdown file, and is marked `Auto-Submitted: auto-generated`.
+- **SUP-AID-7** The sent reply is filed on the ticket and shown in the Aidan
+  tab with who it went to and the file attached. The ticket is resolved by
+  Aidan.
+- **SUP-AID-8** A request to store (with no write verb: starting "store",
+  "save", "ingest", "remember" or "contribute"; or "keep", "add" or "file"
+  with a skill, references, a library or "for later"; or "store / keep /
+  save this … for the X skill") keeps the email and its attachments as reference
+  material for that skill (`skillReferences`); PDFs and images are kept in
+  Storage. Later runs of the skill read it. The ticket is marked
+  **Ingested** and no email is sent.
+- **SUP-AID-9** The allowed senders are runtime configuration only: they are
+  never in the repository, its tests, fixtures, docs or commit messages. An
+  admin sets them in Settings › Support inbox › Aidan; they are kept in
+  `supportSecrets/aidan`, which no client can read or write, and are only
+  ever shown masked to an admin (members see how many there are). With none
+  set, or Aidan switched off, nothing runs.
+- **SUP-AID-10** Runs happen in the scheduled sync, one per sync; "Sync now"
+  files and queues but does not run. A thread runs Aidan five times at most.
+  A whole run fits inside the `supportMail` function's 540 seconds: it runs
+  before triage and only in the sync's first two minutes (otherwise it waits
+  for the next sync), the skill choice has one minute and the document four,
+  neither model call is retried, and a sync that ran Aidan leaves triage to
+  the next sync. A run still `working` 15 minutes after it started was cut
+  off: the next sync (scheduled or "Sync now") moves it to Needs a person
+  with that reason, and it is never started again.
+- **SUP-AID-11** Queueing is idempotent. Each email is decided once per
+  ticket, in a transaction (`aidanSeen` keeps the last 50 decided ids), so
+  the schedule and "Sync now" on another instance filing the same email
+  can't queue it twice. A job is claimed by moving it from queued to
+  working in a transaction, so only one instance runs it and sends. While a
+  run is queued or working on a thread, a new request there is not queued
+  (a note on the ticket says to send it again once Aidan has answered), and
+  a refused tag doesn't overwrite the run's status.
+
 ### Connecting
 
 - **SUP-CON-1** An admin saves a Google OAuth client and signs in as the
@@ -6466,13 +6560,24 @@ articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
 `lastReplyAt` (the latest reply sent to them, by a person, the AI or from
 Gmail itself; unset on tickets last replied to before 17 Nov 2026),
 `firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`, `startedBy` (who
-wrote it, on a ticket that began as a new email from the console).
+wrote it, on a ticket that began as a new email from the console),
+and for Aidan `aidanPending`, `aidanRuns`, `aidanSeen` (the gmail ids of
+the last 50 tagged emails decided on the thread) and `aidan {status (queued |
+working | replied | ingested | ignored | needs-person | error), kind
+(generate | store), gmailId, instruction, reason, skillId, skillName, client,
+document {name, title, size}, recipients, referenceId, files[], at,
+startedAt, finishedAt}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
 (`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
 mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
 | `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
-server-only.
+server-only. Aidan's sent reply has `source: "aidan"`, `cc`, `attachments`
+and `skillName`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
+`enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
+`skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
+`text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
+`source`, `createdAt` (members read; only the function writes).
 
 ### Known gaps
 
@@ -6484,7 +6589,17 @@ for the inbox yet. The five-minute sync depends on GitHub's schedule.
 Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
 that was written to hello@ or aidan@ before then stays in Support Inbox.
 Every reply goes out from the connected mailbox's address, whichever alias
-the customer wrote to.
+the customer wrote to. Aidan's reply waits for the next scheduled sync (five
+minutes, or longer when GitHub's schedule is busy). Aidan's document is a
+Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+spreadsheets) are named to the model, not read. Kept reference material has
+no page of its own yet. The sender check trusts Gmail's own
+`Authentication-Results` (authserv-id `mx.google.com`); if mail ever
+reaches the mailbox through another gateway that adds its own header on
+top, every tagged request is refused until the check is changed. A second
+tagged request on a thread while Aidan is working on the first is not
+queued; it has to be sent again. A run cut off after its email was sent is
+moved to a person, whose reason says to check the thread first.
 
 ## Dashboard — the console's landing page (17 Nov 2026)
 
