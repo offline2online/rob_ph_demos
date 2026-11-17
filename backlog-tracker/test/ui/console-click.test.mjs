@@ -1360,8 +1360,13 @@ const scenarios = [
       await c.visible('.deploy-gate-hint[data-project-id="p1"]', "the header names why Deploy to Main is missing");
       assert.match(await c.text('.deploy-gate-hint[data-project-id="p1"]'), /Deploy to Main appears when Fix the thing is approved or sent back/);
       assert.match(await c.text('.deploy-gate-hint[data-project-id="p2"]'), /Tests failing: red-tests — nobody is pinned as the cause yet/);
+      // Needs attention is on the Dashboard only (kBJU2GCKW9S6XGWTwK8T), not on the board.
+      assert.ok(await c.page.locator("#needs-attention").isHidden(), "no Needs attention strip on the Agent Board");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       // Needs attention: the stale testing card, the blocked card and the red train, oldest first.
       await c.visible("#needs-attention .needs-attention-row", "Needs attention lists rows");
+      await c.visible("#dash-groups .dash-group", "the KPI tiles are drawn");
+      assert.ok(await c.page.evaluate(() => { const na = document.getElementById("needs-attention"), g = document.getElementById("dash-groups"); return !!(na && g && na.parentElement === document.getElementById("dashboard-page") && (na.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING)); }), "the strip is on the Dashboard, above the KPI tiles");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#needs-attention .needs-attention-row")].map((r) => `${r.dataset.kind}:${r.dataset.id}`));
       assert.ok(rows.indexOf("ticket:r1") >= 0 && rows.indexOf("ticket:b1") > rows.indexOf("ticket:r1"), `oldest first: ${rows}`);
       assert.ok(rows.includes("train:p2"), `the red train is listed: ${rows}`);
@@ -1373,20 +1378,53 @@ const scenarios = [
       // Each button does its action: Answer opens the answer dialog.
       await c.click('#needs-attention .needs-attention-action[data-id="b1"]', "Answer");
       await c.waitText("#rs-title", "Answer: Purple widget", "the Answer dialog opens for that ticket");
+      assert.ok(await c.page.locator("#dashboard-page").isVisible(), "Answer opens over the Dashboard");
       const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
   {
-    name: "Needs attention: collapsed to a count when nothing waits on a person; Open scrolls to the card",
+    name: "Needs attention: collapsed to a count when nothing waits on a person",
+    hash: "",
     seed: () => only("l1"),
     async run(c) {
-      await c.boardReady();
+      await c.visible("#dashboard-page", "the console opens on the Dashboard");
       await c.visible("#needs-attention", "the strip is there");
-      assert.strictEqual((await c.text("#needs-attention .needs-attention-count")).trim(), "0");
+      await until(async () => (await c.text("#needs-attention .needs-attention-count")).trim() === "0", "the empty count", 8000);
       assert.strictEqual(await c.page.locator("#needs-attention .needs-attention-row").count(), 0);
+      assert.strictEqual((await c.text("#needs-attention .needs-attention-none")).trim(), "Nothing waiting on you.");
+      // One row: the head alone (the harness has no icon font, so measure structure, not pixels).
+      assert.strictEqual(await c.page.$eval("#needs-attention", (el) => el.children.length), 1, "one line when empty");
       const pos = await c.page.evaluate(() => getComputedStyle(document.getElementById("needs-attention")).position);
       assert.notStrictEqual(pos, "fixed", "normal flow, never position: fixed");
+    },
+  },
+  {
+    // kBJU2GCKW9S6XGWTwK8T: Needs attention lives on the Dashboard only. Test
+    // takes you to the Agent Board with the card in view; no other page has it.
+    name: "Needs attention: on the Dashboard only; Test opens the Agent Board with the card in view",
+    hash: "",
+    seed: () => {
+      const s = only("r1", "l1");
+      // No test link: a link would also open in a new tab, to a host the harness doesn't route.
+      delete s.docs.backlogItems.r1.previewUrl;
+      Object.assign(s.docs.backlogItems.r1, { statusEnteredAt: t(Date.now() - 30 * 3600_000) });
+      return s;
+    },
+    async run(c) {
+      await c.visible('#needs-attention .needs-attention-action[data-id="r1"]', "the Ready for Testing card is listed");
+      assert.strictEqual(await c.page.$eval('#needs-attention .needs-attention-action[data-id="r1"]', (b) => b.dataset.action), "test");
+      await c.click('#needs-attention .needs-attention-action[data-id="r1"]', "Test");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board opened");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      await until(async () => c.page.evaluate(() => { const r = document.querySelector('.card[data-id="r1"]')?.getBoundingClientRect(); return !!r && r.bottom > 0 && r.top < innerHeight; }), "the card in view", 4000);
+      for (const hash of ["#board", "#staff-kanban", "#promote/leads", "#support", "#settings"]) {
+        c.at(`no Needs attention on ${hash}`);
+        await c.page.evaluate((h) => { window.location.hash = h; }, hash);
+        await c.page.waitForTimeout(300);
+        assert.ok(await c.page.locator("#needs-attention").isHidden(), `no Needs attention strip on ${hash}`);
+      }
     },
   },
   {
@@ -3368,6 +3406,9 @@ const scenarios = [
     async run(c) {
       c.at("a load with no hash lands on the Dashboard");
       await c.visible("#dashboard-page");
+      // Needs attention is in the page from the start; wait for the tiles themselves.
+      await c.visible(".dash-group-title", "the tile sections are drawn");
+      assert.ok(await c.page.locator("#dashboard-page #needs-attention").isVisible(), "Needs attention is on the Dashboard");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "the Dashboard has its own URL");
       assert.ok(await c.page.locator("#projects-root").isHidden(), "the board is not drawn under it");
       assert.deepStrictEqual(await c.page.$$eval(".dash-group-title", (els) => els.map((e) => e.textContent)), ["Internal", "External", "Support"]);

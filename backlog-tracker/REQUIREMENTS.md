@@ -873,15 +873,20 @@ a code problem", about 5 hours). Now:
 
 ### Needs attention (RC6wVNJJcPjNTR5hov9W, 16 Nov 2026)
 
-A strip at the top of the Agent Board, above the projects and in normal flow
-(nothing `position: fixed`), collapsed to "Needs attention 0" when empty.
+A section on the **Dashboard** (`#dashboard`) and on no other page
+(kBJU2GCKW9S6XGWTwK8T, 17 Nov 2026; it used to sit above the projects on the
+Agent Board): above the KPI tile sections, in normal flow (nothing
+`position: fixed`), collapsed to "Needs attention 0" and "Nothing waiting on
+you." when empty. It is drawn from the tickets the console already holds and
+redraws as cards change, with no Firestore listener of its own.
 It lists, across all projects, everything waiting on a person (tester,
 approver, decision) or stuck past its threshold, oldest first:
 ticket or train, its status line, who it waits on, its age, and one button
-for the usual next action — Open (scrolls to the card), Answer (the blocked
-flag's Answer dialog), Test (opens the test link), Deploy (the project's own
-Deploy to Main, only when the header offers it; otherwise it scrolls to the
-project). **Waiting on me** narrows it to cards the signed-in member filed
+for the usual next action — Answer (the blocked flag's Answer dialog, opened
+on the Dashboard); Open, Approve and Test open the Agent Board and scroll to
+the card (Test also opens the card's test link in a new tab, when it has
+one); Deploy opens the Agent Board and starts the project's own Deploy to
+Main, only when the header offers it, otherwise it scrolls to the project. **Waiting on me** narrows it to cards the signed-in member filed
 (and that wait on a person) or, for an editor or admin, everything waiting on
 a tester or approver. `needsAttention()` and `waitingOnMe()` in
 `card-state.js`; the same list is `get_pipeline_health` over MCP.
@@ -6412,6 +6417,9 @@ Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
 (`#dashboard`), the first item in the sidebar. The Agent Board keeps its own
 address, `#board`, so a reload on the board stays on the board; Agent Board in
 the sidebar and the Dashboard's Agent board tile both go there.
+
+First on the page, above the tiles, is **Needs attention** (see "Needs
+attention" above): it is shown here and on no other page.
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local

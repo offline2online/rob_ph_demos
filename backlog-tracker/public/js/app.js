@@ -3166,11 +3166,14 @@ function programGroupHTML(group) {
 // delay there is imperceptible.
 let renderScheduled = false;
 // ── Needs attention (RC6wVNJJcPjNTR5hov9W) ───────────────────────────────
-// One strip above the projects listing, across every project, what waits on
-// a person or is stuck past its threshold, oldest first (needsAttention in
-// card-state.js, the same list get_pipeline_health returns over MCP). Each
-// row has one button for the usual next action. "Waiting on me" narrows it
-// to cards the signed-in member filed, was asked about, or can approve.
+// One strip on the Dashboard (#dashboard) and nowhere else (kBJU2GCKW9S6XGWTwK8T),
+// above the KPI tiles: across every project, what waits on a person or is
+// stuck past its threshold, oldest first (needsAttention in card-state.js, the
+// same list get_pipeline_health returns over MCP). Its element sits inside
+// #dashboard-page, so it is drawn from the tickets this file holds on every
+// render, with no listener of its own, and is only seen there. Each row has one
+// button for the usual next action. "Waiting on me" narrows it to cards the
+// signed-in member filed, was asked about, or can approve.
 let needsAttentionMineOnly = false;
 let needsAttentionOpen = true;
 const NEEDS_ATTENTION_ACTIONS = {
@@ -3198,7 +3201,7 @@ function renderNeedsAttention() {
         <span class="needs-attention-title">Needs attention</span>
         <span class="needs-attention-count">${all.length}</span>
       </button>
-      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : ""}
+      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : `<span class="needs-attention-none">Nothing waiting on you.</span>`}
     </div>`;
   if (!all.length || !needsAttentionOpen) { el.innerHTML = head; return; }
   const rows = shown.map((e) => {
@@ -3240,11 +3243,19 @@ function gotoProject(pid) {
 async function runNeedsAttentionAction(btn) {
   const { action, kind, id, projectId } = btn.dataset;
   if (action === "answer" && kind === "ticket") { openResolveModal(id, { answer: true }); return; }
+  // Every other action's control lives on the Agent Board: the strip is on the
+  // Dashboard, so open the board first, then bring the card or project into view.
+  const dash = document.getElementById("dashboard-page");
+  if (dash && !dash.hidden) {
+    returnToBoard();
+    if (!sectionAllowed("agent-board")) return; // returnToBoard said why
+  }
   if (action === "test" && kind === "ticket") {
     const item = allItems.find((i) => i.id === id);
     const url = item && item.previewUrl ? safeHttpUrl(item.previewUrl) : "";
-    if (url) { window.open(url, "_blank", "noopener"); return; }
-    gotoCard(id); return;
+    gotoCard(id);
+    if (url) window.open(url, "_blank", "noopener");
+    return;
   }
   if (action === "deploy") {
     // Only the project's own header button deploys, and only when it is
@@ -12083,6 +12094,7 @@ function ensureDashboardUi() {
     dashboardUiLoading = import(`./dashboard-page.js${pageRetrySuffix("dashboard")}`).then(({ mountDashboard }) => {
       dashboardUi = mountDashboard({
         root: document.getElementById("dashboard-page"), db,
+        attention: document.getElementById("needs-attention"),
         items: () => items, projects: () => projects, releases: () => releases,
         canView: (key) => sectionAllowed(key),
         go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },

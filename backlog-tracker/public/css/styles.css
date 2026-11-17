@@ -3068,6 +3068,7 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 }
 .needs-attention-action .material-symbols-outlined { font-size: 15px; }
 .needs-attention-none { margin: 0; padding: 0 12px 10px; font-size: 12px; color: var(--text-muted); }
+.needs-attention-head .needs-attention-none { padding: 0; }
 @media (max-width: 640px) {
   .needs-attention-row { flex-wrap: wrap; }
   .needs-attention-main { flex-basis: calc(100% - 40px); }

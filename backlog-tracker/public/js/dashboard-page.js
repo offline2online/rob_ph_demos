@@ -32,9 +32,12 @@ export const GROUPS = [
   { key: "support", label: "Support" },
 ];
 
-// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), now?() }
+// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), now?(), attention? }
+// attention: the Needs attention strip (app.js draws and wires it). It is kept
+// as the same element, placed between the header and the tile sections.
 export function mountDashboard(ctx) {
   const root = ctx.root;
+  const attention = ctx.attention || null;
   const now = () => (ctx.now ? ctx.now() : Date.now());
   // Per source: { status: "idle" | "loading" | "ok" | "error", data, error }
   const src = { kanban: { status: "idle" }, leads: { status: "idle" }, funnel: { status: "idle" }, support: { status: "idle" } };
@@ -48,6 +51,7 @@ export function mountDashboard(ctx) {
       <button type="button" class="btn-outline dash-refresh" id="dash-refresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span>Refresh</button>
     </div>
     <div id="dash-groups"></div>`;
+  if (attention) root.querySelector("#dash-groups").before(attention);
   root.querySelector("#dash-refresh").addEventListener("click", () => refresh(true));
   root.addEventListener("click", (e) => {
     const tile = e.target.closest(".dash-tile[data-target]");
