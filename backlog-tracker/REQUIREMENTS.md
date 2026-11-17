@@ -585,6 +585,16 @@ busy. Now:
   the build found already fixed (`noDeploymentRequired`, no commit,
   `autoRaised`, `flakyCaseId`) is closed the same way instead of waiting for
   "Confirm tested" (`autoConfirmNoChangePlan`). Tests: `test/auto-approve.test.js`.
+- **A patch's `package.json` is merged, not rebuilt (17 Nov 2026).** Every
+  ticket that adds a test appends to the same script line of
+  `backlog-tracker/test/package.json`, so two tickets built side by side
+  always conflict there when the second lands. `rebasePatchFilesOnto` now
+  merges a conflicted `package.json` key by key (`mergePackageJsonPatch`,
+  the same `mergeJsonThreeWay` a train's merge with main uses: both sides'
+  added commands kept in a script's `&&` chain). Anything else both changed
+  differently (a version, a dependency) is still a conflict and a rebuild.
+  Before this a finished 78-minute Advanced build of the Dashboard page was
+  discarded and started again over that one line.
 - **One flaky-test ticket per case, by id, not by title (17 Nov 2026).** A
   build renames its ticket, so matching the open ticket by its "Flaky test:
   <case>" title filed a duplicate the moment each fix reached Ready for
