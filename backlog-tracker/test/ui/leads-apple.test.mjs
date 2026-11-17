@@ -76,6 +76,9 @@ try {
       assert.ok(await page.locator("#lead-sum-logo .enrich-logo").count(), "logo in the header");
       assert.strictEqual((await page.textContent("#lead-sum-contacts .lead-inbound")).trim(), "3 inbound", "inbound count beside Contacts");
       assert.ok((await page.textContent("#lead-sum-aws")).includes("Pat Lee"), "AWS team shown");
+      // A contact's LinkedIn button shows LinkedIn's own mark, not a generic "open in new tab" symbol.
+      const li = await page.evaluate(() => { const a = document.querySelector("#lead-sum-contacts a.ap-linkedin-btn"); return a && { href: a.getAttribute("href"), target: a.target, label: a.getAttribute("aria-label"), mark: !!a.querySelector("svg.ap-brand-linkedin"), text: a.textContent.trim() }; });
+      assert.deepStrictEqual(li, { href: "https://linkedin.com/in/jo", target: "_blank", label: "Open Jo Bloggs's LinkedIn profile", mark: true, text: "" }, "the contact's LinkedIn link shows the LinkedIn mark and opens the profile in a new tab");
       await page.keyboard.press("Escape");
       await until(async () => page.locator("#lead-summary-backdrop").isHidden(), "the detail to close");
       // Form

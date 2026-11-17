@@ -36,11 +36,13 @@ The documents on the console, in the order they list:
 Every copy, by the exact name the console lists it under:
 
 - 0 — Start here: reading order, ticket flow and deploy map · `backlog-tracker/START-HERE.md`
-- 1 — Project rules, CLAUDE.md (1/5): site, WordPress MCP, deploys, help centre · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (2/5): two projects, one repo; board basics · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (3/5): linking projects, the train, board access · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (4/5): MCP server, project header, Docs page, archive · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (5/5): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (1/7): site, WordPress MCP, deploys, help centre · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (2/7): two projects, one repo; board basics · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (3/7): linking projects, columns · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (4/7): the train, release groups, board access · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (5/7): MCP server, Support Inbox, project header · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (6/7): iPad rules, Docs page, archive, categories · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (7/7): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
 - 2 — Console MCP guide (1/8): connect an agent, add a member · `backlog-tracker/MCP.md`
 - 2 — Console MCP guide (2/8): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
 - 2 — Console MCP guide (3/8): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
@@ -73,8 +75,8 @@ Where to begin, by role:
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
 - **Building tickets or changing the pipeline**: the ticket flow below, then
-  "1 — Project rules, CLAUDE.md (3/5)" (the train) and "(4/5)" (the MCP
-  server and the board's screens).
+  "1 — Project rules, CLAUDE.md (4/7)" (the train), "(5/7)" (the MCP
+  server and the board's screens) and "(6/7)" (the iPad rules).
 
 ## The ticket flow
 
@@ -97,7 +99,9 @@ Functions) unless a file is named.
    leave the card itself via `backlog-tracker/functions/patch-offload.js`.
    The session never pushes.
 5. **Train commit**: `processApplyPatch()` lands it as one commit on the
-   project's `deploy/<folder>` branch, after `syncTrainWithMain()` brings
+   project's `deploy/<folder>` branch (for a project in a release group, the
+   group's shared branch — `releaseGroups/{id}.deployBranch`, see
+   `backlog-tracker/functions/release-groups.js`), after `syncTrainWithMain()` brings
    the branch up to date with main and `rebasePatchFilesOnto()` carries the
    patch onto the synced files by a three-way merge.
 6. **Train tests**: `trainTestsFor()` picks the workflows for the paths the
@@ -112,7 +116,9 @@ Functions) unless a file is named.
 8. **Approve, or Failed testing**: ticking the cards and approving is the
    only gate. Failed testing writes `revertRequested`, and the automation
    reverts that card's commits.
-9. **Deploy to Main**: shown only when the whole train is approved.
+9. **Deploy to Main**: shown only when the whole train is approved (in a
+   release group, every member project's tickets on the shared train; one
+   PR and one version bump for the group).
    `notifyOnProjectReadyToDeploy()` fires the Deploy Routine, which verifies
    the train. (The help centre is no longer reviewed per deploy: marking a release Live on AWS Marketplace starts a Release Audit.)
 10. **Merge**: `processDeployTrain()` merges the train PR once its checks

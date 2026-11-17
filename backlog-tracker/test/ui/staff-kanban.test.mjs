@@ -692,13 +692,15 @@ T("TC-24", "completed vs withdrawn via the Status menu; epic progress ignores wi
   await p.waitForSelector("#task-backdrop:not([hidden]) #f-description .ql-editor");
   const opts = await p.$$eval("#f-status option", (o) => o.map((x) => x.textContent));
   assert.ok(opts.includes("Completed") && opts.includes("Withdrawn") && !opts.some((t) => /Completed \//.test(t)));
-  // Choose Withdrawn and wait for Save to switch on. A form redrawn meanwhile (the ticket re-read) shows the
-  // ticket's status again, so the choice is made again on the form that is there.
+  // Choose Withdrawn, wait for Save to switch on, and press it, as one step. A form redrawn meanwhile (the ticket
+  // re-read) shows the ticket's status again and switches Save off, and that can happen after Save was seen on and
+  // before the tap lands: the tap then waited 30 s for a Save that stayed off (TC-24's flake on phone-360). So the
+  // press only waits briefly, and a redrawn form gets the choice made again on the form that is there.
   await eventually(async () => {
-    if ((await p.inputValue("#f-status")) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn");
-    assert.ok(await p.isEnabled("#f-save"), "Save is on: the status changed");
-  });
-  await press(p, "#f-save");
+    if ((await p.inputValue("#f-status", { timeout: 2000 })) !== "done:withdrawn") await p.selectOption("#f-status", "done:withdrawn", { timeout: 2000 });
+    assert.ok(await p.isEnabled("#f-save", { timeout: 2000 }), "Save is on: the status changed");
+    await press(p, "#f-save", { timeout: 2000 });
+  }, 20000);
   await eventually(async () => assert.deepEqual((({ status, resolution }) => ({ status, resolution }))(await where(p, "PH-26")), { status: "done", resolution: "withdrawn" }));
   await eventually(async () => assert.ok(await p.$eval('.kb-card[data-key="PH-26"]', (e) => e.classList.contains("kb-card-withdrawn"))));
   const t = await stored(p, "PH-26");
@@ -715,6 +717,18 @@ T("TC-25", "phone swimlanes: every lane shows the current column; swipe changes 
   await p.tap('.kb-pager-tab[data-col="3"]'); await p.waitForTimeout(200);
   const shown = await p.$$eval(".kb-lane-cell", (e) => e.filter((c) => getComputedStyle(c).display !== "none").map((c) => c.dataset.status));
   assert.ok(shown.length >= 1 && shown.every((s) => s === "ready-for-testing"));
+  // Collapsing a lane hides its cards on a phone too, and expanding brings them back (dET0knIEG81wsnXoJ7ht)
+  const visible = (sel) => p.$$eval(sel, (e) => e.filter((c) => getComputedStyle(c).display !== "none").length);
+  const huyCells = `.kb-lane-cell[data-lane="${HUY}"]`;
+  const huyShown = await visible(huyCells);
+  await p.tap(`.kb-lane[data-lane="${HUY}"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), 0, "a collapsed lane shows no cards");
+  await p.tap(`.kb-lane[data-lane="${HUY}"] .kb-lane-head`); await p.waitForTimeout(150);
+  assert.equal(await visible(huyCells), huyShown, "expanding the lane shows its cards again");
+  await p.tap("#kb-lanes-collapse"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), 0, "Collapse all hides every lane's cards");
+  await p.tap("#kb-lanes-expand"); await p.waitForTimeout(150);
+  assert.equal(await visible(".kb-lane-cell"), shown.length, "Expand all shows them again");
   if (prof.engine === "chromium") {
     // a real swipe: touch events over the DevTools protocol
     const cdp = await p.context().newCDPSession(p);
@@ -739,17 +753,29 @@ T("KB-C1", "a viewer sees the board and changes nothing", async (prof) => {
     assert.equal((await where(p, "PH-34")).status, "backlog", "drag does nothing");
   }
   // A viewer's touch drag above never starts a card drag, so Chromium treats it as a pan and flings; the next tap
-  // only stops the fling and produces no click. Tap until the modal opens (it opens on the first tap when nothing
-  // was flung), then wait for it properly.
-  for (let i = 0; i < 4; i++) {
-    await press(p, '.kb-card[data-key="PH-20"]');
-    if (await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 1500 }).then(() => true, () => false)) break;
+  // only stops the fling and produces no click. So tap until PH-20's modal is open, tapping again only while it is
+  // shut: the modal opens after an async read of the ticket, and a tap sent while that read was still in flight could
+  // land on the backdrop the read had just put up (closing it), or a second open could redraw the form between two
+  // separate lookups. KB-C1 flaked on exactly that, on tablet-l-chromium ("page.$eval: Failed to find element
+  // matching selector #f-title" right after the modal was seen open). The modal is read in ONE evaluate and the case
+  // waits until that read shows PH-20 open, so nothing can change between the check and the assertions.
+  const modal = () => p.evaluate(() => {
+    const b = document.getElementById("task-backdrop"), t = document.getElementById("f-title"), st = document.getElementById("f-status");
+    const open = !!(b && !b.hidden && t && b.contains(t));
+    return { open, key: open ? document.getElementById("task-title-h").textContent.trim() : "", save: !!document.getElementById("f-save"), titleDisabled: !!(t && t.disabled), statusDisabled: !!(st && st.disabled), del: !!document.getElementById("f-delete") };
+  });
+  const ph20Open = () => { const b = document.getElementById("task-backdrop"), t = document.getElementById("f-title"); return !!(b && !b.hidden && t && b.contains(t) && document.getElementById("task-title-h").textContent.trim() === "PH-20"); };
+  let m = await modal();
+  for (let i = 0; i < 6 && !(m.open && m.key === "PH-20"); i++) {
+    if (!m.open) await press(p, '.kb-card[data-key="PH-20"]', { timeout: 5000 }).catch(() => {});
+    await p.waitForFunction(ph20Open, null, { timeout: 4000 }).catch(() => {});
+    m = await modal();
   }
-  await p.waitForSelector("#task-backdrop:not([hidden]) #f-title", { timeout: 5000 });
-  assert.equal(await p.$("#f-save"), null, "no Save");
-  assert.equal(await p.$eval("#f-title", (e) => e.disabled), true);
-  assert.equal(await p.$eval("#f-status", (e) => e.disabled), true, "the Status menu is locked");
-  assert.equal(await p.$("#f-delete"), null);
+  assert.deepEqual([m.open, m.key], [true, "PH-20"], "PH-20's modal opens");
+  assert.equal(m.save, false, "no Save");
+  assert.equal(m.titleDisabled, true);
+  assert.equal(m.statusDisabled, true, "the Status menu is locked");
+  assert.equal(m.del, false);
   assert.equal((await writes(p, /^kanban/)).length, 0, "nothing written");
   await p.evaluate(() => { location.hash = "#staff-kanban/settings"; }); await p.waitForSelector(".kb-readonly-note");
   assert.equal(await p.$eval('[data-show="sprint"]', (e) => e.disabled), true);
@@ -1688,6 +1714,63 @@ T("KB-C25", "a tag written over MCP shows as a mention in the ticket and survive
   const t = await stored(p, "PH-20");
   assert.deepEqual(t.mentions, [HUY], "the tag is still on the ticket, so nobody is told a second time");
   assert.match(t.description, new RegExp(`data-user="${HUY.replace(/\./g, "\\.")}"`));
+  await p.done();
+});
+
+// The recogniser keeps hearing "one two three …" until it is stopped; the
+// page's getUserMedia probes are counted in window.__gum.
+const talkingSpeech = () => ({
+  arg: null,
+  fn: () => {
+    window.__gum = 0;
+    navigator.mediaDevices.getUserMedia = async () => { window.__gum++; return { getTracks: () => [{ stop() {} }] }; };
+    if (navigator.permissions) navigator.permissions.query = async () => ({ state: "prompt" });
+    const words = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"];
+    window.SpeechRecognition = class {
+      start() {
+        let n = 0;
+        this.t = setInterval(() => { n = Math.min(n + 1, words.length); if (this.onresult) this.onresult({ resultIndex: 0, results: [Object.assign([{ transcript: words.slice(0, n).join(" ") }], { isFinal: false })] }); }, 80);
+      }
+      stop() { clearInterval(this.t); setTimeout(() => this.onend && this.onend(), 10); }
+      abort() { clearInterval(this.t); setTimeout(() => this.onend && this.onend(), 10); }
+    };
+  },
+});
+
+T("KB-C27", "the microphone is asked for once, and typing in a dictated comment stops the mic and keeps the edit", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: talkingSpeech() });
+  const box = '[data-field="comments"] .ql-editor';
+  const text = () => p.$$eval(box, (e) => (e[0] ? e[0].innerText.trim() : ""));
+  await press(p, '.kb-card[data-key="PH-23"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => /^One two/.test(await text()), "dictation in the comment box");
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "mic", "the mic to stop");
+  // Again, and in another ticket: no second permission probe.
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "stop", "the mic to listen again");
+  assert.equal(await p.evaluate(() => window.__gum), 1, "asked for the microphone once, not on every start");
+  assert.equal(await p.evaluate(() => localStorage.getItem("kb-mic-granted")), "1", "the grant is remembered for the next visit");
+  // Typing while it listens: the mic stops and the typed words stay.
+  // (the caret is put at the end while words are still arriving: it stays there)
+  await p.click(box); await p.keyboard.press("Control+End"); await p.waitForTimeout(200); await p.keyboard.type(" edited by hand");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "mic", "typing to stop the mic");
+  await p.waitForTimeout(400);
+  const kept = await text();
+  assert.match(kept, /edited by hand$/, `the edit survives later results: ${kept}`);
+  await p.keyboard.press("Backspace"); await p.keyboard.press("Backspace");
+  await p.waitForTimeout(200);
+  assert.match(await text(), /edited by ha$/, "and can be edited further");
+  await press(p, "#f-comment-add"); await p.waitForTimeout(200);
+  assert.match(await p.$$eval(".kb-comment-text", (e) => e[e.length - 1].textContent), /edited by ha$/, "the comment is saved as edited");
+  await press(p, "#task-close");
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => (await p.textContent("#f-comment-mic")) === "stop", "the mic on another ticket");
+  await press(p, "#f-comment-mic");
+  assert.equal(await p.evaluate(() => window.__gum), 1, "still asked only once");
   await p.done();
 });
 

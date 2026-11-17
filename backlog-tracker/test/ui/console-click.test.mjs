@@ -80,6 +80,7 @@ function makeCtx(o, width) {
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
   ctx.enrichCalls = o.enrichCalls;
+  ctx.supportCalls = o.supportCalls;
   ctx.routineWrites = o.routineWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
@@ -290,7 +291,7 @@ const scenarios = [
       await check("sidebar open");
       c.at("sidebar collapsed");
       await c.click("#nav-collapse-btn");
-      await c.hidden("#nav-drawer", "sidebar hides");
+      await until(() => c.page.evaluate(() => document.getElementById("nav-drawer").getBoundingClientRect().width === 70), "sidebar folds to the icon rail");
       await check("sidebar collapsed");
     },
   },
@@ -338,11 +339,47 @@ const scenarios = [
       await c.boardReady();
       await overflow("board");
       if (persistent) {
-        c.at("sidebar collapses and the content reflows");
-        await c.click("#nav-collapse-btn");
-        await c.hidden("#nav-drawer", "sidebar hides");
-        await c.click("#nav-open-btn", "reopen");
-        await c.visible("#nav-drawer", "sidebar returns");
+        // Gmail-style (mUjtN0QWAnN9J3kK3LZC): the menu button folds the
+        // sidebar to an icon rail, the page reflows to it, and resting the
+        // mouse on the rail opens it over the page without moving the page.
+        c.at("sidebar collapses to the icon rail and the content reflows");
+        const nav = () => c.page.evaluate(() => {
+          const d = document.getElementById("nav-drawer");
+          const item = document.getElementById("staff-kanban-btn");
+          return {
+            width: Math.round(d.getBoundingClientRect().width),
+            pad: getComputedStyle(document.querySelector(".app")).paddingLeft,
+            label: getComputedStyle(item).color,
+            iconX: Math.round(item.querySelector(".material-symbols-outlined").getBoundingClientRect().left),
+            peek: document.documentElement.hasAttribute("data-nav-peek"),
+            hamburger: getComputedStyle(document.getElementById("nav-open-btn")).display,
+          };
+        });
+        const open = await nav();
+        assert.strictEqual(open.hamburger, "none", "the topbar hamburger is not shown beside the persistent sidebar");
+        await c.click("#nav-collapse-btn", "fold the sidebar");
+        await c.page.mouse.move(c.width - 20, 400);
+        await until(async () => (await nav()).width === 70, "sidebar folds to a 70px icon rail");
+        const rail = await nav();
+        assert.strictEqual(rail.pad, "94px", "the page reflows to the rail");
+        assert.strictEqual(rail.label, "rgba(0, 0, 0, 0)", "rail shows icons only");
+        assert.strictEqual(rail.iconX, open.iconX, "icons keep their place when the sidebar folds");
+        assert.strictEqual(await c.page.evaluate(() => localStorage.getItem("bt-nav-collapsed")), "1", "the folded state is remembered");
+        c.at("resting the mouse on the rail opens it over the page");
+        await c.page.mouse.move(35, 400);
+        await until(async () => (await nav()).width === 248, "rail opens over the page on hover");
+        const peek = await nav();
+        assert.ok(peek.peek, "peek state is set");
+        assert.strictEqual(peek.pad, "94px", "the page does not move while the rail is open over it");
+        assert.notStrictEqual(peek.label, "rgba(0, 0, 0, 0)", "labels show while it is open over the page");
+        await c.click("#concept-incubator-btn", "a destination opens from the open rail");
+        await c.visible("#concept-incubator-page", "Concepts shows");
+        await c.page.mouse.move(c.width - 20, 400);
+        await until(async () => { const n = await nav(); return n.width === 70 && !n.peek; }, "rail folds again when the mouse leaves");
+        c.at("the menu button expands it again");
+        await c.click("#nav-collapse-btn", "expand the sidebar");
+        await until(async () => (await nav()).width === 248 && (await nav()).pad === "272px", "sidebar returns at full width");
+        assert.strictEqual(await c.page.evaluate(() => document.documentElement.hasAttribute("data-nav-collapsed")), false, "not collapsed");
       }
     },
   },
@@ -858,6 +895,104 @@ const scenarios = [
     },
   },
   {
+    // Release groups (Flow 9/9): two projects, one deployable, one train.
+    name: "Release group: header says who it ships with, and Deploy to Main names the other project's ticket that holds it",
+    seed: () => {
+      const s = only("d1");
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      s.docs.backlogItems.k1 = { projectId: "p2", title: "Kanban thing", desc: "x", type: "bug", category: "HQ Admin", status: "ready-for-testing", deployCommit: "aaa111", createdAt: t(T0 + 2), updatedAt: t(T0 + 2) };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      const mine = `.project[data-project-id="${PID}"]`;
+      await c.waitText(`${mine} .release-group-line`, "Ships with Other Project · Console Group");
+      await c.waitText(`${mine} .release-group-line`, "2 tickets on the shared train, 1 in Ready for Testing");
+      await c.waitText(`${mine} .deploy-held-reason`, "Waiting for Other Project: Kanban thing is in Ready for Testing");
+      c.at("held Deploy to Main is disabled");
+      assert.strictEqual(await c.page.locator(`${mine} .deploy-held-by-group`).isDisabled(), true);
+      // The other project's own column holds its card in plain sight: no "Waiting for" there.
+      assert.strictEqual(await c.page.locator(`.project[data-project-id="p2"] .deploy-held-reason`).count(), 0);
+      await c.waitText(`.project[data-project-id="p2"] .release-group-line`, "Ships with Demo Project · Console Group");
+      const { sw, cw } = await c.page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+      assert.ok(sw <= cw, `the header scrolls sideways at ${c.width}px (${sw} > ${cw})`);
+    },
+  },
+  {
+    name: "Release group: approving a card locks every project in the group",
+    seed: () => {
+      const s = only("r1");
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.click(`.project[data-project-id="${PID}"] .card-deploy-select-cb`, "tick the Ready for Testing card");
+      await c.click(`.project[data-project-id="${PID}"] .deploy-to-feature-btn`, "Approved for Deployment — 1 selected");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === "projects/p2") ? w : null; }, "the lock on the other project");
+      c.at("both projects locked");
+      for (const pid of [PID, "p2"]) assert.strictEqual(writes.find((x) => x.path === `projects/${pid}`).data.trainLocked, true, pid);
+    },
+  },
+  {
+    name: "Release group: Settings → Projects lists it; an admin's edit is refused while the shared train has tickets",
+    seed: () => {
+      const s = only("r1");
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin" } };
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.projects.p3 = { name: "Third Project", createdAt: t(T0 + 2), deployBranch: "deploy/third" };
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#settings/projects"; });
+      await c.waitText("#settings-release-groups .release-group-row", "Console Group");
+      await c.waitText("#settings-release-groups .release-group-row", "deploy/console-group");
+      await c.visible("#release-group-new-btn", "an admin sees New release group");
+      const before = (await c.writes()).length;
+      await c.click(`#settings-release-groups .release-group-remove-btn[data-project-id="p2"]`, "remove Other Project");
+      await c.waitText("#release-group-status", "Not changed: Console Group's shared train has 1 ticket on it");
+      c.at("nothing written");
+      assert.strictEqual((await c.writes()).length, before);
+      // Add Third Project: its own train is empty but the group's is not — refused too.
+      await c.click("#settings-release-groups .release-group-add-btn", "Add project");
+      await c.waitText("#release-group-status", "Not changed:");
+      assert.strictEqual((await c.writes()).length, before);
+    },
+  },
+  {
+    name: "Release group: with empty trains an admin removes a project, and only the pointers are written",
+    seed: () => {
+      const s = only("l1");
+      s.user = { email: "admin@personalisationhub.com", role: "admin" };
+      s.docs.consoleUsers = { "admin@personalisationhub.com": { email: "admin@personalisationhub.com", role: "admin", displayName: "Ada Admin" } };
+      s.docs.projects.p2 = { name: "Other Project", createdAt: t(T0 + 1), deployBranch: "deploy/other", releaseGroupId: "g1" };
+      s.docs.projects[PID].releaseGroupId = "g1";
+      s.docs.releaseGroups = { g1: { name: "Console Group", deployBranch: "deploy/console-group", projectIds: [PID, "p2"], createdAt: t(T0) } };
+      return s;
+    },
+    async run(c) {
+      await c.boardReady();
+      await c.page.evaluate(() => { location.hash = "#settings/projects"; });
+      await c.waitText("#settings-release-groups .release-group-row", "Other Project");
+      await c.click(`#settings-release-groups .release-group-remove-btn[data-project-id="p2"]`, "remove Other Project");
+      const writes = await until(async () => { const w = await c.writes(); return w.some((x) => x.path === "releaseGroups/g1") ? w : null; }, "the group write");
+      c.at("group and pointer written");
+      assert.deepStrictEqual(writes.find((x) => x.path === "releaseGroups/g1").data.projectIds, [PID]);
+      const pointer = writes.find((x) => x.path === "projects/p2");
+      assert.ok(pointer && "releaseGroupId" in pointer.data, "the project's pointer is removed");
+      assert.ok(!("deployBranch" in pointer.data), "its own deployBranch is never touched");
+      await c.waitText("#release-group-status", "Other Project has its own train again.");
+    },
+  },
+  {
     name: "New backlog item: a new description creates one Backlog card",
     seed: () => only("r1"),
     async run(c) {
@@ -903,6 +1038,38 @@ const scenarios = [
       await c.boardReady();
       await c.waitText('.card[data-id="b1"] .kanban-link-badge', "PH-12", "the link back to the Kanban ticket");
       assert.strictEqual(await c.page.getAttribute('.card[data-id="b1"] .kanban-link-badge', "href"), "#staff-kanban/ticket/PH-12");
+    },
+  },
+  {
+    // Ticket AveRUvb8zcijYoamN2RN: Attach file takes any image, video or document
+    // (an MP4 screen recording and a PDF here), several at once, and names a
+    // file it can't take instead of silently ignoring it.
+    name: "Edit item: Attach file uploads an MP4 and a PDF together, refuses an .exe by name",
+    seed: () => only("b1"),
+    async run(c) {
+      await c.boardReady();
+      await c.click('.card[data-id="b1"] .edit-item-btn', "Edit");
+      await c.visible("#ei-backdrop");
+      await c.waitText(".ei-attach-screenshot-label[for='ei-attach-screenshot-input']", "Attach file", "the button says Attach file");
+      const accept = await c.page.getAttribute("#ei-attach-screenshot-input", "accept");
+      for (const t of ["image/*", "video/*", "application/pdf", ".mp4", ".mov"]) assert.ok(accept.split(",").includes(t), `the picker accepts ${t}: ${accept}`);
+      assert.strictEqual(await c.page.evaluate(() => document.getElementById("ei-attach-screenshot-input").multiple), true, "several files at once");
+      c.at("pick an MP4 and a PDF", "#ei-attach-screenshot-input");
+      await c.page.setInputFiles("#ei-attach-screenshot-input", [
+        { name: "screen-recording.mp4", mimeType: "video/mp4", buffer: Buffer.from("fake mp4 bytes") },
+        { name: "spec.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 test") },
+      ]);
+      await until(async () => (await c.page.locator("#ei-attachments-list .ei-attachment-item").count()) === 2, "both attachments listed", 6000);
+      assert.strictEqual(await c.page.locator("#ei-attachments-list video.ei-attachment-thumb").count(), 1, "the MP4 shows as a video");
+      assert.strictEqual(await c.page.locator("#ei-attachments-list .ei-attachment-file-icon").count(), 1, "the PDF shows as a file icon");
+      const stored = await c.page.evaluate(() => globalThis.__fbStub.col("backlogItems").get("b1").attachments);
+      assert.deepStrictEqual(stored.map((a) => [a.name, a.type, a.contentType]), [["screen-recording.mp4", "video", "video/mp4"], ["spec.pdf", "file", "application/pdf"]]);
+      c.at("pick an .exe", "#ei-attach-screenshot-input");
+      await c.page.setInputFiles("#ei-attach-screenshot-input", { name: "run.exe", mimeType: "application/x-msdownload", buffer: Buffer.from("MZ") });
+      await c.visible("#dialog-backdrop", "a message about the refused file");
+      await c.waitText("#dialog-message", "run.exe", "it names the file");
+      await c.click("#dialog-ok", "dismiss");
+      assert.strictEqual(await c.page.locator("#ei-attachments-list .ei-attachment-item").count(), 2, "nothing else was attached");
     },
   },
   {
@@ -1194,8 +1361,13 @@ const scenarios = [
       await c.visible('.deploy-gate-hint[data-project-id="p1"]', "the header names why Deploy to Main is missing");
       assert.match(await c.text('.deploy-gate-hint[data-project-id="p1"]'), /Deploy to Main appears when Fix the thing is approved or sent back/);
       assert.match(await c.text('.deploy-gate-hint[data-project-id="p2"]'), /Tests failing: red-tests — nobody is pinned as the cause yet/);
+      // Needs attention is on the Dashboard only (kBJU2GCKW9S6XGWTwK8T), not on the board.
+      assert.ok(await c.page.locator("#needs-attention").isHidden(), "no Needs attention strip on the Agent Board");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       // Needs attention: the stale testing card, the blocked card and the red train, oldest first.
       await c.visible("#needs-attention .needs-attention-row", "Needs attention lists rows");
+      await c.visible("#dash-groups .dash-group", "the KPI tiles are drawn");
+      assert.ok(await c.page.evaluate(() => { const na = document.getElementById("needs-attention"), g = document.getElementById("dash-groups"); return !!(na && g && na.parentElement === document.getElementById("dashboard-page") && (na.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING)); }), "the strip is on the Dashboard, above the KPI tiles");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#needs-attention .needs-attention-row")].map((r) => `${r.dataset.kind}:${r.dataset.id}`));
       assert.ok(rows.indexOf("ticket:r1") >= 0 && rows.indexOf("ticket:b1") > rows.indexOf("ticket:r1"), `oldest first: ${rows}`);
       assert.ok(rows.includes("train:p2"), `the red train is listed: ${rows}`);
@@ -1207,20 +1379,53 @@ const scenarios = [
       // Each button does its action: Answer opens the answer dialog.
       await c.click('#needs-attention .needs-attention-action[data-id="b1"]', "Answer");
       await c.waitText("#rs-title", "Answer: Purple widget", "the Answer dialog opens for that ticket");
+      assert.ok(await c.page.locator("#dashboard-page").isVisible(), "Answer opens over the Dashboard");
       const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
   {
-    name: "Needs attention: collapsed to a count when nothing waits on a person; Open scrolls to the card",
+    name: "Needs attention: collapsed to a count when nothing waits on a person",
+    hash: "",
     seed: () => only("l1"),
     async run(c) {
-      await c.boardReady();
+      await c.visible("#dashboard-page", "the console opens on the Dashboard");
       await c.visible("#needs-attention", "the strip is there");
-      assert.strictEqual((await c.text("#needs-attention .needs-attention-count")).trim(), "0");
+      await until(async () => (await c.text("#needs-attention .needs-attention-count")).trim() === "0", "the empty count", 8000);
       assert.strictEqual(await c.page.locator("#needs-attention .needs-attention-row").count(), 0);
+      assert.strictEqual((await c.text("#needs-attention .needs-attention-none")).trim(), "Nothing waiting on you.");
+      // One row: the head alone (the harness has no icon font, so measure structure, not pixels).
+      assert.strictEqual(await c.page.$eval("#needs-attention", (el) => el.children.length), 1, "one line when empty");
       const pos = await c.page.evaluate(() => getComputedStyle(document.getElementById("needs-attention")).position);
       assert.notStrictEqual(pos, "fixed", "normal flow, never position: fixed");
+    },
+  },
+  {
+    // kBJU2GCKW9S6XGWTwK8T: Needs attention lives on the Dashboard only. Test
+    // takes you to the Agent Board with the card in view; no other page has it.
+    name: "Needs attention: on the Dashboard only; Test opens the Agent Board with the card in view",
+    hash: "",
+    seed: () => {
+      const s = only("r1", "l1");
+      // No test link: a link would also open in a new tab, to a host the harness doesn't route.
+      delete s.docs.backlogItems.r1.previewUrl;
+      Object.assign(s.docs.backlogItems.r1, { statusEnteredAt: t(Date.now() - 30 * 3600_000) });
+      return s;
+    },
+    async run(c) {
+      await c.visible('#needs-attention .needs-attention-action[data-id="r1"]', "the Ready for Testing card is listed");
+      assert.strictEqual(await c.page.$eval('#needs-attention .needs-attention-action[data-id="r1"]', (b) => b.dataset.action), "test");
+      await c.click('#needs-attention .needs-attention-action[data-id="r1"]', "Test");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board opened");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      await until(async () => c.page.evaluate(() => { const r = document.querySelector('.card[data-id="r1"]')?.getBoundingClientRect(); return !!r && r.bottom > 0 && r.top < innerHeight; }), "the card in view", 4000);
+      for (const hash of ["#board", "#staff-kanban", "#promote/leads", "#support", "#settings"]) {
+        c.at(`no Needs attention on ${hash}`);
+        await c.page.evaluate((h) => { window.location.hash = h; }, hash);
+        await c.page.waitForTimeout(300);
+        assert.ok(await c.page.locator("#needs-attention").isHidden(), `no Needs attention strip on ${hash}`);
+      }
     },
   },
   {
@@ -1386,11 +1591,61 @@ const scenarios = [
   },
   {
     name: "Blocked: a card waiting on an answer shows the chip, not Ready for Dev",
-    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C" }; return s; },
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Pick A, B or C", setBy: "owner@example.com" }; return s; },
     async run(c) {
       await c.boardReady();
       await c.waitText(".waiting-answer-chip", "1 waiting on your answer", "the waiting chip");
       assert.strictEqual(await c.page.locator(".project-notify-btn").count(), 0, "no Ready for Dev button");
+    },
+  },
+  {
+    name: "Blocked: a flag the pipeline raised and answers itself is not a question for a person",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "The build stopped without packaging a patch.\n\nNothing to answer.", setBy: "build-report" }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 1; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-status', "Handled automatically", "the chip says it is handled");
+      assert.strictEqual(await c.page.locator(".waiting-answer-chip").count(), 0, "not counted as waiting on your answer");
+      await c.waitText('.card[data-id="b1"] .blocked-answer-btn', "Steer", "the button is for steering, not answering");
+    },
+  },
+  {
+    name: "Blocked: once the senior model's tries are used up, the question is one sentence with options to click",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Two export formats fit the ticket.", setBy: "claude", question: "Ship the export as CSV or as XLSX?", options: [{ label: "XLSX" }, { label: "CSV", recommended: true }] }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 2; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.waitText('.card[data-id="b1"] .blocked-flag-status', "Needs your pick", "the chip asks for a pick");
+      await c.waitText(".waiting-answer-chip", "1 waiting on your answer", "counted as waiting on a person");
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.visible("#rs-backdrop");
+      await c.waitText("#rs-chat", "Ship the export as CSV or as XLSX?", "the question is shown");
+      const labels = await c.page.locator("#rs-chat .rs-option").allTextContents();
+      assert.deepStrictEqual(labels, ["CSV (recommended)", "XLSX"], "the recommended option is first");
+      await c.click("#rs-chat .rs-option.btn-primary", "the recommended option");
+      const writes = await c.waitWrites(2);
+      c.at("one click answers");
+      const card = writes.filter((x) => x.path === "backlogItems/b1");
+      assert.strictEqual(card.length, 1, JSON.stringify(writes));
+      assert.strictEqual(card[0].data.blocked, null);
+      assert.ok(JSON.stringify(card[0].data.notes).includes("Answer to the build's question: CSV"));
+      assert.deepStrictEqual(writes.find((x) => x.path === `projects/${PID}`).data.notifyItemIds, ["b1"]);
+    },
+  },
+  {
+    name: "Blocked: with no question from the build, the standard choice is offered and Park it builds nothing",
+    seed: () => { const s = only("b1"); s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "The build stopped without packaging a patch.\n\nNothing to answer.", setBy: "build-report" }; s.docs.backlogItems.b1.autoAnswers = 2; s.docs.backlogItems.b1.autoRetries = 2; return s; },
+    async run(c) {
+      await c.boardReady();
+      await c.click(".blocked-answer-btn", "Answer");
+      await c.waitText("#rs-chat", "This ticket was built 4 times, the last on the senior model, and did not get through: The build stopped without packaging a patch. What should happen to it?", "the standard question");
+      assert.deepStrictEqual(await c.page.locator("#rs-chat .rs-option").allTextContents(), ["Try again on the senior model (recommended)", "Park it: leave it in Backlog and stop trying"]);
+      await c.click("#rs-chat .rs-option.btn-ghost", "Park it");
+      await c.waitText("#rs-chat", "Parked.", "parked");
+      const writes = await c.writes();
+      c.at("parked without a build");
+      assert.strictEqual(writes.filter((x) => x.path === `projects/${PID}`).length, 0, JSON.stringify(writes));
+      const card = writes.find((x) => x.path === "backlogItems/b1");
+      assert.strictEqual(card.data.blocked, null);
+      assert.ok(JSON.stringify(card.data.notes).includes("Not rebuilt"));
     },
   },
   {
@@ -1594,6 +1849,15 @@ const scenarios = [
       await c.visible("#access-denied-page", "the Concepts URL is blocked");
       assert.ok((await c.page.textContent("#access-denied-text")).includes("Concepts"), "the notice names the section");
       assert.strictEqual(await c.page.evaluate(() => document.getElementById("concept-incubator-page").hidden), true, "the Concepts page never shows");
+      // The notice's way out goes to the Agent Board with its own address, so a reload stays on the board.
+      await c.click("#access-denied-go", "go to a section this role can open");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the redirect gives the Agent Board its address");
+      assert.ok(await c.page.locator("#access-denied-page").isHidden(), "the notice closed");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.boardReady();
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "a reload stays on the board, not the Dashboard");
+      assert.strictEqual(new URL(c.page.url()).hash, "#board");
       // view-only Skills: the page opens but its add control is gone
       await c.page.evaluate(() => { location.hash = "#skills"; });
       await c.visible("#skills-page", "Skills opens at View");
@@ -2608,6 +2872,122 @@ const scenarios = [
     },
   },
   {
+    name: "Promote: Prospects (TAM) Contacts tab - spreadsheet contacts imported and matched, add by hand, add from a URL, extension hand-over without duplicates",
+    seed: () => seed({ prospects: {
+      pa: { name: "Alpha Grocer", country: "United Kingdom", hqCountry: "United Kingdom", industry: "Grocery", contacts: [{ name: "Jo Bloggs", role: "CMO", lastContact: "May 2026" }, { name: "Sam Lee", role: "CIO", lastContact: "" }], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+      pb: { name: "Beta Pharmacy", country: "Germany", hqCountry: "Germany", industry: "Pharmacy", contacts: [], vendors: [], campaigns: [], status: "new", leadId: "", createdAt: t(T0), updatedAt: t(T0) },
+    }, prospectContacts: {
+      "tam-pa-samlee": { name: "Sam Lee", role: "CIO", companyName: "Alpha Grocer", prospectId: "pa", companyKey: "alphagrocer", linkedinUrl: "", email: "", notes: "", source: "TAM spreadsheet", removed: true, createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-prospects-btn", "prospects-page");
+      const col = () => c.page.evaluate(() => Object.fromEntries([...globalThis.__fbStub.col("prospectContacts").entries()]));
+      // Two tabs; Companies first.
+      assert.deepStrictEqual(await c.page.locator("#prospects-tabs [role=tab]").allTextContents(), ["Companies", "Contacts"]);
+      assert.strictEqual(await c.page.getAttribute("#prospects-tab-companies", "aria-selected"), "true");
+      await c.visible("#prospects-grid", "Companies shows the company grid");
+      // The spreadsheet's contacts on the company records are copied in once; a removed one stays removed.
+      await until(async () => !!(await col())["tam-pa-jobloggs"], "Jo Bloggs to be imported from the TAM record", 8000);
+      const all = await col();
+      assert.deepStrictEqual(Object.keys(all).sort(), ["tam-pa-jobloggs", "tam-pa-samlee"], "nothing else imported");
+      assert.strictEqual(all["tam-pa-jobloggs"].prospectId, "pa"); assert.strictEqual(all["tam-pa-jobloggs"].companyKey, "alphagrocer");
+      assert.strictEqual(all["tam-pa-jobloggs"].source, "TAM spreadsheet"); assert.strictEqual(all["tam-pa-samlee"].removed, true);
+      // The Contacts tab: its own URL, the company grid gone, the columns asked for.
+      await c.click("#prospects-tab-contacts", "the Contacts tab");
+      await until(async () => new URL(c.page.url()).hash === "#promote/prospects?tab=contacts", "the tab to have its own URL", 5000);
+      await c.visible("#pct-grid .ag-row", "the contacts list");
+      assert.strictEqual(await c.page.locator("#prospects-grid:visible, #prospects-tools:visible").count(), 0, "the company grid and its tools are hidden");
+      const cRows = () => c.page.evaluate(() => [...document.querySelectorAll("#pct-grid .ag-center-cols-container .ag-row")].map((r) => r.getAttribute("row-id")).sort().join());
+      assert.strictEqual(await cRows(), "tam-pa-jobloggs");
+      assert.strictEqual((await c.text("#pct-count")).replace(/\s+/g, " ").trim(), "1 Contact");
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#pct-grid .ag-header-row-column .ag-header-cell[col-id]")].map((h) => h.getAttribute("col-id"))), ["name", "role", "company", "linkedin", "createdAt"]);
+      assert.strictEqual((await c.text('#pct-grid .ag-row[row-id="tam-pa-jobloggs"] [col-id="company"]')).trim(), "Alpha Grocer", "matched to its TAM company");
+      // Add by hand, Unmatched.
+      await c.click("#pct-add", "Add contact");
+      await c.visible("#pct-drawer", "the contact form");
+      await c.click("#pct-save", "Save with no name");
+      assert.ok((await c.text("#pct-drawer-status")).includes("name"), "a name is required");
+      await c.page.fill("#pctf-name", "Pat Kim");
+      await c.page.fill("#pctf-role", "Buyer");
+      await c.page.fill("#pctf-email", "pat@acme.example");
+      await c.page.fill("#pctf-notes", "Met at the expo");
+      await c.click("#pct-save", "Save Pat");
+      await until(async () => Object.values(await col()).some((x) => x.name === "Pat Kim"), "Pat to be saved", 5000);
+      const pat = Object.values(await col()).find((x) => x.name === "Pat Kim");
+      assert.strictEqual(pat.prospectId, ""); assert.strictEqual(pat.email, "pat@acme.example"); assert.strictEqual(pat.source, "Added by hand");
+      await until(async () => (await cRows()).split(",").length === 2, "Pat to be listed", 5000);
+      // The Unmatched filter and the search.
+      await c.page.selectOption("#pct-company", "__unmatched__");
+      await until(async () => (await c.text("#pct-grid .ag-center-cols-container")).includes("Pat Kim") && !(await c.text("#pct-grid .ag-center-cols-container")).includes("Jo Bloggs"), "Unmatched to show only Pat", 5000);
+      assert.ok((await c.text("#pct-count")).includes("1 of 2"));
+      await c.page.selectOption("#pct-company", "");
+      await c.page.fill("#pct-q", "cmo");
+      await until(async () => (await cRows()) === "tam-pa-jobloggs", "the search to find Jo by role", 5000);
+      await c.page.fill("#pct-q", "");
+      // Paste a LinkedIn URL: the link is kept, the name guessed; pick the company and save.
+      await c.page.fill("#pct-url", "https://www.linkedin.com/search/results/people/?keywords=x");
+      await c.click("#pct-url-btn", "Add from a search URL");
+      assert.ok((await c.text("#prospects-status")).includes("LinkedIn profile"), "a search URL is refused");
+      await c.page.fill("#pct-url", "https://uk.linkedin.com/in/ann-smith-77a1b2/");
+      await c.click("#pct-url-btn", "Add from URL");
+      await c.visible("#pct-drawer", "the form opens prefilled");
+      assert.strictEqual(await c.page.inputValue("#pctf-name"), "Ann Smith");
+      assert.strictEqual(await c.page.inputValue("#pctf-linkedin"), "https://www.linkedin.com/in/ann-smith-77a1b2/");
+      await c.page.selectOption("#pctf-company", "pb");
+      await c.page.fill("#pctf-role", "Head of Retail Media");
+      await c.click("#pct-save", "Save Ann");
+      await until(async () => !!(await col())["li-ann-smith-77a1b2"], "Ann to be saved under her profile's id", 5000);
+      assert.strictEqual((await col())["li-ann-smith-77a1b2"].prospectId, "pb");
+      assert.strictEqual((await col())["li-ann-smith-77a1b2"].source, "LinkedIn URL");
+      await c.visible('#pct-grid .ag-row[row-id="li-ann-smith-77a1b2"] [col-id="linkedin"] a[href="https://www.linkedin.com/in/ann-smith-77a1b2/"]', "the LinkedIn link");
+      // Pasting the same profile again opens the existing contact instead of a new one.
+      await c.page.fill("#pct-url", "linkedin.com/in/Ann-Smith-77a1b2");
+      await c.click("#pct-url-btn", "Add the same URL");
+      await c.visible("#pct-drawer", "the existing contact opens");
+      assert.strictEqual((await c.text("#pct-drawer-title")).trim(), "Ann Smith");
+      await c.click("#pct-cancel", "Cancel");
+      // The Chrome extension's hand-over: matched to the TAM company, then the same profile updates, never duplicates.
+      const hand = (p) => c.page.evaluate((x) => window.__phAddProspectContact(x), p);
+      const r1 = await hand({ name: "Jo Bloggs", headline: "Chief Marketing Officer at Alpha Grocer", company: "Alpha Grocer PLC", url: "https://www.linkedin.com/in/jo-bloggs-1a2b3c/" });
+      assert.deepStrictEqual([r1.ok, r1.outcome, r1.company], [true, "updated", "Alpha Grocer"], `the spreadsheet's Jo gets the profile (${JSON.stringify(r1)})`);
+      assert.strictEqual((await col())["tam-pa-jobloggs"].linkedinUrl, "https://www.linkedin.com/in/jo-bloggs-1a2b3c/");
+      assert.strictEqual((await col())["tam-pa-jobloggs"].role, "Chief Marketing Officer at Alpha Grocer");
+      const r2 = await hand({ name: "Lee Park", headline: "Store design", company: "Gamma Fashion", url: "https://www.linkedin.com/in/lee-park/" });
+      assert.deepStrictEqual([r2.ok, r2.outcome, r2.company], [true, "added", "Unmatched"]);
+      const r3 = await hand({ name: "Lee Park", headline: "Head of store design", company: "Gamma Fashion", url: "https://de.linkedin.com/in/lee-park?trk=x" });
+      assert.deepStrictEqual([r3.ok, r3.outcome], [true, "updated"], "the second click updates");
+      const live = Object.entries(await col()).filter(([, x]) => !x.removed);
+      assert.strictEqual(live.length, 4, "Jo, Pat, Ann, Lee: no duplicates");
+      assert.strictEqual((await col())["li-lee-park"].role, "Head of store design");
+      assert.strictEqual((await col())["li-lee-park"].source, "Chrome extension");
+      const bad = await hand({ name: "X", url: "https://www.linkedin.com/company/x/" });
+      assert.strictEqual(bad.ok, false, "a page that isn't a profile is refused");
+      // The company record shows its contacts.
+      await until(async () => (await cRows()).split(",").length === 4, "four contacts listed", 5000);
+      await c.page.click('#pct-grid .ag-row[row-id="tam-pa-jobloggs"] [col-id="company"] button');
+      await c.visible("#prospect-detail .pd-name", "the company opens on its Contacts tab");
+      assert.strictEqual(await c.page.getAttribute("#pd-tab-contacts", "aria-selected"), "true");
+      assert.strictEqual(await c.page.locator("#prospect-detail .pd-contact").count(), 1, "Alpha Grocer's one live contact");
+      assert.strictEqual(await c.page.locator('#prospect-detail .pd-contact a[href="https://www.linkedin.com/in/jo-bloggs-1a2b3c/"]').count(), 1);
+      assert.ok(new URL(c.page.url()).hash === "#promote/prospects", "back on the Companies tab");
+      await c.page.click('#prospect-detail [data-act="contact-add"]');
+      await c.visible("#pct-drawer", "Add contact from the company");
+      assert.strictEqual(await c.page.inputValue("#pctf-company"), "pa", "the company is picked");
+      await c.click("#pct-cancel", "Cancel");
+      // Remove: kept as removed, so the import never brings it back.
+      await c.page.click('#prospect-detail [data-act="contact-open"]');
+      await c.visible("#pct-drawer", "Jo's record");
+      await c.click("#pct-remove", "Remove");
+      await c.click("#pct-remove", "Click again to remove");
+      await until(async () => (await col())["tam-pa-jobloggs"].removed === true, "Jo to be removed", 5000);
+      await until(async () => (await c.page.locator("#prospect-detail .pd-contact").count()) === 0, "the company shows no contacts", 5000);
+      assert.ok((await col())["tam-pa-jobloggs"], "the record stays as removed");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide})`);
+    },
+  },
+  {
     name: "FAQ article editor: SEO & agents group counts, limits and completeness",
     seed: () => seed({ faqCategories: { fc1: { name: "Getting started", order: 0, createdAt: t(T0), updatedAt: t(T0) } } }),
     async run(c) {
@@ -2992,6 +3372,271 @@ const scenarios = [
       assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
     },
   },
+  {
+    // The console opens on the Dashboard (yYzYdxqAdI5KTdqZXs3C): five KPI
+    // tiles for yesterday in three sections, the breakdown on hover/focus,
+    // and a click through to each section. "#board" keeps the Agent Board.
+    name: "Dashboard: the landing page, five tiles for yesterday, breakdowns on hover, click through",
+    hash: "",
+    seed: () => {
+      const yday = (h, m = 0) => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.getTime(); };
+      const before = (h) => { const d = new Date(yday(h)); d.setDate(d.getDate() - 1); return d.getTime(); };
+      const dayStr = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+      const s = only("b1", "l1");
+      s.docs.backlogItems.l1.mergedAt = t(yday(15));
+      s.docs.backlogItems.l1.statusEnteredAt = t(yday(15));
+      s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Needs a logo" };
+      s.docs.releases = { r2: { name: "Release 1.6", version: "1.6.0", order: 1, status: "draft", createdAt: t(T0) } };
+      s.docs.kanbanSettings = { main: { currentRelease: "r2" } };
+      s.docs.kanbanCards = {
+        "PH-1": { key: "PH-1", title: "Menu import", release: "r2", status: "todo", open: true, assignee: "ana@ph.example", estimate: 16, logged: 4 },
+        "PH-2": { key: "PH-2", title: "Price rules", release: "r2", status: "in-progress", open: true, assignee: "ana@ph.example", estimate: 8 },
+        "PH-3": { key: "PH-3", title: "Help text", release: "r2", status: "todo", open: true, assignee: "ben@ph.example" },
+        "PH-4": { key: "PH-4", title: "Done already", release: "r2", status: "done", open: false, assignee: "ben@ph.example", estimate: 40 },
+      };
+      s.docs.memberDirectory = { "ana@ph.example": { email: "ana@ph.example", displayName: "Ana Lopes" }, "ben@ph.example": { email: "ben@ph.example", displayName: "Ben Okafor" } };
+      s.docs.leads = {
+        L1: { leadType: "company", company: { name: "Burger Co" }, source: "Website form", stage: "lead", createdAt: t(yday(9)), updatedAt: t(yday(9)) },
+        L2: { leadType: "operator", contacts: [{ id: "c1", name: "Sam Jones" }], sourcePage: "/run-your-own-rmn/", stage: "applied", createdAt: t(yday(18)), updatedAt: t(yday(18)) },
+        L3: { leadType: "company", company: { name: "Old Grocer" }, stage: "lead", createdAt: t(before(10)), updatedAt: t(before(10)) },
+      };
+      s.docs.funnelDaily = {
+        f1: { date: dayStr(yday(12)), channel: "Organic", industry: "", visits: 400 },
+        f2: { date: dayStr(yday(12)), channel: "Organic", industry: "Grocery", visits: 120, demoRequests: 3, downloads: 2 },
+        f3: { date: dayStr(yday(12)), channel: "Google Ads", industry: "QSR", visits: 80, demoRequests: 1, downloads: 4 },
+        f4: { date: dayStr(before(12)), channel: "Organic", industry: "", visits: 500 },
+      };
+      // ypgNiZ0c1PrIHgyGdXoR: the Support tile is three figures of the support@ inbox, as things stand now and today.
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const today = t(today0.getTime());
+      s.docs.supportTickets = {
+        s1: { subject: "Can't log in", customerName: "Priya", customerEmail: "priya@shop.example", status: "open", needsHuman: true, createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
+        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9 }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)), lastInboundAt: t(yday(9)) },
+        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedAt: today, lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
+        s4: { subject: "Sent a link", customerName: "Mo", status: "pending", lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
+        s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
+        // Written only to hello@ or aidan@: in none of the three figures.
+        h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(before(8)), lastMessageAt: t(before(8)), lastInboundAt: t(before(8)) },
+        a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedAt: today, lastReplyAt: today, inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: today },
+      };
+      return s;
+    },
+    async run(c) {
+      c.at("a load with no hash lands on the Dashboard");
+      await c.visible("#dashboard-page");
+      // Needs attention is in the page from the start; wait for the tiles themselves.
+      await c.visible(".dash-group-title", "the tile sections are drawn");
+      assert.ok(await c.page.locator("#dashboard-page #needs-attention").isVisible(), "Needs attention is on the Dashboard");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "the Dashboard has its own URL");
+      assert.ok(await c.page.locator("#projects-root").isHidden(), "the board is not drawn under it");
+      assert.deepStrictEqual(await c.page.$$eval(".dash-group-title", (els) => els.map((e) => e.textContent)), ["Internal", "External", "Support"]);
+      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.map((e) => e.dataset.tile)), ["agent", "kanban", "leads", "funnel", "support"]);
+      const value = (k) => c.page.locator(`.dash-tile-wrap[data-tile="${k}"] .dash-value`).first().innerText();
+      await until(async () => (await value("support")) !== "…" && (await value("funnel")) !== "…" && (await value("kanban")) !== "…" && (await value("leads")) !== "…", "every tile to load", 8000);
+      assert.strictEqual(await value("agent"), "1", "one ticket deployed yesterday");
+      assert.strictEqual(await value("kanban"), "20h (2.5d)", "remaining effort (12h + 8h) in hours with days at 8h a day");
+      const kanbanText = await c.text('.dash-tile-wrap[data-tile="kanban"] .dash-tile');
+      assert.ok(kanbanText.includes("1 task unestimated") && kanbanText.includes("Release 1.6"), `the unestimated flag and the release: ${kanbanText}`);
+      assert.strictEqual(await value("leads"), "2", "two leads yesterday");
+      assert.strictEqual(await value("funnel"), "600", "website visitors yesterday");
+      assert.deepStrictEqual(await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-metric', (els) => els.map((e) => e.textContent)), ["Awaiting a reply", "Oldest waiting", "Replied or resolved today"], "exactly three figures");
+      const sVals = await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-value', (els) => els.map((e) => e.textContent));
+      assert.deepStrictEqual([sVals[0], sVals[2]], ["2", "2"], `two support@ tickets await a reply and two were replied to or resolved today; hello@ and aidan@ mail is not counted: ${sVals}`);
+      // Priya wrote at 08:00 yesterday (16 to 40 hours ago); Hattie's older email to hello@ is not the oldest.
+      assert.ok(/^(\d+h|1d( \d+h)?)$/.test(sVals[1]), `the age of the oldest unanswered support@ email: ${sVals[1]}`);
+      assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles");
+      const tip = (k) => `.dash-tile-wrap[data-tile="${k}"] .dash-tip`;
+      const showTip = async (k) => {
+        c.at(`the ${k} breakdown`, tip(k));
+        if (c.width >= 1024) {
+          // Off the last tooltip first: a hover card stays open while the pointer is on it.
+          await c.page.mouse.move(2, 2);
+          await c.page.hover(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
+        } else {
+          // :focus-visible: reach the tile from the keyboard, as a keyboard user would.
+          await c.page.evaluate((sel) => { const all = [document.getElementById("dash-refresh"), ...document.querySelectorAll(".dash-tile")]; all[all.indexOf(document.querySelector(sel)) - 1].focus(); }, `.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
+          await c.page.keyboard.press("Tab");
+        }
+        await until(async () => c.page.locator(tip(k)).isVisible(), `the ${k} tooltip`, 3000);
+        return c.text(tip(k));
+      };
+      const kTip = await showTip("kanban");
+      assert.ok(kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)"), `remaining effort by assignee: ${kTip}`);
+      assert.ok(kTip.includes("No estimate: PH-3"), `missing estimates named: ${kTip}`);
+      const aTip = await showTip("agent");
+      assert.ok(aTip.includes("Demo Project") && /Blocked\s*1/.test(aTip), `per project, with blocked: ${aTip}`);
+      const lTip = await showTip("leads");
+      assert.ok(lTip.includes("Burger Co") && lTip.includes("Sam Jones") && !lTip.includes("Old Grocer"), `companies and operators by name: ${lTip}`);
+      const fTip = await showTip("funnel");
+      assert.ok(/Grocery[\s\S]*QSR/.test(fTip), `industries ranked, peak first: ${fTip}`);
+      assert.ok(fTip.includes("Drop-off"), `drop-off at each step: ${fTip}`);
+      const sTip = await showTip("support");
+      assert.ok(sTip.includes("Priya") && sTip.includes("Tom") && !sTip.includes("Hattie"), `waiting support@ tickets with customers: ${sTip}`);
+      const box = await c.page.locator(tip("support")).boundingBox();
+      const vw = await c.page.evaluate(() => window.innerWidth);
+      assert.ok(box && box.x >= 0 && box.x + box.width <= vw + 1, `the tooltip stays inside the viewport: ${JSON.stringify(box)}`);
+
+      // 7Pq6sqazzDyqvzWmh3Sg: every backlogItems snapshot re-renders the
+      // Dashboard; the tile a keyboard user is on keeps its focus and tooltip.
+      c.at("a board update keeps the focused tile and its open tooltip", tip("agent"));
+      await c.page.mouse.move(2, 2);
+      await c.page.evaluate(() => document.getElementById("dash-refresh").focus());
+      await c.page.keyboard.press("Tab");
+      const onAgent = () => c.page.evaluate(() => { const a = document.activeElement; return !!a && a.matches('.dash-tile-wrap[data-tile="agent"] .dash-tile') && a.__sameTile === true; });
+      await c.page.evaluate(() => { const a = document.activeElement; if (a) a.__sameTile = true; });
+      assert.ok(await onAgent(), "Tab from Refresh reaches the Agent board tile");
+      await until(async () => c.page.locator(tip("agent")).isVisible(), "the agent tooltip on focus", 3000);
+      await c.page.evaluate(() => {
+        const b = globalThis.__fbStub; const col = b.col("backlogItems"); const l1 = col.get("l1");
+        col.set("b1", { ...col.get("b1"), status: l1.status, mergedAt: l1.mergedAt, statusEnteredAt: l1.statusEnteredAt, blocked: null });
+        b.notify();
+      });
+      await until(async () => (await value("agent")) === "2", "the Agent board figure to update after the write", 5000);
+      assert.ok(await onAgent(), `focus stays on the same Agent board tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
+      assert.ok(await c.page.locator(tip("agent")).isVisible(), "its tooltip stays open");
+      assert.ok(/Blocked\s*0/.test(await c.text(tip("agent"))), "the open tooltip shows the new figures");
+      await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
+
+      c.at("a tile opens its section");
+      await c.page.mouse.move(2, 2);
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the Leads tile");
+      await c.visible("#leads-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/leads");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
+      await c.click('.dash-tile-wrap[data-tile="agent"] .dash-tile', "the Agent board tile");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
+      c.at("a reload on the board stays on the board");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.boardReady();
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "still the board after a reload");
+    },
+  },
+  {
+    // 0h1DqL6eKnNH58h2yiiY: mail reaches the mailbox through support@, hello@
+    // and aidan@, and each address has its own inbox tab.
+    name: "Support Inbox: three tabs by alias (Support Inbox, Hello, Aidan), each its own list",
+    hash: "#support",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: `c${n}@shop.example`, status: "open", needsHuman: true, createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        s1: tk(1, { subject: "To support", inboxes: ["support"] }),
+        n1: tk(2, { subject: "No alias" }),
+        h1: tk(3, { subject: "To hello", inboxes: ["hello"] }),
+        a1: tk(4, { subject: "To aidan", inboxes: ["aidan"] }),
+        sa: tk(5, { subject: "To support, Cc aidan", inboxes: ["support", "aidan"] }),
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      const subjects = () => c.page.locator(".support-row-subject").allTextContents();
+      const selected = () => c.page.$$eval("#support-page .support-tab[aria-selected=true]", (els) => els.map((b) => b.textContent));
+      c.at("the tab names read exactly Support Inbox, Hello, Aidan");
+      assert.deepStrictEqual((await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent))).slice(0, 3), ["Support Inbox", "Hello", "Aidan"]);
+      assert.deepStrictEqual(await selected(), ["Support Inbox"]);
+      assert.deepStrictEqual(await subjects(), ["To support, Cc aidan", "No alias", "To support"], "support@ mail, and mail naming no alias");
+      await c.click('[data-support-tab="hello"]', "the Hello tab");
+      await until(async () => (await selected())[0] === "Hello", "Hello selected");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/hello");
+      assert.deepStrictEqual(await subjects(), ["To hello"]);
+      assert.strictEqual(await c.text('[data-support-queue="needs-person"] .support-queue-count'), "1", "its own counts");
+      await c.click('[data-support-tab="aidan"]', "the Aidan tab");
+      await until(async () => (await selected())[0] === "Aidan", "Aidan selected");
+      assert.deepStrictEqual(await subjects(), ["To support, Cc aidan", "To aidan"], "an email to support@ with aidan@ in Cc is in both");
+      c.at("a reload stays in the inbox");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.visible("#support-page .support-row");
+      assert.deepStrictEqual(await selected(), ["Aidan"]);
+      assert.strictEqual((await subjects()).length, 2);
+    },
+  },
+  {
+    // ypgNiZ0c1PrIHgyGdXoR: the Stats and Try an email tabs are gone, and a
+    // small email icon writes a new email from the support mailbox.
+    name: "Support Inbox: no Stats or Try an email tab; the email icon opens a form that sends a new email",
+    hash: "#support/stats",
+    seed: () => {
+      const s = only("b1");
+      s.docs.supportTickets = { s1: { key: "SUP-1", subject: "To support", customerEmail: "c1@shop.example", status: "open", needsHuman: true, createdAt: t(T0), lastMessageAt: t(T0) } };
+      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
+        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 } };
+      s.supportAnswer = { ok: true, newMessages: 0, newTickets: 0, to: "buyer@retailer.example", ticketId: "s1", key: "SUP-2" };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the old Stats address opens the inbox");
+      await c.visible("#support-page .support-row");
+      assert.deepStrictEqual(await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"], "no Stats tab and no Try an email tab");
+      assert.strictEqual(await c.page.locator("#support-page").getByText(/Try an email|Stats/).count(), 0);
+      await c.visible("#support-compose-btn", "the email icon");
+      assert.strictEqual(await c.page.getAttribute("#support-compose-btn", "aria-label"), "Write an email");
+      await c.click("#support-compose-btn", "the email icon");
+      await c.visible("#support-compose-to", "the compose form");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/compose");
+      assert.deepStrictEqual(await c.page.$$eval(".support-compose label.field-label", (els) => els.map((l) => l.textContent)), ["To", "Subject", "Message"]);
+      c.at("an empty To is refused with a message");
+      await c.page.fill("#support-compose-subject", "Your demo");
+      await c.page.fill("#support-compose-text", "Here is the link.");
+      await c.click('[data-support-act="compose-send"]', "Send with no To");
+      await c.visible("#support-compose-error");
+      assert.ok((await c.text("#support-compose-error")).includes("who the email is to"));
+      c.at("an empty message is refused with a message");
+      await c.page.fill("#support-compose-to", "buyer@retailer.example");
+      await c.page.fill("#support-compose-text", "");
+      await c.click('[data-support-act="compose-send"]', "Send with no message");
+      await until(async () => (await c.text("#support-compose-error")).includes("Write the message"), "the message is asked for");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "compose"), [], "nothing was sent");
+      c.at("a complete email is sent from the support mailbox and confirmed");
+      await c.page.fill("#support-compose-text", "Here is the link.");
+      await c.click('[data-support-act="compose-send"]', "Send");
+      await c.visible(".support-compose-sent", "the confirmation");
+      assert.ok((await c.text(".support-compose-sent")).includes("Sent to buyer@retailer.example from support@ph.example"));
+      const sent = c.supportCalls.filter((x) => x.path === "compose");
+      assert.deepStrictEqual(sent.map((x) => x.body), [{ to: "buyer@retailer.example", subject: "Your demo", text: "Here is the link." }]);
+      await c.click('[data-support-act="back"]', "back to the inbox");
+      await c.visible("#support-page .support-row");
+    },
+  },
+  {
+    // EeAljfWIiY8SOPsKXlXD: Aidan, the agent mailbox. A tagged request from an
+    // allowed sender is answered with documentation sent to everyone on the
+    // email; a "store this" request is marked Ingested; a refused tag says why.
+    name: "Support Inbox: Aidan's replies and ingested requests show in the Aidan tab",
+    hash: "#support/aidan?queue=all",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: "owner@example.com", customerName: "Owner Person", status: "resolved", resolvedBy: "aidan", inboxes: ["aidan"], createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        r1: tk(1, { subject: "Kestrel onboarding", aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "aws-onboarding-pack-kestrel.md" }, recipients: 3 } }),
+        g1: tk(2, { subject: "Notes for the pack", aidan: { status: "ingested", kind: "store", skillName: "AWS onboarding pack", files: [{ name: "brief.pdf" }] } }),
+        x1: tk(3, { subject: "Please send everything", status: "open", resolvedBy: "", customerEmail: "someone@shop.example", aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." } }),
+      };
+      s.docs["supportTickets/r1/messages"] = {
+        m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, send the AWS onboarding pack for client Kestrel.", at: t(T0) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example", "colleague@shop.example"], text: "Hi Owner,\n\nHere is the pack.", attachments: [{ name: "aws-onboarding-pack-kestrel.md" }], skillName: "AWS onboarding pack", at: t(T0 + 60000) },
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      c.at("each ticket in the Aidan tab says what Aidan did");
+      await until(async () => (await c.page.locator(".support-row").count()) === 3, "all three Aidan tickets");
+      const badges = await c.page.locator(".support-aidan-badge").allTextContents();
+      assert.deepStrictEqual(badges.sort(), ["Aidan replied", "Aidan: no action", "Ingested"]);
+      c.at("the reply Aidan sent is on the thread, to everyone on the email");
+      await c.click('[data-support-ticket="r1"]', "the Kestrel ticket");
+      await c.visible(".support-msg-aidan");
+      assert.ok((await c.text(".support-aidan-line")).includes("aws-onboarding-pack-kestrel.md"), "the ticket says which document went out");
+      // textContent, not innerText: badges are shown in capitals.
+      const sent = await c.page.evaluate(() => document.querySelector(".support-msg-aidan").textContent.replace(/\s+/g, " "));
+      for (const want of ["Sent by Aidan · AWS onboarding pack", "To owner@example.com", "Cc client@shop.example, colleague@shop.example", "aws-onboarding-pack-kestrel.md"]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/r1", "it opens inside the Aidan tab");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────
@@ -3054,7 +3699,7 @@ async function main() {
         const label = `${s.name} @${width}px`;
         // One attempt: a fresh page, the scenario, and what the page reported.
         const attempt = async () => {
-          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900 });
+          const o = await harness.open({ seed: s.seed(), width, height: width < 640 ? 800 : 900, ...(s.hash !== undefined ? { hash: s.hash } : {}) });
           const ctx = makeCtx(o, width);
           try {
             await s.run(ctx);

@@ -156,16 +156,23 @@
 
     <div class="nav-drawer-backdrop" id="nav-drawer-backdrop"></div>
     <!-- Sidebar: Build (internal) and Publish (external-facing). Persistent
-         and collapsible from 1024px, an overlay below that, and on a phone
-         the Build / Publish tabs open one section at a time. Admin lives in
-         the profile menu (#profile-menu), not here. Ids are unchanged from
-         the old drawer: app.js binds each destination by id. -->
+         from 1024px, where its menu button (#nav-collapse-btn) folds it to a
+         70px icon rail and back, and pointing at the rail opens it over the
+         page until the pointer leaves (the Gmail sidebar). An overlay below
+         1024px, and on a phone the Build / Publish tabs open one section at a
+         time. Admin lives in the profile menu (#profile-menu), not here. Ids
+         are unchanged from the old drawer: app.js binds each destination by
+         id. -->
     <nav class="nav-drawer" id="nav-drawer" aria-label="Main navigation">
       <div class="nav-drawer-header">
         <span class="nav-drawer-title">Menu</span>
-        <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
+        <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">menu</span></button>
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
+      <!-- Dashboard (#dashboard, js/dashboard-page.js): the landing page. Outside every nav-group on
+           purpose: it is open to every member (each tile follows its own section's permission), so it
+           must not be discovered as a permission section of its own. -->
+      <button type="button" class="nav-drawer-item nav-drawer-item-dashboard" id="dashboard-btn"><span class="material-symbols-outlined" aria-hidden="true">dashboard</span>Dashboard</button>
       <div class="nav-group" data-nav-group="build" role="group" aria-labelledby="nav-build-label">
         <div class="nav-drawer-section" id="nav-build-label">Build</div>
         <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Agent Board</button>
@@ -306,8 +313,8 @@
           <h3>Attachments</h3>
           <div id="ni-pending-attachments-list" class="ei-attachments-list"></div>
           <div class="ei-attachments-actions">
-            <label class="btn-attach ei-attach-screenshot-label" for="ni-attach-screenshot-input">&#128206; Attach screenshot</label>
-            <input type="file" id="ni-attach-screenshot-input" accept="image/*" hidden>
+            <label class="btn-attach ei-attach-screenshot-label" for="ni-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+            <input type="file" id="ni-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
             <button type="button" class="btn-attach" id="ni-record-screen-btn">&#9210; Record screen</button>
           </div>
           <p class="field-hint" id="ni-attach-hint" hidden></p>
@@ -688,7 +695,8 @@
           </div>
         </div>
 
-        <!-- Attachments — a screenshot (plain file picker) or a screen
+        <!-- Attachments — any image, video or document (a file picker that
+             takes several at once; item-attachments.js lists the types) or a screen
              recording (captured in-browser via getDisplayMedia +
              MediaRecorder, no separate app needed), both uploaded to
              Firebase Storage the moment they're ready. See app.js's
@@ -702,8 +710,8 @@
           <h3>Attachments</h3>
           <div id="ei-attachments-list" class="ei-attachments-list"></div>
           <div class="ei-attachments-actions">
-            <label class="btn-attach ei-attach-screenshot-label" for="ei-attach-screenshot-input">&#128206; Attach screenshot</label>
-            <input type="file" id="ei-attach-screenshot-input" accept="image/*" hidden>
+            <label class="btn-attach ei-attach-screenshot-label" for="ei-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+            <input type="file" id="ei-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
             <button type="button" class="btn-attach" id="ei-record-screen-btn">&#9210; Record screen</button>
           </div>
           <p class="field-hint" id="ei-attach-hint" hidden></p>
@@ -753,7 +761,7 @@
         </div>
         <p class="listening-hint" id="qc-listening-hint">&#127908; Listening — tap the mic again when you're done.</p>
         <p class="mic-error" id="qc-mic-error"></p>
-        <!-- Attaching a screenshot/recording from here too — this comment
+        <!-- Attaching a file/recording from here too — this comment
              icon is the affordance most people actually tap on a card, and
              it used to have no mention of attachments at all, so nobody
              found the Attachments block buried at the bottom of the full
@@ -762,8 +770,8 @@
              targeting whichever item this quick-comment dialog is open
              for — see app.js's createAttachmentController. -->
         <div class="ei-attachments-actions qc-attachments-actions" id="qc-attachments-actions">
-          <label class="btn-attach" for="qc-attach-screenshot-input">&#128206; Attach screenshot</label>
-          <input type="file" id="qc-attach-screenshot-input" accept="image/*" hidden>
+          <label class="btn-attach" for="qc-attach-screenshot-input"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file</label>
+          <input type="file" id="qc-attach-screenshot-input" accept="image/*,video/*,text/*,.pdf,.zip,.json,.doc,.docx,.xls,.xlsx,.ppt,.pptx" multiple hidden>
           <button type="button" class="btn-attach" id="qc-record-screen-btn">&#9210; Record screen</button>
         </div>
         <p class="field-hint" id="qc-attach-hint" hidden></p>
@@ -1302,18 +1310,33 @@
       <ol class="funnel-stages" id="funnel-stages" aria-label="Funnel stages" hidden></ol>
     </section>
 
+    <!-- Dashboard (#dashboard): the page the console opens on. KPI tiles for yesterday, drawn by
+         js/dashboard-page.js (rules in js/dashboard-core.js). -->
+    <section class="faq-admin-page dash-page" id="dashboard-page" aria-label="Dashboard" hidden>
+      <!-- Needs attention (RC6wVNJJcPjNTR5hov9W): everything across projects
+           waiting on a person or stuck past its threshold, oldest first.
+           On the Dashboard only (kBJU2GCKW9S6XGWTwK8T), above the KPI tiles:
+           dashboard-page.js keeps this element when it draws the page.
+           Normal flow, collapsed to a count when empty; rendered by
+           renderNeedsAttention in app.js. -->
+      <section class="needs-attention" id="needs-attention" aria-label="Needs attention" hidden></section>
+    </section>
+
     <!-- Support › Support Inbox (#support): the support mailbox as tickets (js/support-page.js,
          rules in js/support-core.js, server in functions/support-mail.js). Help lives in the info tooltips. -->
     <section class="faq-admin-page support-page" id="support-page" hidden>
       <div class="page-header">
-        <h2>Support Inbox<button type="button" class="info-tip" data-tip="Every email sent to the support mailbox is a ticket here. Each one is drafted an answer from the published Help Centre articles. A confident answer can be sent by itself (Settings › Support inbox); anything else waits for a person, and a high-value sender is raised on the Staff Kanban. Replies go out from the support mailbox on the same email thread." aria-label="About the Support Inbox">i</button></h2>
-        <button type="button" class="btn-ghost page-header-action" id="support-sync-btn" data-editor-only>Sync now</button>
+        <h2>Support Inbox<button type="button" class="info-tip" data-tip="Every email sent to the support mailbox is a ticket here, filed under the address it was written to: support@ in Support Inbox, hello@ in Hello, aidan@ (To or Cc) in Aidan. An email written to more than one is in each, and one that names none is in Support Inbox. Each one is drafted an answer from the published Help Centre articles. A confident answer can be sent by itself (Settings › Support inbox); anything else waits for a person, and a high-value sender is raised on the Staff Kanban. Replies go out from the support mailbox on the same email thread. The email icon writes a new email from the support mailbox. Today's figures for support@ are on the Dashboard." aria-label="About the Support Inbox">i</button></h2>
+        <div class="page-header-action support-header-actions" data-editor-only>
+          <button type="button" class="btn-ghost support-compose-btn" id="support-compose-btn" aria-label="Write an email" title="Write an email" hidden><span class="material-symbols-outlined" aria-hidden="true">mail</span></button>
+          <button type="button" class="btn-ghost" id="support-sync-btn">Sync now</button>
+        </div>
       </div>
       <div class="um-count" id="support-count" role="status" aria-live="polite"></div>
       <nav class="support-tabs" role="tablist" aria-label="Support Inbox views">
-        <button type="button" class="support-tab" role="tab" data-support-tab="inbox">Inbox</button>
-        <button type="button" class="support-tab" role="tab" data-support-tab="stats">Stats</button>
-        <button type="button" class="support-tab" role="tab" data-support-tab="try" data-editor-only>Try an email</button>
+        <button type="button" class="support-tab" role="tab" data-support-tab="inbox">Support Inbox</button>
+        <button type="button" class="support-tab" role="tab" data-support-tab="hello">Hello</button>
+        <button type="button" class="support-tab" role="tab" data-support-tab="aidan">Aidan</button>
       </nav>
       <div id="support-view"></div>
     </section>
@@ -1325,6 +1348,10 @@
         <h2>Prospects (TAM) <span class="material-symbols-outlined prospects-info" id="prospects-info" tabindex="0" role="img" aria-label="About Prospects (TAM)" title="Every company that could buy Personalisation Hub, one record per company per country (the total addressable market). Filter in the column filters under each heading (the × clears one), click a company for every field, and use Convert to lead in a row's ⋯ menu to start working it on the Leads board. Export for LinkedIn downloads a Matched Audiences company list. Agents add and enrich records over MCP.">info</span></h2>
         <button type="button" class="btn-primary" id="prospects-seed-btn" data-editor-only hidden>Load starter set</button>
       </div>
+      <nav class="pd-tabs prospects-tabs" id="prospects-tabs" role="tablist" aria-label="Prospects (TAM) views">
+        <button type="button" role="tab" class="pd-tab" id="prospects-tab-companies" aria-selected="true" aria-controls="prospects-grid" data-prospects-tab="companies">Companies</button>
+        <button type="button" role="tab" class="pd-tab" id="prospects-tab-contacts" aria-selected="false" aria-controls="prospects-contacts" tabindex="-1" data-prospects-tab="contacts">Contacts</button>
+      </nav>
       <div class="um-count" id="prospects-count" role="status" aria-live="polite"></div>
       <div class="um-toolbar" id="prospects-tools" role="group" aria-label="Prospects tools">
         <div class="prospects-actions">
@@ -1346,7 +1373,51 @@
       <div id="prospects-grid" class="ag-theme-alpine um-grid prospects-grid" aria-label="Prospects" hidden></div>
       <div class="prospects-pop" id="prospects-pop" role="menu" hidden></div>
       <div class="prospect-detail" id="prospect-detail" hidden></div>
+      <!-- Contacts tab (#promote/prospects?tab=contacts, js/prospect-contacts.js): every person at the TAM companies. -->
+      <div class="prospects-contacts" id="prospects-contacts" role="tabpanel" aria-labelledby="prospects-tab-contacts" hidden>
+        <div class="um-count" id="pct-count" role="status" aria-live="polite"></div>
+        <div class="um-toolbar pc-toolbar" role="group" aria-label="Contacts tools">
+          <div class="pc-filters">
+            <label class="pc-search"><span class="material-symbols-outlined" aria-hidden="true">search</span><input type="search" id="pct-q" placeholder="Search contacts" aria-label="Search contacts" autocomplete="off"></label>
+            <select id="pct-company" class="pc-select" aria-label="Filter by company"><option value="">All companies</option></select>
+          </div>
+          <div class="prospects-actions">
+            <form class="pct-url" id="pct-url-form" novalidate data-editor-only hidden>
+              <input type="url" id="pct-url" placeholder="Paste a LinkedIn profile URL" aria-label="LinkedIn profile URL" autocomplete="off">
+              <button type="submit" class="btn-ghost" id="pct-url-btn">Add from URL</button>
+            </form>
+            <button type="button" class="btn-primary" id="pct-add" data-editor-only hidden>Add contact</button>
+          </div>
+        </div>
+        <p class="promote-empty" id="pct-empty" hidden>No contacts yet.</p>
+        <div id="pct-grid" class="ag-theme-alpine um-grid prospects-grid pct-grid" aria-label="Contacts"></div>
+      </div>
     </section>
+
+    <div class="modal-backdrop lead-drawer-backdrop" id="pct-drawer-backdrop" hidden>
+      <aside class="modal-panel lead-drawer prospect-drawer" id="pct-drawer" role="dialog" aria-modal="true" aria-labelledby="pct-drawer-title">
+        <div class="modal-header">
+          <div class="lead-sum-head"><h2 id="pct-drawer-title">Add contact</h2><p class="field-hint" id="pct-meta"></p></div>
+          <button type="button" class="modal-close" id="pct-drawer-close" aria-label="Close">&times;</button>
+        </div>
+        <form class="prospect-form lead-sum-body" id="pct-form" novalidate>
+          <label for="pctf-name">Name</label><input type="text" id="pctf-name" maxlength="120" autocomplete="off" required>
+          <label for="pctf-role">Role</label><input type="text" id="pctf-role" maxlength="200" autocomplete="off">
+          <label for="pctf-company">Company</label><select id="pctf-company"></select>
+          <p class="field-hint" id="pctf-company-hint"></p>
+          <label for="pctf-linkedin">LinkedIn URL</label><input type="url" id="pctf-linkedin" maxlength="300" autocomplete="off" placeholder="https://www.linkedin.com/in/their-name/">
+          <label for="pctf-email">Email</label><input type="text" id="pctf-email" maxlength="200" autocomplete="off" inputmode="email">
+          <label for="pctf-notes">Notes</label><textarea id="pctf-notes" rows="4" maxlength="2000"></textarea>
+          <button type="submit" hidden tabindex="-1" aria-hidden="true"></button>
+        </form>
+        <p class="field-hint" id="pct-drawer-status" role="status" aria-live="polite"></p>
+        <div class="lead-sum-actions">
+          <button type="button" class="btn-primary" id="pct-save" data-editor-only>Save</button>
+          <button type="button" class="btn-ghost" id="pct-cancel">Cancel</button>
+          <button type="button" class="btn-ghost pd-danger" id="pct-remove" data-editor-only hidden><span class="material-symbols-outlined" aria-hidden="true">delete</span>Remove</button>
+        </div>
+      </aside>
+    </div>
 
     <div class="modal-backdrop lead-drawer-backdrop" id="prospect-drawer-backdrop" hidden>
       <aside class="modal-panel lead-drawer prospect-drawer" id="prospect-drawer" role="dialog" aria-modal="true" aria-labelledby="prospect-drawer-title">
@@ -1559,6 +1630,23 @@
                 <button type="button" class="btn-ghost" id="fa-open-archived-projects-btn">View archived projects</button>
               </div>
               <div id="settings-projects-grid"></div>
+            </div>
+            <div class="docs-block" id="settings-release-groups-block">
+              <div class="docs-block-header">
+                <h3>Release groups <span class="page-header-count" id="settings-release-groups-count"></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About release groups" data-tip="Projects that ship in one deployable share one train: one branch, one lock, one Deploy to Main and one PR. Each project keeps its own Backlog, columns, docs and archive. Only admins change a group, and only while the trains involved are empty."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                </h3>
+                <button type="button" class="btn-ghost" id="release-group-new-btn" hidden>New release group</button>
+              </div>
+              <form id="release-group-new-form" class="release-group-form" hidden>
+                <label>Name <input type="text" id="release-group-name" maxlength="80" required></label>
+                <label>Branch <input type="text" id="release-group-branch" maxlength="100" placeholder="deploy/name" required></label>
+                <label>First project <select id="release-group-first-project" required></select></label>
+                <button type="submit" class="btn-primary">Create</button>
+                <button type="button" class="btn-ghost" id="release-group-new-cancel">Cancel</button>
+              </form>
+              <p class="release-group-status" id="release-group-status" role="status" hidden></p>
+              <div id="settings-release-groups"></div>
             </div>
           </div>
 
@@ -2059,12 +2147,6 @@
          viewer (see styles.css "Roles"); firestore.rules refuses their
          writes, so saying so up front beats letting clicks fail. -->
     <div class="readonly-banner" id="readonly-banner">You have read-only access to this console. An admin can change your role in User Management &rarr; Users.</div>
-
-    <!-- Needs attention (RC6wVNJJcPjNTR5hov9W): everything across projects
-         waiting on a person or stuck past its threshold, oldest first.
-         Normal flow above the projects, collapsed to a count when empty;
-         rendered by renderNeedsAttention in app.js. -->
-    <section class="needs-attention" id="needs-attention" aria-label="Needs attention" hidden></section>
 
     <div id="projects-root"></div>
 

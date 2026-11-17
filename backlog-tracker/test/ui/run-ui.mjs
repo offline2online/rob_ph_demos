@@ -7,10 +7,14 @@
 // second run does not fail the run and is recorded as a flake (ui/flaky.mjs),
 // named after the file and its first FAIL line. Stops at the first file that
 // fails for good, like the `&&` chain this replaced.
+//
+// UI_SHARD=1/3 runs the second of three equal parts of the file list (every
+// third file); CI runs the parts as jobs side by side. Unset runs every file.
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { recordFlaky, uiRetries } from "./flaky.mjs";
+import { shardOf } from "../../../kanban-staff-board/test/lib/profiles.mjs";
 
 // These retry case by case themselves (retryCase / the Staff Kanban suite's withRetry).
 export const CASE_LEVEL = ["console-click.test.mjs", "staff-kanban.test.mjs", "minified.test.mjs"];
@@ -46,8 +50,10 @@ export async function runUiFiles(files, { retries = uiRetries(), log = console.l
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const files = process.argv.slice(2);
-  if (!files.length) { console.error("usage: node ui/run-ui.mjs <test file> …"); process.exit(2); }
+  const all = process.argv.slice(2);
+  const files = shardOf(all, process.env.UI_SHARD);
+  if (process.env.UI_SHARD) console.log(`# shard ${process.env.UI_SHARD}: ${files.map((f) => path.basename(f)).join(", ") || "no files"}`);
+  if (!all.length) { console.error("usage: node ui/run-ui.mjs <test file> …"); process.exit(2); }
   const { ok } = await runUiFiles(files);
   process.exit(ok ? 0 : 1);
 }

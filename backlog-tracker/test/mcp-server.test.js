@@ -2548,6 +2548,52 @@ async function rpc(token, method, params, id = 1) {
     assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("revertproj")));
   });
 
+  // Release groups (Flow 9/9): two projects, one deployable, one train.
+  await test("release group: list_projects returns the group and the shared branch", async () => {
+    env.store.col("releaseGroups").set("rgA", { name: "Console Group", deployBranch: "deploy/console-group", projectIds: ["rgOne", "rgTwo"] });
+    env.store.col("projects").set("rgOne", { name: "Group One", deployBranch: "deploy/group-one", releaseGroupId: "rgA" });
+    env.store.col("projects").set("rgTwo", { name: "Group Two", deployBranch: "deploy/group-two", releaseGroupId: "rgA" });
+    const res = await rpc(tokens.access_token, "tools/call", { name: "list_projects", arguments: {} });
+    const list = JSON.parse(res.body.result.content[0].text).projects;
+    const one = list.find((p) => p.id === "rgOne");
+    assert.deepStrictEqual(one.releaseGroup, { id: "rgA", name: "Console Group", projectIds: ["rgOne", "rgTwo"] });
+    assert.strictEqual(one.deployBranch, "deploy/console-group");
+    assert.strictEqual(list.find((p) => p.id === "depproj").releaseGroup, null, "a project with no group has none");
+  });
+
+  await test("release group: readiness is the whole group's and names what in the other project blocks it", async () => {
+    env.store.col("backlogItems").set("rgOk", { projectId: "rgOne", title: "Approved here", desc: "x", type: "bug", category: "HQ Admin", status: "ready-to-publish", deployCommit: "sha-rgOk" });
+    env.store.col("backlogItems").set("rgWait", { projectId: "rgTwo", title: "Still testing there", desc: "x", type: "bug", category: "HQ Admin", status: "ready-for-testing", deployCommit: "sha-rgWait" });
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "rgOne" } });
+    const payload = board.body.result.structuredContent;
+    assert.strictEqual(payload.readyToDeploy, false);
+    assert.match(payload.readyLine, /Waiting for Group Two: Still testing there is in Ready for Testing/);
+    assert.deepStrictEqual(payload.blockedBy.map((b) => [b.id, b.projectName]), [["rgWait", "Group Two"]]);
+    assert.strictEqual(payload.releaseGroup.name, "Console Group");
+    const fire = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: "rgOne" } }));
+    assert.strictEqual(fire.body.result.isError, true);
+    assert.match(fire.body.result.content[0].text, /Waiting for Group Two/);
+    assert.ok(!("deployNotifyRequestedAt" in env.store.col("projects").get("rgOne")));
+  });
+
+  await test("release group: approve_deploy_to_main works from either member once the shared train is approved", async () => {
+    env.store.col("backlogItems").set("rgWait", Object.assign(env.store.col("backlogItems").get("rgWait"), { status: "ready-to-publish" }));
+    const board = await rpc(tokens.access_token, "tools/call", { name: "get_approved_for_deployment_board", arguments: { projectId: "rgTwo" } });
+    const payload = board.body.result.structuredContent;
+    assert.strictEqual(payload.readyToDeploy, true);
+    assert.deepStrictEqual(payload.items.map((i) => [i.id, i.project, i.deployBranch]).sort(), [["rgOk", "Group One", "deploy/console-group"], ["rgWait", "Group Two", "deploy/console-group"]]);
+    for (const pid of ["rgTwo", "rgOne"]) {
+      const fire = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "approve_deploy_to_main", arguments: { projectId: pid } }));
+      assert.strictEqual(fire.body.result.isError, undefined, pid);
+      const out = JSON.parse(fire.body.result.content[0].text);
+      assert.strictEqual(out.deployCount, 2, pid);
+      assert.strictEqual(out.releaseGroup.id, "rgA");
+    }
+    for (const id of ["rgOk", "rgWait"]) env.store.col("backlogItems").delete(id);
+    for (const id of ["rgOne", "rgTwo"]) env.store.col("projects").delete(id);
+    env.store.col("releaseGroups").delete("rgA");
+  });
+
   // ── send_to_build / approve_for_deployment (Ysh0yuU9z643E0uisr51) ────────
   const adminCall = (name, args) => asAdmin(() => rpc(tokens.access_token, "tools/call", { name, arguments: args }));
   const seedItem = (id, over) => env.store.col("backlogItems").set(id, Object.assign({
@@ -2679,17 +2725,20 @@ async function rpc(token, method, params, id = 1) {
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
     seedItem("sA", { groomAreas: ["faq"], createdAt: new Date("2026-11-01T00:00:00Z") });
     seedItem("sB", { groomAreas: ["faq"], createdAt: new Date("2026-11-02T00:00:00Z") });
+    seedItem("sE", { groomAreas: ["faq"], createdAt: new Date("2026-11-03T00:00:00Z") });
+    seedItem("sF", { groomAreas: ["faq"], createdAt: new Date("2026-11-04T00:00:00Z") });
     seedItem("sC", { dependsOnItemIds: ["sA"] });
     seedItem("sD", { dependsOnItemIds: ["sX"] });
     seedItem("sX", { title: "Not sent" });
-    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sC", "sD"] });
+    const res = await adminCall("send_to_build", { projectId: "voiceproj", itemIds: ["sA", "sB", "sE", "sF", "sC", "sD"] });
     assert.strictEqual(res.body.result.isError, undefined, res.body.result.content[0].text);
     const out = JSON.parse(res.body.result.content[0].text);
-    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA"]);
-    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sB", "sA"]]);
+    // Three of a lane build at once; the fourth waits for the first.
+    assert.deepStrictEqual(out.fired.map((x) => x.id), ["sA", "sB", "sE"]);
+    assert.deepStrictEqual(out.queued.map((x) => [x.id, x.after.id]), [["sF", "sA"]]);
     assert.deepStrictEqual(out.held.map((x) => [x.id, x.waitingFor.map((w) => [w.id, w.notSent])]), [["sC", [["sA", false]]], ["sD", [["sX", true]]]]);
     assert.match(out.summary, /2 held: .*"Not sent", which was not sent/);
-    for (const id of ["sA", "sB", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
+    for (const id of ["sA", "sB", "sE", "sF", "sC", "sD", "sX"]) env.store.col("backlogItems").delete(id);
     env.store.col("projects").set("voiceproj", { name: "Voice Project" });
   });
 

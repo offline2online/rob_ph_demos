@@ -168,6 +168,27 @@ progressAt, passedOverAt }], updatedAt }`, written by the automation's
 service account only (no browser, an admin included). See "The deployment
 train" → "Deploy queue".
 
+### `releaseGroups/{groupId}` — projects that ship in one deployable (Flow 9/9, 16 Nov 2026)
+```
+{
+  name: string,             // "PH Agent Console"
+  deployBranch: string,     // "deploy/ph-agent-console" — the shared train's branch
+  projectIds: string[],     // the member projects, in the order the train PR lists them
+  createdAt: Timestamp,
+}
+```
+Plus `projects/{id}.releaseGroupId` on each member, pointing back. Membership
+needs both pointers (a group that doesn't list the project back doesn't
+count). A member keeps its own Backlog, columns, docs, archive and owner, and
+its own `deployBranch` stays on its doc, unused while it is in the group
+(`run-backlog-automation.js`'s `withGroup()` overlays the group's branch and
+keeps the project's own as `ownDeployBranch`, which is also what the repo
+folder is derived from). Written only by an admin (Settings → Projects →
+Release groups) or the board automation user (`firestore.rules`); members
+read. See "Release groups — one deployable, one train" under "The deployment
+train" for the behaviour; the logic is `functions/release-groups.js` (browser
+copy `public/js/release-groups.js`).
+
 ### `backlogItems/{itemId}`
 ```
 {
@@ -183,7 +204,7 @@ train" → "Deploy queue".
   archivedAt?: timestamp,
   claudeNote?: string,          // short one-line status, shown nowhere but kept for history
   notes?: [{ author: "claude" | "viewer", text: string, at: timestamp, key?: string, firstAt?: string }], // append-only: every writer adds entries (arrayUnion / appendMissingElements), none resends the array; only a keyed backlog-automation note is ever replaced (one note per event, "Comments and notes")
-  attachments?: [{ type: "image" | "video", url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
+  attachments?: [{ type: "image" | "video" | "file", contentType?: string, url: string, path: string, name: string, size: number, uploadedAt: timestamp }], // see "Attachments" below
   previewUrl?: string,          // a Ready for Testing card's own "Test this" link
   previewState?: "rebuilding" | "ready" | "stale" | null, // lmdwsP5ElY5Oh12N9Fex — whether a link that opens a checked-in build (GENERATED_BUILDS) already shows this ticket; null = no generated build, the card behaves as before. Written by run-backlog-automation.js only — see "Test/preview link"
   rebuildRequestedAt?: timestamp | null, // 19 Oct 2026 — when the automation last requested an automatic rebuild of this card; cleared once the request is answered (session started, card moved on) or reported as never started. Automation only
@@ -535,8 +556,63 @@ busy. Now:
   higher-ranking agent) or, without one, the default "take the best option,
   state the assumption, do not ask again"; it clears the flag and requests a
   rebuild (held until the train merges when the release is closing). At most
-  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`), after which it stays
-  flagged for a person; a dependency wait (`dependsOnItemIds`, `blocked.reason`
+  `MAX_AUTO_ANSWERS` (2) per ticket (`autoAnswers`). **After those two it
+  goes to the senior model, not to a person (16 Nov 2026)**: the ticket is
+  raised to Advanced (`model: "advanced"`, `modelEscalatedAt`; Claude Opus)
+  and built `MAX_AUTO_RETRIES` (2) more times (`autoRetries`; the second 30
+  minutes after the first), told to make the call itself. While any of this
+  is still to come the card is not a question for anyone: its chip reads
+  "Handled automatically", its line "Being rebuilt by itself" or "With the
+  senior model to make the call", it waits on the automation, it is not in
+  Needs attention and not in the "N waiting on your answer" count
+  (`selfAnswering` in `card-state.js`, which also holds the limits). A build
+  that never ran (`blocked.kind "never-ran"`) keeps its own 12 tries. A flag a
+  person set (`setBy` an email address) is never answered for them.
+- **A ticket that changes only test files approves itself (17 Nov 2026).**
+  A flaky-test fix has nothing a person can try, yet seven of them sat in
+  Ready for Testing for three hours waiting for a tick. `sweepAutoApprovals`
+  (every automation run, after the cards' test results are recorded) moves a
+  Ready for Testing ticket to Approved for Deployment when every file its
+  commits changed is a test file (under a `test`, `tests`, `__tests__` or
+  `e2e` folder, or named `*.test.*` / `*.spec.*`; `isTestOnlyChange`) and its
+  own `trainTest` is `passed` for its `deployCommit`: not running, not
+  borrowed from an older commit, not "not-applicable". It writes
+  `approvedVia: "auto-test-only"` and a note saying why, and does **not** set
+  `trainLocked`: more test fixes may still be building, and a lock would hold
+  them for the next release. One product file in the ticket and it waits for
+  a person as before. Deploy to Main is still a click, and Failed testing
+  still takes it off the release. A flaky-test ticket the ledger raised and
+  the build found already fixed (`noDeploymentRequired`, no commit,
+  `autoRaised`, `flakyCaseId`) is closed the same way instead of waiting for
+  "Confirm tested" (`autoConfirmNoChangePlan`). Tests: `test/auto-approve.test.js`.
+- **A patch's `package.json` is merged, not rebuilt (17 Nov 2026).** Every
+  ticket that adds a test appends to the same script line of
+  `backlog-tracker/test/package.json`, so two tickets built side by side
+  always conflict there when the second lands. `rebasePatchFilesOnto` now
+  merges a conflicted `package.json` key by key (`mergePackageJsonPatch`,
+  the same `mergeJsonThreeWay` a train's merge with main uses: both sides'
+  added commands kept in a script's `&&` chain). Anything else both changed
+  differently (a version, a dependency) is still a conflict and a rebuild.
+  Before this a finished 78-minute Advanced build of the Dashboard page was
+  discarded and started again over that one line.
+- **One flaky-test ticket per case, by id, not by title (17 Nov 2026).** A
+  build renames its ticket, so matching the open ticket by its "Flaky test:
+  <case>" title filed a duplicate the moment each fix reached Ready for
+  Testing (six in one morning). `casesNeedingTicket` matches by the ledger's
+  `ticketId`, the ticket's `flakyCaseId` or the title, and once a case's fix
+  has shipped only flakes seen after that count towards a new ticket.
+- **A question that does reach a person is one sentence with options to
+  click (16 Nov 2026).** Only when the senior model's tries are used up does
+  the card wait on a person ("Needs your pick"). The Answer dialog then shows
+  `personQuestion(item)`: the senior model's own `blocked.question` (one plain
+  sentence, 240 characters at most) and `blocked.options` (2 to 4 choices,
+  `[{label, recommended}]`, the recommended one shown first and marked), or,
+  when it left none, the standard question "built N times … did not get
+  through: <reason>. What should happen to it?" with "Try again on the senior
+  model (recommended)" and "Park it: leave it in Backlog and stop trying".
+  One click answers: an option is saved as the answer and the ticket is
+  rebuilt; Park it clears the flag and builds nothing. Nothing has to be
+  typed (typing stays possible). A dependency wait (`dependsOnItemIds`, `blocked.reason`
   `waiting-on-dependency`) is never a question: it shows "Waiting for: <title>",
   has no Answer button, and unblocks by itself when its dependencies have left
   Backlog. See "Build order" below for how dependencies are recorded and how
@@ -732,7 +808,15 @@ was dropped.
   and no version is bumped. At the head of the queue the order is: merge
   main (resolvers below), push, the train's tests on that head, then the
   bump. So the long suites run **once, on the final head**, and the bump
-  (which starts no tests) is computed from main once.
+  is computed from main once. Pushing the bump does make GitHub start the
+  same suites again on the train PR (a `pull_request` path filter looks at
+  the PR's whole diff, not at the push), on a head that differs by
+  `version.js` alone. The deploy does not wait for that repeat
+  (`withoutGateTestedChecks`, 16 Nov 2026; PR #613 was green at 19:44 and
+  merged at 20:04 after a 30-minute repeat): when the only change since the
+  head the gate passed is `version.js`, the PR's checks from the gate's own
+  workflows are left out of the wait, pass or fail. Every other check on the
+  PR, and every required check (`REQUIRED_TRAIN_CHECKS`), still has to pass.
 - **A stalled head is passed over.** A queue head with no progress (its
   status, hold, PR or branch head unchanged) for 60 minutes, or parked on a
   conflict, is passed over: related trains behind it go, it keeps its place
@@ -789,15 +873,20 @@ a code problem", about 5 hours). Now:
 
 ### Needs attention (RC6wVNJJcPjNTR5hov9W, 16 Nov 2026)
 
-A strip at the top of the Agent Board, above the projects and in normal flow
-(nothing `position: fixed`), collapsed to "Needs attention 0" when empty.
+A section on the **Dashboard** (`#dashboard`) and on no other page
+(kBJU2GCKW9S6XGWTwK8T, 17 Nov 2026; it used to sit above the projects on the
+Agent Board): above the KPI tile sections, in normal flow (nothing
+`position: fixed`), collapsed to "Needs attention 0" and "Nothing waiting on
+you." when empty. It is drawn from the tickets the console already holds and
+redraws as cards change, with no Firestore listener of its own.
 It lists, across all projects, everything waiting on a person (tester,
 approver, decision) or stuck past its threshold, oldest first:
 ticket or train, its status line, who it waits on, its age, and one button
-for the usual next action — Open (scrolls to the card), Answer (the blocked
-flag's Answer dialog), Test (opens the test link), Deploy (the project's own
-Deploy to Main, only when the header offers it; otherwise it scrolls to the
-project). **Waiting on me** narrows it to cards the signed-in member filed
+for the usual next action — Answer (the blocked flag's Answer dialog, opened
+on the Dashboard); Open, Approve and Test open the Agent Board and scroll to
+the card (Test also opens the card's test link in a new tab, when it has
+one); Deploy opens the Agent Board and starts the project's own Deploy to
+Main, only when the header offers it, otherwise it scrolls to the project. **Waiting on me** narrows it to cards the signed-in member filed
 (and that wait on a person) or, for an editor or admin, everything waiting on
 a tester or approver. `needsAttention()` and `waitingOnMe()` in
 `card-state.js`; the same list is `get_pipeline_health` over MCP.
@@ -890,19 +979,32 @@ and `test/build-order.test.js`):
   `{summary, heldItemIds, queuedItemIds, notSent, at}` ("2 held: they need
   "X", which was not sent"), shown beside the Ready for Dev button for two
   hours; when nothing could start, `notifyRoutine` is an error saying that.
-- **Same-area tickets go one at a time; different areas stay parallel.**
+- **Same-area tickets go three at a time; different areas stay parallel.**
   Tickets that share a groom area (`groomAreas`), a file path (by file name;
   `index.js` and the like keep their folder; Markdown files don't count), a
   named function (camelCase, eight characters or more) or a quoted spec
   section (`→ "Section"`) in their Outcome or Spec reference form a lane.
-  A lane fires its first ticket (priority high → medium/unset → low, then
-  oldest first) and queues the rest (`queuedAfter`; the card shows "Queued:
-  builds after <title>", not blocked, no Answer button). A ticket sharing a
-  lane with a build an earlier click is still running queues behind it.
+  A lane fires its first three tickets (`LANE_WIDTH` in
+  `functions/build-order.js`; priority high → medium/unset → low, then
+  oldest first) and queues the rest, each behind the ticket three places
+  ahead of it (`queuedAfter`; the card shows "Queued: builds after <title>",
+  not blocked, no Answer button). Builds an earlier click is still running
+  count towards the three. Until 16 Nov 2026 a lane built one at a time:
+  seven flaky-test tickets sent in one click were a six-hour chain, although
+  each changed a different test case. Two lane-mates built side by side
+  collide only when they change the same lines (a patch is carried onto the
+  train by a three-way merge); that ticket is rebuilt automatically against
+  the train as it then is, which takes no longer than the wait it replaced.
+  Order that matters is a dependency, not a lane.
   `sweepBuildQueue` (every automation run) starts a queued ticket when the
   one ahead of it lands, fails (its current attempt reports error or done
   without a patch, its fire failed, or it is blocked), is archived or
-  deleted, or after three hours; it builds on the train tip after that.
+  deleted, or after three hours; it builds on the train tip after that. A
+  report from before the ticket's latest fire is the previous attempt's and
+  does not count: the ticket is being rebuilt, so the one behind it keeps
+  waiting (16 Nov 2026: it was let go and queued again every run, 139 notes
+  in three hours and no build). The queue writes one note per card, replaced
+  each time.
   Lanes are decided without a model call. `FANOUT_CONCURRENCY` (4) still
   caps how many fire at once.
 - **Deadlock check.** `sweepDependencyWaits` rewrites a waiter's flag when a
@@ -964,7 +1066,14 @@ re-run of everything. The rules now:
 - **Each test file runs in exactly one job of one workflow per train.** The
   console workflow runs as five parallel jobs, each with a time limit:
   `rules` (emulator), `offline` (unit, MCP, train, docs), `ui-console`,
-  `ui-touch`, `ui-kanban`. The train still reads the workflow's one
+  `ui-touch`, `ui-kanban`. `ui-touch` runs as three parts and `ui-kanban`
+  as four, side by side (16 Nov 2026: the run took 28 minutes because
+  `ui-kanban` did, and one deploy waited for it up to four times). A part is
+  every n-th file (`UI_SHARD=i/n`, `test/ui/run-ui.mjs`) or every n-th
+  profile of the viewport matrix (`KB_SHARD=i/n`, `profiles.mjs`), so the
+  parts together run every file and every case in every profile exactly
+  once; `test/ui-shards.test.js` fails if the workflow's part count and its
+  `i/n` disagree. The train still reads the workflow's one
   conclusion. `firestore-rules-test.yml` owns the console's Staff Kanban
   suite (`test/ui/staff-kanban.test.mjs`); `kanban-staff-board-tests.yml`
   owns the prototype suite (`kanban-staff-board/test`) and starts only for a
@@ -1433,6 +1542,83 @@ rebuilt with no cap at all. The loop is now stored and shown.
   once: run it from the deploy session of the train that ships this
   (`BOARD_API_KEY=… node backlog-tracker/scripts/backfill-test-rounds.js
   --apply`; without `--apply` it only counts).
+
+### Release groups — one deployable, one train (Flow 9/9, 16 Nov 2026)
+
+**Rule of thumb: one deployable, one train.** Staff Kanban and Backlog
+Tracker & FAQs were two projects on the board but one deployable — the
+console: same Hosting site, same `deploy-backlog-tracker.yml`, same
+`version.js`, same test suites. On two trains they were tested apart and met
+for the first time on main (14 Nov 2026: both trains carried a bump to
+1.5.398 and both changed `public/index.html` and `MCP.md`). A release group
+joins such projects' trains and nothing else. Projects that are merely
+related (shared docs, an interface contract) are not grouped; they rely on
+the deploy queue and shared-file warnings. PH Website (its own WordPress
+deploy) and Display Types, Retail Media Insights and the archived projects
+stay on their own trains.
+
+For a project in a group, everything that read the train "for a project"
+reads it for the group (`functions/release-groups.js`):
+- **One branch**: a patch from any member lands on the group's
+  `deployBranch` (`withGroup()` in `run-backlog-automation.js`), and test
+  links are re-pointed across every member's Ready for Testing cards.
+- **One lock**: the first approval in any member locks Ready for Dev in all
+  of them (`deployToFeatureNow` writes `trainLocked` on every member;
+  `isTrainLocked` reads any). The lock clears when the shared train is empty
+  (`onBacklogItemTrainLockRecompute`, `reconcileLockedTrains` — which sweeps
+  the group once, on every member's tickets, so a member whose own tickets
+  are gone never resets the branch the other member's tickets are on).
+- **One Deploy to Main**: offered on every member when every ticket on the
+  shared train, in every member, is approved and no member has one in Ready
+  for Testing. When only the other project holds it, the member's header
+  shows a disabled Deploy to Main with the reason ("Waiting for Staff Kanban:
+  <title> is in Ready for Testing"). From either member it does the same
+  thing; a run processes the group's train once (`trainKeyOf`).
+- **One PR, one bump**: `processDeployTrain` opens one PR titled
+  "Deploy <group name> — N tickets", listing tickets by project, and bumps
+  `version.js` once. `finishTrain` flips cards in every member, syncs each
+  member's docs and clears every member's train state. All train state
+  (`trainStatus`, `trainNote`, `trainTestsRed`, `trainPrNumber`, …) is written
+  to every member (`patchTrainProjects`), so each header shows the shared
+  train.
+- **Reverts**: `revertBlockedBy` may name a ticket in the other member; the
+  note says which project ("k (Staff Kanban: <title>)").
+- **Deploy queue, late arrivals and shared files** (see "Deploy queue",
+  "Late arrivals", "Shared files between trains"): a group is one entry in
+  `settings/deployQueue` — a click on the other member drops its group-mate's
+  entry (`withoutGroupMates`), so a group never queues behind itself — and
+  the queued, deploying and conflict states are written to every member.
+  `finishTrain` takes every member off the queue and lands patches held for
+  the next release ("Built — joins the next release") from every member.
+  `trainOverlapFor` never names a group-mate in "Also changed on …" or
+  "Changes <project>'s files", and compares other projects on the branch
+  they really build on (their group's, when they have one).
+  `sweepStuckTrains` reads every member's cards for a grouped train.
+- **Unchanged per project**: approve_for_deployment and fail_testing, each
+  project's Backlog, columns, docs and archive. (approve_for_deployment's
+  lock, like the board's click, is written to every member.)
+
+**Board.** Each member's header shows "Ships with <other project(s)> ·
+<group name>" and the shared train's state. **Settings → Projects → Release
+groups** (admin only): create a group (name, branch, first project), add or
+remove a project — refused while the group's train or the project's own
+train has tickets on it. Removing a project puts it back on its own
+`deployBranch`, which was never changed.
+
+**MCP.** `list_projects` returns `releaseGroup {id, name, projectIds}` and
+the train's `deployBranch`; `get_approved_for_deployment_board` with a
+`projectId` shows the shared train's column and reports readiness for the
+whole group, with `blockedBy` naming what in the other project holds it;
+`approve_deploy_to_main` works from any member. The Deploy Routine's fire
+text names the group's branch and lists every member's approved tickets.
+
+**Migration (done by the deploy session once this is live and both trains
+are empty):** create "PH Agent Console" (`deploy/ph-agent-console`) with
+Backlog Tracker & FAQs (`oTcLAbnhUUO2S7NkbsuV`) and Staff Kanban
+(`New5VKTF2QBqT3T4YEla`). The old branches `deploy/backlog-tracker-faqs`
+and `deploy/kanban-staff-board` are left in place, unused — not deleted. If
+either train is not empty, it is not migrated and the ticket says what is on
+it.
 
 ## The single Deploy CTA, and closing the train
 
@@ -2873,23 +3059,40 @@ else about their control flow changed, since each wrapper's resolved value
 matches its native counterpart's return contract exactly (`showConfirmDialog`
 → boolean, `showPromptDialog` → string-or-null).
 
-### Attachments (screenshots & screen recordings)
+### Attachments (files, videos & screen recordings)
 
-The Edit item modal's own **Attachments** block (below Comments) lets
-anyone attach a screenshot or a screen recording directly to a ticket:
+The Edit item modal's own **Attachments** block (below Comments), the
+quick-comment modal and the New Item form let anyone attach files or a
+screen recording directly to a ticket:
 
-- **Attach screenshot** — a plain `<input type="file" accept="image/*">`,
-  uploaded to Firebase Storage the instant a file is chosen.
+- **Attach file** — a file picker that takes several files at once: any
+  image (PNG, JPEG, GIF, WebP, HEIC…), any video (MP4, MOV, WebM…), PDF,
+  text (TXT, CSV, Markdown, logs), zip, JSON and Word/Excel/PowerPoint
+  files. Each is uploaded to Firebase Storage the instant it is chosen.
+  Images are capped at 15 MB, everything else at 100 MB. A file of another
+  type, or over its cap, is named in a message and skipped; the others
+  still upload. Where the browser leaves a file's type empty, it is read
+  off the extension. The list of types and caps is
+  `public/js/item-attachments.js`, kept in step with `storage.rules`
+  (ticket AveRUvb8zcijYoamN2RN, 17 Nov 2026 — it used to take images only,
+  so a screen recording saved as an MP4 could not be picked).
 - **Record screen** — captures the browser's own share-picker via
   `navigator.mediaDevices.getDisplayMedia` and records it with
-  `MediaRecorder` (webm/vp9, falling back to plain webm); clicking **Stop
-  recording** (or ending the share from the browser's own "Stop sharing"
-  bar) finalizes and uploads the clip the same way. No third-party
-  recording library or separate screen-capture tool needed.
+  `MediaRecorder`, in the first format the browser can make (WebM/VP9,
+  WebM, then MP4 — Safari makes only MP4, and asking it for WebM used to
+  make the button do nothing); clicking **Stop recording** (or ending the
+  share from the browser's own "Stop sharing" bar) finalizes and uploads
+  the clip the same way. No third-party recording library or separate
+  screen-capture tool needed. Where a browser can't record a page's screen
+  (iPhone and iPad), it says so and suggests recording with the device's
+  own screen recorder and adding the video with **Attach file**.
 
 Both write to Storage under `attachments/{itemId}/{fileName}` and append
-`{type, url, path, name, size, uploadedAt}` (see the `backlogItems` schema
-above) onto the item — the file itself never touches Firestore, only its
+`{type, contentType, url, path, name, size, uploadedAt}` (see the
+`backlogItems` schema above; `type` is `"image"`, `"video"` or `"file"`,
+and older entries have no `contentType`) onto the item. An image shows as a
+thumbnail, a video as an inline player and any other file as a file icon
+that opens it — the file itself never touches Firestore, only its
 resulting metadata does, the same "small bounded value on the doc, real
 payload elsewhere" split every Firestore-backed app needs past a few
 hundred KB. Removing an attachment deletes both the Storage object and its
@@ -2907,7 +3110,8 @@ one-time manual step, same as Cloud Functions needed — see README.md's
 `--only` list alongside `firestore:rules`; without either, uploads fail
 until fixed. `storage.rules` mirrors `firestore.rules`' open-but-validated
 posture: open read, write gated on size (< 100MB) and content-type
-(`image/*`/`video/*`) rather than by who's writing — same prototype-stage,
+(`image/*`, `video/*`, `text/*`, PDF, zip, JSON and Office files) rather
+than by who's writing — same prototype-stage,
 no-auth caveat as everything else in this app.
 
 ### Skills page: change history (eKFIGtskqbnUTqUTBFBl)
@@ -4910,6 +5114,16 @@ A full-screen, shareable whiteboard for sketching ideas in meetings. Started fro
   table with a count line; explanations are info tooltips, not text under a
   table. No internal project names appear in UI copy.
 - Reloading `#settings/<page>` or `#user-management` reopens the same page.
+- **The sidebar opens and closes like Gmail's** (1024px and up, 17 Nov 2026,
+  mUjtN0QWAnN9J3kK3LZC). The menu button at the sidebar's top left folds it to
+  a 70px icon rail and expands it again; the page reflows to the rail, the
+  icons keep their place, and the choice is remembered in that browser
+  (`bt-nav-collapsed`). While it is a rail, resting the mouse on it (150ms) or
+  tabbing into it opens it over the page at full width with a shadow, without
+  moving the page, and it folds back when the pointer leaves. Touch never
+  opens it this way: a tap on a rail icon goes to that page. The topbar
+  hamburger is not shown at this width. Below 1024px the overlay drawer and
+  the phone tab bar are unchanged.
 - Out of scope: redesigning the Agent Board, Staff Kanban, Concepts or Help
   Centre pages.
 
@@ -4932,7 +5146,19 @@ Rules:
   and `**/`** as well as for `.html`, `.js` and `.css`. The page and its
   scripts are revalidated together on every load. Never let a page that
   loads module scripts be cached on its own.
-- **A failed start reloads once by itself** (`reloadOnceAfterBootFailure` in
+- **Every script and stylesheet URL carries the build's id** (17 Nov 2026,
+  after Dashboard and Support Inbox did nothing on the iPad while the menu
+  items from before that release worked, and a fresh tab didn't help: the
+  iPad was running the new page with old scripts). `scripts/build-console.js`
+  stamps `?v=<id>` (a hash of the files being deployed) onto every
+  `src`/`href` to `js/` and `css/` in the pages and onto every relative
+  `import` in the scripts, in the uploaded copy only. A page can then only
+  load the scripts it was built with. The build fails if any relative
+  import is left unstamped, since a module loaded under two URLs would run
+  twice. `test/ui/minified.test.mjs` checks every first-party file the
+  console requests carries the stamp and none loads twice. A lazily loaded
+  module is matched in tests by its path, never by the full URL.
+ (`reloadOnceAfterBootFailure` in
   `auth-gate.js`): when `app.js` fails to load, the console reloads the page
   once, stamped in `sessionStorage` so that a real fault (a bad deploy, no
   network) shows "The console didn't finish loading" after one try instead
@@ -5839,6 +6065,72 @@ opportunities, Benefits API for funding drafts) with no long-lived AWS keys.
   write (`prospectFromInput`, so `upsert_prospects`) and on the industry filter
   of `list_prospects`. Stored legacy values are rewritten when a record is next saved.
 
+### Prospects (TAM): Contacts tab and the LinkedIn extension (17 Nov 2026)
+
+Ticket OGwD3FC6iThTwMpsCKic. Companies and contacts, the usual CRM model.
+
+- **Two tabs** under the page title: **Companies** (`#promote/prospects`, the grid,
+  drawer and detail view above, unchanged) and **Contacts**
+  (`#promote/prospects?tab=contacts`). The same `prospects` permission section
+  covers both.
+- **Data**: `prospectContacts/{id}` = `name` (required), `role` (the role or LinkedIn
+  headline), `companyName`, `prospectId` and `companyKey` (the TAM record and its
+  company key; both empty = **Unmatched**), `linkedinUrl` (a person's profile,
+  normalised to `https://www.linkedin.com/in/<slug>/`; company pages and searches
+  are refused), `email`, `notes`, `lastContact`, `source` (TAM spreadsheet, Added by
+  hand, LinkedIn URL, Chrome extension), `removed`, and the usual stamps. **One
+  person, one record**: a contact with a profile is stored under `li-<slug>`, and
+  an add is matched to an existing contact by the profile URL, else (for a contact
+  with no profile yet) by the same name at the same company; a match is updated,
+  never duplicated. Removing a contact sets `removed: true` and keeps the record.
+  Rules: `public/js/prospect-contacts-core.js`; `firestore.rules` →
+  `isProspectContact` (members read, editors write, unknown fields refused, the id
+  `^[A-Za-z0-9_-]{1,220}$`, the URL a profile URL).
+- **The list**: an AG Grid like the Companies grid (`ag-theme-alpine um-grid`, 50
+  rows a page, whole-page scroll). Columns: Name (opens the contact), Role,
+  Company (opens the company's detail on its Contacts tab; an unmatched contact
+  shows an **Unmatched** pill and the company as written), LinkedIn (an icon link to
+  the profile), Added (newest first). Every column sorts. Above it: the count
+  ("12 Contacts", "3 of 12 Contacts"), a search box (name, role, company, email), a
+  company filter (All companies, **Unmatched**, then each company with contacts),
+  **Add from URL** and **Add contact** (editors).
+- **The company record shows its contacts**: the company detail view has a
+  **Contacts** tab (Profile, Contacts, Org chart, AWS account team, Documents)
+  listing that company's contacts (every country record of a company shares them,
+  by company key) with LinkedIn and email links, **Add contact** (company
+  preselected) and each name opening the contact.
+- **Initial seed: the TAM spreadsheet.** Its contacts were imported onto the
+  company records (`prospects/{id}.contacts[]`, 361 people on 146 records on 17
+  Nov 2026). They are copied into `prospectContacts` under
+  `tam-<prospectId>-<name key>`, matched to that record, the first time an editor
+  opens Prospects (TAM), and any added to a record later are copied the next time;
+  ids already there (removed ones included) are skipped, so nothing is copied
+  twice or brought back.
+- **Adding later**: (1) **Add contact**: name, role, company (a TAM company, or
+  Unmatched), LinkedIn URL, email, notes. (2) **Add from URL**: a pasted profile
+  URL opens the same form with the link saved and the name guessed from it, to
+  confirm the company and role; a URL already on file opens that contact. (3) the
+  **Chrome extension** (`chrome-extension/`, loaded unpacked; only the account
+  owner installs it): on a LinkedIn profile, one click reads the name, headline,
+  current company and profile URL from the page (`linkedin-reader.js`) and hands
+  them to a signed-in console tab (an open one is reused, else one opens behind)
+  by calling `window.__phAddProspectContact`, which `prospects-page.js` defines. The
+  console saves it with that person's own sign-in and permissions, matched to a
+  TAM company by name (exact, without legal or filler words such as PLC, Ltd,
+  Group, Retail, or one name inside the other; of several country records, the
+  head-office one), else Unmatched; clicking again on the same profile updates
+  the contact. An existing contact keeps a company someone linked by hand. One
+  profile per click, only on a click: no background or bulk reading, no
+  scrolling or opening other pages (LinkedIn's terms). The extension holds no
+  credential; its permissions are `activeTab`, `scripting` and the console's two
+  addresses. A green ✓ and a note on the LinkedIn page say Added / Updated and the
+  company; a red ! says why not (not a profile, console not signed in, view-only role).
+- Not done: MCP tools for contacts (agents still see the record's own
+  `contacts[]` through `list_prospects` / `upsert_prospects`).
+- Tests: `test/prospect-contacts.test.mjs` (the rules, the import, matching,
+  dedupe, the extension's reader on saved markup and its manifest) and the
+  Contacts scenario in `test/ui/console-click.test.mjs`.
+
 ### Leads: Apple-style board, form and detail view (10 Nov 2026)
 
 Ticket iAY4X9RF5K16vLEGYswi applies the console's design rules 1-11 (ticket
@@ -5864,7 +6156,10 @@ overlay. Presentation only: every field, action and datum is still there.
   initials when there is none), name, company line and industry chip; then inset
   grouped cards in this order: **Contacts** (inbound count beside the title; each
   contact a row with role pill, job title, email, and 44px email and LinkedIn
-  buttons; "No contacts yet" with Add contact), **AWS team** (the company's
+  buttons — the LinkedIn button shows LinkedIn's own "in" mark in LinkedIn blue
+  (`linkedinLink` in `ap-components.js`, an inline SVG because Material Symbols
+  has no brand logos; 17 Nov 2026), never a generic open-in-new-tab symbol, and
+  opens the profile in a new tab; "No contacts yet" with Add contact), **AWS team** (the company's
   `awsTeam` plus the ACE seller, each with an email button), **Company research**
   (summary, facts, LinkedIn, tech stack, Updated with the sources in its (i);
   a failed source stays visible), **Recent news**, **Recent financials · period**
@@ -5978,7 +6273,10 @@ overlay. Presentation only: every field, action and datum is still there.
 Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
 see every incoming email as a ticket, answer what can be answered from the
 Help Centre automatically, involve a person when it can't, flag high-value
-retailers on the Staff Kanban, and track it all on one stats page.
+retailers on the Staff Kanban, and track it all on one stats page. (17 Nov
+2026, Rob: the stats page and Try an email were removed; three figures for
+support@ are on the Dashboard, and an email icon writes a new email. See
+"Stats", "Writing a new email" and SUP-AI-11.)
 
 ### Where it is
 
@@ -5989,6 +6287,198 @@ retailers on the Staff Kanban, and track it all on one stats page.
   no write controls.
 - **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
   Every member can read it; only an admin can change it.
+
+### Inboxes (17 Nov 2026)
+
+Mail reaches the one connected mailbox through three addresses: support@,
+hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
+
+- **SUP-INB-1** The page has three inbox tabs, named exactly **Support
+  Inbox**, **Hello** and **Aidan**, in that order. Support Inbox is the one
+  the page opens on (`#support`); the others are `#support/hello` and
+  `#support/aidan`.
+- **SUP-INB-2** An email is filed by the address it was written to, read
+  from its own To and Cc headers, and from Delivered-To / X-Original-To
+  where the mail server recorded one (a Bcc). The connected mailbox's own
+  address is never used: every message is delivered to it. support@ files
+  under Support Inbox, hello@ under Hello, aidan@ (To or Cc) under Aidan.
+  The alias must be on personalisationhub.com or the connected mailbox's
+  domain; a `+tag` after the name is ignored.
+- **SUP-INB-3** An email written to more than one alias is in each of those
+  tabs (support@ with aidan@ in Cc is in Support Inbox and Aidan). It is one
+  ticket: a reply, note or status change made in one tab shows in the other.
+  The ticket's header names the inboxes it is in.
+- **SUP-INB-4** An email that names none of the three is in Support Inbox.
+  So is every ticket filed before the tabs existed.
+- **SUP-INB-5** A ticket keeps its inboxes for the life of the thread. A
+  later customer email that names another alias adds that inbox; one that
+  names none changes nothing.
+- **SUP-INB-6** Each tab is a separate inbox: its own queues and counts, its
+  own list and search, and its own ticket view (`#support/<inbox>/ticket/<id>`,
+  Back returns to that inbox). The header line counts the inbox on show.
+  `#support/ticket/<id>` still opens any ticket, under its own inbox's tab.
+- **SUP-INB-7** The Dashboard's Support tile counts the Support Inbox
+  only. Mail written only to hello@ or aidan@ is in none of its figures.
+- **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
+  person. With sending switched on, a draft for mail written only to hello@
+  or aidan@ still waits for a person to approve it.
+
+### Aidan, the agent mailbox (17 Nov 2026)
+
+Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
+assistant: tagged requests from Rob run a skill and are answered with the
+documentation, by reply-all.
+
+- **SUP-AID-1** An email starts a run only when all three hold: it is in
+  the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
+  allowed senders, and its new text tags `@Aidan` with an instruction. The
+  tag is a word (`@Aidan`, any case), not an address, not a longer name and
+  not a possessive (`@Aidan's`). It is read only from the email's new text
+  (`splitQuoted`), which ends at the first sign of quoted or forwarded
+  history; the markers are data (`QUOTE_MARKERS`), one row per language or
+  mail app:
+  - an attribution line: one ending "wrote:" or a listed translation
+    ("schrieb", "a écrit", "escribió" …), or any line ending ":" whose
+    paragraph carries an address other than our own aliases, or a year and
+    a time. The
+    cut goes back to the nearest earlier line that starts like an
+    attribution ("On", "Am", "Le", "El" …), however far, and at least to
+    the start of that line's paragraph, so an attribution wrapped over any
+    number of lines is dropped whole;
+  - a ">" quote line (also "&gt;" or a full-width "＞"), dropped wherever it
+    is; when the paragraph just above it ends ":" or carries an address other
+    than our own aliases, that paragraph is an attribution and history starts there;
+  - Outlook's header block: a "From:" line (or a listed translation, "Von:",
+    "De :" …) with "Sent:", "Date:", "To:", "Subject:" or "Cc:" (or a
+    translation) on the same line or within the next four; or any
+    "Label: Name <address>" line with another "Label: …" line within four;
+  - a separator ("-----Original Message-----", "Forwarded message" and their
+    translations), a forward opener ("Begin forwarded message:" and
+    translations) or a line of ten or more underscores.
+  Lines are compared without zero-width characters, with any Unicode space
+  as a space and any line ending (CRLF, CR, LF, Unicode separators) as one.
+  format=flowed text is un-wrapped first. An HTML body is cut at its first
+  quote container (`<blockquote>`, `<hr>`, `.gmail_quote`, `.gmail_attr`,
+  `#divRplyFwdMsg`, `#appendonsend`, `type=cite`, Apple, Yahoo, Thunderbird,
+  ProtonMail and Outlook mobile containers) before it is read as text, and
+  then the same line rules apply. When an email has both a plain-text and an
+  HTML body, the tag must be new text with an instruction in both, or
+  nothing runs. An email with no new text (a blank reply-all, an
+  attachment-only reply, a forward with no comment) has no tag: it never
+  falls back to the whole text. A tag below an attribution, a header
+  block or a separator is history too; one below a bare ">" quote with no
+  attribution above it is new text (an inline answer). A tag is an instruction only when
+  what follows it asks for something. Text that opens with an
+  acknowledgement ("thanks", "great", "hi" …) is an instruction only when one
+  of its clauses opens with a request to write or keep something ("thanks,
+  now send the summary"); "@Aidan thanks, the AWS onboarding pack was great,
+  I'll check it again tomorrow" is not one. Other text is an instruction when
+  it has an action verb (send, write, draft, store, keep …) or is three or
+  more words. A tag that is not an instruction is recorded as "Aidan: no
+  action" with that reason and does not run. Where a quote format is not
+  recognised at all, SUP-AID-12 is the safeguard.
+- **SUP-AID-2** Only the author of the tagged email counts. A tag written by
+  someone who is not allowed does nothing, even on a thread an allowed
+  sender started; an allowed sender may tag Aidan on a thread someone else
+  started.
+- **SUP-AID-3** A plain Cc with no tag, a tag from anyone else, a tag with
+  no instruction, an email with more than one From address (or more than one
+  From header), machine-sent mail and mail the mailbox sent never start a run and never get a reply.
+  The email stays in the Aidan tab. A refused tag is shown on the ticket
+  ("Aidan: no action") with the reason.
+- **SUP-AID-4** Before a run, the sender is checked again against the
+  current allowed list (and SUP-AID-1 and SUP-AID-12 are decided again from
+  Gmail's own copy of the email and the thread as it is then), and Gmail must
+  have verified the From address. Only the topmost `Authentication-Results`
+  header is read (Gmail adds its own above every header the email arrived
+  with; the Gmail API's `payload.headers` keeps that order and the run passes
+  them through untouched). It is parsed as RFC 8601 says
+  (`parseAuthResults`): comments, nested and with escapes, are removed and
+  quoted strings, with escapes, are one value before the header is split on
+  ";", so a "dmarc=pass" or ";" inside either is never a result; a method
+  result counts only at the start of a resinfo element; a property value
+  (`smtp.mailfrom`, `header.from`, `header.d`, `header.i`) is one whole
+  value; an unbalanced comment or quote, a malformed element or a repeated
+  property refuses the email. The verdict (`authVerdict`): the authserv-id
+  must be exactly `mx.google.com` (no other host, no `*.google.com`); more
+  than one DMARC result is refused; a DMARC result whose `header.from` is
+  not exactly the From domain is refused; DMARC pass passes; any DMARC
+  result other than pass or none (fail, quarantine, reject, temperror,
+  permerror …) is final. With DMARC none (the domain publishes no policy) or
+  no DMARC result, a DKIM pass whose signing domain (`header.d`, else the
+  domain of `header.i`) is exactly the From domain, or an SPF pass whose
+  `smtp.mailfrom` domain is exactly the From domain, passes. Domains match
+  exactly: a parent or child domain never does. Headers further down are
+  never read. Otherwise nothing is done.
+- **SUP-AID-5** The skill is the one the instruction names (by slug or
+  name), or else the one Claude picks from the skills library. With no
+  matching skill, nothing is sent and the ticket goes to Needs a person.
+- **SUP-AID-6** A request to write produces the documentation with that
+  skill from the email, its attachments (text, PDF and images; at most 8
+  files and 20 MB) and the skill's kept reference material. Any instruction
+  with a verb to send, write, draft, create, prepare, produce, generate,
+  build, make, reply, email, share, forward, summarise, revise or redo is a
+  write, even when it also says "keep" or "add" ("send the pack, keep it
+  short for the skill reviewers"). It is sent at once, with no approval
+  step, as a reply on the same thread to everyone on the email: the
+  sender's verified From address and the rest of To in To, the original Cc
+  in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
+  is not verified, so it is ignored: it neither replaces the sender nor adds
+  anyone. It comes from the connected mailbox as
+  "Aidan", signed as Rob's assistant, with the document attached as a
+  Markdown file, and is marked `Auto-Submitted: auto-generated`.
+- **SUP-AID-7** The sent reply is filed on the ticket and shown in the Aidan
+  tab with who it went to and the file attached. The ticket is resolved by
+  Aidan.
+- **SUP-AID-8** A request to store (with no write verb: starting "store",
+  "save", "ingest", "remember" or "contribute"; or "keep", "add" or "file"
+  with a skill, references, a library or "for later"; or "store / keep /
+  save this … for the X skill") keeps the email and its attachments as reference
+  material for that skill (`skillReferences`); PDFs and images are kept in
+  Storage. Later runs of the skill read it. The ticket is marked
+  **Ingested** and no email is sent.
+- **SUP-AID-9** The allowed senders are runtime configuration only: they are
+  never in the repository, its tests, fixtures, docs or commit messages. An
+  admin sets them in Settings › Support inbox › Aidan; they are kept in
+  `supportSecrets/aidan`, which no client can read or write, and are only
+  ever shown masked to an admin (members see how many there are). With none
+  set, or Aidan switched off, nothing runs.
+- **SUP-AID-10** Runs happen in the scheduled sync, one per sync; "Sync now"
+  files and queues but does not run. A thread runs Aidan five times at most.
+  A whole run fits inside the `supportMail` function's 540 seconds: it runs
+  before triage and only in the sync's first two minutes (otherwise it waits
+  for the next sync), the skill choice has one minute and the document four,
+  neither model call is retried, and a sync that ran Aidan leaves triage to
+  the next sync. A run still `working` 15 minutes after it started was cut
+  off: the next sync (scheduled or "Sync now") moves it to Needs a person
+  with that reason, and it is never started again.
+- **SUP-AID-11** Queueing is idempotent. Each email is decided once per
+  ticket, in a transaction (`aidanSeen` keeps the last 50 decided ids), so
+  the schedule and "Sync now" on another instance filing the same email
+  can't queue it twice. A job is claimed by moving it from queued to
+  working in a transaction, so only one instance runs it and sends. While a
+  run is queued or working on a thread, a new request there is not queued
+  (a note on the ticket says to send it again once Aidan has answered), and
+  a refused tag doesn't overwrite the run's status.
+- **SUP-AID-12** Defence in depth, for quoted text in a format SUP-AID-1
+  doesn't recognise: an instruction is refused when its text, compared
+  ignoring case, spacing, punctuation, zero-width characters and Unicode
+  lookalike forms (NFKC), appears in a display name or address in the
+  email's From, To, Cc, Reply-To or Sender headers (RFC 2047 encoded names
+  decoded), or appears in a text that also tags Aidan: the subject of a
+  reply or forward, or an earlier inbound email on the thread that someone
+  who is not allowed wrote. An earlier email is the allowed sender's own
+  only when it came from an allowed address and Gmail verified it when it
+  was filed (`senderVerified` on the message, SUP-AID-4); even then its
+  quoted part is someone else's. Mail the mailbox sent is not compared.
+  This is decided when the email is filed and again when the run starts.
+  The refusal says why, so an owner asking for something a client asked
+  for in the same words can rephrase it.
+- **SUP-AID-13** The tag, the From address and the defence in depth are
+  read from Gmail's own copy of the email (`mailFacts`: every body, every
+  From header, the address headers), not from the stored text, both when
+  the email is filed and when the run starts. A From header that holds more
+  than one address, or an email with more than one From header, never runs.
 
 ### Connecting
 
@@ -6008,7 +6498,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
 
 - **SUP-TKT-1** One ticket per Gmail thread, keyed `SUP-n`. Reading the same
   mail twice never creates a second ticket or message.
-- **SUP-TKT-2** Mail the mailbox itself started is not a ticket.
+- **SUP-TKT-2** Mail the mailbox itself started is not a ticket, unless it
+  was written from the console's new email form (SUP-NEW-3).
 - **SUP-TKT-3** Statuses: Open, Waiting on customer, Resolved, Spam. A new
   customer email on a Waiting or Resolved ticket reopens it. It never
   reopens Spam.
@@ -6037,7 +6528,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
   (50% to 99%, default 80%).
 - **SUP-AI-3** Never sent automatically: machine-sent mail, a high-value
   sender, a thread already answered automatically once, a ticket a person
-  has replied to or noted, and anything the model marks as spam.
+  has replied to or noted, anything the model marks as spam, and mail not
+  written to the support address (SUP-INB-8).
 - **SUP-AI-4** An automatic reply is marked `Auto-Submitted: auto-replied`,
   resolves the ticket as answered by AI, and is shown as such.
 - **SUP-AI-5** If the model fails or is not configured, the ticket still
@@ -6062,10 +6554,8 @@ retailers on the Staff Kanban, and track it all on one stats page.
   articles combined and the higher-scoring reply is kept. The confidence is
   shown beside every suggested reply as a word and a number (High ≥ 80%,
   Medium ≥ 60%, Low), with the change when answers were combined.
-- **SUP-AI-11** An editor can try any email (Support Inbox → Try an email)
-  and see whether it counts as about Personalisation Hub, the articles
-  matched, the confidence, what would happen and the draft, with nothing
-  filed, saved or sent (40 tries an hour each).
+- **SUP-AI-11** Removed 17 Nov 2026: there is no "Try an email" tab and no
+  `/v1/preview` route. `#support/try` opens the inbox.
 - **SUP-AI-12** `support-eval.yml` checks the matching against the real
   model with made-up emails whose right answers are known. Its log never
   shows a real ticket's subject, sender or text.
@@ -6085,15 +6575,30 @@ retailers on the Staff Kanban, and track it all on one stats page.
 
 ### Stats
 
-- **SUP-STAT-1** One Stats tab for the last 7, 30 or 90 days: tickets
-  received, resolved, answered by AI alone (share of resolved), needed a
-  person, median first response, median time to resolution, high-value,
-  reopened, tickets per day by how they ended, and by category.
-- **SUP-STAT-2** Spam and machine-sent mail are counted on their own and
-  excluded from every other figure.
-- **SUP-STAT-3** "Answered by AI alone" means resolved by the automatic
-  reply with no person replying, noting or closing it.
-- **SUP-STAT-4** The chart has a legend and a table of the same figures.
+- **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
+  `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
+- **SUP-STAT-5** The support figures are the Dashboard's Support tile:
+  exactly three, all of the support@ inbox (SUP-INB-7). See "Dashboard —
+  the console's landing page".
+
+### Writing a new email (17 Nov 2026)
+
+- **SUP-NEW-1** A small email icon in the Support Inbox header, beside Sync
+  now, opens a form with To, Subject and Message (`#support/compose`). It is
+  shown to editors while a mailbox is connected.
+- **SUP-NEW-2** Send sends the email from the connected mailbox, with the
+  sender name and signature from Settings, and shows a confirmation naming
+  the recipient. To takes one email address. An empty or invalid To, an
+  empty subject or an empty message is refused with a message and nothing is
+  sent; the server checks the same. A message is at most 8,000 characters and
+  a member can send 30 new emails an hour.
+- **SUP-NEW-3** The sent email is filed as a Support Inbox ticket under
+  Waiting on customer, with who sent it on its timeline. The answer arrives
+  on the same ticket and reopens it. A recipient who is a high-value sender
+  (SUP-HV-1) is marked high value, so their answer is never replied to
+  automatically.
+- **SUP-NEW-4** A new email is not a reply: it is not counted in the
+  Dashboard's "Replied or resolved today".
 
 ### iPad
 
@@ -6112,17 +6617,135 @@ retailers on the Staff Kanban, and track it all on one stats page.
 `highValue`, `account {kind, id, name, reason}`, `category`, `summary`,
 `triageReason`, `spamLikely`, `aiDraft {text, confidence, answerable,
 articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
-`reopenCount`, `resolvedBy`, `createdAt`, `lastMessageAt`, `lastInboundAt`,
-`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
+`reopenCount`, `resolvedBy`, `inboxes` (array of `support` | `hello` |
+`aidan`; unset on tickets from before 17 Nov 2026, read as `["support"]`),
+`createdAt`, `lastMessageAt`, `lastInboundAt` (the customer's latest email),
+`lastReplyAt` (the latest reply sent to them, by a person, the AI or from
+Gmail itself; unset on tickets last replied to before 17 Nov 2026),
+`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`, `startedBy` (who
+wrote it, on a ticket that began as a new email from the console),
+and for Aidan `aidanPending`, `aidanRuns`, `aidanSeen` (the gmail ids of
+the last 50 tagged emails decided on the thread) and `aidan {status (queued |
+working | replied | ingested | ignored | needs-person | error), kind
+(generate | store), gmailId, instruction, reason, skillId, skillName, client,
+document {name, title, size}, recipients, referenceId, files[], at,
+startedAt, finishedAt}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
-(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
+(`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`,
+`senderVerified` (inbound mail filed since 17 Nov 2026: whether Gmail's
+Authentication-Results verified the From address, SUP-AID-4), and for sent
 mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
-| `manual`). `supportSettings/main`: connection status and settings
+| `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
-server-only.
+server-only. Aidan's sent reply has `source: "aidan"`, `cc`, `attachments`
+and `skillName`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
+`enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
+`skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
+`text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
+`source`, `createdAt` (members read; only the function writes).
 
 ### Known gaps
 
-Email is shown as text; attachments are named, not stored. The list and
-stats cover the 500 most recently active tickets. There are no MCP tools
+Email is shown as text; attachments are named, not stored. The list covers
+the 500 most recently active tickets, and the Dashboard's Support tile the
+300 most recently active. A new email goes to one address, as text, with no
+Cc and no attachment. There are no MCP tools
 for the inbox yet. The five-minute sync depends on GitHub's schedule.
+Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
+that was written to hello@ or aidan@ before then stays in Support Inbox.
+Every reply goes out from the connected mailbox's address, whichever alias
+the customer wrote to. Aidan's reply waits for the next scheduled sync (five
+minutes, or longer when GitHub's schedule is busy). Aidan's document is a
+Markdown file, not Word or PDF. Files Aidan can't read (Word, PowerPoint,
+spreadsheets) are named to the model, not read. Kept reference material has
+no page of its own yet. The sender check trusts Gmail's own
+`Authentication-Results` (authserv-id `mx.google.com`); if mail ever
+reaches the mailbox through another gateway that adds its own header on
+top, every tagged request is refused until the check is changed. A second
+tagged request on a thread while Aidan is working on the first is not
+queued; it has to be sent again. A run cut off after its email was sent is
+moved to a person, whose reason says to check the thread first. Aidan's
+quote reading (SUP-AID-1) knows the formats in `QUOTE_MARKERS`: a reply
+written in a mail app and language it doesn't list, plain text only, with
+no address or date in the attribution, could still leave a stranger's words
+in the new text; SUP-AID-12 then refuses them only when the stranger is on
+the email or their tagged email is on the thread, so a stranger who wrote
+only to the owner and is not copied on the owner's reply is not covered by
+it (they receive nothing either way). A tag written below an attribution line
+(a bottom-posted reply) is not read: write above the quote. An instruction in
+the same words as an earlier tagged email from someone who is not allowed is
+refused, even when the owner meant it. Earlier emails filed before 17 Nov
+2026 have no `senderVerified`, so their whole text is treated as someone
+else's.
+
+## Dashboard — the console's landing page (17 Nov 2026)
+
+Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
+(`https://backlog-tracker-e4ed2.web.app/`) lands on **Dashboard**
+(`#dashboard`), the first item in the sidebar. The Agent Board keeps its own
+address, `#board`, so a reload on the board stays on the board; Agent Board in
+the sidebar and the Dashboard's Agent board tile both go there.
+
+First on the page, above the tiles, is **Needs attention** (see "Needs
+attention" above): it is shown here and on no other page.
+
+Five KPI tiles in three sections, each a headline figure for **yesterday**,
+meaning the viewer's local calendar day before today, compared with the local
+day before it (the Support tile is the exception: it shows the inbox as it
+stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
+is a tooltip shown on hover or keyboard focus, with no explanatory copy under
+the tiles. Clicking a tile opens its section.
+
+| Section | Tile | Headline | Breakdown (tooltip) | Opens |
+|---|---|---|---|---|
+| Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
+| Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
+| External | Leads | New leads yesterday (test and archived leads left out), with the change | Companies and network operators, by name | `#promote/leads` |
+| External | Conversion funnel | Unique website visitors yesterday (personalisationhub.com, GA4 via `funnelDaily`), with the change | Funnel steps with count and drop-off: unique visitors → industry page → walkthrough or calculator → lead; industries ranked by visitors, peak first | `#promote/conversion-funnel` |
+| Support | Support | Exactly three figures, all of the support@ inbox (the Support Inbox tab) and never of mail written only to hello@ or aidan@: **Awaiting a reply** (open tickets, so the customer's last email has no reply); **Oldest waiting** (the age of the oldest of those, from when the customer wrote, "None" when nothing waits); **Replied or resolved today** (tickets replied to or resolved since the start of the viewer's local day; spam left out) | The tickets awaiting a reply, each with the customer and how long it has waited, longest first (the first 10) | `#support` |
+
+Rules:
+
+- **Support figures** (17 Nov 2026): "open" is the ticket's status, so
+  Needs a person, AI drafts to approve and Automated & not about PH all
+  count as awaiting a reply, and the first figure equals those three queue
+  counts on the Support Inbox tab added together. The wait runs from
+  `lastInboundAt` (else the last message). "Replied" reads `lastReplyAt`
+  (else `firstResponseAt` on a ticket last replied to before that was
+  recorded); "resolved" reads `resolvedAt` on a ticket that is still
+  resolved. A ticket is counted once. A new email written from the console
+  is not a reply.
+- **Remaining effort** is a task's estimate minus time logged, for outstanding
+  tasks of that release; epics and done tasks are left out (the same as the
+  release report).
+- **Funnel steps from `funnelDaily`**: unique visitors are GA4's `users` when
+  the ingest sends that field, else its `visits`; "industry page" is the
+  visitors on rows with an industry; "walkthrough or calculator" is demo
+  requests plus calculator or model downloads; "lead" is leads created
+  yesterday that came from the website (source "Website…", a source page or
+  website activity).
+- **Who sees which tile**: the Dashboard is open to every member and is not a
+  permission section of its own. Each tile follows its section's permission
+  (`agent-board`, `staff-kanban`, `promote-leads`, `conversion-funnel`,
+  `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
+  left with no tiles.
+- **Reads**: the Agent board tile uses the tickets the console already holds
+  and redraws with the board. The other four read their collections once when
+  the page opens, again on Refresh, or when reopened after five minutes. The
+  page keeps no listeners.
+- **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
+  tiles already on the page rather than replacing them, so a tile reached with
+  Tab keeps its keyboard focus and its open tooltip when tickets change (the
+  automation writes cards every few minutes), and only the figures that moved
+  change. The tiles are rebuilt only when the set the viewer may see changes.
+
+Code: `public/js/dashboard-core.js` (rules, no DOM) and
+`public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
+(`openDashboardPage`, `#board`). Tests: `node test/dashboard.test.mjs` and the
+"Dashboard" scenario in `test/ui/console-click.test.mjs`. The UI harness opens
+the console on `#board` by default; a case that wants the landing page passes
+`hash: ""`.
+
+Known gaps: trends compare with the day before only; Staff Kanban's remaining
+effort has no history, so it shows no trend. Unique visitors are GA4 sessions
+until the ingest writes a `users` figure.

@@ -692,7 +692,11 @@ ticket once automatically.
    integration branch (its "deployment train"), never on `main`.** Read
    the project's `deployBranch` off its Firestore doc
    (`projects/{projectId}.deployBranch`, e.g. `deploy/backlog-tracker-faqs`)
-   and read each file you are about to overwrite from
+   — **unless the project has a `releaseGroupId`**: then its train is the
+   release group's, and the branch is `releaseGroups/{releaseGroupId}.deployBranch`
+   (e.g. `deploy/ph-agent-console`, shared by every project in the group;
+   the project's own `deployBranch` is then unused). Read each file you are
+   about to overwrite from
 
    ```
    https://raw.githubusercontent.com/offline2online/rob_ph_demos/<deployBranch>/<path>
@@ -1041,12 +1045,23 @@ path:
   credential, access that is not there, a guard in your environment that
   refuses the hand-off): set
   `blocked: {reason: "waiting-on-input", note: "<what is needed, from whom>"}`.
-  Say what is needed as a statement, not a question with options. This is the
+  Say what is needed as a statement. This is the
   only case for the flag. The automation takes any flagged question as
   answered on its next run (`sweepAutoAnswers`: your `blocked.recommendation`
   if you recorded one, else "take the best option"; twice per ticket, never
   for a `dependsOnItemIds` wait or a flag a person set), so a flag that is
-  really a choice only costs a rebuild.
+  really a choice only costs a rebuild. After those two the ticket is passed
+  to the senior model (Advanced, Claude Opus), twice, to make the call.
+- **You are that senior model** when a note on the card says "Passed to the
+  senior model": read every note, decide, build, and say what you decided
+  under "Assumed:". Only if the ticket cannot be built without something only
+  a person can give, flag it so the person can answer with one click:
+  `blocked: {reason: "waiting-on-input", note: "<what is needed and why>",
+  question: "<ONE plain sentence, answerable without reading the notes>",
+  options: [{label: "<your recommended choice>", recommended: true},
+  {label: "<the other choice>"}]}`. Two to four short options; a yes/no
+  question is two options. Never ask something a person would have to type
+  an answer to, and never more than one question.
 
 ## Cards that ship together are already grouped — don't stamp a deploymentId
 
@@ -1770,7 +1785,7 @@ be stale by the time you run):
      ticket will touch (e.g. `["backlog-tracker/public", "faq"]`). Tickets
      that share an area are always built in the same package, so use the
      same spelling for the same area across tickets. Within a click they
-     are also built one at a time (build order: same area, one lane), so
+     are also built three at a time (build order: same area, one lane), so
      an area that is too broad slows builds down and one that is too narrow
      lets colliding tickets build in parallel.
    - Dependencies: if the ticket plainly needs another open ticket's code

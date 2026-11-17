@@ -133,6 +133,25 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   the board starts a touch drag from a 260 ms long-press timer and drops it
   if the finger moves 8 px first, so a late timer on a busy runner used to
   cancel the drag (TC-65, "Expected values to be strictly equal").
+  TC-65 also reads the open form (title, estimate, description) in one
+  snapshot after each rotation and waits on it, since the resize can redraw
+  the modal after it was first seen open.
+- A change made on a ticket's form is made, checked and saved as one retried
+  step: the form can be redrawn (the ticket re-read) after Save was seen on,
+  which puts the old value back and switches Save off, and a tap on Save then
+  waited 30 s for it (TC-24, "waiting for locator('#f-save')").
+- A case that opens a ticket by tapping its card waits until that ticket's
+  modal is open, tapping again only while it is shut, and reads the modal in
+  one `evaluate`: the modal opens after an async read of the ticket, so a
+  second tap or a second open could change it between two separate lookups
+  (KB-C1, "Failed to find element matching selector #f-title" right after
+  the modal was seen open).
+- A case that scrolls the prototype board right after a filter change waits
+  two animation frames first: the prototype's `keepPosition` puts the old
+  scroll position back on the next frame, and on a busy runner that frame
+  came after the case's own `scrollTo` and undid it. It then waits until the
+  bar is pinned rather than for a fixed time (TC-09, "Expected values to be
+  strictly equal").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.
@@ -146,6 +165,16 @@ CI runs the console tests as five parallel jobs (`rules`, `offline`,
 `npm run test:offline` still runs everything but the emulator in one go.
 `ci-coverage.test.js` fails when a test file is run by two jobs or a job has
 no `timeout-minutes`.
+
+`ui-touch` runs as three parts and `ui-kanban` as four, side by side, so the
+run takes about as long as its slowest part instead of 28 minutes.
+`UI_SHARD=i/n` makes `ui/run-ui.mjs` run every n-th file of its list;
+`KB_SHARD=i/n` makes the Staff Kanban suite run every n-th profile of the
+viewport matrix. Unset (locally) both run everything. The minified build is
+tested by one part only (the one whose profiles are all Firefox and WebKit, which this workflow does not install). `ui-shards.test.js` checks the parts cover every
+file and profile exactly once and that the workflow's matrix matches its
+`i/n`. To reproduce one part locally:
+`KB_SHARD=2/4 npm run test:ui:kanban:matrix`.
 
 `app-boots.test.mjs` (`npm run test:app-boots`, also on every PR touching
 `backlog-tracker/public/**`) is the console's start-up as a test: it
@@ -185,11 +214,11 @@ one of the scripts below, or list it in `EXCLUDED` with a reason.
 | Run console start-up smoke test (job `offline`) | `test:app-boots:unit` | app-boots, header-phase, build-batches, ticket-intake (`test:build-batches`), follow-up (Failed testing's two outcomes), ui-retry. Locally `test:app-boots` runs these and then `test:ui` |
 | Run console click-through suites (job `ui-console`) | `test:ui:console` | mobile-shell, mobile-theme, console-click, ticket-detail-overflow, apple-redesign, leads-apple, support-inbox |
 | Run touch and small UI suites (job `ui-touch`) | `test:ui:touch` | support-touch, webkit-ipad, nav-rotation, nav-touch, stale-page, page-load-error, new-item-voice, avatars, whiteboard, whiteboard-tablet, media-keys |
-| Run Staff Kanban console suite (job `ui-kanban`) | `test:ui:kanban` | staff-kanban, minified |
+| Run Staff Kanban console suite (job `ui-kanban`, four parts) | `test:ui:kanban:matrix`, then `test:ui:kanban:minified` in one part (`test:ui:kanban` runs both) | staff-kanban, minified |
 | Run sign-in wall tests | `test:auth-gate` | auth-gate |
 | Run Routine binding tests | `test:routine-binding` | routine-binding-trigger, skill-history-trigger (`test:skill-history`) |
 | Run Ready for Testing hand-off tests | `test:ready-for-testing` | ready-for-testing-trigger, notify-fanout |
-| Run deployment train tests | `test:train-lock` | notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage, push-workflow-guard |
+| Run deployment train tests | `test:train-lock` | ui-shards (the UI jobs' parts cover every file and profile exactly once), auto-approve (a test-only ticket approves itself once its train tests pass; nothing else does), notes-append (notes only ever appended via `:commit`), train-lock, train-lock-trigger, train-lock-branch-archive, train-carried, train-sync, docs-sync, migrate-project-docs, train-checks, train-tests, parallel-builds, train-follow-up, patch-offload, train-resume, deploy-heal, generated-builds, patch-paths, preview-url-page, preview-url-pin, faq-index, e2e-run, ci-coverage, push-workflow-guard |
 | Run rules tests against the emulator | `test:rules` | firestore-rules, notes-append-emulator (`notesCommitWrite` against real Firestore) |
 
 ## Why this exists

@@ -1,6 +1,6 @@
 // Tablet menu regression: the slide-over (641-1023px) and the persistent
 // sidebar (>=1024px) must hand over cleanly when a tablet rotates, and the
-// hamburger / close / collapse controls must keep working afterwards.
+// hamburger / close / collapse (icon rail) controls must keep working afterwards.
 // Run with:  cd backlog-tracker/test && node ui/nav-rotation.test.mjs
 import assert from "node:assert";
 import { startHarness, until } from "./harness.mjs";
@@ -14,22 +14,24 @@ try {
     open: document.getElementById("nav-drawer").classList.contains("open"),
     visible: getComputedStyle(document.getElementById("nav-drawer")).visibility === "visible",
     collapsed: document.documentElement.hasAttribute("data-nav-collapsed"),
+    width: Math.round(document.getElementById("nav-drawer").getBoundingClientRect().width),
     backdrop: document.getElementById("nav-drawer-backdrop").classList.contains("open"),
   }));
   const settle = () => page.waitForTimeout(350);
 
   await page.click("#nav-open-btn"); await settle();
-  assert.deepEqual(await st(), { open: true, visible: true, collapsed: false, backdrop: true }, "portrait: hamburger opens the slide-over");
+  assert.deepEqual({ ...(await st()), width: undefined }, { open: true, visible: true, collapsed: false, backdrop: true, width: undefined }, "portrait: hamburger opens the slide-over");
   await page.click("#nav-close-btn"); await settle();
   assert.equal((await st()).open, false, "portrait: close button closes it");
 
   await page.click("#nav-open-btn"); await settle();
   await page.setViewportSize({ width: 1180, height: 820 }); await settle();
-  assert.deepEqual(await st(), { open: false, visible: true, collapsed: false, backdrop: false }, "rotate to landscape: no stranded slide-over or backdrop");
+  assert.deepEqual(await st(), { open: false, visible: true, collapsed: false, backdrop: false, width: 248 }, "rotate to landscape: no stranded slide-over or backdrop");
+  // Gmail-style: the menu button folds the sidebar to a 70px icon rail and back.
   await page.click("#nav-collapse-btn"); await settle();
-  assert.equal((await st()).visible, false, "landscape: collapse hides the sidebar");
-  await page.click("#nav-open-btn"); await settle();
-  assert.deepEqual(await st(), { open: false, visible: true, collapsed: false, backdrop: false }, "landscape: hamburger re-expands without the slide-over state");
+  assert.deepEqual(await st(), { open: false, visible: true, collapsed: true, backdrop: false, width: 70 }, "landscape: collapse folds the sidebar to the icon rail");
+  await page.click("#nav-collapse-btn"); await settle();
+  assert.deepEqual(await st(), { open: false, visible: true, collapsed: false, backdrop: false, width: 248 }, "landscape: the menu button re-expands without the slide-over state");
   await page.click("#nav-collapse-btn"); await settle();
   await page.setViewportSize({ width: 820, height: 1180 }); await settle();
   assert.equal((await st()).open, false, "back to portrait: nothing stranded open");

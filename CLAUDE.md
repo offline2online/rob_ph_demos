@@ -370,7 +370,12 @@ is worked:
    deploy-branch slug would happen to match — the fallback is a guess, and
    a rename silently breaks it.
 3. **`projects/{id}.deployBranch`** is `deploy/<folder>`, the project's
-   single integration branch (see "the deployment train" above).
+   single integration branch (see "the deployment train" above). **Is this
+   project its own deployable, or does it ship inside another project's?**
+   If inside (its code goes out through another project's deploy workflow,
+   version and tests, as Staff Kanban's does through the console's), add it
+   to that project's release group (Settings → Projects → Release groups) so
+   they share one train. One deployable, one train.
 4. **The board's doc copies** (`requirementsMd` / `readmeMd`) are filled
    from those two files in the same session, per "Keep the board's copies
    in step as you go".
@@ -428,9 +433,12 @@ status. There used to be a per-card "Merge to main" button (and a bulk
 actually merged — removed for exactly that reason, after it let cards
 say "Merged to Main" while their PRs sat open and unmerged on GitHub.
 
+### The deployment train — one branch and one PR per project
+
 **Each project ships on a deployment train, not per ticket.** Every ticket
 a project builds is one commit on that project's single integration branch,
-`deploy/<project-slug>` (`projects/{id}.deployBranch`) — tickets stack on
+`deploy/<project-slug>` (`projects/{id}.deployBranch` — or, for a project in
+a release group, the group's shared branch; see "Release groups" below) — tickets stack on
 each other, are tested in the combination they will ship in, and merge to
 `main` as ONE PR with one `APP_VERSION` bump. This replaced a per-ticket
 branch-off-`main` model where two tickets alive at once were guaranteed to
@@ -442,6 +450,12 @@ board:
   **Failed testing**; tick it (or the column select-all) and click
   **"Approved for Deployment — N selected"**. The old per-card "Confirm
   tested" button and its `testPassed` flag are gone.
+- **A ticket that changes only test files approves itself** (17 Nov 2026,
+  `autoApprovePlan`): once its own train tests have passed on its commit it
+  moves to Approved for Deployment with a note, without locking the train.
+  Any product file in its commits and it waits for a person as before. A
+  flaky-test ticket the build found already fixed (no commit) closes itself.
+  Deploy to Main is still a click.
 - **Failed testing also takes the ticket off the branch** — it writes
   `revertRequested`, and the automation reverts that card's commits. A card
   in Backlog must never have live commits on a train. If a later ticket
@@ -461,6 +475,22 @@ board:
 - **Deploy to Main appears only when the whole train is approved** —
   merging the branch ships everything on it, so Ready for Testing has to be
   empty for that project first.
+- **Release groups: one deployable, one train (16 Nov 2026).** Projects that
+  are one deployable share one train: `releaseGroups/{id}` `{name,
+  deployBranch, projectIds}` plus `projects/{id}.releaseGroupId`. The branch,
+  lock, train tests, Deploy to Main, PR ("Deploy <group> — N tickets",
+  tickets by project) and version bump are the group's; each project keeps
+  its own Backlog, columns, docs, archive and owner. Deploy to Main is offered
+  on every member once every ticket on the shared train is approved, and
+  names the other project's ticket when that is what holds it. Managed from
+  Settings → Projects → Release groups (admin; refused while a train
+  involved has tickets). **Rule of thumb: one deployable, one train.**
+  Projects that are merely related (shared docs, an interface contract) are
+  not grouped; they rely on the deploy queue and shared-file warnings. The
+  console's two projects (Backlog Tracker & FAQs, Staff Kanban) are to be
+  grouped as "PH Agent Console" on `deploy/ph-agent-console`, their old
+  branches left in place unused. See `backlog-tracker/REQUIREMENTS.md` →
+  "Release groups — one deployable, one train".
 - **The first approval locks the Backlog** (`trainLocked`): Ready for Dev
   and Groom Backlog hide until the train merges, so no new ticket joins a
   release that is already closing. Backlog cards stay fully editable; only
@@ -793,6 +823,15 @@ page's markup, the new `app.js` ran on the old page, reached for a menu
 button that wasn't there, and stopped. The board still showed; the menu was
 dead. A reload fixed it, and Chromium tests (always fresh files) never could.
 
+- **17 Nov 2026, the same symptom again (Dashboard, Support Inbox): the iPad
+  ran the new page with OLD scripts.** Menu items from before the release
+  worked; the new ones did nothing; a fresh tab didn't help. In real WebKit
+  on GitHub (`.github/workflows/console-webkit.yml`) the code passed. The
+  deployed copy now stamps `?v=<build id>` on every script, stylesheet and
+  relative import (`backlog-tracker/scripts/build-console.js`), so a page
+  can only load its own scripts. Never remove that, and never load a
+  first-party script by a hand-written URL that the build can't stamp.
+  The symptom "old menu items work, new ones don't" means old scripts.
 - `/` and `**/` are now no-cache, and a failed start reloads once by itself
   (`reloadOnceAfterBootFailure` in `auth-gate.js`). `test/ui/stale-page.test.mjs`
   reproduces the iPad failure and must stay green.

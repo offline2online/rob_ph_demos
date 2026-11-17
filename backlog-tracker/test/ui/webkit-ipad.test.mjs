@@ -15,7 +15,7 @@
 //   2. every sidebar item opens its page by a finger tap (the route changes and
 //      the page's own section is on screen);
 //   3. the Support Inbox journey: a queue, a ticket, the suggested reply, Send,
-//      the Stats tab, and Settings › Support inbox.
+//      the email icon, and Settings › Support inbox.
 // Run with:  cd backlog-tracker/test && node ui/webkit-ipad.test.mjs
 import assert from "node:assert";
 import { devices } from "playwright-core";
@@ -44,11 +44,16 @@ const seed = { user: { email: "admin@personalisationhub.com", role: "admin" },
 const MENU = [
   ["staff-kanban-btn", "#staff-kanban", "#staff-kanban-page"],
   ["concept-incubator-btn", "#concept-incubator", "#concept-incubator-page"],
+  ["dashboard-btn", "#dashboard", "#dashboard-page"],
+  ["promote-brand-btn", "#promote/brand-guidelines", "#promote-page"],
   ["promote-leads-btn", "#promote/leads", "#leads-page"],
+  ["promote-prospects-btn", "#promote/prospects", "#prospects-page"],
+  ["promote-funnel-btn", "#promote/conversion-funnel", "#funnel-page"],
   ["support-inbox-btn", "#support", "#support-page"],
   ["faq-articles-btn", "#faq-management", "#faq-articles-page"],
   ["faq-settings-btn", "#settings", "#faq-settings-page"],
-  ["nav-ph-console-btn", "", "#projects-root"],
+  // The Agent Board's own address is #board since the Dashboard became the landing page (17 Nov 2026).
+  ["nav-ph-console-btn", "#board", "#projects-root"],
 ];
 
 const h = await startHarness();
@@ -131,7 +136,7 @@ try {
         const p = await tap(`#${id}`, { scroll: false });
         try {
           // Settings opens on its first tab, so its route is "#settings/…".
-          await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash || "(board)"}`, 5000);
+          await until(async () => { const got = (await hash()).split("?")[0]; return got === wantHash || (wantHash === "#settings" && got.startsWith("#settings/")); }, `the route ${wantHash}`, 5000);
           // And the page it came from is gone: "nothing happened" and "both pages showing" both fail here.
           const others = await page.evaluate((q) => ["#staff-kanban-page", "#concept-incubator-page", "#leads-page", "#support-page", "#faq-articles-page", "#faq-settings-page"].filter((x) => x !== q && !document.querySelector(x).hidden), section);
           assert.deepStrictEqual(others, [], "another page is still on screen");
@@ -163,9 +168,11 @@ try {
       await until(() => o.supportCalls.some((c) => c.path === "tickets/t1/reply"), "the reply call", 5000);
       await page.waitForTimeout(500);
       assert.strictEqual(o.supportCalls.filter((c) => c.path === "tickets/t1/reply").length, 1, "Send fired more than once");
-      at = "Support Inbox: Stats";
-      await tap('[data-support-tab="stats"]');
-      await until(() => page.locator(".support-tile").count(), "the stats", 5000);
+      at = "Support Inbox: the email icon";
+      await page.evaluate(() => { location.hash = "#support"; });
+      await until(() => page.locator("#support-compose-btn").isVisible(), "the email icon", 5000);
+      await tap("#support-compose-btn");
+      await until(() => page.locator("#support-compose-to").count(), "the new email form", 5000);
       at = "Settings › Support inbox";
       await page.evaluate(() => { location.hash = "#settings/projects"; });
       await until(() => page.locator('[data-settings-page="support"]').count(), "the Settings tabs", 8000);

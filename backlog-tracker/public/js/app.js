@@ -30,7 +30,7 @@ import { FAILED_TESTING_CHOICES, DEFAULT_FAILED_TESTING_CHOICE, sendBackFields, 
 import { rejectionSummaryHTML, lastRejectionLine } from "./rejection-summary.js";
 import { roundChipHTML, sentBackLastTimeHTML, isLooping, testingLoopRows, formatDuration, LOOP_ROUND, REPORT_DAYS } from "./test-rounds-view.js";
 import { suggestModel, suggestionHint, modelChipText, reviewNeedsOpus, reviewedForCommit, buildsByModel } from "./model-suggest.js";
-import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS } from "./card-state.js";
+import { cardState, deployGate, trainState, needsAttention, waitingOnMe, statusEnteredMs, ageLabel, AGE_THRESHOLDS, selfAnswering, personQuestion } from "./card-state.js";
 import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROVAL_WARNING_FOOTER, approvalFields, approvedByLine } from "./card-test-status.js";
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
@@ -56,6 +56,8 @@ import { fetchPublished, contentHashOf, articleStatus, liveUrlFor, lastSyncLabel
 import { userRows, mountUsersGrid } from "./user-management.js";
 import { LEVELS, LEVEL_LABELS, SECTIONS, PERMISSION_GROUPS, SECTION_HASH, effectiveLevels, canView, canEdit, canAdmin, roleLevels, isAdminRole, sectionForHash, sectionForSettingsPage, firstAllowedSection, permissionCss, storedLevel, discoverNavSections } from "./permissions.js";
 import { DEFAULT_ROLES, roleRows, roleNameError, trimmedRoleName, cloneName, mountRolesGrid } from "./roles.js";
+import { ATTACHMENT_ACCEPT, checkAttachmentFile, attachmentContentType, attachmentKind, kindLabel, pickRecordingType, recordingExtension } from "./item-attachments.js";
+import { withReleaseGroup, trainProjectIdsOf, trainReadiness, shipsWithLine, groupEditRefusal, trainLoad, isValidGroupBranch } from "./release-groups.js";
 
 // auth-gate.js has already initialised the app (and signed the user in)
 // by the time this module is imported; reuse it rather than double-init.
@@ -365,8 +367,16 @@ function rebuildAllItems() {
   items = liveItems.filter((i) => i.status !== "archived");
 }
 let items = [];
+// The Dashboard page (dashboard-page.js), once mounted. Declared up here because
+// renderNow() and recomputeAccess() redraw it and may run before its section below.
+let dashboardUi = null;
+let dashboardUiLoading = null;
 let projects = [];
 let projectsLoaded = false;
+// releaseGroups/{id} (release-groups.js): projects that ship in one
+// deployable share one train. Empty until the listener answers, and for a
+// viewer the read is refused to — then every project is its own train.
+let releaseGroupsList = [];
 let latestArtifactVersions = new Map(); // projectId -> newest artifactVersions doc
 let interfaces = [];
 let programs = [];
@@ -598,6 +608,7 @@ function closeAllSubPages() {
   closeConceptIncubatorPage();
   closeConceptDetailPage();
   closeStaffKanbanPage();
+  closeDashboardPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -616,7 +627,12 @@ function returnToBoard() {
     const next = firstAllowedSection(accessLevels);
     if (next && SECTION_HASH[next]) { window.location.hash = SECTION_HASH[next]; return; }
     showAccessDenied("agent-board");
+    return;
   }
+  // "#board" is the Agent Board's own address: with no hash the console opens
+  // on the Dashboard, so a reload here must not lose the board.
+  setRouteHash("#board", { replace: true });
+  updateTopbarTitle();
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 // The logo in the top-left corner is clickable from anywhere in the app,
@@ -1097,7 +1113,7 @@ function cardHTML(item) {
   const blockedFlag = (isBacklog && item.blocked && item.blocked.reason === "waiting-on-dependency")
     ? dependencyFlagHTML(item)
     : (isBacklog && item.blocked && item.blocked.reason)
-    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : item.blocked.reason === "tools-unavailable" ? "construction" : "hourglass_top"}</span>${escapeHTML(blockedFlagLabel(item.blocked))}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" && item.blocked.reason !== "tools-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="Answer the build's question — this rebuilds the ticket"><span class="material-symbols-outlined">forum</span>Answer</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
+    ? `<span class="blocked-flag blocked-flag-${escapeHTML(item.blocked.reason)}" title="${escapeHTML(item.blocked.note || "")}"><span class="blocked-flag-status"><span class="material-symbols-outlined">${item.blocked.reason === "needs-decision" ? "gavel" : item.blocked.reason === "model-unavailable" ? "psychology" : item.blocked.reason === "tools-unavailable" ? "construction" : "hourglass_top"}</span>${escapeHTML(blockedFlagLabel(item.blocked, item))}</span><span class="blocked-flag-actions">${item.blocked.note && item.blocked.reason !== "model-unavailable" && item.blocked.reason !== "tools-unavailable" ? `<button type="button" class="blocked-resolve-btn blocked-answer-btn" data-id="${item.id}" data-answer="1" title="${selfAnswering(item) === "retrying" ? "Nothing is being asked: this is handled automatically. Use this only to steer it" : "Pick an answer — this rebuilds the ticket"}"><span class="material-symbols-outlined">forum</span>${selfAnswering(item) === "retrying" ? "Steer" : "Answer"}</button>` : ""}${missingSections(item.desc).length ? `<button type="button" class="blocked-resolve-btn" data-id="${item.id}" title="Answer a few questions to fill in what this ticket is missing"><span class="material-symbols-outlined">forum</span>Resolve</button>` : ""}<button type="button" class="blocked-clear-btn" data-id="${item.id}" title="Clear the flag — puts this ticket back in the build queue">&times;</button></span></span>`
     : "";
   const e2eFixBadge = item.e2eAutoFix
     ? `<span class="e2e-fix-badge" title="${escapeHTML(`Raised automatically when ${item.e2eAutoFix.caseId}${item.e2eAutoFix.viewport && item.e2eAutoFix.viewport !== "default" ? ` (${item.e2eAutoFix.viewport})` : ""} failed on ${item.e2eAutoFix.trainBranch || "the train"}${item.e2eAutoFix.causedByItemId ? `; caused by ticket ${item.e2eAutoFix.causedByItemId}` : ""}. Attempt ${item.e2eAutoFix.attempt || 1} of 3.${item.flaggedForRob ? " Flagged for Rob." : ""}`)}"><span class="material-symbols-outlined">auto_fix_high</span>E2E auto-fix${item.flaggedForRob ? " · flagged" : ""}</span>`
@@ -1177,18 +1193,18 @@ function cardHTML(item) {
     ? `${item.testSummary.trim()}${(item.desc || "").trim() ? `\n\nOriginal request:\n${item.desc.trim()}` : ""}`
     : (item.desc || "").trim();
 
-  // A screenshot or screen recording attached via uploadItemAttachment.
+  // A file (image, video, PDF, document…) attached via uploadItemAttachment.
   // Always rendered now, even at zero — it used to only appear once a card
   // already had an attachment, which meant nothing on the card itself
   // hinted that attaching was even possible (DrIEsKsdi3WrwXbUdMH6 and its
   // duplicates: "it's not possible to attach anything to a ticket" was a
   // findability problem, not a real bug). Clicking it opens the same
   // quick-comment modal the comment icon does, which now has its own
-  // Attach screenshot / Record screen controls.
+  // Attach file / Record screen controls.
   const attachmentCount = (item.attachments || []).length;
   const attachmentBadge =
     `<button type="button" class="icon-btn attachment-btn" data-id="${item.id}"${isLocked ? ' data-readonly="1"' : ""} title="${
-      attachmentCount ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : "Attach a screenshot or screen recording"
+      attachmentCount ? `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}` : "Attach a file or a screen recording"
     }">&#128206;${attachmentCount ? ` <span class="options-menu-count">${attachmentCount}</span>` : ""}</button>`;
   // Bottom-right of the tile, alongside archive/delete — not the plain
   // left-aligned icon-row spot it used to share with the category badge,
@@ -1405,7 +1421,7 @@ function backlogCountForProject(pid) {
 }
 
 function waitingOnAnswerCountForProject(pid) {
-  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "waiting-on-input").length;
+  return items.filter((i) => (i.projectId || GENERAL_PROJECT_ID) === pid && i.status === "backlog" && isBlockedItem(i) && i.blocked.reason === "waiting-on-input" && selfAnswering(i) !== "retrying").length;
 }
 
 // Shown in place of Ready for Dev when the only Backlog cards left are blocked
@@ -1532,8 +1548,12 @@ function isUnreviewedBuild(item) {
 // The blocked chip's words. tools-unavailable (Flow 8/9) names what the build
 // session lacked; it has a clear control and no Answer button, like
 // model-unavailable: nobody can answer it, a person adds the tool.
-function blockedFlagLabel(b) {
+function blockedFlagLabel(b, item) {
   if (b.reason === "needs-decision") return "Needs your decision";
+  // A flag the pipeline raised and answers itself asks nothing of a person.
+  const self = item ? selfAnswering(item) : null;
+  if (self === "retrying") return "Handled automatically";
+  if (self === "used-up") return "Needs your pick";
   if (b.reason === "model-unavailable") return "Not built: needs Opus";
   if (b.reason === "tools-unavailable") {
     const missing = Array.isArray(b.missing) ? b.missing.filter((x) => typeof x === "string" && x.trim()) : [];
@@ -1612,9 +1632,19 @@ function archiveSelectedCountForProject(pid) {
 // EVERYTHING on it. With 8 tickets approved and 2 still in Ready for
 // Testing, a merge would carry all 10 — so Deploy to Main is only offered
 // once the branch holds nothing but approved work.
+// A project in a release group shares its train with the group's other
+// projects (release-groups.js): "the train" is then every member's cards.
+function groupedProject(pid) {
+  const project = projects.find((p) => p.id === pid);
+  return withReleaseGroup(project || { id: pid }, releaseGroupsList);
+}
+function trainProjectIdsFor(pid) {
+  return trainProjectIdsOf(groupedProject(pid));
+}
 function trainItemsForProject(pid) {
+  const ids = trainProjectIdsFor(pid);
   return items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.deployCommit &&
+    ids.includes(i.projectId || GENERAL_PROJECT_ID) && i.deployCommit &&
     (i.status === "ready-for-testing" || i.status === "ready-to-publish")
   );
 }
@@ -1628,8 +1658,9 @@ function trainItemsForProject(pid) {
 // trainItemsForProject (its status isn't on the train any more), which is
 // exactly why it needs its own check rather than being folded into that one.
 function pendingTrainRevertsForProject(pid) {
+  const ids = trainProjectIdsFor(pid);
   return items.filter((i) =>
-    (i.projectId || GENERAL_PROJECT_ID) === pid && i.revertRequested && i.deployCommit
+    ids.includes(i.projectId || GENERAL_PROJECT_ID) && i.revertRequested && i.deployCommit
   );
 }
 
@@ -2004,8 +2035,30 @@ async function finaliseProject(pid) {
   }, { merge: true });
 }
 
+// A release group's train is one train: the first approval in any member
+// project locks every member's Ready for Dev (deployToFeatureNow writes the
+// lock on all of them; this also reads it from any of them).
 function isTrainLocked(project) {
-  return !!(project && project.trainLocked);
+  if (!project) return false;
+  if (project.trainLocked) return true;
+  return trainProjectIdsFor(project.id).some((id) => id !== project.id && (projects.find((p) => p.id === id) || {}).trainLocked);
+}
+
+// "Ships with Staff Kanban · PH Agent Console" under a member project's
+// header, with the shared train's state on hover.
+function releaseGroupLineHTML(project) {
+  const grouped = groupedProject(project.id);
+  const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+  const line = shipsWithLine(grouped, byId);
+  if (!line) return "";
+  const onTrain = trainItemsForProject(project.id);
+  const testing = onTrain.filter((i) => i.status === "ready-for-testing").length;
+  const state = onTrain.length
+    ? `${onTrain.length} ticket${onTrain.length === 1 ? "" : "s"} on the shared train${testing ? `, ${testing} in Ready for Testing` : ", all approved"}`
+    : "Shared train empty";
+  return `<div class="release-group-line" title="${escapeHTML(`One train for every project in ${grouped.releaseGroup.name}: branch ${grouped.deployBranch}. Approving in any of them locks Ready for Dev in all, and Deploy to Main from any of them ships the whole train as one PR.`)}">
+    <span class="material-symbols-outlined" aria-hidden="true">merge_type</span><span>${escapeHTML(line)}</span><span class="release-group-state">${escapeHTML(state)}</span>
+  </div>`;
 }
 
 // Point 5 of "Ready for Dev CTA stays hidden after all train tickets are
@@ -2321,6 +2374,21 @@ function deployNotifyButtonHTML(project) {
     const deployCount = onTrain.length
       ? (onTrain.every((i) => i.status === "ready-to-publish") ? onTrain.length : 0)
       : legacyDeployItemsForProject(pid).length;
+    // A release group's shared train held only by another member project:
+    // this project's own column is fully approved, so say what it waits for
+    // ("Waiting for Staff Kanban: <title> is in Ready for Testing") instead
+    // of leaving the button silently absent.
+    if (!deployCount && onTrain.length && trainProjectIdsFor(pid).length > 1) {
+      const byId = Object.fromEntries(projects.map((p) => [p.id, p]));
+      const readiness = trainReadiness(groupedProject(pid), items, byId);
+      if (readiness.heldByOtherProject && readiness.reason) {
+        return `<button type="button" class="notify-claude-btn deploy-notify-btn deploy-held-by-group" disabled aria-disabled="true" title="${escapeHTML(`${readiness.reason}. Deploy to Main ships the whole shared train, so it waits for every project in the group.`)}">
+      <span class="material-symbols-outlined notify-claude-icon">hourglass_top</span>
+      <span class="notify-claude-label">Deploy to Main</span>
+      <span class="notify-claude-count-pill">${onTrain.filter((i) => i.status === "ready-to-publish").length}</span>
+    </button><span class="deploy-held-reason">${escapeHTML(readiness.reason)}</span>`;
+      }
+    }
     if (!deployCount) return "";
     // The train's required check is red (run-backlog-automation.js's
     // reportTrainTestResults sets trainTestsRed): merging would only park
@@ -2822,7 +2890,7 @@ function projectSectionHTML(project) {
           </div>
         </div>
       </div>
-      ${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
+      ${releaseGroupLineHTML(project)}${trainLockedNoteHTML(project)}${deployQueuedHintHTML(project)}${deployGateHintHTML(project)}${sharedFilesHeaderHTML(projectItems)}${kanbanE2eChipHTML(project)}
       ${docsBehindChipHTML(project)}
       <div class="project-body">${board}</div>
     </section>`;
@@ -3098,11 +3166,14 @@ function programGroupHTML(group) {
 // delay there is imperceptible.
 let renderScheduled = false;
 // ── Needs attention (RC6wVNJJcPjNTR5hov9W) ───────────────────────────────
-// One strip above the projects listing, across every project, what waits on
-// a person or is stuck past its threshold, oldest first (needsAttention in
-// card-state.js, the same list get_pipeline_health returns over MCP). Each
-// row has one button for the usual next action. "Waiting on me" narrows it
-// to cards the signed-in member filed, was asked about, or can approve.
+// One strip on the Dashboard (#dashboard) and nowhere else (kBJU2GCKW9S6XGWTwK8T),
+// above the KPI tiles: across every project, what waits on a person or is
+// stuck past its threshold, oldest first (needsAttention in card-state.js, the
+// same list get_pipeline_health returns over MCP). Its element sits inside
+// #dashboard-page, so it is drawn from the tickets this file holds on every
+// render, with no listener of its own, and is only seen there. Each row has one
+// button for the usual next action. "Waiting on me" narrows it to cards the
+// signed-in member filed, was asked about, or can approve.
 let needsAttentionMineOnly = false;
 let needsAttentionOpen = true;
 const NEEDS_ATTENTION_ACTIONS = {
@@ -3130,7 +3201,7 @@ function renderNeedsAttention() {
         <span class="needs-attention-title">Needs attention</span>
         <span class="needs-attention-count">${all.length}</span>
       </button>
-      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : ""}
+      ${all.length ? `<button type="button" class="needs-attention-mine${needsAttentionMineOnly ? " active" : ""}" aria-pressed="${needsAttentionMineOnly}">Waiting on me</button>` : `<span class="needs-attention-none">Nothing waiting on you.</span>`}
     </div>`;
   if (!all.length || !needsAttentionOpen) { el.innerHTML = head; return; }
   const rows = shown.map((e) => {
@@ -3172,11 +3243,19 @@ function gotoProject(pid) {
 async function runNeedsAttentionAction(btn) {
   const { action, kind, id, projectId } = btn.dataset;
   if (action === "answer" && kind === "ticket") { openResolveModal(id, { answer: true }); return; }
+  // Every other action's control lives on the Agent Board: the strip is on the
+  // Dashboard, so open the board first, then bring the card or project into view.
+  const dash = document.getElementById("dashboard-page");
+  if (dash && !dash.hidden) {
+    returnToBoard();
+    if (!sectionAllowed("agent-board")) return; // returnToBoard said why
+  }
   if (action === "test" && kind === "ticket") {
     const item = allItems.find((i) => i.id === id);
     const url = item && item.previewUrl ? safeHttpUrl(item.previewUrl) : "";
-    if (url) { window.open(url, "_blank", "noopener"); return; }
-    gotoCard(id); return;
+    gotoCard(id);
+    if (url) window.open(url, "_blank", "noopener");
+    return;
   }
   if (action === "deploy") {
     // Only the project's own header button deploys, and only when it is
@@ -3211,6 +3290,7 @@ document.getElementById("concept-type-filter").addEventListener("change", () => 
 
 function renderNow() {
   timedSpinnerShown = false;
+  renderDashboardIfOpen();
   migrateOrphanItems();
   const boardTypeEl = document.getElementById("board-type-filter");
   if (!boardTypeEl.options.length) boardTypeEl.innerHTML = typeOptionsHTML("all", { filter: true });
@@ -3553,7 +3633,7 @@ const BACKLOG_ITEM_RENDER_FIELDS = [
   "notes", "attachments",
   // Each train card's own test result and who approved it (19 Oct 2026) —
   // drawn on the card, so on the REST-primed first paint too.
-  "trainTest", "approvedByEmail", "approvedAt", "approvedVia",
+  "trainTest", "approvedByEmail", "approvedAt", "approvedVia", "testOnly", "autoRaised", "flakyCaseId",
   // Parallel builds (4 Oct 2026): the blocked flag, what a blocked ticket
   // waits for, and each ticket's own build-session report — the Ready for
   // Dev spinner reads the last one (perItemRoutineFinished).
@@ -3883,6 +3963,15 @@ onSnapshot(query(projectsRef, orderBy("createdAt", "asc")), (snap) => {
   if (releasesPage && !releasesPage.hidden) renderReleasesPage();
   renderSystemMap();
 }, onListenerError("projects"));
+
+// Release groups are small and change rarely. A refused or failed read only
+// means every project shows as its own train (what it was before groups
+// existed) — never worth the sign-in reload onListenerError does.
+onSnapshot(collection(db, "releaseGroups"), (snap) => {
+  releaseGroupsList = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  if (projectsLoaded) render();
+  renderSettingsGrids();
+}, (err) => { console.warn("backlog-tracker: releaseGroups listener", err && err.code); });
 
 // Latest signed-off artifact snapshot per project (written by the MCP server,
 // read-only here). One collection-group listener; a failure only hides the
@@ -4319,16 +4408,15 @@ async function setItemPreviewUrl(id, url) {
   });
 }
 
-// Attachments (screenshots & screen recordings) — see the Edit item
-// modal's own Attachments block below. Stored in Firebase Storage under
+// Attachments (images, videos, screen recordings and documents — which
+// types, and the size ceilings, are in item-attachments.js) — see the Edit
+// item modal's own Attachments block below. Stored in Firebase Storage under
 // attachments/{itemId}/{fileName}, with only the resulting metadata (not
 // the file itself) written onto the backlogItems doc, same "small,
 // bounded value on the doc, real payload elsewhere" split Firestore
 // already forces for anything past a few hundred KB. storage.rules caps
 // size/content-type at the Storage layer, matching firestore.rules'
 // existing open-but-validated posture — see that file's own comments.
-const MAX_SCREENSHOT_BYTES = 15 * 1024 * 1024;
-const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
 
 function sanitizeAttachmentFileName(name) {
   return String(name || "attachment").replace(/[^a-zA-Z0-9.\-_]/g, "_").slice(-120);
@@ -4357,25 +4445,30 @@ function describeAttachmentUploadError(err) {
     return "Upload was canceled.";
   }
   if (code === "storage/invalid-argument" || code === "storage/invalid-format" || code === "storage/invalid-checksum") {
-    return "This file couldn't be uploaded — check it's a valid image or video and try again.";
+    return "This file couldn't be uploaded — check it's a valid file and try again.";
   }
   return (err && err.message) || String(err);
 }
 
 // `uploadedAt` is a plain client Date, not serverTimestamp(), for the same
 // reason addItemComment's `at` is — see that function's own comment.
+// The content type is the file's own, or one read off its extension when the
+// browser left it empty (attachmentContentType) — Storage would otherwise
+// store it as application/octet-stream, which storage.rules refuses.
 async function uploadItemAttachment(id, file, type) {
   const path = `attachments/${id}/${Date.now()}-${sanitizeAttachmentFileName(file.name)}`;
   const fileRef = storageRef(storage, path);
+  const contentType = attachmentContentType(file);
   try {
-    await uploadBytes(fileRef, file, { contentType: file.type || undefined });
+    await uploadBytes(fileRef, file, { contentType: contentType || undefined });
   } catch (err) {
     throw new Error(describeAttachmentUploadError(err));
   }
   const url = await getDownloadURL(fileRef);
   await updateDoc(doc(db, "backlogItems", id), {
     attachments: arrayUnion({
-      type, url, path, name: file.name || sanitizeAttachmentFileName(file.name), size: file.size || 0, uploadedAt: new Date(),
+      type: type || attachmentKind(contentType), contentType: contentType || null,
+      url, path, name: file.name || sanitizeAttachmentFileName(file.name), size: file.size || 0, uploadedAt: new Date(),
     }),
     updatedAt: serverTimestamp(),
   });
@@ -4608,7 +4701,10 @@ async function deployToFeatureNow(pid) {
   // rather than only on the genuinely-first approval: it's idempotent, and
   // reading "is this the first" from a list the batch above just changed
   // would race its own write.
-  await setDoc(doc(db, "projects", pid), { trainLocked: true }, { merge: true });
+  // A release group shares one train, so the lock goes on every member.
+  for (const lockId of trainProjectIdsFor(pid)) {
+    await setDoc(doc(db, "projects", lockId), { trainLocked: true }, { merge: true });
+  }
 
   getDeploySelectedSet(pid).clear();
 }
@@ -5475,16 +5571,20 @@ function renderEiNotes() {
   document.getElementById("ei-rejection-summary").innerHTML = rejectionSummaryHTML(item);
 }
 
-// Attachments (screenshots & screen recordings) — see uploadItemAttachment/
-// removeItemAttachment above. Image attachments render as a clickable
-// thumbnail (opens the full-size file in a new tab); a video attachment
-// gets an inline <video> with native controls instead, since a still
-// thumbnail wouldn't convey much for a screen recording.
+// Attachments — see uploadItemAttachment/removeItemAttachment above. Image
+// attachments render as a clickable thumbnail (opens the full-size file in a
+// new tab); a video attachment gets an inline <video> with native controls
+// instead, since a still thumbnail wouldn't convey much for a screen
+// recording; any other file (PDF, document, zip…) gets a file icon that
+// opens it.
 function eiAttachmentItemHTML(att, idx) {
-  const label = escapeHTML(att.name || (att.type === "video" ? "Screen recording" : "Screenshot"));
-  const preview = att.type === "video"
-    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted></video>`
-    : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`;
+  const kind = att.type === "video" || att.type === "image" ? att.type : "file";
+  const label = escapeHTML(att.name || (kind === "video" ? "Screen recording" : kind === "image" ? "Screenshot" : "Attachment"));
+  const preview = kind === "video"
+    ? `<video src="${escapeHTML(safeHttpUrl(att.url))}" class="ei-attachment-thumb" controls muted playsinline preload="metadata"></video>`
+    : kind === "image"
+      ? `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener"><img src="${escapeHTML(att.url)}" alt="${label}" class="ei-attachment-thumb"></a>`
+      : `<a href="${escapeHTML(safeHttpUrl(att.url))}" target="_blank" rel="noopener" class="ei-attachment-thumb ei-attachment-file-icon" aria-label="Open ${label}"><span class="material-symbols-outlined" aria-hidden="true">description</span></a>`;
   return `<div class="ei-attachment-item">
     ${preview}
     <div class="ei-attachment-meta">
@@ -5658,6 +5758,10 @@ eiAttachmentsList.addEventListener("click", async (e) => {
 //   as-is) once it has a real item id back from creating the item.
 function createAttachmentController({ getItemId, screenshotInput, recordBtn, hintEl, mode = "upload", onPendingFile }) {
   let recorder = null;
+  // The picker's accepted types and multi-select come from one list
+  // (item-attachments.js), so index.html's three inputs can't drift from it.
+  screenshotInput.accept = ATTACHMENT_ACCEPT;
+  screenshotInput.multiple = true;
 
   function setHint(msg) {
     if (!hintEl) return;
@@ -5681,30 +5785,39 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
     }
     const id = idOverride !== undefined ? idOverride : getItemId();
     if (!id) return;
-    setHint(type === "video" ? "Uploading screen recording…" : "Uploading screenshot…");
+    const name = file.name || "file";
+    setHint(`Uploading ${name}…`);
     try {
       await uploadItemAttachment(id, file, type);
     } catch (err) {
-      await showAlert(`Couldn't upload that ${type === "video" ? "screen recording" : "screenshot"}: ` + (err && err.message ? err.message : err));
+      await showAlert(`Couldn't upload ${name}: ` + (err && err.message ? err.message : err));
     } finally {
       setHint("");
     }
   }
 
+  // Any image, video, PDF, text, zip or Office file — several at once
+  // (item-attachments.js checkAttachmentFile). A file that can't be attached
+  // is named and skipped; the rest still go.
   screenshotInput.addEventListener("change", async () => {
-    const file = screenshotInput.files[0];
+    const files = Array.from(screenshotInput.files || []);
     screenshotInput.value = "";
-    if (!file) return;
+    if (!files.length) return;
     if (mode === "upload" && !getItemId()) return;
-    if (!file.type.startsWith("image/")) { await showAlert("Please choose an image file."); return; }
-    if (file.size > MAX_SCREENSHOT_BYTES) { await showAlert("That screenshot is too large (max 15MB)."); return; }
-    await handleFile(file, "image");
+    const refused = [];
+    for (const file of files) {
+      const check = checkAttachmentFile(file);
+      if (!check.ok) { refused.push(`${file.name || "That file"}: ${check.error}`); continue; }
+      await handleFile(file, check.kind);
+    }
+    if (refused.length) await showAlert(refused.join("\n"));
   });
 
   async function startRecording() {
     if (mode === "upload" && !getItemId()) return;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-      await showAlert("Screen recording isn't supported in this browser.");
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia || !window.MediaRecorder) {
+      // iPhone and iPad browsers can't record the screen from a web page.
+      await showAlert("Screen recording isn't supported in this browser. Record it with your device's own screen recorder, then use Attach file to add the video.");
       return;
     }
     const targetItemId = mode === "upload" ? getItemId() : null;
@@ -5716,20 +5829,32 @@ function createAttachmentController({ getItemId, screenshotInput, recordBtn, hin
       return;
     }
     const chunks = [];
-    const mimeType = (window.MediaRecorder && MediaRecorder.isTypeSupported("video/webm;codecs=vp9"))
-      ? "video/webm;codecs=vp9" : "video/webm";
-    const rec = new MediaRecorder(stream, { mimeType });
+    // Safari's MediaRecorder makes only MP4 and throws on a WebM request,
+    // which is what left Record screen doing nothing there (ticket
+    // AveRUvb8zcijYoamN2RN): ask for the first format this browser can make,
+    // or let it choose.
+    const askFor = window.MediaRecorder ? pickRecordingType((t) => MediaRecorder.isTypeSupported(t)) : "";
+    let rec;
+    try {
+      rec = new MediaRecorder(stream, askFor ? { mimeType: askFor } : undefined);
+    } catch (err) {
+      stream.getTracks().forEach((t) => t.stop());
+      await showAlert("This browser can't record the screen. Record it with your device's own screen recorder, then use Attach file to add the video.");
+      return;
+    }
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     rec.onstop = async () => {
       stream.getTracks().forEach((t) => t.stop());
       setRecordButtonState(false);
+      const mimeType = (rec.mimeType || askFor || "video/webm").split(";")[0];
       const blob = new Blob(chunks, { type: mimeType });
-      if (blob.size > MAX_RECORDING_BYTES) {
+      const file = new File([blob], `screen-recording-${Date.now()}.${recordingExtension(mimeType)}`, { type: mimeType });
+      const check = checkAttachmentFile(file);
+      if (!check.ok) {
         setHint("");
-        await showAlert("That recording is too large (max 100MB) — try a shorter one.");
+        await showAlert(blob.size ? "That recording is too large (max 100 MB) — try a shorter one." : "The recording came out empty — try again.");
         return;
       }
-      const file = new File([blob], `screen-recording-${Date.now()}.webm`, { type: mimeType });
       await handleFile(file, "video", targetItemId);
     };
     // The user can also end the capture from the browser's own "Stop
@@ -5876,6 +6001,50 @@ function rsAsk() {
   rsInput.focus();
 }
 const ANSWER_STEP_KEY = "__build-answer";
+// The choices of a question, as buttons in the chat: one click answers.
+function rsOptions(options) {
+  const row = document.createElement("div");
+  row.className = "rs-options";
+  for (const o of options) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = o.recommended ? "btn-primary rs-option" : "btn-ghost rs-option";
+    b.textContent = o.recommended ? `${o.label} (recommended)` : o.label;
+    b.addEventListener("click", () => {
+      if (resolveBusy) return;
+      row.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+      if (o.noBuild) { parkResolveItem(o.label); return; }
+      rsInput.value = o.label;
+      submitResolveAnswer();
+    });
+    row.appendChild(b);
+  }
+  rsChat.appendChild(row);
+  rsChat.scrollTop = rsChat.scrollHeight;
+}
+// "Park it": the flag is cleared and nothing is built; the ticket stays in
+// Backlog until someone sends it to build again.
+async function parkResolveItem(label) {
+  if (!resolveItemId || resolveBusy) return;
+  resolveBusy = true;
+  try {
+    const me = (auth.currentUser && auth.currentUser.email) || "viewer";
+    await updateDoc(doc(db, "backlogItems", resolveItemId), {
+      notes: arrayUnion({ author: me, text: `Answer: ${label}. Not rebuilt; it stays in Backlog until it is sent to build again.`, at: new Date() }),
+      blocked: null,
+      blockedClearedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    rsSay("user", label);
+    rsSay("agent", "Parked. It stays in Backlog and nothing more is tried until you send it to build again.");
+    resolveQueue = [];
+    rsComposer.hidden = true; rsSend.hidden = true;
+  } catch (err) {
+    rsSay("agent", `Couldn't save that: ${err && err.message ? err.message : err}. Try again.`);
+  } finally {
+    resolveBusy = false;
+  }
+}
 function openResolveModal(id, opts = {}) {
   const item = allItems.find((i) => i.id === id);
   if (!item) return;
@@ -5888,6 +6057,16 @@ function openResolveModal(id, opts = {}) {
   if (opts.answer && isBlockedItem(item) && item.blocked.note) {
     resolveQueue = [{ key: ANSWER_STEP_KEY, heading: "Answer", question: "Your answer is saved on the ticket and the build restarts." }, ...resolveQueue];
     rsComposer.hidden = false; rsSend.hidden = false;
+    // One clear question with choices to click (16 Nov 2026): the senior
+    // model's own, or the standard one once the automatic tries are used up.
+    const pq = (selfAnswering(item) === "used-up" || (item.blocked.question && Array.isArray(item.blocked.options))) ? personQuestion(item) : null;
+    if (pq) {
+      rsSay("agent", pq.question);
+      rsOptions(pq.options);
+      rsSay("agent", "Pick one. Typing an answer instead is optional.");
+      rsInput.focus();
+      return;
+    }
     rsSay("agent", `The build asked:\n${item.blocked.note}`);
     rsAsk();
     return;
@@ -6018,7 +6197,7 @@ function formatAttachmentSize(bytes) {
 }
 
 function niPendingAttachmentRowHTML(pending) {
-  const kind = pending.type === "video" ? "Screen recording" : "Screenshot";
+  const kind = kindLabel(pending.type);
   const label = escapeHTML(pending.file.name || kind);
   const size = formatAttachmentSize(pending.file.size);
   return `<div class="ei-attachment-item">
@@ -6482,7 +6661,7 @@ async function submitNewItem() {
         try {
           await uploadItemAttachment(dup.item.id, pending.file, pending.type);
         } catch (err) {
-          const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+          const label = pending.file.name || kindLabel(pending.type);
           await showAlert(`The comment was added, but "${label}" couldn't be uploaded: ${err && err.message ? err.message : err}`);
         }
       }
@@ -6517,7 +6696,7 @@ async function submitNewItem() {
       try {
         await uploadItemAttachment(newItemId, pending.file, pending.type);
       } catch (err) {
-        const label = pending.file.name || (pending.type === "video" ? "Screen recording" : "Screenshot");
+        const label = pending.file.name || kindLabel(pending.type);
         failures.push(`${label}: ${err && err.message ? err.message : err}`);
       }
     }
@@ -10895,7 +11074,9 @@ function renderSettingsGrids() {
       { key: "type", header: "Type", width: 170, text: (r) => r.type, html: (r) => typeBadgeHTML({ type: r.type }, escapeHTML) },
       { key: "repo", header: "Repository folder", flex: 2, text: (r) => r.repoFolder || r.repoNote,
         html: (r) => r.repoFolder ? `<a href="https://github.com/offline2online/rob_ph_demos/tree/main/${encodeURI(r.repoFolder)}" target="_blank" rel="noopener"><code>${escapeHTML(r.repoFolder)}</code></a>` : sCell(r.repoNote) },
+      { key: "releaseGroup", header: "Release group", width: 170, text: (r) => releaseGroupNameOf(r.id), html: (r) => sCell(releaseGroupNameOf(r.id)) },
     ] }).setRows(rows);
+    renderReleaseGroupsSettings();
   } else if (settingsPage === "releases") {
     const rows = releaseRows(releases, projects, { compare: compareReleases });
     document.getElementById("settings-releases-count").textContent = plural(rows.length, "release");
@@ -10933,6 +11114,138 @@ function renderSettingsGrids() {
     ] }).setRows(automationRows(phaseBindings));
   }
 }
+// ── Settings → Projects: release groups (admin only) ──────────────────────
+// releaseGroups/{id} {name, deployBranch, projectIds[], createdAt} plus each
+// member's projects/{id}.releaseGroupId. Create, add or remove a project —
+// all refused while a train involved has tickets on it (groupEditRefusal),
+// because a move would strand those tickets on the other branch.
+function releaseGroupNameOf(pid) {
+  const g = groupedProject(pid).releaseGroup;
+  return g ? g.name : "";
+}
+function projectNameOf(pid) {
+  return (projects.find((p) => p.id === pid) || {}).name || pid;
+}
+function releaseGroupStatus(text, isError) {
+  const el = document.getElementById("release-group-status");
+  if (!el) return;
+  el.hidden = !text;
+  el.textContent = text || "";
+  el.classList.toggle("release-group-status-error", !!isError);
+}
+function renderReleaseGroupsSettings() {
+  const host = document.getElementById("settings-release-groups");
+  if (!host) return;
+  const admin = isConsoleAdmin();
+  const newBtn = document.getElementById("release-group-new-btn");
+  if (newBtn) newBtn.hidden = !admin;
+  const countEl = document.getElementById("settings-release-groups-count");
+  if (countEl) countEl.textContent = `${releaseGroupsList.length} group${releaseGroupsList.length === 1 ? "" : "s"}`;
+  const firstSel = document.getElementById("release-group-first-project");
+  const ungrouped = projects.filter((p) => !p.archived && !releaseGroupNameOf(p.id));
+  if (firstSel) firstSel.innerHTML = ungrouped.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name || p.id)}</option>`).join("");
+  if (!releaseGroupsList.length) {
+    host.innerHTML = `<p class="release-group-empty">No release groups. Every project has its own train.</p>`;
+    return;
+  }
+  host.innerHTML = releaseGroupsList.slice().sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map((g) => {
+    const members = (Array.isArray(g.projectIds) ? g.projectIds : []).map((pid) => `<span class="release-group-member">${escapeHTML(projectNameOf(pid))}${admin
+      ? `<button type="button" class="icon-btn release-group-remove-btn" data-group-id="${escapeHTML(g.id)}" data-project-id="${escapeHTML(pid)}" aria-label="Remove ${escapeHTML(projectNameOf(pid))} from ${escapeHTML(g.name || g.id)}" title="Remove from this group"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>`
+      : ""}</span>`).join("");
+    const add = admin && ungrouped.length
+      ? `<span class="release-group-add"><select class="release-group-add-select" data-group-id="${escapeHTML(g.id)}" aria-label="Project to add to ${escapeHTML(g.name || g.id)}">${ungrouped.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name || p.id)}</option>`).join("")}</select>
+         <button type="button" class="btn-ghost release-group-add-btn" data-group-id="${escapeHTML(g.id)}">Add project</button></span>`
+      : "";
+    return `<div class="release-group-row" data-group-id="${escapeHTML(g.id)}">
+      <div class="release-group-head"><strong>${escapeHTML(g.name || g.id)}</strong> <code>${escapeHTML(g.deployBranch || "")}</code></div>
+      <div class="release-group-members">${members || `<span class="release-group-empty">No projects</span>`}${add}</div>
+    </div>`;
+  }).join("");
+}
+// What a change would move: the group's shared train and the project's own.
+function releaseGroupRefusal(group, pid) {
+  const busy = [];
+  if (group) busy.push({ label: `${group.name || group.id}'s shared train`, count: trainLoad(items, group.projectIds || []) });
+  const project = projects.find((p) => p.id === pid);
+  if (project && !(group && (group.projectIds || []).includes(pid))) {
+    busy.push({ label: `${project.name || pid}'s own train`, count: trainLoad(items, [pid]) });
+  }
+  return groupEditRefusal(busy);
+}
+async function addProjectToReleaseGroup(groupId, pid) {
+  if (!isConsoleAdmin()) return;
+  const group = releaseGroupsList.find((g) => g.id === groupId);
+  if (!group || !pid) return;
+  if (releaseGroupNameOf(pid)) { releaseGroupStatus(`${projectNameOf(pid)} is already in a release group.`, true); return; }
+  const refusal = releaseGroupRefusal(group, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const batch = writeBatch(db);
+  batch.set(doc(db, "releaseGroups", groupId), { projectIds: [...(group.projectIds || []), pid], updatedAt: serverTimestamp() }, { merge: true });
+  batch.set(doc(db, "projects", pid), { releaseGroupId: groupId }, { merge: true });
+  await batch.commit();
+  releaseGroupStatus(`${projectNameOf(pid)} now ships with ${group.name || groupId}.`);
+}
+async function removeProjectFromReleaseGroup(groupId, pid) {
+  if (!isConsoleAdmin()) return;
+  const group = releaseGroupsList.find((g) => g.id === groupId);
+  if (!group) return;
+  const refusal = releaseGroupRefusal(group, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const left = (group.projectIds || []).filter((id) => id !== pid);
+  const batch = writeBatch(db);
+  // Back on its own deployBranch, which was never changed.
+  batch.set(doc(db, "projects", pid), { releaseGroupId: deleteField() }, { merge: true });
+  batch.set(doc(db, "releaseGroups", groupId), { projectIds: left, updatedAt: serverTimestamp() }, { merge: true });
+  await batch.commit();
+  releaseGroupStatus(`${projectNameOf(pid)} has its own train again.`);
+}
+async function createReleaseGroup(name, branch, pid) {
+  if (!isConsoleAdmin()) return;
+  const cleanName = String(name || "").trim();
+  if (!cleanName) { releaseGroupStatus("Give the group a name.", true); return; }
+  if (!isValidGroupBranch(branch)) { releaseGroupStatus("The branch must look like deploy/name (lower case, digits and dashes).", true); return; }
+  if (releaseGroupsList.some((g) => g.deployBranch === branch) || projects.some((p) => p.deployBranch === branch)) {
+    releaseGroupStatus(`${branch} is already another train's branch.`, true); return;
+  }
+  if (!pid) { releaseGroupStatus("Choose the group's first project.", true); return; }
+  const refusal = releaseGroupRefusal(null, pid);
+  if (refusal) { releaseGroupStatus(refusal, true); return; }
+  const ref = doc(collection(db, "releaseGroups"));
+  const batch = writeBatch(db);
+  batch.set(ref, { name: cleanName, deployBranch: branch, projectIds: [pid], createdAt: serverTimestamp() });
+  batch.set(doc(db, "projects", pid), { releaseGroupId: ref.id }, { merge: true });
+  await batch.commit();
+  document.getElementById("release-group-new-form").hidden = true;
+  releaseGroupStatus(`Created ${cleanName}. Add the projects that ship with ${projectNameOf(pid)}.`);
+}
+document.getElementById("release-group-new-btn")?.addEventListener("click", () => {
+  const form = document.getElementById("release-group-new-form");
+  form.hidden = !form.hidden;
+  releaseGroupStatus("");
+});
+document.getElementById("release-group-new-cancel")?.addEventListener("click", () => {
+  document.getElementById("release-group-new-form").hidden = true;
+});
+document.getElementById("release-group-new-form")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  createReleaseGroup(document.getElementById("release-group-name").value, document.getElementById("release-group-branch").value.trim(), document.getElementById("release-group-first-project").value)
+    .catch((err) => releaseGroupStatus(`Couldn't create the group: ${err.message || err}`, true));
+});
+document.getElementById("settings-release-groups")?.addEventListener("click", (e) => {
+  const rm = e.target.closest(".release-group-remove-btn");
+  if (rm) {
+    removeProjectFromReleaseGroup(rm.dataset.groupId, rm.dataset.projectId)
+      .catch((err) => releaseGroupStatus(`Couldn't remove it: ${err.message || err}`, true));
+    return;
+  }
+  const add = e.target.closest(".release-group-add-btn");
+  if (add) {
+    const sel = add.parentElement.querySelector(".release-group-add-select");
+    addProjectToReleaseGroup(add.dataset.groupId, sel && sel.value)
+      .catch((err) => releaseGroupStatus(`Couldn't add it: ${err.message || err}`, true));
+  }
+});
+
 async function loadPhaseBindings() {
   try {
     const snap = await getDoc(doc(db, "settings", "phaseSkillBindings"));
@@ -11241,6 +11554,7 @@ function recomputeAccess() {
   accessLevels = effectiveLevels(currentConsoleRole(), role || null);
   applyAccessStyles();
   enforceAccessNow();
+  renderDashboardIfOpen();
 }
 // Re-check whatever is on screen against the levels that just arrived (or
 // changed), so a restriction applies without a reload.
@@ -11273,7 +11587,9 @@ onAuthStateChanged(auth, (user) => {
 document.getElementById("access-denied-go")?.addEventListener("click", (e) => {
   const h = e.currentTarget.dataset.hash;
   document.getElementById("access-denied-page").hidden = true;
-  if (h) window.location.hash = h; else returnToBoard();
+  // "#board" goes through returnToBoard, which shows the board and keeps that
+  // address (a plain hash change to #board only closes an open sub-page).
+  if (h && h !== "#board") window.location.hash = h; else returnToBoard();
 });
 
 // The console-side endpoints on mcp-server.js authenticate with a Firebase
@@ -11766,6 +12082,59 @@ PROMOTE_PAGES.forEach((p) => {
     catch (err) { showPageLoadError(LAZY_PROMOTE[p.key] ? LAZY_PROMOTE[p.key].page() : null, p.label, err, () => openPromotePage(p.key)); }
   });
 });
+
+// ── Dashboard (#dashboard, dashboard-page.js) ─────────────────────────────
+// The page the console opens on (a load with no hash goes here, see the end of
+// this file): five KPI tiles for yesterday, each opening its section. Mounted
+// the first time it opens. Its Agent board tile reads the tickets this file
+// already holds, so it is redrawn with the board (renderNow) and when the
+// viewer's permissions arrive (recomputeAccess); the other tiles read their
+// collections once per open (dashboard-page.js).
+function ensureDashboardUi() {
+  if (dashboardUi) return Promise.resolve(dashboardUi);
+  if (!dashboardUiLoading) {
+    dashboardUiLoading = import(`./dashboard-page.js${pageRetrySuffix("dashboard")}`).then(({ mountDashboard }) => {
+      dashboardUi = mountDashboard({
+        root: document.getElementById("dashboard-page"), db,
+        attention: document.getElementById("needs-attention"),
+        items: () => items, projects: () => projects, releases: () => releases,
+        canView: (key) => sectionAllowed(key),
+        go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+      });
+      return dashboardUi;
+    }).catch((err) => { dashboardUiLoading = null; throw err; });
+  }
+  return dashboardUiLoading;
+}
+// Function declarations reach the page by id, not through a module const, so
+// closeAllSubPages() can call this however early it runs.
+function renderDashboardIfOpen() {
+  const page = document.getElementById("dashboard-page");
+  if (dashboardUi && page && !page.hidden) dashboardUi.render();
+}
+function openDashboardPage() {
+  const page = document.getElementById("dashboard-page");
+  if (!page) return;
+  if (page.hidden) closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  page.hidden = false;
+  setRouteHash("#dashboard");
+  updateTopbarTitle();
+  ensureDashboardUi().then((ui) => { if (!page.hidden) ui.refresh(); })
+    .catch((err) => showPageLoadError(page, "Dashboard", err, () => { pageRetries.dashboard = (pageRetries.dashboard || 0) + 1; openDashboardPage(); }));
+}
+function closeDashboardPage() {
+  const page = document.getElementById("dashboard-page");
+  if (!page || page.hidden) return;
+  page.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+{
+  const btn = document.getElementById("dashboard-btn");
+  if (btn) btn.addEventListener("click", () => { closeNavDrawer(); openDashboardPage(); });
+}
 
 // ── Support › Support Inbox (#support, support-page.js) ──────────────────
 // The support mailbox as tickets: inbox queues, one ticket's conversation and
@@ -13097,6 +13466,7 @@ navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHom
 // one of those opens, so a refresh from there still lands on the board,
 // same as before this existed.
 const ROUTE_TITLES = {
+  "#dashboard": "Dashboard",
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
   "#settings/user-management/users": "Settings: Users",
@@ -13250,7 +13620,9 @@ function openDocsRouteFromHash(hash) {
 }
 function applyRouteFromHash() {
   const hash = window.location.hash;
-  if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
+  if (hash === "#dashboard") { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(); }
+  else if (hash === "#board") { if (anySubPageOpen()) returnToBoard(); }
+  else if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (legacyUserManagementHash(hash)) { setRouteHash(legacyUserManagementHash(hash), { replace: true }); applyRouteFromHash(); }
   else if (userManagementRoute(hash) && userManagementRoute(hash).roleId) { const rid = userManagementRoute(hash).roleId; if (rolePage.hidden || rolePageId !== rid) openRolePage(rid); }
   else if (settingsPageFromHash(hash)) {
@@ -13274,7 +13646,11 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (anySubPageOpen()) closeAllSubPages();
+}
+function anySubPageOpen() {
+  const dash = document.getElementById("dashboard-page");
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -14590,6 +14966,9 @@ wireFaqArticleRowInteractions("faq-article-list");
 // declared throughout the file (e.g. faqArticleEditorPage). Running this
 // any earlier risks a "Cannot access before initialization" TDZ error the
 // moment a page is loaded straight into one of these two routes.
+// A load with no hash is someone opening the console: it lands on the
+// Dashboard. The Agent Board keeps its own address, #board.
+if (!window.location.hash || window.location.hash === "#") setRouteHash("#dashboard", { replace: true });
 applyRouteFromHash();
 // pendingInitialScrollRestore is consumed by openFaqArticlesPage/
 // openFaqArticleEditorPage themselves (including on the deferred path —

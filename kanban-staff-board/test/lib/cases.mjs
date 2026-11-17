@@ -1065,10 +1065,11 @@ export function defineNewCases(E) {
     const rel = E.rel("4.12");
     const kpis = () => p.$$eval(".kb-kpi", (e) => e.map((k) => ({ label: k.querySelector(".kb-kpi-label").childNodes[0].textContent.trim(), value: k.querySelector(".kb-kpi-value").textContent.trim(), sub: k.querySelector(".kb-kpi-sub").textContent.trim() })));
     const bars = () => p.$$eval(".kb-bar-row", (e) => Object.fromEntries(e.map((b) => [b.dataset.person, b.querySelector(".kb-bar-val").textContent.trim()])));
-    const rows = () => p.$$eval(".kb-click-row", (e) => e.map((r) => r.innerText.replace(/\s+/g, " ").trim()));
-    // innerText is the rendered text: read while the report is not laid out yet (phone, just opened) it comes back as
-    // the raw text, unspaced and without the pills' capitals. Wait until every row has a box before reading it.
-    const laidOut = () => until(() => p.$$eval(".kb-click-row", (e) => e.length > 0 && e.every((r) => r.getClientRects().length > 0)), "the report's rows to be laid out");
+    // innerText is the rendered text: read from a row that is not rendered (the report just opened, or mid-redraw) it
+    // comes back as the raw text, unspaced and without the pills' capitals. So the check that every row has a box and
+    // the read happen in one snapshot: a redraw between a separate check and read left a raw "before" that the
+    // reloaded report could never equal (TC-62 flake, "the same URL shows the same report").
+    const rows = () => until(() => p.$$eval(".kb-click-row", (e) => (e.length > 0 && e.every((r) => r.getClientRects().length > 0) ? e.map((r) => r.innerText.replace(/\s+/g, " ").trim()) : null)), "the report's rows to be laid out");
     const oracle = async () => {
       const all = (await E.tasks(p)).filter((t) => t.type !== "epic" && t.release === rel);
       const out = all.filter((t) => t.status !== "done");
@@ -1094,9 +1095,8 @@ export function defineNewCases(E) {
     assert.ok(!(await p.$$eval("[data-open]", (e) => e.map((x) => x.dataset.open))).some((k) => /^PH-[1-5]$/.test(k)), "epics are not listed in the report");
     // a shared URL reproduces the view
     const url = await p.evaluate(() => location.hash);
-    await laidOut();
     const before = { k: await kpis(), r: await rows() };
-    await p.reload(); await p.waitForSelector(".kb-kpi"); await laidOut();
+    await p.reload(); await p.waitForSelector(".kb-kpi");
     assert.equal(await p.evaluate(() => location.hash), url);
     // After the reload the report is redrawn as the tickets load; wait for it to reach the same view.
     await eventually(async () => assert.deepEqual({ k: await kpis(), r: await rows() }, before, "the same URL shows the same report"));
@@ -1210,8 +1210,12 @@ export function defineNewCases(E) {
     await p.fill("#f-title", "Half written"); await p.fill("#f-estimate", "3h"); await typeDescription(p, "Some words");
     await swap();
     await eventually(async () => assert.equal(await modalOpen(p), true, "the form is still open"));
-    assert.equal(await val(p, "#f-title"), "Half written"); assert.equal(await val(p, "#f-estimate"), "3h");
-    assert.match(await p.$eval('[data-field="description"] .ql-editor', (e) => e.innerText), /Some words/);
+    // Read the form in one snapshot and wait on it: the modal can be redrawn by the resize after it was seen open.
+    await eventually(async () => {
+      const f = await p.evaluate(() => ({ title: document.getElementById("f-title").value, estimate: document.getElementById("f-estimate").value, desc: (document.querySelector('[data-field="description"] .ql-editor') || {}).innerText || "" }));
+      assert.equal(f.title, "Half written"); assert.equal(f.estimate, "3h");
+      assert.match(f.desc, /Some words/);
+    });
     await swap();
     await eventually(async () => assert.equal(await val(p, "#f-title"), "Half written"));
     await saveTask(p);

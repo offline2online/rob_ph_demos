@@ -750,7 +750,9 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
   .kb-board-lanes[data-col="ready-for-testing"] .kb-lane-cell[data-status="ready-for-testing"],
   .kb-board-lanes[data-col="approved"] .kb-lane-cell[data-status="approved"],
   .kb-board-lanes[data-col="done"] .kb-lane-cell[data-status="done"] { display: flex !important; }
-  .kb-board-lanes .kb-lane-cell.kb-cell-hidden { display: none !important; }
+  /* A collapsed lane hides every cell, including the one the pager is on: the
+     selector must out-rank the per-column [data-col][data-status] rule above. */
+  .kb-board-lanes[data-col] .kb-lane-cell.kb-cell-hidden[data-status] { display: none !important; }
   .kb-board-lanes .kb-lane-cell .kb-cell-head { display: none; }
   .kb-board-lanes .kb-lane-cell .kb-list { min-height: 56px; }
   .kb-board-wrap:has(.kb-board-lanes) { overflow: visible !important; scroll-snap-type: none; }

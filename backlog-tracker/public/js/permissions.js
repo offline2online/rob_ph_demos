@@ -105,7 +105,7 @@ export function firstAllowedSection(levels) {
 // not a section and are never blocked.
 export function sectionForHash(hash) {
   const h = String(hash || "").split("?")[0];
-  if (h === "" || h === "#") return "agent-board";
+  if (h === "" || h === "#" || h === "#board") return "agent-board";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq";
   if (h === "#support" || h.startsWith("#support/")) return "support-inbox";
   if (h === "#promote/prospects") return "prospects";
@@ -127,7 +127,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "support-inbox": "#support", faq: "#faq-management",
+  "agent-board": "#board", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "support-inbox": "#support", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };

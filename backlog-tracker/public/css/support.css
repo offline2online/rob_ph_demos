@@ -1,6 +1,5 @@
 /* Support › Support Inbox (js/support-page.js) and Settings › Support inbox.
    Uses the console's own tokens (styles.css / apple.css); nothing fixed-position. */
-.support-page { --support-ai: #169bc2; --support-people: #9747ff; --support-open: #8c9196; }
 .support-problem { color: var(--danger); }
 p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 16px; text-align: center; color: var(--text-muted); }
@@ -63,6 +62,8 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-msg-body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .support-msg-files { margin-top: 8px; font-size: 12.5px; color: var(--text-muted); }
 .support-msg-files .material-symbols-outlined { font-size: 16px; vertical-align: -3px; }
+/* Aidan's reply: who it went to (everyone on the email), wrapping on a phone. */
+.support-msg-aidan .support-msg-addr { margin-top: 4px; font-size: 12.5px; overflow-wrap: anywhere; }
 .support-event { display: flex; gap: 6px; align-items: flex-start; align-self: center; font-size: 12.5px; color: var(--text-muted); }
 .support-event .material-symbols-outlined { font-size: 16px; }
 .support-composer { padding: 16px; border-radius: 14px; box-shadow: 0 0 0 .5px var(--border); background: var(--surface); }
@@ -85,36 +86,9 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-faq-hit .material-symbols-outlined { font-size: 18px; color: var(--primary-text); }
 .support-faq-hit small { display: block; color: var(--text-muted); }
 
-/* Stats */
-.support-range { display: flex; gap: 8px; margin-bottom: 16px; }
-.support-range .active { background: var(--primary-tint); color: var(--primary-text); font-weight: 600; }
-.support-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-.support-tile { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 14px; box-shadow: 0 0 0 .5px var(--border); background: var(--bg); }
-.support-tile-label { font-size: 12.5px; color: var(--text-muted); }
-.support-tile-value { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-.support-tile-hint { font-size: 12px; color: var(--text-muted); }
-.support-stats-h { margin: 24px 0 10px; font-size: 15px; font-weight: 600; }
-.support-chart { display: flex; align-items: flex-end; gap: 2px; height: 200px; padding: 8px 0 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
-.support-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1 0 14px; max-width: 40px; height: 100%; }
-.support-bar-stack { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; width: 70%; flex: 1; min-height: 0; }
-.support-bar-seg { display: block; min-height: 3px; border-radius: 2px; }
-.support-bar-stack .support-bar-seg:first-child { border-radius: 4px 4px 2px 2px; }
-.support-bar-ai { background: var(--support-ai); }
-.support-bar-people { background: var(--support-people); }
-.support-bar-open { background: var(--support-open); }
-.support-bar-day { margin-top: 4px; font-size: 10px; color: var(--text-muted); white-space: nowrap; }
-.support-bar:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.support-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0; list-style: none; font-size: 12.5px; color: var(--text-muted); }
-.support-legend li { display: inline-flex; align-items: center; gap: 6px; }
-.support-swatch { width: 10px; height: 10px; border-radius: 3px; }
-.support-table { margin-top: 10px; font-size: 13px; }
-.support-table summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--primary-text); }
-.support-cats { max-width: 420px; }
-.support-stats .data-table td, .support-stats .data-table th { padding: 6px 10px; text-align: left; font-size: 13px; }
-
 /* Settings › Support inbox */
 .support-set-grid { display: flex; flex-direction: column; gap: 6px; max-width: 640px; margin-top: 10px; }
-.support-set-grid input[type="text"], .support-set-grid input[type="number"], .support-set-grid select, .support-set-grid textarea { min-height: 44px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: var(--bg); color: var(--text); box-sizing: border-box; }
+.support-set-grid input[type="text"], .support-set-grid input[type="email"], .support-set-grid input[type="number"], .support-set-grid select, .support-set-grid textarea { min-height: 44px; padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-size: 14px; background: var(--bg); color: var(--text); box-sizing: border-box; }
 .support-set-grid input[type="number"] { max-width: 120px; }
 .support-check { display: flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; }
 .support-check input { width: 18px; height: 18px; }
@@ -134,21 +108,23 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-page .material-symbols-outlined, #support-settings .docs-block .material-symbols-outlined { display: inline-block; width: 1em; flex: 0 0 auto; overflow: hidden; white-space: nowrap; }
 .support-search .material-symbols-outlined, .support-faq .um-search .material-symbols-outlined { width: 18px; }
 
-/* Inbox / Stats tabs: the User Management tab look, under their own class (app.js drives every .um-tab). */
-.support-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; }
+/* The inbox tabs: the User Management tab look, under their own class (app.js drives every .um-tab). */
+.support-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--border); margin: 4px 0 16px; }
 .support-tab { font: inherit; font-size: 14px; background: none; border: 0; border-bottom: 2px solid transparent; min-height: 44px; padding: 0 16px; color: var(--text-muted); cursor: pointer; margin-bottom: -1px; border-radius: 10px 10px 0 0; }
 .support-tab:hover { color: var(--primary-text); }
 .support-tab.active { color: var(--primary); background: var(--primary-tint); border-bottom-color: var(--primary); font-weight: 500; }
 .support-tab:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 
-/* Try an email */
-.support-try { max-width: 760px; }
-.support-try .support-set-grid { max-width: none; }
-.support-try textarea { min-height: 160px; }
-.support-try-result { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
-.support-try-articles { margin: 0; padding-left: 20px; }
-.support-try-articles li { line-height: 44px; }
-.support-try-articles a { color: var(--primary-text); }
+/* A new email: the icon in the page header and its form (#support/compose) */
+.support-compose-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 0 10px; }
+.support-compose-btn .material-symbols-outlined { font-size: 20px; }
+.support-header-actions { display: flex; align-items: center; gap: 8px; }
+.support-compose { max-width: 760px; }
+.support-compose .support-set-grid { max-width: none; }
+.support-compose textarea { min-height: 200px; }
+.support-compose-h { display: flex; align-items: center; gap: 6px; margin: 4px 0 8px; font-size: 17px; font-weight: 600; }
+.support-compose-sent { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 8px; font-size: 14px; }
+.support-compose-sent > .material-symbols-outlined { font-size: 20px; color: var(--success); }
 
 /* Confidence beside a suggested reply: a word and a number, never colour alone. */
 .support-conf { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 9999px; font-size: 12px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }

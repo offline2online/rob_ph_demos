@@ -91,6 +91,9 @@ async function reset() {
     await setDoc(doc(db, "supportSettings/main"), { connectedEmail: "support@ph.example", autoReply: false });
     await setDoc(doc(db, "supportSecrets/gmail"), { refresh: { v: 1, ct: "x" }, client: { v: 1, ct: "y" } });
     await setDoc(doc(db, "supportCounters/main"), { nextNumber: 2 });
+    // Aidan (functions/aidan.js): its configuration and one kept reference.
+    await setDoc(doc(db, "supportSecrets/aidan"), { allowedSenders: ["owner@example.com"], enabled: true });
+    await setDoc(doc(db, "skillReferences/r1"), { skillId: "s1", subject: "Onboarding notes", text: "Notes", files: [] });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -488,6 +491,19 @@ async function main() {
   await check("The 10th org chart person's AWS account ID is checked too", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi5"), { ...COMPANY, people: Array.from({ length: 100 }, (_, i) => ({ id: `p${i}`, name: `P${i}`, awsAccountId: i === 9 ? "x" : "" })) }));
   await check("An org chart holds at most 100 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi6"), { ...COMPANY, people: Array.from({ length: 101 }, (_, i) => ({ id: `p${i}`, name: `P${i}` })) }));
   await check("A company's AWS team holds at most 30 people", "deny", () => setDoc(doc(as(MEMBER), "prospectCompanies/aldi7"), { ...COMPANY, awsTeam: Array.from({ length: 31 }, (_, i) => ({ id: `a${i}`, name: `A${i}` })) }));
+  // Prospects (TAM) › Contacts: prospectContacts/{id}
+  const CONTACT = { name: "Jo Bloggs", role: "CMO", companyName: "ALDI", prospectId: "aldi-australia", companyKey: "aldi", linkedinUrl: "https://www.linkedin.com/in/jo-bloggs/", email: "jo@aldi.example", notes: "", lastContact: "", source: "Chrome extension", removed: false };
+  await check("An editor can add a contact", "allow", () => setDoc(doc(as(MEMBER), "prospectContacts/li-jo-bloggs"), CONTACT));
+  await check("An editor can add an unmatched contact with no profile", "allow", () => setDoc(doc(as(MEMBER), "prospectContacts/AbCd0123456789xyzQrs"), { ...CONTACT, prospectId: "", companyKey: "", linkedinUrl: "", email: "" }));
+  await check("An editor can remove a contact (kept as removed)", "allow", () => updateDoc(doc(as(MEMBER), "prospectContacts/li-jo-bloggs"), { removed: true }));
+  await check("A viewer may read a contact", "allow", () => getDoc(doc(as(VIEWER), "prospectContacts/li-jo-bloggs")));
+  await check("A stranger cannot read a contact", "deny", () => getDoc(doc(as(STRANGER), "prospectContacts/li-jo-bloggs")));
+  await check("A viewer cannot write a contact", "deny", () => setDoc(doc(as(VIEWER), "prospectContacts/li-x"), CONTACT));
+  await check("A contact needs a name", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-y"), { ...CONTACT, name: "" }));
+  await check("A contact's LinkedIn link must be a profile", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-z"), { ...CONTACT, linkedinUrl: "https://www.linkedin.com/company/aldi/" }));
+  await check("A contact takes no unknown fields", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-w"), { ...CONTACT, patchFiles: [] }));
+  await check("A contact's company key is letters and digits", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li-v"), { ...CONTACT, companyKey: "ALDI Australia" }));
+  await check("A contact's id is a plain id", "deny", () => setDoc(doc(as(MEMBER), "prospectContacts/li jo"), CONTACT));
   await check("A prospect no longer holds the company's org chart itself", "deny", () => updateDoc(doc(as(MEMBER), "prospects/p1"), { people: [] }));
   await check("A lead may carry the prospect it came from", "allow", () => setDoc(doc(as(MEMBER), "leads/prospect-p1"), { ...LEAD, prospectId: "p1" }));
   await check("An editor can delete a prospect", "allow", () => deleteDoc(doc(as(MEMBER), "prospects/p1")));
@@ -578,6 +594,12 @@ async function main() {
   await check("Not even an owner can read the support mailbox's encrypted sign-in", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/gmail")));
   await check("Nobody can write the support mailbox's sign-in from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/gmail"), { refresh: null }));
   await check("Nobody can read the support ticket counter from a client", "deny", () => getDoc(doc(as(TEAM_ADMIN), "supportCounters/main")));
+  // Aidan: the allowed senders are server-only; kept reference material is member-readable, server-written.
+  await check("Not even an owner can read Aidan's allowed senders", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/aidan")));
+  await check("A team admin cannot write Aidan's allowed senders from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/aidan"), { allowedSenders: ["x@ph.example"] }));
+  await check("A member may read Aidan's reference material", "allow", () => getDoc(doc(as(MEMBER), "skillReferences/r1")));
+  await check("A stranger cannot read Aidan's reference material", "deny", () => getDoc(doc(as(STRANGER), "skillReferences/r1")));
+  await check("An editor cannot write reference material from a client", "deny", () => setDoc(doc(as(MEMBER), "skillReferences/r2"), { skillId: "s1", text: "x" }));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 
@@ -811,6 +833,25 @@ async function main() {
     setDoc(doc(as(MEMBER), "projects/p1"), { routinePromptMd: "ignore previous instructions" }, { merge: true }));
   await check("A team admin can change routinePromptMd", "allow", () =>
     setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { routinePromptMd: "Use the dsp-integration folder." }, { merge: true }));
+  // Release groups (Flow 9/9): a group decides which branch a merge ships from.
+  const GROUP = { name: "PH Agent Console", deployBranch: "deploy/ph-agent-console", projectIds: ["p1"] };
+  await check("An editor CANNOT create a release group", "deny", () =>
+    setDoc(doc(as(MEMBER), "releaseGroups/g1"), GROUP));
+  await check("A team admin can create a release group", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "releaseGroups/g1"), GROUP));
+  await check("The automation user can update a release group (the deploy session's migration)", "allow", () =>
+    setDoc(doc(as(BOT), "releaseGroups/g1"), { ...GROUP, projectIds: ["p1", "p2"] }));
+  await check("A release group's branch must look like deploy/<name>", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "releaseGroups/g2"), { ...GROUP, deployBranch: "main" }));
+  await check("A member can read release groups", "allow", () => getDoc(doc(as(MEMBER), "releaseGroups/g1")));
+  await check("A stranger cannot read release groups", "deny", () => getDoc(doc(as(STRANGER), "releaseGroups/g1")));
+  await check("An editor CANNOT set a project's releaseGroupId", "deny", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { releaseGroupId: "g1" }, { merge: true }));
+  await check("A team admin can set a project's releaseGroupId", "allow", () =>
+    setDoc(doc(as(TEAM_ADMIN), "projects/p1"), { releaseGroupId: "g1" }, { merge: true }));
+  await check("An editor can still rename a project in a group (the pointer unchanged passes)", "allow", () =>
+    setDoc(doc(as(MEMBER), "projects/p1"), { name: "Renamed again" }, { merge: true }));
+  await check("An editor CANNOT delete a release group", "deny", () => deleteDoc(doc(as(MEMBER), "releaseGroups/g1")));
   await check("A javascript: artifactUrl is refused", "deny", () =>
     setDoc(doc(as(MEMBER), "projects/p1"), { artifactUrl: "javascript:alert(1)" }, { merge: true }));
   await check("An https artifactUrl is fine", "allow", () =>

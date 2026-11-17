@@ -1973,23 +1973,54 @@ export function mountStaffKanban(ctx) {
   // (21 Oct 2026). So Android records one utterance per session, restarted
   // when it ends, and dictation-results.js folds any cumulative finals that
   // still arrive (the same reader as the console's other mics in app.js).
-  async function startRecorder({ onLive, onDone, onState, onError }) {
+  // The microphone is asked for once (15 Nov 2026: "it keeps asking for
+  // permission over and over again"). Every start used to probe with
+  // getUserMedia, and Safari (iPad) and a Chrome "allow this time" grant ask
+  // again for each probe, on top of the recogniser's own prompt. Once access
+  // has been given, in this visit or remembered by this browser (kb-mic-granted,
+  // or the Permissions API saying "granted"), the recogniser starts directly.
+  // If that is refused after all, the grant is forgotten and the start is
+  // retried once through the probe, so a real prompt or error still shows.
+  const MIC_KEY = "kb-mic-granted";
+  let micGranted = false;
+  try { micGranted = localStorage.getItem(MIC_KEY) === "1"; } catch { /* storage blocked */ }
+  function rememberMic(on) {
+    micGranted = on;
+    try { if (on) localStorage.setItem(MIC_KEY, "1"); else localStorage.removeItem(MIC_KEY); } catch { /* storage blocked */ }
+  }
+  async function micAlreadyGranted() {
+    try {
+      if (navigator.permissions && navigator.permissions.query) {
+        const st = await navigator.permissions.query({ name: "microphone" });
+        if (st && st.state === "granted") { rememberMic(true); return true; }
+        if (st && st.state === "denied") { rememberMic(false); return false; }
+      }
+    } catch { /* "microphone" isn't a queryable name in this browser */ }
+    return micGranted;
+  }
+  async function startRecorder({ onLive, onDone, onState, onError }, { forceProbe = false } = {}) {
     if (!SR) { onError("Voice capture isn't supported in this browser. Try Chrome, Edge or Safari, or type the description."); return; }
     if (recStarting || rec) return;
     const starting = recStarting = {};
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
-    } catch (e) {
-      if (recStarting !== starting) return;
-      recStarting = null;
-      onError(e && e.name === "NotAllowedError" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
-        : e && e.name === "NotFoundError" ? "No microphone found on this device." : "The microphone couldn't be started.");
-      return;
+    const skipProbe = !forceProbe && (await micAlreadyGranted());
+    if (recStarting !== starting) return; // stopped or closed while checking
+    if (!skipProbe) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+        rememberMic(true);
+      } catch (e) {
+        if (recStarting !== starting) return;
+        recStarting = null;
+        if (e && e.name === "NotAllowedError") rememberMic(false);
+        onError(e && e.name === "NotAllowedError" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
+          : e && e.name === "NotFoundError" ? "No microphone found on this device." : "The microphone couldn't be started.");
+        return;
+      }
+      // Android needs a moment to release the probe's hold on the mic, or the
+      // recogniser shows as listening but never transcribes a word.
+      if (isAndroidDevice()) await new Promise((ok) => setTimeout(ok, 250));
     }
-    // Android needs a moment to release the probe's hold on the mic, or the
-    // recogniser shows as listening but never transcribes a word.
-    if (isAndroidDevice()) await new Promise((ok) => setTimeout(ok, 250));
     if (recStarting !== starting) return; // stopped or closed while waiting
     recStarting = null;
     // Committed segments, one per final (a cumulative final replaces the
@@ -2013,6 +2044,14 @@ export function mountStaffKanban(ctx) {
       inst.onerror = (e) => {
         if (e.error === "no-speech" || e.error === "aborted") return;
         r.wanted = false;
+        if (e.error === "not-allowed") rememberMic(false);
+        // Started without the probe on a remembered grant that no longer
+        // holds: ask properly once instead of showing "blocked".
+        if (e.error === "not-allowed" && skipProbe && rec === r && !r.text()) {
+          stopRecorder(true);
+          startRecorder({ onLive, onDone, onState, onError }, { forceProbe: true });
+          return;
+        }
         onError(e.error === "not-allowed" ? "Microphone access is blocked. Allow it in the browser's site settings and try again."
           : e.error === "network" ? "Voice capture needs a network connection." : e.error === "audio-capture" ? "No microphone found on this device." : "Voice capture stopped unexpectedly. Try again.");
         stopRecorder(true);
@@ -2086,6 +2125,10 @@ export function mountStaffKanban(ctx) {
   // A round mic inside a text box: dictates into that box, and shows a stop
   // icon while it is listening. One recording at a time across the modal.
   let activeMic = null;
+  // Each mic run's number: words heard after a run was halted (typed over,
+  // comment added) are dropped instead of rewriting the box.
+  let micRun = 0;
+  function haltMic() { micRun++; stopRecorder(true); }
   // Rich editors for the description and the comment box (js/editor.js).
   let descQ = null, commentQ = null, descInitial = "";
   const staff = () => people().map((u) => ({ id: u.id, first: u.first, full: u.full, color: u.color, photo: photoOf(u.id) }));
@@ -2112,6 +2155,8 @@ export function mountStaffKanban(ctx) {
   // A comment is saved as soon as it's added (it doesn't wait for Save).
   function addCommentFromEditor() {
     if (!commentQ || !draft || draftIsNew) return false;
+    // Still dictating into the box: keep what it shows, stop listening first.
+    if (activeMic && activeMic.id === "f-comment-mic" && (rec || recStarting)) haltMic();
     const html = KBEditor.getHtml(commentQ);
     if (!html) return false;
     const mentioned = KBEditor.mentionsIn(html).filter((id) => id !== state.me);
@@ -2131,7 +2176,15 @@ export function mountStaffKanban(ctx) {
       let start = 0;
       return {
         begin() { start = Math.max(0, q.getLength() - 1); if (start && !/\s$/.test(q.getText(start - 1, 1))) { q.insertText(start, " ", "user"); start++; } },
-        live(t) { const said = start ? t : t.charAt(0).toUpperCase() + t.slice(1); q.deleteText(start, q.getLength() - 1 - start, "user"); q.insertText(start, said, "user"); },
+        live(t) {
+          const said = start ? t : t.charAt(0).toUpperCase() + t.slice(1);
+          // A caret the person put at the end stays at the end: rewriting the
+          // words pulled it back to where dictation began, so what they typed
+          // next landed in the middle of the dictated text.
+          const sel = q.getSelection(), atEnd = sel && sel.length === 0 && sel.index >= q.getLength() - 1;
+          q.deleteText(start, q.getLength() - 1 - start, "user"); q.insertText(start, said, "user");
+          if (atEnd) q.setSelection(q.getLength() - 1, 0, "silent");
+        },
       };
     }
     const ta = $("#" + id);
@@ -2150,6 +2203,18 @@ export function mountStaffKanban(ctx) {
       mic.title = on ? "Stop recording" : "Dictate";
       mic.firstElementChild.textContent = on ? "stop" : "mic";
     };
+    // Typing in the box while it listens (15 Nov 2026: "I need to be able to
+    // edit a comment using the text entry once I've done a verbal entry")
+    // stops the dictation and keeps the text as it is, so the edit sticks:
+    // before, the next words heard rewrote everything dictated so far,
+    // including the person's corrections.
+    const box = $("#" + taId);
+    const typed = (e) => {
+      if (e.type === "keydown" && (e.ctrlKey || e.metaKey || e.altKey || !e.key || !(e.key.length === 1 || e.key === "Backspace" || e.key === "Delete" || e.key === "Enter"))) return;
+      if (activeMic === mic && (rec || recStarting)) haltMic();
+      else if (!rec && !recStarting) micRun++; // a late result from a run already stopped writes nothing over the edit
+    };
+    if (box) ["beforeinput", "keydown", "paste", "drop"].forEach((t) => box.addEventListener(t, typed, true));
     mic.addEventListener("click", () => {
       if (recStarting) return; // still waiting on the microphone
       const target = dictationTarget(taId), err = $("#" + errId);
@@ -2161,9 +2226,10 @@ export function mountStaffKanban(ctx) {
       if (err) err.classList.remove("on");
       target.begin();
       activeMic = mic;
+      const run = ++micRun;
       startRecorder({
-        onLive: (t) => target.live(t),
-        onState: (st) => { show(st === "recording"); if (st !== "recording" && activeMic === mic) activeMic = null; },
+        onLive: (t) => { if (run === micRun) target.live(t); },
+        onState: (st) => { const on = st === "recording"; show(on); if (on) activeMic = mic; else if (activeMic === mic) activeMic = null; },
         onError: (m) => { if (err) { err.textContent = m; err.classList.add("on"); } show(false); },
         onDone: () => {},
       });

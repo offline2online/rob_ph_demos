@@ -1,13 +1,17 @@
 // Support › Support Inbox (#support) and Settings › Support inbox.
+// Three inboxes, one tab each (Support Inbox, Hello, Aidan): the address an
+// email was written to decides which it is filed under (support-core.js).
+// The email icon in the header writes a new email from the mailbox (#support/compose).
 // Tickets are read straight from Firestore (supportTickets + messages); every
 // change goes through the supportMail function (/supportMail/v1/**), which
 // sends the email, keeps Gmail in step and records who did what. Rules are in
 // support-core.js. Every control is a <button> acting on click (iPad taps).
 import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
-  QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, supportStats, toMs,
-  fmtDuration, fmtPct, fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource,
-  confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct,
+  QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
+  fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
+  confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
+  aidanView,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -18,6 +22,16 @@ const SYNC_EVERY_MS = 3 * 60 * 1000;
 const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); return `<span class="support-conf support-conf-${b}" title="How sure the AI is that this reply is correct and complete">${short ? `AI draft · ${pct(c)}` : `${CONFIDENCE_LABEL[b]} · ${pct(c)}`}</span>`; };
 const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
 const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+// Aidan, the agent mailbox (aidan@): its state on a ticket, and the reply it sent to everyone on the email.
+const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting" };
+const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>` : ""; };
+const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>` : ""; };
+function aidanMessageHtml(m, at) {
+  const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
+  return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
+    <div class="support-msg-addr">To ${esc((m.to || []).join(", "))}${(m.cc || []).length ? ` · Cc ${esc(m.cc.join(", "))}` : ""}</div>
+    <div class="support-msg-body">${esc(m.text)}</div>${files}</li>`;
+}
 
 async function api(apiHeaders, path, { method = "POST", body } = {}) {
   const resp = await fetch(`/supportMail/v1/${path}`, { method, headers: await apiHeaders(), ...(method === "GET" ? {} : { body: JSON.stringify(body || {}) }) });
@@ -33,8 +47,19 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   const $ = (id) => document.getElementById(id);
   const view = $("support-view");
   let tickets = [], loaded = false, listError = "";
-  let route = { view: "inbox", queue: DEFAULT_QUEUE, ticketId: "" };
-  let search = "", range = 30;
+  let route = { view: "inbox", inbox: DEFAULT_INBOX, queue: DEFAULT_QUEUE, ticketId: "" };
+  // The inbox on show: Support Inbox, Hello or Aidan, each with its own tab,
+  // queues, counts and tickets. An open ticket shows under the tab it was
+  // opened from, or under its own first inbox when it isn't in that one
+  // (a link made elsewhere, such as the Staff Kanban ticket's).
+  const inboxKey = () => {
+    const key = inboxOf(route.inbox).key;
+    const t = route.view === "ticket" ? tickets.find((x) => x.id === route.ticketId) : null;
+    return t && !inInbox(t, key) ? t.inboxes[0] : key;
+  };
+  // The Support Inbox tab keeps its first name ("inbox"); the others are named after their inbox.
+  const tabOf = (key) => (key === DEFAULT_INBOX ? "inbox" : key);
+  let search = "";
   let status = null, statusError = "";
   let messages = [], messagesFor = "", unsubMessages = null, unsubTickets = null;
   let members = null, articles = null;
@@ -94,7 +119,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (statusError) { el.textContent = `The mailbox status didn't load: ${statusError}`; return; }
     if (!status) { el.textContent = ""; return; }
     if (!status.connected) { el.textContent = "No mailbox is connected."; return; }
-    const c = queueCounts(tickets);
+    const c = queueCounts(tickets, inboxKey());
     const problem = status.connectionError || (!status.lastSyncOk && status.lastSyncError ? `Last sync failed: ${status.lastSyncError}` : "");
     el.innerHTML = `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve · ${esc(status.connectedEmail)}`
       + (status.lastSyncAt ? ` · synced ${esc(fmtWhen(Date.parse(status.lastSyncAt)))}` : " · not synced yet")
@@ -111,11 +136,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (!force && typing()) { stale = true; return; }
     stale = false;
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
-      const on = b.dataset.supportTab === (route.view === "stats" || route.view === "try" ? route.view : "inbox");
+      const on = b.dataset.supportTab === tabOf(inboxKey());
       b.classList.toggle("active", on);
       b.setAttribute("aria-selected", String(on));
     });
     $("support-sync-btn").hidden = !(status && status.connected);
+    $("support-compose-btn").hidden = !(status && status.connected);
     if (status && !status.connected && !tickets.length) {
       view.innerHTML = `<div class="support-empty">${icon("mark_email_unread")}<p>Connect the support mailbox to start receiving tickets.</p>
         <button type="button" class="btn-primary" data-support-act="open-settings">Open Settings</button></div>`;
@@ -123,8 +149,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }
     if (listError) { view.innerHTML = `<p class="support-problem" role="alert">Tickets didn't load: ${esc(listError)}</p>`; return; }
     if (!loaded) { view.innerHTML = `<p class="interface-row-empty">Loading…</p>`; return; }
-    if (route.view === "stats") renderStats();
-    else if (route.view === "try") renderTry();
+    if (route.view === "compose") renderCompose();
     else if (route.view === "ticket") renderTicket();
     else renderInbox();
   }
@@ -139,14 +164,15 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (t.aiDraft && t.status === "open") out.push(confidenceHtml(t.aiDraft.confidence, { short: true }));
     if (t.resolvedBy === "ai" && !t.humanInvolved && t.status === "resolved") out.push(`<span class="badge badge-feature">Answered by AI</span>`);
     if (t.triagePending) out.push(`<span class="badge badge-status-draft">Sorting…</span>`);
+    if (t.aidan) out.push(aidanBadge(t));
     return out.join("");
   }
 
   function renderInbox() {
-    const counts = queueCounts(tickets);
+    const counts = queueCounts(tickets, route.inbox);
     const rail = QUEUES.map((q) => `<button type="button" class="support-queue${q.key === route.queue ? " active" : ""}" data-support-queue="${q.key}" ${q.key === route.queue ? 'aria-current="true"' : ""}>
       ${icon(q.icon)}<span class="support-queue-label">${esc(q.label)}</span><span class="support-queue-count">${counts[q.key]}</span></button>`).join("");
-    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="Queues">${rail}</nav>
+    view.innerHTML = `<div class="support-inbox"><nav class="support-queues" aria-label="${esc(inboxOf(route.inbox).label)} queues">${rail}</nav>
       <div class="support-list-wrap">
         <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
@@ -158,7 +184,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   function renderList() {
     const box = $("support-list");
     if (!box) return;
-    const rows = filterTickets(tickets, route.queue, search);
+    const rows = filterTickets(tickets, route.queue, search, route.inbox);
     box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
           <span class="support-row-from">${esc(t.customerName || t.customerEmail)}${t.account && t.account.name ? ` · ${esc(t.account.name)}` : ""}</span>
@@ -172,6 +198,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const at = toMs(m.at);
     if (m.direction === "event") return `<li class="support-event">${icon("history")}<span>${esc(m.text)} <small>${esc(m.by === "ai" ? "AI" : m.by || "")} · ${esc(fullDate(at))}</small></span></li>`;
     if (m.direction === "note") return `<li class="support-msg support-msg-note"><div class="support-msg-head"><b>Internal note</b> · ${esc(m.by || "")}<small>${esc(fullDate(at))}</small></div><div class="support-msg-body">${esc(m.text)}</div></li>`;
+    if (m.direction === "out" && m.source === "aidan") return aidanMessageHtml(m, at);
     const out = m.direction === "out";
     const who = out ? (m.auto ? "AI reply" : m.sentBy === "gmail" ? "Sent from Gmail" : `${m.sentBy || "Support"}`) : (m.fromName || m.from);
     const tag = out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
@@ -187,7 +214,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
 
   function renderTicket() {
     const t = tickets.find((x) => x.id === route.ticketId);
-    if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} Inbox</button>`; return; }
+    if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>`; return; }
     watchMessages(t.id);
     if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
     const edit = canEdit();
@@ -218,14 +245,16 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           <button type="button" class="btn-ghost" data-support-act="send-resolve">Send and resolve</button>
           <button type="button" class="btn-ghost" data-support-act="note">Save as internal note</button></div></div>`;
     view.innerHTML = `<div class="support-ticket">
-      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} Inbox</button>
+      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>
       <div class="support-ticket-head">
         <h3><span class="support-row-key">${esc(t.key)}</span> ${esc(t.subject)}</h3>
         <div class="support-ticket-meta"><span class="badge support-status-${t.status}">${esc(STATUS_LABEL[t.status])}</span>${badges(t)}
+          ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span>
           ${t.account ? `<span class="support-account">${icon("apartment")}${esc(t.account.name)} · ${esc(t.account.reason)}</span>` : ""}
           ${t.kanbanKey ? `<button type="button" class="support-link" data-support-act="open-kanban">${icon("view_kanban")}${esc(t.kanbanKey)}</button>` : ""}</div>
         ${t.summary ? `<p class="support-summary">${icon("auto_awesome")}${esc(t.summary)}</p>` : ""}
+        ${aidanLine(t)}
         ${t.escalationError ? `<p class="support-problem">The Staff Kanban ticket couldn't be raised: ${esc(t.escalationError)}</p>` : ""}
       </div>
       ${actions}
@@ -244,34 +273,6 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const hits = searchArticles(articles, q);
     box.innerHTML = hits.length ? hits.map((a) => `<li><button type="button" class="support-faq-hit" data-support-article="${esc(a.id)}">${icon("add")}<span><b>${esc(a.title)}</b><small>${esc(a.directAnswer || a.summary || "")}</small></span></button></li>`).join("")
       : `<li class="interface-row-empty">No published article matches.</li>`;
-  }
-
-  function renderStats() {
-    const now = Date.now();
-    const s = supportStats(tickets, { from: now - range * 86400000, to: now });
-    const tile = (label, value, hint, tip) => `<div class="support-tile"${tip ? ` title="${esc(tip)}"` : ""}><span class="support-tile-label">${esc(label)}</span><span class="support-tile-value">${esc(value)}</span>${hint ? `<span class="support-tile-hint">${esc(hint)}</span>` : ""}</div>`;
-    const max = Math.max(1, ...s.byDay.map((d) => d.ai + d.people + d.open));
-    const seg = (d, k, label) => (d[k] ? `<span class="support-bar-seg support-bar-${k}" style="height:${(d[k] / max) * 100}%" title="${esc(`${d.day}: ${d[k]} ${label}`)}"></span>` : "");
-    const chart = s.byDay.length ? `<div class="support-chart" role="img" aria-label="Tickets received per day, by how they were resolved. The table below has the same figures.">
-        ${s.byDay.map((d) => `<div class="support-bar" tabindex="0" aria-label="${esc(`${d.day}: ${d.ai} answered by AI, ${d.people} resolved by a person, ${d.open} not resolved`)}"><div class="support-bar-stack">${seg(d, "open", "not resolved")}${seg(d, "people", "resolved by a person")}${seg(d, "ai", "answered by AI")}</div><span class="support-bar-day">${esc(d.day.slice(8))}/${esc(d.day.slice(5, 7))}</span></div>`).join("")}</div>
-      <ul class="support-legend"><li><span class="support-swatch support-bar-ai"></span>Answered by AI</li><li><span class="support-swatch support-bar-people"></span>Resolved by a person</li><li><span class="support-swatch support-bar-open"></span>Not resolved yet</li></ul>
-      <details class="support-table"><summary>Show as a table</summary><table class="data-table"><thead><tr><th>Day</th><th>Answered by AI</th><th>Resolved by a person</th><th>Not resolved yet</th></tr></thead>
-        <tbody>${s.byDay.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.ai}</td><td>${d.people}</td><td>${d.open}</td></tr>`).join("")}</tbody></table></details>` : `<p class="interface-row-empty">No customer tickets in this period.</p>`;
-    view.innerHTML = `<div class="support-stats">
-      <div class="support-range" role="group" aria-label="Period">${[7, 30, 90].map((d) => `<button type="button" class="btn-ghost${d === range ? " active" : ""}" data-support-range="${d}" aria-pressed="${d === range}">${d} days</button>`).join("")}</div>
-      <div class="support-tiles">
-        ${tile("Tickets received", String(s.received), `${s.spam} spam, ${s.automated} automated and ${s.unrelated} not about PH not counted`, "Customer emails that opened a ticket in this period. Spam and machine-sent mail are left out of every figure here.")}
-        ${tile("Resolved", String(s.resolved), `${s.open} open · ${s.pending} waiting on customer`)}
-        ${tile("Answered by AI alone", fmtPct(s.aiRate), `${s.resolvedByAi} of ${s.resolved} resolved`, "Resolved tickets where the automatic answer was the only reply and no person replied, noted or closed it.")}
-        ${tile("Needed a person", String(s.humanInvolved), `${s.needsPerson} waiting for one now`, "Tickets a person replied to, noted or closed.")}
-        ${tile("Median first response", fmtDuration(s.medianFirstResponseMs), "", "From the customer's first email to the first reply, by AI or a person. Half of tickets were answered faster than this.")}
-        ${tile("Median time to resolution", fmtDuration(s.medianResolutionMs), "", "From the customer's first email to the ticket being resolved.")}
-        ${tile("High-value senders", String(s.highValue), "raised on the Staff Kanban")}
-        ${tile("Reopened", String(s.reopened), "customer wrote again after resolution")}
-      </div>
-      <h3 class="support-stats-h">Tickets per day</h3>${chart}
-      ${s.byCategory.length ? `<h3 class="support-stats-h">What customers asked about</h3><table class="data-table support-cats"><thead><tr><th>Type</th><th>Tickets</th></tr></thead><tbody>${s.byCategory.map((c) => `<tr><td>${esc(c.label)}</td><td>${c.count}</td></tr>`).join("")}</tbody></table>` : ""}
-      ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Based on the ${LIST_LIMIT} most recently active tickets.</p>` : ""}</div>`;
   }
 
   // ── Actions ──
@@ -295,57 +296,53 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }, "The reply wasn't sent");
   }
 
-  // ── Try an email: what the inbox would do with any email, nothing saved or sent ──
-  let tryForm = { fromName: "", fromEmail: "", subject: "", text: "" }, tryResult = null, tryError = "", trying = false;
-  const DECISION_LABEL = { send: "Would be sent by itself", review: "Draft waits for a person to approve", human: "A person answers" };
-  function renderTry() {
-    if (!canEdit()) { view.innerHTML = `<p class="interface-row-empty">Trying an email needs edit access to the Support Inbox.</p>`; return; }
-    const r = tryResult;
-    const field = (id, label, value, type = "text") => `<label class="field-label" for="${id}">${label}</label><input type="${type}" id="${id}" value="${esc(value)}" autocomplete="off">`;
-    const result = trying ? `<p class="interface-row-empty">Matching and drafting… (about 20 seconds)</p>`
-      : tryError ? `<p class="support-problem" role="alert">${esc(tryError)}</p>`
-      : !r ? "" : `<div class="support-try-result">
-        <div class="support-ticket-meta">
-          <span class="badge ${r.relevant ? "badge-feature" : "badge-status-draft"}">${r.relevant ? "About Personalisation Hub" : "Not about Personalisation Hub"}</span>
-          ${r.relevant ? `<span class="badge badge-status-draft">${esc(CATEGORY_LABEL[r.category] || r.category)}</span>` : ""}
-          ${r.spamLikely ? `<span class="badge badge-wp-waiting">Looks like spam</span>` : ""}
-          ${r.highValue ? `<span class="badge support-badge-hv">High value · ${esc(r.highValue.name)}</span>` : ""}
-          ${r.relevant && r.draft ? confidenceHtml(r.confidence) : ""}
-        </div>
-        ${r.summary ? `<p class="support-summary">${icon("auto_awesome")}${esc(r.summary)}</p>` : ""}
-        <h3 class="support-stats-h">Help Centre articles matched</h3>
-        ${r.articles.length ? `<ol class="support-try-articles">${r.articles.map((a) => (a.url ? `<li><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a></li>` : `<li>${esc(a.title)} (not on the website)</li>`)).join("")}</ol>` : `<p class="interface-row-empty">None${r.relevant ? ": a person would answer this" : ""}.</p>`}
-        <h3 class="support-stats-h">What would happen</h3>
-        <p><b>${esc(DECISION_LABEL[r.decision.action] || r.decision.action)}</b>: ${esc(r.decision.reason)}</p>
-        ${r.draft ? `<h3 class="support-stats-h">The draft</h3><div class="support-draft"><div class="support-draft-head">${icon("auto_awesome")}<b>Suggested reply</b>${confidenceHtml(r.confidence)}</div>${confidenceChangeHtml(r.confidenceSteps)}<div class="support-draft-text">${esc(r.draft)}</div></div>` : ""}
-      </div>`;
-    view.innerHTML = `<div class="support-try">
-      <p class="field-hint">Paste or write any email to see which Help Centre articles it matches and the reply it would draft. Nothing is filed, saved or sent.</p>
+  // ── A new email from the support mailbox (the email icon in the header) ──
+  let composeForm = { to: "", subject: "", text: "" }, composeError = "", composeSent = null, composing = false;
+  function renderCompose() {
+    const back = `<button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(DEFAULT_INBOX).label)}</button>`;
+    if (!canEdit()) { view.innerHTML = `${back}<p class="interface-row-empty">Writing an email needs edit access to the Support Inbox.</p>`; return; }
+    if (!status || !status.connected) { view.innerHTML = `${back}<p class="interface-row-empty">${status ? "Connect the support mailbox before writing an email." : "Loading…"}</p>`; return; }
+    const sent = composeSent ? `<p class="support-compose-sent" role="status">${icon("check_circle")}<span>Sent to ${esc(composeSent.to)} from ${esc(status.connectedEmail)}.</span>
+        ${composeSent.ticketId ? `<button type="button" class="support-link" data-support-act="open-sent">${esc(composeSent.key || "Open it")}</button>` : ""}</p>` : "";
+    view.innerHTML = `<div class="support-compose">
+      ${back}
+      <h3 class="support-compose-h">New email<button type="button" class="info-tip" data-tip="Sent from ${esc(status.connectedEmail)} with the signature from Settings. It is filed in the Support Inbox under Waiting on customer, and the answer arrives on the same ticket." aria-label="About a new email">i</button></h3>
+      ${sent}
       <div class="support-set-grid">
-        ${field("support-try-name", "From (name)", tryForm.fromName)}
-        ${field("support-try-email", "From (address)", tryForm.fromEmail, "email")}
-        ${field("support-try-subject", "Subject", tryForm.subject)}
-        <label class="field-label" for="support-try-text">Email</label>
-        <textarea id="support-try-text" rows="8">${esc(tryForm.text)}</textarea>
-        <div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-support-act="try"${trying ? " disabled" : ""}>Try it</button></div>
+        <label class="field-label" for="support-compose-to">To</label>
+        <input type="email" id="support-compose-to" value="${esc(composeForm.to)}" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="email">
+        <label class="field-label" for="support-compose-subject">Subject</label>
+        <input type="text" id="support-compose-subject" maxlength="300" value="${esc(composeForm.subject)}" autocomplete="off">
+        <label class="field-label" for="support-compose-text">Message</label>
+        <textarea id="support-compose-text" rows="10">${esc(composeForm.text)}</textarea>
+        ${composeError ? `<p class="support-problem" role="alert" id="support-compose-error">${esc(composeError)}</p>` : ""}
+        <div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-support-act="compose-send"${composing ? " disabled" : ""}>${composing ? "Sending…" : "Send"}</button></div>
       </div>
-      ${result}
     </div>`;
   }
-  async function runTry() {
-    if (trying) return;
-    if (!tryForm.subject.trim() && !tryForm.text.trim()) { tryError = "Give the email a subject or some text."; tryResult = null; return renderTry(); }
-    trying = true; tryError = ""; tryResult = null;
-    renderTry();
-    try { tryResult = await api(apiHeaders, "preview", { body: tryForm }); }
-    catch (err) { tryError = err.message; }
-    trying = false;
-    if (route.view === "try") renderTry();
+  async function sendCompose() {
+    if (composing) return;
+    composeSent = null;
+    composeError = composeProblem(composeForm);
+    if (composeError) return renderCompose();
+    composing = true;
+    renderCompose();
+    try {
+      const r = await api(apiHeaders, "compose", { body: { to: composeForm.to.trim(), subject: composeForm.subject.trim(), text: composeForm.text } });
+      composeSent = { to: r.to, ticketId: r.ticketId || "", key: r.key || "" };
+      composeForm = { to: "", subject: "", text: "" };
+    } catch (err) { composeError = `The email wasn't sent: ${err.message}`; }
+    composing = false;
+    if (route.view === "compose") renderCompose();
   }
-  const TRY_FIELDS = { "support-try-name": "fromName", "support-try-email": "fromEmail", "support-try-subject": "subject", "support-try-text": "text" };
+  const COMPOSE_FIELDS = { "support-compose-to": "to", "support-compose-subject": "subject", "support-compose-text": "text" };
 
   view.addEventListener("input", (e) => {
-    if (TRY_FIELDS[e.target.id]) tryForm[TRY_FIELDS[e.target.id]] = e.target.value;
+    if (COMPOSE_FIELDS[e.target.id]) {
+      composeForm[COMPOSE_FIELDS[e.target.id]] = e.target.value;
+      // The last refusal no longer describes what is in the form (removed in place: a redraw would drop the caret).
+      if (composeError) { composeError = ""; const el = $("support-compose-error"); if (el) el.remove(); }
+    }
     else if (e.target.id === "support-search") {
       search = e.target.value;
       renderList();
@@ -361,9 +358,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   view.addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b || !view.contains(b)) return;
-    if (b.dataset.supportQueue) return go(supportHash({ queue: b.dataset.supportQueue }));
-    if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", ticketId: b.dataset.supportTicket }));
-    if (b.dataset.supportRange) { range = Number(b.dataset.supportRange); return renderStats(); }
+    if (b.dataset.supportQueue) return go(supportHash({ inbox: route.inbox, queue: b.dataset.supportQueue }));
+    if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", inbox: route.inbox, ticketId: b.dataset.supportTicket }));
     const t = current();
     if (b.dataset.supportArticle) {
       const a = (articles || []).find((x) => x.id === b.dataset.supportArticle);
@@ -374,13 +370,14 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }
     if (b.dataset.supportStatus && t) {
       const to = b.dataset.supportStatus;
-      if (to === "spam" && !(await confirm(`Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the stats.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
-      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ queue: route.queue })); }, "The ticket wasn't changed");
+      if (to === "spam" && !(await confirm(`Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
+      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, "The ticket wasn't changed");
     }
     const a = b.dataset.supportAct;
     if (a === "open-settings") return openSettings();
-    if (a === "back") return go(supportHash({}));
-    if (a === "try") return runTry();
+    if (a === "back") return go(supportHash({ inbox: inboxKey() }));
+    if (a === "compose-send") return sendCompose();
+    if (a === "open-sent" && composeSent && composeSent.ticketId) return go(supportHash({ view: "ticket", ticketId: composeSent.ticketId }));
     if (!t) return;
     if (a === "open-kanban") return openKanbanTicket(t.kanbanKey);
     if (a === "use-draft" && t.aiDraft) { composer.text = t.aiDraft.text; composer.usedDraft = true; renderTicket(); return $("support-reply").focus(); }
@@ -394,7 +391,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/note`, { body: { text } }); composer.text = ""; }, "The note wasn't saved");
     }
   });
-  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => go(supportHash({ view: b.dataset.supportTab }))));
+  document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => {
+    const tab = b.dataset.supportTab;
+    const inbox = INBOXES.find((i) => tabOf(i.key) === tab);
+    if (inbox) go(supportHash({ inbox: inbox.key }));
+  }));
+  $("support-compose-btn").addEventListener("click", () => { composeError = ""; composeSent = null; go(supportHash({ view: "compose" })); });
   $("support-sync-btn").addEventListener("click", () => sync());
 
   return {
@@ -423,6 +425,26 @@ const CALLBACK_ERRORS = {
   exchange: "Google refused the sign-in. Check the OAuth client ID, secret and redirect address.",
   access_denied: "The Google sign-in was cancelled.",
 };
+// Aidan's block in Settings › Support inbox. The allowed senders are kept on
+// the server and never shown in full: an admin sees them masked and replaces
+// the whole list by pasting it; everyone else sees how many there are.
+function aidanSettingsHtml(aidan, admin) {
+  const a = aidan || { enabled: false, switchedOn: true, senderCount: 0, sendersMasked: [] };
+  const dis = admin ? "" : " disabled";
+  const state = a.senderCount
+    ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
+    : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
+  return `<div class="docs-block" id="support-aidan-settings"><div class="docs-block-header"><h3>Aidan
+      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction: it writes the documentation with the matching skill and replies to everyone on the email with it attached, or keeps the email and its attachments as reference material for a skill. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
+      ${state}
+      <div class="support-set-grid">
+        <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>
+        ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
+        <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
+      </div>
+      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan">Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
+    </div>`;
+}
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
   // `returned` is the query Google's sign-in came back with ("connected=1" or "error=…").
@@ -484,7 +506,8 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <textarea id="support-vip" rows="3" placeholder="bigretailer.com, another.co.uk"${dis}>${esc(set.vipDomains.join(", "))}</textarea>
         </div>
         ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings">Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
-      </div>`;
+      </div>
+      ${aidanSettingsHtml(s.aidan, admin)}`;
   }
   host.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-ss-act]");
@@ -513,6 +536,10 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         } });
         await load();
         host.querySelector("#support-settings-status").textContent = "Saved.";
+      } else if (a === "save-aidan") {
+        await api(apiHeaders, "aidan", { body: { enabled: host.querySelector("#support-aidan-on").checked, allowedSenders: val("support-aidan-senders") } });
+        await load();
+        host.querySelector("#support-aidan-status").textContent = "Saved.";
       }
     } catch (err) { await alert(err.message); }
     if (b.isConnected) b.disabled = false;

@@ -125,7 +125,7 @@ only about one kind of screen (TC-05, TC-10, TC-25 touch and phone; TC-09 and TC
 | TC-22 | KB-NAV, §13 accessibility | Hover / tap the (i) beside Record task, desktop and phone | Tooltip fully inside the window |
 | TC-23 | KB-NAV-1 | Open Agent Board; click Staff Kanban | Separate pages; nav highlights the current one |
 | TC-24 | KB-BOARD-2, KB-TASK-7 | PH-26 Status → Withdrawn; open epic PH-1 | Status menu lists Completed and Withdrawn separately; card withdrawn and struck through; epic counts it as withdrawn |
-| TC-25 | KB-LANE-1, KB-BOARD-8 | Phone: select Rob and Huy; tab Ready for Testing; swipe left | Every lane shows Ready for Testing; swipe moves all lanes to Approved |
+| TC-25 | KB-LANE-1, KB-BOARD-8 | Phone: select Rob, Huy; tab Ready for Testing; collapse a lane; swipe | Lanes show that column; collapsed hides; swipe to Approved |
 
 ### TC-26 to TC-67, TC-68 to TC-70
 
