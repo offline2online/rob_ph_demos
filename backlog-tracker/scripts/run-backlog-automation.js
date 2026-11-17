@@ -3224,11 +3224,16 @@ async function sweepAutoApprovals(filesFor = memoByKey(fetchCommitFiles)) {
   for (const card of cards) {
     try {
       let plan = autoConfirmNoChangePlan(card);
-      if (!plan && card.deployCommit && card.trainTest && card.trainTest.state === "passed") {
+      if (!plan && card.deployCommit && !card.revertRequested) {
         const shas = [...new Set([...(Array.isArray(card.deployCommits) ? card.deployCommits : []), card.deployCommit].filter(Boolean))];
         const files = [];
         for (const sha of shas) files.push(...(await filesFor(sha)));
-        plan = autoApprovePlan(card, [...new Set(files)]);
+        const all = [...new Set(files)];
+        // The board reads testOnly to say "approves itself" instead of
+        // listing the card under Needs attention while its tests run.
+        const testOnly = isTestOnlyChange(all);
+        if (card.testOnly !== testOnly) await patchItem(card.id, { testOnly });
+        plan = autoApprovePlan(card, all);
       }
       if (!plan) continue;
       const notes = await appendNote(card, plan.note);
