@@ -1848,6 +1848,15 @@ const scenarios = [
       await c.visible("#access-denied-page", "the Concepts URL is blocked");
       assert.ok((await c.page.textContent("#access-denied-text")).includes("Concepts"), "the notice names the section");
       assert.strictEqual(await c.page.evaluate(() => document.getElementById("concept-incubator-page").hidden), true, "the Concepts page never shows");
+      // The notice's way out goes to the Agent Board with its own address, so a reload stays on the board.
+      await c.click("#access-denied-go", "go to a section this role can open");
+      await c.boardReady();
+      assert.strictEqual(new URL(c.page.url()).hash, "#board", "the redirect gives the Agent Board its address");
+      assert.ok(await c.page.locator("#access-denied-page").isHidden(), "the notice closed");
+      await c.page.reload({ waitUntil: "domcontentloaded" });
+      await c.boardReady();
+      assert.ok(await c.page.locator("#dashboard-page").isHidden(), "a reload stays on the board, not the Dashboard");
+      assert.strictEqual(new URL(c.page.url()).hash, "#board");
       // view-only Skills: the page opens but its add control is gone
       await c.page.evaluate(() => { location.hash = "#skills"; });
       await c.visible("#skills-page", "Skills opens at View");

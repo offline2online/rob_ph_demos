@@ -4,6 +4,7 @@
 import assert from "node:assert";
 import { localDayRange, fmtEffort, trend, fmtWait, agentBoardKpi, kanbanKpi, dashboardRelease, leadsKpi, funnelKpi, supportKpi, isBuilding, isWebsiteLead } from "../public/js/dashboard-core.js";
 import { normaliseTicket } from "../public/js/support-core.js";
+import { currentReleaseId } from "../public/js/kanban/kanban-core.js";
 
 const at = (d, h = 12, m = 0) => new Date(2026, 10, d, h, m).getTime(); // November 2026, local
 const NOW = at(17, 9, 30);
@@ -59,6 +60,14 @@ const releases = [{ id: "r2", name: "1.6", order: 2 }, { id: "r1", name: "1.5", 
 assert.strictEqual(dashboardRelease({ currentRelease: "r3" }, releases).id, "r3", "the release picked in Kanban settings");
 assert.strictEqual(dashboardRelease({}, releases).id, "r2", "else the earliest release not yet live");
 assert.strictEqual(dashboardRelease(null, [{ id: "x", released: true }]), null);
+{
+  // Order and version disagree: the tile follows Staff Kanban's own rule (version first).
+  const mixed = [{ id: "a", name: "2.0.0", version: "2.0.0", order: 1 }, { id: "b", name: "1.9.0", version: "1.9.0", order: 2 }];
+  assert.strictEqual(dashboardRelease({}, mixed).id, "b", "the earliest open release by version, not by order");
+  assert.strictEqual(dashboardRelease({}, mixed).id, currentReleaseId({}, mixed), "the same release Staff Kanban treats as current");
+  assert.strictEqual(dashboardRelease({ currentRelease: "a" }, mixed).name, "2.0.0", "a release picked in settings still wins");
+  assert.deepStrictEqual(dashboardRelease({ currentRelease: "gone" }, mixed), { id: "gone", name: "gone" }, "a picked release not in the list still shows its id");
+}
 const tasks = [
   { key: "PH-1", release: "r2", status: "todo", assignee: "ana@ph.example", estimate: 16, logged: 4 },
   { key: "PH-2", release: "r2", status: "in-progress", assignee: "ana@ph.example", estimate: 8 },

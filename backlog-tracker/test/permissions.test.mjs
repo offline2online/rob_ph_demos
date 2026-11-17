@@ -1,7 +1,7 @@
 // Pure rules of the Permissions matrix (public/js/permissions.js).
 import assert from "node:assert";
 import { readFileSync } from "node:fs";
-import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections } from "../public/js/permissions.js";
+import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections, SECTION_HASH } from "../public/js/permissions.js";
 
 assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "support-inbox", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
 
@@ -39,6 +39,8 @@ assert.throws(() => setLevel(engineer, "concepts", "owner"));
 
 assert.strictEqual(sectionForHash(""), "agent-board");
 assert.strictEqual(sectionForHash("#board"), "agent-board", "#board is the Agent Board's own address");
+assert.strictEqual(SECTION_HASH["agent-board"], "#board", "a redirect to the Agent Board gives it its own address, so a reload stays there");
+assert.strictEqual(sectionForHash(SECTION_HASH["agent-board"]), "agent-board");
 assert.strictEqual(sectionForHash("#dashboard"), null, "the Dashboard is open to every member");
 assert.strictEqual(sectionForHash("#concept-incubator"), "concepts");
 assert.strictEqual(sectionForHash("#concept-abc"), "concepts");

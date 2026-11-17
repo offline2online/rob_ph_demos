@@ -127,7 +127,7 @@ export function sectionForHash(hash) {
 
 // The hash a section opens at, for the redirect.
 export const SECTION_HASH = {
-  "agent-board": "", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "support-inbox": "#support", faq: "#faq-management",
+  "agent-board": "#board", "staff-kanban": "#staff-kanban", concepts: "#concept-incubator", whiteboard: "#whiteboard", promote: "#promote/brand-guidelines", "promote-leads": "#promote/leads", prospects: "#promote/prospects", "conversion-funnel": "#promote/conversion-funnel", "support-inbox": "#support", faq: "#faq-management",
   skills: "#settings/skills", releases: "#settings/releases", "project-docs": "", settings: "#settings",
   "user-management": "#settings/user-management/users",
 };
