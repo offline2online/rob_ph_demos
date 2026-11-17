@@ -71,6 +71,8 @@ export function normaliseTicket(id, d) {
     messageCount: t.messageCount || 0, humanInvolved: !!t.humanInvolved, autoRepliesSent: t.autoRepliesSent || 0, reopenCount: t.reopenCount || 0,
     resolvedBy: t.resolvedBy || "", escalationError: t.escalationError || "",
     createdAt: toMs(t.createdAt), lastMessageAt: toMs(t.lastMessageAt), firstResponseAt: toMs(t.firstResponseAt), resolvedAt: toMs(t.resolvedAt),
+    // The customer's latest email and our latest reply to them (0 on tickets filed before these were recorded).
+    lastInboundAt: toMs(t.lastInboundAt), lastReplyAt: toMs(t.lastReplyAt),
   };
 }
 
@@ -85,16 +87,17 @@ export function filterTickets(tickets, queueKey, search, inbox) {
 }
 
 // "#support", "#support?queue=spam", "#support/hello", "#support/aidan?queue=spam",
-// "#support/stats", "#support/ticket/<id>", "#support/hello/ticket/<id>"
+// "#support/compose", "#support/ticket/<id>", "#support/hello/ticket/<id>"
 // -> { view, inbox, queue, ticketId }, or null when the hash is not a Support Inbox route.
 // The Support Inbox's own routes carry no inbox name, so links made before the
-// Hello and Aidan tabs existed still open.
+// Hello and Aidan tabs existed still open. "#support/stats" and "#support/try"
+// were tabs once (removed 17 Nov 2026): an old link to either opens the inbox.
 export function supportRoute(hash) {
   const [path, qs] = String(hash || "").split("?");
   if (path !== "#support" && !path.startsWith("#support/")) return null;
   let rest = path.slice("#support".length).replace(/^\//, "");
-  if (rest === "stats") return { view: "stats", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
-  if (rest === "try") return { view: "try", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
+  if (rest === "compose") return { view: "compose", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
+  if (rest === "stats" || rest === "try") rest = "";
   let inbox = DEFAULT_INBOX;
   const named = INBOX_KEYS.find((k) => k !== DEFAULT_INBOX && (rest === k || rest.startsWith(`${k}/`)));
   if (named) { inbox = named; rest = rest.slice(named.length).replace(/^\//, ""); }
@@ -104,74 +107,27 @@ export function supportRoute(hash) {
   return { view: "inbox", inbox, queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
 export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "" } = {}) {
-  if (view === "stats") return "#support/stats";
-  if (view === "try") return "#support/try";
+  if (view === "compose") return "#support/compose";
   const key = inboxOf(inbox).key;
   const base = key === DEFAULT_INBOX ? "#support" : `#support/${key}`;
   if (view === "ticket") return `${base}/ticket/${encodeURIComponent(ticketId)}`;
   return queue && queue !== DEFAULT_QUEUE ? `${base}?queue=${queue}` : base;
 }
 
-// ── Stats ─────────────────────────────────────────────────────────────────
-const median = (list) => {
-  if (!list.length) return null;
-  const s = [...list].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-};
-const dayOf = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-
-// Everything the Stats tab shows, for tickets received between `from` and
-// `to` (ms, inclusive). Spam and machine-sent mail are counted on their own
-// and left out of the customer figures, so they cannot flatter the rates.
-// The figures are the Support Inbox's (mail written to support@): Hello and
-// Aidan are separate inboxes and are not counted.
-export function supportStats(tickets, { from = 0, to = Infinity } = {}) {
-  const inRange = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && t.createdAt >= from && t.createdAt <= to);
-  const spam = inRange.filter((t) => t.status === "spam");
-  const automated = inRange.filter((t) => t.status !== "spam" && t.automated);
-  const unrelated = inRange.filter((t) => t.status !== "spam" && !t.automated && t.unrelated);
-  const customer = inRange.filter((t) => t.status !== "spam" && !t.automated && !t.unrelated);
-  const resolved = customer.filter((t) => t.status === "resolved");
-  const byAi = resolved.filter((t) => t.resolvedBy === "ai" && !t.humanInvolved);
-  const byPeople = resolved.filter((t) => !(t.resolvedBy === "ai" && !t.humanInvolved));
-  const firstResponse = customer.filter((t) => t.firstResponseAt && t.firstResponseAt >= t.createdAt).map((t) => t.firstResponseAt - t.createdAt);
-  const resolution = resolved.filter((t) => t.resolvedAt && t.resolvedAt >= t.createdAt).map((t) => t.resolvedAt - t.createdAt);
-  const days = new Map();
-  for (const t of customer) {
-    const k = dayOf(t.createdAt);
-    const row = days.get(k) || { day: k, ai: 0, people: 0, open: 0 };
-    if (t.status !== "resolved") row.open += 1; else if (t.resolvedBy === "ai" && !t.humanInvolved) row.ai += 1; else row.people += 1;
-    days.set(k, row);
-  }
-  const categories = new Map();
-  for (const t of customer) { const k = t.category || "other"; categories.set(k, (categories.get(k) || 0) + 1); }
-  return {
-    received: customer.length, spam: spam.length, automated: automated.length, unrelated: unrelated.length,
-    open: customer.filter((t) => t.status === "open").length, pending: customer.filter((t) => t.status === "pending").length,
-    needsPerson: customer.filter((t) => t.status === "open" && t.needsHuman).length,
-    resolved: resolved.length, resolvedByAi: byAi.length, resolvedByPeople: byPeople.length,
-    aiRate: resolved.length ? byAi.length / resolved.length : null,
-    humanInvolved: customer.filter((t) => t.humanInvolved).length,
-    highValue: customer.filter((t) => t.highValue).length, reopened: customer.filter((t) => t.reopenCount > 0).length,
-    medianFirstResponseMs: median(firstResponse), medianResolutionMs: median(resolution),
-    byDay: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
-    byCategory: [...categories.entries()].map(([key, count]) => ({ key, label: CATEGORY_LABEL[key] || key, count })).sort((a, b) => b.count - a.count),
-  };
+// ── Writing a new email (the email icon in the Support Inbox) ─────────────
+// One address, a subject and a message. Returns what is wrong, or "" when it
+// can be sent; functions/support-mail.js checks the same before sending.
+export const COMPOSE_MAX = 8000;
+const ADDRESS_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"'.]+$/;
+export function composeProblem({ to, subject, text } = {}) {
+  const addr = String(to || "").trim();
+  if (!addr) return "Say who the email is to.";
+  if (!ADDRESS_RE.test(addr) || addr.length > 254) return "That isn't an email address. Use one address, like name@company.com.";
+  if (!String(subject || "").trim()) return "Give the email a subject.";
+  if (!String(text || "").trim()) return "Write the message first.";
+  if (String(text).trim().length > COMPOSE_MAX) return `A message is at most ${COMPOSE_MAX} characters.`;
+  return "";
 }
-
-// 95000 -> "1m", 7500000 -> "2h 5m", 300000000 -> "3d 11h"; null -> "—".
-export function fmtDuration(ms) {
-  if (ms == null || !Number.isFinite(ms)) return "—";
-  const m = Math.max(0, Math.round(ms / 60000));
-  if (m < 1) return "under 1m";
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
-  const d = Math.floor(h / 24);
-  return h % 24 ? `${d}d ${h % 24}h` : `${d}d`;
-}
-export const fmtPct = (v) => (v == null ? "—" : `${Math.round(v * 100)}%`);
 
 export function fmtWhen(ms, nowMs = Date.now()) {
   if (!ms) return "";

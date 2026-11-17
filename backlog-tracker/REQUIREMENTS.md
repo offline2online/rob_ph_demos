@@ -6273,7 +6273,10 @@ overlay. Presentation only: every field, action and datum is still there.
 Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
 see every incoming email as a ticket, answer what can be answered from the
 Help Centre automatically, involve a person when it can't, flag high-value
-retailers on the Staff Kanban, and track it all on one stats page.
+retailers on the Staff Kanban, and track it all on one stats page. (17 Nov
+2026, Rob: the stats page and Try an email were removed; three figures for
+support@ are on the Dashboard, and an email icon writes a new email. See
+"Stats", "Writing a new email" and SUP-AI-11.)
 
 ### Where it is
 
@@ -6288,7 +6291,7 @@ retailers on the Staff Kanban, and track it all on one stats page.
 ### Inboxes (17 Nov 2026)
 
 Mail reaches the one connected mailbox through three addresses: support@,
-hello@ and aidan@personalisationhub.com. Each has its own tab.
+hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
 
 - **SUP-INB-1** The page has three inbox tabs, named exactly **Support
   Inbox**, **Hello** and **Aidan**, in that order. Support Inbox is the one
@@ -6314,8 +6317,8 @@ hello@ and aidan@personalisationhub.com. Each has its own tab.
   own list and search, and its own ticket view (`#support/<inbox>/ticket/<id>`,
   Back returns to that inbox). The header line counts the inbox on show.
   `#support/ticket/<id>` still opens any ticket, under its own inbox's tab.
-- **SUP-INB-7** The stats, and the Dashboard's Support tile, count the
-  Support Inbox only. Mail written only to hello@ or aidan@ is in neither.
+- **SUP-INB-7** The Dashboard's Support tile counts the Support Inbox
+  only. Mail written only to hello@ or aidan@ is in none of its figures.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
@@ -6338,7 +6341,8 @@ hello@ and aidan@personalisationhub.com. Each has its own tab.
 
 - **SUP-TKT-1** One ticket per Gmail thread, keyed `SUP-n`. Reading the same
   mail twice never creates a second ticket or message.
-- **SUP-TKT-2** Mail the mailbox itself started is not a ticket.
+- **SUP-TKT-2** Mail the mailbox itself started is not a ticket, unless it
+  was written from the console's new email form (SUP-NEW-3).
 - **SUP-TKT-3** Statuses: Open, Waiting on customer, Resolved, Spam. A new
   customer email on a Waiting or Resolved ticket reopens it. It never
   reopens Spam.
@@ -6393,10 +6397,8 @@ hello@ and aidan@personalisationhub.com. Each has its own tab.
   articles combined and the higher-scoring reply is kept. The confidence is
   shown beside every suggested reply as a word and a number (High ≥ 80%,
   Medium ≥ 60%, Low), with the change when answers were combined.
-- **SUP-AI-11** An editor can try any email (Support Inbox → Try an email)
-  and see whether it counts as about Personalisation Hub, the articles
-  matched, the confidence, what would happen and the draft, with nothing
-  filed, saved or sent (40 tries an hour each).
+- **SUP-AI-11** Removed 17 Nov 2026: there is no "Try an email" tab and no
+  `/v1/preview` route. `#support/try` opens the inbox.
 - **SUP-AI-12** `support-eval.yml` checks the matching against the real
   model with made-up emails whose right answers are known. Its log never
   shows a real ticket's subject, sender or text.
@@ -6416,15 +6418,30 @@ hello@ and aidan@personalisationhub.com. Each has its own tab.
 
 ### Stats
 
-- **SUP-STAT-1** One Stats tab for the last 7, 30 or 90 days: tickets
-  received, resolved, answered by AI alone (share of resolved), needed a
-  person, median first response, median time to resolution, high-value,
-  reopened, tickets per day by how they ended, and by category.
-- **SUP-STAT-2** Spam and machine-sent mail are counted on their own and
-  excluded from every other figure.
-- **SUP-STAT-3** "Answered by AI alone" means resolved by the automatic
-  reply with no person replying, noting or closing it.
-- **SUP-STAT-4** The chart has a legend and a table of the same figures.
+- **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
+  `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
+- **SUP-STAT-5** The support figures are the Dashboard's Support tile:
+  exactly three, all of the support@ inbox (SUP-INB-7). See "Dashboard —
+  the console's landing page".
+
+### Writing a new email (17 Nov 2026)
+
+- **SUP-NEW-1** A small email icon in the Support Inbox header, beside Sync
+  now, opens a form with To, Subject and Message (`#support/compose`). It is
+  shown to editors while a mailbox is connected.
+- **SUP-NEW-2** Send sends the email from the connected mailbox, with the
+  sender name and signature from Settings, and shows a confirmation naming
+  the recipient. To takes one email address. An empty or invalid To, an
+  empty subject or an empty message is refused with a message and nothing is
+  sent; the server checks the same. A message is at most 8,000 characters and
+  a member can send 30 new emails an hour.
+- **SUP-NEW-3** The sent email is filed as a Support Inbox ticket under
+  Waiting on customer, with who sent it on its timeline. The answer arrives
+  on the same ticket and reopens it. A recipient who is a high-value sender
+  (SUP-HV-1) is marked high value, so their answer is never replied to
+  automatically.
+- **SUP-NEW-4** A new email is not a reply: it is not counted in the
+  Dashboard's "Replied or resolved today".
 
 ### iPad
 
@@ -6445,19 +6462,24 @@ hello@ and aidan@personalisationhub.com. Each has its own tab.
 articles[]}`, `assignee`, `kanbanKey`, `humanInvolved`, `autoRepliesSent`,
 `reopenCount`, `resolvedBy`, `inboxes` (array of `support` | `hello` |
 `aidan`; unset on tickets from before 17 Nov 2026, read as `["support"]`),
-`createdAt`, `lastMessageAt`, `lastInboundAt`,
-`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`.
+`createdAt`, `lastMessageAt`, `lastInboundAt` (the customer's latest email),
+`lastReplyAt` (the latest reply sent to them, by a person, the AI or from
+Gmail itself; unset on tickets last replied to before 17 Nov 2026),
+`firstResponseAt`, `resolvedAt`, `messageCount`, `snippet`, `startedBy` (who
+wrote it, on a ticket that began as a new email from the console).
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
 (`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`, and for sent
 mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
-| `manual`). `supportSettings/main`: connection status and settings
+| `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
 server-only.
 
 ### Known gaps
 
-Email is shown as text; attachments are named, not stored. The list and
-stats cover the 500 most recently active tickets. There are no MCP tools
+Email is shown as text; attachments are named, not stored. The list covers
+the 500 most recently active tickets, and the Dashboard's Support tile the
+300 most recently active. A new email goes to one address, as text, with no
+Cc and no attachment. There are no MCP tools
 for the inbox yet. The five-minute sync depends on GitHub's schedule.
 Tickets filed before the inbox tabs (17 Nov 2026) are not re-sorted: mail
 that was written to hello@ or aidan@ before then stays in Support Inbox.
@@ -6477,7 +6499,8 @@ attention" above): it is shown here and on no other page.
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local
-day before it. Times are never shown or compared in UTC. Each tile's breakdown
+day before it (the Support tile is the exception: it shows the inbox as it
+stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
 is a tooltip shown on hover or keyboard focus, with no explanatory copy under
 the tiles. Clicking a tile opens its section.
 
@@ -6487,10 +6510,19 @@ the tiles. Clicking a tile opens its section.
 | Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
 | External | Leads | New leads yesterday (test and archived leads left out), with the change | Companies and network operators, by name | `#promote/leads` |
 | External | Conversion funnel | Unique website visitors yesterday (personalisationhub.com, GA4 via `funnelDaily`), with the change | Funnel steps with count and drop-off: unique visitors → industry page → walkthrough or calculator → lead; industries ranked by visitors, peak first | `#promote/conversion-funnel` |
-| Support | Support | Three figures: tickets that need a person, AI drafts to approve, tickets resolved yesterday (with the change) | The needs-a-person tickets and pending AI drafts, each with the customer and how long it has waited, longest first | `#support` |
+| Support | Support | Exactly three figures, all of the support@ inbox (the Support Inbox tab) and never of mail written only to hello@ or aidan@: **Awaiting a reply** (open tickets, so the customer's last email has no reply); **Oldest waiting** (the age of the oldest of those, from when the customer wrote, "None" when nothing waits); **Replied or resolved today** (tickets replied to or resolved since the start of the viewer's local day; spam left out) | The tickets awaiting a reply, each with the customer and how long it has waited, longest first (the first 10) | `#support` |
 
 Rules:
 
+- **Support figures** (17 Nov 2026): "open" is the ticket's status, so
+  Needs a person, AI drafts to approve and Automated & not about PH all
+  count as awaiting a reply, and the first figure equals those three queue
+  counts on the Support Inbox tab added together. The wait runs from
+  `lastInboundAt` (else the last message). "Replied" reads `lastReplyAt`
+  (else `firstResponseAt` on a ticket last replied to before that was
+  recorded); "resolved" reads `resolvedAt` on a ticket that is still
+  resolved. A ticket is counted once. A new email written from the console
+  is not a reply.
 - **Remaining effort** is a task's estimate minus time logged, for outstanding
   tasks of that release; epics and done tasks are left out (the same as the
   release report).

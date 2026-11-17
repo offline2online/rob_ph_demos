@@ -80,6 +80,7 @@ function makeCtx(o, width) {
   ctx.at = at;
   ctx.aceWrites = o.aceWrites;
   ctx.enrichCalls = o.enrichCalls;
+  ctx.supportCalls = o.supportCalls;
   ctx.routineWrites = o.routineWrites;
   // A scenario that makes the page's own request fail on purpose says so; the browser logs that as a console error.
   ctx.expectProblem = (re) => { for (let i = o.problems.length - 1; i >= 0; i--) if (re.test(o.problems[i])) o.problems.splice(i, 1); };
@@ -3405,10 +3406,18 @@ const scenarios = [
         f3: { date: dayStr(yday(12)), channel: "Google Ads", industry: "QSR", visits: 80, demoRequests: 1, downloads: 4 },
         f4: { date: dayStr(before(12)), channel: "Organic", industry: "", visits: 500 },
       };
+      // ypgNiZ0c1PrIHgyGdXoR: the Support tile is three figures of the support@ inbox, as things stand now and today.
+      const today0 = new Date(); today0.setHours(0, 0, 0, 0);
+      const today = t(today0.getTime());
       s.docs.supportTickets = {
-        s1: { subject: "Can't log in", customerName: "Priya", customerEmail: "priya@shop.example", status: "open", needsHuman: true, createdAt: t(yday(8)), lastMessageAt: t(yday(8)) },
-        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9 }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)) },
-        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
+        s1: { subject: "Can't log in", customerName: "Priya", customerEmail: "priya@shop.example", status: "open", needsHuman: true, createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
+        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9 }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)), lastInboundAt: t(yday(9)) },
+        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedAt: today, lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
+        s4: { subject: "Sent a link", customerName: "Mo", status: "pending", lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
+        s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
+        // Written only to hello@ or aidan@: in none of the three figures.
+        h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(before(8)), lastMessageAt: t(before(8)), lastInboundAt: t(before(8)) },
+        a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedAt: today, lastReplyAt: today, inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: today },
       };
       return s;
     },
@@ -3430,7 +3439,11 @@ const scenarios = [
       assert.ok(kanbanText.includes("1 task unestimated") && kanbanText.includes("Release 1.6"), `the unestimated flag and the release: ${kanbanText}`);
       assert.strictEqual(await value("leads"), "2", "two leads yesterday");
       assert.strictEqual(await value("funnel"), "600", "website visitors yesterday");
-      assert.deepStrictEqual(await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-value', (els) => els.map((e) => e.textContent)), ["1", "1", "1"], "need a person, AI drafts, resolved yesterday");
+      assert.deepStrictEqual(await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-metric', (els) => els.map((e) => e.textContent)), ["Awaiting a reply", "Oldest waiting", "Replied or resolved today"], "exactly three figures");
+      const sVals = await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-value', (els) => els.map((e) => e.textContent));
+      assert.deepStrictEqual([sVals[0], sVals[2]], ["2", "2"], `two support@ tickets await a reply and two were replied to or resolved today; hello@ and aidan@ mail is not counted: ${sVals}`);
+      // Priya wrote at 08:00 yesterday (16 to 40 hours ago); Hattie's older email to hello@ is not the oldest.
+      assert.ok(/^(\d+h|1d( \d+h)?)$/.test(sVals[1]), `the age of the oldest unanswered support@ email: ${sVals[1]}`);
       assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles");
       const tip = (k) => `.dash-tile-wrap[data-tile="${k}"] .dash-tip`;
       const showTip = async (k) => {
@@ -3458,7 +3471,7 @@ const scenarios = [
       assert.ok(/Grocery[\s\S]*QSR/.test(fTip), `industries ranked, peak first: ${fTip}`);
       assert.ok(fTip.includes("Drop-off"), `drop-off at each step: ${fTip}`);
       const sTip = await showTip("support");
-      assert.ok(sTip.includes("Priya") && sTip.includes("Tom"), `waiting tickets with customers: ${sTip}`);
+      assert.ok(sTip.includes("Priya") && sTip.includes("Tom") && !sTip.includes("Hattie"), `waiting support@ tickets with customers: ${sTip}`);
       const box = await c.page.locator(tip("support")).boundingBox();
       const vw = await c.page.evaluate(() => window.innerWidth);
       assert.ok(box && box.x >= 0 && box.x + box.width <= vw + 1, `the tooltip stays inside the viewport: ${JSON.stringify(box)}`);
@@ -3539,6 +3552,53 @@ const scenarios = [
       await c.visible("#support-page .support-row");
       assert.deepStrictEqual(await selected(), ["Aidan"]);
       assert.strictEqual((await subjects()).length, 2);
+    },
+  },
+  {
+    // ypgNiZ0c1PrIHgyGdXoR: the Stats and Try an email tabs are gone, and a
+    // small email icon writes a new email from the support mailbox.
+    name: "Support Inbox: no Stats or Try an email tab; the email icon opens a form that sends a new email",
+    hash: "#support/stats",
+    seed: () => {
+      const s = only("b1");
+      s.docs.supportTickets = { s1: { key: "SUP-1", subject: "To support", customerEmail: "c1@shop.example", status: "open", needsHuman: true, createdAt: t(T0), lastMessageAt: t(T0) } };
+      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
+        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 } };
+      s.supportAnswer = { ok: true, newMessages: 0, newTickets: 0, to: "buyer@retailer.example", ticketId: "s1", key: "SUP-2" };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the old Stats address opens the inbox");
+      await c.visible("#support-page .support-row");
+      assert.deepStrictEqual(await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"], "no Stats tab and no Try an email tab");
+      assert.strictEqual(await c.page.locator("#support-page").getByText(/Try an email|Stats/).count(), 0);
+      await c.visible("#support-compose-btn", "the email icon");
+      assert.strictEqual(await c.page.getAttribute("#support-compose-btn", "aria-label"), "Write an email");
+      await c.click("#support-compose-btn", "the email icon");
+      await c.visible("#support-compose-to", "the compose form");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/compose");
+      assert.deepStrictEqual(await c.page.$$eval(".support-compose label.field-label", (els) => els.map((l) => l.textContent)), ["To", "Subject", "Message"]);
+      c.at("an empty To is refused with a message");
+      await c.page.fill("#support-compose-subject", "Your demo");
+      await c.page.fill("#support-compose-text", "Here is the link.");
+      await c.click('[data-support-act="compose-send"]', "Send with no To");
+      await c.visible("#support-compose-error");
+      assert.ok((await c.text("#support-compose-error")).includes("who the email is to"));
+      c.at("an empty message is refused with a message");
+      await c.page.fill("#support-compose-to", "buyer@retailer.example");
+      await c.page.fill("#support-compose-text", "");
+      await c.click('[data-support-act="compose-send"]', "Send with no message");
+      await until(async () => (await c.text("#support-compose-error")).includes("Write the message"), "the message is asked for");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "compose"), [], "nothing was sent");
+      c.at("a complete email is sent from the support mailbox and confirmed");
+      await c.page.fill("#support-compose-text", "Here is the link.");
+      await c.click('[data-support-act="compose-send"]', "Send");
+      await c.visible(".support-compose-sent", "the confirmation");
+      assert.ok((await c.text(".support-compose-sent")).includes("Sent to buyer@retailer.example from support@ph.example"));
+      const sent = c.supportCalls.filter((x) => x.path === "compose");
+      assert.deepStrictEqual(sent.map((x) => x.body), [{ to: "buyer@retailer.example", subject: "Your demo", text: "Here is the link." }]);
+      await c.click('[data-support-act="back"]', "back to the inbox");
+      await c.visible("#support-page .support-row");
     },
   },
 ];

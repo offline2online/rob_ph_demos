@@ -12,7 +12,7 @@
 //     In every mode, at iPad landscape, the 1024 edge and portrait, one person's
 //     whole journey is done with a finger: the menu item, every queue, a
 //     ticket, the suggested reply, a Help Centre article, a note, Send, Raise
-//     on Staff Kanban, Mark as spam and its confirmation, the Stats tab and its
+//     on Staff Kanban, Mark as spam and its confirmation, the email icon and its
 //     controls, Sync now, and Settings › Support inbox (the switch and Save).
 //     Each tap must do its job EXACTLY once: a dropped tap does nothing, a
 //     doubled one sends a customer two emails.
@@ -218,18 +218,20 @@ try {
         await until(async () => (await hash()) === "#support", "the inbox", 3000);
       });
 
-      await step("the Stats tab, its period buttons and its table open by tap", async () => {
-        await tapSel('[data-support-tab="stats"]');
-        await until(async () => (await hash()) === "#support/stats", "the stats route", 3000);
-        await until(() => page.locator(".support-tile").count(), "the stats");
-        await tapSel('[data-support-range="7"]');
-        await until(() => page.evaluate(() => document.querySelector('[data-support-range="7"]').getAttribute("aria-pressed") === "true"), "7 days selected", 3000);
-        await tapSel(".support-table summary");
-        await until(() => page.evaluate(() => document.querySelector(".support-table").open), "the table to open", 3000);
-        await page.waitForTimeout(500);
-        assert.strictEqual(await page.evaluate(() => document.querySelector(".support-table").open), true, "the table opened and shut again (the tap fired twice)");
-        await tapSel('[data-support-tab="inbox"]');
-        await until(async () => (await hash()) === "#support", "the inbox tab", 3000);
+      await step("the email icon opens the new email form, and Send sends it once", async () => {
+        await tapSel("#support-compose-btn");
+        await until(async () => (await hash()) === "#support/compose", "the compose route", 3000);
+        await until(() => page.locator("#support-compose-to").count(), "the form");
+        await page.fill("#support-compose-to", "buyer@retailer.example");
+        await page.fill("#support-compose-subject", "Your demo");
+        await page.fill("#support-compose-text", "Here is the link.");
+        const n = calls("compose").length;
+        await tapSel('[data-support-act="compose-send"]');
+        const c = await once("compose", n, "the new email");
+        assert.deepStrictEqual(c.body, { to: "buyer@retailer.example", subject: "Your demo", text: "Here is the link." });
+        await until(() => page.locator(".support-compose-sent").count(), "the confirmation", 3000);
+        await tapSel('[data-support-act="back"]');
+        await until(async () => (await hash()) === "#support", "the inbox", 3000);
       });
 
       await step("Sync now syncs once", async () => {

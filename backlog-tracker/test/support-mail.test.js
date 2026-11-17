@@ -74,7 +74,8 @@ function fakeGoogle(mail) {
       const body = JSON.parse(opts.body);
       const id = `sent-${calls.sent.length + 1}`;
       calls.sent.push({ id, threadId: body.threadId, mail: Buffer.from(body.raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8") });
-      return json(200, { id, threadId: body.threadId });
+      // A message sent with no thread starts one, as Gmail does.
+      return json(200, { id, threadId: body.threadId || `thread-${id}` });
     }
     const one = path.match(/^messages\/([^/]+)$/);
     if (one) { const m = mail.find((x) => x.id === decodeURIComponent(one[1])); return m ? json(200, m) : json(404, { error: { message: "not found" } }); }
@@ -260,19 +261,97 @@ check("an email that isn't about Personalisation Hub is filed with no draft, no 
   assert.strictEqual(t.google.calls.sent.length, 0);
 });
 
-check("Try an email: the decision and the draft for an email, with nothing filed, saved or sent; editors only, limited per hour", async () => {
+check("Try an email is gone: its route answers not found, to an admin too", async () => {
   const t = make();
   await connect(t);
-  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "view@ph.example", body: { subject: "x", text: "y" } })).statusCode, 403);
-  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: {} })).statusCode, 400);
-  const r = await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "Adding a screen", text: "How do I add a display to my store?", fromName: "Ann Lee", fromEmail: "ann@shop.example" } });
-  assert.strictEqual(r.statusCode, 200);
-  assert.deepStrictEqual([r.body.relevant, r.body.answerable, r.body.articles.map((a) => a.title), r.body.decision.action], [true, true, ["Add a display to a store"], "review"]);
-  assert.ok(r.body.draft.startsWith("Hi Ann,\n\nThanks for your email.\n\n"));
-  assert.strictEqual(t.db.state.supportTickets, undefined, "nothing was filed");
-  assert.strictEqual(t.google.calls.sent.length, 0, "nothing was sent");
-  for (let i = 0; i < 39; i++) await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } });
-  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "ed@ph.example", body: { subject: "x", text: "y" } })).statusCode, 429);
+  assert.strictEqual((await call(t.api, "POST", "/v1/preview", { token: "admin@ph.example", body: { subject: "x", text: "y" } })).statusCode, 404);
+});
+
+check("compose: an editor sends a new email from the mailbox; it is filed as a Support Inbox ticket waiting on the customer", async () => {
+  const t = make({ settings: { signature: "PH Support", fromName: "PH Support" } });
+  await connect(t);
+  const ok = { to: "Buyer@Retailer.example", subject: "Your  demo\nBcc: x@evil.example", text: "Hello,\n\nHere is the link we discussed." };
+  assert.strictEqual((await call(t.api, "POST", "/v1/compose", { body: ok })).statusCode, 401, "signed out");
+  assert.strictEqual((await call(t.api, "POST", "/v1/compose", { token: "view@ph.example", body: ok })).statusCode, 403, "a viewer is read-only");
+  assert.strictEqual((await call(t.api, "GET", "/v1/compose", { token: "ed@ph.example" })).statusCode, 405);
+  for (const [bad, said] of [
+    [{ ...ok, to: "" }, /who the email is to/], [{ ...ok, to: "not an address" }, /isn't an email address/], [{ ...ok, to: "a@b.example, c@d.example" }, /isn't an email address/],
+    [{ ...ok, to: "a@b.example\nBcc: x@evil.example" }, /isn't an email address/], [{ ...ok, subject: "  " }, /subject/], [{ ...ok, text: " \n " }, /Write the message/], [{ ...ok, text: "x".repeat(8001) }, /at most 8000/],
+  ]) {
+    const r = await call(t.api, "POST", "/v1/compose", { token: "ed@ph.example", body: bad });
+    assert.strictEqual(r.statusCode, 400, JSON.stringify(bad).slice(0, 80));
+    assert.ok(said.test(r.body.error), r.body.error);
+  }
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing refused was sent");
+  const r = await call(t.api, "POST", "/v1/compose", { token: "ed@ph.example", body: ok });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  assert.deepStrictEqual([r.body.ok, r.body.to, r.body.ticketId, r.body.key], [true, "buyer@retailer.example", "thread-sent-1", "SUP-1"]);
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  const mail = t.google.calls.sent[0].mail;
+  assert.ok(mail.includes(`From: "PH Support" <${MAILBOX}>`) && mail.includes("To: buyer@retailer.example"), mail);
+  assert.ok(/\r\nSubject: Your demo Bcc: x@evil\.example\r\n/.test(mail), "a new email's subject has no Re:, and a line break in it cannot add a header");
+  assert.ok(!/\r\nBcc:/.test(mail) && !/In-Reply-To|Auto-Submitted/.test(mail));
+  assert.strictEqual(t.google.calls.sent[0].threadId, undefined, "it starts its own thread");
+  const tk = ticketOf(t, "thread-sent-1");
+  assert.deepStrictEqual([tk.status, tk.inboxes, tk.customerEmail, tk.startedBy, tk.humanInvolved, tk.needsHuman, tk.triagePending, tk.messageCount, tk.inboundCount],
+    ["pending", ["support"], "buyer@retailer.example", "ed@ph.example", true, false, false, 1, 0]);
+  assert.deepStrictEqual([tk.lastReplyAt, tk.firstResponseAt, tk.lastInboundAt], [null, null, null], "a new email is not a reply: it is not in the Dashboard's replied today");
+  const msgs = messagesOf(t, "thread-sent-1");
+  const out = msgs.find((m) => m.direction === "out");
+  assert.deepStrictEqual([out.sentBy, out.source, out.to, out.auto], ["ed@ph.example", "compose", ["buyer@retailer.example"], false]);
+  assert.ok(out.text.endsWith("PH Support"), "the signature is added");
+  assert.ok(msgs.some((m) => m.direction === "event" && /Wrote a new email/.test(m.text) && m.by === "ed@ph.example"));
+});
+
+check("compose: the answer joins the same ticket and reopens it; a high-value recipient stays high value", async () => {
+  const mail = [];
+  const t = make({ mail, prospects: { p1: { company: "Big Retailer", website: "https://bigretailer.example", status: "active" } } });
+  await connect(t);
+  const r = await call(t.api, "POST", "/v1/compose", { token: "ed@ph.example", body: { to: "cto@bigretailer.example", subject: "Following up", text: "Good to meet you." } });
+  assert.strictEqual(r.statusCode, 200, JSON.stringify(r.body));
+  const id = r.body.ticketId;
+  assert.strictEqual(ticketOf(t, id).highValue, true, "so its answer is never replied to automatically");
+  // The sent email comes back in the next sync's listing; it is already filed, so it is not added twice.
+  mail.push(gmailMessage({ id: "sent-1", threadId: id, from: MAILBOX, subject: "Following up", text: "Good to meet you.", labels: ["SENT"], date: 1760000100000 }));
+  mail.push(gmailMessage({ id: "ans-1", threadId: id, from: "Cee Tio <cto@bigretailer.example>", subject: "Re: Following up", text: "Thanks, when can we talk?", date: 1760000200000 }));
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  const tk = ticketOf(t, id);
+  assert.deepStrictEqual([tk.messageCount, tk.inboundCount, tk.status, tk.key], [2, 1, "open", r.body.key], "one sent, one received, one ticket");
+  assert.ok(tk.lastInboundAt, "the customer's email starts the wait the Dashboard shows");
+  assert.strictEqual(Object.keys(t.db.state.supportTickets).length, 1);
+});
+
+check("compose: not connected, a send Gmail refuses, and the hourly limit", async () => {
+  const off = make();
+  const body = { to: "a@b.example", subject: "Hello", text: "Hi" };
+  assert.strictEqual((await call(off.api, "POST", "/v1/compose", { token: "ed@ph.example", body })).statusCode, 409, "no mailbox connected");
+  const t = make();
+  await connect(t);
+  t.google.breakRefresh();
+  const refused = await call(t.api, "POST", "/v1/compose", { token: "ed@ph.example", body });
+  assert.strictEqual(refused.statusCode, 502);
+  assert.ok(/The email wasn't sent/.test(refused.body.error));
+  assert.strictEqual(t.db.state.supportTickets, undefined, "an email that wasn't sent is not filed");
+  const u = make();
+  await connect(u);
+  for (let i = 0; i < 30; i++) assert.strictEqual((await call(u.api, "POST", "/v1/compose", { token: "ed@ph.example", body })).statusCode, 200);
+  assert.strictEqual((await call(u.api, "POST", "/v1/compose", { token: "ed@ph.example", body })).statusCode, 429);
+  assert.strictEqual((await call(u.api, "POST", "/v1/compose", { token: "admin@ph.example", body })).statusCode, 200, "the limit is each member's own");
+  assert.strictEqual(u.google.calls.sent.length, 31);
+});
+
+check("a reply records when it was sent (lastReplyAt), from the console and from Gmail itself", async () => {
+  const mail = [gmailMessage({ id: "m1", threadId: "t1", date: 1759990000000 })];
+  const t = make({ mail });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.ok(!ticketOf(t, "t1").lastReplyAt, "no reply yet");
+  assert.strictEqual((await call(t.api, "POST", "/v1/tickets/t1/reply", { token: "ed@ph.example", body: { text: "Here you go." } })).statusCode, 200);
+  const first = ticketOf(t, "t1").lastReplyAt;
+  assert.ok(first instanceof Date, "the console's reply");
+  mail.push(gmailMessage({ id: "g2", threadId: "t1", from: MAILBOX, subject: "Re: How do I add a display?", text: "One more thing.", labels: ["SENT"], date: first.getTime() + 60000 }));
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.strictEqual(ticketOf(t, "t1").lastReplyAt.getTime(), first.getTime() + 60000, "a reply sent from Gmail");
 });
 
 // A stand-in for the Anthropic SDK: answers each call by which step it is.

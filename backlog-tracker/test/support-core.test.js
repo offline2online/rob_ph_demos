@@ -218,21 +218,37 @@ check("the page's copy of the statuses matches the server's", () => {
   assert.deepStrictEqual(JSON.parse(m[1]), core.STATUSES);
 });
 
+check("a new email: the server and the page refuse the same things, and its subject gets no Re:", async () => {
+  const page = await import("../public/js/support-core.js");
+  assert.strictEqual(page.COMPOSE_MAX, core.COMPOSE_MAX);
+  const ok = { to: "ann@shop.example", subject: "Hello", text: "Hi Ann" };
+  for (const input of [ok, undefined, { ...ok, to: "" }, { ...ok, to: "ann" }, { ...ok, to: "a@b.example,c@d.example" }, { ...ok, to: "a@b.example\r\nBcc: x@y.example" }, { ...ok, to: "Ann <ann@shop.example>" },
+    { ...ok, subject: " " }, { ...ok, text: "" }, { ...ok, text: "x".repeat(core.COMPOSE_MAX + 1) }]) {
+    assert.strictEqual(core.composeProblem(input), page.composeProblem(input), JSON.stringify(input || null).slice(0, 80));
+  }
+  assert.strictEqual(core.composeProblem(ok), "");
+  const raw = Buffer.from(core.buildReplyRaw({ fromEmail: "s@ph.example", to: "a@b.example", subject: "Your demo", text: "y", isNew: true }).replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  assert.ok(/^Subject: Your demo$/m.test(raw), raw);
+  assert.ok(!/In-Reply-To|References/.test(raw));
+});
+
 check("inboxes: an email is filed under each alias it was written to (To, Cc, Delivered-To, X-Original-To), and under Support when it names none", () => {
   const BOX = "support@personalisationhub.com";
+  // Our own domain, from the code: an alias other than the role mailboxes is never written out in full in a tracked file.
+  const OURS = core.ALIAS_DOMAIN;
   const al = (headers) => core.parseGmailMessage(gmailMsg({ headers }), BOX).aliases;
   assert.deepStrictEqual(al({ To: "support@personalisationhub.com" }), ["support"]);
   assert.deepStrictEqual(al({ To: "Hello <Hello@PersonalisationHub.com>" }), ["hello"], "the alias is read from the To header, not the mailbox it was delivered to");
-  assert.deepStrictEqual(al({ To: "aidan@personalisationhub.com" }), ["aidan"]);
-  assert.deepStrictEqual(al({ To: "support@personalisationhub.com", Cc: "Aidan <aidan@personalisationhub.com>, someone@shop.example" }), ["support", "aidan"], "support@ with aidan@ in Cc is in both");
-  assert.deepStrictEqual(al({ To: "hello@personalisationhub.com, aidan@personalisationhub.com, support@personalisationhub.com" }), ["support", "hello", "aidan"]);
+  assert.deepStrictEqual(al({ To: `aidan@${OURS}` }), ["aidan"]);
+  assert.deepStrictEqual(al({ To: "support@personalisationhub.com", Cc: `Aidan <aidan@${OURS}>, someone@shop.example` }), ["support", "aidan"], "support@ with aidan@ in Cc is in both");
+  assert.deepStrictEqual(al({ To: `hello@personalisationhub.com, aidan@${OURS}, support@personalisationhub.com` }), ["support", "hello", "aidan"]);
   assert.deepStrictEqual(al({ To: "someone@shop.example" }), [], "no alias named");
   assert.deepStrictEqual(core.mergeInboxes([], []), ["support"], "which falls back to the Support Inbox");
   assert.deepStrictEqual(al({ To: "aidan@elsewhere.example", Cc: "hello@gmail.com" }), [], "the same name at another company is not ours");
-  assert.deepStrictEqual(al({ To: "hello+newsletter@personalisationhub.com" }), ["hello"], "a +tag still names the alias");
+  assert.deepStrictEqual(al({ To: `hello+newsletter@${OURS}` }), ["hello"], "a +tag still names the alias");
   // A Bcc leaves no To or Cc: the delivery headers are all there is.
   const raw = gmailMsg({ headers: { To: "undisclosed-recipients:;" } });
-  raw.payload.headers.push({ name: "Delivered-To", value: BOX }, { name: "Delivered-To", value: "hello@personalisationhub.com" }, { name: "X-Original-To", value: "aidan@personalisationhub.com" });
+  raw.payload.headers.push({ name: "Delivered-To", value: BOX }, { name: "Delivered-To", value: "hello@personalisationhub.com" }, { name: "X-Original-To", value: `aidan@${OURS}` });
   assert.deepStrictEqual(core.parseGmailMessage(raw, BOX).aliases, ["hello", "aidan"], "every Delivered-To line is read; the mailbox's own address is on every message and says nothing");
   // A mailbox on another domain (a test or staging mailbox) still has its aliases.
   assert.deepStrictEqual(core.parseGmailMessage(gmailMsg({ headers: { To: "hello@ph.example" } }), "support@ph.example").aliases, ["hello"]);

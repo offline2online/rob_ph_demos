@@ -1,9 +1,9 @@
 // public/js/support-core.js — the Support Inbox page's rules: queues, routes,
-// the stats and what "Insert from the Help Centre" puts in a reply.
+// writing a new email and what "Insert from the Help Centre" puts in a reply.
 // Run: node test/support-page-core.test.mjs
 import assert from "node:assert";
 import {
-  QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, supportStats, fmtDuration, fmtPct, toMs,
+  QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, composeProblem, COMPOSE_MAX, toMs,
   searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
@@ -48,11 +48,15 @@ check("routes round-trip and belong to the Support Inbox section", () => {
   assert.deepStrictEqual(supportRoute("#support"), { view: "inbox", inbox: "support", queue: "needs-person", ticketId: "" });
   assert.deepStrictEqual(supportRoute("#support?queue=spam"), { view: "inbox", inbox: "support", queue: "spam", ticketId: "" });
   assert.strictEqual(supportRoute("#support?queue=bogus").queue, "needs-person");
-  assert.deepStrictEqual(supportRoute("#support/stats"), { view: "stats", inbox: "support", queue: "", ticketId: "" });
-  assert.deepStrictEqual(supportRoute("#support/try"), { view: "try", inbox: "support", queue: "", ticketId: "" });
-  assert.strictEqual(supportHash({ view: "try" }), "#support/try");
+  // Stats and Try an email were tabs once: an old link to either opens the inbox.
+  const inbox = { view: "inbox", inbox: "support", queue: "needs-person", ticketId: "" };
+  assert.deepStrictEqual(supportRoute("#support/stats"), inbox);
+  assert.deepStrictEqual(supportRoute("#support/try"), inbox);
+  assert.strictEqual(supportHash({ view: "stats" }), "#support");
+  assert.deepStrictEqual(supportRoute("#support/compose"), { view: "compose", inbox: "support", queue: "", ticketId: "" });
+  assert.strictEqual(supportHash({ view: "compose" }), "#support/compose");
   assert.deepStrictEqual(supportRoute("#support/ticket/19a%2Fb"), { view: "ticket", inbox: "support", queue: "", ticketId: "19a/b" });
-  for (const r of [{ view: "inbox", queue: "spam" }, { view: "stats" }, { view: "ticket", ticketId: "19a/b" }, {}]) {
+  for (const r of [{ view: "inbox", queue: "spam" }, { view: "compose" }, { view: "ticket", ticketId: "19a/b" }, {}]) {
     const back = supportRoute(supportHash(r));
     assert.strictEqual(back.view, r.view || "inbox");
     assert.strictEqual(back.ticketId, r.ticketId || "");
@@ -104,40 +108,26 @@ check("three inboxes, each with its own route, list and counts; a ticket written
   assert.strictEqual(sectionForHash("#support/aidan/ticket/x"), "support-inbox");
 });
 
-check("stats count the Support Inbox only: mail written to hello@ or aidan@ alone is not in them", () => {
-  const rows = [tk("s", { status: "resolved", resolvedBy: "ai" }), tk("h", { status: "resolved", inboxes: ["hello"] }), tk("a", { inboxes: ["aidan"], needsHuman: true }), tk("sa", { inboxes: ["support", "aidan"], needsHuman: true })];
-  const s = supportStats(rows, {});
-  assert.deepStrictEqual([s.received, s.resolved, s.needsPerson], [2, 1, 1]);
+check("a new email needs one address, a subject and a message", () => {
+  const ok = { to: " ann@shop.example ", subject: "Hello", text: "Hi Ann" };
+  assert.strictEqual(composeProblem(ok), "");
+  assert.ok(/who the email is to/.test(composeProblem({ ...ok, to: " " })));
+  for (const to of ["ann", "ann@shop", "ann@shop.example, bo@shop.example", "Ann <ann@shop.example>", "ann@shop.example\nBcc: x@y.example", "ann @shop.example"]) assert.ok(/isn't an email address/.test(composeProblem({ ...ok, to })), to);
+  assert.ok(/subject/.test(composeProblem({ ...ok, subject: "" })));
+  assert.ok(/Write the message/.test(composeProblem({ ...ok, text: "\n " })));
+  assert.strictEqual(composeProblem({ ...ok, text: "x".repeat(COMPOSE_MAX) }), "");
+  assert.ok(/at most 8000/.test(composeProblem({ ...ok, text: "x".repeat(COMPOSE_MAX + 1) })));
+  assert.ok(composeProblem(), "nothing given");
 });
 
-check("stats: spam and machine mail are left out, AI-only resolutions are separated from people's, times are medians", () => {
-  const rows = [
-    tk("ai1", { status: "resolved", resolvedBy: "ai", firstResponseAt: new Date(T0 + 0.1 * H), resolvedAt: new Date(T0 + 0.1 * H), category: "how-to" }),
-    tk("ai2", { status: "resolved", resolvedBy: "ai", humanInvolved: true, firstResponseAt: new Date(T0 + H), resolvedAt: new Date(T0 + 5 * H), reopenCount: 1, category: "how-to" }),
-    tk("hum", { status: "resolved", resolvedBy: "ed@ph.example", humanInvolved: true, highValue: true, firstResponseAt: new Date(T0 + 3 * H), resolvedAt: new Date(T0 + 9 * H), category: "bug" }),
-    tk("open", { status: "open", needsHuman: true, createdAt: new Date(T0 + D) }),
-    tk("wait", { status: "pending", humanInvolved: true, firstResponseAt: new Date(T0 + 2 * H) }),
-    tk("spam", { status: "spam" }), tk("news", { status: "open", automated: "mailing list" }),
-    tk("seo", { status: "open", unrelated: true, category: "unrelated" }),
-    tk("before", { status: "resolved", createdAt: new Date(T0 - 100 * D) }),
-  ];
-  const s = supportStats(rows, { from: T0 - D, to: T0 + 2 * D });
-  assert.deepStrictEqual([s.received, s.spam, s.automated, s.unrelated], [5, 1, 1, 1], "mail that isn't about Personalisation Hub is counted on its own");
-  assert.strictEqual(normaliseTicket("x", { category: "unrelated" }).unrelated, true);
-  assert.deepStrictEqual([s.resolved, s.resolvedByAi, s.resolvedByPeople, s.open, s.pending, s.needsPerson], [3, 1, 2, 1, 1, 1]);
-  assert.strictEqual(fmtPct(s.aiRate), "33%");
-  assert.deepStrictEqual([s.humanInvolved, s.highValue, s.reopened], [3, 1, 1]);
-  assert.strictEqual(s.medianFirstResponseMs, 1.5 * H, "median of 0.1h, 1h, 2h, 3h");
-  assert.strictEqual(s.medianResolutionMs, 5 * H);
-  assert.deepStrictEqual(s.byDay.map((d) => [d.ai, d.people, d.open]), [[1, 2, 1], [0, 0, 1]]);
-  assert.deepStrictEqual(s.byCategory[0], { key: "how-to", label: "How-to", count: 2 });
-  const none = supportStats([], {});
-  assert.deepStrictEqual([none.received, none.aiRate, none.medianFirstResponseMs], [0, null, null]);
+check("a ticket carries when the customer last wrote and when they were last replied to", () => {
+  const t = normaliseTicket("x", { lastInboundAt: new Date(T0), lastReplyAt: new Date(T0 + H) });
+  assert.deepStrictEqual([t.lastInboundAt, t.lastReplyAt], [T0, T0 + H]);
+  const old = normaliseTicket("y", {});
+  assert.deepStrictEqual([old.lastInboundAt, old.lastReplyAt], [0, 0], "unset on a ticket filed before they were recorded");
 });
 
-check("durations, percentages and timestamps read plainly", () => {
-  assert.deepStrictEqual([fmtDuration(null), fmtDuration(20000), fmtDuration(95000), fmtDuration(7500000), fmtDuration(3 * D + 11 * H), fmtDuration(2 * D)], ["—", "under 1m", "2m", "2h 5m", "3d 11h", "2d"]);
-  assert.deepStrictEqual([fmtPct(null), fmtPct(0.666)], ["—", "67%"]);
+check("timestamps read plainly", () => {
   assert.deepStrictEqual([toMs(null), toMs({ toMillis: () => 5 }), toMs({ $ts: 7 }), toMs({ seconds: 2 }), toMs("2026-11-01T09:00:00Z")], [0, 5, 7, 2000, T0]);
 });
 

@@ -3179,13 +3179,13 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | File | What it does |
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
-| `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, spam, notes, assignment, Staff Kanban escalation |
-| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, the stats |
-| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, Stats) and Settings › Support inbox |
+| `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
+| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
+| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
 
 **Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
-support@, hello@ and aidan@personalisationhub.com, all delivered to the one
+support@, hello@ and aidan@ (at personalisationhub.com), all delivered to the one
 connected mailbox. The page has a tab for each: **Support Inbox**, **Hello**
 and **Aidan**, each with its own queues, counts, list and ticket view
 (`#support`, `#support/hello`, `#support/aidan`). `aliasesOf` in
@@ -3193,8 +3193,8 @@ and **Aidan**, each with its own queues, counts, list and ticket view
 its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
 from the mailbox it landed in, and the ticket keeps the result in `inboxes`.
 An email to two aliases is in both tabs; one that names none, and every
-ticket from before the tabs, is in Support Inbox. The stats and the
-Dashboard's Support tile count the Support Inbox only, and only a Support
+ticket from before the tabs, is in Support Inbox. The Dashboard's Support
+tile counts the Support Inbox only, and only a Support
 Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
@@ -3221,9 +3221,7 @@ Every draft opens "Hi <first name>," and "Thanks for your email." (or
 "Hi there," when the name isn't clear, e.g. a role mailbox such as Legal).
 This is added in code (`composeReply`), not left to the model. The
 confidence is shown beside every suggested reply as a word and a number
-(High from 80%, Medium from 60%, Low below). **Try an email** (an editor's
-tab in the Support Inbox) runs any subject and text through all of this
-without filing, saving or sending anything.
+(High from 80%, Medium from 60%, Low below).
 
 `scripts/support-eval.js` (Actions → "Support Inbox matching check",
 `support-eval.yml`) runs 33 made-up emails with known right answers
@@ -3257,11 +3255,20 @@ board's own `kanban_create_task`, assigned to the person chosen in Settings
 Resolving the support ticket comments on the Kanban ticket. Any ticket can
 also be raised by hand ("Raise on Staff Kanban").
 
-**Stats** (`#support/stats`): tickets received, resolved, answered by AI
-alone, needed a person, median first response, median time to resolution,
-high-value, reopened, tickets per day by how they ended, and what customers
-asked about. Spam and machine-sent mail are counted separately and left out
-of every rate.
+**Writing a new email (17 Nov 2026).** The small email icon beside Sync now
+(editors, mailbox connected) opens a form at `#support/compose`: To (one
+address), Subject and Message. Send posts to `/supportMail/v1/compose`, which
+sends it from the connected mailbox with the signature from Settings and
+files it as a Support Inbox ticket under Waiting on customer, with who sent
+it. The answer arrives on that ticket and reopens it. An empty or invalid To,
+subject or message is refused with a message, in the page and again by the
+server (`composeProblem` in both `support-core.js` files); a member can send
+30 new emails an hour.
+
+**No Stats tab, no Try an email (17 Nov 2026).** Both tabs were removed, with
+`supportStats`, the `/v1/preview` route and their styles. `#support/stats`
+and `#support/try` open the inbox. The support figures are the three on the
+Dashboard's Support tile (below).
 
 ### Connecting the mailbox (once, by an admin)
 
@@ -3345,8 +3352,10 @@ The console opens on **Dashboard** (`#dashboard`): five KPI tiles for
 yesterday (the viewer's local day) in three sections. Internal: Agent board
 (tickets deployed) and Staff Kanban (remaining effort on the release selected
 for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
-Leads and Conversion funnel (website visitors). Support: needs a person, AI
-drafts, resolved. Each tile's breakdown is a hover/focus tooltip and a click
+Leads and Conversion funnel (website visitors). Support: exactly three
+figures for the support@ inbox as it stands now (never hello@ or aidan@
+mail): open and awaiting a reply, the age of the oldest unanswered email, and
+tickets replied to or resolved today. Each tile's breakdown is a hover/focus tooltip and a click
 opens the section. Above the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full

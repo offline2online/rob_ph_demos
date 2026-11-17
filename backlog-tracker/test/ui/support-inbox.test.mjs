@@ -65,7 +65,7 @@ const run = async (label, opts, fn) => {
 };
 try {
   for (const theme of ["light", "dark"]) for (const width of [390, 820, 1280]) {
-    await run(`inbox, ticket and stats ${theme} @${width}px`, { seed: seedFor("editor"), width, height: 900, hash: "#support" }, async (page, o) => {
+    await run(`inbox and ticket ${theme} @${width}px`, { seed: seedFor("editor"), width, height: 900, hash: "#support" }, async (page, o) => {
       if (theme === "dark") await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
       await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
       // The menu: Support Inbox directly above Help Centre, marked as the current page.
@@ -123,46 +123,73 @@ try {
       await page.keyboard.press("Enter");
       await until(() => o.supportCalls.some((c) => c.path === "tickets/t1/status"), "the spam call");
       assert.strictEqual(o.supportCalls.find((c) => c.path === "tickets/t1/status").body.status, "spam");
-      // Stats.
-      await page.click('[data-support-tab="stats"]');
-      await until(() => page.locator(".support-tile").count(), "the stats");
-      const tiles = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-tile")].map((x) => [x.querySelector(".support-tile-label").textContent, x.querySelector(".support-tile-value").textContent])));
-      assert.deepStrictEqual(tiles, { "Tickets received": "6", Resolved: "2", "Answered by AI alone": "50%", "Needed a person": "2", "Median first response": "1h", "Median time to resolution": "3h 2m", "High-value senders": "1", Reopened: "0" });
-      assert.strictEqual(await page.locator(".support-bar-seg").count(), 3, "one day, three segments");
-      assert.strictEqual(await page.locator(".support-legend li").count(), 3);
-      a = await audit(page, "#support-page");
-      assert.ok(a.overflow <= 0, `no sideways scroll on stats (${a.overflow}px)`);
-      assert.deepStrictEqual(a.small, [], "touch targets under 44px on stats");
-      if (theme === "light") await shot(page, `stats-${width}`);
+      // The Stats and Try an email tabs are gone: three inbox tabs, and an old link to either opens the inbox.
+      assert.deepStrictEqual(await page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"]);
+      for (const old of ["#support/stats", "#support/try"]) {
+        await page.evaluate((hash) => { location.hash = hash; }, old);
+        await until(() => page.locator("#support-page .support-row").count(), `the inbox at ${old}`);
+        assert.strictEqual(await page.locator('#support-page .support-tab[aria-selected="true"]').textContent(), "Support Inbox");
+        assert.strictEqual(await page.locator(".support-tile, .support-try, .support-stats").count(), 0);
+        await page.evaluate(() => { location.hash = "#support?queue=all"; });
+        await until(async () => (await page.locator(".support-queue.active").getAttribute("data-support-queue")) === "all", "another queue");
+      }
     });
   }
 
-  for (const width of [390, 1280]) await run(`Try an email @${width}px`, { seed: seedFor("editor", { supportAnswer: { ok: true, relevant: true, category: "how-to", summary: "Wants to add a display.", spamLikely: false, answerable: true, confidence: 0.91,
-      articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }], highValue: null,
-      decision: { action: "review", reason: "Sending by itself is switched off." }, draft: "Hi Ann,\n\nThanks for your email.\n\nOpen Displays and Devices, then choose Add display." } }), width, height: 900, hash: "#support" }, async (page, o) => {
+  // The small email icon: a new email from the support mailbox.
+  for (const width of [390, 1280]) await run(`write a new email @${width}px`, { seed: seedFor("editor", { supportAnswer: { ok: true, newMessages: 0, newTickets: 0, to: "buyer@retailer.example", ticketId: "t7", key: "SUP-7" } }), width, height: 900, hash: "#support" }, async (page, o) => {
     await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
-    await page.click('[data-support-tab="try"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/try", "the Try an email route");
-    await page.fill("#support-try-name", "Ann Lee");
-    await page.fill("#support-try-subject", "New screen");
-    await page.fill("#support-try-text", "How do I add a display?");
-    await page.click('[data-support-act="try"]');
-    await until(() => page.locator(".support-try-result").count(), "the result");
-    const call = o.supportCalls.find((c) => c.path === "preview");
-    assert.deepStrictEqual([call.body.fromName, call.body.subject, call.body.text], ["Ann Lee", "New screen", "How do I add a display?"]);
-    const text = await page.textContent(".support-try-result");
-    for (const want of ["About Personalisation Hub", "High confidence · 91%", "Add a display to a store", "Draft waits for a person to approve", "Hi Ann,"]) assert.ok(text.includes(want), `the result shows "${want}"`);
-    assert.strictEqual(await page.inputValue("#support-try-text"), "How do I add a display?", "the email stays in the form to try again");
-    const a = await audit(page, "#support-page");
+    const btn = page.locator("#support-compose-btn");
+    await until(() => btn.isVisible(), "the email icon");
+    assert.deepStrictEqual([await btn.getAttribute("aria-label"), (await btn.textContent()).trim()], ["Write an email", "mail"], "an icon with a name, no text");
+    const box = await btn.boundingBox();
+    assert.ok(box.width >= 44 && box.height >= 44 && box.width <= 56, `a small icon button (${Math.round(box.width)}×${Math.round(box.height)})`);
+    await btn.click();
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/compose", "the compose route");
+    await until(() => page.locator("#support-compose-to").count(), "the form");
+    assert.deepStrictEqual(await page.$$eval(".support-compose label.field-label", (els) => els.map((l) => l.textContent)), ["To", "Subject", "Message"]);
+    assert.strictEqual(await page.locator('#support-page .support-tab[aria-selected="true"]').textContent(), "Support Inbox");
+    // Nothing is sent until it is complete: each gap is named.
+    const refused = async (said) => { await page.click('[data-support-act="compose-send"]'); await until(async () => said.test((await page.locator("#support-compose-error").textContent().catch(() => "")) || ""), `"${said}"`); };
+    await refused(/who the email is to/);
+    await page.fill("#support-compose-to", "not an address");
+    await refused(/isn't an email address/);
+    await page.fill("#support-compose-to", "Buyer@Retailer.example");
+    await refused(/subject/);
+    await page.fill("#support-compose-subject", "Your demo");
+    await refused(/Write the message/);
+    assert.deepStrictEqual(o.supportCalls.filter((c) => c.path === "compose"), [], "nothing was sent while it was incomplete");
+    assert.strictEqual(await page.inputValue("#support-compose-to"), "Buyer@Retailer.example", "what was typed is kept");
+    await page.fill("#support-compose-text", "Hello,\n\nHere is the link we discussed.");
+    let a = await audit(page, "#support-page");
     assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
     assert.deepStrictEqual(a.small, [], "touch targets under 44px");
-    await shot(page, `try-${width}`);
+    await shot(page, `compose-${width}`);
+    await page.click('[data-support-act="compose-send"]');
+    await until(() => page.locator(".support-compose-sent").count(), "the confirmation");
+    const calls = o.supportCalls.filter((c) => c.path === "compose");
+    assert.strictEqual(calls.length, 1, "sent once");
+    assert.deepStrictEqual([calls[0].method, calls[0].body], ["POST", { to: "Buyer@Retailer.example", subject: "Your demo", text: "Hello,\n\nHere is the link we discussed." }]);
+    const said = await page.textContent(".support-compose-sent");
+    assert.ok(said.includes("Sent to buyer@retailer.example from support@ph.example"), said);
+    assert.deepStrictEqual([await page.inputValue("#support-compose-to"), await page.inputValue("#support-compose-subject"), await page.inputValue("#support-compose-text")], ["", "", ""], "the form is cleared for the next one");
+    await shot(page, `compose-sent-${width}`);
+    // The confirmation opens the ticket it was filed as; Back from the form returns to the inbox.
+    await page.click('[data-support-act="open-sent"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support/ticket/t7", "the filed ticket");
+    await page.evaluate(() => { location.hash = "#support/compose"; });
+    await until(() => page.locator("#support-compose-to").count(), "the form again");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await page.evaluate(() => location.hash)) === "#support", "back in the inbox");
   });
 
   await run("a viewer reads but gets no write controls", { seed: seedFor("viewer"), width: 1280, hash: "#support/ticket/t1" }, async (page, o) => {
     await until(() => page.locator(".support-msg-in").count(), "the conversation", 15000);
     assert.strictEqual(await page.locator(".support-composer, .support-actions, #support-reply").count(), 0);
-    assert.ok(await page.locator('[data-support-tab="try"]').isHidden(), "a viewer has no Try an email tab");
+    assert.ok(await page.locator("#support-compose-btn").isHidden(), "a viewer has no email icon");
+    await page.evaluate(() => { location.hash = "#support/compose"; });
+    await until(() => page.locator("#support-view .interface-row-empty").count(), "the compose route as a viewer");
+    assert.strictEqual(await page.locator("#support-compose-to, [data-support-act='compose-send']").count(), 0, "and no form by its address");
     assert.ok(await page.locator("#support-sync-btn").isHidden());
     await page.waitForTimeout(1800);
     assert.deepStrictEqual(o.supportCalls, [], "no sync or write is attempted for a viewer");

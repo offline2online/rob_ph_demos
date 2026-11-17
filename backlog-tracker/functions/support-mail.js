@@ -32,7 +32,7 @@
 //   POST /v1/disconnect                admin
 //   POST /v1/settings                  admin
 //   POST /v1/sync                      editor  read new mail now
-//   POST /v1/preview                   editor  what would happen to an email (nothing saved or sent)
+//   POST /v1/compose                   editor  {to, subject, text}: a new email from the mailbox
 //   POST /v1/cron                      board key  the same, for the five-minute workflow
 //   POST /v1/tickets/{id}/reply        editor  {text, resolve, draft}
 //   POST /v1/tickets/{id}/draft        editor  write a fresh AI draft
@@ -70,7 +70,7 @@ const TRIAGE_PER_PAGE_SYNC = 2;
 const CACHE_MS = 5 * 60 * 1000;
 const DRAFT_MODEL = "claude-opus-5-5";
 const DRAFT_TIMEOUT_MS = 40000;
-const PREVIEWS_PER_HOUR = 40;
+const COMPOSED_PER_HOUR = 30;      // new emails one member may send from the mailbox
 
 // An article as triage uses it. `hidden` (hiddenFromWebsite on the article or
 // its category/folder, see functions/faq-feed.js) keeps it in the catalogue
@@ -167,7 +167,7 @@ function createSupportMail({
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
-  const previewCalls = new Map(); // member -> recent "Try an email" times
+  const composeCalls = new Map(); // member -> when they last sent new emails
   const redirectUri = `${baseUrl}/supportMail/v1/oauth/callback`;
   const tickets = () => db.collection(TICKETS);
   const settingsRef = () => db.collection(SETTINGS).doc("main");
@@ -356,6 +356,7 @@ function createSupportMail({
       patch.triagePending = false;
       patch.aiDraft = null;
       if (!cur.firstResponseAt) patch.firstResponseAt = at;
+      if (ms(at) >= ms(cur.lastReplyAt)) patch.lastReplyAt = at;
       if (cur.status === "open") patch.status = "pending";
       messageDoc.sentBy = "gmail";
     }
@@ -456,7 +457,7 @@ function createSupportMail({
         await sendReply({ ticketId, ticket, text: draftText, auto: true, by: "ai", source: "ai-auto", settings, extra: { confidence: triage.confidence, articles: cited } });
         Object.assign(patch, {
           aiDraft: null, status: "resolved", resolvedBy: "ai", resolvedAt: now(), autoRepliesSent: (ticket.autoRepliesSent || 0) + 1,
-          firstResponseAt: ticket.firstResponseAt || now(), lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1,
+          firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1,
         });
       } catch (err) {
         // Not sent: a person takes it, with the draft still there to use.
@@ -471,32 +472,48 @@ function createSupportMail({
     return { ok: true, action: patch.status === "resolved" ? "send" : decision.action === "send" ? "human" : decision.action, reason: patch.triageReason };
   }
 
-  // What triage would do with one email, nothing stored or sent.
-  async function preview({ subject, text, fromName, fromEmail }) {
-    const t = core.clip(String(text || "").trim(), core.TEXT_MAX);
-    const subj = core.clip(String(subject || "").trim(), 500);
-    if (!t && !subj) return { ok: false, error: "Give the email a subject or some text." };
-    const key = String(anthropicKey() || "");
-    if (!triageImpl && (!key || key === "unset")) return { ok: false, error: "No drafting model is configured (ANTHROPIC_API_KEY)." };
+  // A new email from the support mailbox (the email icon in the Support
+  // Inbox). It is filed as a Support Inbox ticket waiting on the customer, so
+  // who sent it is on record and the answer joins the same conversation.
+  async function compose({ to, subject, text, by }) {
+    const problem = core.composeProblem({ to, subject, text });
+    if (problem) return { ok: false, status: 400, error: problem };
     const settings = await readSettings();
-    const email = core.lower(fromEmail) || "customer@example.com";
-    const ticket = { subject: subj || "(no subject)", customerEmail: email, fromEmail: email, customerName: core.clip(String(fromName || "").trim(), 200) };
-    const all = await articles();
-    const acct = await accounts();
-    const account = core.matchAccount(email, { prospects: acct.prospects, leads: acct.leads, vipDomains: settings.vipDomains, freeDomains });
-    let triage;
+    if (!settings.connectedEmail) return { ok: false, status: 409, error: "The support mailbox isn't connected." };
+    const addr = core.lower(to);
+    const subj = core.clip(String(subject).replace(/\s+/g, " ").trim(), core.SUBJECT_MAX);
+    const body = String(text).trim();
+    const full = core.withSignature(body, settings.signature);
+    let sent;
     try {
-      triage = core.cleanTriage(await (triageImpl || runTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages: [{ direction: "in", text: t }], articles: all }), all.map((a) => a.id));
-    } catch (err) { return { ok: false, error: `The draft couldn't be written: ${core.clip(String(err && err.message ? err.message : err), 200)}` }; }
-    const decision = core.decideAction({ triage, settings, highValue: Boolean(account) });
-    const draft = triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, email), triage.reply) : "";
-    const view = (id) => { const a = all.find((x) => x.id === id); return a ? { id, title: a.title, url: a.url } : null; };
-    return {
-      ok: true, relevant: triage.relevant, category: triage.category, summary: triage.summary, spamLikely: triage.spamLikely,
-      answerable: triage.answerable, confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: triage.articleIds.map(view).filter(Boolean),
-      highValue: account ? { name: account.name, reason: account.reason } : null,
-      decision: { action: decision.action, reason: decision.reason }, draft,
-    };
+      const raw = core.buildReplyRaw({ fromName: settings.fromName, fromEmail: settings.connectedEmail, to: addr, subject: subj, text: full, isNew: true });
+      sent = await gmail("messages/send", { method: "POST", body: { raw } });
+    } catch (err) { return { ok: false, status: 502, error: `The email wasn't sent: ${core.clip(String(err && err.message ? err.message : err), 200)}` }; }
+    const threadId = String((sent && sent.threadId) || "");
+    // Sent, but Gmail named no thread to file it under: say so rather than fail a sent email.
+    if (!threadId || !/^[A-Za-z0-9_-]{1,80}$/.test(threadId)) return { ok: true, to: addr, ticketId: "", key: "" };
+    const id = String(sent.id || eventId());
+    const at = now();
+    const acct = await accounts();
+    const account = core.matchAccount(addr, { prospects: acct.prospects, leads: acct.leads, vipDomains: settings.vipDomains, freeDomains });
+    const number = await nextNumber();
+    const ref = tickets().doc(threadId);
+    const snippet = core.clip(body.replace(/\s+/g, " "), 240);
+    await ref.set({
+      key: core.ticketKey(number), number, threadId, subject: subj,
+      customerEmail: addr, fromEmail: addr, customerName: "", status: "pending", needsHuman: false, triagePending: false,
+      inboxes: [core.DEFAULT_INBOX], automated: "", highValue: Boolean(account), account: account || null,
+      category: "", summary: "", triageReason: "",
+      createdAt: at, updatedAt: at, lastMessageAt: at, lastInboundAt: null, lastReplyAt: null, snippet,
+      messageCount: 1, inboundCount: 0, humanInvolved: true, autoRepliesSent: 0, reopenCount: 0,
+      firstResponseAt: null, resolvedAt: null, resolvedBy: "", assignee: "", kanbanKey: "", aiDraft: null, startedBy: by,
+    });
+    await ref.collection("messages").doc(id).set({
+      direction: "out", from: settings.connectedEmail, fromName: settings.fromName, to: [addr], cc: [], subject: subj,
+      text: full, snippet, at, gmailId: id, auto: false, sentBy: by, source: "compose",
+    });
+    await logEvent(threadId, by, "Wrote a new email from the support mailbox.");
+    return { ok: true, to: addr, ticketId: threadId, key: core.ticketKey(number) };
   }
 
   // ── Sync ──
@@ -604,7 +621,7 @@ function createSupportMail({
       const resolve = body.resolve === true;
       await ref.set({
         status: resolve ? "resolved" : "pending", resolvedAt: resolve ? now() : null, resolvedBy: resolve ? by : "",
-        humanInvolved: true, needsHuman: false, aiDraft: null, triagePending: false, firstResponseAt: ticket.firstResponseAt || now(),
+        humanInvolved: true, needsHuman: false, aiDraft: null, triagePending: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(),
         lastMessageAt: now(), messageCount: (ticket.messageCount || 0) + 1, updatedAt: now(), snippet: core.clip(text.replace(/\s+/g, " "), 240),
       }, { merge: true });
       if (resolve) {
@@ -719,19 +736,20 @@ function createSupportMail({
       return send(res, r.ok || /isn't connected/.test(r.error || "") ? 200 : 502, r);
     }
 
-    // "Try an email" (Support Inbox): what the inbox would do with an email,
-    // without filing, saving or sending anything.
-    if (path === "/v1/preview") {
+    // The email icon in the Support Inbox: a new email, sent from the mailbox.
+    if (path === "/v1/compose") {
       const who = await requireRole(req, "editor");
       if (!who.ok) return send(res, who.status, { error: who.error });
       if (req.method !== "POST") return send(res, 405, { error: "POST only" });
-      const hit = previewCalls.get(who.user.email) || [];
-      const recent = hit.filter((t) => now().getTime() - t < 3600000);
-      if (recent.length >= PREVIEWS_PER_HOUR) return send(res, 429, { error: `At most ${PREVIEWS_PER_HOUR} tries an hour. Try again later.` });
-      previewCalls.set(who.user.email, [...recent, now().getTime()]);
       const body = req.body && typeof req.body === "object" ? req.body : {};
-      const r = await preview({ subject: body.subject, text: body.text, fromName: body.fromName, fromEmail: body.fromEmail });
-      return send(res, r.ok ? 200 : 400, r);
+      const problem = core.composeProblem(body);
+      if (problem) return send(res, 400, { error: problem });
+      const recent = (composeCalls.get(who.user.email) || []).filter((t) => now().getTime() - t < 3600000);
+      if (recent.length >= COMPOSED_PER_HOUR) return send(res, 429, { error: `At most ${COMPOSED_PER_HOUR} new emails an hour. Try again later.` });
+      const r = await compose({ to: body.to, subject: body.subject, text: body.text, by: who.user.email });
+      if (!r.ok) return send(res, r.status, { error: r.error });
+      composeCalls.set(who.user.email, [...recent, now().getTime()]);
+      return send(res, 200, r);
     }
 
     if (path === "/v1/sync") {

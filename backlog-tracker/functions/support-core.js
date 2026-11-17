@@ -513,13 +513,14 @@ function withSignature(text, signature) {
   return sig ? `${body}\n\n${sig}` : body;
 }
 // The raw RFC 5322 message Gmail's send endpoint takes (base64url).
-function buildReplyRaw({ fromName, fromEmail, to, subject, text, inReplyTo, references, auto = false }) {
+// `isNew`: an email that starts a thread (the Support Inbox's compose form), so its subject gets no "Re:".
+function buildReplyRaw({ fromName, fromEmail, to, subject, text, inReplyTo, references, auto = false, isNew = false }) {
   const safe = (v) => String(v || "").replace(/[\r\n]+/g, " ").trim();
   const refs = [safe(references), safe(inReplyTo)].filter(Boolean).join(" ");
   const head = [
     `From: ${fromName ? `"${encodeHeader(fromName).replace(/"/g, "")}" ` : ""}<${safe(fromEmail)}>`,
     `To: ${safe(to)}`,
-    `Subject: ${encodeHeader(replySubject(subject))}`,
+    `Subject: ${encodeHeader(isNew ? String(subject || "").trim() || "(no subject)" : replySubject(subject))}`,
     ...(inReplyTo ? [`In-Reply-To: ${safe(inReplyTo)}`] : []),
     ...(refs ? [`References: ${refs}`] : []),
     ...(auto ? ["Auto-Submitted: auto-replied", "X-Auto-Response-Suppress: All"] : []),
@@ -531,6 +532,23 @@ function buildReplyRaw({ fromName, fromEmail, to, subject, text, inReplyTo, refe
   return b64url(`${head.join("\r\n")}\r\n\r\n${body}`);
 }
 
+// A new email written in the Support Inbox: one address, a subject and a
+// message. Returns what is wrong, or "" when it can be sent. The page checks
+// the same first (public/js/support-core.js; test/support-core.test.js keeps
+// the two in step).
+const COMPOSE_MAX = DRAFT_MAX;
+const SUBJECT_MAX = 300;
+const ADDRESS_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"'.]+$/;
+function composeProblem({ to, subject, text } = {}) {
+  const addr = String(to || "").trim();
+  if (!addr) return "Say who the email is to.";
+  if (!ADDRESS_RE.test(addr) || addr.length > 254) return "That isn't an email address. Use one address, like name@company.com.";
+  if (!String(subject || "").trim()) return "Give the email a subject.";
+  if (!String(text || "").trim()) return "Write the message first.";
+  if (String(text).trim().length > COMPOSE_MAX) return `A message is at most ${COMPOSE_MAX} characters.`;
+  return "";
+}
+
 const ticketKey = (n) => `SUP-${n}`;
 
 module.exports = {
@@ -540,5 +558,5 @@ module.exports = {
   b64urlDecode, htmlToText, bodyOf, stripQuoted, parseGmailMessage, automatedReason, sameDomain, hostOf, matchAccount,
   SCOPE, MAX_ARTICLES, CONFIDENCE_BOOST_BELOW, cleanSteps, termsOf, rankArticles, articleIndexLine, SELECT_SCHEMA, SELECT_SYSTEM, cleanSelection, TRIAGE_SCHEMA, TRIAGE_SYSTEM, cleanTriage,
   firstNameOf, stripOpening, composeReply, decideAction,
-  b64url, encodeHeader, replySubject, withSignature, buildReplyRaw, ticketKey,
+  b64url, encodeHeader, replySubject, withSignature, buildReplyRaw, ticketKey, COMPOSE_MAX, SUBJECT_MAX, composeProblem,
 };
