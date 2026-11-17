@@ -103,7 +103,7 @@ export function mountStaffKanban(ctx) {
   const $ = (sel, el = document) => el.querySelector(sel);
   const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  // Everyone on the console, by first name (KB-PPL-1): memberDirectory, plus
+  // Everyone on the console, by full name (KB-PPL-1): memberDirectory, plus
   // anyone a ticket names who isn't in it (a removed member keeps their name
   // on old tickets as their address). An alias address (PERSON_ALIASES) is
   // never a person of its own: it shows, and is picked, as its owner.
@@ -127,22 +127,28 @@ export function mountStaffKanban(ctx) {
     peopleById = new Map(peopleList.map((u) => [u.id, u]));
     return peopleList;
   }
+  // full is the name shown everywhere: first name + last name as saved in
+  // Users, else the display name, else the address. first is the short name
+  // (Kanban settings → Team): what typing after @ and the voice fill match,
+  // not shown as someone's name. The list is in full-name order, you first.
   function buildPeople() {
     const named = store.state.settings.firstNames || {};
     const list = store.state.members.filter((m) => !isAliasEmail(m.email)).map((m) => {
-      const name = String(m.displayName || "").trim() || [m.firstName, m.lastName].filter(Boolean).join(" ").trim() || String(m.email).split("@")[0];
+      const name = [m.firstName, m.lastName].map((x) => String(x || "").trim()).filter(Boolean).join(" ") || String(m.displayName || "").trim() || String(m.email).split("@")[0];
       return { id: m.email, first: String(named[m.email] || "").trim() || String(m.firstName || "").trim() || name.split(/\s+/)[0], full: name, email: m.email, color: colourFor(m.email), initials: initialsOfRow(m, m.email) };
     });
     const self = canonicalEmail(me);
     if (!list.some((u) => u.id === self)) {
-      const name = (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || self.split("@")[0];
+      const own0 = getAvatarMember(self) || {};
+      const name = [own0.firstName, own0.lastName].map((x) => String(x || "").trim()).filter(Boolean).join(" ") || (ctx.auth.currentUser && ctx.auth.currentUser.displayName) || self.split("@")[0];
       const own = getAvatarMember(self) || { displayName: name };
       list.push({ id: self, first: String(named[self] || "").trim() || name.split(/\s+/)[0], full: name, email: self, color: colourFor(self), initials: initialsOfRow(own, self) });
     }
-    return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.first.localeCompare(b.first)));
+    return list.sort((a, b) => (a.id === self ? -1 : b.id === self ? 1 : a.full.localeCompare(b.full)));
   }
   const user = (id) => (id ? (people(), peopleById.get(canonicalEmail(id))) || (id.includes("@") ? { id, first: id.split("@")[0], full: id, email: id, color: colourFor(id), initials: initialOf(id) } : null) : null);
-  const firstName = (id) => (user(id) || {}).first || "Unassigned";
+  // A person's name wherever one is shown or written into a note: first name + last name.
+  const fullName = (id) => { const u = user(id); return u ? u.full || u.first : "Unassigned"; };
   // Console releases, in release order; a release's date is a Kanban setting.
   function releases() {
     const dates = store.state.settings.releaseDates || {};
@@ -234,8 +240,8 @@ export function mountStaffKanban(ctx) {
     if (!u) return `<span class="kb-avatar kb-avatar-none ${size}" title="Unassigned"><span class="material-symbols-outlined" aria-hidden="true">person</span></span>`;
     const ph = photoOf(u.id);
     const src = KBEditor.cssUrl(ph);
-    if (src) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.first)}" title="${esc(u.first)}" style="background-image:url('${src}')"></span>`;
-    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.first)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
+    if (src) return `<span class="kb-avatar kb-avatar-img ${size}" role="img" aria-label="${esc(u.full)}" title="${esc(u.full)}" style="background-image:url('${src}')"></span>`;
+    return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.full)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
   let toastTimer;
@@ -256,7 +262,7 @@ export function mountStaffKanban(ctx) {
   // ── Status changes (the one place the testing hand-off happens) ─────────
   // Returns { patch, note, activity } for the store, or null when nothing changes.
   function setStatus(task, status, opts = {}) {
-    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName });
+    const ch = statusChange(task, status, { resolution: opts.resolution, tester: opts.tester, firstName: fullName });
     if (!ch) return null;
     if (!opts.silent) toast(`<b>${esc(task.key)}</b> ${status === "done" ? (ch.resolution === "withdrawn" ? "withdrawn" : "completed") : "moved to " + esc(STATUS_LABEL[status])}${ch.note ? ` · ${esc(ch.note)}` : ""}`);
     return ch;
@@ -276,7 +282,7 @@ export function mountStaffKanban(ctx) {
     return new Promise((resolve) => {
       const wrap = document.createElement("div");
       wrap.className = "modal-backdrop"; wrap.id = "kb-tester-backdrop";
-      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.first)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
+      wrap.innerHTML = `<div class="modal" role="dialog" aria-modal="true" aria-labelledby="kb-tester-h" style="max-width:420px"><div class="modal-body"><h3 id="kb-tester-h">Who will test ${esc(task.key)}?</h3><p class="kb-none">It moves to Ready for Testing and is assigned to them.</p><select id="kb-tester-pick" class="kb-input"><option value="">Choose a tester…</option>${people().map((u) => `<option value="${esc(u.id)}">${esc(u.full)}</option>`).join("")}</select></div><div class="modal-footer"><button type="button" class="btn-ghost" id="kb-tester-cancel">Cancel</button><button type="button" class="btn-primary" id="kb-tester-ok" disabled>Move to Ready for Testing</button></div></div>`;
       document.body.appendChild(wrap);
       const pick = wrap.querySelector("#kb-tester-pick"), ok = wrap.querySelector("#kb-tester-ok");
       const done = (v) => { wrap.remove(); resolve(v); };
@@ -310,7 +316,7 @@ export function mountStaffKanban(ctx) {
     const reassigned = (toAssignee || "") !== (task.assignee || "");
     let base = task;
     if (reassigned) {
-      activity.push(`reassigned ${firstName(task.assignee)} → ${firstName(toAssignee)}`);
+      activity.push(`reassigned ${fullName(task.assignee)} → ${fullName(toAssignee)}`);
       patch.assignee = toAssignee; patch.previousAssignee = "";
       base = { ...task, assignee: toAssignee, previousAssignee: "" };
     }
@@ -318,7 +324,7 @@ export function mountStaffKanban(ctx) {
     if (ch) { Object.assign(patch, ch.patch); activity.push(ch.activity); }
     if (reassigned) {
       const moved = task.status !== status ? ` · moved to ${esc(statusLabel(status, resolution))}` : "";
-      toast(`<b>${esc(task.key)}</b> assigned to ${esc(firstName(toAssignee))}${moved}${ch && ch.note ? `, ${esc(ch.note)}` : ""}`);
+      toast(`<b>${esc(task.key)}</b> assigned to ${esc(fullName(toAssignee))}${moved}${ch && ch.note ? `, ${esc(ch.note)}` : ""}`);
     }
     store.updateTask(key, patch, activity).then(() => { if (ch) return advanceParents(key); }).catch(fail);
     renderKanbanBoard();
@@ -334,7 +340,7 @@ export function mountStaffKanban(ctx) {
     const ups = parentsToAdvance(taskByKey(key), taskByKey, childrenOf);
     for (const pk of ups) {
       const p = taskByKey(pk);
-      const ch = p && statusChange(p, "ready-for-testing", { firstName });
+      const ch = p && statusChange(p, "ready-for-testing", { firstName: fullName });
       if (!ch) continue;
       const inCol = state.tasks.filter((x) => x.status === "ready-for-testing");
       const rank = inCol.length ? Math.max(...inCol.map((x) => x.rank)) + 10 : 10;
@@ -625,7 +631,7 @@ export function mountStaffKanban(ctx) {
       <div class="kb-sticky" id="kb-sticky">
         <div class="kb-filters" role="search">
           <div class="kb-people" role="group" aria-label="Filter by assignee">
-            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${esc(u.id)}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.first)}">${avatar(u.id)}<span>${esc(u.first)}</span></button>`).join("")}
+            ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${esc(u.id)}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.full)}">${avatar(u.id)}<span>${esc(u.full)}</span></button>`).join("")}
             <button type="button" class="kb-person-chip${board.assignees.has("none") ? " on" : ""}" data-person="none" aria-pressed="${board.assignees.has("none")}" title="Unassigned">${avatar("")}<span>Unassigned</span></button>
           </div>
           <button type="button" class="kb-mine${board.mine ? " on" : ""}" id="kb-mine" aria-pressed="${board.mine}"><span class="material-symbols-outlined" aria-hidden="true">person</span>My tasks</button>
@@ -916,12 +922,12 @@ export function mountStaffKanban(ctx) {
           return `<div class="kb-lane${collapsed ? " kb-lane-collapsed" : ""}" data-lane="${id}" style="--lane-c:${laneColor}">
             <button type="button" class="kb-lane-head" aria-expanded="${!collapsed}">
               <span class="material-symbols-outlined kb-lane-caret" aria-hidden="true">expand_more</span>${avatar(id === "none" ? "" : id)}
-              <span class="kb-lane-name">${esc(id === "none" ? "Unassigned" : firstName(id))}</span>
+              <span class="kb-lane-name">${esc(id === "none" ? "Unassigned" : fullName(id))}</span>
               <span class="col-count">${mine.length}</span>${rem ? `<span class="kb-col-effort">${fmtH(rem)} remaining</span>` : ""}
             </button>
           </div>` + STATUSES.map((s) => {
             const list = sorted(mine, s.key);
-            return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : firstName(id)) + " · " + s.label)}">
+            return `<section class="column kb-col kb-lane-cell${list.length ? "" : " kb-cell-empty"}${collapsed ? " kb-cell-hidden" : ""}" data-status="${s.key}" data-lane="${id}" aria-label="${esc((id === "none" ? "Unassigned" : fullName(id)) + " · " + s.label)}">
               <div class="kb-cell-head kb-col-${s.key}"><span>${esc(s.label)}</span><span class="col-count">${list.length}</span></div>
               ${listsHTML(list, s, "", `lane:${id}`)}
             </section>`;
@@ -1015,7 +1021,7 @@ export function mountStaffKanban(ctx) {
       <p class="card-title">${esc(t.title)}</p>
       ${ep ? `<p class="kb-parent-epic" title="Parent ${esc(levelName(levelOfT(ep), ep.type).toLowerCase())}: ${esc(ep.key + " " + ep.title)}"><span class="material-symbols-outlined" aria-hidden="true">${ep.type === "epic" ? "bolt" : "subdirectory_arrow_right"}</span><span>${esc(ep.title)}</span></p>` : ""}
       ${kids ? `<div class="kb-progress kb-epic-progress" title="${kidsDone} of ${kidsLive.length} child tickets done"><span style="width:${kidsLive.length ? (kidsDone / kidsLive.length) * 100 : 0}%"></span></div>` : ""}
-      ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(firstName(t.previousAssignee))}</p>` : ""}
+      ${t.status === "ready-for-testing" && t.previousAssignee ? `<p class="kb-handoff"><span class="material-symbols-outlined" aria-hidden="true">swap_horiz</span>From ${esc(fullName(t.previousAssignee))}</p>` : ""}
       ${est ? `<div class="kb-progress${over ? " over" : ""}" title="${fmtH(log)} logged of ${fmtH(est)}"><span style="width:${pct}%"></span></div>` : ""}
       <div class="kb-card-footer">
         <div class="kb-card-chips">
@@ -1427,8 +1433,8 @@ export function mountStaffKanban(ctx) {
       case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap kb-ed-wrap"><div class="kb-editor" id="f-description"></div>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
         ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
-      case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${peopleWith(d.assignee).map((u) => opt(u.id, u.first, d.assignee)).join("")}</select></div>`;
-      case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${peopleWith(d.reporter).map((u) => opt(u.id, u.first, d.reporter)).join("")}</select></div>`;
+      case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${peopleWith(d.assignee).map((u) => opt(u.id, u.full, d.assignee)).join("")}</select></div>`;
+      case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${peopleWith(d.reporter).map((u) => opt(u.id, u.full, d.reporter)).join("")}</select></div>`;
       case "release": return `<div class="kb-field" data-field="release">${label("release")}<select id="f-release" class="kb-input">${opt("", "No release", d.release)}${releases().map((r) => opt(r.id, r.label + (r.released ? " (released)" : ""), d.release)).join("")}</select></div>`;
       case "estimate": return `<div class="kb-field" data-field="estimate">${label("estimate")}<input type="text" id="f-estimate" class="kb-input" value="${esc(d.estimate === "" || d.estimate == null ? "" : fmtH(d.estimate))}" placeholder="e.g. 1d 4h" inputmode="text"></div>`;
       case "type": return `<div class="kb-field" data-field="type">${label("type", "f-type-task")}<div class="type-toggle kb-type-toggle" role="radiogroup">${TYPES.map((t) => `<button type="button" class="type-opt${d.type === t.key ? " active" : ""}" id="f-type-${t.key}" data-type="${t.key}" role="radio" aria-checked="${d.type === t.key}"><span class="material-symbols-outlined kb-type-${t.key}" aria-hidden="true">${t.icon}</span>${t.label}</button>`).join("")}</div></div>`;
@@ -1780,7 +1786,7 @@ export function mountStaffKanban(ctx) {
     const id = editingComment;
     try { await KBEditor.ready(); } catch (e) { toast("The editor couldn't load. Check your connection and try again."); editingComment = ""; redrawComments(); return; }
     if (!host.isConnected || editingComment !== id) return;
-    editQ = KBEditor.create(host, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Edit your comment", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+    editQ = KBEditor.create(host, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Edit your comment", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.full)}</b> will be notified when you save`) });
     const c = (draft.comments || []).find((x) => x.id === id);
     KBEditor.setHtml(editQ, html != null ? html : (c && (c.html || esc(c.text))) || "");
     editBase = KBEditor.getHtml(editQ);
@@ -1809,10 +1815,10 @@ export function mountStaffKanban(ctx) {
   const commentsHTML = () => {
     const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
     return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(firstName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
+      ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(fullName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
         ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save disabled>Save</button></div>`
         : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`
-      : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(firstName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
+      : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(fullName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
 
   function renderForm() {
@@ -1830,7 +1836,7 @@ export function mountStaffKanban(ctx) {
         <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
       </div>
       ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
-      ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(firstName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
+      ${draftIsNew ? "" : `<p class="kb-created">Created by ${esc(fullName(draft.reporter))} · ${fmtDate(draft.created, { day: "numeric", month: "short", year: "numeric" })}</p>`}
       <p class="tm-error" id="f-error" hidden></p>
       <div class="form-row kb-form-actions">
         ${draftIsNew || !canWrite() ? "<span></span>" : '<button type="button" class="btn-ghost fa-actions-delete" id="f-delete" aria-label="Delete ticket" title="Delete ticket"><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>'}
@@ -2142,12 +2148,12 @@ export function mountStaffKanban(ctx) {
     // The modal may have been closed or re-rendered while Quill loaded.
     if ((d && !d.isConnected) || (c && !c.isConnected)) return;
     if (d) {
-      descQ = KBEditor.create(d, { users: staff(), upload: uploadFor(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you save`) });
+      descQ = KBEditor.create(d, { users: staff(), upload: uploadFor(), placeholder: "Context, steps to reproduce, acceptance criteria. Type @ to mention someone; paste a screenshot straight in.", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.full)}</b> will be notified when you save`) });
       KBEditor.setHtml(descQ, draft.description || "");
       descInitial = KBEditor.getHtml(descQ);
     }
     if (c) {
-      commentQ = KBEditor.create(c, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.first)}</b> will be notified when you add the comment`) });
+      commentQ = KBEditor.create(c, { compact: true, users: staff(), upload: uploadFor(), placeholder: "Add a comment, @mention someone, or tap the mic and talk", onNotice: toast, onMention: (u) => toast(`<b>${esc(u.full)}</b> will be notified when you add the comment`) });
     }
     // Viewers see everything and change nothing.
     if (!canWrite()) [descQ, commentQ].forEach((q) => { if (q) q.enable(false); });
@@ -2160,7 +2166,7 @@ export function mountStaffKanban(ctx) {
     const html = KBEditor.getHtml(commentQ);
     if (!html) return false;
     const mentioned = KBEditor.mentionsIn(html).filter((id) => id !== state.me);
-    const who = mentioned.map(firstName);
+    const who = mentioned.map(fullName);
     const pending = { author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) };
     draft.comments = [...(draft.comments || []), pending];
     redrawComments();
@@ -2525,7 +2531,7 @@ export function mountStaffKanban(ctx) {
           if (JSON.stringify(a == null ? "" : a) !== JSON.stringify(b == null ? "" : b)) patch[k] = b;
         }
         // One line per changed field, with the old and new value (KB-BOARD-5).
-        activity.push(...editActivity(existing, { ...existing, ...patch }, { person: firstName, release: (id) => (release(id) || {}).name || id, project: (id) => projectName(id) || id }));
+        activity.push(...editActivity(existing, { ...existing, ...patch }, { person: fullName, release: (id) => (release(id) || {}).name || id, project: (id) => projectName(id) || id }));
         let ch = null;
         if (newStatus !== existing.status || (newStatus === "done" && newRes !== res(existing))) {
           ch = setStatus({ ...existing, ...patch }, newStatus, { resolution: newRes });
@@ -2544,7 +2550,7 @@ export function mountStaffKanban(ctx) {
         await store.fetchTask(key).catch(() => {});
         toast(`<b>${esc(key)}</b> created in Backlog`);
       }
-      if (notify.length) setTimeout(() => toast(`${esc(notify.map(firstName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
+      if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
     } catch (e) {
       saving = false;
       if (saveBtn) saveBtn.disabled = false;
@@ -2684,7 +2690,7 @@ export function mountStaffKanban(ctx) {
       <div class="kb-filters kb-report-filters">
         ${sel("release", ["Release"], relItems)}
         ${sel("status", ["Status"], opt("outstanding", "Outstanding (not completed)", f.status) + opt("all", "All, including completed / withdrawn", f.status) + STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, f.status)).join("") + RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, f.status)).join(""))}
-        ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + staffList.map((u) => opt(u.id, u.first, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
+        ${sel("assignee", ["Staff member"], opt("", "Everyone", f.assignee) + staffList.map((u) => opt(u.id, u.full, f.assignee)).join("") + opt("none", "Unassigned", f.assignee))}
         ${sel("type", ["Type"], opt("", "All types", f.type) + TYPES.map((t) => opt(t.key, t.label, f.type)).join(""))}
         ${sel("priority", ["Priority"], opt("", "All priorities", f.priority) + PRIORITIES.map((p) => opt(p.key, p.label, f.priority)).join(""))}
         ${sel("sprint", ["Sprint"], opt("", "All sprints", f.sprint) + sprints().map((s) => opt(s.id, s.name, f.sprint)).join(""))}
@@ -2704,8 +2710,8 @@ export function mountStaffKanban(ctx) {
       <section class="docs-block kb-report-block">
         <div class="docs-block-header"><h3>Remaining effort by staff member${tip(capPer ? `Bar length is remaining effort. Capacity assumes 6 focused hours per working day until release: ${fmtH(capPer)} each.` : "Bar length is remaining effort.")}</h3></div>
         <div class="kb-bars" id="rp-bars">
-          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${esc(p.id || "none")}" data-tip="${esc(`${firstName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
-            <span class="kb-bar-name">${avatar(p.id)}${esc(firstName(p.id))}</span>
+          ${rows.filter((p) => p.out.length).map((p) => `<button type="button" class="kb-bar-row" data-person="${esc(p.id || "none")}" data-tip="${esc(`${fullName(p.id)}: ${fmtH(p.rem)} remaining · ${p.out.length} task${p.out.length === 1 ? "" : "s"}${capPer && p.id ? ` · ${Math.round((p.rem / capPer) * 100)}% of capacity` : ""}`)}">
+            <span class="kb-bar-name">${avatar(p.id)}${esc(fullName(p.id))}</span>
             <span class="kb-bar-track">${capPer && p.id ? `<span class="kb-bar-cap" style="left:${(capPer / scale) * 100}%"></span>` : ""}<span class="kb-bar-fill" style="width:${(p.rem / scale) * 100}%"></span></span>
             <span class="kb-bar-val">${fmtH(p.rem)}</span>
           </button>`).join("") || '<p class="empty-hint">No outstanding tasks</p>'}
@@ -2719,7 +2725,7 @@ export function mountStaffKanban(ctx) {
           <table class="archive-table kb-table">
             <thead><tr><th>Staff member</th><th class="num">Tasks</th>${statusCols.map((s) => `<th class="num">${esc(s.short)}</th>`).join("")}<th class="num">Estimate</th><th class="num">Logged</th><th class="num">Remaining</th>${capPer ? "<th>Capacity</th>" : ""}</tr></thead>
             <tbody>
-              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${esc(p.id || "none")}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(firstName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
+              ${rows.map((p) => `<tr class="kb-click-row${f.assignee === (p.id || "none") ? " kb-row-on" : ""}" data-person="${esc(p.id || "none")}"><td><span class="kb-person-cell">${avatar(p.id)}${esc(fullName(p.id))}</span></td><td class="num">${p.tasks.length}</td>${statusCols.map((s) => `<td class="num${p.byStatus[s.key] ? "" : " kb-zero"}">${p.byStatus[s.key] || "–"}</td>`).join("")}<td class="num">${fmtH(p.est)}</td><td class="num">${fmtH(p.log)}</td><td class="num"><b>${fmtH(p.rem)}</b></td>${capPer ? `<td>${capState(p)}</td>` : ""}</tr>`).join("") || `<tr><td colspan="${6 + statusCols.length}" class="empty-hint">No tasks match these filters</td></tr>`}
             </tbody>
             ${rows.length ? `<tfoot><tr><td><b>Total</b></td><td class="num"><b>${filtered.length}</b></td>${statusCols.map((s) => `<td class="num"><b>${filtered.filter(s.match).length || "–"}</b></td>`).join("")}<td class="num"><b>${fmtH(totalEst)}</b></td><td class="num"><b>${fmtH(totalLog)}</b></td><td class="num"><b>${fmtH(totalRem)}</b></td>${capPer ? "<td></td>" : ""}</tr></tfoot>` : ""}
           </table>
@@ -2732,7 +2738,7 @@ export function mountStaffKanban(ctx) {
           <table class="archive-table kb-table">
             <thead><tr><th>Task</th><th>Status</th><th>Priority</th><th>Sprint</th><th>Due</th><th class="num">Estimate</th><th class="num">Logged</th><th class="num">Remaining</th></tr></thead>
             <tbody>
-              ${rows.map((p) => `<tr class="kb-group-row"><td colspan="8"><span class="kb-person-cell">${avatar(p.id)}<b>${esc(firstName(p.id))}</b><span class="kb-none">${p.tasks.length} task${p.tasks.length === 1 ? "" : "s"} · ${fmtH(p.rem)} remaining</span></span></td></tr>` +
+              ${rows.map((p) => `<tr class="kb-group-row"><td colspan="8"><span class="kb-person-cell">${avatar(p.id)}<b>${esc(fullName(p.id))}</b><span class="kb-none">${p.tasks.length} task${p.tasks.length === 1 ? "" : "s"} · ${fmtH(p.rem)} remaining</span></span></td></tr>` +
                 p.tasks.slice().sort((a, b) => STATUSES.findIndex((s) => s.key === a.status) - STATUSES.findIndex((s) => s.key === b.status) || a.rank - b.rank).map((t) => {
                   const overdue = t.due && t.status !== "done" && daysBetween(t.due, today()) < 0;
                   const pr = prioOf(t.priority), ty = typeOf(t.type);
@@ -2815,8 +2821,8 @@ export function mountStaffKanban(ctx) {
           ${admin ? `<div class="kb-add-row kb-sprint-add"><input type="text" class="kb-input" id="st-sprint-name" placeholder="Sprint name" maxlength="80" aria-label="Sprint name"><input type="date" class="kb-input" id="st-sprint-start" aria-label="Start date"><input type="date" class="kb-input" id="st-sprint-end" aria-label="End date"><button type="button" class="btn-ghost" id="st-sprint-add">Add sprint</button></div>` : ""}
         </section>
         <section class="docs-block">
-          <div class="docs-block-header"><h3>Team${tip("Everyone added under User Management → Users appears in the assignee list by first name. Each person sets their own photo from the profile menu (Upload photo); an admin can set anyone's under User Management → Users.")}</h3></div>
-          <ul class="kb-team">${people().map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.first)}</b><span class="kb-none">${esc(u.full)}</span></span><span class="kb-none kb-team-email">${esc(u.email)}</span>${admin ? `<label class="kb-team-name"><span class="kb-none">Shown as</span><input type="text" class="kb-input" data-first-for="${esc(u.id)}" value="${esc(u.first)}" maxlength="40" aria-label="${esc(u.full)} is shown as"></label>` : ""}</li>`).join("")}</ul>
+          <div class="docs-block-header"><h3>Team${tip("Everyone added under User Management → Users appears in the assignee list by full name (first name, last name). The short name is what typing after @ and the voice fill match; it is not shown as their name. Each person sets their own photo from the profile menu (Upload photo); an admin can set anyone's under User Management → Users.")}</h3></div>
+          <ul class="kb-team">${people().map((u) => `<li>${avatar(u.id)}<span><b>${esc(u.full)}</b></span><span class="kb-none kb-team-email">${esc(u.email)}</span>${admin ? `<label class="kb-team-name"><span class="kb-none">Short name</span><input type="text" class="kb-input" data-first-for="${esc(u.id)}" value="${esc(u.first)}" maxlength="40" aria-label="Short name for ${esc(u.full)}"></label>` : ""}</li>`).join("")}</ul>
         </section>
       </div>`;
     const saveS = (patch, msg) => store.saveSettings(patch).then(() => toast(msg)).catch(fail);
@@ -2839,7 +2845,7 @@ export function mountStaffKanban(ctx) {
       const v = inp.value.trim();
       const firstNames = { ...(store.state.settings.firstNames || {}) };
       if (v) firstNames[inp.dataset.firstFor] = v; else delete firstNames[inp.dataset.firstFor];
-      saveS({ firstNames }, v ? `Shown as <b>${esc(v)}</b>` : "Name reset");
+      saveS({ firstNames }, v ? `Short name is <b>${esc(v)}</b>` : "Short name reset");
     }));
     const add = $("#st-sprint-add");
     if (add) add.addEventListener("click", () => {

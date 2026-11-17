@@ -42,8 +42,9 @@ external (non-member) users.
 | Viewer | role `viewer` | read the board and report only |
 | Tester | the ticket's designated tester, else the person who moves it picks | receives the task moved to Ready for Testing; there is no board-wide default (Rob is never assigned automatically) |
 
-People are shown by **first name** everywhere (from `consoleUsers.displayName`,
-first word), with their profile photo or initials (KB-PPL-2).
+People are shown by **full name** everywhere: first name and last name as
+saved in Users, else their display name (KB-PPL-1), with their profile photo
+or initials (KB-PPL-2).
 
 ## 3. Navigation and shell
 
@@ -186,7 +187,7 @@ the mentions bell panel opens inside the window (KB-NAV-2).
 ## 5. Filters and swimlanes
 
 **KB-FLT-1 Primary filters** (always visible, pinned): staff avatars (multi-
-select, first names, "Unassigned"), **My tasks**, **Release**. **Secondary**
+select, full names, "Unassigned"), **My tasks**, **Release**. **Secondary**
 in a **Filters** menu: Flagged only, Type, Priority, Sprint, Project, Label; the
 button shows how many secondary filters are on. The Project filter is kept in the
 address (`#staff-kanban?project=<id>`), so a reload or a shared link keeps it. Search sits in the page header and
@@ -206,7 +207,7 @@ can be told apart at a glance. Switching it off returns it to 28 px. KB-C21.
 
 **KB-LANE-1 Swimlanes.** Selecting one or more staff splits the board into one
 lane per selected person (Jira's "swimlanes by assignee"), each with a full-
-width header (photo, first name, count, remaining effort) that expands or
+width header (photo, full name, count, remaining effort) that expands or
 collapses its row; Expand all / Collapse all. The header of the lane being
 scrolled through is pinned under the column headers. Dragging a card into
 another person's lane reassigns it. On a phone every lane shows the current
@@ -480,9 +481,26 @@ read settings; only admins change them.
 
 ## 10. People and photos
 
-**KB-PPL-1** Assignee lists show every console member by first name: the first
-word of their console name, or the "Shown as" name an admin sets in Kanban
-settings → Team (for names where the given name comes last, e.g. Lê Quang Huy → Huy).
+**KB-PPL-1** Every console member is shown by **full name** wherever a person
+is named: `consoleUsers.firstName` + `lastName` (Users, or the profile menu's
+Save name), else the display name, else the part of the address before the @.
+That covers the staff filter chips and their tooltips, swimlane headers, card
+avatars' tooltips, the Assignee, Reporter and "Who will test" lists, comment
+and activity authors, "Created by", the report (rows, bars and its Staff
+member filter), toasts, the notification bell ("Lê Quang Huy mentioned you in
+a comment"), new @mention chips, and the notes and notification text the
+server and the MCP tools write (`assigneeName`, `fromName`, "reassigned to …
+for testing"). Lists are in full-name order, the signed-in person first.
+(17 Nov 2026: people were shown by first name before, which did not say which
+staff member was meant. A mention or activity note written before then keeps
+the name it was saved with.) An admin can give someone a **short name** in
+Kanban settings → Team (for names where the given name comes last, e.g. Lê
+Quang Huy → Huy; stored in `kanbanSettings/main.firstNames`). The short name
+is what typing after @ and the voice fill match ("assign it to Huy") and the
+`name` agents get over MCP; it is never shown as the person's name. AC: with
+the short name "Huy" set for Lê Quang Huy, his filter chip, cards, comments
+and notifications all read "Lê Quang Huy", and typing "@huy" offers "Lê Quang
+Huy".
 Members come from `memberDirectory`, a copy of `consoleUsers` without roles kept
 by a Cloud Function, since the full member list is admin-only.
 **KB-PPL-3** One person, one entry. An alias (`PERSON_ALIASES` in
@@ -503,7 +521,7 @@ name saved in Users (`consoleUsers.firstName` / `lastName`, carried into
 `memberDirectory` by `syncMemberDirectory`), else of the first two words of the
 display name, else the first letter of the address — the same rule as the
 Users page (`initialOf()` in `public/js/avatar.js`). A Kanban short name
-(Settings → first names) changes the label, not the initials. (12 Nov 2026:
+(Settings → Team) changes neither the name shown nor the initials. (12 Nov 2026:
 the board used to show only the first letter of the short name.) AC: a member
 saved as Minh / Nguyen shows "MN" on their cards, the people filter and their
 comments; a member with only the display name "Lê Quang Huy" shows "LQ".
@@ -520,8 +538,8 @@ unknown one is refused with every other validation error, and `""` clears it;
 `kanban_list_tasks` filters on it (pushed into the query), `kanban_get_task`
 returns it with `projectName`, and `kanban_list_people` lists the projects.
 
-**KB-NAME-1 Staff names and pronunciation (agents only).** Every member has the board's
-spelling, a full name and a pronunciation hint (a plain-English sound-alike). The pronunciation is
+**KB-NAME-1 Staff names and pronunciation (agents only).** Every member has a short name
+(the spelling agents use), the full name the board shows and a pronunciation hint (a plain-English sound-alike). The pronunciation is
 stored only in the server-only `staffPronunciations/{email}` collection and is **never shown in the
 UI**: not on the board, a profile (the member's own included) or settings, and it is not on
 `memberDirectory`. Agents read it over MCP (`kanban_list_people`, `kanban_get_staff_names`) and an

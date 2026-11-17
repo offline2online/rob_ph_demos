@@ -50,6 +50,11 @@ When you change any prototype CSS or JS file, bump the `?v=` on its link in
 minutes. The prototype keeps changes in the viewer's own `localStorage`;
 **Kanban settings (cog) → Reset demo data** puts the mock data back.
 
+**Names (17 Nov 2026):** the console shows everyone by full name (first name
+and last name) on the board, in comments and in notifications
+(`REQUIREMENTS.md` KB-PPL-1). The prototype still shows its mock team by first
+name; the shared test cases ask each suite for the name it shows (`E.person`).
+
 ## Which board is for what
 
 Staff Kanban is for staff tasks only: work a human staff member does. Work for
