@@ -108,5 +108,22 @@ test("MCP.md gives the install commands with the real marketplace and plugin nam
   assert.ok(md.includes(`/${manifest.name}:status`));
 });
 
+test("the console's Connect your AI agent screen shows and copies the same install commands", () => {
+  const add = "/plugin marketplace add offline2online/rob_ph_demos";
+  const installCmd = `/plugin install ${manifest.name}@${market.name}`;
+  const html = fs.readFileSync(path.join(BT, "public", "index.html"), "utf8");
+  const shown = /<code id="mcp-plugin-commands">([\s\S]*?)<\/code>/.exec(html);
+  assert.ok(shown, "the screen has the plugin commands");
+  assert.deepStrictEqual(shown[1].split("<br>"), [add, installCmd]);
+  assert.ok(html.includes(`<code>/${manifest.name}:status</code>`));
+  assert.ok(html.includes(`<code id="mcp-url">${servers.console.url}</code>`), "the by-hand URL is the plugin's URL");
+  assert.ok(html.includes('id="mcp-plugin-copy-btn"') && html.includes('id="mcp-copy-btn"'));
+  const js = fs.readFileSync(path.join(BT, "public", "js", "app.js"), "utf8");
+  const copied = /const MCP_PLUGIN_COMMANDS = "([^"]+)";/.exec(js);
+  assert.ok(copied, "app.js has the commands the button copies");
+  assert.deepStrictEqual(copied[1].split("\\n"), [add, installCmd]);
+  assert.ok(js.includes('getElementById("mcp-plugin-copy-btn")'));
+});
+
 console.log(`\n${passed} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);
