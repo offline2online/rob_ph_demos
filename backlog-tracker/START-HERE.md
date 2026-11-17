@@ -36,12 +36,13 @@ The documents on the console, in the order they list:
 Every copy, by the exact name the console lists it under:
 
 - 0 — Start here: reading order, ticket flow and deploy map · `backlog-tracker/START-HERE.md`
-- 1 — Project rules, CLAUDE.md (1/6): site, WordPress MCP, deploys, help centre · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (2/6): two projects, one repo; board basics · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (3/6): linking projects, columns · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (4/6): the train, release groups, board access · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (5/6): MCP server, project header, Docs page, archive · `CLAUDE.md`
-- 1 — Project rules, CLAUDE.md (6/6): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (1/7): site, WordPress MCP, deploys, help centre · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (2/7): two projects, one repo; board basics · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (3/7): linking projects, columns · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (4/7): the train, release groups, board access · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (5/7): MCP server, Support Inbox, project header · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (6/7): iPad rules, Docs page, archive, categories · `CLAUDE.md`
+- 1 — Project rules, CLAUDE.md (7/7): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
 - 2 — Console MCP guide (1/8): connect an agent, add a member · `backlog-tracker/MCP.md`
 - 2 — Console MCP guide (2/8): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
 - 2 — Console MCP guide (3/8): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
@@ -74,8 +75,8 @@ Where to begin, by role:
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
 - **Building tickets or changing the pipeline**: the ticket flow below, then
-  "1 — Project rules, CLAUDE.md (4/6)" (the train) and "(5/6)" (the MCP
-  server and the board's screens).
+  "1 — Project rules, CLAUDE.md (4/7)" (the train), "(5/7)" (the MCP
+  server and the board's screens) and "(6/7)" (the iPad rules).
 
 ## The ticket flow
 
