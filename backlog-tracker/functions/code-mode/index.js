@@ -23,7 +23,9 @@ const makeLib = require("./insights/_lib");
 // ── The allow-list ───────────────────────────────────────────────────────
 // Read-only tools a script may call. Adding a name here is the whole act of
 // exposing it — and it is refused at load time unless that tool is a
-// board.read tool with no role requirement (assertAllowList below).
+// board.read tool (assertAllowList below). Which of them one caller's script
+// actually gets is decided per call by mayUse(): the same scope and role
+// test tools/call applies, so a script has the caller's tools and no more.
 // `args` / `returns` are the compact signatures describe_script_tools prints;
 // test/code-mode.test.js checks every argument named here exists in the real
 // tool's inputSchema, so a signature cannot drift from the tool.
@@ -66,6 +68,22 @@ const SCRIPT_TOOLS = [
     returns: "{ matched: number; results: Array<{ key: string; title: string; type: string; status: string; matchedIn: \"title\" | \"description\" }> }" },
   { name: "kanban_release_report", args: "{ release?: string /* id or \"all\"; default the current release */; assignee?: string; status?: string }",
     returns: "{ release: string; releaseName: string; releaseDate: string | null; workingDaysLeft: number | null; outstanding: number; completed: number; withdrawn: number; flagged: number; remaining: string; logged: string; estimate: string; withoutEstimate: number; capacityPerPerson: string | null; byPerson: Array<{ assignee: string | null; name: string; tasks: number; outstanding: number; remaining: string; overCapacity: boolean | null }>; truncated: boolean }" },
+  { name: "kanban_get_staff_names", args: "{}",
+    returns: "{ staff: Array<{ email: string; name: string; fullName: string | null; pronunciation: string | null }>; rule: string; pronunciationNeeded?: Array<{ email: string; name: string }> }",
+    note: "How each member's name is spelled and said." },
+  // Prospects (TAM)
+  { name: "list_prospects", args: "{ q?: string; industry?: string; country?: string; priority?: string; market?: string; awsRegion?: string; campaign?: string; sizeBand?: string; status?: string; minStores?: number; maxStores?: number; limit?: number /* max 1000, default 200 */ }",
+    returns: "{ total: number; count: number; prospects: Array<{ id: string; company: string; country: string | null; priority: string | null; industry: string | null; subIndustry: string | null; hqCountry: string | null; markets: string[]; website: string | null; storeCount: number | null; sizeBand: string | null; vendors: string[]; campaigns: string[]; status: string; statusLabel: string; leadId: string | null; contacts: object[]; insights: string | null; awsRegion: string | null }> }",
+    note: "The target-company database. Records are large: count and group, don't return them whole." },
+  // Skills library
+  { name: "list_skills", args: "{}",
+    returns: "{ matched: number; skills: Array<{ id: string; name: string; slug: string; summary: string; version: string; owningTeam: string | null; fileCount: number; updatedAt: string | null; reviewDue?: boolean }> }" },
+  { name: "get_skill", args: "{ skillId?: string; slug?: string }",
+    returns: "{ id: string; name: string; slug: string; summary: string; version: string; owningTeam: string | null; files: Array<{ path: string; content: string }>; createdByEmail: string | null; updatedByEmail: string | null; createdAt: string | null; updatedAt: string | null; missCount: number; reviewDue?: boolean }",
+    note: "One skill with every file. Pass skillId or slug." },
+  { name: "list_skill_misses", args: "{ skillId?: string; slug?: string }",
+    returns: "{ skillId: string; slug: string; name: string; matched: number; misses: Array<{ at: string | null; [field: string]: unknown }> }",
+    note: "Newest first. Pass skillId or slug." },
   // Help centre
   { name: "search_faq", args: "{ query: string; limit?: number /* max 25, default 8 */; includeDrafts?: boolean; release?: string }",
     returns: "{ matched: number; results: Array<{ id: string; title: string; summary: string; docType: string | null; category: string | null; slug: string | null; status: string; hiddenFromWebsite: boolean }> }" },
@@ -82,7 +100,8 @@ const SHARED_TYPES = [
   "type KanbanTask = { key: string; type: string; title: string; status: string; statusLabel: string; resolution: string | null; priority: string | null; flagged: boolean; assignee: string | null; assigneeName: string | null; release: string | null; sprint: string | null; project: string | null; epic: string | null; estimate: string | null; logged: string | null; remaining: string | null; due: string | null; labels: string[] };",
 ];
 
-function describeText() {
+function describeText(names) {
+  const shown = SCRIPT_TOOLS.filter((t) => !names || names.includes(t.name));
   const L = sandbox.LIMITS;
   const lines = [
     "// run_script: `code` is the body of an async function (tools, params). Use await; `return` a",
@@ -97,7 +116,7 @@ function describeText() {
     "",
     "declare const tools: {",
   ];
-  for (const t of SCRIPT_TOOLS) {
+  for (const t of shown) {
     if (t.note) lines.push(`  /** ${t.note} */`);
     lines.push(`  ${t.name}(args${t.args === "{}" ? "?" : /^\{ \w+: /.test(t.args) ? "" : "?"}: ${t.args}): Promise<${t.returns}>;`);
   }
@@ -152,9 +171,9 @@ function insightParams(def, given) {
 }
 
 // ── The tools ────────────────────────────────────────────────────────────
-// deps: { textResult, toolError, db, FieldValue, logger, getTool(name) }
+// deps: { textResult, toolError, db, FieldValue, logger, getTool(name), atLeast(role, needed) }
 function codeModeTools(deps) {
-  const { textResult, toolError, db, FieldValue, logger, getTool } = deps;
+  const { textResult, toolError, db, FieldValue, logger, getTool, atLeast } = deps;
 
   // Refuse to expose anything that is not a plain read tool. Called on first
   // use (the registry is still being built when this module loads).
@@ -164,17 +183,32 @@ function codeModeTools(deps) {
     for (const name of SCRIPT_TOOL_NAMES) {
       const tool = getTool(name);
       if (!tool) throw new Error(`Code Mode allow-list names ${name}, which is not a tool.`);
-      if (tool.scope !== "board.read" || tool.role || tool.destructive) throw new Error(`Code Mode allow-list names ${name}, which is not a plain read-only tool.`);
+      if (tool.scope !== "board.read" || tool.destructive) throw new Error(`Code Mode allow-list names ${name}, which is not a read-only tool.`);
     }
     checked = true;
   }
+
+  // May this caller use this tool? The rule tools/call applies in
+  // mcp-server.js, re-stated here so a script is held to it call by call: a
+  // write tool needs the board.write scope (which a viewer's token never
+  // carries), and a tool with a role needs at least that role. On top of
+  // that, a script only ever gets allow-listed read tools.
+  function mayUse(session, name) {
+    const tool = getTool(name);
+    if (!tool || !SCRIPT_TOOL_NAMES.includes(name) || tool.scope !== "board.read") return false;
+    const scopes = Array.isArray(session.scopes) ? session.scopes : [];
+    if (tool.scope === "board.write" && !scopes.includes("board.write")) return false;
+    if (tool.role && !atLeast(session.role, tool.role)) return false;
+    return true;
+  }
+  const toolsFor = (session) => SCRIPT_TOOL_NAMES.filter((name) => mayUse(session, name));
 
   // One proxied call: the existing tool's own run(), with the caller's own
   // session. Returns the tool's JSON payload; throws an Error whose message
   // is safe to hand to the script.
   async function callAsCaller(session, name, args) {
     const tool = getTool(name);
-    if (!tool || !SCRIPT_TOOL_NAMES.includes(name) || tool.scope !== "board.read" || tool.role) throw new Error(`${name} is not available to scripts.`);
+    if (!mayUse(session, name)) throw new Error(`${name} is not available to ${session.role || "this role"} scripts.`);
     let result;
     try {
       result = await tool.run(args, session);
@@ -204,7 +238,7 @@ function codeModeTools(deps) {
   async function execute(session, kind, source, opts, auditExtra) {
     assertAllowList();
     const outcome = await sandbox.runInSandbox(source, Object.assign({
-      toolNames: SCRIPT_TOOL_NAMES,
+      toolNames: toolsFor(session),
       callTool: (name, args) => callAsCaller(session, name, args),
     }, opts));
     const max = sandbox.LIMITS.MAX_SOURCE_BYTES;
@@ -258,9 +292,10 @@ function codeModeTools(deps) {
       description: "The tools a run_script program may call, as compact TypeScript signatures, with the sandbox's limits and an example. Read this before writing a script instead of loading every tool's schema.",
       scope: "board.read",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
-      async run() {
+      async run(args, session) {
         assertAllowList();
-        return textResult(describeText());
+        // Only what this caller's role may call — the same set their script gets.
+        return textResult(describeText(toolsFor(session)));
       },
     },
     {

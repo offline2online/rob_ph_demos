@@ -1019,14 +1019,25 @@ script can call these existing read tools and nothing else:
 - Agent board: `list_projects`, `list_backlog_items`, `get_backlog_item`, `get_pipeline_health`
 - Concepts: `list_concepts`, `get_concept`
 - Leads: `list_leads`, `get_lead`
-- Staff Kanban and releases: `kanban_list_people`, `kanban_list_tasks`, `kanban_get_task`, `kanban_search_tickets`, `kanban_release_report`
+- Staff Kanban and releases: `kanban_list_people`, `kanban_get_staff_names`, `kanban_list_tasks`, `kanban_get_task`, `kanban_search_tickets`, `kanban_release_report`
+- Prospects: `list_prospects`
+- Skills library: `list_skills`, `get_skill`, `list_skill_misses`
 - Help centre: `search_faq`, `get_faq_article`, `list_faq_categories`
 
 There are no write tools in a script. Each call is the existing tool's own
 code, run with the caller's own session, so a script reads exactly what its
-caller could read one call at a time. A name on the list that is not a
-`board.read` tool with no role requirement is refused, at load and again on
-every call.
+caller could read one call at a time.
+
+**Scoped to the caller's role.** A script's `tools` object holds only the
+allow-listed tools the caller's own role may call, decided by the same test
+`tools/call` applies: a write tool needs the `board.write` scope, which a
+viewer's token never carries, and a tool that names a role needs at least
+that role. Today every allow-listed tool is open to all members, so viewers,
+editors and admins get the same set. If one of them is later restricted to a
+role, it leaves the scripts of everyone below that role, `describe_script_tools`
+stops listing it for them, and an insight that needs it fails for them. The
+check runs when the script starts and again on each call. A tool that is not
+`board.read` cannot be put on the list at all.
 
 **Limits.** Over a limit is an error, never a silent cut.
 

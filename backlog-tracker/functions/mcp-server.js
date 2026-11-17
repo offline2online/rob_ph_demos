@@ -5608,7 +5608,7 @@ TOOLS.push(...prospects.prospectsTools({ textResult, toolError, audit }));
 // Code Mode (functions/code-mode): run_script / describe_script_tools /
 // get_insight / list_insights. A script calls the read tools above through
 // getTool, each with the caller's own session; nothing above is changed.
-TOOLS.push(...codeMode.codeModeTools({ textResult, toolError, db, FieldValue, logger, getTool: (name) => TOOLS_BY_NAME.get(name) }));
+TOOLS.push(...codeMode.codeModeTools({ textResult, toolError, db, FieldValue, logger, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) }));
 const TOOLS_BY_NAME = new Map(TOOLS.map((t) => [t.name, t]));
 
 // ══════════════════════════════════════════════════════════════════════════

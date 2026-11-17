@@ -158,7 +158,7 @@ function seed() {
       const t = toolByName(n);
       assert.ok(t, `${n} exists`);
       assert.strictEqual(t.scope, "board.read", `${n} is a read tool`);
-      assert.ok(!t.role && !t.destructive, `${n} has no role requirement`);
+      assert.ok(!t.destructive, `${n} is not destructive`);
       assert.ok(!WRITE_TOOLS.includes(n));
     }
     for (const n of ["run_script", "get_insight", "describe_script_tools", "list_insights"]) assert.ok(!codeMode.SCRIPT_TOOL_NAMES.includes(n), "a script cannot start a script");
@@ -285,7 +285,7 @@ function seed() {
 
   // ── Identity and role ──────────────────────────────────────────────────
   await test("a script has no write tool, no admin tool and no un-listed read tool — as a viewer or as an admin", async () => {
-    const probe = `return { names: Object.keys(tools).sort(), write: ${JSON.stringify(WRITE_TOOLS)}.filter((n) => n in tools), other: ["whoami", "get_project_docs", "list_prospects", "get_skill", "get_routine_setup_instructions", "run_script", "get_insight"].filter((n) => n in tools) };`;
+    const probe = `return { names: Object.keys(tools).sort(), write: ${JSON.stringify(WRITE_TOOLS)}.filter((n) => n in tools), other: ["whoami", "get_project_docs", "get_routine_setup_instructions", "kanban_my_work", "run_script", "get_insight"].filter((n) => n in tools) };`;
     for (const token of [kit, ada]) {
       const r = await script(token, probe);
       assert.deepStrictEqual(r.json.result.names, codeMode.SCRIPT_TOOL_NAMES.slice().sort());
@@ -358,13 +358,81 @@ function seed() {
     assert.strictEqual(env.store.col("scriptRuns").size, runs, "nothing ran");
   });
 
-  await test("if a tool on the allow-list stopped being a plain read tool, scripts lose it at once", async () => {
+  await test("staff names, skills and prospects are readable from a script", async () => {
+    env.store.col("skills").set("sk1", { name: "PH Designer", slug: "ph-designer", summary: "The design system.", version: "3", files: [{ path: "SKILL.md", content: "# PH Designer" }], misses: [{ text: "Wrong icon set", at: ago(3) }], updatedAt: ago(4) });
+    env.store.col("prospects").set("pr1", { name: "Globex Retail", country: "United Kingdom", industry: "Grocery", storeCount: 420 });
+    env.store.col("prospects").set("pr2", { name: "Initech Stores", country: "Australia", industry: "Grocery", storeCount: 35 });
+    const r = await script(kit, `
+      const [names, skills, prospects] = await Promise.all([tools.kanban_get_staff_names({}), tools.list_skills({}), tools.list_prospects({})]);
+      const skill = await tools.get_skill({ slug: "ph-designer" });
+      const misses = await tools.list_skill_misses({ skillId: skill.id });
+      return { staff: names.staff.map((x) => x.name).filter((n) => n !== 'Gone').sort(), skills: skills.skills.map((x) => x.slug), files: skill.files.map((f) => f.path), misses: misses.matched,
+        prospects: prospects.total, byCountry: prospects.prospects.map((p) => p.country).sort() };`);
+    assert.ok(!r.isError, r.text);
+    assert.deepStrictEqual(r.json.result, { staff: ["Ada", "Kit", "Sam"], skills: ["ph-designer"], files: ["SKILL.md"], misses: 1, prospects: 2, byCountry: ["Australia", "United Kingdom"] });
+  });
+
+  await test("a tool with a role requirement is in a script only for callers who hold that role", async () => {
     const t = toolByName("list_leads");
     t.role = "admin";
     try {
-      const r = await script(ada, "try { return await tools.list_leads({}); } catch (e) { return e.message; }");
-      assert.strictEqual(r.json.result, "list_leads is not available to scripts.");
+      const probe = "return { has: 'list_leads' in tools, n: Object.keys(tools).length };";
+      const full = codeMode.SCRIPT_TOOL_NAMES.length;
+      assert.deepStrictEqual((await script(ada, probe)).json.result, { has: true, n: full });
+      assert.deepStrictEqual((await script(sam, probe)).json.result, { has: false, n: full - 1 });
+      assert.deepStrictEqual((await script(kit, probe)).json.result, { has: false, n: full - 1 });
+      assert.strictEqual((await script(ada, "return (await tools.list_leads({})).total;")).json.result, 5);
+      // The description each caller sees is the set their own script gets.
+      assert.ok((await tool(ada, "describe_script_tools")).text.includes("  list_leads(args"));
+      assert.ok(!(await tool(sam, "describe_script_tools")).text.includes("  list_leads(args"));
+      // An insight that needs the tool fails for them the same way the tool itself would.
+      const viaInsight = await insight(sam, "leads_summary");
+      assert.ok(viaInsight.isError);
+      assert.ok(!viaInsight.text.includes("Northwind"));
+      assert.ok((await tool(sam, "list_leads")).isError, "and the direct call is refused too");
+      assert.ok(!(await insight(ada, "leads_summary")).isError);
     } finally { delete t.role; }
+    // A write tool can never be exposed, whatever the role: the allow-list refuses to load it.
+    const w = toolByName("list_leads");
+    w.scope = "board.write";
+    try {
+      const r = await script(ada, "return 'list_leads' in tools;");
+      assert.strictEqual(r.json.result, false);
+    } finally { w.scope = "board.read"; }
+  });
+
+  await test("every MCP tool is held to the caller's role: a viewer runs no write tool, an editor no admin tool", async () => {
+    const snapshot = () => JSON.stringify([...env.store.data].filter(([name]) => !/^mcp|^scriptRuns$/.test(name)).map(([name, docs]) => [name, [...docs]]));
+    const before = snapshot();
+    const writeTools = TOOLS.filter((t) => t.scope === "board.write");
+    const roleTools = TOOLS.filter((t) => t.role);
+    assert.ok(writeTools.length > 40 && roleTools.length >= 7);
+    for (const t of TOOLS) assert.ok(t.scope === "board.read" || t.scope === "board.write", `${t.name} declares a scope`);
+    // Viewer: every write tool is refused before it runs.
+    for (const t of writeTools) {
+      const r = await tool(kit, t.name, {});
+      assert.ok(r.isError, `${t.name} ran for a viewer`);
+      assert.match(r.text, /read-only access/, `${t.name}: ${r.text}`);
+    }
+    // Editor: every tool that names a higher role is refused before it runs.
+    for (const t of roleTools) {
+      const r = await tool(sam, t.name, {});
+      assert.ok(r.isError, `${t.name} ran for an editor`);
+      assert.match(r.text, new RegExp(`requires the ${t.role} role`), `${t.name}: ${r.text}`);
+    }
+    assert.strictEqual(snapshot(), before, "nothing was written");
+    // What a viewer is shown matches what a viewer can do.
+    const listed = (await rpc(kit, "tools/list")).body.result.tools;
+    for (const t of writeTools) assert.match(listed.find((x) => x.name === t.name).description, /Unavailable: this connection is read-only/);
+    // And a script is the same set, narrowed to reads: nothing a role lacks appears in it.
+    for (const [token, email] of [[kit, KIT], [sam, SAM], [ada, ADA]]) {
+      const names = (await script(token, "return Object.keys(tools);")).json.result;
+      for (const n of names) {
+        const direct = await rpc(token, "tools/call", { name: n, arguments: {} });
+        const text = direct.body.result.content[0].text;
+        assert.ok(!/read-only access|requires the \w+ role/.test(text), `${email}'s script has ${n}, which ${email} may not call`);
+      }
+    }
   });
 
   // ── Audit ──────────────────────────────────────────────────────────────
