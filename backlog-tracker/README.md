@@ -3180,6 +3180,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
+| `functions/aidan-core.js` | Aidan's rules, pure: the `@Aidan` tag, `decideAidan` (all three conditions), the sender check (Gmail's SPF/DKIM/DMARC verdict), reply-all recipients, the email with the document attached |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request, choosing the skill, reading attachments, writing the document and replying to everyone, or keeping the email for a skill (`skillReferences`); `POST /v1/aidan` for the allowed senders |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
@@ -3196,6 +3198,40 @@ An email to two aliases is in both tabs; one that names none, and every
 ticket from before the tabs, is in Support Inbox. The Dashboard's Support
 tile counts the Support Inbox only, and only a Support
 Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
+
+**Aidan, the agent mailbox (17 Nov 2026).** aidan@ acts as Rob's assistant.
+An email in the Aidan tab starts a run only when all three hold: it is in
+the Aidan tab (aidan@ in To or Cc), it was written by one of the **allowed
+senders**, and its new text (not a quoted earlier email) tags `@Aidan` with
+an instruction ("@Aidan, send the AWS onboarding pack for client X"). A
+plain Cc, a tag from anyone else, and machine-sent mail do nothing: the
+email just sits in the tab (a refused tag shows "Aidan: no action" and why).
+Only the author of the tag counts, never who started the thread. A run:
+
+- checks again that the sender is allowed and that Gmail verified the From
+  address (SPF, DKIM or DMARC pass in `Authentication-Results`; a forged
+  From does nothing);
+- picks the skill from the skills library (named in the instruction, or
+  chosen by Claude from the list; none fitting goes to a person);
+- **write** ("send", "write", "draft" …): writes the documentation with
+  that skill from the email, its attachments (text, PDF and images are
+  read; up to 8 files, 20 MB) and the skill's kept reference material, and
+  replies to everyone on the email (the sender in To, everyone they copied
+  in Cc, never our own addresses) from the mailbox as "Aidan", with the
+  document attached as a Markdown file. No approval step. The reply is on
+  the thread in the Aidan tab;
+- **store** ("store", "keep", "save … for the X skill"): keeps the email
+  and its attachments as reference material for that skill
+  (`skillReferences`, PDFs and images in Storage under `skill-references/`),
+  used by every later run of the skill, and marks the ticket **Ingested**.
+  It emails no one.
+
+Runs happen in the scheduled sync (one per sync, since a run takes
+minutes), not in "Sync now". **The allowed senders are configuration, never
+the repository**: an admin sets them in Settings › Support inbox › Aidan;
+they are stored in `supportSecrets/aidan` (closed to every client by
+`firestore.rules`) and are only ever shown masked. With none set, Aidan acts
+on nothing. Requirements: SUP-AID-1 to 10.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

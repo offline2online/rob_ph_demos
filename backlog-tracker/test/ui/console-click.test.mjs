@@ -3601,6 +3601,42 @@ const scenarios = [
       await c.visible("#support-page .support-row");
     },
   },
+  {
+    // EeAljfWIiY8SOPsKXlXD: Aidan, the agent mailbox. A tagged request from an
+    // allowed sender is answered with documentation sent to everyone on the
+    // email; a "store this" request is marked Ingested; a refused tag says why.
+    name: "Support Inbox: Aidan's replies and ingested requests show in the Aidan tab",
+    hash: "#support/aidan?queue=all",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: "owner@example.com", customerName: "Owner Person", status: "resolved", resolvedBy: "aidan", inboxes: ["aidan"], createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        r1: tk(1, { subject: "Kestrel onboarding", aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "aws-onboarding-pack-kestrel.md" }, recipients: 3 } }),
+        g1: tk(2, { subject: "Notes for the pack", aidan: { status: "ingested", kind: "store", skillName: "AWS onboarding pack", files: [{ name: "brief.pdf" }] } }),
+        x1: tk(3, { subject: "Please send everything", status: "open", resolvedBy: "", customerEmail: "someone@shop.example", aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." } }),
+      };
+      s.docs["supportTickets/r1/messages"] = {
+        m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, send the AWS onboarding pack for client Kestrel.", at: t(T0) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example", "colleague@shop.example"], text: "Hi Owner,\n\nHere is the pack.", attachments: [{ name: "aws-onboarding-pack-kestrel.md" }], skillName: "AWS onboarding pack", at: t(T0 + 60000) },
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      c.at("each ticket in the Aidan tab says what Aidan did");
+      await until(async () => (await c.page.locator(".support-row").count()) === 3, "all three Aidan tickets");
+      const badges = await c.page.locator(".support-aidan-badge").allTextContents();
+      assert.deepStrictEqual(badges.sort(), ["Aidan replied", "Aidan: no action", "Ingested"]);
+      c.at("the reply Aidan sent is on the thread, to everyone on the email");
+      await c.click('[data-support-ticket="r1"]', "the Kestrel ticket");
+      await c.visible(".support-msg-aidan");
+      assert.ok((await c.text(".support-aidan-line")).includes("aws-onboarding-pack-kestrel.md"), "the ticket says which document went out");
+      // textContent, not innerText: badges are shown in capitals.
+      const sent = await c.page.evaluate(() => document.querySelector(".support-msg-aidan").textContent.replace(/\s+/g, " "));
+      for (const want of ["Sent by Aidan · AWS onboarding pack", "To owner@example.com", "Cc client@shop.example, colleague@shop.example", "aws-onboarding-pack-kestrel.md"]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/r1", "it opens inside the Aidan tab");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

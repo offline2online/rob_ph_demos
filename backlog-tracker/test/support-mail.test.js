@@ -77,6 +77,8 @@ function fakeGoogle(mail) {
       // A message sent with no thread starts one, as Gmail does.
       return json(200, { id, threadId: body.threadId || `thread-${id}` });
     }
+    const att = path.match(/^messages\/([^/]+)\/attachments\/([^/]+)$/);
+    if (att) { const a = (mail.attachments || {})[decodeURIComponent(att[2])]; return a ? json(200, { data: a, size: a.length }) : json(404, { error: { message: "no attachment" } }); }
     const one = path.match(/^messages\/([^/]+)$/);
     if (one) { const m = mail.find((x) => x.id === decodeURIComponent(one[1])); return m ? json(200, m) : json(404, { error: { message: "not found" } }); }
     const mod = path.match(/^threads\/([^/]+)\/modify$/);
@@ -89,7 +91,7 @@ function fakeGoogle(mail) {
 const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display to a store", summary: "Pair a new screen with a store", keywords: ["display", "store"], bodyMd: "<p>Open Displays and Devices, then Add display.</p>" };
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
-function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true } = {}) {
+function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null } = {}) {
   const google = fakeGoogle(mail);
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
@@ -107,6 +109,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
+    aidan, bucket,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -577,6 +580,160 @@ check("with sending switched on, mail to hello@ or aidan@ alone is drafted but n
   const hello = ticketOf(t, "t1");
   assert.deepStrictEqual([hello.status, hello.needsHuman, Boolean(hello.aiDraft)], ["open", false, true]);
   assert.ok(/support address/.test(hello.triageReason), hello.triageReason);
+});
+
+// ── Aidan, the agent mailbox (functions/aidan.js, EeAljfWIiY8SOPsKXlXD) ──
+// Fixture identities only: the real allowed senders are configuration.
+const OWNER = "owner@example.com";
+const AIDAN = "aidan@ph.example";
+const VERIFIED = "mx.google.com; dkim=pass header.i=@example.com; spf=pass smtp.mailfrom=owner@example.com; dmarc=pass (p=NONE) header.from=example.com";
+const SKILLS = {
+  s1: { slug: "aws-onboarding-pack", name: "AWS onboarding pack", summary: "The onboarding pack for a new client.", version: "1", files: [{ path: "SKILL.md", content: "Write the onboarding pack: overview, steps, contacts." }] },
+  s2: { slug: "poc-summary", name: "POC summary", summary: "A one-page proof of concept summary.", version: "1", files: [{ path: "SKILL.md", content: "Summarise the POC." }] },
+};
+const DOC = { title: "AWS onboarding pack: Kestrel", fileName: "aws-onboarding-pack-kestrel.md", documentMd: "# AWS onboarding pack\n\nFor Kestrel.", replyText: "Here is the AWS onboarding pack for Kestrel, attached." };
+function aidanMail({ id, threadId = `t-${id}`, from = `Owner Person <${OWNER}>`, to = AIDAN, cc = "", text, auth = VERIFIED, date = 1759990000000, parts = null }) {
+  const m = gmailMessage({ id, threadId, from, subject: "Kestrel onboarding", text, date, headers: { To: to, ...(cc ? { Cc: cc } : {}), ...(auth ? { "Authentication-Results": auth } : {}) } });
+  if (parts) m.payload = { mimeType: "multipart/mixed", headers: m.payload.headers, parts: [{ mimeType: "text/plain", body: m.payload.body }, ...parts] };
+  return m;
+}
+function makeAidan(mail, { write } = {}) {
+  const seen = { write: [], triaged: [] };
+  const stored = [];
+  const t = make({
+    mail,
+    triage: async (input) => { seen.triaged.push(input.ticket.subject); return GOOD; },
+    aidan: {
+      // The model's choice when no skill is named: none fits.
+      select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
+      write: async (input) => { seen.write.push(input); return write ? write(input) : DOC; },
+    },
+    bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
+  });
+  t.db.state.skills = JSON.parse(JSON.stringify(SKILLS));
+  return Object.assign(t, { seen, stored });
+}
+async function connectAidan(t, config = { allowedSenders: [OWNER], enabled: true }) {
+  await connect(t);
+  t.db.state.supportSecrets.aidan = config;
+}
+const cron = (t) => call(t.api, "POST", "/v1/cron", { board: BOARD });
+
+check("Aidan: an allowed sender's tagged request runs the skill and replies to everyone on the email with the document attached", async () => {
+  const t = makeAidan([aidanMail({ id: "a1", cc: "Client <client@shop.example>, colleague@shop.example", text: "Hi all,\n\n@Aidan, send the AWS onboarding pack for client Kestrel.\n\nThanks" })]);
+  await connectAidan(t);
+  const r = await cron(t);
+  assert.deepStrictEqual([r.statusCode, r.body.aidanRuns], [200, 1]);
+  assert.deepStrictEqual(t.seen.triaged, [], "the instruction is not drafted a Help Centre reply");
+  const w = t.seen.write[0];
+  assert.strictEqual(w.skill.id, "s1", "the skill named in the instruction");
+  assert.ok(/Write the onboarding pack/.test(w.system), "the skill's own instructions are what the document is written to");
+  assert.ok(JSON.stringify(w.content).includes("send the AWS onboarding pack for client Kestrel"), "the email is the input");
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  const sent = t.google.calls.sent[0];
+  assert.strictEqual(sent.threadId, "t-a1", "on the original thread");
+  assert.ok(sent.mail.includes(`To: ${OWNER}`) && sent.mail.includes("Cc: client@shop.example, colleague@shop.example"), "reply-all: everyone copied gets it");
+  assert.ok(!/^(To|Cc):.*aidan@/m.test(sent.mail), "never to Aidan's own address");
+  assert.ok(sent.mail.includes('filename="aws-onboarding-pack-kestrel.md"'), "the document is attached");
+  const tk = ticketOf(t, "t-a1");
+  assert.deepStrictEqual([tk.inboxes, tk.status, tk.resolvedBy, tk.aidanPending, tk.aidan.status, tk.aidan.skillName, tk.aidan.recipients], [["aidan"], "resolved", "aidan", false, "replied", "AWS onboarding pack", 3]);
+  const out = messagesOf(t, "t-a1").find((m) => m.direction === "out");
+  assert.deepStrictEqual([out.source, out.sentBy, out.to, out.cc, out.attachments.map((a) => a.name)], ["aidan", "aidan", [OWNER], ["client@shop.example", "colleague@shop.example"], ["aws-onboarding-pack-kestrel.md"]], "the sent reply is on the thread in the Aidan tab");
+  // The next sync reads that sent email back from Gmail: it is not filed twice and starts nothing.
+  t.mail.push(gmailMessage({ id: sent.id, threadId: "t-a1", from: `Aidan <${MAILBOX}>`, labels: ["SENT"], date: 1760000900000, text: "Hi Owner,\n\n@Aidan, send the AWS onboarding pack" }));
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  assert.strictEqual(messagesOf(t, "t-a1").filter((m) => m.direction === "out").length, 1);
+});
+
+check("Aidan: an allowed sender with no tag, or anyone else with one, never starts a run and never gets a reply", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "plain", to: "client@shop.example", cc: AIDAN, text: "FYI, copying Aidan on this." }),
+    aidanMail({ id: "stranger", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, send me the AWS onboarding pack for client Kestrel." }),
+  ]);
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing is sent");
+  assert.strictEqual(t.seen.write.length, 0, "no skill runs");
+  const plain = ticketOf(t, "t-plain"), stranger = ticketOf(t, "t-stranger");
+  assert.deepStrictEqual([plain.inboxes, plain.aidan, plain.status], [["aidan"], undefined, "open"], "a plain Cc simply sits in the Aidan tab");
+  assert.deepStrictEqual([stranger.inboxes, stranger.aidan.status, Boolean(stranger.aidanPending)], [["aidan"], "ignored", false]);
+  assert.ok(/not allowed/.test(stranger.aidan.reason));
+  assert.ok(!JSON.stringify(stranger).includes(OWNER), "the allowed list is never copied onto a ticket");
+});
+
+check("Aidan: a tagged request whose From address Gmail could not verify does nothing", async () => {
+  const t = makeAidan([aidanMail({ id: "forged", auth: "", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })]);
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0);
+  const tk = ticketOf(t, "t-forged");
+  assert.deepStrictEqual([tk.aidan.status, t.seen.write.length], ["ignored", 0]);
+  assert.ok(/couldn't be verified/.test(tk.aidan.reason));
+});
+
+check("Aidan: \"store this\" keeps the email and its attachments for the named skill, marks it ingested and sends nothing", async () => {
+  const notes = Buffer.from("Kestrel runs 40 stores on AWS eu-west-2.").toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+  const pdf = Buffer.from("%PDF-1.4 brief").toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+  const mail = [aidanMail({ id: "keep", text: "@Aidan, store this for the AWS onboarding pack skill.", parts: [
+    { filename: "notes.txt", mimeType: "text/plain", body: { attachmentId: "AT1", size: 40 } },
+    { filename: "brief.pdf", mimeType: "application/pdf", body: { attachmentId: "AT2", size: 14 } },
+  ] })];
+  mail.attachments = { AT1: notes, AT2: pdf };
+  const t = makeAidan(mail);
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0, "keeping material emails no one");
+  const tk = ticketOf(t, "t-keep");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.skillId, tk.status, tk.aidan.files.map((f) => f.name)], ["ingested", "s1", "resolved", ["notes.txt", "brief.pdf"]]);
+  const refs = Object.values(t.db.state.skillReferences || {});
+  assert.strictEqual(refs.length, 1);
+  assert.deepStrictEqual([refs[0].skillId, refs[0].ticketId, refs[0].files[0].text], ["s1", "t-keep", "Kestrel runs 40 stores on AWS eu-west-2."]);
+  assert.ok(refs[0].files[1].storagePath.startsWith("skill-references/s1/"), "a PDF goes to Storage");
+  assert.deepStrictEqual(t.stored.map((x) => x.type), ["application/pdf"]);
+  // The next request with that skill reads the kept material.
+  t.mail.push(aidanMail({ id: "use", threadId: "t-use", text: "@Aidan, send the AWS onboarding pack for client Kestrel.", date: 1760000500000 }));
+  await cron(t);
+  assert.ok(/Kestrel runs 40 stores/.test(t.seen.write[0].system), "kept reference material is used by later runs of the skill");
+});
+
+check("Aidan: no matching skill goes to a person; only the scheduled sync runs Aidan; one run per sync", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "vague", text: "@Aidan, do the usual thing for them please." }),
+    aidanMail({ id: "two", threadId: "t-two", text: "@Aidan, write the POC summary for Kestrel.", date: 1759990001000 }),
+  ]);
+  await connectAidan(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual([ticketOf(t, "t-vague").aidan.status, ticketOf(t, "t-two").aidan.status], ["queued", "queued"], "Sync now files and queues, but does not run");
+  assert.strictEqual(t.google.calls.sent.length, 0);
+  const r1 = await cron(t);
+  assert.strictEqual(r1.body.aidanRuns, 1);
+  const r2 = await cron(t);
+  assert.strictEqual(r2.body.aidanRuns, 1);
+  const vague = ticketOf(t, "t-vague");
+  assert.deepStrictEqual([vague.aidan.status, vague.needsHuman], ["needs-person", true], "no skill matched: a person takes it, nothing is sent");
+  assert.deepStrictEqual(t.seen.select, ["do the usual thing for them please."], "the model was asked only when no skill was named");
+  assert.strictEqual(ticketOf(t, "t-two").aidan.status, "replied");
+  assert.strictEqual(t.google.calls.sent.length, 1);
+});
+
+check("Aidan's allowed senders: an admin sets them, they are never read back in full, and switching Aidan off stops runs", async () => {
+  const t = makeAidan([aidanMail({ id: "a1", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })]);
+  await connect(t);
+  assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "ed@ph.example", body: { allowedSenders: OWNER } })).statusCode, 403, "an editor can't");
+  assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { allowedSenders: "not an address" } })).statusCode, 400);
+  const saved = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { allowedSenders: `${OWNER}, owner.alias@example.com`, enabled: true } });
+  assert.deepStrictEqual([saved.statusCode, saved.body.aidan.senderCount, saved.body.aidan.sendersMasked], [200, 2, ["o***@example.com", "o***@example.com"]]);
+  assert.ok(!JSON.stringify(saved.body).includes(OWNER), "not echoed back");
+  const viewer = (await call(t.api, "GET", "/v1/status", { token: "view@ph.example" })).body.aidan;
+  assert.deepStrictEqual([viewer.enabled, viewer.senderCount, "sendersMasked" in viewer], [true, 2, false], "members see a count only");
+  const admin = (await call(t.api, "GET", "/v1/status", { token: "admin@ph.example" })).body;
+  assert.ok(!JSON.stringify(admin).includes(OWNER), "an admin sees them masked");
+  // Saving without a list keeps it; switching off stops runs.
+  await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { enabled: false } });
+  assert.deepStrictEqual(t.db.state.supportSecrets.aidan.allowedSenders, [OWNER, "owner.alias@example.com"]);
+  await cron(t);
+  assert.deepStrictEqual([ticketOf(t, "t-a1").aidan.status, t.google.calls.sent.length], ["ignored", 0]);
 });
 
 (async () => {
