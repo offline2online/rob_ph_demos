@@ -301,7 +301,10 @@ body {
 }
 .column { container-type: inline-size; container-name: pipeline-col; }
 .col-head .notify-claude-icon { width: 1em; overflow: hidden; flex: none; }
-@container pipeline-col (max-width: 300px) {
+/* 340px, not 300px: with the sidebar folded to its icon rail a 1440px screen
+   gives ~314px columns, where "READY FOR TESTING" beside a full "Review Batch"
+   button was cut. */
+@container pipeline-col (max-width: 340px) {
   .col-head { padding: 12px 10px; gap: 6px; }
   .col-head .notify-claude-label { display: none; }
   .col-groom-inline .notify-claude-btn, .col-head .review-batch-btn { padding: 3px 8px; }
@@ -1998,16 +2001,36 @@ body { overflow-x: clip; }
 .tabbar { display: none; }
 
 @media (min-width: 1024px) {
-  .nav-drawer { transform: none; visibility: visible; box-shadow: none; width: var(--nav-w); max-width: none; z-index: 17; }
-  html[data-nav-collapsed] .nav-drawer { transform: translateX(-100%); visibility: hidden; }
+  /* Gmail-style sidebar (mUjtN0QWAnN9J3kK3LZC): the menu button at its top
+     left folds it to a 70px icon rail (the Retail Admin rail width) and back;
+     while it is a rail, data-nav-peek (nav-shell.js, set when a mouse rests
+     on it or the keyboard tabs into it) opens it over the page at full width
+     with a shadow, and the page does not move. Icons keep the same x in every
+     state, and labels only fade, so nothing jumps as it opens. */
+  :root { --nav-rail-w: 70px; }
+  .nav-drawer {
+    transform: none; visibility: visible; box-shadow: none; width: var(--nav-w); max-width: none; z-index: 17;
+    overflow-x: hidden; transition: width .2s ease, box-shadow .2s ease;
+  }
   .nav-drawer-backdrop { display: none; }
   .nav-drawer .modal-close { display: none; }
-  .nav-collapse-btn { display: inline-flex; }
-  html:not([data-nav-collapsed]) .app { max-width: 1640px; margin-left: 0; padding-left: calc(var(--nav-w) + 24px); }
-  html:not([data-nav-collapsed]) .hamburger-btn { display: none; }
-  html:not([data-nav-collapsed]) .mobile-action-bar { left: var(--nav-w); }
-  /* The sidebar owns the left edge, so the topbar bar need not repeat the logo's room. */
+  .nav-drawer-header { padding-left: 7px; }
+  .nav-collapse-btn { display: inline-flex; order: -1; }
+  .nav-drawer-title, .nav-drawer-section { white-space: nowrap; transition: opacity .15s ease; }
+  .nav-drawer-item { padding-left: 15px; white-space: nowrap; overflow: hidden; transition: color .15s ease; }
+  .nav-kbd { transition: opacity .15s ease; }
+  html[data-nav-collapsed] .nav-drawer { width: var(--nav-rail-w); }
+  html[data-nav-collapsed][data-nav-peek] .nav-drawer { width: var(--nav-w); box-shadow: 0 8px 24px rgba(0, 0, 0, .16); background: var(--bg); }
+  html[data-nav-collapsed]:not([data-nav-peek]) .nav-drawer :is(.nav-drawer-title, .nav-drawer-section, .nav-kbd) { opacity: 0; }
+  html[data-nav-collapsed]:not([data-nav-peek]) .nav-drawer-item { color: transparent; }
+  html .app { max-width: 1640px; margin-left: 0; padding-left: calc(var(--nav-w) + 24px); }
+  html[data-nav-collapsed] .app { padding-left: calc(var(--nav-rail-w) + 24px); }
+  /* The rail's own menu button replaces the topbar hamburger here. */
+  .hamburger-btn { display: none; }
+  html .mobile-action-bar { left: var(--nav-w); }
+  html[data-nav-collapsed] .mobile-action-bar { left: var(--nav-rail-w); }
 }
+@media (min-width: 1024px) and (pointer: coarse) { .nav-drawer-header { padding-left: 3px; } }
 
 @media (max-width: 640px) {
   .app { padding-bottom: calc(var(--tabbar-h) + 28px + env(safe-area-inset-bottom, 0px)); }
@@ -2075,7 +2098,7 @@ body { overflow-x: clip; }
 .cmdk-empty { padding: 18px 12px; color: var(--text-muted); text-align: center; }
 
 @media (prefers-reduced-motion: reduce) {
-  .nav-drawer, .nav-drawer-backdrop { transition: none; }
+  .nav-drawer, .nav-drawer-backdrop, .nav-drawer-item, .nav-drawer-title, .nav-drawer-section, .nav-kbd { transition: none; }
 }
 /* Icon boxes keep their size even if the icon font is slow or blocked, so a
    ligature name can never push the sidebar or tab bar wider. */
