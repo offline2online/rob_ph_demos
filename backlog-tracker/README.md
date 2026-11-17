@@ -1098,6 +1098,11 @@ typed fallback, the denied-microphone error and the pinned action bar.
   inside the Firestore emulator and asserts what each principal may and may
   not write, including the membership model (`consoleUsers`) and the fact
   that nobody may read the MCP credential store.
+- **`code-mode-sandbox.test.js`** and **`code-mode.test.js`** cover Code Mode
+  (`functions/code-mode/`: `run_script`, `describe_script_tools`,
+  `get_insight`, `list_insights`): the sandbox's limits with stub tools, then
+  the four tools, the role checks and each insight through the real server.
+  See `MCP.md` → "Code Mode".
 - **`claude-plugin.test.js`** checks the Claude plugin that packages the MCP
   server (`claude-plugin/`, offered by the repository's
   `.claude-plugin/marketplace.json`). See `MCP.md` → "Install it as a plugin".

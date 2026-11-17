@@ -1180,6 +1180,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Code Mode's execution log (functions/code-mode): one entry per
+    // run_script / get_insight call — who, when, the script and its hash,
+    // the tools it called, how long it took and how it ended. Written only
+    // by the MCP server (Admin SDK); every client is read-only, so a member
+    // can see what was run but nobody can alter or remove an entry.
+    match /scriptRuns/{entryId} {
+      allow read: if isMember();
+      allow write: if false;
+    }
+
     // ── FAQ / Help Center content ─────────────────────────────────────────
     // These two collections feed the PUBLIC help centre (repo-root faq/,
     // iframed into personalisationhub.com). Reads stay public — the site

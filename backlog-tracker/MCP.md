@@ -884,6 +884,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | --- | --- |
 | `functions/mcp-server.js` | the whole server — OAuth endpoints, sign-in page, MCP protocol, tools, admin endpoints, claim sync |
 | `functions/index.js` | exports `mcpServer` and `syncConsoleUserClaims` |
+| `functions/code-mode/` | Code Mode: the sandbox (`sandbox.js`, `sandbox-worker.js`), the four tools and the allow-list (`index.js`), the insight scripts (`insights/`) |
 | `claude-plugin/` | the Claude plugin that packages this server: manifest, `.mcp.json`, two skills (`test/claude-plugin.test.js`) |
 | `firebase.json` | hosting rewrites putting it at `/mcp` and the two `/.well-known` paths |
 | `firestore.rules` | `consoleUsers` membership model; `mcp*` collections denied to every client |
@@ -891,6 +892,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `public/js/auth-gate.js` | the console's own sign-in wall — claim-first, own-row fallback, claim sync in the background, password sign-in (`test/auth-gate.test.mjs`) |
 | `public/js/app.js` | User Management → Users, and Connect your AI agent |
 | `test/mcp-server.test.js` | in-process test of the whole flow, no emulator needed (`npm run test:mcp` in `test/`) |
+| `test/code-mode-sandbox.test.js`, `test/code-mode.test.js` | the sandbox's limits, and Code Mode through the real server (in `npm run test:mcp`) |
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
 | `test/mcp-live-server.js` | serves the real server on localhost for that test |
 | `test/mcp-stubs.js` | in-memory Firebase SDKs both tests use |
@@ -1055,3 +1057,122 @@ you once in that conversation and carries on.
 A bound member, or a viewer (who can't call `set_my_routine_binding`), gets
 the normal instructions with no setup block. Instructions are read once per
 connection, so after you set it up, your next connection shows no prompt.
+
+## Code Mode: one call for an aggregated answer
+
+Four read-only tools (`functions/code-mode/`) let an agent get a roll-up in
+one call instead of dozens. Any member can use them, viewers included.
+
+| Tool | What |
+| --- | --- |
+| `run_script` | Takes `code` and an optional `timeoutMs`. Runs a short JavaScript program in a sandbox and returns `{ result, toolCalls: [{ name, durationMs }], durationMs }`. On failure the result is an error holding `{ error: { kind, name, message, line, column }, toolCalls, durationMs }`. |
+| `describe_script_tools` | The tools a script may call, as compact TypeScript signatures, with the limits and an example. Read this instead of loading every tool schema. |
+| `get_insight` | Takes `name` and `params`. Runs one pre-written script from the insight library and returns its compact result. |
+| `list_insights` | Each insight's name, one-line description and parameters. |
+
+**The script.** `code` is the body of an async function. It calls tools as
+`await tools.<name>(args)` and `return`s a JSON-serialisable value. Only that
+value goes back to the caller, never the raw tool outputs. A tool that fails
+throws an `Error` the script can catch.
+
+```js
+const { projects } = await tools.list_projects({});
+const out = {};
+for (const p of projects) {
+  const r = await tools.list_backlog_items({ projectId: p.id, type: "bug", status: "backlog", limit: 1 });
+  if (r.matched) out[p.name] = r.matched;
+}
+return out;
+```
+
+**The allow-list** (`SCRIPT_TOOLS` in `functions/code-mode/index.js`). A
+script can call these existing read tools and nothing else:
+
+- Agent board: `list_projects`, `list_backlog_items`, `get_backlog_item`, `get_pipeline_health`
+- Concepts: `list_concepts`, `get_concept`
+- Leads: `list_leads`, `get_lead`
+- Staff Kanban and releases: `kanban_list_people`, `kanban_get_staff_names`, `kanban_list_tasks`, `kanban_get_task`, `kanban_search_tickets`, `kanban_release_report`
+- Prospects: `list_prospects`
+- Skills library: `list_skills`, `get_skill`, `list_skill_misses`
+- Help centre: `search_faq`, `get_faq_article`, `list_faq_categories`
+
+There are no write tools in a script. Each call is the existing tool's own
+code, run with the caller's own session, so a script reads exactly what its
+caller could read one call at a time.
+
+**Scoped to the caller's role.** A script's `tools` object holds only the
+allow-listed tools the caller's own role may call, decided by the same test
+`tools/call` applies: a write tool needs the `board.write` scope, which a
+viewer's token never carries, and a tool that names a role needs at least
+that role. Today every allow-listed tool is open to all members, so viewers,
+editors and admins get the same set. If one of them is later restricted to a
+role, it leaves the scripts of everyone below that role, `describe_script_tools`
+stops listing it for them, and an insight that needs it fails for them. The
+check runs when the script starts and again on each call. A tool that is not
+`board.read` cannot be put on the list at all.
+
+**Limits.** Over a limit is an error, never a silent cut.
+
+| Limit | Value |
+| --- | --- |
+| Wall clock | 10 s by default, `timeoutMs` up to 30 s. Insights get 30 s. |
+| Memory | 128 MB |
+| Tool calls per script | 50 |
+| Returned value | 20 KB |
+| Script source | 20 KB (`run_script`) |
+| Scripts at once, per server instance | 3; a fourth is told to try again |
+
+**The sandbox.** Each script runs in its own
+[isolated-vm](https://github.com/laverdet/isolated-vm) isolate inside its own
+child process, started with an empty environment. The isolate has no
+`require`, `process`, `fetch`, timers or filesystem; `tools` is its only way
+out. The child is killed at the deadline, which also stops a loop that starts
+after an `await`. It is a child process because isolated-vm needs Node's
+`--no-node-snapshot` flag on Node 20 and later, and the Functions runtime
+cannot set that for its own process. If isolated-vm is not installed the tools
+refuse to run; there is no fallback to `eval` or Node's `vm`. Errors carry the
+script's own message and line, or the tool's own message. A tool that throws
+on the server reaches the script as "`<tool>` failed on the server" and the
+detail goes to the function log.
+
+**The audit log.** Every `run_script` and `get_insight` execution adds one
+document to `scriptRuns`: caller email, time, script hash (SHA-256), script
+source, tools called with durations, total duration, outcome and error kind;
+for an insight, also its name, version and parameters. Only the server writes
+it. `firestore.rules` lets members read it and nobody change it.
+
+**The insight library** (`functions/code-mode/insights/`). Project, concept
+and release parameters take an id or a name. Names are matched
+case-insensitively (exact, then starts-with, then contains); an ambiguous or
+unknown name is an error that lists the candidates.
+
+| Insight | Parameters | Answers |
+| --- | --- | --- |
+| `pipeline_status` | `projectId` (optional) | Tickets per stage, blocked tickets, tickets awaiting approval, oldest ticket per stage |
+| `what_changed` | `since` (default `7d`; a date, or `36h` / `2w`), `projectId` (optional) | Tickets created, deployed, commented on or otherwise changed, by project; concept activity |
+| `project_status` | `projectId` | Tickets by stage, blockers, train and release group, last deployment, open Kanban tickets |
+| `concept_status` | `conceptId` | Description, README/Requirements presence, latest decisions, interfaces, artifact link, promoted project |
+| `leads_summary` | `stalledDays` (default 14), `recentDays` (default 7), `leadType` (optional) | Leads by stage, recently updated, stalled |
+| `release_status` | `releaseId` (optional; default the current release) | Projects in the release, tickets by stage, effort, what is outstanding |
+
+**Adding an insight.**
+
+1. Add `functions/code-mode/insights/<name>.js` exporting
+   `{ name, version, description, params, run }`. `run` is
+   `async function (tools, params, lib)`. Its source text is what runs in the
+   sandbox, so it may use only those three arguments: no `require`, nothing
+   from the file around it. `lib` is `insights/_lib.js` (name resolution,
+   paging, dates, `top()` for capped lists).
+2. Add the name to `INSIGHT_NAMES` in `functions/code-mode/index.js`.
+3. Keep the answer small: cap every list and say how many were left out. It
+   must fit in 20 KB and 50 tool calls.
+4. Add a test against the fixtures in `test/code-mode.test.js`, and a row to
+   the table above. Raise `version` when the answer's shape changes.
+
+To expose another tool to scripts, add it to `SCRIPT_TOOLS` with its
+signature. The test checks every argument named there against the real tool.
+
+Tests: `node code-mode-sandbox.test.js` (the limits, with stub tools) and
+`node code-mode.test.js` (the four tools through the real server), both in
+`npm run test:mcp`. They need `isolated-vm`, which `test/package.json`
+installs.
