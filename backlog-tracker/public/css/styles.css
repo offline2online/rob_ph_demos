@@ -2039,6 +2039,10 @@ body { overflow-x: clip; }
   .nav-drawer[data-show="settings"] [data-nav-group="build"],
   .nav-drawer[data-show="settings"] [data-nav-group="promote"],
   .nav-drawer[data-show="settings"] [data-nav-group="publish"] { display: none; }
+  /* Dashboard sits above the groups; on a phone it is listed in the Build sheet only. */
+  .nav-drawer[data-show="promote"] .nav-drawer-item-dashboard,
+  .nav-drawer[data-show="publish"] .nav-drawer-item-dashboard,
+  .nav-drawer[data-show="settings"] .nav-drawer-item-dashboard { display: none; }
   .nav-drawer-item, .profile-menu-item { min-height: 48px; font-size: 16px; }
   .profile-menu { top: auto; left: 0; right: 0; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px)); width: 100%; max-width: none; border-radius: 16px 16px 0 0; border-width: 1px 0 0; }
   .profile-btn { display: none; }
@@ -3018,4 +3022,68 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
   .needs-attention-main { flex-basis: calc(100% - 40px); }
   .needs-attention-meta { flex-direction: row; gap: 8px; margin-left: 28px; }
   .needs-attention-action { margin-left: auto; }
+}
+
+/* ── Dashboard (#dashboard, js/dashboard-page.js) ─────────────────────────
+   KPI tiles after ph-designer's KPI card: an icon chip, an uppercase metric
+   label, a bold figure. Theme tokens only, so apple.css's dark theme applies.
+   The breakdown is a tooltip shown on hover or keyboard focus; nothing
+   explanatory sits under a tile. */
+.dash-header { align-items: baseline; }
+.dash-day { font-size: 13px; color: var(--text-muted); }
+.dash-refresh { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.dash-refresh .material-symbols-outlined { font-size: 18px; }
+.dash-group { margin: 0 0 24px; }
+.dash-group-title { margin: 0 0 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.dash-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.dash-tile-wrap { position: relative; min-width: 0; }
+.dash-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; min-height: 148px;
+  padding: 14px 16px; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.dash-tile:hover { border-color: var(--primary); box-shadow: 0 2px 10px rgba(0, 0, 0, .06); }
+.dash-tile:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.dash-tile-head { display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 6px; }
+.dash-tile-head > .material-symbols-outlined { margin-left: auto; font-size: 16px; color: var(--text-muted); }
+.dash-tile-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: 8px; background: var(--primary-tint); color: var(--primary-text); flex-shrink: 0; }
+.dash-tile-icon .material-symbols-outlined { font-size: 20px; }
+.dash-tile-title { font-size: 14px; font-weight: 600; }
+.dash-metric { font-size: 10px; font-weight: 500; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); }
+.dash-value { font-size: 28px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.dash-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12px; color: var(--text-muted); margin-top: auto; }
+.dash-sub { color: var(--text-muted); }
+.dash-trend { display: inline-flex; align-items: center; gap: 2px; }
+.dash-trend .material-symbols-outlined, .dash-flag .material-symbols-outlined { font-size: 14px; }
+.dash-trend-up { color: var(--success); }
+.dash-trend-down { color: var(--danger); }
+.dash-flag { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-weight: 600; }
+.dash-trio { display: flex; gap: 16px; width: 100%; }
+.dash-trio-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.dash-trio .dash-value { font-size: 24px; }
+.dash-tip {
+  position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0; max-height: 340px; overflow: auto;
+  padding: 10px 12px; font-size: 12px; line-height: 1.45; color: var(--text);
+  background: var(--tip-bg); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+  visibility: hidden; opacity: 0; transition: opacity .12s, visibility .12s;
+}
+.dash-tile-wrap:hover .dash-tip, .dash-tile:focus-visible + .dash-tip { visibility: visible; opacity: 1; }
+.dash-tip-title { margin: 8px 0 4px; font-weight: 700; }
+.dash-tip-title:first-child { margin-top: 0; }
+.dash-tip-empty { margin: 0 0 4px; color: var(--text-muted); }
+.dash-tip-list, .dash-tip-names { margin: 0; padding: 0; list-style: none; }
+.dash-tip-list > li { padding: 4px 0; border-top: 1px solid var(--border); }
+.dash-tip-list > li:first-child { border-top: none; }
+.dash-tip-names > li { display: inline; }
+.dash-tip-names > li + li::before { content: ", "; }
+.dash-tip-row { display: flex; justify-content: space-between; gap: 12px; }
+.dash-tip-row b, .dash-tip-grid b { font-variant-numeric: tabular-nums; }
+.dash-tip-meta { display: block; color: var(--text-muted); }
+.dash-tip-warn { display: block; color: var(--warning); }
+.dash-tip-grid { display: grid; grid-template-columns: 1fr auto 1fr auto; gap: 0 10px; margin-top: 2px; color: var(--text-muted); }
+.dash-tip-grid b { color: var(--text); text-align: right; }
+@media (max-width: 640px) {
+  .dash-tiles { grid-template-columns: 1fr; }
+  .dash-header { align-items: center; }
 }

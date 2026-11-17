@@ -166,6 +166,10 @@
         <button type="button" class="nav-collapse-btn" id="nav-collapse-btn" aria-expanded="true" aria-label="Collapse sidebar"><span class="material-symbols-outlined" aria-hidden="true">left_panel_close</span></button>
         <button type="button" class="modal-close" id="nav-close-btn" aria-label="Close menu">&times;</button>
       </div>
+      <!-- Dashboard (#dashboard, js/dashboard-page.js): the landing page. Outside every nav-group on
+           purpose: it is open to every member (each tile follows its own section's permission), so it
+           must not be discovered as a permission section of its own. -->
+      <button type="button" class="nav-drawer-item nav-drawer-item-dashboard" id="dashboard-btn"><span class="material-symbols-outlined" aria-hidden="true">dashboard</span>Dashboard</button>
       <div class="nav-group" data-nav-group="build" role="group" aria-labelledby="nav-build-label">
         <div class="nav-drawer-section" id="nav-build-label">Build</div>
         <button type="button" class="nav-drawer-item nav-drawer-item-home" id="nav-ph-console-btn"><span class="material-symbols-outlined" aria-hidden="true">smart_toy</span>Agent Board</button>
@@ -1301,6 +1305,10 @@
       <p class="promote-empty" id="funnel-empty" hidden><span id="funnel-empty-text">No funnel data yet.</span></p>
       <ol class="funnel-stages" id="funnel-stages" aria-label="Funnel stages" hidden></ol>
     </section>
+
+    <!-- Dashboard (#dashboard): the page the console opens on. KPI tiles for yesterday, drawn by
+         js/dashboard-page.js (rules in js/dashboard-core.js). -->
+    <section class="faq-admin-page dash-page" id="dashboard-page" aria-label="Dashboard" hidden></section>
 
     <!-- Support › Support Inbox (#support): the support mailbox as tickets (js/support-page.js,
          rules in js/support-core.js, server in functions/support-mail.js). Help lives in the info tooltips. -->

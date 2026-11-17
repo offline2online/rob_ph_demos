@@ -366,6 +366,10 @@ function rebuildAllItems() {
   items = liveItems.filter((i) => i.status !== "archived");
 }
 let items = [];
+// The Dashboard page (dashboard-page.js), once mounted. Declared up here because
+// renderNow() and recomputeAccess() redraw it and may run before its section below.
+let dashboardUi = null;
+let dashboardUiLoading = null;
 let projects = [];
 let projectsLoaded = false;
 // releaseGroups/{id} (release-groups.js): projects that ship in one
@@ -603,6 +607,7 @@ function closeAllSubPages() {
   closeConceptIncubatorPage();
   closeConceptDetailPage();
   closeStaffKanbanPage();
+  closeDashboardPage();
   // Every routed page (FAQ Management, Settings, the article editor — see
   // "URL routing" below) opens by calling this first, so clearing the hash
   // here is the one
@@ -621,7 +626,12 @@ function returnToBoard() {
     const next = firstAllowedSection(accessLevels);
     if (next && SECTION_HASH[next]) { window.location.hash = SECTION_HASH[next]; return; }
     showAccessDenied("agent-board");
+    return;
   }
+  // "#board" is the Agent Board's own address: with no hash the console opens
+  // on the Dashboard, so a reload here must not lose the board.
+  setRouteHash("#board", { replace: true });
+  updateTopbarTitle();
 }
 document.getElementById("nav-ph-console-btn").addEventListener("click", () => { closeNavDrawer(); returnToBoard(); });
 // The logo in the top-left corner is clickable from anywhere in the app,
@@ -3268,6 +3278,7 @@ document.getElementById("concept-type-filter").addEventListener("change", () => 
 
 function renderNow() {
   timedSpinnerShown = false;
+  renderDashboardIfOpen();
   migrateOrphanItems();
   const boardTypeEl = document.getElementById("board-type-filter");
   if (!boardTypeEl.options.length) boardTypeEl.innerHTML = typeOptionsHTML("all", { filter: true });
@@ -11498,6 +11509,7 @@ function recomputeAccess() {
   accessLevels = effectiveLevels(currentConsoleRole(), role || null);
   applyAccessStyles();
   enforceAccessNow();
+  renderDashboardIfOpen();
 }
 // Re-check whatever is on screen against the levels that just arrived (or
 // changed), so a restriction applies without a reload.
@@ -12023,6 +12035,58 @@ PROMOTE_PAGES.forEach((p) => {
     catch (err) { showPageLoadError(LAZY_PROMOTE[p.key] ? LAZY_PROMOTE[p.key].page() : null, p.label, err, () => openPromotePage(p.key)); }
   });
 });
+
+// ── Dashboard (#dashboard, dashboard-page.js) ─────────────────────────────
+// The page the console opens on (a load with no hash goes here, see the end of
+// this file): five KPI tiles for yesterday, each opening its section. Mounted
+// the first time it opens. Its Agent board tile reads the tickets this file
+// already holds, so it is redrawn with the board (renderNow) and when the
+// viewer's permissions arrive (recomputeAccess); the other tiles read their
+// collections once per open (dashboard-page.js).
+function ensureDashboardUi() {
+  if (dashboardUi) return Promise.resolve(dashboardUi);
+  if (!dashboardUiLoading) {
+    dashboardUiLoading = import(`./dashboard-page.js${pageRetrySuffix("dashboard")}`).then(({ mountDashboard }) => {
+      dashboardUi = mountDashboard({
+        root: document.getElementById("dashboard-page"), db,
+        items: () => items, projects: () => projects, releases: () => releases,
+        canView: (key) => sectionAllowed(key),
+        go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
+      });
+      return dashboardUi;
+    }).catch((err) => { dashboardUiLoading = null; throw err; });
+  }
+  return dashboardUiLoading;
+}
+// Function declarations reach the page by id, not through a module const, so
+// closeAllSubPages() can call this however early it runs.
+function renderDashboardIfOpen() {
+  const page = document.getElementById("dashboard-page");
+  if (dashboardUi && page && !page.hidden) dashboardUi.render();
+}
+function openDashboardPage() {
+  const page = document.getElementById("dashboard-page");
+  if (!page) return;
+  if (page.hidden) closeAllSubPages();
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  page.hidden = false;
+  setRouteHash("#dashboard");
+  updateTopbarTitle();
+  ensureDashboardUi().then((ui) => { if (!page.hidden) ui.refresh(); })
+    .catch((err) => showPageLoadError(page, "Dashboard", err, () => { pageRetries.dashboard = (pageRetries.dashboard || 0) + 1; openDashboardPage(); }));
+}
+function closeDashboardPage() {
+  const page = document.getElementById("dashboard-page");
+  if (!page || page.hidden) return;
+  page.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+{
+  const btn = document.getElementById("dashboard-btn");
+  if (btn) btn.addEventListener("click", () => { closeNavDrawer(); openDashboardPage(); });
+}
 
 // ── Support › Support Inbox (#support, support-page.js) ──────────────────
 // The support mailbox as tickets: inbox queues, one ticket's conversation and
@@ -13354,6 +13418,7 @@ navShell = initNavShell({ getEntries: navEntries, openEntry: openNavEntry, goHom
 // one of those opens, so a refresh from there still lands on the board,
 // same as before this existed.
 const ROUTE_TITLES = {
+  "#dashboard": "Dashboard",
   "#faq-management": "FAQ Management",
   "#settings": "Settings",
   "#settings/user-management/users": "Settings: Users",
@@ -13507,7 +13572,9 @@ function openDocsRouteFromHash(hash) {
 }
 function applyRouteFromHash() {
   const hash = window.location.hash;
-  if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
+  if (hash === "#dashboard") { const d = document.getElementById("dashboard-page"); if (d && d.hidden) openDashboardPage(); }
+  else if (hash === "#board") { if (anySubPageOpen()) returnToBoard(); }
+  else if (hash === "#faq-management" || hash.startsWith("#faq-management?")) openFaqArticlesPage(faqFilterFromHash(hash));
   else if (legacyUserManagementHash(hash)) { setRouteHash(legacyUserManagementHash(hash), { replace: true }); applyRouteFromHash(); }
   else if (userManagementRoute(hash) && userManagementRoute(hash).roleId) { const rid = userManagementRoute(hash).roleId; if (rolePage.hidden || rolePageId !== rid) openRolePage(rid); }
   else if (settingsPageFromHash(hash)) {
@@ -13531,7 +13598,11 @@ function applyRouteFromHash() {
   else if (hash === "#staff-kanban" || hash.startsWith("#staff-kanban/") || hash.startsWith("#staff-kanban?")) openStaffKanbanRouteFromHash(hash);
   else if (conceptDetailId) closeConceptDetailPage();
   else if (docsOpenedByRoute && !docsPage.hidden) closeDocsPage();
-  else if (!faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden) closeAllSubPages();
+  else if (anySubPageOpen()) closeAllSubPages();
+}
+function anySubPageOpen() {
+  const dash = document.getElementById("dashboard-page");
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -14847,6 +14918,9 @@ wireFaqArticleRowInteractions("faq-article-list");
 // declared throughout the file (e.g. faqArticleEditorPage). Running this
 // any earlier risks a "Cannot access before initialization" TDZ error the
 // moment a page is loaded straight into one of these two routes.
+// A load with no hash is someone opening the console: it lands on the
+// Dashboard. The Agent Board keeps its own address, #board.
+if (!window.location.hash || window.location.hash === "#") setRouteHash("#dashboard", { replace: true });
 applyRouteFromHash();
 // pendingInitialScrollRestore is consumed by openFaqArticlesPage/
 // openFaqArticleEditorPage themselves (including on the deferred path —

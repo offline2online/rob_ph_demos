@@ -6274,3 +6274,57 @@ server-only.
 Email is shown as text; attachments are named, not stored. The list and
 stats cover the 500 most recently active tickets. There are no MCP tools
 for the inbox yet. The five-minute sync depends on GitHub's schedule.
+
+## Dashboard — the console's landing page (17 Nov 2026)
+
+Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
+(`https://backlog-tracker-e4ed2.web.app/`) lands on **Dashboard**
+(`#dashboard`), the first item in the sidebar. The Agent Board keeps its own
+address, `#board`, so a reload on the board stays on the board; Agent Board in
+the sidebar and the Dashboard's Agent board tile both go there.
+
+Five KPI tiles in three sections, each a headline figure for **yesterday**,
+meaning the viewer's local calendar day before today, compared with the local
+day before it. Times are never shown or compared in UTC. Each tile's breakdown
+is a tooltip shown on hover or keyboard focus, with no explanatory copy under
+the tiles. Clicking a tile opens its section.
+
+| Section | Tile | Headline | Breakdown (tooltip) | Opens |
+|---|---|---|---|---|
+| Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
+| Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
+| External | Leads | New leads yesterday (test and archived leads left out), with the change | Companies and network operators, by name | `#promote/leads` |
+| External | Conversion funnel | Unique website visitors yesterday (personalisationhub.com, GA4 via `funnelDaily`), with the change | Funnel steps with count and drop-off: unique visitors → industry page → walkthrough or calculator → lead; industries ranked by visitors, peak first | `#promote/conversion-funnel` |
+| Support | Support | Three figures: tickets that need a person, AI drafts to approve, tickets resolved yesterday (with the change) | The needs-a-person tickets and pending AI drafts, each with the customer and how long it has waited, longest first | `#support` |
+
+Rules:
+
+- **Remaining effort** is a task's estimate minus time logged, for outstanding
+  tasks of that release; epics and done tasks are left out (the same as the
+  release report).
+- **Funnel steps from `funnelDaily`**: unique visitors are GA4's `users` when
+  the ingest sends that field, else its `visits`; "industry page" is the
+  visitors on rows with an industry; "walkthrough or calculator" is demo
+  requests plus calculator or model downloads; "lead" is leads created
+  yesterday that came from the website (source "Website…", a source page or
+  website activity).
+- **Who sees which tile**: the Dashboard is open to every member and is not a
+  permission section of its own. Each tile follows its section's permission
+  (`agent-board`, `staff-kanban`, `promote-leads`, `conversion-funnel`,
+  `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
+  left with no tiles.
+- **Reads**: the Agent board tile uses the tickets the console already holds
+  and redraws with the board. The other four read their collections once when
+  the page opens, again on Refresh, or when reopened after five minutes. The
+  page keeps no listeners.
+
+Code: `public/js/dashboard-core.js` (rules, no DOM) and
+`public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
+(`openDashboardPage`, `#board`). Tests: `node test/dashboard.test.mjs` and the
+"Dashboard" scenario in `test/ui/console-click.test.mjs`. The UI harness opens
+the console on `#board` by default; a case that wants the landing page passes
+`hash: ""`.
+
+Known gaps: trends compare with the day before only; Staff Kanban's remaining
+effort has no history, so it shows no trend. Unique visitors are GA4 sessions
+until the ingest writes a `users` figure.
