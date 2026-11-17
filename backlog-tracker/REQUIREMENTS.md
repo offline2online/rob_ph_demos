@@ -6035,7 +6035,10 @@ overlay. Presentation only: every field, action and datum is still there.
   initials when there is none), name, company line and industry chip; then inset
   grouped cards in this order: **Contacts** (inbound count beside the title; each
   contact a row with role pill, job title, email, and 44px email and LinkedIn
-  buttons; "No contacts yet" with Add contact), **AWS team** (the company's
+  buttons — the LinkedIn button shows LinkedIn's own "in" mark in LinkedIn blue
+  (`linkedinLink` in `ap-components.js`, an inline SVG because Material Symbols
+  has no brand logos; 17 Nov 2026), never a generic open-in-new-tab symbol, and
+  opens the profile in a new tab; "No contacts yet" with Add contact), **AWS team** (the company's
   `awsTeam` plus the ACE seller, each with an email button), **Company research**
   (summary, facts, LinkedIn, tech stack, Updated with the sources in its (i);
   a failed source stays visible), **Recent news**, **Recent financials · period**
