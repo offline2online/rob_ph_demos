@@ -3197,6 +3197,7 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | File | What it does |
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
+| `functions/answer-core.js` | **The one answering engine**, pure: the published Help Centre as a catalogue (`publishedArticles`), match → draft → confidence (`matchAndDraft`), the answer made safe with its articles (`answerFromHelpCentre`), whether the Help Centre answers it (`usableAnswer`), the cited titles under a reply (`withArticleTitles`). Called by triage and by Aidan's answer runs (`test/answer-core.test.js`) |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
@@ -3298,6 +3299,24 @@ thread. A run:
   thread quoted in it and its attachments. When the email can't answer it
   (it needs a document, or facts that are not there), nothing is sent and the
   ticket goes to **Needs a person** with the reason;
+- **answers a platform question with the Support Inbox's own Help Centre
+  pipeline** (18 Nov 2026, one answering engine, `functions/answer-core.js`):
+  an answer run that asks something ("@Aidan, how do I set up targeting?")
+  is first matched against the whole published Help Centre and drafted
+  exactly as "How a ticket flows" below describes: the same prompts, the
+  same articles, the same 80% rule for adding articles. When the Help Centre
+  answers it, Aidan replies in the email itself to everyone on the email,
+  opening "Hi <first name>," with the same reply body the Support Inbox
+  would draft for a customer, and a line naming each cited article by title
+  with its link (an article hidden from the website is never named). **None
+  of the Support Inbox's sending gates apply**: no confidence threshold, no
+  auto-send switch; he always replies to an allowed sender. The confidence
+  and the matched articles are kept on the ticket (`aidan.helpCentre`) and
+  shown on it in the Aidan tab, never written in the email. An
+  acknowledgement and an instruction that names a skill are not put to the
+  Help Centre. Whatever it doesn't answer (a project or documentation
+  question, a question about the email) carries on to the console and the
+  email as below (REQUIREMENTS SUP-AID-20 to 25);
 - for a write or a store, picks the skill from the skills library (named in
   the instruction, or chosen by Claude from the list). A store with no
   fitting skill goes to a person. A write with no fitting skill is tried as
@@ -3359,7 +3378,7 @@ thread. A run:
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, console plans 25 seconds each, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
+(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
 function's 540 seconds; a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
@@ -3370,12 +3389,15 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 19.
+SUP-AID-1 to 25.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
 notes and timeline in the `messages` subcollection. For each new customer
-email Claude triages it in steps (`runTriage` in `functions/support-mail.js`):
+email Claude triages it in steps (`matchAndDraft` in
+`functions/answer-core.js`, the one answering engine: triage calls it
+through `runTriage` in `functions/support-mail.js`, and Aidan's answer runs
+call the same function for a platform question):
 
 1. **Match.** It sees the subject and body together with the *whole*
    published Help Centre, one line per article (category, title, summary,
@@ -3402,10 +3424,16 @@ confidence is shown beside every suggested reply as a word and a number
 `support-eval.yml`) runs 33 made-up emails with known right answers
 (`test/fixtures/support-eval.json`) against the real model and the
 published Help Centre, and re-runs the newest real tickets, printing only
-their SUP key and article titles. Run it after changing the prompts or the
+their SUP key and article titles. Each email goes through both paths of
+the engine, as a customer's email to support@ and as the same email tagged
+"@Aidan, …" (with the reply Aidan would send), judged by the same rules;
+`EVAL_PATHS=support` or `aidan` runs one. `test/answer-core.test.js` runs
+the same fixtures through both paths with a stand-in model, on every
+train. Run it after changing the prompts or the
 Help Centre, and add a case whenever a real email is matched badly.
 
-Then one rule (`decideAction`) decides:
+Then one rule (`decideAction`) decides, for the Support Inbox only (Aidan's
+answer runs use the engine above and none of these gates):
 
 - **Sent by itself** and the ticket resolved by AI: only when sending is
   switched on in Settings, the articles answer the question, the reply cites

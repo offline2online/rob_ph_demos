@@ -98,7 +98,8 @@ function fakeGoogle(mail) {
 const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display to a store", summary: "Pair a new screen with a store", keywords: ["display", "store"], bodyMd: "<p>Open Displays and Devices, then Add display.</p>" };
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
-function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null } = {}) {
+// `triage: null` with an `Anthropic` stand-in runs the real answering engine (functions/answer-core.js).
+function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null, Anthropic = null } = {}) {
   const google = fakeGoogle(mail);
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
@@ -116,7 +117,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
-    aidan, bucket, consoleReader,
+    aidan, bucket, consoleReader, Anthropic,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -609,12 +610,22 @@ function aidanMail({ id, threadId = `t-${id}`, from = `Owner Person <${OWNER}>`,
   if (parts) m.payload = { mimeType: "multipart/mixed", headers: m.payload.headers, parts: [{ mimeType: "text/plain", body: m.payload.body }, ...parts] };
   return m;
 }
-function makeAidan(mail, { write, answer } = {}) {
-  const seen = { write: [], triaged: [], answer: [] };
+// What the answering engine says when the Help Centre doesn't answer the question.
+const NOT_IN_HELP_CENTRE = { relevant: true, category: "question", summary: "Not a Help Centre question.", answerable: false, confidence: 0.2, reply: "We'll come back to you.", articleIds: [], spamLikely: false };
+// The one stand-in for the answering engine, as triage and Aidan both call it:
+// a Support Inbox draft is GOOD; a question Aidan puts to it (source "aidan")
+// is not in the Help Centre unless `helpCentre` says otherwise.
+const engineStub = (seen, helpCentre) => async (input) => {
+  if (input.source !== "aidan") { seen.triaged.push(input.ticket.subject); return GOOD; }
+  seen.helpCentre.push(input);
+  return helpCentre ? helpCentre(input) : NOT_IN_HELP_CENTRE;
+};
+function makeAidan(mail, { write, answer, helpCentre } = {}) {
+  const seen = { write: [], triaged: [], answer: [], helpCentre: [] };
   const stored = [];
   const t = make({
     mail,
-    triage: async (input) => { seen.triaged.push(input.ticket.subject); return GOOD; },
+    triage: engineStub(seen, helpCentre),
     aidan: {
       // The model's choice when no skill is named: none fits.
       select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
@@ -777,7 +788,7 @@ check("Aidan: \"please confirm you received this email\" is answered in the emai
   assert.deepStrictEqual([queued.aidan.status, queued.aidan.kind, queued.aidanPending, queued.aidan.instruction], ["queued", "answer", true, "please confirm you received this email."], "queued as an answer; Sync now does not run it");
   const r = await cron(t);
   assert.deepStrictEqual([r.statusCode, r.body.aidanRuns], [200, 1]);
-  assert.deepStrictEqual([t.seen.select, t.seen.write.length, t.seen.triaged], [undefined, 0, []], "no skill is chosen, no document is written, no Help Centre draft");
+  assert.deepStrictEqual([t.seen.select, t.seen.write.length, t.seen.triaged, t.seen.helpCentre], [undefined, 0, [], []], "no skill is chosen, no document is written, no Help Centre draft, and an acknowledgement is not put to the Help Centre");
   const a = t.seen.answer[0];
   assert.deepStrictEqual([a.skill, a.instruction], [null, "please confirm you received this email."]);
   assert.ok(JSON.stringify(a.content).includes("Instruction to Aidan: please confirm you received this email.") && JSON.stringify(a.content).includes("The sender's first name: Owner"));
@@ -817,6 +828,9 @@ check("Aidan: a question is answered from the email and the thread quoted in it;
   assert.strictEqual(named.skill.id, "s2");
   assert.ok(/Summarise the POC\./.test(named.system), "a skill named in the question is read");
   assert.deepStrictEqual([ticketOf(t, "t-named").aidan.kind, ticketOf(t, "t-named").aidan.skillName], ["answer", "POC summary"]);
+  // One answering engine: the question is put to the Help Centre first; it isn't there, so the email answers it. One that names a skill is not put to it.
+  assert.deepStrictEqual(t.seen.helpCentre.map((h) => h.messages[0].text.split("\n")[0]), ["@Aidan, what's the status of the Kestrel POC?"]);
+  assert.strictEqual(ticketOf(t, "t-q").aidan.helpCentre, undefined, "nothing from the Help Centre is recorded when it didn't answer");
   assert.deepStrictEqual([ticketOf(t, "t-stranger").aidan.status, ticketOf(t, "t-forged").aidan.status], ["ignored", "ignored"]);
   assert.ok(/not allowed/.test(ticketOf(t, "t-stranger").aidan.reason) && /couldn't be verified/.test(ticketOf(t, "t-forged").aidan.reason));
 });
@@ -1105,12 +1119,12 @@ function stubConsole() {
   };
   return { reader, calls };
 }
-function makeConsoleAidan(mail, { plan, answer, write } = {}) {
+function makeConsoleAidan(mail, { plan, answer, write, helpCentre } = {}) {
   const c = stubConsole();
-  const seen = { write: [], triaged: [], answer: [], plan: [] };
+  const seen = { write: [], triaged: [], answer: [], plan: [], helpCentre: [] };
   const t = make({
     mail, consoleReader: c.reader,
-    triage: async (input) => { seen.triaged.push(input.ticket.subject); return GOOD; },
+    triage: engineStub(seen, helpCentre),
     aidan: {
       select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
       write: async (input) => { seen.write.push(input); return write ? write(input) : DOC; },
@@ -1325,6 +1339,130 @@ check("Aidan reads the console within the function's budget: planning rounds are
   const ac = require("../functions/aidan-core");
   assert.ok(ac.CONSOLE_ROUNDS <= 2 && CONSOLE_PLAN_TIMEOUT_MS <= 30000);
   assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + document + a minute fit in 540 s");
+});
+
+// ── One answering engine (rVv1x2N8xlKAZs0gpkRx, functions/answer-core.js) ──
+// A stand-in for the Anthropic SDK that keeps each request, for the real engine.
+function recordingModel(answers) {
+  const reqs = [];
+  class Client {
+    constructor(opts) { this.beta = { messages: { create: async (req) => {
+      const step = req.system.startsWith("You route") ? "select" : req.system.startsWith("You write replies") ? "draft" : "other";
+      reqs.push({ step, system: req.system, content: req.messages[0].content, maxRetries: opts.maxRetries, timeout: opts.timeout });
+      return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(answers(step, req)) }] };
+    } } }; }
+  }
+  return { Client, reqs };
+}
+
+check("one answering engine: the same question to support@ and to @Aidan matches the same articles and drafts the same reply; only what happens after differs", async () => {
+  const core = require("../functions/support-core");
+  const QUESTION = "How do I add a display to my store?";
+  const BODY = "Open Displays and Devices, then Add display.";
+  const model = recordingModel((step) => (step === "select"
+    ? { relevant: true, question: "How to add a display.", category: "how-to", articleIds: ["a1"], spamLikely: false }
+    : { summary: "Wants to add a display.", answerable: true, confidence: 0.62, reply: BODY, articleIds: ["a1"] }));
+  // Sending by itself is ON for support: its gates still hold a 62% draft for a person.
+  const t = make({ triage: null, Anthropic: model.Client, settings: { autoReply: true }, mail: [
+    gmailMessage({ id: "c1", threadId: "t-c1", subject: "Displays", text: QUESTION, date: 1759990000000 }),
+    aidanMail({ id: "q1", cc: "client@shop.example", subject: "Displays", text: `@Aidan, ${QUESTION}`, date: 1759990001000 }),
+  ] });
+  t.db.state.skills = JSON.parse(JSON.stringify(SKILLS));
+  await connectAidan(t);
+  await cron(t); // Aidan's run
+  await cron(t); // triage
+  const sup = ticketOf(t, "t-c1"), aid = ticketOf(t, "t-q1");
+  // The same matched articles and the same confidence, from the same engine.
+  assert.deepStrictEqual(aid.aidan.helpCentre.articles, sup.aiDraft.articles);
+  assert.deepStrictEqual(aid.aidan.helpCentre.articles, [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }]);
+  assert.deepStrictEqual([aid.aidan.helpCentre.confidence, aid.aidan.helpCentre.confidenceSteps, aid.aidan.helpCentre.question], [sup.aiDraft.confidence, sup.aiDraft.confidenceSteps, "Wants to add a display."]);
+  assert.strictEqual(sup.aiDraft.confidence, 0.62);
+  // An equivalent draft: the engine's reply body is the body of both.
+  assert.strictEqual(sup.aiDraft.text, `Hi Ann,\n\nThanks for your email.\n\n${BODY}`);
+  // Support keeps its gates: 62% is under the 80% needed, so nothing was sent to the customer.
+  assert.deepStrictEqual([sup.status, sup.triageReason, sup.autoRepliesSent], ["open", "Confidence 62% is under the 80% needed to send.", 0]);
+  // Aidan applies none of them: he replied, to everyone on the email, in the email itself.
+  assert.strictEqual(t.google.calls.sent.length, 1, "one email in all: Aidan's");
+  const sent = t.google.calls.sent[0];
+  assert.strictEqual(sent.threadId, "t-q1");
+  assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && sent.mail.includes("Cc: client@shop.example"), "reply-all: the Help Centre is public");
+  assert.ok(/Content-Type: text\/plain/.test(sent.mail) && !/multipart|filename=/i.test(sent.mail), "inline, nothing attached");
+  const body = readSent(sent).body;
+  assert.strictEqual(body.trim(), `Hi Owner,\n\n${BODY}\n\nHelp Centre article:\nAdd a display to a store: https://personalisationhub.com/support-centre/article.html?id=a1\n\nAidan\nAssistant to Rob, Personalisation Hub`);
+  assert.ok(!/62|confidence/i.test(body), "the confidence is on the ticket, never in the email");
+  assert.deepStrictEqual([aid.status, aid.resolvedBy, aid.aidan.status, aid.aidan.kind, aid.aidan.recipients, aid.aiDraft, aid.triagePending], ["resolved", "aidan", "replied", "answer", 2, null, false]);
+  const out = messagesOf(t, "t-q1").find((m) => m.direction === "out");
+  assert.deepStrictEqual([out.kind, out.helpCentre, out.confidence, out.articles.map((a) => a.id)], ["answer", true, 0.62, ["a1"]]);
+  assert.ok(messagesOf(t, "t-q1").some((m) => m.direction === "event" && /Aidan answered from the Help Centre \(1 article, 62% confidence\) in the email itself and replied to 2 people\./.test(m.text)));
+  // Exactly the same pipeline: the same two prompts, the same catalogue, the same question.
+  const [aSel, aDraft, sSel, sDraft] = model.reqs;
+  assert.deepStrictEqual(model.reqs.map((r) => r.step), ["select", "draft", "select", "draft"], "match then draft, for each");
+  assert.deepStrictEqual([aSel.system, aDraft.system], [core.SELECT_SYSTEM, core.TRIAGE_SYSTEM]);
+  assert.deepStrictEqual([sSel.system, sDraft.system], [aSel.system, aDraft.system]);
+  const catalogue = (r) => r.content.match(/<catalogue>[\s\S]*<\/catalogue>/)[0];
+  assert.strictEqual(catalogue(aSel), catalogue(sSel), "the whole published Help Centre, for both");
+  assert.ok(aSel.content.includes(`[customer]\n@Aidan, ${QUESTION}`) && sSel.content.includes(`[customer]\n${QUESTION}`));
+  assert.ok(aDraft.content.includes("<article id=\"a1\"") && sDraft.content.includes("<article id=\"a1\""));
+  assert.deepStrictEqual([aSel.maxRetries, aDraft.maxRetries], [0, 0], "inside an Aidan run the engine is never retried");
+});
+
+check("one answering engine: Aidan always replies when the Help Centre answers, names only articles that are on the website, and reads only the tagged email", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "old", threadId: "t-th", from: "Client <client@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "Our internal notes: the budget is 40k.", date: 1759990000000 }),
+    aidanMail({ id: "ask", threadId: "t-th", cc: "client@shop.example", text: "@Aidan, how do I set up targeting?\n\nOn Mon, 16 Nov 2026 at 10:00, Client <client@shop.example> wrote:\n> Our internal notes: the budget is 40k.", date: 1759990001000 }),
+  ], { helpCentre: () => ({ relevant: true, category: "how-to", summary: "How to set up targeting.", answerable: true, confidence: 0.31, confidenceSteps: [{ articles: 1, confidence: 0.2 }, { articles: 2, confidence: 0.31 }],
+    reply: "Hello Owner,\n\nThanks for your email.\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nKind regards,\nSupport", articleIds: ["a1", "h1", "nope"], spamLikely: false }) });
+  t.db.state.faqArticles.h1 = { ...ARTICLE, title: "Targeting rules (internal draft)", hiddenFromWebsite: true };
+  await connectAidan(t);
+  await cron(t);
+  const tk = ticketOf(t, "t-th");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.kind, tk.status], ["replied", "answer", "resolved"], "31% is far under support's threshold, and Aidan still replies");
+  assert.deepStrictEqual(tk.aidan.helpCentre, { confidence: 0.31, confidenceSteps: [{ articles: 1, confidence: 0.2 }, { articles: 2, confidence: 0.31 }], question: "How to set up targeting.",
+    articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }, { id: "h1", title: "Targeting rules (internal draft)", url: "" }] });
+  const body = readSent(t.google.calls.sent[0]).body.trim();
+  assert.strictEqual(body, "Hi Owner,\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nAidan\nAssistant to Rob, Personalisation Hub", "the engine's greeting and sign-off are replaced by Aidan's; an article the reply names is not listed twice");
+  assert.ok(!/internal draft/.test(body), "an article hidden from the website is on the ticket, never named in the email");
+  // The engine was given the tagged email only, as a customer's first email: not the thread's earlier mail, and no answer model, console read or skill.
+  const asked = t.seen.helpCentre[0];
+  assert.deepStrictEqual([asked.source, asked.messages.length, asked.messages[0].direction, asked.ticket.customerName, asked.ticket.customerEmail, asked.ticket.subject], ["aidan", 1, "in", "Owner Person", OWNER, "Kestrel onboarding"]);
+  assert.ok(asked.articles.some((a) => a.id === "h1" && a.url === "") && !asked.articles.some((a) => a.id === "a2"), "the same catalogue as triage: published, hidden ones included, drafts left out");
+  assert.deepStrictEqual([t.seen.answer.length, t.seen.select, t.seen.triaged], [0, undefined, []]);
+});
+
+check("one answering engine: what the Help Centre doesn't answer carries on to the console and the email, and a failing engine never stops a run", async () => {
+  const cases = {
+    "t-seo": { relevant: false, category: "other", summary: "x", answerable: true, confidence: 0.9, reply: "Hello", articleIds: ["a1"], spamLikely: false },
+    "t-spam": { ...GOOD, spamLikely: true },
+    "t-none": { ...GOOD, articleIds: [] },
+    "t-hold": { ...GOOD, answerable: false },
+    "t-empty": { ...GOOD, reply: "" },
+  };
+  const mail = Object.keys(cases).map((threadId, i) => aidanMail({ id: `m${i}`, threadId, subject: threadId, text: "@Aidan, what did the client say about the rollout?", date: 1759990000000 + i }));
+  mail.push(aidanMail({ id: "boom", threadId: "t-boom", subject: "t-boom", text: "@Aidan, what did the client say about the rollout?", date: 1759990000010 }));
+  const t = makeConsoleAidan(mail, {
+    helpCentre: (input) => { if (input.ticket.subject === "t-boom") throw new Error("model down"); return cases[input.ticket.subject]; },
+    answer: () => ({ canAnswer: true, replyText: "They are happy with it.", documentMd: "", title: "", reason: "" }),
+  });
+  await connectAidan(t);
+  for (let i = 0; i < mail.length; i++) await cron(t);
+  assert.strictEqual(t.seen.helpCentre.length, mail.length, "each question was put to the Help Centre once, the one that failed included");
+  for (const m of mail) {
+    const tk = ticketOf(t, m.threadId);
+    assert.deepStrictEqual([tk.aidan.status, tk.aidan.kind, tk.aidan.helpCentre], ["replied", "answer", undefined], m.threadId);
+  }
+  assert.strictEqual(t.seen.plan.filter((p) => p.round === 0).length, mail.length, "the console is still planned for each");
+  assert.strictEqual(t.seen.answer.length, mail.length, "and each is answered as before");
+  assert.ok(t.google.calls.sent.every((s) => readSent(s).body.startsWith("They are happy with it.")));
+});
+
+check("one answering engine: a question put to the Help Centre first still fits the function's budget", () => {
+  const { DRAFT_TIMEOUT_MS } = require("../functions/support-mail");
+  const { CONSOLE_PLAN_TIMEOUT_MS, ANSWER_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
+  const ac = require("../functions/aidan-core");
+  const core = require("../functions/support-core");
+  assert.ok(core.MAX_ARTICLES >= 1 && DRAFT_TIMEOUT_MS <= 40000);
+  // The match, the best article's draft and one wider draft; then, when the Help Centre doesn't answer, the console plans and the answer.
+  assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000);
 });
 
 (async () => {

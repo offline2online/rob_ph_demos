@@ -30,6 +30,9 @@
 //   "answer"    replies to everyone on the email in the email's own body, with
 //               no attachment: an acknowledgement, or the answer to a question
 //               (Answer). Every instruction that is not a write or a store.
+//               A question about the platform is answered from the Help
+//               Centre by the Support Inbox's own engine
+//               (functions/answer-core.js), with none of its sending gates.
 // An answer or a write may also read the console's own data, read-only
 // (CONSOLE_READ_TOOLS, below); a request to change the console is refused
 // politely and changes nothing (consoleChangeRequest).
@@ -769,6 +772,13 @@ function cleanAnswer(raw) {
 function composeAidanAnswer({ replyText, fromName }) {
   return `${String(replyText || "").replace(/\r/g, "").trim()}\n\n${fromName || DEFAULT_FROM_NAME}\nAssistant to Rob, Personalisation Hub`;
 }
+// The email Aidan sends when the Help Centre answers the question (the shared
+// answering engine, functions/answer-core.js): a greeting, the engine's reply
+// with its articles named, then the sign-off. No "Thanks for your email": the
+// sender is a colleague, not a customer.
+function composeHelpCentreAnswer({ firstName, replyText, fromName }) {
+  return composeAidanAnswer({ replyText: `${firstName ? `Hi ${firstName},` : "Hi,"}\n\n${String(replyText || "").replace(/\r/g, "").trim()}`, fromName });
+}
 
 // ── Reading the console (1W4QQzYdlJzfdqizePWR) ────────────────────────────
 // An answer or a write run may read the PH Agent Console's own data, so Rob can
@@ -1123,7 +1133,7 @@ module.exports = {
   attachmentParts, pickAttachments, attachmentInput, fromB64url,
   skillNamedIn, SELECT_SCHEMA, SELECT_SYSTEM, skillIndexLine, cleanSelection,
   DOC_SCHEMA, DOC_SYSTEM, DOC_CONSOLE_LINE, DOC_RECIPIENTS_LINE, DOC_CONSOLE_RECIPIENTS_LINE, docSystemFor, safeFileName, cleanDocument, composeAidanReply, greetingName,
-  ANSWER_SCHEMA, ANSWER_SYSTEM, ANSWER_MAX, cleanAnswer, composeAidanAnswer,
+  ANSWER_SCHEMA, ANSWER_SYSTEM, ANSWER_MAX, cleanAnswer, composeAidanAnswer, composeHelpCentreAnswer,
   CONSOLE_READ_TOOLS, MAX_CONSOLE_READS, CONSOLE_ROUNDS, CONSOLE_READ_CHARS, CONSOLE_DATA_BUDGET, ANSWER_PAGE_CHARS, ANSWER_PAGE_LINES,
   PROJECT_SCOPED_READS, consoleChangeRequest, mayReadConsole, isAcknowledgement, writeReadsConsole, asksForIds, composeReadOnlyReply, consoleRecipients, scrubAddresses, namesById, stripIds, consoleIndex,
   CONSOLE_PLAN_SCHEMA, CONSOLE_PLAN_SYSTEM, toolIndexLine, consolePlanPrompt, cleanConsolePlan, consoleBlock,

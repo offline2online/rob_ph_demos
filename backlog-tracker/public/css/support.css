@@ -87,6 +87,8 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-draft-text { margin: 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .support-draft-sources { font-size: 12.5px; color: var(--text-muted); }
 .support-draft-sources a { color: var(--primary-text); }
+/* An answer Aidan took from the Help Centre: its confidence, then the articles it was written from. */
+.support-aidan-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
 .support-draft-actions, .support-send { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .support-faq { margin-top: 10px; }
 .support-faq .um-search { display: block; max-width: none; }

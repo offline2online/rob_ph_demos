@@ -177,6 +177,19 @@ check("Aidan's state on a ticket reads as a badge and one line; nothing when Aid
   assert.ok(aidanView({ status: "queued", kind: "answer", instruction: "please confirm you received this" }).line.startsWith('Aidan was asked to answer on the email: "please confirm you received this".'));
 });
 
+check("an answer Aidan took from the Help Centre carries its matched articles and confidence; any other run carries none", () => {
+  const hc = { confidence: 0.62, confidenceSteps: [{ articles: 1, confidence: 0.5 }, { articles: 2, confidence: 0.62 }], articles: [{ id: "a1", title: "Set up targeting", url: "https://x.example/a1" }, { id: "h1", title: "Hidden one", url: "" }, { id: "bad" }] };
+  const v = aidanView(normaliseTicket("x", { aidan: { status: "replied", kind: "answer", recipients: 2, helpCentre: hc } }).aidan);
+  assert.strictEqual(v.line, "Aidan answered from the Help Centre, in the email itself, to 2 people on this email. Nothing was attached.");
+  assert.deepStrictEqual(v.helpCentre, { confidence: 0.62, confidenceSteps: hc.confidenceSteps, articles: [{ id: "a1", title: "Set up targeting", url: "https://x.example/a1" }, { id: "h1", title: "Hidden one", url: "" }] });
+  assert.strictEqual(aidanView({ status: "replied", kind: "answer", recipients: 2 }).helpCentre, null, "an answer from the email or the console");
+  assert.strictEqual(aidanView({ status: "replied", kind: "answer", recipients: 2, helpCentre: { confidence: 0.9, articles: [] } }).helpCentre, null, "no article, nothing to show");
+  assert.strictEqual(aidanView({ status: "replied", kind: "generate", recipients: 2, helpCentre: hc }).helpCentre, null, "only an answer");
+  assert.strictEqual(aidanView({ status: "needs-person", kind: "answer", helpCentre: hc }).helpCentre, null, "only one that was sent");
+  assert.strictEqual(aidanView({ status: "replied", kind: "answer", recipients: 1, helpCentre: { confidence: 7, articles: [{ id: "a", title: "T" }] } }).helpCentre.confidence, 1);
+  assert.ok(!aidanThreadState(null).helpCentre, "a thread Aidan never ran has none");
+});
+
 check("Hello and Aidan are plain inboxes: an email list with unread and spam, no queues", () => {
   assert.deepStrictEqual(INBOXES.map((i) => isPlainInbox(i.key)), [false, true, true], "only the Support Inbox is worked as tickets");
   assert.strictEqual(isPlainInbox("nonsense"), false, "an unknown inbox is the Support Inbox");

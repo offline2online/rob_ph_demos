@@ -35,7 +35,11 @@ const aidanStateBadge = (t) => { const v = aidanThreadState(t.aidan); return `<s
 const OPENED_KEY = "bt-support-opened";
 function readOpened() { try { const v = JSON.parse(localStorage.getItem(OPENED_KEY) || "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } }
 function writeOpened(map) { try { localStorage.setItem(OPENED_KEY, JSON.stringify(Object.fromEntries(Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 600)))); } catch { /* private window: unread falls back to "not yet answered" */ } }
-const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>` : ""; };
+// The Help Centre articles a reply was written from, as links (an article hidden from the website has no page to link to).
+const sourcesHtml = (articles) => `<div class="support-draft-sources">From: ${articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>`;
+// An answer Aidan took from the Help Centre: the confidence and the matched articles (on the ticket only, never in his email).
+const aidanSourcesHtml = (v) => (v && v.helpCentre ? `<div class="support-aidan-sources">${confidenceHtml(v.helpCentre.confidence)}${sourcesHtml(v.helpCentre.articles)}</div>${confidenceChangeHtml(v.helpCentre.confidenceSteps)}` : "");
+const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}` : ""; };
 function aidanMessageHtml(m, at) {
   const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
   return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.kind === "answer" ? " · Answer" : ""}${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
@@ -258,7 +262,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : ""}${state ? aidanStateBadge(t) : ""}
           ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
-        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>` : ""}
+        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}` : ""}
       </div>
       ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
         ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`
@@ -312,7 +316,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           ${draft.answerable ? "" : `<span class="badge badge-wp-waiting">Holding reply: the Help Centre doesn't answer this</span>`}</div>
         ${confidenceChangeHtml(draft.confidenceSteps)}
         <div class="support-draft-text">${esc(draft.text)}</div>
-        ${draft.articles.length ? `<div class="support-draft-sources">From: ${draft.articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>` : ""}
+        ${draft.articles.length ? sourcesHtml(draft.articles) : ""}
         <div class="support-draft-actions"><button type="button" class="btn-ghost" data-support-act="use-draft">Use this reply</button><button type="button" class="btn-ghost" data-support-act="redraft">Write another</button></div></div>`
       : edit && t.status !== "spam" && !t.automated ? `<div class="support-draft support-draft-none">${icon("auto_awesome")}<span>${esc(t.triagePending ? "A reply is being drafted…" : t.triageReason || "No suggested reply.")}</span><button type="button" class="btn-ghost" data-support-act="redraft">Draft a reply</button></div>` : "";
     const composerHtml = !edit || t.status === "spam" ? "" : `<div class="support-composer">
@@ -517,7 +521,7 @@ function aidanSettingsHtml(aidan, admin) {
     ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
     : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
   return `<div class="docs-block" id="support-aidan-settings"><div class="docs-block-header"><h3>Aidan
-      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction. A request to write something is written with the matching skill and sent to everyone on the email as an attachment. A request to keep something stores the email and its attachments as reference material for a skill. Anything else, such as a question or a request to confirm, is answered in the reply itself, with no attachment. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
+      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction. A request to write something is written with the matching skill and sent to everyone on the email as an attachment. A request to keep something stores the email and its attachments as reference material for a skill. Anything else, such as a question or a request to confirm, is answered in the reply itself, with no attachment. A question about the platform is answered from the Help Centre, the way the Support Inbox drafts a reply, and the ticket shows the articles and the confidence. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
       ${state}
       <div class="support-set-grid">
         <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>

@@ -37,6 +37,17 @@
 //     replaced by titles unless asked for. A request to
 //     change the console gets a polite "read-only, nothing changed" reply
 //     (`readOnlyReply`), and nothing is changed.
+//   • One answering engine (rVv1x2N8xlKAZs0gpkRx): an answer run that asks a
+//     question is first put to the Support Inbox's own Help Centre pipeline
+//     (functions/answer-core.js: match against the whole published Help
+//     Centre, draft from the best article, add articles when confidence is
+//     under 80%). When the Help Centre answers it (`helpCentreAnswer`), that
+//     reply is sent in the email itself, to everyone on the email, with the
+//     articles named by title; the confidence and the matched articles are
+//     kept on the ticket (`aidan.helpCentre`), never written in the email.
+//     None of the Support Inbox's sending gates apply. Anything the Help
+//     Centre doesn't answer (a project or documentation question, a question
+//     about the email) carries on to the console and the email as before.
 //     A run still "working" after 15 minutes was cut off: the next sync moves
 //     it to a person (`sweepStale`).
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
@@ -49,6 +60,7 @@
 const crypto = require("crypto");
 const core = require("./support-core");
 const ac = require("./aidan-core");
+const answerCore = require("./answer-core");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -63,7 +75,9 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // retried (worst case about 2 + 1 + 4 minutes, plus attachment reads and the
 // send; an answer gets ANSWER_TIMEOUT_MS, so 2 + 1 + 2 at most). Reading the
 // console adds at most CONSOLE_ROUNDS planning calls of CONSOLE_PLAN_TIMEOUT_MS
-// each (under a minute) and the reads themselves. A run that is cut off anyway is moved to a person by the next sync
+// each (under a minute) and the reads themselves. A question put to the Help
+// Centre first adds at most three calls of the engine's own 40 s (the match and
+// two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. A run that is cut off anyway is moved to a person by the next sync
 // (sweepStale) once it has been "working" for STALE_MS.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
@@ -80,7 +94,10 @@ const tsMs = (v) => (!v ? 0 : typeof v.toMillis === "function" ? v.toMillis() : 
 
 // `consoleReader` (functions/mcp-server.js → consoleReader): { tools(), read(name, args) }
 // over the console's read-only MCP tools; null leaves Aidan reading the email only.
-function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null }) {
+// `helpCentre` (support-mail.js): { articles(), run } — the published Help
+// Centre catalogue and, in tests, the stand-in for the answering engine; null
+// leaves a platform question to the console and the email.
+function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null }) {
   const data = (snap) => (snap && snap.exists ? snap.data() || {} : null);
   const configRef = () => secretsRef(CONFIG_DOC);
   const errText = (err) => core.clip(String(err && err.message ? err.message : err), 300);
@@ -469,6 +486,53 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       : `Aidan answered on the email and replied to ${n} ${n === 1 ? "person" : "people"}.`);
   }
 
+  // ── One answering engine: a platform question, from the Help Centre ──
+  // The Support Inbox's own match → draft → confidence pipeline
+  // (answer-core.js), given the tagged email exactly as triage is given a
+  // customer's first email. Returns { triage, cited } when the Help Centre
+  // answers the question, else null (not about the platform, no article
+  // answers it, or the engine couldn't be reached): the run then carries on to
+  // the console and the email. An acknowledgement asks nothing, and an
+  // instruction that names a skill is answered with that skill, so neither is
+  // put to the engine. With Aidan's model stubbed (`run`) the engine runs only
+  // when it is stubbed too, so no test reaches the network.
+  async function helpCentreAnswer({ ticketId, msg, ticket, instruction, skill }) {
+    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction)) return null;
+    if (runImpl && !helpCentre.run) return null;
+    try {
+      const articles = await helpCentre.articles();
+      if (!articles.length) return null;
+      const q = answerCore.questionFromEmail({ fromName: msg.fromName, fromEmail: msg.from, subject: msg.subject || ticket.subject, text: msg.text });
+      const answered = await answerCore.answerFromHelpCentre({ run: helpCentre.run, call: model, ticket: q.ticket, messages: q.messages, articles, source: "aidan" });
+      return answerCore.usableAnswer(answered.triage) ? answered : null;
+    } catch (err) {
+      logger.warn("support: Aidan Help Centre match failed", { ticketId, error: errText(err) });
+      return null;
+    }
+  }
+  // The Help Centre's answer, sent as Aidan's: the engine's reply body as the
+  // Support Inbox would draft it (support-core.js → stripOpening), the cited
+  // articles named by title, in the email itself, to everyone on the email
+  // (the Help Centre is public, so nobody is left off). Always sent: the
+  // Support Inbox's confidence threshold and auto-send switch are not Aidan's.
+  // The confidence and the articles go on the ticket, not in the email.
+  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const n = recipients.to.length + recipients.cc.length;
+    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), fromName: config.fromName });
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", helpCentre: true, confidence: triage.confidence, articles: cited } });
+    const pct = Math.round(triage.confidence * 100);
+    return finish({
+      aidan: { status: "replied", kind: "answer", recipients: n, sentId,
+        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } },
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan answered from the Help Centre (${cited.length} article${cited.length === 1 ? "" : "s"}, ${pct}% confidence) in the email itself and replied to ${n} ${n === 1 ? "person" : "people"}.`);
+  }
+
   async function runOne(ticketId) {
     const ref = tickets().doc(ticketId);
     // The claim is a transaction: of two instances working the queue at once,
@@ -538,9 +602,16 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       };
       // An answer needs no skill: one named in the instruction is read, and
       // the model is never asked to choose one.
+      // A question about the platform goes to the Help Centre first, through
+      // the Support Inbox's own engine; whatever that doesn't answer (a
+      // project or documentation question, a question about the email)
+      // carries on to the console and the email.
       if (d.action === "answer") {
+        const skill = ac.skillNamedIn(d.instruction, skills);
+        const fromHelpCentre = await helpCentreAnswer({ ticketId, msg, ticket, instruction: d.instruction, skill });
+        if (fromHelpCentre) return sendHelpCentreAnswer(Object.assign({}, base, fromHelpCentre));
         if (await readTheConsole()) return readOnlyReply(base);
-        return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { skill: ac.skillNamedIn(d.instruction, skills), consoleData }));
+        return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { skill, consoleData }));
       }
       const chosen = await chooseSkill({ instruction: d.instruction, email, skills });
       if (!chosen.skill) {

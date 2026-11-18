@@ -3708,6 +3708,58 @@ const scenarios = [
       for (const want of ["Sent by Aidan · Answer", "To owner@example.com", "Cc client@shop.example", "Got it, Owner, all good."]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
       assert.strictEqual(await c.page.locator(".support-msg-aidan .support-msg-files").count(), 0, "no attachment line");
       assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/a1");
+      assert.strictEqual(await c.page.locator(".support-aidan-sources, .support-conf").count(), 0, "an answer that isn't from the Help Centre shows no articles or confidence");
+    },
+  },
+  {
+    // rVv1x2N8xlKAZs0gpkRx: one answering engine. A platform question tagged
+    // for Aidan is answered from the Help Centre by the Support Inbox's own
+    // pipeline; the ticket shows the matched articles and the confidence,
+    // which are never written in the email.
+    name: "Support Inbox: an Aidan answer from the Help Centre shows its matched articles and confidence on the ticket",
+    hash: "#support/aidan?queue=all",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: "owner@example.com", customerName: "Owner Person", status: "resolved", resolvedBy: "aidan", inboxes: ["aidan"], createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        h1: tk(1, { subject: "Targeting", aidan: { status: "replied", kind: "answer", recipients: 2, helpCentre: {
+          confidence: 0.62, confidenceSteps: [{ articles: 1, confidence: 0.5 }, { articles: 2, confidence: 0.62 }], question: "How to set up targeting.",
+          articles: [{ id: "art-1", title: "Set up campaign targeting", url: "https://personalisationhub.com/support-centre/article.html?id=art-1" }, { id: "art-2", title: "Targeting rules", url: "" }] } } }),
+        e1: tk(2, { subject: "Did this reach you", aidan: { status: "replied", kind: "answer", recipients: 2 } }),
+      };
+      s.docs["supportTickets/h1/messages"] = {
+        m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, how do I set up targeting?", at: t(T0) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", helpCentre: true, from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Hi Owner,\n\nOpen the campaign, then Targeting.\n\nHelp Centre article:\nSet up campaign targeting: https://personalisationhub.com/support-centre/article.html?id=art-1\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      await until(async () => (await c.page.locator(".support-row").count()) === 2, "both Aidan tickets");
+      c.at("the ticket says the answer came from the Help Centre, with the confidence and the articles");
+      await c.click('[data-support-ticket="h1"]', "the Help Centre answer");
+      await c.visible(".support-aidan-sources");
+      assert.strictEqual((await c.text(".support-aidan-line")).replace("smart_toy", "").trim(), "Aidan answered from the Help Centre, in the email itself, to 2 people on this email. Nothing was attached.");
+      assert.strictEqual(await c.page.$eval(".support-aidan-sources .support-conf", (el) => `${el.textContent} / ${el.className}`), "Medium confidence · 62% / support-conf support-conf-medium");
+      const sources = await c.page.$eval(".support-aidan-sources .support-draft-sources", (el) => el.textContent.replace(/\s+/g, " ").trim());
+      assert.strictEqual(sources, "From: Set up campaign targeting, Targeting rules (not on the website)");
+      assert.deepStrictEqual(await c.page.$$eval(".support-aidan-sources a", (as) => as.map((a) => [a.textContent, a.getAttribute("href"), a.target])), [["Set up campaign targeting", "https://personalisationhub.com/support-centre/article.html?id=art-1", "_blank"]], "an article on the website is a link; a hidden one is not");
+      assert.ok((await c.text(".support-conf-change")).includes("50% from 1 article, 62% with 2 combined"), "the change from adding an article is shown");
+      c.at("the confidence is on the ticket, not in the email Aidan sent");
+      const sent = await c.page.evaluate(() => document.querySelector(".support-msg-aidan").textContent.replace(/\s+/g, " "));
+      assert.ok(sent.includes("Sent by Aidan · Answer") && sent.includes("Help Centre article: Set up campaign targeting") && !/62%|confidence/i.test(sent));
+      assert.strictEqual(await c.page.locator('.support-draft, #support-assign, [data-support-act="escalate"], [data-support-status="resolved"]').count(), 0, "still a plain inbox: no draft and no triage control");
+      c.at("at phone width the confidence and the articles wrap inside the ticket");
+      const viewport = c.page.viewportSize();
+      await c.page.setViewportSize({ width: 390, height: 844 });
+      const fits = await c.page.$eval(".support-aidan-sources", (el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1; });
+      assert.ok(fits, "no sideways scroll at 390px");
+      await c.page.setViewportSize(viewport);
+      c.at("an answer that didn't come from the Help Centre shows neither");
+      await c.click('[data-support-act="back"]', "back to the Aidan tab");
+      await c.click('[data-support-ticket="e1"]', "the plain answer");
+      await c.visible(".support-aidan-line");
+      assert.strictEqual(await c.page.locator(".support-aidan-sources, .support-conf").count(), 0);
     },
   },
 ];

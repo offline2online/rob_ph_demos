@@ -6511,7 +6511,8 @@ data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
   before triage and only in the sync's first two minutes (otherwise it waits
   for the next sync), the skill choice has one minute and the document four,
   neither model call is retried, and a sync that ran Aidan leaves triage to
-  the next sync. A run still `working` 15 minutes after it started was cut
+  the next sync. An answer has two minutes, after the Help Centre engine's
+  three calls of 40 seconds at most (SUP-AID-21) and the console plans. A run still `working` 15 minutes after it started was cut
   off: the next sync (scheduled or "Sync now") moves it to Needs a person
   with that reason, and it is never started again.
 - **SUP-AID-11** Queueing is idempotent. Each email is decided once per
@@ -6659,6 +6660,53 @@ data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
   "deploy … to main" or "merge … into main" is refused whatever it names.
   "Open a ticket" makes one; "open the Backlog Tracker README and summarise
   it" reads it; "update me on …" asks for news.
+- **SUP-AID-20** (18 Nov 2026, ticket rVv1x2N8xlKAZs0gpkRx) **One answering
+  engine.** A question about the platform in an answer run is answered by
+  the same match-and-draft pipeline as the Support Inbox
+  (`functions/answer-core.js`, SUP-AI-7, SUP-AI-8, SUP-AI-10): matched
+  against the whole published Help Centre, drafted from the best article,
+  drafted again from the best 2 or 3 when confidence is under 80%. The same
+  prompts, the same catalogue (hidden-from-website articles included) and
+  the same limits; neither path has a copy of its own. The same question
+  from a customer to support@ and tagged for Aidan by an allowed sender
+  gets the same matched articles and the same reply body.
+- **SUP-AID-21** Every answer run that asks something is put to that engine
+  first, with the tagged email alone (its quoted history and the rest of the
+  thread are not read). Not put to it: an acknowledgement ("please confirm
+  you received this"), and an instruction that names a skill (answered with
+  that skill, SUP-AID-14). When the Help Centre answers it (about the
+  platform, not spam, the articles fully answer it, at least one article
+  cited), Aidan replies with that answer. Otherwise, or when the engine
+  cannot be reached, the run carries on exactly as before: the console
+  (project and documentation questions, SUP-AID-16) and the email
+  (SUP-AID-14). The engine's calls are not retried and take 40 seconds each
+  at most (three at most), so the run still fits the function (SUP-AID-10).
+- **SUP-AID-22** Aidan applies **none of the Support Inbox's sending gates**
+  (SUP-AI-2, SUP-AI-3, SUP-INB-8): no confidence threshold, no auto-send
+  switch, no once-per-thread limit. He always replies to an allowed sender
+  when the Help Centre answers. The Support Inbox's own gates are unchanged.
+- **SUP-AID-23** The Help Centre reply is sent in the email itself with no
+  attachment, to everyone on the email (the Help Centre is public, so nobody
+  is left off, unlike SUP-AID-18), from the mailbox as "Aidan". It opens
+  "Hi <first name>," (no "Thanks for your email."), carries the engine's
+  reply body with any greeting or sign-off the model wrote removed
+  (SUP-AI-9), and names each cited article by its title: a line "Help Centre
+  article(s):" with the title and link of every cited article the body does
+  not already name. An article hidden from the website is never named in the
+  email. The confidence is never written in the email.
+- **SUP-AID-24** The ticket keeps what the answer was written from
+  (`aidan.helpCentre`: `confidence`, `confidenceSteps`, `articles [{id,
+  title, url}]`, `question`). On the ticket in the Aidan tab, under what
+  Aidan did ("Aidan answered from the Help Centre, in the email itself, to N
+  people on this email."), the confidence shows as a word and a number
+  (SUP-AI-10) beside "From:" and the matched articles (links; a hidden one
+  as text marked "not on the website"), with the change when articles were
+  combined. An answer that did not come from the Help Centre shows neither.
+- **SUP-AID-25** `test/fixtures/support-eval.json` passes through both
+  paths: `scripts/support-eval.js` runs every fixture as a customer's email
+  to support@ and as the same email tagged "@Aidan, …", judged by the same
+  rules (SUP-AI-12), and `test/answer-core.test.js` runs both paths over the
+  fixtures with a stand-in model on every train.
 
 ### Connecting
 
@@ -6738,7 +6786,13 @@ data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
   `/v1/preview` route. `#support/try` opens the inbox.
 - **SUP-AI-12** `support-eval.yml` checks the matching against the real
   model with made-up emails whose right answers are known. Its log never
-  shows a real ticket's subject, sender or text.
+  shows a real ticket's subject, sender or text. Each email is run through
+  both paths of the engine, support@ and "@Aidan" (SUP-AID-25).
+- **SUP-AI-13** (18 Nov 2026) The match, draft and confidence steps are one
+  module, `functions/answer-core.js`, called by triage and by Aidan's answer
+  runs (SUP-AID-20). What happens after the engine differs: the Support
+  Inbox applies its gates (SUP-AI-2, SUP-AI-3); Aidan applies none
+  (SUP-AID-22).
 
 ### High-value senders
 
@@ -6807,9 +6861,11 @@ wrote it, on a ticket that began as a new email from the console),
 and for Aidan `aidanPending`, `aidanRuns`, `aidanSeen` (the gmail ids of
 the last 50 tagged emails decided on the thread) and `aidan {status (queued |
 working | replied | ingested | ignored | needs-person | error), kind
-(generate | store), gmailId, instruction, reason, skillId, skillName, client,
+(answer | generate | store), gmailId, instruction, reason, skillId, skillName, client,
 document {name, title, size}, recipients, referenceId, files[], at,
-startedAt, finishedAt}`.
+startedAt, finishedAt, helpCentre {confidence, confidenceSteps, articles
+[{id, title, url}], question} (an answer taken from the Help Centre,
+SUP-AID-24)}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
 (`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`,
 `senderVerified` (inbound mail filed since 17 Nov 2026: whether Gmail's
@@ -6818,7 +6874,8 @@ mail `auto`, `sentBy`, `source` (`ai-auto` | `ai-draft` | `ai-draft-edited`
 | `manual` | `compose`). `supportSettings/main`: connection status and settings
 (member-readable, no secret). `supportSecrets/gmail`, `supportCounters/main`:
 server-only. Aidan's sent reply has `source: "aidan"`, `cc`, `attachments`
-and `skillName`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
+and `skillName`; one answered from the Help Centre also has `helpCentre:
+true`, `confidence` and `articles`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
 `enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
 `skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
 `text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
