@@ -1,3 +1,7 @@
-node_modules/
+# No trailing slash: "node_modules/" matches only a directory, so a symlink
+# named node_modules (a worktree borrowing another checkout's install) was
+# tracked by accident on 16 Nov 2026. It pointed at a path on one machine,
+# and GitHub Pages' build (tar --dereference) failed on it for every push.
+node_modules
 .env
 .env.*
