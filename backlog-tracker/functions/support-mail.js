@@ -117,7 +117,7 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
-  aidan: aidanImpl = null, bucket = null, consoleReader = null,
+  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -483,6 +483,11 @@ function createSupportMail({
     // The Help Centre answering engine, for a platform question in an answer
     // run: the same catalogue and the same stand-in (`triage`) triage uses.
     helpCentre: { articles, run: triageImpl },
+    // Branded collateral: the prospect's industry and country (from the same
+    // cached Prospects (TAM) and Leads), and the server-side PDF printer
+    // (collateral-pdf.js), loaded only when collateral is printed.
+    accounts,
+    renderPdf: renderPdf || ((html, opts) => require("./collateral-pdf").renderPdf(html, opts)),
   });
 
   // ── Sync ──

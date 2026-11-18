@@ -143,8 +143,8 @@ const quiet = { log: () => {} };
     .filter((f) => /(from|import\()\s*["']\.\/ui\/(flaky|run-ui)\.mjs["']|retryCase\(/.test(fs.readFileSync(path.join(here, f), "utf8")));
   assert.deepEqual(offenders, [], "unit, rules, MCP and docs tests never retry");
   const scripts = JSON.parse(fs.readFileSync(path.join(here, "package.json"), "utf8")).scripts;
-  // The two Playwright-driven files that live outside ui/.
-  const BROWSER_OUTSIDE_UI = ["mcp-app-view.test.mjs", "faq-editor-load.test.mjs"];
+  // The Playwright-driven files that live outside ui/ (collateral-render prints Aidan's collateral to PDF).
+  const BROWSER_OUTSIDE_UI = ["mcp-app-view.test.mjs", "faq-editor-load.test.mjs", "collateral-render.test.mjs"];
   for (const [name, cmd] of Object.entries(scripts)) {
     for (const m of cmd.matchAll(/node\s+ui\/run-ui\.mjs((?:\s+[\w./-]+\.m?js)+)/g)) {
       for (const f of m[1].trim().split(/\s+/)) {

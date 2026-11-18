@@ -3201,6 +3201,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no Sydney/Australia positioning, no internal names, no long dashes), Markdown to safe HTML, the branded page laid out by the brand skill (`collateralHtml`), the page footer and page count (`test/collateral-core.test.js`) |
+| `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most (`test/collateral-render.test.mjs` prints the same page in Chromium) |
 | `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
@@ -3375,11 +3377,50 @@ thread. A run:
   plan for Kestrel", "create a FAQ for the client", "approve this" or
   "archive this email" are not refused, and "open the README and summarise
   it" or "update me on …" is a read (REQUIREMENTS SUP-AID-19);
+- **writes branded sales collateral as a PDF** (18 Nov 2026, ticket
+  JtkLrEG0aTnC5JfkdPA1): a write whose instruction names collateral ("@Aidan,
+  send me a one-pager for Kestrel", "@Aidan, prepare a platform overview for
+  CP Group for my AWS contact, retail grocery", a feature deep-dive, a deck,
+  a brochure; `collateralFormat` in `functions/collateral-core.js`) needs the
+  brand skill (`ph-brand`) in the skills library, and goes to a person when
+  it isn't there. The document is written with the brand skill (voice,
+  messaging, the call to action) and the chosen collateral skill (format and
+  depth; the brand skill alone when none fits), from the instruction, the
+  email's new text and attachments (its quoted history is not read yet: that
+  comes with the quoted-thread ticket), the skill's kept reference material, the published Help Centre (articles on the website
+  only, the industry's first) and, from Prospects (TAM) or Leads, the
+  company's **industry and country and nothing else** (never revenue, store
+  counts, contacts, notes or anything about the retailer's customers). The
+  industry is the one the instruction names, else the record's. It reads no
+  other console data, so it goes to everyone on the email like any write.
+  Before it is printed, what the model wrote is cleaned in code
+  (`guardCollateral`): a sentence that places Personalisation Hub in Sydney or
+  Australia is dropped (the company is presented as global; an Australian
+  prospect's own country may still be named), so is one naming an internal
+  project (the console's project names and the brand skill's list), the
+  brand skill's renames are applied ("PH Core" → "Personalisation Hub"), and
+  long dashes go. It is then printed to an A4 PDF on the server
+  (`functions/collateral-pdf.js`) from a page laid out by the brand skill: its
+  light-surface colours, Kantumruy Pro, the thin four-colour bar once, its
+  full-colour logo file, an eyebrow with the format and industry, "Prepared
+  for <company>", one teal accent, a footer with personalisationhub.com and
+  the page number on every page, and the CTA ("Try free on AWS Marketplace →",
+  then "Or book a demo at personalisationhub.com"); a deck is landscape with a
+  page per section, and a `collateral*.css` file in the brand skill is applied
+  after the defaults. The reply goes to everyone on the email with **the
+  PDF and the Markdown source** attached. The run is filed on the ticket
+  (`aidan.collateral`: format, industry, company, the two files, the page
+  count, what was removed) and the Aidan tab shows it (Collateral, Files,
+  Kept, Removed). It is kept as a **reference example** for the skill
+  (`skillReferences`, `example: true`, the PDF in Storage beside it), so later
+  runs of that skill read it. When the PDF can't be made in time, nothing is
+  sent: the ticket goes to **Needs a person** with the Markdown kept as an
+  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
-function's 540 seconds; a sync that ran Aidan leaves triage to the next
+(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute), so a whole run fits inside the
+function's 540 seconds (the function has 1 GiB for the PDF printer); a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
 idempotent: each email is decided once (`aidanSeen`, in a transaction), a
@@ -3389,7 +3430,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 25.
+SUP-AID-1 to 25 and 30 to 34.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

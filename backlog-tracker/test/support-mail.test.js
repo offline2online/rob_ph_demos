@@ -1465,6 +1465,149 @@ check("one answering engine: a question put to the Help Centre first still fits 
   assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000);
 });
 
+// ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──
+const BRAND_SKILL = { slug: "ph-brand", name: "PH Brand", summary: "Marketing brand for external artifacts: decks, PDFs.", version: "1", files: [
+  { path: "SKILL.md", content: "# PH Brand\nLead with a pain point. Primary CTA: Try free on AWS Marketplace." },
+  { path: "logos/ph_logo_full_color.svg", content: "<svg xmlns='http://www.w3.org/2000/svg'><title>PH full colour</title></svg>" },
+] };
+const COLLATERAL_SKILL = { slug: "sales-collateral", name: "Sales collateral", summary: "Industry platform overviews.", version: "1", files: [{ path: "SKILL.md", content: "Overview structure: challenge, what changes, proof." }] };
+const FAKE_PDF = (pages = 1) => Buffer.concat([Buffer.from("%PDF-1.7\n", "latin1"), ...Array.from({ length: pages }, () => Buffer.from("1 0 obj << /Type /Page >>\n", "latin1")), Buffer.alloc(80, 32)]);
+const COLLATERAL_DOC = {
+  title: "Grocery that sells more", fileName: "cp-group-one-pager.md", replyText: "Attached is the one-pager for CP Group as a branded PDF — with its Markdown source.",
+  documentMd: "# Grocery that sells more\n\nPersonalise every aisle on your own data. Personalisation Hub is a Sydney-based company.\n\n## What changes\n\n- Signage that knows who is walking past.\n- Built on PH Core and tracked in the Backlog Tracker.\n",
+};
+// Attachments of a sent email: { name: { type, body (decoded) } }.
+function attachmentsOf(mail) {
+  const out = {};
+  for (const part of mail.split(/\r\n--aidan-[^\r\n]*/)) {
+    const name = (part.match(/filename="([^"]+)"/) || [])[1];
+    if (!name) continue;
+    const [head, body] = part.split(/\r\n\r\n/);
+    out[name] = { type: (head.match(/Content-Type: ([^;\r\n]+)/) || [])[1], body: Buffer.from(String(body || "").replace(/\s+/g, ""), "base64") };
+  }
+  return out;
+}
+function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = { s1: SKILLS.s1, b1: BRAND_SKILL }, prospects = {}, leads = {} } = {}) {
+  const seen = { write: [], render: [], select: [] };
+  const stored = [];
+  const t = make({
+    mail, prospects,
+    aidan: {
+      select: async (input) => { seen.select.push(input.instruction); return { skillId: "", client: "", reason: "the brand skill alone" }; },
+      write: async (input) => { seen.write.push(input); return write(input); },
+      answer: async () => ({ canAnswer: false, replyText: "", reason: "n/a" }),
+      render: async (html, opts) => { seen.render.push({ html, opts }); return render ? render(html, opts) : { pdf: FAKE_PDF(opts.format.key === "one-pager" ? 1 : 4), pages: opts.format.key === "one-pager" ? 1 : 4 }; },
+    },
+    bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
+  });
+  t.db.state.skills = JSON.parse(JSON.stringify(skills));
+  t.db.state.leads = leads;
+  t.db.state.projects = { p1: { name: "Display Types & DSP Integration" }, p2: { name: "Retail Media Insights & Analytics Dashboards" } };
+  return Object.assign(t, { seen, stored });
+}
+
+check("Aidan collateral: \"send me a one-pager for <prospect>\" replies to everyone with a branded PDF and the Markdown attached, cleaned, filed and kept for the skill", async () => {
+  const t = makeCollateral([aidanMail({ id: "c1", cc: "AWS Partner <partner@aws.example>", subject: "CP Group", text: "@Aidan, send me a one-pager for CP Group, retail grocery." })], {
+    prospects: { cp: { name: "CP Group", country: "Thailand", industry: "Grocery & Supermarkets", storeCount: 13000, revenue: "USD 60bn", insights: "board-level notes", contacts: [{ name: "Somchai", email: "s@cp.example" }] } },
+  });
+  await connectAidan(t);
+  await cron(t);
+  const w = t.seen.write[0];
+  assert.ok(w, "the document was written");
+  assert.strictEqual(w.skill.slug, "ph-brand", "no collateral skill chosen: the brand skill alone decides format and depth");
+  assert.deepStrictEqual(w.collateral, { format: "one-pager", industry: "Grocery & Supermarkets", prospect: { name: "CP Group", industry: "Grocery & Supermarkets", country: "Thailand", source: "prospect" } });
+  assert.ok(w.system.includes("<brand_skill") && w.system.includes("Lead with a pain point") && !w.system.includes("<svg"), "the brand guidelines, not the logo files");
+  assert.ok(/global company: never mention Sydney, Australia/.test(w.system) && w.system.includes("Display Types & DSP Integration"), "the console's project names are banned too");
+  const input = JSON.stringify(w.content);
+  assert.ok(input.includes("<prospect>") && input.includes("Country: Thailand") && input.includes("<help_centre>") && input.includes("Add a display to a store"));
+  assert.ok(!/13000|60bn|board-level|s@cp\.example/.test(input), "never revenue, store counts, insights or contacts");
+  // The PDF was printed from the branded page.
+  const r = t.seen.render[0];
+  assert.strictEqual(r.opts.format.key, "one-pager");
+  assert.ok(r.html.includes("Prepared for CP Group") && r.html.includes("One-pager · Grocery &amp; Supermarkets") && r.html.includes("Try free on AWS Marketplace"));
+  assert.ok(!/sydney|PH Core|Backlog Tracker/i.test(r.html), "cleaned before it was printed");
+  // Reply-all with both files.
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  const sent = t.google.calls.sent[0];
+  assert.ok(sent.mail.includes(`To: ${OWNER}`) && sent.mail.includes("Cc: partner@aws.example"), "the partner contact on Cc gets it");
+  const files = attachmentsOf(sent.mail);
+  assert.deepStrictEqual(Object.keys(files), ["cp-group-one-pager.pdf", "cp-group-one-pager.md"]);
+  assert.strictEqual(files["cp-group-one-pager.pdf"].type, "application/pdf");
+  assert.ok(files["cp-group-one-pager.pdf"].body.subarray(0, 5).toString("latin1") === "%PDF-", "the PDF bytes, intact");
+  const md = files["cp-group-one-pager.md"].body.toString("utf8");
+  assert.ok(md.includes("Personalise every aisle on your own data.") && !/sydney|australia|PH Core|Backlog Tracker/i.test(md), md);
+  assert.ok(!/[–—]/.test(sent.mail.split("--aidan-")[1] || ""), "no long dash in the email body either");
+  // Filed on the ticket and kept as a reference example.
+  const tk = ticketOf(t, "t-c1");
+  assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients], ["resolved", "replied", "generate", 2]);
+  const c = tk.aidan.collateral;
+  assert.deepStrictEqual([c.format, c.formatLabel, c.industry, c.prospect, c.pdf.name, c.pdf.pages, c.markdown.name], ["one-pager", "One-pager", "Grocery & Supermarkets", { name: "CP Group", source: "prospect" }, "cp-group-one-pager.pdf", 1, "cp-group-one-pager.md"]);
+  assert.deepStrictEqual(c.removed.map((x) => x.rule).sort(), ["australia", "internal", "renamed"], "what was taken out of the document");
+  const ref = t.db.state.skillReferences[c.referenceId];
+  assert.deepStrictEqual([ref.skillSlug, ref.source, ref.example, ref.format, ref.files.map((f) => f.name)], ["ph-brand", "aidan-collateral", true, "one-pager", ["cp-group-one-pager.pdf", "cp-group-one-pager.md"]]);
+  assert.ok(ref.text.includes("Personalise every aisle") && !/sydney/i.test(ref.text));
+  assert.ok(t.stored.some((x) => x.path === `skill-references/b1/${c.referenceId}/cp-group-one-pager.pdf` && x.type === "application/pdf"), "the PDF kept in Storage beside it");
+  const out = messagesOf(t, "t-c1").find((m) => m.direction === "out");
+  assert.deepStrictEqual([out.collateral, out.attachments.map((a) => [a.name, a.type])], [true, [["cp-group-one-pager.pdf", "application/pdf"], ["cp-group-one-pager.md", "text/markdown"]]]);
+  assert.ok(messagesOf(t, "t-c1").some((m) => m.direction === "event" && /branded one-pager cp-group-one-pager\.pdf \(1 page\)/.test(m.text) && /3 sentences|placing Personalisation Hub in Australia/.test(m.text)));
+});
+
+check("Aidan collateral: a platform overview in pharmacy with a named collateral skill is multi-page, uses both skills, and the next run reads the kept example", async () => {
+  const doc = { title: "Pharmacy that converts", fileName: "heron-platform-overview.md", replyText: "Attached.", documentMd: "# Pharmacy that converts\n\nOpening.\n\n## Prescriptions\n\nPersonal at the counter." };
+  const t = makeCollateral([
+    aidanMail({ id: "o1", subject: "Heron", text: "@Aidan, prepare a platform overview for Heron Pharmacy in pharmacy with the sales-collateral skill." }),
+    aidanMail({ id: "o2", subject: "Heron again", date: 1759990005000, text: "@Aidan, prepare a platform overview for Heron Pharmacy with the sales-collateral skill." }),
+  ], { write: () => doc, skills: { b1: BRAND_SKILL, s3: COLLATERAL_SKILL }, leads: { l1: { company: { name: "Heron Pharmacy", industry: "Pharmacy", countries: ["United Kingdom"] } } } });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  assert.strictEqual(t.seen.write.length, 2);
+  const [first, second] = t.seen.write;
+  assert.deepStrictEqual([first.skill.slug, first.brand.slug, first.collateral.format, first.collateral.industry, first.collateral.prospect.source], ["sales-collateral", "ph-brand", "overview", "Pharmacy", "lead"]);
+  assert.ok(first.system.includes("<skill name=\"Sales collateral\">") && first.system.includes("<brand_skill") && first.system.includes("three to five A4 pages"));
+  assert.strictEqual(t.seen.select.length, 0, "a skill named in the instruction needs no model choice");
+  assert.deepStrictEqual([first.references, second.references], [0, 1], "the first overview is the second run's reference example");
+  assert.ok(second.system.includes("<reference_material>") && second.system.includes("Personal at the counter."));
+  assert.strictEqual(second.collateral.industry, "Pharmacy", "from the lead's record when the instruction names none");
+  const tk = ticketOf(t, "t-o1");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.collateral.pdf.pages, tk.aidan.skillName], ["replied", 4, "Sales collateral"]);
+  assert.strictEqual(t.db.state.skillReferences[tk.aidan.collateral.referenceId].skillSlug, "sales-collateral");
+});
+
+check("Aidan collateral: no PDF, no email; a person takes it with the Markdown kept as an internal note. No brand skill: nothing is written", async () => {
+  const t = makeCollateral([aidanMail({ id: "f1", text: "@Aidan, send me a one-pager for Kestrel." })], { render: async () => { throw new Error("Printing the PDF took longer than 60 seconds"); } });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing is sent without the PDF");
+  const tk = ticketOf(t, "t-f1");
+  assert.deepStrictEqual([tk.aidan.status, tk.needsHuman, tk.aidan.collateral.pdf], ["needs-person", true, null]);
+  assert.ok(/branded PDF couldn't be made \(Printing the PDF took longer than 60 seconds\)/.test(tk.aidan.reason));
+  const note = messagesOf(t, "t-f1").find((m) => m.direction === "note" && m.by === "aidan");
+  assert.ok(note && note.text.includes("Personalise every aisle") && !/sydney/i.test(note.text), "the cleaned Markdown is on the thread for a person");
+  assert.ok(!t.db.state.skillReferences || !Object.values(t.db.state.skillReferences).some((r) => r.source === "aidan-collateral"), "an unsent draft is not kept as an example");
+
+  const n = makeCollateral([aidanMail({ id: "n1", text: "@Aidan, send me a one-pager for Kestrel." })], { skills: { s1: SKILLS.s1 } });
+  await connectAidan(n);
+  await cron(n);
+  const nk = ticketOf(n, "t-n1");
+  assert.deepStrictEqual([nk.aidan.status, n.seen.write.length, n.google.calls.sent.length], ["needs-person", 0, 0]);
+  assert.ok(/brand skill \(ph-brand\)/.test(nk.aidan.reason));
+});
+
+check("Aidan collateral: the gates hold: a stranger's request for a one-pager does nothing; an ordinary write is not collateral", async () => {
+  const t = makeCollateral([
+    aidanMail({ id: "x1", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, send me a one-pager for Kestrel." }),
+    aidanMail({ id: "x2", date: 1759990009000, text: "@Aidan, send the AWS onboarding pack for client Kestrel." }),
+  ], { write: (input) => (input.collateral ? COLLATERAL_DOC : DOC) });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  assert.strictEqual(ticketOf(t, "t-x1").aidan.status, "ignored");
+  assert.strictEqual(t.seen.render.length, 0, "no PDF for anything but collateral");
+  const x2 = ticketOf(t, "t-x2");
+  assert.deepStrictEqual([x2.aidan.status, x2.aidan.collateral, Object.keys(attachmentsOf(t.google.calls.sent[0].mail))], ["replied", undefined, ["aws-onboarding-pack-kestrel.md"]]);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

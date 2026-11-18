@@ -6,7 +6,7 @@ import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, composeProblem, COMPOSE_MAX, toMs,
   searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
-import { aidanView, aidanThreadState, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
+import { aidanView, aidanThreadState, aidanCollateral, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
 
@@ -220,6 +220,24 @@ check("Hello and Aidan are plain inboxes: an email list with unread and spam, no
   assert.deepStrictEqual(aidanThreadState(null), { badge: "Aidan: no action", tone: "none", line: "Aidan did nothing: this email has no @Aidan request.", kind: "" });
   assert.strictEqual(aidanThreadState({ status: "ignored", reason: "The sender is not allowed to instruct Aidan." }).line, "Aidan did nothing: The sender is not allowed to instruct Aidan.");
   assert.strictEqual(aidanThreadState({ status: "working", instruction: "send the pack" }).badge, "Aidan: working");
+});
+
+check("Aidan's branded collateral (JtkLrEG0aTnC5JfkdPA1): what was written and for whom, the PDF and its Markdown, kept for the skill, what was removed", () => {
+  const a = { status: "replied", kind: "generate", skillName: "PH Brand", recipients: 2, document: { name: "cp-group.md" },
+    collateral: { format: "one-pager", formatLabel: "One-pager", industry: "Grocery & Supermarkets", prospect: { name: "CP Group", source: "prospect" },
+      pdf: { name: "cp-group.pdf", pages: 1, size: 48000 }, markdown: { name: "cp-group.md", size: 2100 }, referenceId: "ref-1",
+      removed: [{ rule: "australia", count: 2 }, { rule: "internal", count: 1 }, { rule: "made-up", count: 4 }, { rule: "dashes", count: 0 }] } };
+  const c = aidanCollateral(a);
+  assert.strictEqual(c.about, "One-pager · Grocery & Supermarkets · for CP Group (industry and country from Prospects (TAM))");
+  assert.deepStrictEqual(c.files, [{ name: "cp-group.pdf", detail: "Branded PDF, 1 page, 47 KB" }, { name: "cp-group.md", detail: "Markdown source, 2 KB" }]);
+  assert.deepStrictEqual([c.kept, c.unsent], [true, false]);
+  assert.deepStrictEqual(c.removed, ["2 sentences placing Personalisation Hub in Australia", "1 sentence naming an internal project"], "known rules with a count only");
+  assert.strictEqual(aidanView(a).line, "Aidan wrote the branded one-pager with the PH Brand skill and replied to 2 people on this email with the PDF and its Markdown source attached.");
+  const unsent = aidanCollateral({ status: "needs-person", collateral: { formatLabel: "Platform overview", industry: "", prospect: null, pdf: null, markdown: { name: "x.md", size: 10 } } });
+  assert.deepStrictEqual([unsent.about, unsent.unsent, unsent.kept, unsent.files.length], ["Platform overview", true, false, 1]);
+  assert.strictEqual(aidanCollateral({ status: "replied", kind: "generate" }), null, "an ordinary write");
+  assert.strictEqual(aidanCollateral(null), null);
+  assert.ok(aidanView({ status: "replied", kind: "generate", document: { name: "pack.md" }, recipients: 1 }).line.startsWith("Aidan wrote pack.md"), "an ordinary write reads as before");
 });
 
 let failed = 0;

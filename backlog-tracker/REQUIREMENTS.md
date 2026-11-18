@@ -6379,6 +6379,9 @@ a tagged request that asks for neither a document nor for something to be
 kept is answered in the email itself (SUP-AID-14, SUP-AID-15). Since 18 Nov
 2026 (ticket 1W4QQzYdlJzfdqizePWR) Aidan can answer from the console's own
 data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
+Since 18 Nov 2026 (ticket JtkLrEG0aTnC5JfkdPA1) Aidan writes branded sales
+collateral, from a one-pager to an industry platform overview, as a PDF
+with its Markdown source (SUP-AID-30 to 34).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6707,6 +6710,74 @@ data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
   to support@ and as the same email tagged "@Aidan, …", judged by the same
   rules (SUP-AI-12), and `test/answer-core.test.js` runs both paths over the
   fixtures with a stand-in model on every train.
+- **SUP-AID-30** (18 Nov 2026, ticket JtkLrEG0aTnC5JfkdPA1) **Branded
+  collateral.** A write whose instruction names collateral is a collateral
+  run (`collateralFormat` in `functions/collateral-core.js`): a one-pager
+  (also one page, fact/sell/data sheet, flyer, leave-behind), a platform
+  overview (also product, solution, company, capability, industry overview,
+  brochure, collateral, white paper), a feature deep-dive, or a deck (also
+  slides). A bare "overview", and an instruction about the console (backlog,
+  tickets, concepts, pipeline, README), are not collateral. Every gate before
+  it (SUP-AID-1 to 13) is unchanged. (SUP-AID-26 to 29 are left for the
+  quoted-thread ticket, OrkZBBjz9RM5DY54azIG, which was taken off the train
+  for a rebuild.) The brand skill (slug `ph-brand`) must be
+  in the skills library; without it the run goes to a person and nothing is
+  written. The skill is chosen as for any write; when none is chosen the
+  brand skill alone decides format and depth.
+- **SUP-AID-31** The collateral is written with the brand skill's guidelines
+  (its non-asset files) and the chosen skill, the skill's kept reference
+  material, the email's new text (not its quoted history) and its
+  attachments, the published Help Centre (articles
+  on the website only, those matching the industry first, 30,000 characters
+  at most) and the prospect: the company named in the instruction (or the
+  client the skill choice names), matched in Prospects (TAM) then Leads, of
+  which only **name, industry and country** are read; never revenue, store
+  counts, contacts, notes, insights or end-customer data. The industry is the
+  one named in the instruction (the nine on personalisationhub.com), else the
+  record's. No console plan runs, so the reply goes to everyone on the email
+  like any write. The prompt sets a length per format (one page; three to
+  five pages; three to six pages; six to ten landscape pages), global
+  positioning, the banned internal names, the retailer's own vertical, no
+  invented facts and no call to action of its own. One model call, 4 minutes,
+  medium effort.
+- **SUP-AID-32** What the model wrote is cleaned in code before it is printed
+  or sent (`guardCollateral`), document, title and reply alike: a sentence
+  that names Sydney, Australia or Australian is dropped (when the prospect is
+  Australian, only one that places Personalisation Hub there: based,
+  headquarters, founded, office, origin); a sentence or table row naming an
+  internal project (the console's project names and a fixed list: PH Agent
+  Console, Backlog Tracker, Staff Kanban, Concept Incubator …) is dropped;
+  the brand skill's renames are applied (PH Core, Autonomous Shopfront,
+  Context360, Live Visitor Profile, menu board project); long dashes become
+  commas, or "to" in a range. The counts are kept on the ticket.
+- **SUP-AID-33** The collateral is printed to PDF on the server
+  (`functions/collateral-pdf.js`, headless Chromium, JavaScript off, no
+  request but data: URIs and the brand font, 60 seconds at most) from a page
+  laid out by the brand skill: light surface, Kantumruy Pro with its fallback
+  stack, the four-colour bar once, the skill's full-colour logo file (never
+  redrawn), an eyebrow with the format and industry, "Prepared for
+  <company>", one teal accent, the CTA "Try free on AWS Marketplace →"
+  linking to the trial with "Or book a demo at personalisationhub.com", and a
+  footer with personalisationhub.com and the page number on every page. A4
+  portrait; a deck is A4 landscape with one page per `##` section. A
+  `collateral*.css` file in the brand skill is applied after the defaults.
+  The reply goes to everyone on the email (as SUP-AID-7) with the PDF
+  (`application/pdf`) and the Markdown source (`text/markdown`) attached.
+  When the PDF can't be made, nothing is sent: the ticket goes to Needs a
+  person with the reason, and the cleaned Markdown is kept as an internal
+  note on the thread. The whole run stays inside the function's 540 seconds
+  (start within 2 minutes, skill choice 1, document 4, PDF 1); a run cut off
+  anyway goes to a person (SUP-AID-11).
+- **SUP-AID-34** A sent collateral run is filed on the ticket as
+  `aidan.collateral` and kept as a reference example for the skill used: a
+  `skillReferences` document with `source: "aidan-collateral"`, `example:
+  true`, `format`, `industry`, the cleaned Markdown as its text and the PDF in
+  Storage under `skill-references/<skillId>/<referenceId>/`, read by later
+  runs of the skill like any reference. The Aidan tab shows, on the ticket,
+  **Collateral** (format · industry · for whom, and whether the industry and
+  country came from Prospects (TAM) or Leads), **Files** (the PDF with its
+  pages and size, the Markdown with its size), **Kept** and **Removed**
+  (`aidanCollateral` in `public/js/support-core.js`). Text only, no control.
 
 ### Connecting
 
@@ -6865,7 +6936,9 @@ working | replied | ingested | ignored | needs-person | error), kind
 document {name, title, size}, recipients, referenceId, files[], at,
 startedAt, finishedAt, helpCentre {confidence, confidenceSteps, articles
 [{id, title, url}], question} (an answer taken from the Help Centre,
-SUP-AID-24)}`.
+SUP-AID-24), collateral {format, formatLabel, industry, prospect {name,
+source}, pdf {name, size, pages, storagePath} | null, markdown {name, size},
+referenceId, removed [{rule, count}]} (branded collateral, SUP-AID-34)}`.
 `supportTickets/{id}/messages/{gmailMessageId}`: `direction`
 (`in` | `out` | `note` | `event`), `from`, `to`, `text`, `at`,
 `senderVerified` (inbound mail filed since 17 Nov 2026: whether Gmail's
@@ -6878,8 +6951,11 @@ and `skillName`; one answered from the Help Centre also has `helpCentre:
 true`, `confidence` and `articles`. `supportSecrets/aidan`: Aidan's `allowedSenders`,
 `enabled`, `requireSenderAuth` (server-only). `skillReferences/{id}`:
 `skillId`, `skillSlug`, `skillName`, `ticketId`, `gmailId`, `subject`,
-`text`, `files [{name, kind, size, text?, storagePath?}]`, `addedBy`,
-`source`, `createdAt` (members read; only the function writes).
+`text`, `files [{name, kind, size, text?, storagePath?, pages?}]`, `addedBy`,
+`source` (`aidan-email` | `aidan-collateral`), `createdAt`, and on kept
+collateral `example: true`, `format`, `industry` (SUP-AID-34) (members read;
+only the function writes). Aidan's sent collateral reply has `collateral:
+true` and both files in `attachments`.
 
 ### Known gaps
 

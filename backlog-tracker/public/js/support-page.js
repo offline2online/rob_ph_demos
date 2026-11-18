@@ -14,7 +14,7 @@ import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView, aidanThreadState, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
+  aidanView, aidanThreadState, aidanCollateral, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -39,7 +39,19 @@ function writeOpened(map) { try { localStorage.setItem(OPENED_KEY, JSON.stringif
 const sourcesHtml = (articles) => `<div class="support-draft-sources">From: ${articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>`;
 // An answer Aidan took from the Help Centre: the confidence and the matched articles (on the ticket only, never in his email).
 const aidanSourcesHtml = (v) => (v && v.helpCentre ? `<div class="support-aidan-sources">${confidenceHtml(v.helpCentre.confidence)}${sourcesHtml(v.helpCentre.articles)}</div>${confidenceChangeHtml(v.helpCentre.confidenceSteps)}` : "");
-const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}` : ""; };
+// Branded collateral (JtkLrEG0aTnC5JfkdPA1): what was written, the PDF and its
+// Markdown source, whether it was kept for the skill, and what was taken out. Text only.
+function aidanCollateralHtml(aidan) {
+  const c = aidanCollateral(aidan);
+  if (!c) return "";
+  return `<dl class="support-aidan-collateral" aria-label="Collateral Aidan wrote">
+      <div class="support-aidan-coll-row"><dt>${icon("picture_as_pdf")}Collateral</dt><dd>${esc(c.about)}${c.unsent ? "<small>Not sent: the PDF couldn't be made. The Markdown is on the thread as an internal note.</small>" : ""}</dd></div>
+      ${c.files.length ? `<div class="support-aidan-coll-row"><dt>${icon("attach_file")}Files</dt><dd><ul class="support-aidan-files">${c.files.map((f) => `<li><b>${esc(f.name)}</b> <small>${esc(f.detail)}</small></li>`).join("")}</ul>${c.unsent ? "" : "<small>Attached to Aidan's reply (open in Gmail).</small>"}</dd></div>` : ""}
+      ${c.kept ? `<div class="support-aidan-coll-row"><dt>${icon("bookmark")}Kept</dt><dd>As a reference example for the skill, so later collateral stays consistent.</dd></div>` : ""}
+      ${c.removed.length ? `<div class="support-aidan-coll-row"><dt>${icon("rule")}Removed</dt><dd>Before it was sent: ${esc(c.removed.join(", "))}.</dd></div>` : ""}
+    </dl>`;
+}
+const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}${aidanCollateralHtml(t.aidan)}` : ""; };
 function aidanMessageHtml(m, at) {
   const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
   return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.kind === "answer" ? " · Answer" : ""}${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
@@ -262,7 +274,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : ""}${state ? aidanStateBadge(t) : ""}
           ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
-        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}` : ""}
+        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}${aidanCollateralHtml(t.aidan)}` : ""}
       </div>
       ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
         ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`

@@ -3762,6 +3762,60 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".support-aidan-sources, .support-conf").count(), 0);
     },
   },
+  {
+    // JtkLrEG0aTnC5JfkdPA1: branded sales collateral. "@Aidan, send me a
+    // one-pager for CP Group": the ticket says what was written and for whom,
+    // the branded PDF and its Markdown source, that it was kept as a reference
+    // example, and what was removed before it was sent. Text only.
+    name: "Support Inbox: Aidan's branded collateral shows the PDF and Markdown sent, kept for the skill, and what was removed",
+    hash: "#support/aidan?queue=all",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: "owner@example.com", customerName: "Owner Person", status: "resolved", resolvedBy: "aidan", inboxes: ["aidan"], createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        c1: tk(1, { subject: "CP Group one-pager", aidan: { status: "replied", kind: "generate", skillName: "PH Brand", recipients: 2, instruction: "send me a one-pager for CP Group, retail grocery.", document: { name: "cp-group-one-pager.md", size: 2100 },
+          collateral: { format: "one-pager", formatLabel: "One-pager", industry: "Grocery & Supermarkets", prospect: { name: "CP Group", source: "prospect" },
+            pdf: { name: "cp-group-one-pager.pdf", pages: 1, size: 48000 }, markdown: { name: "cp-group-one-pager.md", size: 2100 }, referenceId: "ref-1",
+            removed: [{ rule: "australia", count: 1 }] } } }),
+        f1: tk(2, { subject: "Kestrel overview", status: "open", resolvedBy: "", aidan: { status: "needs-person", kind: "generate", skillName: "PH Brand", instruction: "prepare a platform overview for Kestrel.",
+          reason: "The branded PDF couldn't be made (Printing the PDF took longer than 60 seconds), so nothing was sent. The Markdown is on the thread as an internal note.",
+          collateral: { format: "overview", formatLabel: "Platform overview", industry: "", prospect: { name: "Kestrel", source: "" }, pdf: null, markdown: { name: "kestrel.md", size: 900 }, removed: [] } } }),
+      };
+      s.docs["supportTickets/c1/messages"] = {
+        m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["partner@aws.example"], text: "@Aidan, send me a one-pager for CP Group, retail grocery.", at: t(T0) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "generate", collateral: true, skillName: "PH Brand", from: "support@ph.example", to: ["owner@example.com"], cc: ["partner@aws.example"], text: "Hi Owner,\n\nAttached is the one-pager for CP Group as a branded PDF, with its Markdown source.\n\nAidan\nAssistant to Rob, Personalisation Hub",
+          attachments: [{ name: "cp-group-one-pager.pdf", type: "application/pdf", size: 48000 }, { name: "cp-group-one-pager.md", type: "text/markdown", size: 2100 }], at: t(T0 + 60000) },
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      await until(async () => (await c.page.locator(".support-row").count()) === 2, "both Aidan tickets");
+      c.at("the collateral ticket names the PDF and the Markdown, says it was kept, and what was removed");
+      await c.click('[data-support-ticket="c1"]', "the one-pager");
+      await c.visible(".support-aidan-collateral");
+      assert.ok((await c.text(".support-aidan-line")).includes("Aidan wrote the branded one-pager with the PH Brand skill and replied to 2 people on this email with the PDF and its Markdown source attached."));
+      const parts = await c.page.$$eval(".support-aidan-collateral .support-aidan-coll-row", (els) => els.map((el) => [el.querySelector("dt").textContent.replace(/^(picture_as_pdf|attach_file|bookmark|rule)/, ""), el.querySelector("dd").textContent.replace(/\s+/g, " ").trim()]));
+      assert.deepStrictEqual(parts.map((p) => p[0]), ["Collateral", "Files", "Kept", "Removed"]);
+      assert.strictEqual(parts[0][1], "One-pager · Grocery & Supermarkets · for CP Group (industry and country from Prospects (TAM))");
+      assert.ok(parts[1][1].includes("cp-group-one-pager.pdf Branded PDF, 1 page, 47 KB") && parts[1][1].includes("cp-group-one-pager.md Markdown source, 2 KB"), parts[1][1]);
+      assert.ok(parts[3][1].includes("1 sentence placing Personalisation Hub in Australia"), parts[3][1]);
+      assert.strictEqual(await c.page.locator(".support-aidan-collateral button, .support-aidan-collateral a, .support-aidan-collateral input").count(), 0, "text only: no control to tap");
+      assert.ok((await c.text("#support-thread")).includes("cp-group-one-pager.pdf, cp-group-one-pager.md"), "both files on Aidan's sent reply");
+      c.at("at phone width it stays inside the ticket");
+      const viewport = c.page.viewportSize();
+      await c.page.setViewportSize({ width: 390, height: 844 });
+      const fits = await c.page.$eval(".support-aidan-collateral", (el) => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= window.innerWidth + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1; });
+      assert.ok(fits, "no sideways scroll at 390px");
+      await c.page.setViewportSize(viewport);
+      c.at("collateral that couldn't be printed says nothing was sent");
+      await c.click('[data-support-act="back"]', "back to the Aidan tab");
+      await c.click('[data-support-ticket="f1"]', "the overview that failed");
+      await c.visible(".support-aidan-collateral");
+      const text = await c.text(".support-aidan-collateral");
+      assert.ok(text.includes("Not sent: the PDF couldn't be made") && !text.includes("Kept"), text);
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

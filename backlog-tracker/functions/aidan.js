@@ -50,6 +50,17 @@
 //     about the email) carries on to the console and the email as before.
 //     A run still "working" after 15 minutes was cut off: the next sync moves
 //     it to a person (`sweepStale`).
+//   • Branded sales collateral (JtkLrEG0aTnC5JfkdPA1): a write whose
+//     instruction names collateral ("@Aidan, send me a one-pager for Kestrel",
+//     "prepare a platform overview for CP Group in pharmacy"; collateral-core.js
+//     → collateralFormat) is written with the brand skill (ph-brand) and the
+//     chosen collateral skill, from the email, its attachments, the skill's kept
+//     reference material, the published Help Centre and the prospect's
+//     industry and country from Prospects (TAM) / Leads (nothing else from the
+//     console), cleaned of Australian positioning and internal names, printed
+//     to a branded PDF on the server (collateral-pdf.js) and sent by reply-all
+//     with the PDF and the Markdown source attached (`collateralAndReply`). It
+//     is filed on the ticket and kept as a reference example for the skill.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
 //     POST /supportMail/v1/aidan, never returned unmasked.
@@ -61,6 +72,7 @@ const crypto = require("crypto");
 const core = require("./support-core");
 const ac = require("./aidan-core");
 const answerCore = require("./answer-core");
+const cc = require("./collateral-core");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -77,7 +89,9 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // console adds at most CONSOLE_ROUNDS planning calls of CONSOLE_PLAN_TIMEOUT_MS
 // each (under a minute) and the reads themselves. A question put to the Help
 // Centre first adds at most three calls of the engine's own 40 s (the match and
-// two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. A run that is cut off anyway is moved to a person by the next sync
+// two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. Collateral reads no
+// console plan: it is start + choice + document + COLLATERAL_RENDER_TIMEOUT_MS
+// for the PDF (2 + 1 + 4 + 1 minutes, with the send and the filing after). A run that is cut off anyway is moved to a person by the next sync
 // (sweepStale) once it has been "working" for STALE_MS.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
@@ -87,6 +101,8 @@ const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the th
 // Each planning round of the console reads (aidan-core.js → CONSOLE_ROUNDS);
 // with them a write is still start + choice + plans + document + a minute.
 const CONSOLE_PLAN_TIMEOUT_MS = 25000;
+// Printing collateral to PDF: Chromium's start, the brand font and the print.
+const COLLATERAL_RENDER_TIMEOUT_MS = 60000;
 const STALE_MS = 15 * 60 * 1000;
 const SEEN_KEEP = 50;                    // gmailIds remembered per ticket (aidanSeen), so a message is decided once
 const ACTIVE = ["queued", "working"];
@@ -97,7 +113,12 @@ const tsMs = (v) => (!v ? 0 : typeof v.toMillis === "function" ? v.toMillis() : 
 // `helpCentre` (support-mail.js): { articles(), run } — the published Help
 // Centre catalogue and, in tests, the stand-in for the answering engine; null
 // leaves a platform question to the console and the email.
-function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null }) {
+// `accounts` (support-mail.js): async () => { prospects, leads }, the console's
+// Prospects (TAM) and Leads, from which collateral takes a company's industry
+// and country only. `renderPdf` (collateral-pdf.js → renderPdf): html -> { pdf,
+// pages }; with Aidan's model stubbed (`run`) only `run.render` is used, so no
+// test starts a browser.
+function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null }) {
   const data = (snap) => (snap && snap.exists ? snap.data() || {} : null);
   const configRef = () => secretsRef(CONFIG_DOC);
   const errText = (err) => core.clip(String(err && err.message ? err.message : err), 300);
@@ -361,7 +382,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     await tickets().doc(ticketId).collection("messages").doc(sentId).set(Object.assign({
       direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
       text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan",
-      attachments: attachments.map((a) => ({ name: a.name, type: String(a.type || "").split(";")[0], size: Buffer.byteLength(String(a.content || ""), "utf8") })),
+      attachments: attachments.map((a) => ({ name: a.name, type: String(a.type || "").split(";")[0], size: Buffer.isBuffer(a.content) ? a.content.length : Buffer.byteLength(String(a.content || ""), "utf8") })),
     }, fields));
     return sentId;
   }
@@ -423,6 +444,121 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
+  }
+
+  // ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──
+  // A write whose instruction names collateral (collateral-core.js →
+  // collateralFormat). The document is written with the brand skill (voice,
+  // messaging, the CTA) and the chosen collateral skill (structure and depth;
+  // the brand skill alone when none was chosen), from the email, its
+  // attachments (the email's quoted history is not read), the skill's kept reference
+  // material (earlier collateral included), the published Help Centre and the
+  // prospect's industry and country. What the model wrote is cleaned
+  // (guardCollateral: no Sydney/Australia positioning, no internal names, no
+  // long dashes), printed to a branded PDF on the server, and sent by
+  // reply-all with the PDF and the Markdown source attached. It is then filed
+  // on the ticket and kept as a reference example for the skill, so later runs
+  // stay consistent. No PDF, no email: a person takes it, with the Markdown
+  // kept as an internal note on the thread.
+  const pdfRenderer = runImpl ? (runImpl.render || null) : renderPdf;
+  async function projectNames() {
+    try { return (await rowsOf("projects")).map((p) => String(p.name || "").trim()).filter(Boolean); }
+    catch (err) { logger.warn("support: Aidan couldn't read the project names", { error: errText(err) }); return []; }
+  }
+  async function prospectOf(instruction, client) {
+    if (typeof accounts !== "function") return cc.prospectFor({ instruction, client });
+    try { const a = (await accounts()) || {}; return cc.prospectFor({ instruction, client, prospects: a.prospects || [], leads: a.leads || [] }); }
+    catch (err) { logger.warn("support: Aidan couldn't read Prospects and Leads", { error: errText(err) }); return cc.prospectFor({ instruction, client }); }
+  }
+  async function helpCentreText(industry) {
+    if (!helpCentre || typeof helpCentre.articles !== "function") return "";
+    try { return cc.helpCentreBlock(await helpCentre.articles(), industry); }
+    catch (err) { logger.warn("support: Aidan couldn't read the Help Centre for collateral", { error: errText(err) }); return ""; }
+  }
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const [prospect, internalNames] = await Promise.all([prospectOf(instruction, client), projectNames()]);
+    const industry = cc.industryFor(instruction, prospect);
+    const helpText = await helpCentreText(industry);
+    const refs = await referencesFor(skill.id);
+    const own = skill.id !== brand.id;
+    const system = `${ac.DOC_SYSTEM}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}`
+      + `\n\n<brand_skill name="${String(brand.name || brand.slug || "").replace(/"/g, "")}">\n${await skillFiles(cc.promptFiles(brand))}\n</brand_skill>`
+      + (own ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
+      + (refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : "");
+    const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${prospect && prospect.name ? `\nFor: ${prospect.name}` : client ? `\nFor: ${client}` : ""}\nCollateral: ${format.label}`;
+    const blocks = contentBlocks({ header, email, inputs, skipped });
+    const facts = cc.prospectBlock(prospect, industry);
+    if (facts) blocks.push({ type: "text", text: facts });
+    if (helpText) blocks.push({ type: "text", text: helpText });
+    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: { format: format.key, industry, prospect } })
+      : await model({ system, schema: ac.DOC_SCHEMA, effort: "medium", maxTokens: format.maxTokens, content: blocks, timeout: DOC_TIMEOUT_MS });
+    const written = ac.cleanDocument(raw);
+    // Deterministic, whatever the model wrote: no Australian positioning, no internal names, no long dashes.
+    const guard = { internalNames, prospectCountry: prospect ? prospect.country : "" };
+    const docMd = cc.guardCollateral(written.documentMd, guard);
+    const title = cc.guardCollateral(written.title, guard).text || format.label;
+    const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
+    const removed = docMd.changes;
+    const files = cc.fileNames(written.fileName, title);
+    const facts2 = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
+    const mdSize = Buffer.byteLength(docMd.text, "utf8");
+    // The branded PDF, printed on the server. Without it nothing is sent.
+    let printed = null;
+    let failure = "";
+    if (!pdfRenderer) failure = "the PDF printer isn't available on the server";
+    else {
+      try {
+        const html = cc.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand });
+        printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS });
+        if (!printed || !cc.isPdf(printed.pdf)) { printed = null; failure = "the printer returned no PDF"; }
+      } catch (err) { failure = errText(err); }
+    }
+    if (!printed) {
+      // The Markdown is kept on the thread as an internal note, so a person can finish it.
+      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
+        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.md}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
+      return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
+        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The Markdown is on the thread as an internal note.`,
+        document: { name: files.md, title, size: mdSize }, collateral: Object.assign({}, facts2, { pdf: null, markdown: { name: files.md, size: mdSize }, removed }) }, needsHuman: true },
+      "Aidan wrote the collateral but couldn't make the PDF, so a person takes it.");
+    }
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
+    const pdfSize = printed.pdf.length;
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
+      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
+      fields: { kind: "generate", collateral: true, skillId: skill.id, skillName: skill.name || skill.slug } });
+    // Filed as a reference example for the skill: the Markdown as its text, the
+    // PDF in Storage. A filing failure is noted; the email has already gone.
+    const refId = `ref-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}`;
+    let storagePath = "";
+    let referenceId = "";
+    try {
+      if (bucket) {
+        const path = `skill-references/${skill.id}/${refId}/${files.pdf}`;
+        try { await bucket().file(path).save(printed.pdf, { contentType: "application/pdf", resumable: false }); storagePath = path; }
+        catch (err) { logger.warn("support: Aidan couldn't store the collateral PDF", { ticketId, error: errText(err) }); }
+      }
+      await db.collection(REFERENCES).doc(refId).set({
+        skillId: skill.id, skillSlug: skill.slug || "", skillName: skill.name || "", ticketId, gmailId: sentId,
+        subject: core.clip(`${format.label}: ${title}`, 500), text: core.clip(docMd.text, REFERENCE_TEXT_BUDGET), example: true, format: format.key, industry,
+        files: [Object.assign({ name: files.pdf, kind: "pdf", size: pdfSize, pages: printed.pages || 0 }, storagePath ? { storagePath } : {}), { name: files.md, kind: "text", size: mdSize }],
+        addedBy: "aidan", source: "aidan-collateral", createdAt: now(),
+      });
+      referenceId = refId;
+    } catch (err) { logger.error("support: Aidan couldn't keep the collateral as a reference", { ticketId, error: errText(err) }); }
+    const n = recipients.to.length + recipients.cc.length;
+    const pages = printed.pages || 0;
+    const skillName = skill.name || skill.slug;
+    return finish({
+      aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
+        collateral: Object.assign({}, facts2, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${own ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
   }
 
   // An "answer" run: reply to everyone on the email (the same recipients as a
@@ -613,6 +749,21 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         if (await readTheConsole()) return readOnlyReply(base);
         return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { skill, consoleData }));
       }
+      // Branded collateral: a write whose instruction names it. The brand skill
+      // has to be in the library; the chosen skill (or the brand skill alone)
+      // decides format and depth. It reads no console plan: only the
+      // prospect's industry and country, and the published Help Centre.
+      const format = d.action === "generate" ? cc.collateralFormat(d.instruction) : null;
+      if (format) {
+        const brand = cc.brandSkillIn(skills);
+        if (!brand) {
+          return finish({ aidan: { status: "needs-person", kind: "generate", reason: `Branded collateral needs the brand skill (${cc.BRAND_SLUG}) in the skills library, and it isn't there.` }, needsHuman: true },
+            "Aidan was asked for branded collateral, but the brand skill isn't in the skills library, so a person takes it.");
+        }
+        const picked = await chooseSkill({ instruction: d.instruction, email, skills });
+        const { inputs, skipped } = await readAttachments(job.gmailId, full && full.payload);
+        return collateralAndReply(Object.assign(base, { skill: picked.skill || brand, brand, format, client: picked.client, inputs, skipped }));
+      }
       const chosen = await chooseSkill({ instruction: d.instruction, email, skills });
       if (!chosen.skill) {
         // A request to write that no skill matches may still be something the
@@ -676,4 +827,4 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, factsOf: ac.mailFacts };
 }
 
-module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, STALE_MS };
+module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };

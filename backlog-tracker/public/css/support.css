@@ -89,6 +89,18 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-draft-sources a { color: var(--primary-text); }
 /* An answer Aidan took from the Help Centre: its confidence, then the articles it was written from. */
 .support-aidan-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+/* Branded collateral Aidan wrote (JtkLrEG0aTnC5JfkdPA1): label and text rows, text only. */
+.support-aidan-collateral { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
+.support-aidan-coll-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; padding: 4px 0; }
+.support-aidan-coll-row + .support-aidan-coll-row { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.support-aidan-coll-row dt { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; color: var(--text-muted); }
+.support-aidan-coll-row dt .material-symbols-outlined { font-size: 16px; }
+.support-aidan-coll-row dd { margin: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.support-aidan-coll-row small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.support-aidan-files { margin: 0; padding: 0; list-style: none; }
+.support-aidan-files li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
+.support-aidan-files small { display: inline; margin: 0; }
+@media (max-width: 640px) { .support-aidan-coll-row { grid-template-columns: minmax(0, 1fr); } }
 .support-draft-actions, .support-send { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .support-faq { margin-top: 10px; }
 .support-faq .um-search { display: block; max-width: none; }

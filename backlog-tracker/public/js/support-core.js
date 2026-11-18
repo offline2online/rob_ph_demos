@@ -120,6 +120,7 @@ export function aidanView(aidan) {
   const a = aidan && AIDAN_STATES[aidan.status] ? aidan : null;
   if (!a) return null;
   const helpCentre = a.status === "replied" && a.kind === "answer" ? aidanHelpCentre(a) : null;
+  const collateral = aidanCollateral(a);
   const s = AIDAN_STATES[a.status];
   const skill = a.skillName ? ` with the ${a.skillName} skill` : "";
   const people = `${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"}`;
@@ -127,13 +128,41 @@ export function aidanView(aidan) {
     queued: `Aidan was asked to ${AIDAN_ASKED[a.kind] || AIDAN_ASKED.generate}: "${a.instruction || ""}". It runs at the next scheduled sync.`,
     working: `Aidan is working on: "${a.instruction || ""}".`,
     replied: helpCentre ? `Aidan answered from the Help Centre, in the email itself, to ${people} on this email. Nothing was attached.`
-      : a.kind === "answer" ? `Aidan answered in the email itself, to ${people} on this email. Nothing was attached.` : `Aidan wrote ${a.document && a.document.name ? a.document.name : "the documentation"}${skill} and replied to ${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"} on this email.`,
+      : a.kind === "answer" ? `Aidan answered in the email itself, to ${people} on this email. Nothing was attached.`
+      : collateral && !collateral.unsent ? `Aidan wrote the branded ${collateral.formatLabel.toLowerCase()}${skill} and replied to ${people} on this email with the PDF and its Markdown source attached.`
+      : `Aidan wrote ${a.document && a.document.name ? a.document.name : "the documentation"}${skill} and replied to ${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"} on this email.`,
     ingested: `Ingested: kept as reference material for the ${a.skillName || "named"} skill${a.files && a.files.length ? ` (${a.files.length} attachment${a.files.length === 1 ? "" : "s"})` : ""}.`,
     ignored: `Aidan did nothing: ${a.reason || "the request wasn't accepted."}`,
     "needs-person": `Aidan needs a person: ${a.reason || ""}`,
     error: a.reason || "Aidan couldn't finish.",
   }[a.status];
-  return { badge: s.badge, tone: s.tone, line, kind: AIDAN_KINDS[a.kind] || "", helpCentre };
+  return { badge: s.badge, tone: s.tone, line, kind: AIDAN_KINDS[a.kind] || "", helpCentre, collateral };
+}
+
+// Branded sales collateral Aidan wrote (functions/collateral-core.js,
+// JtkLrEG0aTnC5JfkdPA1): what it was, for whom, the two files sent (the PDF
+// and its Markdown source), whether it was kept as a reference example for
+// the skill, and what was taken out of it before it was sent. null for any
+// other run. { formatLabel, about, files: [{ name, detail }], kept, removed: [string], unsent }
+const COLLATERAL_REMOVED = {
+  australia: (n) => `${n} sentence${n === 1 ? "" : "s"} placing Personalisation Hub in Australia`,
+  internal: (n) => `${n} sentence${n === 1 ? "" : "s"} naming an internal project`,
+  renamed: (n) => `${n} internal name${n === 1 ? "" : "s"} renamed`,
+  dashes: (n) => `${n} long dash${n === 1 ? "" : "es"} replaced`,
+};
+const kb = (n) => { const b = Math.max(0, Number(n) || 0); return b >= 1024 * 1024 ? `${(b / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`; };
+export function aidanCollateral(aidan) {
+  const c = aidan && aidan.collateral && typeof aidan.collateral === "object" ? aidan.collateral : null;
+  if (!c || typeof c.formatLabel !== "string" || !c.formatLabel) return null;
+  const prospect = c.prospect && typeof c.prospect === "object" && typeof c.prospect.name === "string" ? c.prospect : null;
+  const source = prospect && prospect.source === "prospect" ? "Prospects (TAM)" : prospect && prospect.source === "lead" ? "Leads" : "";
+  const about = [c.formatLabel, typeof c.industry === "string" ? c.industry : "", prospect ? `for ${prospect.name}${source ? ` (industry and country from ${source})` : ""}` : ""].filter(Boolean).join(" · ");
+  const files = [];
+  const pdf = c.pdf && typeof c.pdf === "object" && c.pdf.name ? c.pdf : null;
+  if (pdf) { const pages = Math.max(0, Number(pdf.pages) || 0); files.push({ name: String(pdf.name), detail: `Branded PDF${pages ? `, ${pages} page${pages === 1 ? "" : "s"}` : ""}, ${kb(pdf.size)}` }); }
+  if (c.markdown && c.markdown.name) files.push({ name: String(c.markdown.name), detail: `Markdown source, ${kb(c.markdown.size)}` });
+  const removed = (Array.isArray(c.removed) ? c.removed : []).filter((r) => r && COLLATERAL_REMOVED[r.rule] && Number(r.count) > 0).map((r) => COLLATERAL_REMOVED[r.rule](Number(r.count)));
+  return { formatLabel: c.formatLabel, about, files, kept: Boolean(c.referenceId), removed, unsent: !pdf };
 }
 
 // What the Aidan tab says about a thread: always a state. A thread Aidan was
