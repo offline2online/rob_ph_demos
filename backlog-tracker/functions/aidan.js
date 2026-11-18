@@ -96,6 +96,17 @@
 //     suggested, or comments on a matching open one (`reflect`, through
 //     `improvements`, mcp-server.js → aidanImprovements). The ticket is
 //     linked on the thread's timeline and in `aidan.improvement`.
+//   • The voice (SYkk20srKT7pIKM1HS8Z, functions/aidan-voice.js): every reply
+//     Aidan writes (an answer, a Help Centre answer, the cover note of a
+//     write) is finished first, and then at most ONE light aside in his
+//     character is added after it (`inVoice`), from the "aidan-voice" skill in
+//     the skills library (added to the library, insert-only, the first time
+//     it is missing). The voice never rewrites the reply and never touches an
+//     attached document. No aside on a complaint, an outage, a fault or
+//     anything commercial, and none when the voice can't be reached: the
+//     reply is sent plain. Asked whether he is a bot or an AI, he says yes
+//     (`ensureAiDisclosure`). Signed "Aidan, Personalisation Hub", with the
+//     optional signature line from Settings when it is switched on.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
 //     POST /supportMail/v1/aidan, never returned unmasked.
@@ -109,6 +120,7 @@ const ac = require("./aidan-core");
 const answerCore = require("./answer-core");
 const cc = require("./collateral-core");
 const cl = require("./collateral-layout");
+const av = require("./aidan-voice");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -129,7 +141,10 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. Collateral reads no
 // console plan: it is start + choice + document + COLLATERAL_RENDER_TIMEOUT_MS
 // for the PDF (2 + 1 + 4 + 1 minutes, with the send and the filing after). A run that is cut off anyway is moved to a person by the next sync
-// (sweepStale) once it has been "working" for STALE_MS.
+// (sweepStale) once it has been "working" for STALE_MS. The voice adds one
+// short call of VOICE_TIMEOUT_MS after the reply is written (2 + 2 + 1 + 2
+// minutes and 20 seconds for the worst answer, 2 + 1 + 4 + 1 and 20 seconds
+// for collateral); when it fails or runs out of time the reply goes plain.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
 const DOC_TIMEOUT_MS = 240000;
@@ -140,6 +155,8 @@ const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the th
 const CONSOLE_PLAN_TIMEOUT_MS = 25000;
 // Printing collateral to PDF: Chromium's start, the brand font and the print.
 const COLLATERAL_RENDER_TIMEOUT_MS = 60000;
+// The voice's one sentence: a small call, never retried.
+const VOICE_TIMEOUT_MS = 20000;
 const STALE_MS = 15 * 60 * 1000;
 const SEEN_KEEP = 50;                    // gmailIds remembered per ticket (aidanSeen), so a message is decided once
 const ACTIVE = ["queued", "working"];
@@ -177,6 +194,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (body.clearSenders === true) patch.allowedSenders = [];
     if ("enabled" in body) patch.enabled = body.enabled === true;
     if ("requireSenderAuth" in body) patch.requireSenderAuth = body.requireSenderAuth !== false;
+    // The optional signature line under "Aidan, Personalisation Hub": the text
+    // is kept when it is switched off, and it can't be switched on empty.
+    if ("signatureLine" in body) patch.signatureLine = ac.cleanSignatureLine(body.signatureLine);
+    if ("signatureLineOn" in body) patch.signatureLineOn = body.signatureLineOn === true;
+    if (patch.signatureLineOn && !ac.cleanSignatureLine("signatureLine" in patch ? patch.signatureLine : cur.signatureLine)) {
+      return { ok: false, error: "Write the signature line, or switch it off." };
+    }
     await configRef().set(patch, { merge: true });
     return { ok: true, aidan: ac.publicConfig(Object.assign({}, cur, patch), { admin: true }) };
   }
@@ -537,6 +561,69 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     return ac.shapeConsoleAnswer({ replyText: withoutIds(answer.replyText, c, instruction), documentMd: withoutIds(answer.documentMd, c, instruction), title: answer.title });
   }
 
+  // ── The voice (functions/aidan-voice.js) ──
+  // With Aidan's model stubbed (`run`) the voice runs only when it is stubbed
+  // too (`run.voice`), so no test reaches the network.
+  const voiceOn = () => !runImpl || typeof runImpl.voice === "function";
+  // The "aidan-voice" skill, from the library. When the library has none it
+  // is added as first written (insert-only, in a transaction, under a fixed
+  // id so two instances can't add it twice); a failure leaves the run using
+  // the built-in text.
+  async function voiceSkillFrom(skills) {
+    const found = av.voiceSkillIn(skills);
+    if (found || !voiceOn()) return found;
+    const doc = av.defaultSkillDoc();
+    try {
+      const ref = db.collection("skills").doc(av.VOICE_SLUG);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (snap.exists) return;
+        tx.set(ref, Object.assign({}, doc, { createdVia: "aidan", createdByEmail: null, updatedByEmail: null, createdAt: now(), updatedAt: now() }));
+      });
+    } catch (err) { logger.warn("support: Aidan couldn't add the voice skill to the library", { error: errText(err) }); }
+    return Object.assign({ id: av.VOICE_SLUG }, doc);
+  }
+  // The finished reply body, in Aidan's voice: the body exactly as it was
+  // written, then at most one aside. `kind`: "answer", "helpCentre" or
+  // "generate" (a cover note; the attached document never comes here).
+  // Returns { text, voice } where voice is what goes on the ticket
+  // ({ quirk: bool, reason? }), or null when the voice didn't run at all.
+  // Never throws: a reply is never held up by its voice.
+  // `content`: the thread the instruction refers to (readThreadContent), when
+  // there is one: a complaint or a pricing question quoted below "@Aidan,
+  // please answer John's question" makes the reply a plain one too.
+  // "Are you a bot?" (asked in the instruction) is settled here, for every
+  // kind of reply and whether or not the voice runs: the reply says yes (a
+  // dodge gets the line first, a sentence denying it is taken out), and that
+  // yes is the email's one touch of character, so no aside is added. On an
+  // email that gets no quirk the yes is the plain line.
+  async function inVoice({ ticketId, kind, body, instruction, msg, ticket, voiceSkill = null, content = null }) {
+    let text = String(body || "").replace(/\r/g, "").trim();
+    if (!text) return { text, voice: null };
+    const sensitive = av.sensitiveReason([instruction, msg && msg.subject, ticket && ticket.subject, core.stripQuoted((msg && msg.text) || ""), content && content.text, text]);
+    if (av.asksIfAi(instruction)) {
+      if (sensitive) text = text.split(av.AI_LINE).join(av.AI_LINE_PLAIN);
+      const said = av.ensureAiDisclosure(text, { asked: true, line: sensitive ? av.AI_LINE_PLAIN : av.AI_LINE });
+      return { text: said.text, voice: { quirk: false, aiAsked: true, reason: said.added ? "asked whether Aidan is an AI: the yes was added" : "asked whether Aidan is an AI" } };
+    }
+    if (!voiceOn()) return { text, voice: null };
+    if (sensitive) return { text, voice: { quirk: false, reason: `plain reply: ${sensitive}` } };
+    try {
+      const input = { kind, instruction, body: text, firstName: ac.greetingName(msg && msg.fromName) };
+      const system = av.voiceSystemFor(voiceSkill);
+      const prompt = av.voicePrompt(input);
+      const raw = runImpl ? await runImpl.voice(Object.assign({ system, content: prompt, skill: voiceSkill }, input))
+        : await model({ system, schema: av.VOICE_SCHEMA, effort: "low", maxTokens: 400, content: prompt, timeout: VOICE_TIMEOUT_MS });
+      const quirk = av.cleanQuirk(raw);
+      if (!quirk) return { text, voice: { quirk: false, reason: raw && raw.sensitive === true ? "plain reply: the voice judged it sensitive" : "no aside fitted" } };
+      return { text: av.withQuirk(text, quirk), voice: { quirk: true } };
+    } catch (err) {
+      logger.warn("support: Aidan's voice wasn't added", { ticketId, error: errText(err) });
+      return { text, voice: { quirk: false, reason: "the voice couldn't be reached" } };
+    }
+  }
+  const voiceFact = (v) => (v ? { voice: v } : {});
+
   // Send a plain reply (or one with files) on the thread from the mailbox and file it on the ticket.
   async function sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments = [], fields = {} }) {
     const raw5322 = ac.buildMultipartRaw({
@@ -563,7 +650,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const recipients = ac.consoleRecipients(ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail }), config.allowedSenders);
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeReadOnlyReply({ firstName: ac.greetingName(msg.fromName), fromName: config.fromName });
+    const text = ac.composeReadOnlyReply({ firstName: ac.greetingName(msg.fromName), fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", readOnly: true } });
     const n = recipients.to.length + recipients.cc.length;
     return finish({
@@ -576,7 +663,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // A "generate" run: write the document with the skill and reply to everyone
   // on the email (the verified From address plus the original To and Cc; never
   // Reply-To, never our own addresses), on the thread, with it attached.
-  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish, consoleData = null, content = null }) {
+  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish, consoleData = null, content = null, voiceSkill = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}`;
@@ -591,7 +678,9 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const all = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     const recipients = fromConsole ? ac.consoleRecipients(all, config.allowedSenders) : all;
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: doc.replyText, fromName: config.fromName });
+    // The cover note in Aidan's voice; the document is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "generate", body: doc.replyText, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const raw = ac.buildMultipartRaw({
       fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
       inReplyTo: msg.messageId, references: msg.references, attachments: [{ name: doc.fileName, type: "text/markdown; charset=UTF-8", content: doc.documentMd }],
@@ -610,7 +699,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const n = recipients.to.length + recipients.cc.length;
     return finish({
       aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: doc.fileName, title: doc.title, size }, recipients: n, sentId },
-        fromConsole ? { console: consoleFacts(consoleData) } : {}),
+        fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
@@ -712,7 +801,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   }
   // The whole run: write, print, send (reply-all with the PDF and the
   // Markdown), keep the example, file it on the ticket. No PDF, no email.
-  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null }) {
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
@@ -732,7 +821,10 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     }
     const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
+    // The cover note in Aidan's voice. The collateral itself (the PDF and its
+    // Markdown) is the brand voice's alone and is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "generate", body: replyText, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const pdfSize = printed.pdf.length;
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
       attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
@@ -742,8 +834,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const pages = printed.pages || 0;
     const skillName = skill.name || skill.slug;
     return finish({
-      aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
-        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
+      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
+        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
@@ -764,7 +856,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // With thread `content` (the instruction refers to the thread), the email
   // block is the sender's new text only and the content is its own block,
   // marked as third-party material; the reply is written for everyone on it.
-  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null, consoleData = null, content = null, signals = null }) {
+  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null, consoleData = null, content = null, signals = null, voiceSkill = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const fromConsole = Boolean(consoleData && consoleData.used);
@@ -783,9 +875,17 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       : await model(fromConsole
         ? { system, schema: ac.CONSOLE_ANSWER_SCHEMA, effort: "medium", maxTokens: 16000, content: blocks, timeout: ANSWER_TIMEOUT_MS }
         : { system, schema: ac.ANSWER_SCHEMA, effort: "medium", maxTokens: 4000, content: blocks, timeout: ANSWER_TIMEOUT_MS });
-    const answer = fromConsole ? ac.cleanConsoleAnswer(raw) : ac.cleanAnswer(raw);
+    let answer = fromConsole ? ac.cleanConsoleAnswer(raw) : ac.cleanAnswer(raw);
     // The model's own self-check, for the self-improvement ticket (never sent).
     if (signals) signals.selfCheck = answer.selfCheck;
+    // "Are you a bot?" always gets a plain yes: when the model had nothing to
+    // say to a short instruction that asks only that, the line is the answer.
+    const askedAi = av.asksIfAi(instruction);
+    if (askedAi && !answer.canAnswer && noSkill === null && String(instruction || "").length <= av.AI_ONLY_MAX) {
+      answer = Object.assign({}, answer, { canAnswer: true, replyText: av.AI_LINE, documentMd: "", title: "", reason: "", selfCheck: null });
+      // The request was met (it asked only that), so there is no gap to file.
+      if (signals) signals.selfCheck = null;
+    }
     if (!answer.canAnswer) {
       const why = answer.reason ? ` (${answer.reason})` : "";
       const where = fromConsole ? "the email and the console" : "the email alone";
@@ -801,11 +901,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       body = shaped.inline;
       attachment = shaped.attachment;
     }
-    const text = ac.composeAidanAnswer({ replyText: body, fromName: config.fromName });
+    // The voice: "are you a bot?" answered yes, or at most one aside after
+    // the body; an attached answer is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "answer", body, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanAnswer({ replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const attachments = attachment ? [{ name: attachment.name, type: "text/markdown; charset=UTF-8", content: attachment.content }] : [];
     const named = skill ? { skillId: skill.id, skillName: skill.name || skill.slug } : {};
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments, fields: Object.assign({ kind: "answer" }, named, fromConsole ? { console: true } : {}) });
-    const extra = fromConsole ? { console: consoleFacts(consoleData) } : {};
+    const extra = Object.assign(fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice));
     if (attachment) extra.document = { name: attachment.name, title: answer.title || attachment.name, size: Buffer.byteLength(attachment.content, "utf8") };
     return finish({
       aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId }, named, extra),
@@ -831,7 +934,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // instructions" line (ac.CONTENT_LINE), ahead of the sender's new text
   // (answer-core.js → questionFromEmail, emailBlock).
   async function helpCentreAnswer({ ticketId, msg, ticket, instruction, skill, content = null }) {
-    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction)) return null;
+    // "Are you a bot?" is Aidan's own to answer, not the Help Centre's.
+    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction) || av.asksIfAi(instruction)) return null;
     if (runImpl && !helpCentre.run) return null;
     try {
       const articles = await helpCentre.articles();
@@ -851,20 +955,22 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // (the Help Centre is public, so nobody is left off). Always sent: the
   // Support Inbox's confidence threshold and auto-send switch are not Aidan's.
   // The confidence and the articles go on the ticket, not in the email.
-  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited, content = null, signals = null }) {
+  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited, content = null, signals = null, instruction = "", voiceSkill = null }) {
     if (signals) signals.helpCentre = { confidence: triage.confidence };
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
     const n = recipients.to.length + recipients.cc.length;
+    // The engine's answer and its articles first, exactly as drafted; then the voice's one aside, if any.
+    const voiced = await inVoice({ ticketId, kind: "helpCentre", body: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), instruction, msg, ticket, voiceSkill, content });
     // A question from the thread is answered to everyone on it: "Hi all".
-    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), fromName: config.fromName, all: Boolean(content) });
+    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config), all: Boolean(content) });
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", helpCentre: true, confidence: triage.confidence, articles: cited } });
     const pct = Math.round(triage.confidence * 100);
     return finish({
-      aidan: { status: "replied", kind: "answer", recipients: n, sentId,
-        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } },
+      aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId,
+        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan answered from the Help Centre (${cited.length} article${cited.length === 1 ? "" : "s"}, ${pct}% confidence) in the email itself and replied to ${n} ${n === 1 ? "person" : "people"}.`);
@@ -973,7 +1079,11 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       if (d.action !== "store" && ac.consoleChangeRequest(d.instruction)) return readOnlyReply(base);
       const key = String(apiKey() || "");
       if (!runImpl && (!key || key === "unset")) { signals.noModel = true; return finish({ aidan: { status: "needs-person", reason: "No model is configured (ANTHROPIC_API_KEY)." }, needsHuman: true }); }
-      const skills = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
+      const library = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
+      // The voice is how the reply is delivered, never a skill a document is
+      // written with: it is taken out of the list a run chooses from.
+      const skills = av.withoutVoiceSkill(library);
+      base.voiceSkill = await voiceSkillFrom(library);
       // What the console holds, read-only. An answer always reads it (a plain
       // acknowledgement plans no read). A write reads it only when the
       // instruction is clearly about the console (ac.writeReadsConsole: a
@@ -1178,4 +1288,4 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts };
 }
 
-module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };
+module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, VOICE_TIMEOUT_MS, STALE_MS };

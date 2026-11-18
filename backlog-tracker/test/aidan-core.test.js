@@ -473,7 +473,7 @@ check("the answer: a plain-text email with no attachment, signed by Aidan; an em
   assert.strictEqual(ac.cleanAnswer(null).canAnswer, false);
   assert.ok(ac.cleanAnswer({ canAnswer: true, replyText: "x".repeat(20000) }).replyText.length <= ac.ANSWER_MAX);
   const text = ac.composeAidanAnswer({ replyText: "Got it, Owner, all good.", fromName: "Aidan" });
-  assert.strictEqual(text, "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub");
+  assert.strictEqual(text, "Got it, Owner, all good.\n\nAidan, Personalisation Hub");
   const raw = ac.buildMultipartRaw({ fromName: "Aidan", fromEmail: "support@ph.example", to: [ALLOWED, "client@shop.example"], cc: ["colleague@shop.example"], subject: "Onboarding", text,
     inReplyTo: "<m1@mail.example>", references: "<m0@mail.example>", attachments: [] });
   const mail = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
@@ -501,7 +501,7 @@ check("console: a request to create or change something on the console is recogn
   assert.deepStrictEqual([ac.mayReadConsole("please confirm you received this email"), ac.mayReadConsole("summarise the Customer Support concept")], [false, true]);
   assert.deepStrictEqual([ac.asksForIds("list the backlog tickets with their ids"), ac.asksForIds("what tickets are in the backlog?"), ac.asksForIds("I'd like the list")], [true, false, false]);
   const reply = ac.composeReadOnlyReply({ firstName: "Owner", fromName: "Aidan" });
-  assert.ok(/^Hi Owner,/.test(reply) && /can only read the agent console/.test(reply) && /haven't created or changed anything/.test(reply) && /\nAidan\nAssistant to Rob, Personalisation Hub$/.test(reply), reply);
+  assert.ok(/^Hi Owner,/.test(reply) && /can only read the agent console/.test(reply) && /haven't created or changed anything/.test(reply) && /\nAidan, Personalisation Hub$/.test(reply), reply);
 });
 
 check("console: the read-only refusal needs a console thing as the head of the object; documents, reads and other objects pass through (review kick-back 1)", () => {
