@@ -9,7 +9,7 @@ import {
   collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, query, where, orderBy, limit, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { avatarHTML, getAvatarMember, memberLabel, normEmail } from "../avatar.js";
-import { canonicalEmail } from "./kanban-core.js";
+import { canonicalEmail, setPersonAliases } from "./kanban-core.js";
 
 export const BELL_LIMIT = 30;
 // Read notifications older than this go when their owner marks all read (no scheduled job).
@@ -56,7 +56,7 @@ export function groupByTicket(list) {
 // host: the element to put the bell in. openTicket(key) shows that ticket.
 export function mountNotificationBell({ db, me, host, openTicket, onError = () => {} }) {
   // Notifications are addressed to a person's own address, whichever of their addresses they signed in with.
-  const mine = canonicalEmail(normEmail(me));
+  let mine = canonicalEmail(normEmail(me));
   const state = { list: [], unread: 0, open: false, names: {}, error: "", busy: false };
   // Who each notification is from, by full name. The console's own record of a
   // member may not be loaded on this page yet, so each sender's directory row
@@ -103,12 +103,24 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     } catch (err) { onError(err); }
   }
 
-  const unsub = onSnapshot(query(collection(db, "kanbanNotifications"), where("to", "==", mine), orderBy("at", "desc"), limit(BELL_LIMIT)), (snap) => {
+  const listen = () => onSnapshot(query(collection(db, "kanbanNotifications"), where("to", "==", mine), orderBy("at", "desc"), limit(BELL_LIMIT)), (snap) => {
     state.list = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).map((n) => ({ ...n, at: isoOf(n.at) }));
     draw();
     loadNames(state.list);
     recount();
   }, onError);
+  let unsub = listen(), gone = false;
+  // Which address is this person's own is configuration (consoleConfig/identity), and the bell is
+  // on every page, often before anything else has read it: read here, once. Someone signed in
+  // with a second address is then listened for under their own. (It used to depend on the Staff
+  // Kanban having loaded the map first, so the bell was empty for them on every other page.)
+  getDoc(doc(db, "consoleConfig", "identity")).then((s) => {
+    if (gone || !s.exists()) return;
+    setPersonAliases((s.data() || {}).personAliases);
+    const own = canonicalEmail(normEmail(me));
+    if (own === mine) return;
+    unsub(); mine = own; unsub = listen();
+  }).catch(() => { /* not readable: no aliases */ });
 
   async function markRead(ids) {
     const b = writeBatch(db);
@@ -166,5 +178,5 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
   };
   document.addEventListener("click", onClick);
   draw();
-  return { destroy() { unsub(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
+  return { destroy() { gone = true; unsub(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
 }

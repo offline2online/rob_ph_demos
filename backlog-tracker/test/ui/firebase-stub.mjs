@@ -71,7 +71,9 @@ class Backend {
     this.user = s.user || { email: "editor@ph.example", role: "editor" };
   }
   resolve(value, existing, key) {
-    if (isObj(value) && value.$sentinel === "serverTimestamp") return new Timestamp(this.now += 1000);
+    // One commit, one time: every serverTimestamp() written together gets the same value, as on the
+    // server (a ticket and its card are stamped alike, which the board relies on).
+    if (isObj(value) && value.$sentinel === "serverTimestamp") return this.commitTime || new Timestamp(this.now += 1000);
     if (isObj(value) && value.$sentinel === "arrayUnion") {
       const cur = Array.isArray(existing) ? existing.slice() : [];
       for (const el of value.values) if (!cur.some((c) => same(c, el))) cur.push(clone(el));
@@ -109,10 +111,13 @@ class Backend {
     } else throw new Error(`firebase-stub: unknown write ${op}`);
   }
   commit(writes) {
-    for (const w of writes) {
-      this.apply(w.op, w.ref, w.data, w.merge);
-      this.writes.push({ op: w.as || w.op, path: w.ref.path, data: w.data === undefined ? undefined : describe(w.data), merge: !!w.merge });
-    }
+    this.commitTime = new Timestamp(this.now += 1000);
+    try {
+      for (const w of writes) {
+        this.apply(w.op, w.ref, w.data, w.merge);
+        this.writes.push({ op: w.as || w.op, path: w.ref.path, data: w.data === undefined ? undefined : describe(w.data), merge: !!w.merge });
+      }
+    } finally { this.commitTime = null; }
     this.notify();
   }
   notify() { for (const l of [...this.listeners]) l.run(); }
@@ -214,9 +219,15 @@ export function onSnapshot(target, onNext, onError) {
   Promise.resolve().then(() => { if (b.listeners.has(l)) emit(); });
   return () => { if (b.listeners.delete(l)) watch[target.path] -= 1; };
 }
-export async function getDoc(ref) { return docSnap(ref.parentPath, ref.id, backend().col(ref.parentPath).get(ref.id)); }
-export async function getDocs(target) { return querySnap(target); }
+// window.__FB_LATENCY (ms, kanban-perf-probe.mjs only; unset in every test): what a
+// server round trip costs, as the real SDK spends it. A read from the server, a
+// count and a transaction wait for it; a write is applied locally at once (its
+// listeners fire) and only its promise waits; a listener answers from the cache.
+const roundTrip = () => (globalThis.__FB_LATENCY > 0 ? new Promise((ok) => setTimeout(ok, globalThis.__FB_LATENCY)) : null);
+export async function getDoc(ref) { await roundTrip(); return docSnap(ref.parentPath, ref.id, backend().col(ref.parentPath).get(ref.id)); }
+export async function getDocs(target) { await roundTrip(); return querySnap(target); }
 export async function getCountFromServer(target) {
+  await roundTrip();
   const rows = run(target.type === "collection" ? { path: target.path, constraints: [] } : target);
   return { data: () => ({ count: rows.length }) };
 }
@@ -226,16 +237,16 @@ export async function addDoc(colRef, data) {
   backend().commit([{ op: "set", as: "add", ref, data }]);
   return ref;
 }
-export async function setDoc(ref, data, opts) { backend().commit([{ op: "set", ref, data, merge: !!(opts && opts.merge) }]); }
-export async function updateDoc(ref, data) { backend().commit([{ op: "update", ref, data }]); }
-export async function deleteDoc(ref) { backend().commit([{ op: "delete", ref }]); }
+export async function setDoc(ref, data, opts) { backend().commit([{ op: "set", ref, data, merge: !!(opts && opts.merge) }]); await roundTrip(); }
+export async function updateDoc(ref, data) { backend().commit([{ op: "update", ref, data }]); await roundTrip(); }
+export async function deleteDoc(ref) { backend().commit([{ op: "delete", ref }]); await roundTrip(); }
 export function writeBatch() {
   const pending = [];
   return {
     set: (ref, data, opts) => pending.push({ op: "set", ref, data, merge: !!(opts && opts.merge) }),
     update: (ref, data) => pending.push({ op: "update", ref, data }),
     delete: (ref) => pending.push({ op: "delete", ref }),
-    commit: async () => backend().commit(pending),
+    commit: async () => { backend().commit(pending); await roundTrip(); },
   };
 }
 // Transactions: reads see the committed state; writes commit together.
@@ -248,6 +259,7 @@ export async function runTransaction(_db, fn) {
     delete: (ref) => { pending.push({ op: "delete", ref }); return tx; },
   };
   const out = await fn(tx);
+  await roundTrip();
   backend().commit(pending);
   return out;
 }

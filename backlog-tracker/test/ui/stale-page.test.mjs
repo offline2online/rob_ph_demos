@@ -7,8 +7,14 @@
 // Chromium tests always load fresh files, so nothing caught it.
 //
 // Checked here:
-//   1. firebase.json sends no-cache for "/" (and any directory index), as well
-//      as for .html/.js/.css;
+//   1. firebase.json sends no-cache for "/" (and any directory index) and for
+//      every .html page. Scripts and stylesheets are the other way round since
+//      18 Nov 2026: the deployed page names each one with its build's content
+//      stamp (?v=<id>, scripts/build-console.js; ui/minified.test.mjs checks no
+//      request goes out without it), so a stamped URL never changes what it
+//      answers and is kept for a year. A reload then asks the server for the
+//      page alone, not for sixty files. The page itself must never be cached:
+//      it is what names the scripts;
 //   2. with a stale page on first load, the console reloads once by itself and
 //      the menu then works, by touch, at iPad landscape and portrait;
 //   3. when the page is broken on every load, it shows the error after one
@@ -27,7 +33,16 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const fb = JSON.parse(fs.readFileSync(path.join(here, "..", "..", "firebase.json"), "utf8"));
 const consoleSite = (Array.isArray(fb.hosting) ? fb.hosting : [fb.hosting]).find((h) => h.target === "console");
 const noCache = (src) => (consoleSite.headers || []).some((h) => h.source === src && h.headers.some((x) => x.key === "Cache-Control" && /no-cache/.test(x.value)));
-for (const src of ["/", "**/", "**/*.@(html|js|css)"]) assert.ok(noCache(src), `firebase.json (console) must send Cache-Control: no-cache for "${src}"`);
+for (const src of ["/", "**/", "**/*.html"]) assert.ok(noCache(src), `firebase.json (console) must send Cache-Control: no-cache for "${src}"`);
+// No rule may let a page be kept: a long-lived rule names scripts and stylesheets only, and the build stamps every one of them.
+for (const h of consoleSite.headers || []) {
+  const cc = (h.headers.find((x) => x.key === "Cache-Control") || {}).value || "";
+  if (/immutable|max-age=[1-9]/.test(cc)) assert.ok(/^\*\*\/\*\.@\(js\|css\)$/.test(h.source) || h.source === "/js/vendor/**", `firebase.json (console): "${h.source}" is cached (${cc}); only stamped scripts and stylesheets may be`);
+}
+{
+  const build = fs.readFileSync(path.join(here, "..", "..", "scripts", "build-console.js"), "utf8");
+  assert.ok(/unstamped import/.test(build) && /unstamped asset/.test(build), "scripts/build-console.js must keep failing the build on an unstamped script or stylesheet: they are cached for a year");
+}
 
 // A stale page: today's index.html with the newest menu items missing, which is
 // what a page from before a release that added menu items looks like.

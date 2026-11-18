@@ -457,6 +457,7 @@ export function mountStaffKanban(ctx) {
     const here = () => current.ticket === link && !pageEl.hidden;
     if (!link.key) { renderTicketMissing(link.raw); return; }
     setAddress(ticketHash(link.key));
+    store.warmThread(link.key);
     let t;
     try { t = await store.fetchTask(link.key); }
     catch (e) {
@@ -1257,10 +1258,67 @@ export function mountStaffKanban(ctx) {
   // Opening a ticket the board isn't holding (a mention, a link, a child in
   // another release) fetches it first.
   // The board holds cards, so a ticket's modal reads the full ticket first.
+  // The click is answered in the same turn, whatever the read takes (about half a second
+  // on a real connection, and a card that is tapped has had no pointer resting on it):
+  //   - a ticket read earlier and unchanged since (the store checks its card's stamp)
+  //     opens at once from that copy, and is read again behind the open form;
+  //   - any other shows the dialog with the ticket's key and title straight away, and
+  //     the form when the read lands;
+  //   - its comments and activity are asked for now, alongside the ticket, not after it.
+  // `opening` counts opens: a read that lands after the dialog was closed, or after
+  // another ticket was asked for, opens nothing.
+  let opening = 0;
   async function openTaskByKey(key, preset) {
-    try { if (!(await takePrefetch(key))) { toast(`<b>${esc(key)}</b> no longer exists`); return; } }
-    catch (e) { fail(e); return; }
+    const mine = ++opening;
+    store.warmThread(key);
+    if (store.current(key)) {
+      prefetched.delete(key);
+      openTask(key, { ...preset, loaded: true });
+      recheckOpenTask(key);
+      return;
+    }
+    const placeholder = showOpening(key);
+    let t;
+    try { t = await takePrefetch(key); }
+    catch (e) { if (placeholder && mine === opening) hideOpening(); fail(e); return; }
+    if (mine !== opening) return;
+    if (!t) { if (placeholder) hideOpening(); toast(`<b>${esc(key)}</b> no longer exists`); return; }
     openTask(key, { ...preset, loaded: true });
+  }
+  // The dialog while its ticket is being read. Only over the board: with a ticket already
+  // open (a link, a child ticket) that ticket stays as it is until the next one is here.
+  function showOpening(key) {
+    const bd = $("#task-backdrop");
+    if (!bd.hidden || pageEl.hidden) return false;
+    const card = taskByKey(key);
+    clearInterval(changeTimer); changeBase = null;
+    draft = null;
+    $("#task-title-h").innerHTML = `<span class="kb-modal-key">${esc(key)}</span>`;
+    ["task-watch", "task-flag", "task-share"].forEach((id) => { const b = $("#" + id); if (b) b.hidden = true; });
+    $(".kb-task-panel").classList.remove("kb-panel-flagged");
+    $("#task-form").innerHTML = `<div class="kb-opening" role="status" aria-busy="true"><p class="kb-opening-title">${esc(card ? card.title : "")}</p><span class="kb-opening-line"></span><span class="kb-opening-line"></span><span class="kb-opening-line kb-opening-short"></span><span class="visually-hidden">Opening ${esc(key)}</span></div>`;
+    bd.hidden = false;
+    document.body.classList.add("kb-modal-open");
+    return true;
+  }
+  function hideOpening() {
+    if (draft) return;
+    $("#task-backdrop").hidden = true;
+    document.body.classList.remove("kb-modal-open");
+    $("#task-form").innerHTML = "";
+  }
+  // A ticket opened from the copy the page held is read again behind the form. The card
+  // said it hadn't changed, and a few writes touch the ticket alone (its watchers, its
+  // agent tickets): when the read differs and nothing has been typed, the form is drawn
+  // again from it. With unsaved changes the form is left alone; Save writes only what changed.
+  function recheckOpenTask(key) {
+    const shown = (store.getFull(key) || {}).updated;
+    store.fetchTask(key).then((t) => {
+      if (!draft || draftIsNew || draft.key !== key) return;
+      if (!t) { toast(`<b>${esc(key)}</b> was deleted`); returnTo = null; closeTask(); return; }
+      if (t.updated === shown || saving || changeBase == null || formState() !== changeBase) return;
+      openTask(key, { loaded: true, returnTo });
+    }).catch(() => {});
   }
   function openTask(key, preset) {
     // Always read the ticket fresh: what the board holds is the card.
@@ -1275,7 +1333,8 @@ export function mountStaffKanban(ctx) {
       assignee: board.mine ? state.me : "", reporter: state.me, release: state.settings.currentRelease,
       estimate: "", logged: 0, priority: "medium", sprint: "", project: "", due: "", labels: [], epic: "",
       comments: [], attachments: [], links: [], previousAssignee: "", activity: [], flagged: false, acceptanceCriteria: [],
-    }, preset ? preset.fields : {});
+    }, preset ? preset.fields : unsavedNew || {});
+    if (!t && !(preset && preset.fields)) unsavedNew = null;
     if (t) {
       watchThread(t.key);
       // A ticket's children and parents may sit outside what the board holds.
@@ -1394,6 +1453,7 @@ export function mountStaffKanban(ctx) {
     syncSaveState();
   }
   function closeTask(opts) {
+    opening++;
     clearInterval(changeTimer); changeBase = null; editBase = null;
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
     if (!(opts && opts.keepAddress)) restoreAddress();
@@ -2453,6 +2513,9 @@ export function mountStaffKanban(ctx) {
   }
 
   let saving = false;
+  // A new ticket whose create failed after its form had closed, when the form couldn't be
+  // put back (another ticket was open by then): the next New task starts from it.
+  let unsavedNew = null;
   async function submitTask(opts = {}) {
     if (saving || !draft) return;
     const form = $("#task-form");
@@ -2463,6 +2526,10 @@ export function mountStaffKanban(ctx) {
     let notify = [];
     if (descQ) {
       next.description = KBEditor.getHtml(descQ);
+      // A description nobody touched is not saved again. The editor hands back its own form of the
+      // HTML (a line break becomes a paragraph), so text written elsewhere (over MCP, by the voice
+      // fill) used to be rewritten, and logged as changed, by a save that only renamed the ticket.
+      if (!draftIsNew && next.description === descInitial) next.description = (store.getFull(next.key) || draft).description || "";
       if (hasInlineImages(next.description)) {
         try { next.description = await store.externaliseImages(next.key || "new", next.description); }
         catch (e) { toast("A screenshot couldn't be uploaded, so the ticket wasn't saved. Try again."); return; }
@@ -2539,15 +2606,47 @@ export function mountStaffKanban(ctx) {
         }
         // An epic that stops being one keeps its children: any ticket above the lowest level can have them (KB-TASK-14).
         if (commentQ && KBEditor.getHtml(commentQ)) addCommentFromEditor();
-        if (Object.keys(patch).length) await store.updateTask(existing.key, patch, activity);
+        // The store shows a save on the board in the same turn (as a drag, a flag and a
+        // comment already were), so the form closes without waiting for the server; a save
+        // that is refused says so and puts the old values back. A changed description or
+        // link still waits: a long text is not something to find out was lost after the
+        // form has gone, and a link writes to other tickets.
+        const waits = !!opts.then || "description" in patch || "links" in patch;
+        if (Object.keys(patch).length) {
+          const saved = store.updateTask(existing.key, patch, activity);
+          if (waits) { await saved; if (ch) advanceParents(existing.key).catch(fail); }
+          else saved.then(() => { if (ch) return advanceParents(existing.key); }).catch(fail);
+        }
         if (!ch) toast(`<b>${esc(existing.key)}</b> saved`);
-        if (ch) advanceParents(existing.key).catch(fail);
       } else {
         const fields = { ...next, status: "backlog", resolution: null, rank: endOf("backlog") };
         delete fields.key; delete fields.comments; delete fields.activity;
+        if (!opts.then && !returnTo) {
+          // A new ticket's number comes from the server (two round trips). The form closes
+          // now; the ticket and its number follow. If it can't be created the form comes
+          // back with everything that was in it.
+          const keep = clone(next);
+          delete keep.key; delete keep.comments; delete keep.activity;
+          saving = false;
+          closeTask(); renderCurrent();
+          toast("Creating the ticket…");
+          store.createTask(fields).then((key) => {
+            toast(`<b>${esc(key)}</b> created in Backlog`);
+            if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(key)}</b>`), 1800);
+            renderCurrent();
+          }).catch((e) => {
+            console.warn("staff kanban: create failed", e);
+            const why = e && e.code === "permission-denied" ? "You don't have permission to create tickets." : "This ticket wasn't created. Check your connection and try again.";
+            if ($("#task-backdrop").hidden && !pageEl.hidden) {
+              openTask(null, { fields: keep });
+              const err3 = $("#f-error");
+              if (err3) { err3.hidden = false; err3.textContent = why; }
+            } else { unsavedNew = keep; toast(`${esc(why)} What you wrote is kept: it is in the form the next time you open New task.`); }
+          });
+          return;
+        }
         const key = await store.createTask(fields);
         next.key = key;
-        await store.fetchTask(key).catch(() => {});
         toast(`<b>${esc(key)}</b> created in Backlog`);
       }
       if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);

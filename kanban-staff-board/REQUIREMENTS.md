@@ -680,6 +680,15 @@ the same comparison on the server.
   preloaded in parallel with `app.js` on `#staff-kanban`, and the rich-text
   editor (Quill) downloads when a ticket first opens, not at page start. See
   `backlog-tracker/README.md` → "Load performance".
+  Nothing waits on the server (18 Nov 2026): the board listens for its cards
+  before the counts that check them have answered; a ticket's dialog shows at
+  the click with its key and title while the ticket is read, and a ticket read
+  earlier and unchanged since opens at once; Save (when neither the description
+  nor a link changed) and Create close the form at the click, and a save or
+  create the server refuses is said and put back (a new ticket's form returns
+  with what was typed). A reload asks the server for the page only: scripts and
+  stylesheets are kept by the browser until the next release. Cases KB-C28 and
+  KB-C29; see `backlog-tracker/README.md` → "Load performance".
   Render cost (29 Oct 2026): the board draws a page of each column, not every
   ticket: **Backlog its first 25 cards and every other column its first 50**,
   each with a "Show 50 more" row. Header counts and remaining effort cover every
