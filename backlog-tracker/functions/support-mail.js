@@ -578,6 +578,13 @@ function createSupportMail({
       Object.assign(patch, { needsHuman: false, resolvedAt: null, resolvedBy: "" });
     }
     await tickets().doc(ticketId).set(patch, { merge: true });
+    // Aidan (functions/aidan.js): spam cancels a request queued on the thread
+    // and records "no action — spam", whichever tab it was marked in; not spam
+    // puts back what Aidan had recorded. A failure here doesn't undo the ticket.
+    if (status === "spam" || ticket.status === "spam") {
+      try { if (status === "spam") await aidan.markSpam(ticketId); else await aidan.markNotSpam(ticketId); }
+      catch (err) { logger.error("support: Aidan spam change failed", { ticketId, error: String(err && err.message ? err.message : err) }); }
+    }
     // Keep Gmail's own spam folder in step; a failure here doesn't undo the ticket.
     if (status === "spam" || ticket.status === "spam") {
       const body = status === "spam" ? { addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] } : { addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] };

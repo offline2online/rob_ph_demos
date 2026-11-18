@@ -14,7 +14,7 @@ import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView, aidanThreadState, aidanCollateral, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
+  aidanView, aidanThreadState, aidanCollateral, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -30,7 +30,7 @@ const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", atten
 // The state badge, then what was asked for: Answer, Write or Store.
 const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}` : ""; };
 // The Aidan tab: every thread carries a state, "no action" included, then what was asked for.
-const aidanStateBadge = (t) => { const v = aidanThreadState(t.aidan); return `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}`; };
+const aidanStateBadge = (t) => { const v = aidanThreadState(t.aidan, { spam: t.status === "spam" }); return `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}`; };
 // Which threads this browser has opened, and when (the unread state of Hello and Aidan). Per browser, best effort.
 const OPENED_KEY = "bt-support-opened";
 function readOpened() { try { const v = JSON.parse(localStorage.getItem(OPENED_KEY) || "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } }
@@ -247,7 +247,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   function plainRowHtml(t) {
     const box = inboxOf(route.inbox);
     const unread = isUnread(t, opened[t.id]);
-    const state = box.agent ? aidanThreadState(t.aidan) : null;
+    const state = box.agent ? aidanThreadState(t.aidan, { spam: t.status === "spam" }) : null;
     return `<li><button type="button" class="support-row support-mail-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-from">${esc(t.customerName || t.customerEmail || "Unknown sender")}</span>
           <span class="support-row-subject">${esc(t.subject)}</span>
@@ -266,7 +266,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if ((opened[t.id] || 0) < (t.lastInboundAt || 1)) { opened[t.id] = seen; writeOpened(opened); headerLine(); }
     const edit = canEdit();
     const spam = t.status === "spam";
-    const state = box.agent ? aidanThreadState(t.aidan) : null;
+    const state = box.agent ? aidanThreadState(t.aidan, { spam: t.status === "spam" }) : null;
     view.innerHTML = `<div class="support-ticket support-plain-ticket">
       <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>
       <div class="support-ticket-head">
@@ -468,7 +468,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (b.dataset.supportStatus && t) {
       const to = b.dataset.supportStatus;
       const plain = isPlainInbox(inboxKey());
-      if (to === "spam" && !(await confirm(plain ? "Mark this email as spam? It moves to Spam here and in the mailbox." : `Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
+      if (to === "spam" && !(await confirm(spamConfirmText(t, { plain }), { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
       return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, plain ? "The email wasn't changed" : "The ticket wasn't changed");
     }
     const a = b.dataset.supportAct;

@@ -3225,6 +3225,17 @@ opened the thread (kept in the browser, `bt-support-opened`). In Aidan
 every thread also says what Aidan did (no action and why, queued, working,
 replied, ingested, needs a person) and his reply is on the thread. An email
 in two inboxes shows whichever view belongs to the tab it was opened from.
+**Mark as spam is in all three tabs (18 Nov 2026).** On any thread, in
+Support Inbox, Hello or Aidan, it asks first, sets the ticket's status to
+Spam and moves the thread to Gmail's Spam (`setStatus` in
+`functions/support-mail.js`). The status is the ticket's, so a thread in
+two tabs leaves both and is in each one's Spam, where **Not spam** puts it
+back. In Aidan a spam thread reads "Aidan: no action — spam": a request
+Aidan had queued on it is cancelled and never runs, a run already working
+sends nothing, and mail arriving on a spam thread queues nothing
+(`markSpam`, `markNotSpam` and `stopIfSpam` in `functions/aidan.js`). Not
+spam does not run a cancelled request; the sender asks again. Requirements:
+SUP-INB-14, SUP-INB-15, SUP-AID-35.
 The server is unchanged: it still files, sorts and drafts for every
 address, and the plain tabs do not show it. `aliasesOf` in
 `functions/support-core.js` reads the address an email was written to from

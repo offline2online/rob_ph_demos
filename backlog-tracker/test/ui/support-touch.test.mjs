@@ -297,6 +297,26 @@ try {
         assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
         await tapSel('[data-support-act="back"]');
         await until(async () => (await hash()) === "#support/aidan", "back in Aidan", 3000);
+      });
+
+      // mMQ4yBYu4uwvOSHK9WlA: Mark as spam is in the Aidan tab too, and a tap acts exactly once.
+      await step("Mark as spam in the Aidan tab asks first, and the confirmation works by tap, once", async () => {
+        await tapSel('[data-support-ticket="a2"]');
+        await until(async () => (await hash()) === "#support/aidan/ticket/a2", "the Aidan email route", 3000);
+        await until(() => page.locator('[data-support-status="spam"]').count(), "Mark as spam on the Aidan thread");
+        const m = calls("tickets/a2/status").length;
+        await tapSel('[data-support-status="spam"]');
+        await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the confirmation", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), true, "the confirmation opened and shut at once");
+        assert.strictEqual(calls("tickets/a2/status").length, m, "spam was sent before it was confirmed");
+        await tapSel("#dialog-ok");
+        const sp = await once("tickets/a2/status", m, "the Aidan spam change");
+        assert.strictEqual(sp.body.status, "spam");
+        await until(async () => (await hash()) === "#support/aidan", "back in Aidan", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(calls("tickets/a2/status").length, m + 1, "one tap, one change");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
         await tapSel('[data-support-tab="inbox"]');
         await until(async () => (await hash()) === "#support", "the Support Inbox route", 3000);
         await until(async () => (await page.locator(".support-queue").count()) === 7, "the Support Inbox's queues");

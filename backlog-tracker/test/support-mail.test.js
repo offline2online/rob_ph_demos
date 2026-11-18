@@ -934,6 +934,122 @@ check("Aidan: a run fits the function's budget: it starts early, before triage, 
   assert.strictEqual(t.google.calls.sent.length, 1, "nothing is sent again");
 });
 
+// ── Mark as spam, in all three tabs (mMQ4yBYu4uwvOSHK9WlA) ──
+const spamStatus = (t, id, status) => call(t.api, "POST", `/v1/tickets/${id}/status`, { token: "ed@ph.example", body: { status } });
+const aidanEvents = (t, id) => messagesOf(t, id).filter((m) => m.direction === "event" && m.by === "aidan").map((m) => m.text);
+check("Aidan, spam: marking a thread with a queued request cancels it; it never runs, and Not spam does not run it either", async () => {
+  const t = makeAidan([aidanMail({ id: "s1", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })]);
+  await connectAidan(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual([ticketOf(t, "t-s1").aidan.status, ticketOf(t, "t-s1").aidanPending], ["queued", true]);
+  assert.strictEqual((await spamStatus(t, "t-s1", "spam")).statusCode, 200);
+  const tk = ticketOf(t, "t-s1");
+  assert.deepStrictEqual([tk.status, tk.aidanPending, tk.aidan.status, tk.aidan.spam, tk.aidan.cancelled, tk.aidan.reason, tk.aidan.gmailId, tk.aidan.instruction, tk.aidan.before],
+    ["spam", false, "ignored", true, true, "spam", "s1", undefined, undefined], "the queued run's own record is replaced whole");
+  assert.deepStrictEqual(t.google.calls.modified[0], { threadId: "t-s1", addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] }, "the existing Gmail spam handling");
+  assert.ok(aidanEvents(t, "t-s1").includes("Aidan: no action — spam. The request waiting on this thread was cancelled."), "said on the timeline");
+  // The scheduled sync finds nothing to run, and nothing is sent.
+  const r = await cron(t);
+  assert.strictEqual(r.body.aidanRuns, 0);
+  assert.deepStrictEqual([t.seen.write.length, t.google.calls.sent.length], [0, 0]);
+  // A tagged email arriving on the spam thread queues nothing.
+  t.mail.push(aidanMail({ id: "s2", threadId: "t-s1", text: "@Aidan, write the POC summary for Kestrel.", date: 1759990005000 }));
+  await cron(t);
+  assert.deepStrictEqual([ticketOf(t, "t-s1").status, ticketOf(t, "t-s1").aidanPending, ticketOf(t, "t-s1").aidan.spam, t.google.calls.sent.length], ["spam", false, true, 0]);
+  // Not spam: the cancelled request is not queued again; the thread says why.
+  await spamStatus(t, "t-s1", "open");
+  const back = ticketOf(t, "t-s1");
+  assert.deepStrictEqual([back.status, back.aidanPending, back.aidan.status, back.aidan.spam, back.aidan.cancelled, back.aidan.reason],
+    ["open", false, "ignored", undefined, true, "The request was cancelled when this thread was marked as spam. Send it again to run it."]);
+  await cron(t);
+  assert.deepStrictEqual([t.seen.write.length, t.google.calls.sent.length], [0, 0], "Aidan still sends nothing");
+});
+check("Aidan, spam: a thread with no request, or a finished one, reads no action — spam, and Not spam puts back what Aidan had recorded", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "n1", text: "Just for the file, no request here." }),
+    aidanMail({ id: "n2", text: "@Aidan, send the AWS onboarding pack for client Kestrel.", date: 1759990001000 }),
+  ]);
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(ticketOf(t, "t-n2").aidan.status, "replied");
+  const replied = JSON.parse(JSON.stringify(ticketOf(t, "t-n2").aidan));
+  await spamStatus(t, "t-n1", "spam");
+  await spamStatus(t, "t-n2", "spam");
+  assert.deepStrictEqual([ticketOf(t, "t-n1").aidan.status, ticketOf(t, "t-n1").aidan.spam, ticketOf(t, "t-n1").aidan.cancelled, ticketOf(t, "t-n1").aidan.before], ["ignored", true, false, undefined]);
+  assert.deepStrictEqual([ticketOf(t, "t-n2").aidan.spam, ticketOf(t, "t-n2").aidan.cancelled, ticketOf(t, "t-n2").aidan.before.status, ticketOf(t, "t-n2").aidan.before.sentId], [true, false, "replied", replied.sentId]);
+  assert.ok(aidanEvents(t, "t-n1").includes("Aidan: no action — spam."));
+  // Marking it again (another tab, a double request) changes nothing and says nothing twice.
+  await t.api.aidan.markSpam("t-n2");
+  assert.strictEqual(ticketOf(t, "t-n2").aidan.before.status, "replied");
+  assert.strictEqual(aidanEvents(t, "t-n2").filter((x) => x.startsWith("Aidan: no action — spam")).length, 1);
+  await spamStatus(t, "t-n1", "open");
+  await spamStatus(t, "t-n2", "open");
+  assert.strictEqual(ticketOf(t, "t-n1").aidan, null, "nothing was recorded before, so nothing is now");
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(ticketOf(t, "t-n2").aidan)), replied, "the finished run's record is back as it was");
+  assert.strictEqual(t.google.calls.sent.length, 1, "only the first run's reply was ever sent");
+});
+check("Aidan, spam: one email in Support and Aidan marked as spam is spam in both; a thread outside the Aidan tab gets no Aidan record", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "b1", to: MAILBOX, cc: AIDAN, text: "@Aidan, send the AWS onboarding pack for client Kestrel." }),
+    gmailMessage({ id: "c1", threadId: "t-cust", date: 1759990001000 }),
+  ]);
+  await connectAidan(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.ok(ticketOf(t, "t-b1").inboxes.includes("aidan") && ticketOf(t, "t-b1").inboxes.length > 1, "filed under two tabs");
+  await spamStatus(t, "t-b1", "spam");
+  await spamStatus(t, "t-cust", "spam");
+  // One status for the ticket: every tab it is in reads it.
+  assert.deepStrictEqual([ticketOf(t, "t-b1").status, ticketOf(t, "t-b1").aidan.spam, ticketOf(t, "t-b1").aidan.cancelled, ticketOf(t, "t-b1").aidanPending], ["spam", true, true, false]);
+  assert.deepStrictEqual([ticketOf(t, "t-cust").status, ticketOf(t, "t-cust").aidan], ["spam", undefined]);
+  assert.deepStrictEqual(aidanEvents(t, "t-cust"), []);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0);
+});
+check("Aidan, spam: a run already working sends nothing once its thread is spam; a job found queued on a spam thread is cancelled when claimed; a cut-off run is no action", async () => {
+  // Marked as spam while the document is being written: the send is stopped.
+  let t = null;
+  t = makeAidan([aidanMail({ id: "w1", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })], {
+    write: async () => { await spamStatus(t, "t-w1", "spam"); return DOC; },
+  });
+  await connectAidan(t);
+  await cron(t);
+  let tk = ticketOf(t, "t-w1");
+  assert.strictEqual(t.seen.write.length, 1, "the run was working");
+  assert.strictEqual(t.google.calls.sent.length, 0, "and sent nothing");
+  assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.spam, tk.aidan.cancelled, tk.needsHuman, tk.resolvedBy], ["spam", "ignored", true, true, false, ""]);
+  assert.ok(!messagesOf(t, "t-w1").some((m) => m.direction === "out"), "no reply is filed on the thread");
+  assert.ok(!aidanEvents(t, "t-w1").some((x) => /couldn't finish|person takes it/.test(x)), "not an error, and not work for a person");
+  // The same for an answer in the email itself (sendOnThread).
+  let a = null;
+  a = makeAidan([aidanMail({ id: "w2", text: "@Aidan, please confirm you received this email." })], {
+    answer: async () => { await spamStatus(a, "t-w2", "spam"); return { canAnswer: true, replyText: "Received, thank you." }; },
+  });
+  await connectAidan(a);
+  await cron(a);
+  assert.deepStrictEqual([a.seen.answer.length, a.google.calls.sent.length, ticketOf(a, "t-w2").status, ticketOf(a, "t-w2").aidan.spam], [1, 0, "spam", true]);
+  // A store that finishes on a spam thread does not resolve it.
+  let k = null;
+  k = makeAidan([aidanMail({ id: "w3", text: "@Aidan, store this for the AWS onboarding pack skill." })]);
+  await connectAidan(k);
+  await call(k.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  if (ticketOf(k, "t-w3").aidan.status === "queued") {
+    // Spam set on the ticket without the status route (an older record): the claim cancels it.
+    k.db.state.supportTickets["t-w3"].status = "spam";
+    const r = await k.api.aidan.runOne("t-w3");
+    assert.deepStrictEqual(r, { ok: true, spam: true });
+    const c = ticketOf(k, "t-w3");
+    assert.deepStrictEqual([c.status, c.aidanPending, c.aidan.status, c.aidan.spam, c.aidan.cancelled], ["spam", false, "ignored", true, true]);
+    assert.deepStrictEqual(k.stored, [], "nothing was kept");
+  } else assert.fail("the store request should have been queued");
+  // A run cut off on a spam thread is swept to "no action — spam", not to a person.
+  const nowMs = 1760000000000 + 10 * 60 * 60 * 1000;
+  k.db.state.supportTickets["t-w3"].aidan = { status: "working", gmailId: "w3", startedAt: new Date(nowMs) };
+  k.tick(16 * 60 * 1000 + 10 * 60 * 60 * 1000);
+  assert.strictEqual(await k.api.aidan.sweepStale(), 0);
+  const swept = ticketOf(k, "t-w3");
+  assert.deepStrictEqual([swept.aidan.status, swept.aidan.spam, Boolean(swept.needsHuman)], ["ignored", true, false]);
+});
+
 check("Aidan's model calls: no retry, and timeouts that fit the function", async () => {
   const { createAidan, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
   assert.ok(ANSWER_TIMEOUT_MS <= DOC_TIMEOUT_MS, "an answer, even after a skill choice that found none, takes no longer than a document");

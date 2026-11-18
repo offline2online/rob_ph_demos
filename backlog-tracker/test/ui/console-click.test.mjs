@@ -3670,6 +3670,24 @@ const scenarios = [
       for (const want of ["Sent by Aidan · AWS onboarding pack", "To owner@example.com", "Cc client@shop.example, colleague@shop.example", "aws-onboarding-pack-kestrel.md"]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
       assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/r1", "it opens inside the Aidan tab");
       assert.strictEqual(await c.page.locator('.support-draft, .support-conf, #support-assign, [data-support-act="escalate"], [data-support-status="resolved"]').count(), 0, "no triage control on an Aidan thread");
+      // mMQ4yBYu4uwvOSHK9WlA: Mark as spam is on every thread in all three tabs; in Aidan the thread then reads "no action — spam".
+      c.at("Mark as spam on an Aidan thread asks first, and the spam thread reads Aidan: no action — spam");
+      await c.click('[data-support-status="spam"]', "Mark as spam");
+      await c.visible("#dialog-ok");
+      assert.strictEqual(c.supportCalls.filter((x) => x.path === "tickets/r1/status").length, 0, "nothing is sent before it is confirmed");
+      await c.click("#dialog-ok", "the confirmation");
+      await until(() => c.supportCalls.some((x) => x.path === "tickets/r1/status"), "the spam call");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "tickets/r1/status").map((x) => x.body), [{ status: "spam" }]);
+      await until(() => new URL(c.page.url()).hash.startsWith("#support/aidan") && !new URL(c.page.url()).hash.includes("/ticket/"), "back in the Aidan list");
+      // What the server writes (functions/aidan.js → markSpam).
+      await c.page.evaluate(() => globalThis.__fbStub.commit([{ op: "set", merge: true, ref: { type: "doc", id: "r1", path: "supportTickets/r1", parentPath: "supportTickets" }, data: { status: "spam", aidan: { status: "ignored", spam: true, cancelled: false, reason: "spam" } } }]));
+      await until(async () => (await c.page.locator('[data-support-ticket="r1"]').count()) === 0, "the spam thread to leave the Aidan tab");
+      await c.click('.support-plain-foot [data-support-queue="spam"]', "Spam");
+      await c.visible('[data-support-ticket="r1"]');
+      assert.ok((await c.page.locator('[data-support-ticket="r1"] .support-row-snippet').textContent()).includes("Aidan: no action — spam."), "the spam thread says so");
+      await c.click('[data-support-ticket="r1"]', "the spam thread");
+      await c.visible('[data-support-status="open"]');
+      assert.strictEqual(await c.page.locator('[data-support-status="spam"], #support-reply').count(), 0, "a spam thread offers Not spam only");
     },
   },
   {

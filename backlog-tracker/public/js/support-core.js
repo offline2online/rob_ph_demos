@@ -114,11 +114,28 @@ export function aidanHelpCentre(aidan) {
     articles: h.articles.filter((x) => x && x.title).map((x) => ({ id: String(x.id || ""), title: String(x.title), url: typeof x.url === "string" ? x.url : null })),
   };
 }
+// A thread marked as spam (functions/aidan.js → markSpam): no action, and a
+// request that was waiting on it was cancelled.
+const aidanSpamView = (a) => ({ badge: "Aidan: no action", tone: "none", kind: "", helpCentre: null, spam: true,
+  line: `Aidan: no action — spam.${a.cancelled ? " The request waiting on this thread was cancelled." : ""}` });
+// True while Aidan has a request queued or working on the thread: marking it
+// as spam cancels that request, and the confirmation says so first.
+export function aidanRequestWaiting(aidan) {
+  return Boolean(aidan && typeof aidan === "object" && (aidan.status === "queued" || aidan.status === "working"));
+}
+// What the Mark as spam confirmation says. `plain` is a Hello or Aidan email;
+// the Support Inbox names the ticket.
+export function spamConfirmText(t, { plain = false } = {}) {
+  const base = plain ? "Mark this email as spam? It moves to Spam here and in the mailbox."
+    : `Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`;
+  return aidanRequestWaiting(t.aidan) ? `${base} Aidan's request on it is cancelled.` : base;
+}
 // { badge, tone, line, kind, helpCentre } for a ticket's Aidan state, or null when Aidan has
 // nothing to say. `kind` is "Answer", "Write" or "Store" ("" when no run was accepted).
 export function aidanView(aidan) {
   const a = aidan && AIDAN_STATES[aidan.status] ? aidan : null;
   if (!a) return null;
+  if (a.spam) return aidanSpamView(a);
   const helpCentre = a.status === "replied" && a.kind === "answer" ? aidanHelpCentre(a) : null;
   const collateral = aidanCollateral(a);
   const s = AIDAN_STATES[a.status];
@@ -167,7 +184,8 @@ export function aidanCollateral(aidan) {
 
 // What the Aidan tab says about a thread: always a state. A thread Aidan was
 // never asked about reads "no action", and why.
-export function aidanThreadState(aidan) {
+export function aidanThreadState(aidan, { spam = false } = {}) {
+  if (spam && !(aidan && aidan.spam)) return aidanSpamView({});
   return aidanView(aidan) || { badge: "Aidan: no action", tone: "none", line: "Aidan did nothing: this email has no @Aidan request.", kind: "" };
 }
 

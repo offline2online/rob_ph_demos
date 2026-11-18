@@ -61,6 +61,12 @@
 //     to a branded PDF on the server (collateral-pdf.js) and sent by reply-all
 //     with the PDF and the Markdown source attached (`collateralAndReply`). It
 //     is filed on the ticket and kept as a reference example for the skill.
+//   • Spam (mMQ4yBYu4uwvOSHK9WlA): marking a thread as spam, from any tab,
+//     cancels a queued run (`markSpam`), and a run already working sends
+//     nothing: every send, and the write that ends a run, checks the ticket
+//     first (`stopIfSpam`). The ticket then reads "Aidan: no action — spam".
+//     Mail arriving on a spam thread queues nothing. "Not spam" puts back what
+//     Aidan had recorded (`markNotSpam`); a cancelled request is not run again.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
 //     POST /supportMail/v1/aidan, never returned unmasked.
@@ -163,6 +169,62 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     snap.forEach((d) => rows.push(Object.assign({ id: d.id }, d.data() || {})));
     return ac.untrustedThreadText(rows, { allowed: config.allowedSenders, exclude });
   }
+  // ── Spam ──
+  // What a spam thread's `aidan` map says. `before` is what Aidan had
+  // recorded (a finished run, a refusal), kept so "Not spam" can put it back;
+  // a request that was queued or working is cancelled instead and not kept.
+  const SPAM_STOP = "aidan-spam";
+  const isSpam = (t) => Boolean(t && t.status === "spam");
+  function spamState(prev) {
+    const p = prev && typeof prev === "object" ? prev : null;
+    if (p && p.spam) return p;
+    const cancelled = Boolean(p && ACTIVE.includes(p.status));
+    const state = { status: "ignored", spam: true, cancelled, reason: "spam", at: now() };
+    if (p && p.gmailId) state.gmailId = p.gmailId;
+    if (p && !cancelled) state.before = p;
+    return state;
+  }
+  // Called when a ticket's status becomes Spam (support-mail.js → setStatus),
+  // whichever tab it was marked in. Only a thread in the Aidan tab gets a
+  // record. Returns { aidan: bool, cancelled: bool }.
+  async function markSpam(ticketId) {
+    const ref = tickets().doc(ticketId);
+    const out = await db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !(t.inboxes || []).includes(ac.AIDAN_INBOX)) return { aidan: false, cancelled: false };
+      if (t.aidan && t.aidan.spam && !t.aidanPending) return { aidan: true, cancelled: false, already: true };
+      const state = spamState(t.aidan);
+      // update(), not set-merge: the new map replaces the run's whole map.
+      tx.update(ref, { aidanPending: false, aidan: state, updatedAt: now() });
+      return { aidan: true, cancelled: state.cancelled };
+    });
+    if (out.aidan && !out.already) await logEvent(ticketId, "aidan", `Aidan: no action — spam.${out.cancelled ? " The request waiting on this thread was cancelled." : ""}`);
+    return out;
+  }
+  // Called when a spam ticket is marked not spam: what Aidan had recorded is
+  // put back. A cancelled request stays cancelled (the sender asks again).
+  async function markNotSpam(ticketId) {
+    const ref = tickets().doc(ticketId);
+    return db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !t.aidan || !t.aidan.spam) return { aidan: false };
+      const a = t.aidan;
+      const back = a.cancelled
+        ? Object.assign({ status: "ignored", cancelled: true, reason: "The request was cancelled when this thread was marked as spam. Send it again to run it.", at: now() }, a.gmailId ? { gmailId: a.gmailId } : {})
+        : (a.before && typeof a.before === "object" ? a.before : null);
+      tx.update(ref, { aidanPending: false, aidan: back, updatedAt: now() });
+      return { aidan: true, cancelled: Boolean(a.cancelled) };
+    });
+  }
+  // A run that is already working stops here, before anything is sent or
+  // written, when its thread has been marked as spam meanwhile.
+  async function stopIfSpam(ticketId) {
+    if (!isSpam(data(await tickets().doc(ticketId).get()))) return;
+    const err = new Error("This thread was marked as spam.");
+    err.code = SPAM_STOP;
+    throw err;
+  }
+
   const mentionsAidan = (m, facts) => [m.text, ...((facts && facts.bodies) || []).map((b) => b.text || b.html)].some((x) => /@\s*aidan/i.test(String(x || "")));
 
   async function afterIngest(m, config) {
@@ -175,6 +237,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const out = await db.runTransaction(async (tx) => {
       const ticket = data(await tx.get(ref));
       if (!ticket || !(ticket.inboxes || []).includes(ac.AIDAN_INBOX)) return { action: "none" };
+      // A spam thread queues nothing and keeps its "no action — spam" record.
+      if (isSpam(ticket)) return { action: "none" };
       const seen = Array.isArray(ticket.aidanSeen) ? ticket.aidanSeen : [];
       if (seen.includes(m.gmailId) || (ticket.aidan && ticket.aidan.gmailId === m.gmailId)) return { action: "duplicate" };
       const d = ac.decideAidan({ inboxes: ticket.inboxes, message, config, runs: ticket.aidanRuns || 0, untrusted });
@@ -377,6 +441,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
       inReplyTo: msg.messageId, references: msg.references, attachments,
     });
+    await stopIfSpam(ticketId);
     const sent = await gmail("messages/send", { method: "POST", body: { raw: raw5322, threadId: ticket.threadId || ticketId } });
     const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
     await tickets().doc(ticketId).collection("messages").doc(sentId).set(Object.assign({
@@ -429,6 +494,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
       inReplyTo: msg.messageId, references: msg.references, attachments: [{ name: doc.fileName, type: "text/markdown; charset=UTF-8", content: doc.documentMd }],
     });
+    await stopIfSpam(ticketId);
     const sent = await gmail("messages/send", { method: "POST", body: { raw, threadId: ticket.threadId || ticketId } });
     const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
     const size = Buffer.byteLength(doc.documentMd, "utf8");
@@ -676,13 +742,22 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const claim = await db.runTransaction(async (tx) => {
       const t = data(await tx.get(ref));
       if (!t || !t.aidanPending || !t.aidan || t.aidan.status !== "queued") return null;
+      // Queued on a thread that is spam: cancelled here, never run.
+      if (isSpam(t)) { tx.update(ref, { aidanPending: false, aidan: spamState(t.aidan), updatedAt: now() }); return { spam: true }; }
       const job = Object.assign({}, t.aidan, { status: "working", startedAt: now() });
       tx.set(ref, { aidanPending: false, aidan: job }, { merge: true });
       return { ticket: t, job };
     });
     if (!claim) return { ok: false, error: "nothing queued" };
+    if (claim.spam) {
+      await logEvent(ticketId, "aidan", "Aidan: no action — spam. The request waiting on this thread was cancelled.");
+      return { ok: true, spam: true };
+    }
     const { ticket, job } = claim;
     const finish = async (fields, event) => {
+      // Marked as spam while the run worked: the run's result is not written
+      // over the spam record (a store would otherwise resolve the ticket).
+      await stopIfSpam(ticketId);
       await ref.set(Object.assign({ updatedAt: now() }, fields, { aidan: Object.assign({}, job, fields.aidan || {}, { finishedAt: now() }) }), { merge: true });
       if (event) await logEvent(ticketId, "aidan", event);
     };
@@ -782,9 +857,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const run = Object.assign(base, { skill: chosen.skill, client: chosen.client, inputs, skipped, consoleData });
       return d.action === "store" ? keepReference(run) : generateAndReply(run);
     } catch (err) {
+      // Marked as spam while it worked: nothing was sent, and markSpam has
+      // already recorded "no action — spam" on the ticket.
+      if (err && err.code === SPAM_STOP) return { ok: true, spam: true };
       // Never customer text in the log: the ticket id and the error only.
       logger.error("support: Aidan run failed", { ticketId, error: errText(err) });
-      return finish({ aidan: { status: "error", reason: `Aidan couldn't finish: ${errText(err)}` }, needsHuman: true }, "Aidan couldn't finish, so a person takes it.");
+      try { return await finish({ aidan: { status: "error", reason: `Aidan couldn't finish: ${errText(err)}` }, needsHuman: true }, "Aidan couldn't finish, so a person takes it."); }
+      catch (e) { if (e && e.code === SPAM_STOP) return { ok: true, spam: true }; throw e; }
     }
   }
 
@@ -801,11 +880,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const done = await db.runTransaction(async (tx) => {
         const t = data(await tx.get(ref));
         if (!t || !t.aidan || t.aidan.status !== "working" || now().getTime() - tsMs(t.aidan.startedAt) < STALE_MS) return false;
+        // A cut-off run on a spam thread is no action, not work for a person.
+        if (isSpam(t)) { tx.update(ref, { aidanPending: false, aidan: spamState(t.aidan), updatedAt: now() }); return "spam"; }
         tx.set(ref, { needsHuman: true, updatedAt: now(), aidan: Object.assign({}, t.aidan, { status: "needs-person", finishedAt: now(),
           reason: "Aidan's run stopped before it finished (it was still working after 15 minutes). Check the thread for a reply from Aidan before answering." }) }, { merge: true });
         return true;
       });
-      if (done) { moved += 1; await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it."); }
+      if (done === "spam") await logEvent(id, "aidan", "Aidan: no action — spam. The request waiting on this thread was cancelled.");
+      else if (done) { moved += 1; await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it."); }
     }
     return moved;
   }
@@ -824,7 +906,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     return ran;
   }
 
-  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, factsOf: ac.mailFacts };
+  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, factsOf: ac.mailFacts };
 }
 
 module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };

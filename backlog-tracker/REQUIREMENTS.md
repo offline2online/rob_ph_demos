@@ -6369,6 +6369,20 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
 - **SUP-INB-13** An email in the Support Inbox and a plain inbox shows the
   view of the tab it was opened from: with triage in Support Inbox, plain in
   Hello or Aidan. It is one ticket either way (SUP-INB-3).
+- **SUP-INB-14** (18 Nov 2026, ticket mMQ4yBYu4uwvOSHK9WlA) **Mark as spam
+  is on every thread in all three tabs**: Support Inbox, Hello and Aidan,
+  for a member with Edit. It asks first in each, then does the same thing
+  whichever tab it was clicked in (SUP-TKT-5): the ticket's status becomes
+  Spam and the thread moves to Gmail's Spam. Spam is the ticket's one
+  status, so a thread in two or three tabs leaves every one of them at once
+  and is in each tab's Spam. **Not spam** is on the spam thread in the same
+  place, in every tab, with no confirmation, and puts it back in all of
+  them.
+- **SUP-INB-15** In Aidan, a thread marked as spam (from any tab) reads
+  **"Aidan: no action — spam"** in the list and on the thread. A request
+  Aidan had queued on it is cancelled and never runs; the confirmation says
+  so first ("Aidan's request on it is cancelled."), and the thread then
+  reads "The request waiting on this thread was cancelled." See SUP-AID-35.
 
 ### Aidan, the agent mailbox (17 Nov 2026)
 
@@ -6778,6 +6792,25 @@ with its Markdown source (SUP-AID-30 to 34).
   country came from Prospects (TAM) or Leads), **Files** (the PDF with its
   pages and size, the Markdown with its size), **Kept** and **Removed**
   (`aidanCollateral` in `public/js/support-core.js`). Text only, no control.
+- **SUP-AID-35** (18 Nov 2026, ticket mMQ4yBYu4uwvOSHK9WlA) **Spam.**
+  Marking a thread in the Aidan tab as spam, from any tab, records
+  `aidan {status: "ignored", spam: true, reason: "spam", cancelled}` on the
+  ticket ("Aidan: no action — spam", also written on the timeline) and
+  clears `aidanPending` (`markSpam` in `functions/aidan.js`, called by the
+  status change in `support-mail.js`):
+  - a **queued** run is cancelled (`cancelled: true`) and never runs;
+  - a run already **working** is left to notice by itself: every send
+    checks the ticket first (`stopIfSpam`), so nothing is sent, and the run
+    ends as "no action — spam" instead of replied;
+  - a thread with no request, or a finished one, keeps what Aidan had
+    recorded in `aidan.before`.
+  While a thread is spam, a tagged email arriving on it queues nothing, and
+  a job found queued on a spam thread is cancelled when it is claimed.
+  **Not spam** puts back what was recorded before (`markNotSpam`). A
+  cancelled request is not queued again: the thread reads "Aidan did
+  nothing: The request was cancelled when this thread was marked as spam.
+  Send it again to run it." A thread that is not in the Aidan tab gets no
+  Aidan record.
 
 ### Connecting
 
@@ -6806,7 +6839,9 @@ with its Markdown source (SUP-AID-30 to 34).
   unsorted, Waiting on customer, Resolved, Spam, All tickets. An open,
   waiting, resolved or spam ticket is in exactly one of the first six.
 - **SUP-TKT-5** Marking spam asks first, moves the thread to Gmail's Spam
-  too, and can be undone ("Not spam").
+  too, and can be undone ("Not spam"). It is available in all three tabs
+  (SUP-INB-14), and cancels a request Aidan has queued on the thread
+  (SUP-AID-35).
 - **SUP-TKT-6** A person can reply (sent from the mailbox on the same
   thread), reply and resolve, add an internal note (never emailed), assign
   the ticket to a member, resolve, reopen, and raise it on the Staff Kanban.

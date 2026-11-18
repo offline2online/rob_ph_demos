@@ -6,7 +6,7 @@ import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, composeProblem, COMPOSE_MAX, toMs,
   searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
-import { aidanView, aidanThreadState, aidanCollateral, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
+import { aidanView, aidanThreadState, aidanCollateral, aidanRequestWaiting, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
 
@@ -238,6 +238,30 @@ check("Aidan's branded collateral (JtkLrEG0aTnC5JfkdPA1): what was written and f
   assert.strictEqual(aidanCollateral({ status: "replied", kind: "generate" }), null, "an ordinary write");
   assert.strictEqual(aidanCollateral(null), null);
   assert.ok(aidanView({ status: "replied", kind: "generate", document: { name: "pack.md" }, recipients: 1 }).line.startsWith("Aidan wrote pack.md"), "an ordinary write reads as before");
+});
+
+check("Mark as spam (mMQ4yBYu4uwvOSHK9WlA): the confirmation in each tab, and what a spam thread reads in Aidan", () => {
+  const t = tk("s", { inboxes: ["support", "aidan"] });
+  assert.strictEqual(spamConfirmText(t, { plain: true }), "Mark this email as spam? It moves to Spam here and in the mailbox.");
+  assert.strictEqual(spamConfirmText(t), `Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`);
+  // A request Aidan has waiting is cancelled, and the confirmation says so first, in every tab.
+  for (const status of ["queued", "working"]) {
+    const waiting = tk("w", { inboxes: ["aidan"], aidan: { status, kind: "answer", instruction: "confirm" } });
+    assert.strictEqual(aidanRequestWaiting(waiting.aidan), true);
+    assert.strictEqual(spamConfirmText(waiting, { plain: true }), "Mark this email as spam? It moves to Spam here and in the mailbox. Aidan's request on it is cancelled.");
+    assert.ok(spamConfirmText(waiting).endsWith("the Dashboard's figures. Aidan's request on it is cancelled."));
+  }
+  assert.deepStrictEqual([null, { status: "replied" }, { status: "ignored", spam: true, cancelled: true }].map(aidanRequestWaiting), [false, false, false]);
+  // What the server records (functions/aidan.js → markSpam).
+  const cancelled = aidanView({ status: "ignored", spam: true, cancelled: true, reason: "spam" });
+  assert.deepStrictEqual([cancelled.badge, cancelled.tone, cancelled.kind, cancelled.line], ["Aidan: no action", "none", "", "Aidan: no action — spam. The request waiting on this thread was cancelled."]);
+  assert.strictEqual(aidanView({ status: "ignored", spam: true, cancelled: false, reason: "spam", before: { status: "replied", kind: "answer" } }).line, "Aidan: no action — spam.");
+  // A spam thread in the Aidan tab says so even with no record (marked before Aidan kept one).
+  assert.strictEqual(aidanThreadState(null, { spam: true }).line, "Aidan: no action — spam.");
+  assert.strictEqual(aidanThreadState({ status: "replied", kind: "answer", recipients: 1 }, { spam: true }).line, "Aidan: no action — spam.");
+  // After Not spam a cancelled request reads as an ordinary refusal.
+  assert.strictEqual(aidanThreadState({ status: "ignored", cancelled: true, reason: "The request was cancelled when this thread was marked as spam. Send it again to run it." }).line,
+    "Aidan did nothing: The request was cancelled when this thread was marked as spam. Send it again to run it.");
 });
 
 let failed = 0;
