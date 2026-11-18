@@ -352,30 +352,6 @@ async function rpc(token, method, params, id = 1) {
     assert.match(bad3.body.result.content[0].text, /api\.anthropic\.com/);
   });
 
-  // ── The Advanced (Opus) Routine (6Nia0yWu8yAL3STGh96R, 18 Nov 2026) ─────
-  await test("set_advanced_routine_binding: admin only, write-only, api.anthropic.com only, clears with two empty strings", async () => {
-    const t = mcp.__test.TOOLS.find((x) => x.name === "set_advanced_routine_binding");
-    assert.ok(t && t.role === "admin" && t.scope === "board.write");
-    const url = "https://api.anthropic.com/v1/claude_code/routines/trig_opus/fire";
-    const refused = await rpc(tokens.access_token, "tools/call", { name: "set_advanced_routine_binding", arguments: { fireUrl: url, token: "sk-ant-opus-secret" } });
-    assert.strictEqual(refused.body.result.isError, true);
-    assert.match(refused.body.result.content[0].text, /requires the admin role/);
-    assert.strictEqual(env.store.col("modelRoutineBindings").get("advanced"), undefined, "an editor wrote nothing");
-    const bad = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "set_advanced_routine_binding", arguments: { fireUrl: "https://attacker.example.com/collect", token: "sk-ant-looks-real-enough" } }));
-    assert.strictEqual(bad.body.result.isError, true);
-    assert.match(bad.body.result.content[0].text, /api\.anthropic\.com/);
-    const ok = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "set_advanced_routine_binding", arguments: { fireUrl: url, token: "sk-ant-opus-secret" } }));
-    const payload = JSON.parse(ok.body.result.content[0].text);
-    assert.strictEqual(payload.registered, true);
-    assert.ok(!JSON.stringify(payload).includes("sk-ant-opus-secret") && !JSON.stringify(payload).includes("trig_opus"), "never echoed");
-    const stored = env.store.col("modelRoutineBindings").get("advanced");
-    assert.strictEqual(stored.fireUrl, url);
-    assert.strictEqual(stored.token, "sk-ant-opus-secret");
-    const cleared = await asAdmin(() => rpc(tokens.access_token, "tools/call", { name: "set_advanced_routine_binding", arguments: { fireUrl: "", token: "" } }));
-    assert.strictEqual(JSON.parse(cleared.body.result.content[0].text).cleared, true);
-    assert.strictEqual(env.store.col("modelRoutineBindings").get("advanced"), undefined);
-  });
-
   await test("set_my_routine_binding with two empty strings clears an existing binding", async () => {
     const res = await rpc(tokens.access_token, "tools/call", { name: "set_my_routine_binding", arguments: { fireUrl: "", token: "" } });
     const payload = JSON.parse(res.body.result.content[0].text);

@@ -462,7 +462,7 @@ as text until Anthropic switches on its MCP Apps host.
 
 | Tickets | Documentation | Help centre | Skills library | Release (admin only) | Your own routine binding |
 | --- | --- | --- | --- | --- | --- |
-| `create_backlog_item` (always into the Backlog column; optional `dependsOnItemIds`, plus ids and exact titles from the Dependencies section, added automatically) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main`, `set_advanced_routine_binding` (the Advanced (Opus) Routine; see below) | `set_my_routine_binding` |
+| `create_backlog_item` (always into the Backlog column; optional `dependsOnItemIds`, plus ids and exact titles from the Dependencies section, added automatically) | `set_project_requirements` | `create_faq_article` (always a draft) | `upload_skill` | `send_to_build` (says what fired, queued, held), `approve_for_deployment`, `fail_testing`, `approve_deploy_to_main` | `set_my_routine_binding` |
 | `update_backlog_item` (title, description, type, area, model, `dependsOnItemIds`); `archive_backlog_items`, `delete_backlog_items` (Backlog only) | `set_project_readme` | `update_faq_article` (always a pending revision) | `update_skill` (rename/re-version/replace files) | | |
 | `add_item_comment` | `set_project_artifact`, `set_project_description`, `snapshot_project_artifact` (sign-off: the next frozen, numbered artifact version) | `comment_on_faq_revision` | `delete_skill` | | |
 | | `create_project_document` / `update_project_document` / `delete_project_document` | | `report_skill_miss` (tags a real gap, never edits the skill's own content) | | |
@@ -524,22 +524,6 @@ its fire URL must be on `api.anthropic.com` — until 27 Sep 2026 it lived on
 accepted (see `SECURITY-PERFORMANCE.md`).
 The console's own **Settings → My Claude Routine** page does the same setup
 without an agent (`/mcp/me/routine-binding`, same write, same validation).
-
-**The Advanced (Opus) Routine** (admin only, 18 Nov 2026). A Routine's model
-is fixed where it is created, so to have Advanced tickets built on Claude
-Opus from the start, create a second Routine at claude.ai/code/routines with
-Claude Opus as its model and the same bootstrap prompt
-(`get_routine_setup_instructions` has it), add an API trigger, and call
-`set_advanced_routine_binding` with its fire URL and token. A Ready for Dev
-click then sends each Advanced ticket that would otherwise fire on the
-shared Routine to it, and Standard tickets to the shared Routine, in
-parallel. A project's own Routine, a member's own Routine and agent tickets
-are unchanged. It is write-only like `set_my_routine_binding` (stored in
-`modelRoutineBindings/advanced`, which no browser and no tool can read) and
-`""`/`""` clears it. Without it, Advanced tickets fire on the shared Routine,
-which hands the build to an Opus subagent. A card fired on it shows
-`lastFire.firedVia: "advanced"`. See `REQUIREMENTS.md` → "Per-ticket model
-requirement".
 
 **Agent tickets (`ownedByMe`)**: `create_backlog_item` with `ownedByMe: true`
 files a ticket owned by you (`ownerEmail`); `update_backlog_item` with

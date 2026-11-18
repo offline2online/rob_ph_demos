@@ -2451,40 +2451,6 @@ const TOOLS = [
     },
   },
   {
-    // The Advanced (Opus) Routine (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R):
-    // a second Routine, set to run on Claude Opus at claude.ai/code/routines,
-    // that functions/index.js fires for an Advanced ticket instead of the
-    // shared Routine (advancedRoutineFor). modelRoutineBindings/advanced has no
-    // rule in firestore.rules, so only the server reads or writes it, and no
-    // tool returns it.
-    name: "set_advanced_routine_binding",
-    role: "admin",
-    description: "ADMIN ONLY. Register (or clear) the Advanced (Opus) Routine: a Routine you created at claude.ai/code/routines with Claude Opus as its model and the same bootstrap prompt as the shared one (get_routine_setup_instructions has it). Once set, a build click sends each Advanced ticket that would otherwise run on the shared Routine to this one, so it is built on Opus from the start, while Standard tickets keep the shared Routine and run alongside. A project's own Routine, a member's own Routine and an owner's agent tickets are unchanged. Without it, Advanced tickets run on the shared Routine and hand the build to an Opus subagent. Write-only: the values are never returned by this or any other tool. Pass both as \"\" to clear it. Logged to mcpAuditLog.",
-    scope: "board.write",
-    inputSchema: {
-      type: "object",
-      properties: {
-        fireUrl: { type: "string", description: "The Opus Routine's API trigger URL (ends in /fire), from claude.ai/code/routines. Pass \"\" together with token: \"\" to clear it." },
-        token: { type: "string", description: "The bearer token shown when you added the API trigger. Pass \"\" together with fireUrl: \"\" to clear it." },
-      },
-      required: ["fireUrl", "token"], additionalProperties: false,
-    },
-    async run(args, session) {
-      const fireUrl = String(args.fireUrl || "").trim();
-      const token = String(args.token || "").trim();
-      const error = routineBindingError(fireUrl, token);
-      if (error) return toolError(error.replace("your binding", "the Advanced Routine"));
-      const clearing = !fireUrl && !token;
-      const ref = db().collection("modelRoutineBindings").doc("advanced");
-      if (clearing) await ref.delete();
-      else await ref.set({ fireUrl, token, boundAt: FieldValue.serverTimestamp(), boundByEmail: session.email });
-      await audit(session, "set_advanced_routine_binding", { cleared: clearing });
-      return textResult(clearing
-        ? { cleared: true, note: "Advanced tickets go back to the shared Routine, which hands the build to an Opus subagent." }
-        : { registered: true, note: "Stored, and never returned by any tool. The next build click sends Advanced tickets to this Routine; the card's lastFire.firedVia reads \"advanced\" when it did." });
-    },
-  },
-  {
     name: "list_projects",
     description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project. startHereDocId is the document to read first when taking a project over (read it with get_project_document); null when the project declares none.",
     scope: "board.read",
@@ -5759,7 +5725,7 @@ const SERVER_INSTRUCTIONS = [
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Leads: list_leads, get_lead; writes create_lead, create_leads, update_lead, update_lead_stage, add_lead_contact, update_lead_contact, remove_lead_contact, add_lead_note, link_lead_customer_account, unlink_lead_customer_account, link_lead_prospect, unlink_lead_prospect, archive_lead, restore_lead; delete_lead is admin only. Prospects: list_prospects, upsert_prospects.",
   "Skills: list_skills, get_skill; upload_skill, update_skill, delete_skill, mark_skill_reviewed, report_skill_miss.",
-  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding picks whose Routine your clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills build/deploy runs load); set_advanced_routine_binding; finalise_project / unfreeze_project.",
+  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills that build and deploy runs load); finalise_project / unfreeze_project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {

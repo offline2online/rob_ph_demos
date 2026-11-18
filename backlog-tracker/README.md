@@ -307,14 +307,8 @@ safe and moving:
   Opus", cleared with ×). Sessions record `builtByModel` / `reviewedByModel`
   (pipeline fields), shown on the card's "Advanced · Opus" chip and in Edit
   item; `run-backlog-automation.js` refuses an Advanced patch whose
-  `builtByModel` is not an Opus. Since 18 Nov 2026 it judges the patch by
-  the requirement its build was fired with (`lastFire.model`) when the model
-  is the classifier's, and the classifier no longer changes `model` while a
-  build is in flight or scores the Test steps and Dependencies sections. An
-  admin can register an Advanced (Opus) Routine with the MCP tool
-  `set_advanced_routine_binding` (server-only `modelRoutineBindings/advanced`);
-  Advanced tickets bound for the shared Routine then fire on it. See
-  `REQUIREMENTS.md` → "Per-ticket model requirement".
+  `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
+  requirement".
 - **Model, skills and tools chosen per ticket** (16 Nov 2026, "Flow 8/9") —
   `public/js/model-suggest.js` (generated CommonJS copy
   `functions/model-suggest.js`, `scripts/gen-model-suggest-cjs.sh`) suggests

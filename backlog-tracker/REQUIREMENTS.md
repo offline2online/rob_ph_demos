@@ -214,7 +214,7 @@ copy `public/js/release-groups.js`).
   sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
   foreignPaths?: [{projectId, projectName, paths}], // 15 Nov 2026 — files it changed that another project owns (projects.ownedPaths). A warning, never a refusal. Automation-only.
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
-  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null, firedVia?: string, model?: "standard" | "advanced" }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. `model` (18 Nov 2026) is the model requirement the session was fired with; `firedVia` is "advanced" when it went to the Advanced (Opus) Routine. Automation/function only
+  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
   patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
   dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
@@ -4675,40 +4675,6 @@ field.
   whose `builtByModel` is not an Opus (`modelGuardRefusal`): nothing lands,
   `patchReady` is cleared, the card is flagged `model-unavailable` with a note,
   and it is not rebuilt automatically.
-- **Judged by what was fired** (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R).
-  Each fire records the requirement it carried as `lastFire.model`. When the
-  card's `model` is the classifier's (`modelAuto: true`), the guard judges the
-  patch against `lastFire.model` for the attempt that handed back
-  (`requiredModelForBuild`: `patchAttemptId`, else `buildAttemptId`, must
-  match `lastFire.buildAttemptId`). A person's choice or an escalation is
-  judged as it stands; with no fire record, the card's model, as before.
-  Advanced means Claude Opus, strictly: any other model is refused. On 18 Nov
-  2026 two finished, tested Standard builds (x3MqwdJx…, SYkk20sr…) were
-  refused as "needs Opus" because their own hand-over wording ("the
-  `ANTHROPIC_API_KEY` function secret, already set"; "No new secret or
-  index") made the classifier re-mark them Advanced in the same write as
-  `patchReady`.
-- **The Advanced (Opus) Routine** (18 Nov 2026). The fire endpoint takes
-  only `text`, so a Routine's model is fixed where it is created. An admin
-  can create a second Routine at claude.ai/code/routines with Claude Opus as
-  its model and the same bootstrap prompt, and register its API trigger with
-  the MCP tool `set_advanced_routine_binding` (admin only, write-only, fire
-  URL on `api.anthropic.com` only; `""`/`""` clears it). It is stored at
-  `modelRoutineBindings/advanced` `{fireUrl, token, boundAt, boundByEmail}`,
-  which has no rule in `firestore.rules`, so no browser can read or write it
-  and no tool returns it. When it is set, a Ready for Dev click sends each
-  Advanced ticket that would otherwise fire on the shared Routine to it
-  (`advancedRoutineFor` in `functions/index.js`), while Standard tickets fire
-  on the shared Routine, all in parallel as before (one session per ticket).
-  The card's `lastFire.firedVia` reads `"advanced"` and the project's
-  `notifyRoutine.firedVia` `"shared+advanced"` for a mixed click. A project's
-  own Routine, the clicker's own binding and an owner's agent ticket keep
-  their Routine (they may carry tools or an account the Opus Routine lacks),
-  and those sessions still delegate to an Opus subagent from the fire text.
-  Without the binding nothing changes: the shared Routine plus the
-  delegation block. Build fires only; Review Batch and Deploy fires are
-  unchanged (an Advanced ticket's review is still delegated, and a non-Opus
-  review does not count).
 - **Flag**: a `model-unavailable` card shows "Not built: needs Opus" with the
   clear (×) control and no Answer button (there is no question). Notify Claude
   skips it like any blocked card; clearing the flag puts it back in the queue.
@@ -4742,23 +4708,6 @@ want of the WordPress MCP; v8q30p66… four builds for basic errors).
   `repoFolder`), effort Large, or is over 2,500 characters with five or more
   numbered build items in its Outcome. Otherwise Standard. The verdict and
   every reason that fired are stored as `modelSuggested`.
-- **What it reads** (version 2, 18 Nov 2026). The keyword rules read the
-  title and the description without its **Test steps** and **Dependencies**
-  sections: those say how to test the ticket and what it needs (another
-  ticket, a secret that already exists), not what it changes, and a build
-  session writes them at hand-over. The Outcome and Spec reference are read
-  as before. A keyword with "no", "not", "without", "never" or "nor" up to two
-  words before it in the same clause does not count ("No new secret",
-  "does not change auth-gate.js"; "no longer" is not a negation). The version
-  bump makes `sweepModelSuggestions` score every open Backlog ticket again
-  once; a person's choice is untouched.
-- **Held while a build is in flight** (18 Nov 2026). While a build of the
-  ticket is under way (`buildInFlight`: `patchReady` is set, or the current
-  attempt's fire started a session that has not reported done or error
-  since), the trigger records the new `modelSuggested` but leaves `model` as
-  the build was fired with. Once nothing holds it, the next write to the card
-  brings `model` in line with the suggestion (`modelSuggestNeeded`), so a
-  rebuild is fired on it.
 - **Who sets `model`.** The `onBacklogItemModelSuggest` trigger runs on a
   create and on every save of the title, description, area or effort (Backlog
   only). If no person chose a model, `model` takes the suggestion with

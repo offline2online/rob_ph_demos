@@ -189,7 +189,7 @@ await test("tools/list returns the whole surface", async () => {
     "kanban_list_tasks", "kanban_mark_notifications_read", "kanban_move_task", "kanban_my_work", "kanban_release_report", "kanban_remove_attachment", "kanban_search_tickets", "kanban_set_staff_pronunciation", "kanban_update_task",
     "link_lead_customer_account", "link_lead_prospect", "list_artifact_versions", "list_backlog_items",
     "list_concept_critiques", "list_concepts", "list_doc_revisions", "list_faq_categories", "list_insights", "list_leads", "list_pending_faq_revisions", "list_project_documents", "list_projects", "list_prospects", "list_skill_misses",
-    "list_skills", "mark_skill_reviewed", "remove_lead_contact", "report_skill_miss", "restore_lead", "run_script", "search_faq", "send_to_build", "set_advanced_routine_binding", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
+    "list_skills", "mark_skill_reviewed", "remove_lead_contact", "report_skill_miss", "restore_lead", "run_script", "search_faq", "send_to_build", "set_blocked", "set_concept_artifact", "set_concept_description", "set_concept_readme",
     "set_concept_requirements", "set_concept_type", "set_faq_visibility", "set_my_routine_binding", "set_phase_skill_bindings",
     "set_project_artifact", "set_project_description", "set_project_readme", "set_project_requirements", "set_project_type", "snapshot_project_artifact", "synthesise_concept_critiques", "unfreeze_project", "unlink_lead_customer_account", "unlink_lead_prospect", "update_backlog_item",
     "update_faq_article", "update_interface", "update_lead", "update_lead_contact", "update_lead_stage", "update_project_document", "update_skill",

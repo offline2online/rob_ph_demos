@@ -9,9 +9,6 @@
 //     same Routine, and a project's own Routine binding used for its fires
 //     and never returned by any read path
 //   - the intake trigger that stores modelSuggested
-//   - the build guard judged against the model the attempt was fired with,
-//     the model held while a build is in flight, and Advanced tickets fired
-//     on the Advanced (Opus) Routine when one is bound (6Nia0yWu8yAL3STGh96R)
 //
 // Drives the REAL functions/index.js handlers under stubbed Firebase SDKs
 // (same harness as notify-fanout.test.js) and the automation's pure helpers.
@@ -23,7 +20,7 @@ const assert = require("assert");
 const Module = require("module");
 process.env.FIRE_SPACING_MS = "0";
 
-const { modelEscalation, ESCALATE_AFTER, modelGuardRefusal, requiredModelForBuild } = require("../functions/model-requirement");
+const { modelEscalation, ESCALATE_AFTER } = require("../functions/model-requirement");
 const skillBindings = require("../functions/skill-bindings");
 const auto = require("../scripts/run-backlog-automation.js");
 
@@ -323,111 +320,6 @@ async function withFetch(stub, fn) {
     assert.strictEqual(db.__state.backlogItems.n.model, "advanced", "nothing rewrote it (the stub state is the trigger's own writes)");
     const notBacklog = { ...created, status: "ready-for-testing" };
     assert.strictEqual(mod.__test.modelSuggestNeeded(null, notBacklog), false, "only Backlog tickets");
-  });
-
-  // ── Advanced means Opus, judged by what was fired (6Nia0yWu8yAL3STGh96R) ─
-  await test("guard: a model the classifier raised after the fire does not refuse the build it was fired as", async () => {
-    const fired = (model) => ({ status: "started", buildAttemptId: "a1", model, at: "2026-11-18T10:00:00Z" });
-    // SYkk20srKT7pIKM1HS8Z, 18 Nov 2026: fired Standard, re-marked Advanced by
-    // its own hand-over wording, patch refused. Now it lands.
-    const raised = { model: "advanced", modelAuto: true, buildAttemptId: "a1", patchAttemptId: "a1", lastFire: fired("standard"), builtByModel: "claude-fable-5-2" };
-    assert.strictEqual(requiredModelForBuild(raised), "standard");
-    assert.strictEqual(modelGuardRefusal(raised), null);
-    // Fired Advanced: refused on a non-Opus, whatever the classifier did since.
-    const lowered = { ...raised, model: "standard", lastFire: fired("advanced") };
-    assert.ok(modelGuardRefusal(lowered), "fired Advanced, built on a lesser model");
-    assert.strictEqual(modelGuardRefusal({ ...lowered, builtByModel: "claude-opus-5-5" }), null, "built on Opus");
-    // A person's choice is binding as it stands.
-    assert.ok(modelGuardRefusal({ ...raised, modelAuto: false }), "a person chose Advanced");
-    assert.ok(modelGuardRefusal({ ...raised, modelAuto: undefined }), "a model set before modelAuto existed counts as chosen");
-    // No record of the fire for this attempt: the card's model, as before.
-    assert.ok(modelGuardRefusal({ ...raised, lastFire: { ...fired("standard"), buildAttemptId: "older" } }), "another attempt's fire");
-    assert.ok(modelGuardRefusal({ ...raised, lastFire: { status: "started", buildAttemptId: "a1" } }), "a fire from before lastFire.model existed");
-    assert.strictEqual(modelGuardRefusal({ model: "standard", builtByModel: "claude-haiku-5-5" }), null);
-  });
-
-  await test("intake trigger: the hand-over write does not raise the model; it follows once the build is no longer in flight", async () => {
-    const fire = { status: "started", buildAttemptId: "a1", model: "standard", at: ts(1_763_400_000_000) };
-    const building = { projectId: PID, status: "backlog", desc: "## Outcome\nA new signature line", model: "standard", modelAuto: true, modelSuggested: { model: "standard", reasons: [], version: 2 }, buildAttemptId: "a1", lastFire: fire };
-    const db = makeFakeDb({ backlogItems: { h: building }, projects: { [PID]: { name: "Demo" } } });
-    const mod = loadIndex(db, SHARED);
-    const ref = db.collection("backlogItems").doc("h");
-    const ev = (before, after) => ({ params: { itemId: "h" }, data: { before: { data: () => before }, after: { data: () => after, ref } } });
-    const handOver = { ...building, desc: "## Outcome\nA new signature line, stored beside Aidan's secret settings", patchReady: true };
-    const upd = await mod.__test.runModelSuggest(ev(building, handOver), db);
-    assert.strictEqual(upd.modelSuggested.model, "advanced", "the suggestion is recorded");
-    assert.ok(!("model" in upd), "the model the build was fired with is kept");
-    assert.strictEqual(db.__state.backlogItems.h.model, "standard");
-    const held = { ...handOver, ...upd };
-    assert.strictEqual(mod.__test.modelSuggestNeeded(handOver, { ...held, buildSession: { status: "done" } }), false, "still in flight while patchReady");
-    const refused = { ...held, patchReady: false, buildSession: { status: "done", reportedAt: ts(1_763_400_600_000) } };
-    assert.strictEqual(mod.__test.modelSuggestNeeded(held, refused), true, "nothing holds it now");
-    const follow = await mod.__test.runModelSuggest(ev(held, refused), db);
-    assert.strictEqual(follow.model, "advanced", "the next build is fired on the suggestion");
-  });
-
-  const opusSeed = (extra = {}) => ({
-    backlogItems: {
-      adv: { projectId: PID, status: "backlog", type: "feature", title: "Adv", desc: "copy", model: "advanced", modelAuto: false },
-      std: { projectId: PID, status: "backlog", type: "feature", title: "Std", desc: "copy" },
-    },
-    projects: { [PID]: { name: "Demo" } },
-    modelRoutineBindings: { advanced: { fireUrl: "https://api.anthropic.com/v1/opus/fire", token: "opus-tok-SECRET" } },
-    ...extra,
-  });
-  const clickOn = async (db) => {
-    const mod = loadIndex(db, SHARED);
-    const stub = fireStub();
-    await withFetch(stub, () => mod.notifyOnProjectReadyForReview({ params: { projectId: PID }, data: { before: { data: () => ({ name: "Demo" }) }, after: { data: () => ({ name: "Demo", notifyRequestedAt: ts(Date.now()) }) } } }));
-    return stub;
-  };
-
-  await test("a mixed click: the Advanced ticket fires on the Opus Routine, the Standard one on the shared Routine, both in the same click", async () => {
-    const db = makeFakeDb(opusSeed());
-    const stub = await clickOn(db);
-    assert.strictEqual(stub.calls.length, 2);
-    const adv = stub.calls.find((c) => c.text.includes("(ticket adv)"));
-    const std = stub.calls.find((c) => c.text.includes("(ticket std)"));
-    assert.strictEqual(adv.url, "https://api.anthropic.com/v1/opus/fire");
-    assert.strictEqual(adv.auth, "Bearer opus-tok-SECRET");
-    assert.strictEqual(std.url, SHARED.CLAUDE_ROUTINE_FIRE_URL);
-    assert.ok(adv.text.includes("=== MODEL REQUIREMENT: ADVANCED (Claude Opus) ==="), "the requirement still travels in the text");
-    assert.ok(std.text.includes("Model requirement: Standard"));
-    const cards = db.__state.backlogItems;
-    assert.strictEqual(cards.adv.lastFire.firedVia, "advanced");
-    assert.strictEqual(cards.adv.lastFire.model, "advanced", "the card records the requirement it was fired with");
-    assert.strictEqual(cards.std.lastFire.firedVia, "shared");
-    assert.strictEqual(cards.std.lastFire.model, "standard");
-    assert.strictEqual(db.__state.projects[PID].notifyRoutine.firedVia, "shared+advanced");
-    const visible = JSON.stringify({ items: cards, projects: db.__state.projects, texts: stub.calls.map((c) => c.text) });
-    assert.ok(!visible.includes("opus-tok-SECRET") && !visible.includes("/v1/opus/fire"), "the binding is never in a fire text, a card or the project");
-  });
-
-  await test("no Opus Routine: both tickets on the shared Routine, the Advanced one with the delegation block, as before", async () => {
-    const seed = opusSeed();
-    delete seed.modelRoutineBindings;
-    const db = makeFakeDb(seed);
-    const stub = await clickOn(db);
-    assert.ok(stub.calls.every((c) => c.url === SHARED.CLAUDE_ROUTINE_FIRE_URL));
-    assert.ok(stub.calls.find((c) => c.text.includes("(ticket adv)")).text.includes('the Agent tool with model "opus"'));
-    assert.strictEqual(db.__state.backlogItems.adv.lastFire.firedVia, "shared");
-    assert.strictEqual(db.__state.projects[PID].notifyRoutine.firedVia, "shared");
-  });
-
-  await test("the Opus Routine replaces only the shared Routine: a project's own Routine keeps its tickets; a binding off api.anthropic.com is refused", async () => {
-    const db = makeFakeDb(opusSeed({ projectRoutineBindings: { [PID]: { fireUrl: "https://api.anthropic.com/v1/project/fire", token: "project-tok" } } }));
-    const stub = await clickOn(db);
-    assert.ok(stub.calls.every((c) => c.url === "https://api.anthropic.com/v1/project/fire"), "the project's Routine has the tools it needs");
-    const evil = makeFakeDb({ modelRoutineBindings: { advanced: { fireUrl: "https://evil.example/fire", token: "t" } } });
-    assert.strictEqual(await loadIndex(evil, SHARED).__test.advancedRoutineCredentials(evil), null);
-    const mod = loadIndex(makeFakeDb({}), SHARED);
-    const usual = { fireUrl: "u", token: "t", via: "shared" };
-    const adv = { fireUrl: "o", token: "p", via: "advanced" };
-    assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, usual, adv), adv);
-    assert.strictEqual(mod.__test.advancedRoutineFor({ model: "standard" }, usual, adv), usual);
-    assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, { ...usual, via: "member" }, adv).via, "member", "a member's own Routine is kept");
-    assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, usual, null), usual);
-    assert.strictEqual(mod.__test.advancedRoutineFor({ model: "advanced" }, null, adv), null, "no shared Routine: not sent, as before");
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

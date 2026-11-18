@@ -18,21 +18,6 @@
 // builtByModel is not an Opus (modelGuardRefusal) — the backstop for a session
 // that ignored the block.
 //
-// The guard judges a patch against the requirement its build was fired with
-// (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R). Each fire records the ticket's
-// model on the card as lastFire.model; when the model on the card is the
-// classifier's (modelAuto) rather than a person's choice, the guard uses the
-// fired one for the attempt that handed back. Two finished Standard builds were
-// refused on 18 Nov 2026 because the classifier re-marked the ticket Advanced
-// from the build session's own hand-over wording. A person's explicit choice
-// (or an escalation) still counts as it stands.
-//
-// When an Advanced (Opus) Routine is configured (modelRoutineBindings/advanced,
-// set by an admin with the MCP tool set_advanced_routine_binding), an Advanced
-// ticket that would otherwise fire on the shared Routine fires on that one
-// instead, so it runs on Opus from the start; without one it fires on the
-// shared Routine with the block below, as before.
-//
 // Shared by functions/index.js, functions/mcp-server.js and
 // scripts/run-backlog-automation.js. public/js/app.js keeps its own copy of
 // the two values and labels (a browser module can't require this file).
@@ -55,24 +40,6 @@ function requiresAdvancedModel(item) {
 // A model id or name such as "claude-opus-5-5" or "Claude Opus 5.5".
 function isAdvancedModelId(modelId) {
   return typeof modelId === "string" && /\bopus\b|-opus-|opus-\d/i.test(modelId);
-}
-
-// The requirement a handed-back patch is judged against. A person's choice (or
-// an escalation) is binding as it stands now. A model the classifier set
-// (modelAuto) is judged as it was when this build attempt was fired
-// (lastFire.model, for the attempt named by patchAttemptId, or the card's
-// current buildAttemptId when the patch carries none). Anything else: the
-// card's model. Pure.
-function requiredModelForBuild(item) {
-  if (!item) return DEFAULT_MODEL_REQUIREMENT;
-  const current = normaliseModelRequirement(item.model);
-  if (item.modelAuto !== true) return current;
-  const fire = item.lastFire;
-  const attempt = item.patchAttemptId || item.buildAttemptId;
-  if (fire && typeof fire.model === "string" && fire.buildAttemptId && attempt && fire.buildAttemptId === attempt) {
-    return normaliseModelRequirement(fire.model);
-  }
-  return current;
 }
 
 // The block a build fire carries. An Advanced ticket gets the full rule; a
@@ -98,7 +65,7 @@ function reviewModelTag(item) {
 
 // Why the automation must not land this patch, or null. Pure.
 function modelGuardRefusal(item) {
-  if (requiredModelForBuild(item) !== "advanced") return null;
+  if (!requiresAdvancedModel(item)) return null;
   if (isAdvancedModelId(item.builtByModel)) return null;
   const built = typeof item.builtByModel === "string" && item.builtByModel.trim() ? item.builtByModel.trim() : "an unrecorded model";
   return {
@@ -136,6 +103,6 @@ function modelEscalation(item, { countedSendBacks, autoRebuilds, now = new Date(
 module.exports = {
   ESCALATE_AFTER, ESCALATION_NOTE, modelEscalation,
   MODEL_REQUIREMENTS, DEFAULT_MODEL_REQUIREMENT, MODEL_UNAVAILABLE_REASON, MODEL_LABELS, ADVANCED_AGENT_MODEL,
-  normaliseModelRequirement, requiresAdvancedModel, requiredModelForBuild, isAdvancedModelId,
+  normaliseModelRequirement, requiresAdvancedModel, isAdvancedModelId,
   modelRequirementBlock, reviewModelTag, modelGuardRefusal,
 };
