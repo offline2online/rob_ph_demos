@@ -201,6 +201,19 @@ mis-edited collection can never lock everyone out.
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`.
 
+**Aidan uses the same read tools, and only those (18 Nov 2026).** The agent
+mailbox (`functions/aidan.js`, README → "Aidan, the agent mailbox") answers
+questions by email from the console's data through `consoleReader` in
+`functions/mcp-server.js`: thirteen read tools named in `CONSOLE_READ_TOOLS`
+(`functions/aidan-core.js`), and of those only `board.read` tools with no
+role, so no write tool is reachable from an email whatever the list says
+(`test/aidan-console.test.js`). It is not an MCP connection: no token, no
+`consoleUsers` row, nothing in `mcpAuditLog`; the run is gated by Aidan's own
+allowed senders.
+Aidan reads `list_backlog_items` and `get_pipeline_health` only with a
+`projectId` (one project at a time), and its answer sees at most 40,000
+characters of one read and 120,000 in all (REQUIREMENTS SUP-AID-16).
+
 ### Staff Kanban (the team's own task board)
 
 The human task board at `#staff-kanban` (kanban-staff-board/REQUIREMENTS.md
@@ -899,6 +912,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `test/mcp-client.test.mjs` | the real MCP client SDK against the real server over HTTP (`npm run test:client`) |
 | `test/mcp-live-server.js` | serves the real server on localhost for that test |
 | `test/mcp-stubs.js` | in-memory Firebase SDKs both tests use |
+| `test/aidan-console.test.js` | `consoleReader`, Aidan's read-only use of the read tools (in `npm run test:mcp`) |
 | `public/img/ph-mark.*` | the PH mark on its own — the server's icon and the console's favicon |
 
 ## Deploying it

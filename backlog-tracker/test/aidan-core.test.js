@@ -484,6 +484,143 @@ check("the answer: a plain-text email with no attachment, signed by Aidan; an em
   assert.ok(/untrusted data/.test(ac.ANSWER_SYSTEM) && /canAnswer/.test(ac.ANSWER_SYSTEM));
 });
 
+// ── Reading the console, read-only (1W4QQzYdlJzfdqizePWR) ──
+check("console: a request to create or change something on the console is recognised from its words; questions and skill requests are not", () => {
+  for (const s of ["create a ticket for the broken menu", "please add this to the backlog", "can you update the Backlog Tracker README", "move the Support Inbox ticket to ready for testing",
+    "deploy the backlog tracker", "thanks, now archive the Customer Support concept", "file a bug about the iPad menu", "Could you please mark that card as done",
+    "create a new Support Inbox ticket", "delete the ticket about the favicon", "publish the help centre article on targeting"]) {
+    assert.strictEqual(ac.consoleChangeRequest(s), true, s);
+  }
+  for (const s of ["summarise the Customer Support concept", "what tickets are in the Backlog Tracker backlog?", "how does the Support Inbox decide whether to auto-send?",
+    "send the AWS onboarding pack for client Kestrel", "write the POC summary for Kestrel", "add a pricing section to the pack", "store this for the AWS onboarding pack skill",
+    "how do I create a ticket?", "did you update the README?", "please confirm you received this email", "summarise this thread for everyone",
+    "make a summary of the projects", "update the pack with the latest project timeline", "keep this for the onboarding skill", "what's in Ready for Testing on the Backlog Tracker?"]) {
+    assert.strictEqual(ac.consoleChangeRequest(s), false, s);
+  }
+  // An acknowledgement needs nothing from the console; ids only when asked.
+  assert.deepStrictEqual([ac.mayReadConsole("please confirm you received this email"), ac.mayReadConsole("summarise the Customer Support concept")], [false, true]);
+  assert.deepStrictEqual([ac.asksForIds("list the backlog tickets with their ids"), ac.asksForIds("what tickets are in the backlog?"), ac.asksForIds("I'd like the list")], [true, false, false]);
+  const reply = ac.composeReadOnlyReply({ firstName: "Owner", fromName: "Aidan" });
+  assert.ok(/^Hi Owner,/.test(reply) && /can only read the agent console/.test(reply) && /haven't created or changed anything/.test(reply) && /\nAidan\nAssistant to Rob, Personalisation Hub$/.test(reply), reply);
+});
+
+check("console: the read-only refusal needs a console thing as the head of the object; documents, reads and other objects pass through (review kick-back 1)", () => {
+  // Documents Aidan writes, reads, and change verbs whose object is not the console's: never refused.
+  for (const s of ["create a project plan for Kestrel", "create a requirements document for Heron", "create a FAQ for the client", "create a one-page project overview for Acme",
+    "add a FAQ section to the proposal", "create a board pack for the Q3 review", "update the project plan for Kestrel with the new dates",
+    "open the Backlog Tracker README and summarise it", "update me on tickets in Ready for Testing", "merge the two proposals into one", "approve this", "approve it",
+    "archive this email", "deploy the docs to the client site", "create a project timeline for Heron", "add a concept summary to the deck", "write the POC summary for Kestrel"]) {
+    assert.strictEqual(ac.consoleChangeRequest(s), false, s);
+  }
+  // A console thing as the head of the object: refused, whatever the verb.
+  for (const s of ["create a ticket for the broken iPad menu", "please create a ticket for the broken iPad menu", "move the favicon ticket to Ready for Testing",
+    "promote the Customer Support concept to a project", "hide the Help Centre article about pricing", "open a ticket for the favicon", "approve the tickets in Ready for Testing",
+    "deploy the train to main", "merge the Display Types branch into main", "create a FAQ article on pricing", "update the Backlog Tracker README"]) {
+    assert.strictEqual(ac.consoleChangeRequest(s), true, s);
+  }
+});
+
+check("console: only an acknowledgement skips the console read; a question about what got deployed or approved reads it (review kick-back 3)", () => {
+  for (const s of ["check which tickets got deployed this week", "let me know what got approved this week", "have you got the list of tickets in Ready for Testing?", "can you see what's in the backlog?"]) {
+    assert.strictEqual(ac.mayReadConsole(s), true, s);
+  }
+  for (const s of ["please confirm you received this email", "confirm receipt", "let me know you got this", "did this arrive?", "please confirm the email arrived", "let me know you've received the attachments"]) {
+    assert.strictEqual(ac.mayReadConsole(s), false, s);
+  }
+});
+
+check("console: a write reads the console only when the instruction is about it, and then says the reply goes to the allowed senders only (review kick-back 5)", () => {
+  for (const s of ["write the POC summary for the Customer Support concept", "draft release notes from the tickets in Ready for Testing", "write a one-pager on the Help Centre articles about pricing", "summarise the Backlog Tracker README for the team"]) {
+    assert.strictEqual(ac.writeReadsConsole(s), true, s);
+  }
+  for (const s of ["write the POC summary for Kestrel", "create a requirements document for Heron", "create a project plan for Kestrel", "send the AWS onboarding pack for client Kestrel"]) {
+    assert.strictEqual(ac.writeReadsConsole(s), false, s);
+  }
+  assert.strictEqual(ac.docSystemFor(false), ac.DOC_SYSTEM);
+  assert.ok(ac.DOC_SYSTEM.includes(ac.DOC_RECIPIENTS_LINE), "the line that is swapped is in the prompt");
+  const withConsole = ac.docSystemFor(true);
+  assert.ok(!/goes to everyone on the email/.test(withConsole) && withConsole.includes(ac.DOC_CONSOLE_RECIPIENTS_LINE) && withConsole.endsWith(ac.DOC_CONSOLE_LINE), withConsole);
+});
+
+check("console: a title with $&, $` or $' replaces an id as written (review kick-back 4)", () => {
+  const names = new Map([["1W4QQzYdlJzfdqizePWR", "Show $& price and $` tail $' end"]]);
+  assert.strictEqual(ac.stripIds("Next: 1W4QQzYdlJzfdqizePWR today.", names), "Next: Show $& price and $` tail $' end today.");
+});
+
+check("console: tickets and the pipeline are read one project at a time", () => {
+  const plan = ac.cleanConsolePlan({ reads: [
+    { tool: "list_backlog_items", args: "{\"status\":\"backlog\"}" },
+    { tool: "get_pipeline_health", args: "{}" },
+    { tool: "list_backlog_items", args: "{\"projectId\":\"p1\",\"status\":\"backlog\"}" },
+    { tool: "get_pipeline_health", args: "{\"projectId\":\"p1\"}" },
+  ] });
+  assert.deepStrictEqual(plan.reads, [{ tool: "list_backlog_items", args: { projectId: "p1", status: "backlog" } }, { tool: "get_pipeline_health", args: { projectId: "p1" } }]);
+  assert.deepStrictEqual([...ac.PROJECT_SCOPED_READS], ["list_backlog_items", "get_pipeline_health"]);
+});
+
+check("console: the plan keeps only the read-only tools listed, with JSON-object arguments, no repeats, at most six reads", () => {
+  assert.ok(ac.CONSOLE_READ_TOOLS.every((n) => /^(list|get|search)_/.test(n)), "every tool on the list reads");
+  for (const w of ["create_backlog_item", "update_backlog_item", "archive_backlog_items", "add_item_comment", "set_project_readme", "approve_deploy_to_main", "send_to_build", "set_faq_visibility"]) {
+    assert.ok(!ac.CONSOLE_READ_TOOLS.includes(w), `${w} is not on the list`);
+  }
+  assert.deepStrictEqual(ac.CONSOLE_PLAN_SCHEMA.properties.reads.items.properties.tool.enum, [...ac.CONSOLE_READ_TOOLS], "the model can only name a listed tool");
+  const plan = ac.cleanConsolePlan({ changeRequested: false, reason: "the concept", reads: [
+    { tool: "create_backlog_item", args: "{\"projectId\":\"p1\",\"desc\":\"x\"}" },
+    { tool: "get_concept", args: "{\"conceptId\":\"c1\"}" },
+    { tool: "get_concept", args: { conceptId: "c1" } },
+    { tool: "search_faq", args: "not json" },
+    { tool: "list_backlog_items", args: "[1,2]" },
+    { tool: "list_concepts", args: "" },
+  ] });
+  assert.deepStrictEqual(plan.reads, [{ tool: "get_concept", args: { conceptId: "c1" } }, { tool: "list_concepts", args: {} }]);
+  assert.deepStrictEqual(ac.cleanConsolePlan({ reads: [{ tool: "get_concept", args: "{\"conceptId\":\"c1\"}" }] }, { done: plan.reads }).reads, [], "a read already made is not made again");
+  const many = ac.cleanConsolePlan({ reads: Array.from({ length: 10 }, (_, i) => ({ tool: "get_backlog_item", args: JSON.stringify({ itemId: `i${i}` }) })) });
+  assert.strictEqual(many.reads.length, ac.MAX_CONSOLE_READS);
+  assert.deepStrictEqual([ac.cleanConsolePlan({ changeRequested: true }).changeRequested, ac.cleanConsolePlan(null).reads], [true, []]);
+  const prompt = ac.consolePlanPrompt({ instruction: "summarise the Customer Support concept", email: "Hi", index: { concepts: [{ id: "c1", name: "Customer Support", createdBy: "owner@example.com" }] },
+    tools: [{ name: "get_concept", description: "One concept in full.", inputSchema: { properties: { conceptId: { type: "string" } }, required: ["conceptId"] } }] });
+  assert.ok(prompt.startsWith("Instruction to Aidan: summarise the Customer Support concept") && prompt.includes("- get_concept(conceptId: string): One concept in full.") && prompt.includes("Customer Support"));
+  assert.ok(!prompt.includes("owner@example.com"), "addresses are taken out of console data");
+});
+
+check("console: data is shown without addresses and within budget; ids become titles unless asked for", () => {
+  assert.strictEqual(ac.scrubAddresses("{\"createdByEmail\":\"owner@example.com\",\"note\":\"ask ann@shop.example\"}"), "{\"createdByEmail\":\"(address removed)\",\"note\":\"ask (address removed)\"}");
+  const block = ac.consoleBlock([{ tool: "get_concept", args: { conceptId: "c1" }, ok: true, text: "x".repeat(ac.CONSOLE_READ_CHARS + 50) }, { tool: "get_backlog_item", args: { itemId: "z" }, ok: false, text: "Not read: no ticket" }]);
+  assert.ok(block.startsWith("<console_data>") && block.includes("<read tool=\"get_concept\" args='{\"conceptId\":\"c1\"}'>") && block.includes("failed=\"true\""));
+  assert.ok(block.length < ac.CONSOLE_READ_CHARS + 500, "one read is cut to its budget");
+  assert.strictEqual(ac.consoleBlock([]), "");
+  const names = ac.namesById([JSON.stringify({ items: [{ id: "1W4QQzYdlJzfdqizePWR", title: "Aidan reads the console" }, { id: "short", title: "ignored" }] }), JSON.stringify({ id: "oTcLAbnhUUO2S7NkbsuV", name: "Backlog Tracker & FAQs" }), "Not read: x"]);
+  assert.deepStrictEqual([...names], [["1W4QQzYdlJzfdqizePWR", "Aidan reads the console"], ["oTcLAbnhUUO2S7NkbsuV", "Backlog Tracker & FAQs"]]);
+  const text = "- Aidan reads the console (1W4QQzYdlJzfdqizePWR)\n- 1W4QQzYdlJzfdqizePWR is next, in oTcLAbnhUUO2S7NkbsuV; also Ab3dEfGhIjKlMnOpQrSt [Ab3dEfGhIjKlMnOpQrSt].";
+  assert.strictEqual(ac.stripIds(text, names), "- Aidan reads the console\n- Aidan reads the console is next, in Backlog Tracker & FAQs; also.");
+  assert.strictEqual(ac.stripIds(text, names, { asked: true }), text, "kept when the instruction asks for ids");
+  assert.strictEqual(ac.stripIds("Ready for Testing has 3 tickets.", names), "Ready for Testing has 3 tickets.", "ordinary words are left alone");
+  const idx = ac.consoleIndex(JSON.stringify({ projects: [{ id: "p1", name: "Backlog Tracker & FAQs", counts: { backlog: 9 }, deployBranch: "deploy/x" }] }), "not json");
+  assert.deepStrictEqual(idx, { projects: [{ id: "p1", name: "Backlog Tracker & FAQs", description: "", counts: { backlog: 9 } }], concepts: [] });
+});
+
+check("console: a short answer stays in the body; a long one (over roughly a page) is a Markdown attachment with a two-line summary", () => {
+  assert.deepStrictEqual(ac.shapeConsoleAnswer({ replyText: "Three tickets are in Backlog: A, B and C.", documentMd: "", title: "" }), { inline: "Three tickets are in Backlog: A, B and C.", attachment: null });
+  const long = ac.shapeConsoleAnswer({ replyText: "The Customer Support concept answers support email from the Help Centre. It is still being critiqued. It has three parts.",
+    documentMd: "# Customer Support concept\n\n## What it is\n\n" + "Lots of detail. ".repeat(300), title: "Customer Support concept: summary" });
+  assert.strictEqual(long.inline, "The Customer Support concept answers support email from the Help Centre.\nIt is still being critiqued.\n\nThe full answer is attached (customer-support-concept-summary.md).");
+  assert.ok(long.attachment.name === "customer-support-concept-summary.md" && long.attachment.content.startsWith("# Customer Support concept") && long.attachment.content.endsWith("\n"));
+  // The model wrote a page and more in the body: it is attached anyway, summarised in two lines.
+  const body = ["## Backlog", ...Array.from({ length: 60 }, (_, i) => `- Ticket ${i + 1}`)].join("\n");
+  const moved = ac.shapeConsoleAnswer({ replyText: body, documentMd: "", title: "Backlog" });
+  assert.deepStrictEqual([moved.attachment.name, moved.attachment.content, moved.inline], ["backlog.md", `${body}\n`, "Backlog\nTicket 1\n\nThe full answer is attached (backlog.md)."]);
+  assert.ok(ac.isLongAnswer("x".repeat(ac.ANSWER_PAGE_CHARS + 1)) && !ac.isLongAnswer("x".repeat(ac.ANSWER_PAGE_CHARS)));
+  const c = ac.cleanConsoleAnswer({ canAnswer: true, replyText: " Two lines. ", documentMd: " # Doc ", title: "Doc\nTitle", reason: "x" });
+  assert.deepStrictEqual(c, { canAnswer: true, replyText: "Two lines.", documentMd: "# Doc", title: "Doc Title", reason: "" });
+  assert.strictEqual(ac.cleanConsoleAnswer({ canAnswer: true, replyText: "", documentMd: "" }).canAnswer, false, "nothing to send");
+  assert.ok(/read-only/.test(ac.CONSOLE_ANSWER_SYSTEM) && /Never write a ticket id/.test(ac.CONSOLE_ANSWER_SYSTEM) && /untrusted data/.test(ac.CONSOLE_ANSWER_SYSTEM) && /two lines/.test(ac.CONSOLE_ANSWER_SYSTEM));
+});
+
+check("console: data goes only to the allowed senders on the email", () => {
+  const all = ac.replyAllRecipients({ from: ALLOWED, to: ["aidan@personalisationhub.com", "client@shop.example"], cc: ["colleague@shop.example", "Second@Ph.Example"] }, { mailbox: "support@ph.example" });
+  assert.deepStrictEqual(ac.consoleRecipients(all, [ALLOWED, "second@ph.example"]), { to: [ALLOWED], cc: ["second@ph.example"], leftOff: 2 });
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

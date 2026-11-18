@@ -3190,8 +3190,9 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
-| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`) |
-| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
@@ -3294,11 +3295,49 @@ thread. A run:
   skill / for later"): keeps the email and its attachments as reference
   material for that skill (`skillReferences`, PDFs and images in Storage
   under `skill-references/`), used by every later run of the skill, and
-  marks the ticket **Ingested**. It emails no one.
+  marks the ticket **Ingested**. It emails no one;
+- **reads the console, read-only** (18 Nov 2026), for an answer or a write:
+  "@Aidan, summarise the Customer Support concept", "how does the Support
+  Inbox decide whether to auto-send?", "what's in Ready for Testing on the
+  Backlog Tracker?". The model plans the reads (up to two rounds of six,
+  25 seconds each) from an index of the projects and concepts, and they run
+  through the MCP server's own read tools (`consoleReader` in
+  `functions/mcp-server.js`; the thirteen in `CONSOLE_READ_TOOLS`: projects,
+  their Requirements, README, documents and interface contracts, tickets,
+  pipeline health, concepts and their critiques, Help Centre articles). Only
+  `board.read` tools can run, so nothing an email asks for can write.
+  Addresses are taken out of what the model sees. The answer is written from
+  that and the email: a short one in the body; a long one (over roughly a
+  page, 3,000 characters or 45 lines) attached as Markdown with a two-line
+  summary in the body. Tickets, projects and concepts are named by title;
+  an id the model writes is replaced by its title (or dropped) unless the
+  instruction asks for ids. **A reply with console data goes only to the
+  allowed senders on the email** (the sender, and any other allowed sender
+  in To or Cc), never to a client or partner copied in; the ticket notes how
+  many were left off. A plain acknowledgement reads nothing, and a failed
+  read leaves the answer to the email alone;
+  a write (a skill's document) reads the console only when the instruction
+  is clearly about it (tickets, the backlog, a concept, the pipeline, the
+  Help Centre, a README; `writeReadsConsole`), so "write the POC summary for
+  Kestrel" still goes to everyone on the email, and when it does read it the
+  prompt says the reply goes to the allowed senders only. Ids are replaced
+  by titles in a write's reply and document too. Tickets and the pipeline
+  are read one project at a time, and the model sees at most 40,000
+  characters of one read and 120,000 of console data in all
+  (REQUIREMENTS SUP-AID-16 to 18);
+- **a request to change the console** ("create a ticket for …", "update the
+  README", "move that card", "deploy …", decided from the instruction's own
+  words, or by the plan) gets a short, fixed reply to the allowed senders
+  on the email: Aidan can only read the console, so it hasn't created or
+  changed anything. No model writes it and nothing is changed.
+  Only when the console thing is the head of the object: "create a project
+  plan for Kestrel", "create a FAQ for the client", "approve this" or
+  "archive this email" are not refused, and "open the README and summarise
+  it" or "update me on …" is a read (REQUIREMENTS SUP-AID-19);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
+(skill choice 1 minute, console plans 25 seconds each, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
 function's 540 seconds; a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
@@ -3309,7 +3348,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 15.
+SUP-AID-1 to 19.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
