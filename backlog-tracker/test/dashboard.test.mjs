@@ -124,23 +124,45 @@ assert.strictEqual(funnelKpi([{ date: "2026-11-16", visits: 10, users: 7 }], [],
 assert.strictEqual(funnelKpi([], [], NOW).hasData, false);
 
 // ── Support ───────────────────────────────────────────────────────────────
+// Exactly three figures, all of the Support Inbox (support@), as things stand now and today.
 const t = (id, o) => normaliseTicket(id, { subject: `Ticket ${id}`, customerName: `Customer ${id}`, createdAt: at(15, 8), lastMessageAt: at(16, 9), ...o });
 const tickets = [
-  t("1", { status: "open", needsHuman: true, lastMessageAt: at(17, 7, 30) }),
-  t("2", { status: "open", needsHuman: true, lastMessageAt: at(16, 9, 30) }),
-  t("3", { status: "open", aiDraft: { text: "Hello", confidence: 0.9 } }),
-  t("4", { status: "resolved", resolvedAt: at(16, 15) }),
-  t("5", { status: "resolved", resolvedAt: at(16, 16) }),
-  t("6", { status: "resolved", resolvedAt: at(15, 16) }),
-  t("7", { status: "open" }),
+  // Open: the customer's last email has no reply. The wait runs from that email, not from a later note or event.
+  t("1", { status: "open", needsHuman: true, lastInboundAt: at(17, 7, 30), lastMessageAt: at(17, 7, 30) }),
+  t("2", { status: "open", needsHuman: true, lastInboundAt: at(16, 9, 30), lastMessageAt: at(17, 8) }),
+  t("3", { status: "open", aiDraft: { text: "Hello", confidence: 0.9 }, lastInboundAt: at(16, 20) }),
+  // Filed before lastInboundAt was recorded: falls back to the last message.
+  t("7", { status: "open", automated: "noreply", lastMessageAt: at(17, 6) }),
+  // Resolved today, resolved yesterday, replied today (waiting on the customer), replied yesterday.
+  t("4", { status: "resolved", resolvedAt: at(17, 8), lastReplyAt: at(17, 8) }),
+  t("5", { status: "resolved", resolvedAt: at(16, 16), lastReplyAt: at(16, 16) }),
+  t("6", { status: "pending", lastReplyAt: at(17, 0, 5) }),
+  t("10", { status: "pending", lastReplyAt: at(16, 23, 55) }),
+  // Replied today before lastReplyAt was recorded: its first reply's time counts.
+  t("11", { status: "pending", firstResponseAt: at(17, 9) }),
+  // Replied to yesterday, then again today: counted once, by the latest reply.
+  t("12", { status: "pending", firstResponseAt: at(16, 9), lastReplyAt: at(17, 9, 10) }),
+  // Spam is never counted, whatever happened to it today.
+  t("13", { status: "spam", lastReplyAt: at(17, 9) }),
+  // Hello and Aidan are separate inboxes: the Dashboard counts the Support Inbox only.
+  t("8", { status: "open", needsHuman: true, inboxes: ["hello"], lastInboundAt: at(14, 9) }),
+  t("9", { status: "resolved", resolvedAt: at(17, 9), lastReplyAt: at(17, 9), inboxes: ["aidan"] }),
+  // Written to support@ and hello@ together: it is in the Support Inbox, so it counts.
+  t("14", { status: "open", inboxes: ["support", "hello"], lastInboundAt: at(17, 9) }),
 ];
 const sk = supportKpi(tickets, NOW);
-assert.deepStrictEqual(sk.needsPerson.map((w) => w.id), ["2", "1"], "longest-waiting first");
-assert.strictEqual(fmtWait(sk.needsPerson[1].waitedMs), "2h");
-assert.strictEqual(sk.needsPerson[0].customer, "Customer 2");
-assert.deepStrictEqual(sk.aiDrafts.map((w) => w.id), ["3"]);
-assert.strictEqual(sk.resolved, 2);
-assert.strictEqual(sk.prevResolved, 1);
-assert.strictEqual(sk.trend.dir, "up");
+assert.deepStrictEqual(Object.keys(sk).sort(), ["doneToday", "oldestMs", "open", "waiting"], "three figures and the list behind them, nothing else");
+assert.strictEqual(sk.open, 5, "open and awaiting a reply, support@ only");
+assert.deepStrictEqual(sk.waiting.map((w) => w.id), ["2", "3", "7", "1", "14"], "longest-waiting first");
+assert.strictEqual(sk.waiting[0].customer, "Customer 2");
+assert.strictEqual(sk.oldestMs, NOW - at(16, 9, 30), "the oldest unanswered email, measured from when the customer wrote");
+assert.strictEqual(fmtWait(sk.oldestMs), fmtWait(NOW - at(16, 9, 30)));
+assert.strictEqual(sk.doneToday, 4, "resolved or replied since local midnight: 4, 6, 11 and 12");
+// An email written only to hello@ or aidan@ changes none of the three.
+const more = supportKpi([...tickets, t("20", { status: "open", inboxes: ["hello"], lastInboundAt: at(10, 9) }), t("21", { status: "resolved", inboxes: ["aidan"], resolvedAt: at(17, 9), lastReplyAt: at(17, 9) }), t("22", { status: "pending", inboxes: ["hello", "aidan"], lastReplyAt: at(17, 9) })], NOW);
+assert.deepStrictEqual([more.open, more.oldestMs, more.doneToday], [sk.open, sk.oldestMs, sk.doneToday], "hello@ and aidan@ mail is never counted");
+// Nothing waiting: no age to show.
+const quiet = supportKpi([t("1", { status: "resolved", resolvedAt: at(16, 9) })], NOW);
+assert.deepStrictEqual([quiet.open, quiet.oldestMs, quiet.doneToday, quiet.waiting], [0, null, 0, []]);
 
 console.log("dashboard.test.mjs: ok");

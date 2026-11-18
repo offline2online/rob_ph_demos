@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "console": {
+      "type": "http",
+      "url": "https://backlog-tracker-e4ed2.web.app/mcp"
+    }
+  }
+}

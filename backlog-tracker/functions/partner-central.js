@@ -141,6 +141,7 @@ function normaliseOpportunity(summary, detail) {
     nextSteps: text(life.NextSteps, 2000),
     description: text(o.Project && o.Project.CustomerBusinessProblem, 2000),
     website: text(o.Customer && o.Customer.Account && o.Customer.Account.WebsiteUrl, 300),
+    awsAccountId: text(o.Customer && o.Customer.Account && o.Customer.Account.AwsAccountId, 12),
     industry: text(o.Customer && o.Customer.Account && o.Customer.Account.Industry, 80),
     createdDate: text(o.CreatedDate, 30) || null,
     lastModifiedDate: text(o.LastModifiedDate, 30) || null,

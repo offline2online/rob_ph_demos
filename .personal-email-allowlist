@@ -22,3 +22,10 @@ alex.j@gmail.com
 
 # The public website tour's mock UI: Kestrel Mobile is a fictional brand.
 sam.taylor@kestrelmobile.com
+
+# Personalisation Hub's own inbox aliases, routed into the Support Inbox's
+# tabs (backlog-tracker/functions/support-core.js → aliasesOf). aidan@ is the
+# agent mailbox (functions/aidan.js), a role mailbox on the brand's own
+# domain, not a person; a +tag on any of the three aliases is the same alias.
+aidan@personalisationhub.com
+/^(support|hello|aidan)\+[a-z0-9._-]+[@]personalisationhub\.com$/

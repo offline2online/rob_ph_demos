@@ -134,6 +134,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
           LEAD_INGEST_KEY: ${{ secrets.LEAD_INGEST_KEY }}
+          GA4_MP_API_SECRET: ${{ secrets.GA4_MP_API_SECRET }}
         run: |
           gcloud auth activate-service-account --key-file="$RUNNER_TEMP/firebase-sa.json" --quiet
           sync() { printf '%s' "$2" | bash scripts/sync-function-secret.sh "$1"; }
@@ -149,6 +150,8 @@ jobs:
           sync ANTHROPIC_API_KEY "${ANTHROPIC_API_KEY:-unset}"
           sync ANTHROPIC_WORKSPACE_ID "${ANTHROPIC_WORKSPACE_ID:-unset}"
           sync LEAD_INGEST_KEY "${LEAD_INGEST_KEY:-unset}"
+          # GA4 Measurement Protocol secret for aceToGa4 (functions/ace-ga4.js). Unset, the job sends nothing.
+          sync GA4_MP_API_SECRET "${GA4_MP_API_SECRET:-unset}"
 
       # MEDIA_KEYS_ENC_KEY encrypts the Media Studio provider keys admins
       # enter in Settings (functions/media-keys.js). It is generated here,

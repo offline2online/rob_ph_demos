@@ -91,6 +91,9 @@ async function reset() {
     await setDoc(doc(db, "supportSettings/main"), { connectedEmail: "support@ph.example", autoReply: false });
     await setDoc(doc(db, "supportSecrets/gmail"), { refresh: { v: 1, ct: "x" }, client: { v: 1, ct: "y" } });
     await setDoc(doc(db, "supportCounters/main"), { nextNumber: 2 });
+    // Aidan (functions/aidan.js): its configuration and one kept reference.
+    await setDoc(doc(db, "supportSecrets/aidan"), { allowedSenders: ["owner@example.com"], enabled: true });
+    await setDoc(doc(db, "skillReferences/r1"), { skillId: "s1", subject: "Onboarding notes", text: "Notes", files: [] });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -111,6 +114,7 @@ async function reset() {
     await setDoc(doc(db, "mcpTokens/deadbeef"), { email: "sam@ph.example", type: "access" });
     await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@ph.example" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@ph.example", tool: "create_backlog_item" });
+    await setDoc(doc(db, "scriptRuns/r1"), { email: "sam@ph.example", kind: "run_script", scriptSource: "return 1;", outcome: "ok" });
     await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
     await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
     await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
@@ -338,6 +342,14 @@ async function main() {
 
   await check("An admin may read the agent audit log", "allow", () => getDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1")));
   await check("A non-admin member may NOT read the agent audit log", "deny", () => getDoc(doc(as(MEMBER), "mcpAuditLog/e1")));
+  // Code Mode's execution log (functions/code-mode): readable by members, written only by the server.
+  await check("A member may read the script execution log", "allow", () => getDoc(doc(as(MEMBER), "scriptRuns/r1")));
+  await check("A signed-in non-member may NOT read the script execution log", "deny", () => getDoc(doc(as(STRANGER), "scriptRuns/r1")));
+  await check("An admin may NOT edit a script execution log entry", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "scriptRuns/r1"), { outcome: "error" }, { merge: true }));
+  await check("A member may NOT add a script execution log entry", "deny", () =>
+    setDoc(doc(as(MEMBER), "scriptRuns/r2"), { email: "x@ph.example", kind: "run_script" }));
+  await check("An admin may NOT delete a script execution log entry", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "scriptRuns/r1")));
   await check("Nobody can edit the agent audit log", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1"), { tool: "something else" }, { merge: true }));
 
@@ -591,6 +603,12 @@ async function main() {
   await check("Not even an owner can read the support mailbox's encrypted sign-in", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/gmail")));
   await check("Nobody can write the support mailbox's sign-in from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/gmail"), { refresh: null }));
   await check("Nobody can read the support ticket counter from a client", "deny", () => getDoc(doc(as(TEAM_ADMIN), "supportCounters/main")));
+  // Aidan: the allowed senders are server-only; kept reference material is member-readable, server-written.
+  await check("Not even an owner can read Aidan's allowed senders", "deny", () => getDoc(doc(as(HUMAN), "supportSecrets/aidan")));
+  await check("A team admin cannot write Aidan's allowed senders from a client", "deny", () => setDoc(doc(as(TEAM_ADMIN), "supportSecrets/aidan"), { allowedSenders: ["x@ph.example"] }));
+  await check("A member may read Aidan's reference material", "allow", () => getDoc(doc(as(MEMBER), "skillReferences/r1")));
+  await check("A stranger cannot read Aidan's reference material", "deny", () => getDoc(doc(as(STRANGER), "skillReferences/r1")));
+  await check("An editor cannot write reference material from a client", "deny", () => setDoc(doc(as(MEMBER), "skillReferences/r2"), { skillId: "s1", text: "x" }));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 
