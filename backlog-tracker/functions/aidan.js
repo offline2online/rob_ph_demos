@@ -234,6 +234,23 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       return { aidan: true, cancelled: Boolean(a.cancelled) };
     });
   }
+  // Dismiss what Aidan recorded on a thread (the Aidan tab's checkboxes →
+  // support-mail.js). Only a finished state that asks for attention is cleared:
+  // "no action", "needs a person" and "failed". A request queued or working is
+  // left alone (marking the thread as spam cancels it), and so is a record of
+  // something Aidan did (a reply sent, an email kept). Returns { dismissed }.
+  const DISMISSABLE = ["ignored", "needs-person", "error"];
+  async function dismiss(ticketId, by) {
+    const ref = tickets().doc(ticketId);
+    const dismissed = await db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !t.aidan || t.aidan.spam || t.aidanPending || !DISMISSABLE.includes(t.aidan.status)) return false;
+      tx.update(ref, { aidan: null, updatedAt: now() });
+      return true;
+    });
+    if (dismissed) await logEvent(ticketId, by || "system", "Aidan's state on this thread was dismissed.");
+    return { dismissed };
+  }
   // A run that is already working stops here, before anything is sent or
   // written, when its thread has been marked as spam meanwhile.
   async function stopIfSpam(ticketId) {
@@ -983,7 +1000,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     return ran;
   }
 
-  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, factsOf: ac.mailFacts };
+  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts };
 }
 
 module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };

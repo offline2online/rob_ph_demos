@@ -5,7 +5,7 @@
 "use strict";
 const assert = require("assert");
 const crypto = require("crypto");
-const { createSupportMail, runTriage, SCOPE } = require("../functions/support-mail");
+const { createSupportMail, runTriage, SCOPE, BULK_MAX } = require("../functions/support-mail");
 
 const ENC = crypto.randomBytes(32).toString("base64");
 const BOARD = "board-key-123";
@@ -1968,6 +1968,99 @@ check("Aidan, instruction and content: branded collateral is given the audience-
   const tk = ticketOf(t, "t-cl");
   assert.deepStrictEqual([tk.aidan.status, Boolean(tk.aidan.collateral), tk.aidan.content.left], ["replied", true, 1]);
   assert.ok(tk.aidan.content.ignored.some((x) => /attacker@x\.example/.test(x)), "the quoted instruction is noted as ignored");
+});
+
+// ── One action on many threads: the lists' checkboxes (b3NmU4mdmiGOZgHLURgK) ──
+const bulk = (t, body, token = "ed@ph.example") => call(t.api, "POST", "/v1/tickets/bulk", { token, body });
+const eventsOf = (t, id) => messagesOf(t, id).filter((m) => m.direction === "event").map((m) => m.text);
+async function bulkSetup(n = 3) {
+  const t = make({ mail: Array.from({ length: n }, (_, i) => gmailMessage({ id: `m${i + 1}`, threadId: `b${i + 1}`, date: 1759990000000 + i * 1000 })) });
+  await connect(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  return t;
+}
+check("bulk: an editor marks several threads as spam in one call, each exactly as the single action does; the answer counts them", async () => {
+  const t = await bulkSetup(3);
+  const r = await bulk(t, { ids: ["b1", "b2", "b3", "b1"], action: "status", status: "spam" });
+  assert.deepStrictEqual([r.statusCode, r.body], [200, { ok: true, done: 3, failed: 0, skipped: 0, errors: [] }]);
+  for (const id of ["b1", "b2", "b3"]) {
+    assert.deepStrictEqual([ticketOf(t, id).status, ticketOf(t, id).needsHuman, ticketOf(t, id).aiDraft], ["spam", false, null]);
+    assert.strictEqual(eventsOf(t, id).filter((x) => x === "Marked as spam.").length, 1, "one line on the timeline each (the repeated id is one thread)");
+  }
+  assert.deepStrictEqual(t.google.calls.modified.map((m) => m.threadId).sort(), ["b1", "b2", "b3"], "Gmail's spam folder is kept in step for each");
+  // Not spam, and Resolve, the same way; one already there counts as done and is not written twice.
+  assert.strictEqual((await bulk(t, { ids: ["b1", "b2"], action: "status", status: "open" })).body.done, 2);
+  const res = await bulk(t, { ids: ["b1", "b2"], action: "status", status: "resolved" });
+  assert.deepStrictEqual([res.body.done, ticketOf(t, "b1").status, ticketOf(t, "b1").resolvedBy], [2, "resolved", "ed@ph.example"]);
+  await bulk(t, { ids: ["b1"], action: "status", status: "resolved" });
+  assert.strictEqual(eventsOf(t, "b1").filter((x) => x === "Resolved.").length, 1);
+});
+check("bulk: a missing thread fails by itself and the rest are done; who may call, and what is refused before anything changes", async () => {
+  const t = await bulkSetup(2);
+  const r = await bulk(t, { ids: ["b1", "nope", "b2"], action: "status", status: "pending" });
+  assert.deepStrictEqual([r.statusCode, r.body.done, r.body.failed, r.body.errors], [200, 2, 1, [{ id: "nope", error: "no such ticket" }]]);
+  assert.deepStrictEqual([ticketOf(t, "b1").status, ticketOf(t, "b2").status], ["pending", "pending"]);
+  assert.strictEqual((await bulk(t, { ids: ["b1"], action: "status", status: "spam" }, "")).statusCode, 401, "signed out");
+  assert.strictEqual((await bulk(t, { ids: ["b1"], action: "status", status: "spam" }, "view@ph.example")).statusCode, 403, "a viewer is read-only");
+  assert.strictEqual((await call(t.api, "GET", "/v1/tickets/bulk", { token: "ed@ph.example" })).statusCode, 405);
+  for (const body of [{ ids: ["b1"], action: "delete" }, { ids: [], action: "status", status: "spam" }, { action: "status", status: "spam" }, { ids: ["b1"], action: "status", status: "gone" },
+    { ids: ["b1", "../x"], action: "status", status: "spam" }, { ids: Array.from({ length: BULK_MAX + 1 }, (_, i) => `x${i}`), action: "status", status: "spam" },
+    { ids: ["b1"], action: "assign", assignee: "stranger@elsewhere.example" }]) {
+    assert.strictEqual((await bulk(t, body)).statusCode, 400, JSON.stringify(body).slice(0, 80));
+  }
+  assert.deepStrictEqual([ticketOf(t, "b1").status, ticketOf(t, "b1").assignee || ""], ["pending", ""], "a refused call changes nothing");
+});
+check("bulk: assign to a member, move to Needs a person, and one Staff Kanban ticket per support ticket", async () => {
+  const t = await bulkSetup(3);
+  const a = await bulk(t, { ids: ["b1", "b2", "b3"], action: "assign", assignee: "Admin@PH.example" });
+  assert.deepStrictEqual([a.body.done, ticketOf(t, "b1").assignee, ticketOf(t, "b3").assignee], [3, "admin@ph.example", "admin@ph.example"]);
+  assert.ok(eventsOf(t, "b2").includes("Assigned to admin@ph.example."));
+  assert.strictEqual((await bulk(t, { ids: ["b1"], action: "assign", assignee: "" })).body.done, 1);
+  assert.deepStrictEqual([ticketOf(t, "b1").assignee, eventsOf(t, "b1").includes("Unassigned.")], ["", true]);
+  // Needs a person: from any working state, never out of spam.
+  await bulk(t, { ids: ["b1"], action: "status", status: "resolved" });
+  await bulk(t, { ids: ["b3"], action: "status", status: "spam" });
+  const n = await bulk(t, { ids: ["b1", "b2", "b3"], action: "needs-person" });
+  assert.deepStrictEqual([n.body.done, n.body.failed, n.body.errors], [2, 1, [{ id: "b3", error: "marked as spam" }]]);
+  assert.deepStrictEqual([ticketOf(t, "b1").status, ticketOf(t, "b1").needsHuman, ticketOf(t, "b2").needsHuman, ticketOf(t, "b3").status], ["open", true, true, "spam"]);
+  assert.ok(eventsOf(t, "b1").includes("Moved to Needs a person."));
+  // Raise on Staff Kanban: one each; a ticket that already has one keeps it.
+  const e = await bulk(t, { ids: ["b1", "b2"], action: "escalate" });
+  assert.deepStrictEqual([e.body.done, t.kanbanCalls.created.length, ticketOf(t, "b1").kanbanKey, ticketOf(t, "b2").kanbanKey].map(String), ["2", "2", "PH-1", "PH-2"]);
+  assert.ok(t.kanbanCalls.created[0].task.title.startsWith("Support ") && t.kanbanCalls.created[0].actor === "ed@ph.example");
+  await bulk(t, { ids: ["b1", "b2"], action: "escalate" });
+  assert.strictEqual(t.kanbanCalls.created.length, 2, "asking again raises no second ticket");
+});
+check("bulk: archive takes a Hello or Aidan email out of its list, Move to inbox puts it back, and a new email from the sender brings it back by itself", async () => {
+  const t = await bulkSetup(2);
+  const a = await bulk(t, { ids: ["b1", "b2"], action: "archive", archived: true });
+  assert.deepStrictEqual([a.body.done, ticketOf(t, "b1").archived, ticketOf(t, "b2").archived, ticketOf(t, "b1").status], [2, true, true, "open"], "archiving is not a status");
+  assert.ok(eventsOf(t, "b1").includes("Archived."));
+  await bulk(t, { ids: ["b1"], action: "archive", archived: false });
+  assert.deepStrictEqual([ticketOf(t, "b1").archived, eventsOf(t, "b1").includes("Moved back to the inbox.")], [false, true]);
+  t.mail.push(gmailMessage({ id: "m9", threadId: "b2", text: "Any news?", date: 1759990900000 }));
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.strictEqual(ticketOf(t, "b2").archived, false, "the sender wrote again");
+  await bulk(t, { ids: ["b2"], action: "status", status: "spam" });
+  assert.deepStrictEqual((await bulk(t, { ids: ["b2"], action: "archive", archived: true })).body.errors, [{ id: "b2", error: "marked as spam" }]);
+});
+check("bulk, Aidan: dismiss clears a state that asks for attention and leaves a record of work, or a request still waiting, alone", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "d1", text: "Just for the file, no request here." }),
+    aidanMail({ id: "d2", text: "@Aidan, send the AWS onboarding pack for client Kestrel.", date: 1759990001000 }),
+    aidanMail({ id: "d3", text: "@Aidan, write the POC summary for Kestrel.", date: 1759990002000 }),
+  ]);
+  await connectAidan(t);
+  await cron(t);
+  // d1: no action (ignored). d2: replied. d3: still queued (one run per sync).
+  t.db.state.supportTickets["t-d1"].aidan = { status: "needs-person", reason: "No skill matches.", gmailId: "d1" };
+  assert.deepStrictEqual([ticketOf(t, "t-d2").aidan.status, ticketOf(t, "t-d3").aidan.status], ["replied", "queued"]);
+  const r = await bulk(t, { ids: ["t-d1", "t-d2", "t-d3"], action: "aidan-dismiss" });
+  assert.deepStrictEqual([r.statusCode, r.body.done, r.body.skipped, r.body.failed], [200, 1, 2, 0]);
+  assert.strictEqual(ticketOf(t, "t-d1").aidan, null, "the thread reads no action again");
+  assert.ok(eventsOf(t, "t-d1").includes("Aidan's state on this thread was dismissed."));
+  assert.deepStrictEqual([ticketOf(t, "t-d2").aidan.status, ticketOf(t, "t-d3").aidan.status, ticketOf(t, "t-d3").aidanPending], ["replied", "queued", true], "nothing done or waiting is touched");
+  assert.strictEqual((await bulk(t, { ids: ["t-d1"], action: "aidan-dismiss" })).body.skipped, 1, "nothing left to dismiss");
 });
 
 (async () => {

@@ -3691,6 +3691,65 @@ const scenarios = [
     },
   },
   {
+    // b3NmU4mdmiGOZgHLURgK: every inbox's list has a checkbox per row and one
+    // above it; the selection bar acts on all the selected threads in one call.
+    name: "Support inboxes: tick several rows, one bulk action per inbox, one call and one result; the selection clears on a tab change",
+    hash: "#support/hello",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: `c${n}@shop.example`, status: "open", needsHuman: true, createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        s1: tk(1, { subject: "Support one" }), s2: tk(2, { subject: "Support two" }),
+        h1: tk(3, { subject: "Hello one", inboxes: ["hello"] }), h2: tk(4, { subject: "Hello two", inboxes: ["hello"] }), h3: tk(5, { subject: "Hello three", inboxes: ["hello"] }),
+        a1: tk(6, { subject: "Aidan one", inboxes: ["aidan"], aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." } }),
+      };
+      s.supportAnswer = { ok: true, done: 2, failed: 0, skipped: 0, errors: [] };
+      return s;
+    },
+    run: async (c) => {
+      const bulkCalls = () => c.supportCalls.filter((x) => x.path === "tickets/bulk").map((x) => x.body);
+      const picked = () => c.page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
+      const actions = () => c.page.$$eval("#support-bulk [data-support-bulk], #support-bulk [data-support-bulk-pick]", (els) => els.map((e) => e.dataset.supportBulk || e.dataset.supportBulkPick));
+      await c.visible('[data-support-ticket="h1"]');
+      c.at("Hello: tick two rows, Mark as spam asks once and sends one call");
+      assert.deepStrictEqual(await actions(), [], "no actions until something is selected");
+      await c.click('[data-support-pick="h1"]', "Hello one's checkbox");
+      await c.click('[data-support-pick="h2"]', "Hello two's checkbox");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/hello", "a checkbox doesn't open the email");
+      assert.deepStrictEqual([await picked(), await c.page.textContent("#support-bulk-count"), await actions()], [["h1", "h2"], "2 selected", ["spam", "read", "unread", "archive", "clear"]]);
+      await c.click('[data-support-bulk="spam"]', "Mark as spam");
+      await c.visible("#dialog-ok");
+      assert.ok((await c.page.textContent("#dialog-message")).includes("Mark 2 emails as spam?"));
+      assert.deepStrictEqual(bulkCalls(), [], "nothing is sent before it is confirmed");
+      await c.click("#dialog-ok", "the confirmation");
+      await until(() => bulkCalls().length === 1, "the bulk call");
+      assert.deepStrictEqual(bulkCalls()[0], { ids: ["h2", "h1"], action: "status", status: "spam" });
+      await c.visible("#support-bulk-result");
+      assert.strictEqual(await c.page.textContent("#support-bulk-result > span:last-child"), "2 emails marked as spam.");
+      assert.deepStrictEqual(await picked(), [], "the selection clears after the action");
+      c.at("the row still opens the email, and a tab change clears the selection");
+      await c.click("#support-pick-all", "Select all");
+      assert.deepStrictEqual(await picked(), ["h1", "h2", "h3"]);
+      await c.click('[data-support-tab="aidan"]', "the Aidan tab");
+      await c.visible('[data-support-ticket="a1"]');
+      assert.deepStrictEqual([await picked(), await c.page.locator("#support-bulk-count").count()], [[], 0]);
+      await c.click('[data-support-pick="a1"]', "Aidan one's checkbox");
+      assert.deepStrictEqual(await actions(), ["spam", "read", "unread", "archive", "aidan-dismiss", "clear"], "Aidan adds Dismiss Aidan's state");
+      await c.click('[data-support-ticket="a1"]', "the Aidan row");
+      await until(() => new URL(c.page.url()).hash === "#support/aidan/ticket/a1", "the email opens from its row");
+      c.at("Support Inbox: Select all, then Resolve");
+      await c.click('[data-support-tab="inbox"]', "the Support Inbox tab");
+      await c.visible('[data-support-ticket="s1"]');
+      await c.click("#support-pick-all", "Select all");
+      assert.deepStrictEqual([await picked(), await actions()], [["s1", "s2"], ["spam", "read", "unread", "resolve", "assign", "move", "escalate", "clear"]]);
+      await c.click('[data-support-bulk="resolve"]', "Resolve");
+      await until(() => bulkCalls().length === 2, "the resolve call");
+      assert.deepStrictEqual(bulkCalls()[1], { ids: ["s2", "s1"], action: "status", status: "resolved" });
+      await c.visible("#support-bulk-result");
+      assert.strictEqual(await c.page.textContent("#support-bulk-result > span:last-child"), "2 tickets resolved.");
+    },
+  },
+  {
     // 303SwmU5aQdyJNHxlTtQ: Aidan answers in the email itself (no attachment),
     // and every ticket Aidan ran says what was asked for: Answer, Write or Store.
     name: "Support Inbox: an Aidan answer shows on the thread, and each run shows its kind (Answer, Write, Store)",

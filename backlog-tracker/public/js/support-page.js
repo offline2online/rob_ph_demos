@@ -9,18 +9,24 @@
 // change goes through the supportMail function (/supportMail/v1/**), which
 // sends the email, keeps Gmail in step and records who did what. Rules are in
 // support-core.js. Every control is a <button> acting on click (iPad taps).
+// Every list has a checkbox on each row and one above it (select all shown):
+// the selection bar then offers that inbox's actions for all of them at once,
+// sent to /supportMail/v1/tickets/bulk in batches, with one message at the end.
 import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
   aidanView, aidanThreadState, aidanCollateral, aidanParts, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
+  MARKED_UNREAD, isMarkedUnread, bulkActions, bulkAction, BULK_MOVES, bulkSpamConfirmText, bulkResultText, keepSelected,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
 const LIST_LIMIT = 500;
 const SYNC_EVERY_MS = 3 * 60 * 1000;
+// Threads per bulk call: each call must finish inside the console address's one-minute limit.
+const BULK_CHUNK = 25;
 // The confidence beside a suggested reply: a word and a number, coloured by band.
 const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); return `<span class="support-conf support-conf-${b}" title="How sure the AI is that this reply is correct and complete">${short ? `AI draft · ${pct(c)}` : `${CONFIDENCE_LABEL[b]} · ${pct(c)}`}</span>`; };
 const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
@@ -103,6 +109,10 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   let composer = { ticketId: "", text: "", usedDraft: false, faq: "" };
   let busy = false, syncTimer = null, visible = false, stale = false;
   const opened = readOpened();
+  // The rows ticked on the list on show, and the message left by the last
+  // action on them. Both go when the tab or queue changes (show()); a redraw
+  // from new data keeps the ticks of every thread still in the list.
+  let selected = new Set(), bulkResult = "", listKey = "";
 
   function start() {
     if (unsubTickets) return;
@@ -127,7 +137,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       if (route.view === "ticket" && route.ticketId === ticketId) renderThread();
     }, (err) => console.warn("backlog-tracker: support messages", err));
   }
-  async function ensureMembers() {
+  let membersLoading = null;
+  function ensureMembers() {
+    if (!membersLoading) membersLoading = loadMembers();
+    return membersLoading;
+  }
+  async function loadMembers() {
     if (members) return members;
     try { members = (await getDocs(collection(db, "memberDirectory"))).docs.map((d) => d.data() || {}).filter((m) => m.email && !m.disabled).map((m) => ({ email: String(m.email).toLowerCase(), name: m.displayName || m.email })); }
     catch { members = []; }
@@ -167,13 +182,22 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   // Someone typing in the page (a reply, a search, the assign list open). On the
   // iPad, rebuilding the field under them closes the keyboard and drops the
   // caret, so a redraw that nobody asked for waits until they leave the field.
-  const typing = () => { const a = document.activeElement; return !!a && view.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName); };
+  // A ticked checkbox is not typing: the list redraws under it and keeps the tick.
+  const typing = () => { const a = document.activeElement; return !!a && view.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName) && a.type !== "checkbox"; };
+  // The checkbox that has the focus, found again after a redraw (keyboard users keep their place).
+  const focusedPick = () => { const a = document.activeElement; return !a || !view.contains(a) ? "" : a.id === "support-pick-all" ? "#support-pick-all" : a.dataset.supportPick ? `[data-support-pick="${CSS.escape(a.dataset.supportPick)}"]` : ""; };
+  const refocus = (sel) => { const el = sel && view.querySelector(sel); if (el && el !== document.activeElement) el.focus({ preventScroll: true }); };
   // `force`: the person just did something (opened a page, pressed a button), so draw now.
   function render(force) {
     if (!visible) return;
     headerLine();
     if (!force && typing()) { stale = true; return; }
     stale = false;
+    const focused = focusedPick();
+    draw();
+    refocus(focused);
+  }
+  function draw() {
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
       const on = b.dataset.supportTab === tabOf(inboxKey());
       b.classList.toggle("active", on);
@@ -216,42 +240,123 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       <div class="support-list-wrap">
         <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
+        ${bulkBarHtml()}
         <ul class="support-list" id="support-list" aria-label="Tickets"></ul>
         ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active tickets.</p>` : ""}
       </div></div>`;
     renderList();
+    if (canEdit() && !members) ensureMembers().then(() => { if (route.view === "inbox" && !typing()) renderBulk(); });
+  }
+  // ── Selecting several threads ──
+  // The list on show: `withSearch` false is every thread in it, whatever the search box hides.
+  const listRows = (withSearch = true) => (isPlainInbox(route.inbox)
+    ? plainInboxRows(tickets, route.inbox, withSearch ? search : "", route.queue)
+    : filterTickets(tickets, route.queue, withSearch ? search : "", route.inbox));
+  // The row's own checkbox: a labelled control beside the row's button, so the row still opens the thread.
+  const pickHtml = (t) => (canEdit() ? `<label class="support-pick"><input type="checkbox" class="no-switch" data-support-pick="${esc(t.id)}" aria-label="Select ${esc(t.subject)}"${selected.has(t.id) ? " checked" : ""}></label>` : "");
+  const bulkBarHtml = () => (canEdit() ? `<div class="support-bulk" id="support-bulk" role="group" aria-label="Selection"></div>` : "");
+  function renderBulk() {
+    const bar = $("support-bulk");
+    if (!bar) return;
+    const shown = listRows();
+    const n = selected.size;
+    const picked = shown.filter((t) => selected.has(t.id)).length;
+    const control = (a) => {
+      if (a.pick === "member") return `<select class="support-bulk-pick" data-support-bulk-pick="${a.key}" aria-label="Assign the selected tickets to"><option value="">Assign to…</option><option value="__none">No one</option>${(members || []).map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select>`;
+      if (a.pick === "move") return `<select class="support-bulk-pick" data-support-bulk-pick="${a.key}" aria-label="Move the selected tickets to"><option value="">Move to…</option>${BULK_MOVES.map((m) => `<option value="${m.key}">${esc(m.label)}</option>`).join("")}</select>`;
+      return `<button type="button" class="btn-ghost" data-support-bulk="${a.key}">${icon(a.icon)} ${esc(a.label)}</button>`;
+    };
+    const focused = focusedPick();
+    bar.innerHTML = `<label class="support-pick support-pick-all"><input type="checkbox" class="no-switch" id="support-pick-all" aria-label="Select all ${shown.length} shown"${shown.length && picked === shown.length ? " checked" : ""}${shown.length ? "" : " disabled"}><span>Select all</span></label>
+      ${n ? `<span class="support-bulk-count" id="support-bulk-count">${n} selected</span>
+      <span class="support-bulk-actions">${bulkActions(route.inbox, route.queue).map(control).join("")}
+        <button type="button" class="btn-ghost" data-support-bulk="clear">Clear</button></span>` : ""}
+      ${bulkResult ? `<p class="support-bulk-result" id="support-bulk-result" role="status">${icon("check_circle")}<span>${esc(bulkResult)}</span></p>` : ""}`;
+    bar.classList.toggle("has-selection", n > 0);
+    const all = $("support-pick-all");
+    if (all) all.indeterminate = picked > 0 && picked < shown.length;
+    refocus(focused);
+  }
+  // One action on every selected thread: asked once, sent in batches, one message at the end.
+  async function runBulk(key, choice = "") {
+    const def = bulkAction(route.inbox, route.queue, key);
+    const rows = listRows(false).filter((t) => selected.has(t.id));
+    if (!def || !rows.length || busy) return;
+    const plain = isPlainInbox(route.inbox);
+    if (def.local) {
+      for (const t of rows) opened[t.id] = def.local === "unread" ? MARKED_UNREAD : Math.max(Date.now(), t.lastInboundAt || 0);
+      writeOpened(opened);
+      selected = new Set();
+      bulkResult = bulkResultText(key, { done: rows.length }, { plain });
+      return render(true);
+    }
+    let send = { action: def.action, ...(def.status ? { status: def.status } : {}), ...(def.action === "archive" ? { archived: def.archived } : {}) }, detail = "";
+    if (def.pick === "member") {
+      const assignee = choice === "__none" ? "" : choice;
+      const m = (members || []).find((x) => x.email === assignee);
+      send.assignee = assignee;
+      detail = assignee ? `to ${m ? m.name : assignee}` : "to no one";
+    } else if (def.pick === "move") {
+      const m = BULK_MOVES.find((x) => x.key === choice);
+      if (!m) return;
+      send = { action: m.action, ...(m.status ? { status: m.status } : {}) };
+      detail = `to ${m.label}`;
+    }
+    if (def.danger && !(await confirm(bulkSpamConfirmText(rows, { plain }), { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return renderBulk();
+    if (def.confirm && !(await confirm(`Raise ${rows.length === 1 ? "a Staff Kanban ticket for the selected support ticket" : `${rows.length} Staff Kanban tickets, one for each selected support ticket`}? A ticket that already has one keeps it.`, { title: "Raise on Staff Kanban", okLabel: "Raise" }))) return renderBulk();
+    await act(async () => {
+      const total = { done: 0, failed: 0, skipped: 0, error: "" };
+      const ids = rows.map((t) => t.id);
+      for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+        const part = ids.slice(i, i + BULK_CHUNK);
+        try {
+          const r = await api(apiHeaders, "tickets/bulk", { body: { ids: part, ...send } });
+          const failed = Number(r.failed) || 0, skipped = Number(r.skipped) || 0;
+          total.done += typeof r.done === "number" ? r.done : part.length - failed - skipped;
+          total.failed += failed;
+          total.skipped += skipped;
+          if (!total.error && Array.isArray(r.errors) && r.errors[0]) total.error = String(r.errors[0].error || "");
+        } catch (err) { total.failed += part.length; if (!total.error) total.error = err.message; }
+      }
+      selected = new Set();
+      bulkResult = bulkResultText(key, total, { plain, detail });
+    }, "The selection wasn't changed");
   }
   function renderList() {
     const box = $("support-list");
     if (!box) return;
+    // A thread that left this list (resolved, marked as spam, moved by someone else) is no longer selected.
+    selected = keepSelected(selected, listRows(false));
+    renderBulk();
     if (isPlainInbox(route.inbox)) {
-      const mail = plainInboxRows(tickets, route.inbox, search, route.queue === "spam");
+      const mail = listRows();
       box.innerHTML = mail.length ? mail.map(plainRowHtml).join("")
-        : `<li class="support-empty-row">${search ? "Nothing matches that search." : route.queue === "spam" ? "Nothing in spam." : "No emails yet."}</li>`;
+        : `<li class="support-empty-row">${search ? "Nothing matches that search." : route.queue === "spam" ? "Nothing in spam." : route.queue === "archived" ? "Nothing archived." : "No emails yet."}</li>`;
       return;
     }
-    const rows = filterTickets(tickets, route.queue, search, route.inbox);
-    box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
+    const rows = listRows();
+    box.innerHTML = rows.length ? rows.map((t) => { const unread = t.status !== "spam" && isMarkedUnread(opened[t.id]); return `<li class="support-li">${pickHtml(t)}<button type="button" class="support-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
           <span class="support-row-from">${esc(t.customerName || t.customerEmail)}${t.account && t.account.name ? ` · ${esc(t.account.name)}` : ""}</span>
           <span class="support-row-snippet">${esc(t.summary || t.snippet)}</span></span>
         <span class="support-row-side"><span class="support-row-when" title="${esc(fullDate(t.lastMessageAt))}">${esc(fmtWhen(t.lastMessageAt))}</span>
-          <span class="support-row-key">${esc(t.key)}</span><span class="support-row-badges">${badges(t)}</span></span></button></li>`).join("")
+          <span class="support-row-key">${esc(t.key)}</span><span class="support-row-badges">${unread ? `<span class="badge support-unread">Unread</span>` : ""}${badges(t)}</span></span></button></li>`; }).join("")
       : `<li class="support-empty-row">${search ? "Nothing matches that search." : "Nothing in this queue."}</li>`;
   }
 
   // ── Hello and Aidan: a plain inbox (an email list, no queues or triage) ──
   function renderPlainInbox() {
     const box = inboxOf(route.inbox);
-    const spam = route.queue === "spam";
+    const spam = route.queue === "spam", archived = route.queue === "archived";
     const counts = plainInboxCounts(tickets, box.key, opened);
     view.innerHTML = `<div class="support-plain">
-        ${spam ? `<button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button><h3 class="support-plain-h">Spam</h3>` : ""}
+        ${spam || archived ? `<button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button><h3 class="support-plain-h">${spam ? "Spam" : "Archived"}</h3>` : ""}
         <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="search" id="support-search" placeholder="Search emails" aria-label="Search emails" value="${esc(search)}"></label>
-        <ul class="support-list" id="support-list" aria-label="${esc(spam ? `${box.label} spam` : `${box.label} emails`)}"></ul>
+        ${bulkBarHtml()}
+        <ul class="support-list" id="support-list" aria-label="${esc(spam ? `${box.label} spam` : archived ? `${box.label} archived emails` : `${box.label} emails`)}"></ul>
         ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active emails.</p>` : ""}
-        ${!spam && counts.spam ? `<div class="support-plain-foot"><button type="button" class="btn-ghost" data-support-queue="spam">${icon("report")} Spam (${counts.spam})</button></div>` : ""}
+        ${!spam && !archived && (counts.spam || counts.archived) ? `<div class="support-plain-foot">${counts.archived ? `<button type="button" class="btn-ghost" data-support-queue="archived">${icon("archive")} Archived (${counts.archived})</button>` : ""}${counts.spam ? `<button type="button" class="btn-ghost" data-support-queue="spam">${icon("report")} Spam (${counts.spam})</button>` : ""}</div>` : ""}
       </div>`;
     renderList();
   }
@@ -259,7 +364,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const box = inboxOf(route.inbox);
     const unread = isUnread(t, opened[t.id]);
     const state = box.agent ? aidanThreadState(t.aidan, { spam: t.status === "spam" }) : null;
-    return `<li><button type="button" class="support-row support-mail-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
+    return `<li class="support-li">${pickHtml(t)}<button type="button" class="support-row support-mail-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-from">${esc(t.customerName || t.customerEmail || "Unknown sender")}</span>
           <span class="support-row-subject">${esc(t.subject)}</span>
           ${state ? `<span class="support-row-snippet">${esc(state.line)}</span>` : ""}</span>
@@ -282,7 +387,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>
       <div class="support-ticket-head">
         <h3>${esc(t.subject)}</h3>
-        <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : ""}${state ? aidanStateBadge(t) : ""}
+        <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : t.archived ? `<span class="badge badge-status-draft">Archived</span>` : ""}${state ? aidanStateBadge(t) : ""}
           ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
         ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}${aidanPartsHtml(t.aidan)}${aidanCollateralHtml(t.aidan)}` : ""}
@@ -325,6 +430,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>`; return; }
     watchMessages(t.id);
     if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
+    // A ticket marked unread from the list is read once it is opened.
+    if (isMarkedUnread(opened[t.id])) { opened[t.id] = Date.now(); writeOpened(opened); }
     const edit = canEdit();
     const draft = t.aiDraft;
     const actions = !edit ? "" : `<div class="support-actions" role="group" aria-label="Ticket actions">
@@ -459,7 +566,21 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   });
   view.addEventListener("focusout", () => setTimeout(() => { if (stale && !typing()) render(); }, 0));
   view.addEventListener("change", (e) => {
-    if (e.target.id !== "support-assign") return;
+    const el = e.target;
+    if (el.dataset.supportPick) {
+      if (el.checked) selected.add(el.dataset.supportPick); else selected.delete(el.dataset.supportPick);
+      bulkResult = "";
+      return renderBulk();
+    }
+    if (el.id === "support-pick-all") {
+      const shown = listRows();
+      for (const t of shown) { if (el.checked) selected.add(t.id); else selected.delete(t.id); }
+      view.querySelectorAll("[data-support-pick]").forEach((c) => { c.checked = selected.has(c.dataset.supportPick); });
+      bulkResult = "";
+      return renderBulk();
+    }
+    if (el.dataset.supportBulkPick) { if (el.value) runBulk(el.dataset.supportBulkPick, el.value); return; }
+    if (el.id !== "support-assign") return;
     const t = current();
     if (t) act(() => api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/assign`, { body: { assignee: e.target.value } }), "The ticket wasn't assigned");
   });
@@ -467,6 +588,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const b = e.target.closest("button");
     if (!b || !view.contains(b)) return;
     if (b.dataset.supportQueue) return go(supportHash({ inbox: route.inbox, queue: b.dataset.supportQueue }));
+    if (b.dataset.supportBulk === "clear") { selected = new Set(); bulkResult = ""; return render(true); }
+    if (b.dataset.supportBulk) return runBulk(b.dataset.supportBulk);
     if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", inbox: route.inbox, ticketId: b.dataset.supportTicket }));
     const t = current();
     if (b.dataset.supportArticle) {
@@ -511,6 +634,9 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   return {
     show(r) {
       visible = true;
+      // Another tab, queue or page: nothing stays selected, and the last result goes.
+      const key = `${r.view}|${r.inbox}|${r.queue}`;
+      if (key !== listKey) { selected = new Set(); bulkResult = ""; listKey = key; }
       route = r;
       start();
       render(true);

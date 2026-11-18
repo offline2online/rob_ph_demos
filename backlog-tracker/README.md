@@ -3236,7 +3236,30 @@ sends nothing, and mail arriving on a spam thread queues nothing
 (`markSpam`, `markNotSpam` and `stopIfSpam` in `functions/aidan.js`). Not
 spam does not run a cancelled request; the sender asks again. Requirements:
 SUP-INB-14, SUP-INB-15, SUP-AID-35.
-The server is unchanged: it still files, sorts and drafts for every
+**Selecting several threads (18 Nov 2026).** For a member with Edit, every
+list in all three tabs has a checkbox beside each row and **Select all**
+above it. Ticking a row never opens it. With rows ticked, a selection bar
+shows the count and that list's actions: Mark as spam (one confirmation
+for the batch), Mark as read / unread, and Resolve, Assign to, Move to and
+Raise on Staff Kanban in the Support Inbox, or Archive in Hello and Aidan
+(plus Dismiss Aidan's state in Aidan). Each action is one call to
+`POST /supportMail/v1/tickets/bulk` (`handleBulk` in
+`functions/support-mail.js`; 25 threads a call from the page, 50 at most),
+which changes each thread with the same code as its single action and
+answers `{done, failed, skipped, errors}`; the page shows one result
+message. The selection clears after an action and on changing tab or
+queue, and survives a redraw from new data. **Archive** sets `archived` on
+the ticket (not a status): the email leaves the Hello or Aidan list for
+"Archived (N)" under it (`#support/hello?queue=archived`) and comes back
+on Move to inbox or when the sender writes again. **Dismiss Aidan's
+state** clears a no action / needs a person / failed record
+(`dismiss` in `functions/aidan.js`) and nothing else. Read and unread are
+kept in the browser (`bt-support-opened`), and a ticket marked unread stays
+so until opened. The rules (which actions each list has, the confirmation
+and result wording) are `bulkActions`, `bulkSpamConfirmText` and
+`bulkResultText` in `public/js/support-core.js`. Requirements: SUP-INB-16
+to 23.
+The server's intake is unchanged: it still files, sorts and drafts for every
 address, and the plain tabs do not show it. `aliasesOf` in
 `functions/support-core.js` reads the address an email was written to from
 its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never

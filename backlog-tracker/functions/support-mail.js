@@ -49,6 +49,7 @@
 //   POST /v1/tickets/{id}/note         editor  {text}
 //   POST /v1/tickets/{id}/assign       editor  {assignee}
 //   POST /v1/tickets/{id}/escalate     editor  raise a Staff Kanban ticket
+//   POST /v1/tickets/bulk              editor  {ids, action, …}: one action on many threads (the lists' checkboxes)
 //
 // Pure module: index.js injects Firestore, ID-token verification, the secrets
 // and the Staff Kanban writer, so test/support-mail.test.js runs it with no
@@ -84,6 +85,11 @@ const DRAFT_TIMEOUT_MS = 40000;
 const COMPOSED_PER_HOUR = 30;      // new emails one member may send from the mailbox
 // Aidan runs per scheduled sync: one writes a whole document (minutes).
 const AIDAN_PER_RUN = 1;
+// The lists' checkboxes: threads per call (the page sends more in batches), and
+// how many are changed at once. Staff Kanban tickets are raised one at a time.
+const BULK_MAX = 50;
+const BULK_AT_ONCE = 5;
+const BULK_ACTIONS = ["status", "assign", "needs-person", "escalate", "archive", "aidan-dismiss"];
 
 // One structured call to the model. Returns the parsed JSON, or throws.
 async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000, timeout = DRAFT_TIMEOUT_MS, maxRetries = 1 }) {
@@ -302,6 +308,8 @@ function createSupportMail({
         patch.status = "open";
         patch.triagePending = true;
         patch.aiDraft = null;
+        // An archived Hello or Aidan email comes back to its inbox when the sender writes again.
+        if (cur.archived) patch.archived = false;
       }
     } else {
       // Sent from Gmail itself, not from the console: a person answered there.
@@ -667,6 +675,90 @@ function createSupportMail({
     return send(res, 404, { error: "not found" });
   }
 
+  // ── One action on many threads (the checkboxes on each inbox's list) ──
+  // Each thread is changed by the same code as its single action, and a
+  // failure on one doesn't stop the rest. Answers { ok, done, failed, skipped,
+  // errors: [{ id, error }] } (the first few errors): `skipped` is a thread the
+  // action doesn't apply to.
+  async function bulkOne(ticketId, action, body, by, shared) {
+    const ref = tickets().doc(ticketId);
+    const ticket = data(await ref.get());
+    if (!ticket) return { ok: false, error: "no such ticket" };
+    if (action === "status") {
+      if (body.status !== ticket.status) await setStatus(ticketId, ticket, body.status, by);
+      return { ok: true };
+    }
+    if (action === "assign") {
+      if ((ticket.assignee || "") === shared.assignee) return { ok: true };
+      await ref.set({ assignee: shared.assignee, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, shared.assignee ? `Assigned to ${shared.assignee}.` : "Unassigned.");
+      return { ok: true };
+    }
+    if (action === "needs-person") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      if (ticket.status === "open" && ticket.needsHuman) return { ok: true };
+      if (ticket.status !== "open") await setStatus(ticketId, ticket, "open", by);
+      await ref.set({ needsHuman: true, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, "Moved to Needs a person.");
+      return { ok: true };
+    }
+    if (action === "escalate") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      const r = await escalate(ticketId, ticket, shared.settings, by);
+      if (r.ok) await ref.set({ needsHuman: true }, { merge: true });
+      return r.ok ? { ok: true } : { ok: false, error: r.error };
+    }
+    if (action === "archive") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      const archived = body.archived !== false;
+      if (Boolean(ticket.archived) === archived) return { ok: true };
+      await ref.set({ archived, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, archived ? "Archived." : "Moved back to the inbox.");
+      return { ok: true };
+    }
+    // aidan-dismiss: clear what Aidan recorded, where there is something to clear.
+    if (typeof aidan.dismiss !== "function") return { ok: false, error: "Aidan isn't available" };
+    const r = await aidan.dismiss(ticketId, by);
+    return r.dismissed ? { ok: true } : { ok: true, skipped: true };
+  }
+  async function handleBulk(req, res) {
+    const who = await requireRole(req, "editor");
+    if (!who.ok) return send(res, who.status, { error: who.error });
+    if (req.method !== "POST") return send(res, 405, { error: "POST only" });
+    const by = who.user.email;
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const action = String(body.action || "");
+    if (!BULK_ACTIONS.includes(action)) return send(res, 400, { error: `action is one of ${BULK_ACTIONS.join(", ")}` });
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map((id) => String(id)))];
+    if (!ids.length) return send(res, 400, { error: "Select at least one." });
+    if (ids.length > BULK_MAX) return send(res, 400, { error: `At most ${BULK_MAX} at a time.` });
+    if (ids.some((id) => !/^[A-Za-z0-9_-]{1,80}$/.test(id))) return send(res, 400, { error: "That isn't a ticket id." });
+    const shared = {};
+    if (action === "status" && !core.STATUSES.includes(body.status)) return send(res, 400, { error: `status is one of ${core.STATUSES.join(", ")}` });
+    if (action === "assign") {
+      shared.assignee = core.lower(body.assignee);
+      if (shared.assignee && !(await resolveConsoleUser(shared.assignee))) return send(res, 400, { error: `${shared.assignee} isn't a member of the console.` });
+    }
+    if (action === "escalate") shared.settings = await readSettings();
+    const out = { ok: true, done: 0, failed: 0, skipped: 0, errors: [] };
+    const queue = ids.slice();
+    const worker = async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+        let r;
+        try { r = await bulkOne(id, action, body, by, shared); }
+        catch (err) {
+          logger.error("support: bulk action failed", { ticketId: id, action, error: String(err && err.message ? err.message : err) });
+          r = { ok: false, error: String(err && err.message ? err.message : err) };
+        }
+        if (!r.ok) { out.failed += 1; if (out.errors.length < 5) out.errors.push({ id, error: core.clip(r.error || "failed", 200) }); }
+        else if (r.skipped) out.skipped += 1;
+        else out.done += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(action === "escalate" ? 1 : BULK_AT_ONCE, ids.length) }, worker));
+    return send(res, 200, out);
+  }
+
   // ── HTTP ──
   async function handle(req, res) {
     const path = String((req.path || req.url || "/").split("?")[0]).replace(/^\/supportMail(?=\/|$)/, "").replace(/\/+$/, "") || "/";
@@ -714,6 +806,7 @@ function createSupportMail({
       return send(res, 200, Object.assign(await status(), { aidan: await aidan.status({ admin: who.user.role === "admin" }) }));
     }
 
+    if (path === "/v1/tickets/bulk") return handleBulk(req, res);
     const t = /^\/v1\/tickets\/([A-Za-z0-9_-]{1,80})\/(reply|draft|status|note|assign|escalate)$/.exec(path);
     if (t) return handleTicket(req, res, t[1], t[2]);
 
@@ -818,4 +911,4 @@ function createSupportMail({
   return { handle, sync, status, triageTicket, ingest, aidan };
 }
 
-module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL, DRAFT_TIMEOUT_MS };
+module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL, DRAFT_TIMEOUT_MS, BULK_MAX, BULK_ACTIONS };

@@ -16,6 +16,8 @@
 //     controls, Sync now, and Settings › Support inbox (the switch and Save).
 //     The Hello and Aidan tabs (plain inboxes: no queues or triage) are part
 //     of it: the tab, an email, Reply, a note, Spam and back, Mark as spam.
+//     So are the lists' checkboxes: two rows ticked, Select all, and the
+//     selection bar's Mark as spam with its one confirmation.
 //     Each tap must do its job EXACTLY once: a dropped tap does nothing, a
 //     doubled one sends a customer two emails.
 //  B. A page kept from before this release, running this release's scripts,
@@ -320,6 +322,42 @@ try {
         await tapSel('[data-support-tab="inbox"]');
         await until(async () => (await hash()) === "#support", "the Support Inbox route", 3000);
         await until(async () => (await page.locator(".support-queue").count()) === 7, "the Support Inbox's queues");
+      });
+
+      // b3NmU4mdmiGOZgHLURgK: the checkboxes on a list and the selection bar's buttons, each tap exactly once.
+      await step("two rows are ticked by tap (neither opens), Select all ticks and unticks, and bulk Mark as spam asks once and sends one call", async () => {
+        const picked = () => page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
+        await until(() => page.locator('[data-support-pick="t2"]').count(), "the rows' checkboxes");
+        for (const [id, want] of [["t2", ["t2"]], ["t3", ["t2", "t3"]]]) {
+          await tapSel(`[data-support-pick="${id}"]`);
+          await until(async () => (await picked()).join() === want.join(), `${id} to be ticked`, 3000);
+          await page.waitForTimeout(700);
+          assert.deepStrictEqual(await picked(), want, `${id} unticked itself (the tap fired twice)`);
+          assert.strictEqual(await hash(), "#support", "ticking a row must not open it");
+        }
+        assert.strictEqual(await page.textContent("#support-bulk-count"), "2 selected");
+        await tapSel("#support-pick-all");
+        await until(async () => (await picked()).length === 0, "Select all to untick every row (all were ticked)", 3000);
+        await page.waitForTimeout(700);
+        assert.deepStrictEqual(await picked(), [], "Select all ticked itself back (the tap fired twice)");
+        await tapSel("#support-pick-all");
+        await until(async () => (await picked()).join() === "t2,t3", "Select all to tick every row", 3000);
+        await page.waitForTimeout(700);
+        assert.deepStrictEqual(await picked(), ["t2", "t3"], "Select all unticked itself (the tap fired twice)");
+        const n = calls("tickets/bulk").length;
+        await tapSel('[data-support-bulk="spam"]');
+        await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the one confirmation for the batch", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), true, "the confirmation opened and shut at once");
+        assert.strictEqual(calls("tickets/bulk").length, n, "spam was sent before it was confirmed");
+        await tapSel("#dialog-ok");
+        const c = await once("tickets/bulk", n, "the bulk spam change");
+        assert.deepStrictEqual(c.body, { ids: ["t3", "t2"], action: "status", status: "spam" });
+        await until(() => page.locator("#support-bulk-result").count(), "the one result message", 3000);
+        assert.strictEqual(await page.textContent("#support-bulk-result > span:last-child"), "2 tickets marked as spam.");
+        assert.deepStrictEqual([await picked(), await hash()], [[], "#support"], "the selection clears, and no row was opened");
+        assert.strictEqual(o.supportCalls.filter((x) => /^tickets\/t[23]\//.test(x.path)).length, 0, "no single-ticket call was made");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
       });
 
       await step("the email icon opens the new email form, and Send sends it once", async () => {

@@ -6350,15 +6350,17 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   Staff Kanban link, Resolve, "Answered by AI", assignment, Insert from the
   Help Centre, the ticket key or the ticket's history lines. The Support
   Inbox tab is unchanged.
-- **SUP-INB-10** A plain inbox lists every email of that inbox, newest
-  first, whatever its support status, each with the sender, the subject, the
+- **SUP-INB-10** A plain inbox lists every email of that inbox that is
+  neither spam nor archived (SUP-INB-20), newest first, whatever its support
+  status, each with the sender, the subject, the
   date and **Unread** (in bold and as a word). Unread means the sender's
   latest email is newer than our last reply and than the last time this
   browser opened the thread; opening a thread reads it. The header line
   reads "N unread". Search reads the sender, subject and text.
 - **SUP-INB-11** A plain inbox's thread shows the emails and internal
   notes, with **Reply**, **Save as internal note** and **Mark as spam**
-  (which asks first) for a member with Edit. Spam is the only other view
+  (which asks first) for a member with Edit. Spam and Archived
+  (SUP-INB-20) are the only other views
   (`#support/<inbox>?queue=spam`, a "Spam (N)" button under the list when
   there is any, with Not spam on the thread); a link to any other queue of a
   plain inbox opens its emails. A reply is sent as a person's own words.
@@ -6383,6 +6385,63 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   Aidan had queued on it is cancelled and never runs; the confirmation says
   so first ("Aidan's request on it is cancelled."), and the thread then
   reads "The request waiting on this thread was cancelled." See SUP-AID-35.
+- **SUP-INB-16** (18 Nov 2026, ticket b3NmU4mdmiGOZgHLURgK) **Selecting
+  several threads.** For a member with Edit, every list in all three tabs
+  (each Support Inbox queue, Hello, Aidan, and their Spam and Archived
+  lists) has a labelled checkbox beside each row and a **Select all**
+  checkbox above the list, which ticks or unticks every row shown (with a
+  search, the rows that match). The checkbox is its own control: ticking it
+  never opens the thread, and the row still opens the thread without
+  ticking anything. A viewer sees no checkboxes.
+- **SUP-INB-17** With one or more rows ticked, a selection bar above the
+  list shows "N selected", that list's actions and **Clear**:
+  - every inbox: **Mark as spam** (one confirmation for the batch, naming
+    how many and how many of Aidan's waiting requests are cancelled),
+    **Mark as read**, **Mark as unread**;
+  - Support Inbox also: **Resolve**, **Assign to** (a member, or No one),
+    **Move to** (Needs a person, Waiting on customer) and **Raise on Staff
+    Kanban** (asks once; one Staff Kanban ticket per selected support
+    ticket, and a ticket that already has one keeps it);
+  - Hello and Aidan also: **Archive** (SUP-INB-20); Aidan also **Dismiss
+    Aidan's state** (SUP-INB-21);
+  - a Spam list: **Not spam** only; an Archived list: **Move to inbox** and
+    Mark as spam.
+- **SUP-INB-18** An action applies to every selected thread through
+  `POST /supportMail/v1/tickets/bulk` (`{ids, action, …}`, editor, at most
+  50 ids a call; the page sends 25 at a time), never one call per thread.
+  Each thread is changed by the same code as its single action (so spam
+  moves the Gmail thread and cancels Aidan's queued request, as SUP-INB-14
+  and 15 say), and one failing does not stop the rest. The page then shows
+  **one result message** under the bar with what was done to how many and
+  how many failed ("3 emails marked as spam.", "2 tickets resolved. 1
+  failed: …").
+- **SUP-INB-19** The selection clears after an action, on **Clear**, and
+  on changing tab or queue (or opening a thread). A redraw from new data (a
+  sync, another person's change) keeps it: every ticked thread still in
+  the list stays ticked, and one that left the list is dropped from it.
+- **SUP-INB-20** **Archive** takes a Hello or Aidan email out of its list
+  without changing its support status (`archived` on the ticket). Archived
+  emails are under an "Archived (N)" button below the list
+  (`#support/<inbox>?queue=archived`), where **Move to inbox** puts them
+  back; a new email from the sender brings the thread back by itself. The
+  Support Inbox has no Archive: it resolves, and archiving never changes
+  which Support Inbox queue a ticket is in.
+- **SUP-INB-21** **Dismiss Aidan's state** clears what Aidan recorded on a
+  thread only when it is a finished state asking for attention: no action,
+  needs a person or failed. The thread then reads "no action" as one Aidan
+  was never asked about. A request queued or working is left alone (Mark as
+  spam cancels it), and so is a record of something Aidan did (a reply
+  sent, an email kept); those are counted as "had nothing to dismiss".
+- **SUP-INB-22** **Mark as read / unread** change this browser's unread
+  state (SUP-INB-10), with no server call. A thread marked unread stays
+  unread until it is opened or marked read, whatever was replied. In the
+  Support Inbox, whose queues already say what needs work, a ticket reads
+  **Unread** only when someone marked it so.
+- **SUP-INB-23** iPad: the checkboxes are labelled checkboxes and every
+  selection-bar action is a `<button>` (or a native list for Assign to and
+  Move to), so `touch-click.js` covers them; `test/ui/support-touch.test.mjs`
+  ticks two rows, uses Select all and bulk-marks as spam under each
+  simulated WebKit failure, each tap acting exactly once.
 
 ### Aidan, the agent mailbox (17 Nov 2026)
 

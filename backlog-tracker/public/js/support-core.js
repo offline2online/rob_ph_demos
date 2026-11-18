@@ -74,6 +74,8 @@ export function normaliseTicket(id, d) {
     aiDraft: t.aiDraft && t.aiDraft.text ? { text: t.aiDraft.text, confidence: Number(t.aiDraft.confidence) || 0, confidenceSteps: Array.isArray(t.aiDraft.confidenceSteps) ? t.aiDraft.confidenceSteps : [], answerable: !!t.aiDraft.answerable, articles: Array.isArray(t.aiDraft.articles) ? t.aiDraft.articles : [] } : null,
     messageCount: t.messageCount || 0, humanInvolved: !!t.humanInvolved, autoRepliesSent: t.autoRepliesSent || 0, reopenCount: t.reopenCount || 0,
     resolvedBy: t.resolvedBy || "", escalationError: t.escalationError || "",
+    // Archived out of a plain inbox's list (Hello, Aidan); the Support Inbox resolves instead.
+    archived: !!t.archived,
     // What Aidan (the agent mailbox, aidan@) did with this ticket's tagged request; null when nothing.
     aidan: t.aidan && typeof t.aidan === "object" && AIDAN_STATES[t.aidan.status] ? t.aidan : null,
     createdAt: toMs(t.createdAt), lastMessageAt: toMs(t.lastMessageAt), firstResponseAt: toMs(t.firstResponseAt), resolvedAt: toMs(t.resolvedAt),
@@ -219,29 +221,103 @@ export function aidanThreadState(aidan, { spam = false } = {}) {
 
 // ── Hello and Aidan: plain inboxes ────────────────────────────────────────
 // An email list (sender, subject, date, unread) and the thread. No queues:
-// the only other place an email can be is Spam.
+// the only other places an email can be are Spam and Archived.
 // Unread: the sender's latest email is newer than our last reply and than the
 // last time this browser opened the thread (`openedAt`, ms; kept by the page).
+// MARKED_UNREAD in its place means a person marked the thread unread (the
+// lists' checkboxes): it stays unread until it is opened or marked read.
+export const MARKED_UNREAD = -1;
+export const isMarkedUnread = (openedAt) => Number(openedAt) === MARKED_UNREAD;
 export function isUnread(t, openedAt = 0) {
-  return t.status !== "spam" && (t.lastInboundAt || 0) > Math.max(t.lastReplyAt || 0, Number(openedAt) || 0);
+  if (t.status === "spam") return false;
+  if (isMarkedUnread(openedAt)) return true;
+  return (t.lastInboundAt || 0) > Math.max(t.lastReplyAt || 0, Number(openedAt) || 0);
 }
-// `spam`: the inbox's Spam instead of its emails. Newest first.
-export function plainInboxRows(tickets, inbox, search, spam = false) {
+// Which of a plain inbox's three lists a thread is in: "spam", "archived" or "" (its emails).
+export const plainListOf = (t) => (t.status === "spam" ? "spam" : t.archived ? "archived" : "");
+// `list`: "spam" (or true) for the inbox's Spam, "archived" for what was
+// archived out of it, anything else for its emails. Newest first.
+export function plainInboxRows(tickets, inbox, search, list = "") {
   const s = String(search || "").trim().toLowerCase();
-  return (tickets || []).filter((t) => inInbox(t, inbox) && (t.status === "spam") === !!spam
+  const want = list === true || list === "spam" ? "spam" : list === "archived" ? "archived" : "";
+  return (tickets || []).filter((t) => inInbox(t, inbox) && plainListOf(t) === want
     && (!s || [t.subject, t.customerEmail, t.customerName, t.snippet].some((v) => String(v || "").toLowerCase().includes(s))))
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 }
-// { emails, unread, spam } for a plain inbox; `opened` is { ticketId: ms }.
+// { emails, unread, spam, archived } for a plain inbox; `opened` is { ticketId: ms }.
 export function plainInboxCounts(tickets, inbox, opened = {}) {
-  const out = { emails: 0, unread: 0, spam: 0 };
+  const out = { emails: 0, unread: 0, spam: 0, archived: 0 };
   for (const t of tickets || []) {
     if (!inInbox(t, inbox)) continue;
     if (t.status === "spam") { out.spam += 1; continue; }
+    if (t.archived) { out.archived += 1; continue; }
     out.emails += 1;
     if (isUnread(t, opened[t.id])) out.unread += 1;
   }
   return out;
+}
+
+// ── Selecting several threads (the checkboxes on every inbox's list) ──────
+// What can be done to the selected threads, by inbox and list, in the order
+// the selection bar shows them. Each is { key, label, icon } plus what the
+// page sends to POST /supportMail/v1/tickets/bulk (`action` and its fields),
+// or `local: "read" | "unread"` for the unread state this browser keeps.
+// `pick: "member" | "move"` is a list to choose from instead of a button.
+// `danger` asks once for the whole batch before anything is sent.
+const BULK = {
+  spam: { key: "spam", label: "Mark as spam", icon: "report", action: "status", status: "spam", danger: true },
+  notSpam: { key: "not-spam", label: "Not spam", icon: "inbox", action: "status", status: "open" },
+  read: { key: "read", label: "Mark as read", icon: "drafts", local: "read" },
+  unread: { key: "unread", label: "Mark as unread", icon: "mark_email_unread", local: "unread" },
+  resolve: { key: "resolve", label: "Resolve", icon: "task_alt", action: "status", status: "resolved" },
+  archive: { key: "archive", label: "Archive", icon: "archive", action: "archive", archived: true },
+  unarchive: { key: "unarchive", label: "Move to inbox", icon: "unarchive", action: "archive", archived: false },
+  assign: { key: "assign", label: "Assign to", icon: "person_add", action: "assign", pick: "member" },
+  move: { key: "move", label: "Move to", icon: "drive_file_move", pick: "move" },
+  escalate: { key: "escalate", label: "Raise on Staff Kanban", icon: "view_kanban", action: "escalate", confirm: true },
+  dismiss: { key: "aidan-dismiss", label: "Dismiss Aidan's state", icon: "smart_toy", action: "aidan-dismiss" },
+};
+// Where "Move to" can put Support Inbox tickets (Resolved and Spam have their own buttons).
+export const BULK_MOVES = [
+  { key: "needs-person", label: "Needs a person", action: "needs-person" },
+  { key: "pending", label: "Waiting on customer", action: "status", status: "pending" },
+];
+export function bulkActions(inbox, queue) {
+  const box = inboxOf(inbox);
+  if (queue === "spam") return [BULK.notSpam];
+  if (!box.plain) return [BULK.spam, BULK.read, BULK.unread, BULK.resolve, BULK.assign, BULK.move, BULK.escalate];
+  if (queue === "archived") return [BULK.unarchive, BULK.spam];
+  return [BULK.spam, BULK.read, BULK.unread, BULK.archive, ...(box.agent ? [BULK.dismiss] : [])];
+}
+export const bulkAction = (inbox, queue, key) => bulkActions(inbox, queue).find((a) => a.key === key) || null;
+const things = (n, plain) => `${n} ${plain ? "email" : "ticket"}${n === 1 ? "" : "s"}`;
+// The one confirmation for a batch marked as spam.
+export function bulkSpamConfirmText(tickets, { plain = false } = {}) {
+  const n = (tickets || []).length;
+  if (n === 1) return spamConfirmText(tickets[0], { plain });
+  const waiting = tickets.filter((t) => aidanRequestWaiting(t.aidan)).length;
+  return `Mark ${things(n, plain)} as spam? They move to Spam here and in the mailbox${plain ? "" : ", and are left out of the Dashboard's figures"}.`
+    + (waiting ? ` Aidan's request on ${waiting === 1 ? "one of them" : `${waiting} of them`} is cancelled.` : "");
+}
+// The one message after a batch: what was done to how many, and how many failed.
+// `r` is { done, failed, skipped, error } summed over the calls made.
+const BULK_DONE = {
+  spam: "marked as spam", "not-spam": "marked not spam", read: "marked as read", unread: "marked as unread", resolve: "resolved",
+  archive: "archived", unarchive: "moved to the inbox", assign: "assigned", move: "moved", escalate: "raised on Staff Kanban", "aidan-dismiss": "cleared of Aidan's state",
+};
+export function bulkResultText(key, r, { plain = false, detail = "" } = {}) {
+  const done = Number(r && r.done) || 0, failed = Number(r && r.failed) || 0, skipped = Number(r && r.skipped) || 0;
+  const what = `${BULK_DONE[key] || "changed"}${detail ? ` ${detail}` : ""}`;
+  const parts = [];
+  if (done || (!failed && !skipped)) parts.push(`${things(done, plain)} ${what}.`);
+  if (skipped) parts.push(key === "aidan-dismiss" ? `${skipped} had nothing to dismiss.` : `${skipped} left as ${skipped === 1 ? "it was" : "they were"}.`);
+  if (failed) parts.push(`${failed} failed${r.error ? `: ${r.error}` : "."}`);
+  return parts.join(" ");
+}
+// The selection after the list changed: only threads still in it stay selected.
+export function keepSelected(selected, rows) {
+  const ids = new Set((rows || []).map((t) => t.id));
+  return new Set([...(selected || [])].filter((id) => ids.has(id)));
 }
 
 // Queue + free-text filter, newest activity first (high-value first inside
@@ -258,11 +334,12 @@ export function filterTickets(tickets, queueKey, search, inbox) {
 // "#support/compose", "#support/ticket/<id>", "#support/hello/ticket/<id>"
 // -> { view, inbox, queue, ticketId }, or null when the hash is not a Support Inbox route.
 // Routes are split by inbox: the Support Inbox has its queues; Hello and Aidan
-// have none, so their `queue` is "" (the emails) or "spam", and an old link
-// to any other queue of theirs opens the emails.
+// have none, so their `queue` is "" (the emails), "spam" or "archived", and an
+// old link to any other queue of theirs opens the emails.
 // The Support Inbox's own routes carry no inbox name, so links made before the
 // Hello and Aidan tabs existed still open. "#support/stats" and "#support/try"
 // were tabs once (removed 17 Nov 2026): an old link to either opens the inbox.
+const PLAIN_LISTS = ["spam", "archived"];
 export function supportRoute(hash) {
   const [path, qs] = String(hash || "").split("?");
   if (path !== "#support" && !path.startsWith("#support/")) return null;
@@ -275,7 +352,7 @@ export function supportRoute(hash) {
   const m = rest.match(/^ticket\/(.+)$/);
   if (m) return { view: "ticket", inbox, queue: "", ticketId: decodeURIComponent(m[1]) };
   const queue = new URLSearchParams(qs || "").get("queue");
-  if (isPlainInbox(inbox)) return { view: "inbox", inbox, queue: queue === "spam" ? "spam" : "", ticketId: "" };
+  if (isPlainInbox(inbox)) return { view: "inbox", inbox, queue: PLAIN_LISTS.includes(queue) ? queue : "", ticketId: "" };
   return { view: "inbox", inbox, queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
 export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "" } = {}) {
@@ -283,7 +360,7 @@ export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "",
   const key = inboxOf(inbox).key;
   const base = key === DEFAULT_INBOX ? "#support" : `#support/${key}`;
   if (view === "ticket") return `${base}/ticket/${encodeURIComponent(ticketId)}`;
-  if (isPlainInbox(key)) return queue === "spam" ? `${base}?queue=spam` : base;
+  if (isPlainInbox(key)) return PLAIN_LISTS.includes(queue) ? `${base}?queue=${queue}` : base;
   return queue && queue !== DEFAULT_QUEUE ? `${base}?queue=${queue}` : base;
 }
 

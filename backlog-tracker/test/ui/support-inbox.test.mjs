@@ -5,7 +5,9 @@
 // inserting a Help Centre article, sending (what the server is asked to do),
 // marking spam, the Stats tab's figures, the three inbox tabs (Support Inbox,
 // Hello, Aidan) each with its own list, the Settings page, a viewer getting
-// no write controls, no sideways scroll and 44px touch targets.
+// no write controls, no sideways scroll and 44px touch targets. Also the
+// checkboxes on every list: select, select all, each inbox's bulk actions as
+// one call with one result message, and what clears or keeps the selection.
 // Run with:  cd backlog-tracker/test && node ui/support-inbox.test.mjs
 // SHOTS=1 also saves screenshots to ui/out/.
 import assert from "node:assert";
@@ -408,6 +410,178 @@ try {
     assert.ok((await page.textContent("#support-aidan-settings")).includes("2 allowed senders"));
     assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
     assert.ok(await page.locator("#support-aidan-on").isDisabled());
+  });
+  // Selecting several threads (b3NmU4mdmiGOZgHLURgK): a checkbox on every row and one above the list, in all
+  // three inboxes; the selection bar's actions go to the server in one call, with one result message.
+  const bulkDocs = { ...docs, supportTickets: {
+    s1: ticket(1, { subject: "Support one", needsHuman: true }), s2: ticket(2, { subject: "Support two", needsHuman: true }), s3: ticket(3, { subject: "Support three", needsHuman: true }),
+    s4: ticket(4, { subject: "Support junk", status: "spam" }),
+    h1: ticket(11, { subject: "Hello one", lastInboundAt: t(T0 + 11 * 60000), inboxes: ["hello"] }), h2: ticket(12, { subject: "Hello two", inboxes: ["hello"] }),
+    h3: ticket(13, { subject: "Hello three", inboxes: ["hello"] }), h4: ticket(14, { subject: "Hello four", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 2 * 60000), inboxes: ["hello"] }),
+    h5: ticket(15, { subject: "Hello archived", archived: true, inboxes: ["hello"] }),
+    a1: ticket(21, { subject: "Aidan refused", aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." }, inboxes: ["aidan"] }),
+    a2: ticket(22, { subject: "Aidan plain", inboxes: ["aidan"] }),
+  }, "supportTickets/h1/messages": { m1: { direction: "in", from: "c11@shop.example", fromName: "Customer 11", text: "Hello there.", at: t(T0) } } };
+  const setDocs = (page, changes) => page.evaluate((list) => window.__fbStub.commit(list.map(([id, data]) => ({ op: "set", merge: true, ref: { type: "doc", id, path: `supportTickets/${id}`, parentPath: "supportTickets" }, data }))), changes);
+  for (const width of [390, 820, 1280]) await run(`selecting several threads @${width}px`, { seed: seedFor("editor", { docs: bulkDocs, supportAnswer: { ok: true, done: 3, failed: 0, skipped: 0, errors: [] } }), width, height: 900, hash: "#support/hello" }, async (page, o) => {
+    const bulkCalls = () => o.supportCalls.filter((c) => c.path === "tickets/bulk");
+    const subjects = () => page.locator(".support-row-subject").allTextContents();
+    const picked = () => page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
+    const count = async () => ((await page.locator("#support-bulk-count").count()) ? page.textContent("#support-bulk-count") : "");
+    const barKeys = () => page.$$eval("#support-bulk [data-support-bulk], #support-bulk [data-support-bulk-pick]", (els) => els.map((e) => e.dataset.supportBulk || e.dataset.supportBulkPick));
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+
+    // Every row has its own labelled checkbox; nothing is selected and no actions show yet.
+    assert.deepStrictEqual(await page.$$eval("[data-support-pick]", (els) => els.map((e) => [e.type, e.getAttribute("aria-label"), e.closest("label") !== null, e.closest("button") === null])),
+      [["checkbox", "Select Hello four", true, true], ["checkbox", "Select Hello three", true, true], ["checkbox", "Select Hello two", true, true], ["checkbox", "Select Hello one", true, true]]);
+    assert.strictEqual(await page.getAttribute("#support-pick-all", "aria-label"), "Select all 4 shown");
+    assert.deepStrictEqual([await barKeys(), await count()], [[], ""]);
+
+    // A checkbox selects without opening the email; the row still opens it without ticking anything.
+    await page.check('[data-support-pick="h1"]');
+    assert.deepStrictEqual([await page.evaluate(() => location.hash), await count(), await picked()], ["#support/hello", "1 selected", ["h1"]]);
+    await page.click('[data-support-ticket="h2"]');
+    await until(() => page.evaluate(() => location.hash === "#support/hello/ticket/h2"), "the email opens from its row");
+    await page.click('[data-support-act="back"]');
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "back in Hello");
+    assert.deepStrictEqual(await picked(), [], "leaving the list clears the selection");
+
+    // Test step: select three emails in Hello, Mark as spam, confirm: all three gone, one result message.
+    for (const id of ["h1", "h2", "h3"]) await page.check(`[data-support-pick="${id}"]`);
+    assert.deepStrictEqual([await count(), await barKeys()], ["3 selected", ["spam", "read", "unread", "archive", "clear"]]);
+    assert.strictEqual(await page.evaluate(() => document.getElementById("support-pick-all").indeterminate), true, "some, not all");
+    const a0 = await audit(page, "#support-page");
+    assert.ok(a0.overflow <= 0, `no sideways scroll with the selection bar open (${a0.overflow}px)`);
+    assert.deepStrictEqual(a0.small, [], "touch targets under 44px");
+    assert.deepStrictEqual(await page.$$eval(".support-pick", (els) => els.filter((e) => e.getBoundingClientRect().width < 44 || e.getBoundingClientRect().height < 44).length), 0, "each checkbox's label is a 44px target");
+    await shot(page, `bulk-hello-${width}`);
+
+    // New mail arriving mid-selection redraws the list and keeps the selection.
+    await setDocs(page, [["h4", { snippet: "changed by a sync" }], ["h9", ticket(19, { subject: "Hello new", inboxes: ["hello"] })]]);
+    await until(async () => (await subjects()).includes("Hello new"), "the new email");
+    assert.deepStrictEqual([await picked(), await count()], [["h1", "h2", "h3"], "3 selected"], "a redraw from new data keeps the selection");
+
+    await page.click('[data-support-bulk="spam"]');
+    await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "one confirmation for the batch");
+    assert.ok((await page.textContent("#dialog-backdrop")).includes("Mark 3 emails as spam?"));
+    assert.strictEqual(bulkCalls().length, 0, "nothing is sent before it is confirmed");
+    await page.click("#dialog-ok");
+    await until(() => bulkCalls().length === 1, "the bulk call");
+    assert.deepStrictEqual(bulkCalls()[0].body, { ids: ["h3", "h2", "h1"], action: "status", status: "spam" }, "one call for all three");
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.deepStrictEqual([await page.locator("#support-bulk-result").count(), await page.textContent("#support-bulk-result > span:last-child")].map(String), ["1", "3 emails marked as spam."]);
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "the selection clears after the action");
+    await setDocs(page, ["h1", "h2", "h3"].map((id) => [id, { status: "spam" }]));
+    await until(async () => (await subjects()).join() === "Hello new,Hello four", "all three gone");
+    assert.strictEqual(o.supportCalls.filter((c) => /\/status$/.test(c.path)).length, 0, "not three single calls");
+    assert.ok((await page.textContent(".support-plain-foot")).includes("Spam (3)") && (await page.textContent(".support-plain-foot")).includes("Archived (1)"));
+
+    // Read and unread are this browser's own state: no call, the row changes at once.
+    await page.check('[data-support-pick="h4"]');
+    await page.click('[data-support-bulk="unread"]');
+    await until(() => page.locator('[data-support-ticket="h4"].is-unread .support-unread').count(), "Hello four reads Unread");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("1 email marked as unread."));
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual(await picked(), ["h4", "h9"], "Select all ticks every row shown");
+    await page.click('[data-support-bulk="read"]');
+    await until(async () => (await page.locator(".support-mail-row.is-unread").count()) === 0, "nothing unread");
+    assert.strictEqual(bulkCalls().length, 1, "read and unread send nothing");
+
+    // Archive: one call; the Archived list has Move to inbox.
+    await page.check('[data-support-pick="h4"]');
+    await page.click('[data-support-bulk="archive"]');
+    await until(() => bulkCalls().length === 2, "the archive call");
+    assert.deepStrictEqual(bulkCalls()[1].body, { ids: ["h4"], action: "archive", archived: true });
+    await setDocs(page, [["h4", { archived: true }]]);
+    await until(async () => (await subjects()).join() === "Hello new", "the archived email leaves the list");
+    await page.click('[data-support-queue="archived"]');
+    await until(() => page.evaluate(() => location.hash === "#support/hello?queue=archived"), "the Archived list");
+    await until(async () => (await subjects()).join() === "Hello archived,Hello four", "the archived emails");
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual(await barKeys(), ["unarchive", "spam", "clear"]);
+    await page.click('[data-support-bulk="clear"]');
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "Clear unticks everything");
+
+    // Test step: switching tab clears the selection. Aidan has its own extra action.
+    await page.check("#support-pick-all");
+    await page.click('[data-support-tab="aidan"]');
+    await until(() => page.locator('[data-support-ticket="a1"]').count(), "the Aidan emails");
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "another tab: nothing selected");
+    await page.check('[data-support-pick="a1"]');
+    await page.check('[data-support-pick="a2"]');
+    assert.deepStrictEqual(await barKeys(), ["spam", "read", "unread", "archive", "aidan-dismiss", "clear"]);
+    await page.click('[data-support-bulk="aidan-dismiss"]');
+    await until(() => bulkCalls().length === 3, "the dismiss call");
+    assert.deepStrictEqual(bulkCalls()[2].body, { ids: ["a2", "a1"], action: "aidan-dismiss" });
+
+    // Test step: select all in the Support Inbox, assign to a member: all assigned, in one call.
+    await page.click('[data-support-tab="inbox"]');
+    await until(() => page.locator('[data-support-ticket="s1"]').count(), "the Support Inbox");
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual([await picked(), await count()], [["s1", "s2", "s3"], "3 selected"]);
+    assert.strictEqual(await page.isChecked("#support-pick-all"), true);
+    await until(() => page.locator('[data-support-bulk-pick="assign"] option[value="editor@ph.example"]').count(), "the members to assign to");
+    assert.deepStrictEqual(await barKeys(), ["spam", "read", "unread", "resolve", "assign", "move", "escalate", "clear"]);
+    const a1 = await audit(page, "#support-page");
+    assert.ok(a1.overflow <= 0, `no sideways scroll with the Support Inbox's actions (${a1.overflow}px)`);
+    assert.deepStrictEqual(a1.small, [], "touch targets under 44px");
+    await shot(page, `bulk-support-${width}`);
+    await page.selectOption('[data-support-bulk-pick="assign"]', "editor@ph.example");
+    await until(() => bulkCalls().length === 4, "the assign call");
+    assert.deepStrictEqual(bulkCalls()[3].body, { ids: ["s3", "s2", "s1"], action: "assign", assignee: "editor@ph.example" });
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("3 tickets assigned to Ed Itor."));
+    assert.deepStrictEqual(await picked(), []);
+
+    // Move to a queue, and one Staff Kanban ticket per selected ticket (asked once).
+    await page.check('[data-support-pick="s1"]');
+    await page.check('[data-support-pick="s2"]');
+    await page.selectOption('[data-support-bulk-pick="move"]', "pending");
+    await until(() => bulkCalls().length === 5, "the move call");
+    assert.deepStrictEqual(bulkCalls()[4].body, { ids: ["s2", "s1"], action: "status", status: "pending" });
+    await until(() => page.locator('[data-support-pick="s1"]:not(:disabled)').count(), "the list again");
+    await page.check('[data-support-pick="s1"]');
+    await page.check('[data-support-pick="s2"]');
+    await page.click('[data-support-bulk="escalate"]');
+    await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the Staff Kanban confirmation");
+    assert.ok((await page.textContent("#dialog-backdrop")).includes("2 Staff Kanban tickets, one for each selected support ticket"));
+    await page.click("#dialog-ok");
+    await until(() => bulkCalls().length === 6, "the escalate call");
+    assert.deepStrictEqual(bulkCalls()[5].body, { ids: ["s2", "s1"], action: "escalate" });
+
+    // Marked unread shows in the Support Inbox too, until the ticket is opened. Changing queue clears the selection.
+    await until(() => page.locator('[data-support-pick="s3"]:not(:disabled)').count(), "the list again");
+    await page.check('[data-support-pick="s3"]');
+    await page.click('[data-support-bulk="unread"]');
+    await until(() => page.locator('[data-support-ticket="s3"].is-unread .support-unread').count(), "Support three reads Unread");
+    await page.check('[data-support-pick="s1"]');
+    await page.click('[data-support-queue="spam"]');
+    await until(() => page.locator('[data-support-ticket="s4"]').count(), "the Spam queue");
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "another queue: nothing selected");
+    await page.check('[data-support-pick="s4"]');
+    assert.deepStrictEqual(await barKeys(), ["not-spam", "clear"]);
+    await page.click('[data-support-bulk="not-spam"]');
+    await until(() => bulkCalls().length === 7, "the not-spam call");
+    assert.deepStrictEqual(bulkCalls()[6].body, { ids: ["s4"], action: "status", status: "open" });
+    await page.click('[data-support-queue="needs-person"]');
+    await page.click('[data-support-ticket="s3"]');
+    await until(() => page.evaluate(() => location.hash === "#support/ticket/s3"), "the ticket");
+    await page.click('[data-support-act="back"]');
+    await until(() => page.locator('[data-support-ticket="s3"]').count(), "the list");
+    assert.strictEqual(await page.locator('[data-support-ticket="s3"].is-unread').count(), 0, "opening it reads it");
+  });
+  // A failed batch says how many failed and why, once.
+  await run("selecting several threads: a failure is counted in the one result", { seed: seedFor("editor", { docs: bulkDocs, supportAnswer: { ok: true, done: 1, failed: 1, skipped: 0, errors: [{ id: "h2", error: "no such ticket" }] } }), width: 1280, hash: "#support/hello" }, async (page) => {
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+    await page.check('[data-support-pick="h1"]');
+    await page.check('[data-support-pick="h2"]');
+    await page.click('[data-support-bulk="archive"]');
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("1 email archived. 1 failed: no such ticket"));
+  });
+  await run("selecting several threads: a viewer has no checkboxes", { seed: seedFor("viewer", { docs: bulkDocs }), width: 1280, hash: "#support/hello" }, async (page) => {
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+    assert.strictEqual(await page.locator("[data-support-pick], #support-pick-all, #support-bulk").count(), 0);
   });
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);

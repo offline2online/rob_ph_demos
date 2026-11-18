@@ -33,6 +33,23 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-row-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .support-badge-hv { background: rgba(151, 71, 255, .14); color: #6b2fd0; }
 :root[data-theme="dark"] .support-badge-hv { color: #c9a6ff; }
+/* Selecting several threads: a checkbox beside each row (the row itself still opens the thread),
+   Select all above the list, and the selection bar with that inbox's actions. */
+.support-list > li.support-li { display: flex; align-items: stretch; }
+.support-list-wrap { min-width: 0; }
+.support-li > .support-row { flex: 1; min-width: 0; padding-left: 4px; }
+.support-pick { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 44px; min-height: 44px; cursor: pointer; }
+.support-pick input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.support-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 44px; margin-bottom: 8px; }
+.support-pick-all { justify-content: flex-start; gap: 8px; padding: 0 13px; font-size: 13px; color: var(--text-muted); }
+.support-bulk-count { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.support-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.support-bulk-actions .btn-ghost { min-height: 44px; }
+.support-bulk-actions .material-symbols-outlined { font-size: 18px; vertical-align: -4px; }
+.support-bulk-pick { min-height: 44px; max-width: 200px; font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; background: var(--bg); color: var(--text); }
+.support-bulk-result { display: flex; align-items: flex-start; gap: 6px; flex: 1 0 100%; margin: 0; font-size: 13px; color: var(--text-muted); }
+.support-bulk-result .material-symbols-outlined { font-size: 18px; color: var(--success); }
+.support-row.is-unread .support-row-subject { font-weight: 700; }
 .support-status-open { background: var(--primary-tint); color: var(--primary-text); }
 .support-status-pending { background: rgba(201, 138, 10, .12); color: var(--warning); }
 .support-status-resolved { background: rgba(82, 196, 26, .12); color: var(--success); }
@@ -41,7 +58,7 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 /* Hello and Aidan: a plain email list (no queue rail), sender first, unread in bold with a word. */
 .support-plain { max-width: 900px; }
 .support-plain-h { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
-.support-plain-foot { display: flex; margin-top: 12px; }
+.support-plain-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .support-plain-foot .material-symbols-outlined { font-size: 18px; vertical-align: -4px; }
 .support-mail-row .support-row-from { font-size: 14.5px; color: var(--text); }
 .support-mail-row .support-row-subject { font-size: 14px; font-weight: 400; }

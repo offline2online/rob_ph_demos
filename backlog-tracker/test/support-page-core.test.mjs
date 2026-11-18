@@ -214,8 +214,8 @@ check("Hello and Aidan are plain inboxes: an email list with unread and spam, no
   assert.strictEqual(isUnread(by.new, T0 + 5 * H), false, "opened since it arrived");
   assert.strictEqual(isUnread(by.new, T0 + 4 * H), true, "a newer email than the last look");
   assert.strictEqual(isUnread(tk("old", { inboxes: ["hello"] })), false, "filed before arrival times were kept");
-  assert.deepStrictEqual(plainInboxCounts(rows, "hello"), { emails: 4, unread: 3, spam: 1 });
-  assert.deepStrictEqual(plainInboxCounts(rows, "hello", { new: T0 + 5 * H, resolved: T0 + D }), { emails: 4, unread: 1, spam: 1 });
+  assert.deepStrictEqual(plainInboxCounts(rows, "hello"), { emails: 4, unread: 3, spam: 1, archived: 0 });
+  assert.deepStrictEqual(plainInboxCounts(rows, "hello", { new: T0 + 5 * H, resolved: T0 + D }), { emails: 4, unread: 1, spam: 1, archived: 0 });
   // The Aidan tab always says what Aidan did, "no action" included.
   assert.deepStrictEqual(aidanThreadState(null), { badge: "Aidan: no action", tone: "none", line: "Aidan did nothing: this email has no @Aidan request.", kind: "" });
   assert.strictEqual(aidanThreadState({ status: "ignored", reason: "The sender is not allowed to instruct Aidan." }).line, "Aidan did nothing: The sender is not allowed to instruct Aidan.");
@@ -291,6 +291,59 @@ check("Aidan's instruction and content, review finding 3: a finished run that re
   // Earlier emails left out by the audience rule are said so.
   const left = aidanParts({ status: "replied", instruction: "please answer John's question below.", content: { quotedChars: 80, earlierCount: 1, left: 2, preview: "x", ignored: [] } });
   assert.strictEqual(left.content.line, "Aidan read the quoted or forwarded email and 1 earlier email on this thread as content to answer from, never as instructions. 2 earlier emails were left out, because not everyone this reply went to had received them.");
+});
+
+// ── Selecting several threads: the lists' checkboxes (b3NmU4mdmiGOZgHLURgK) ──
+const bulk = await import("../public/js/support-core.js");
+check("bulk: each inbox's selection bar offers its own actions, and Spam offers only Not spam", () => {
+  const keys = (inbox, queue) => bulk.bulkActions(inbox, queue).map((a) => a.key);
+  assert.deepStrictEqual(keys("support", "needs-person"), ["spam", "read", "unread", "resolve", "assign", "move", "escalate"]);
+  assert.deepStrictEqual(keys("support", "all"), keys("support", "needs-person"));
+  assert.deepStrictEqual(keys("hello", ""), ["spam", "read", "unread", "archive"], "a plain inbox has no queues, assignment or Staff Kanban");
+  assert.deepStrictEqual(keys("aidan", ""), ["spam", "read", "unread", "archive", "aidan-dismiss"]);
+  assert.deepStrictEqual(keys("hello", "archived"), ["unarchive", "spam"]);
+  for (const inbox of ["support", "hello", "aidan"]) assert.deepStrictEqual(keys(inbox, "spam"), ["not-spam"]);
+  // What each sends to the server; read and unread are this browser's own state.
+  const sent = (inbox, queue, key) => { const a = bulk.bulkAction(inbox, queue, key); return a && [a.action || "", a.status || "", a.local || ""]; };
+  assert.deepStrictEqual([sent("hello", "", "spam"), sent("hello", "spam", "not-spam"), sent("support", "all", "resolve"), sent("hello", "", "read"), sent("aidan", "", "aidan-dismiss")],
+    [["status", "spam", ""], ["status", "open", ""], ["status", "resolved", ""], ["", "", "read"], ["aidan-dismiss", "", ""]]);
+  assert.strictEqual(bulk.bulkAction("hello", "", "escalate"), null, "an action the inbox doesn't have is refused");
+  assert.strictEqual(bulk.bulkAction("support", "spam", "spam"), null);
+  assert.deepStrictEqual(bulk.BULK_MOVES.map((m) => [m.label, m.action, m.status || ""]), [["Needs a person", "needs-person", ""], ["Waiting on customer", "status", "pending"]]);
+});
+check("bulk: one confirmation for the batch, and one result message with the counts", () => {
+  const rows = [tk("a", {}), tk("b", { aidan: { status: "queued", kind: "generate", instruction: "x" } }), tk("c", {})];
+  assert.strictEqual(bulk.bulkSpamConfirmText(rows, { plain: true }), "Mark 3 emails as spam? They move to Spam here and in the mailbox. Aidan's request on one of them is cancelled.");
+  assert.strictEqual(bulk.bulkSpamConfirmText([rows[0], rows[2]]), "Mark 2 tickets as spam? They move to Spam here and in the mailbox, and are left out of the Dashboard's figures.");
+  assert.strictEqual(bulk.bulkSpamConfirmText([rows[0]]), spamConfirmText(rows[0]), "one selected reads as the single action does");
+  assert.strictEqual(bulk.bulkResultText("spam", { done: 3 }, { plain: true }), "3 emails marked as spam.");
+  assert.strictEqual(bulk.bulkResultText("assign", { done: 1 }, { detail: "to Ada Min" }), "1 ticket assigned to Ada Min.");
+  assert.strictEqual(bulk.bulkResultText("resolve", { done: 2, failed: 1, error: "no such ticket" }), "2 tickets resolved. 1 failed: no such ticket");
+  assert.strictEqual(bulk.bulkResultText("spam", { done: 0, failed: 3, error: "HTTP 500" }, { plain: true }), "3 failed: HTTP 500");
+  assert.strictEqual(bulk.bulkResultText("aidan-dismiss", { done: 1, skipped: 2 }, { plain: true }), "1 email cleared of Aidan's state. 2 had nothing to dismiss.");
+  assert.strictEqual(bulk.bulkResultText("unread", { done: 2 }, { plain: true }), "2 emails marked as unread.");
+});
+check("bulk: a redraw keeps the ticks of threads still in the list and drops the rest", () => {
+  const rows = [tk("a", {}), tk("b", {})];
+  assert.deepStrictEqual([...bulk.keepSelected(new Set(["a", "b", "gone"]), rows)], ["a", "b"]);
+  assert.deepStrictEqual([...bulk.keepSelected(new Set(["a"]), [])], []);
+});
+check("bulk: marked unread stays unread until opened, in any inbox; archived emails are a list of their own", () => {
+  const answered = tk("x", { inboxes: ["hello"], lastInboundAt: new Date(T0), lastReplyAt: new Date(T0 + H) });
+  assert.strictEqual(isUnread(answered, 0), false);
+  assert.strictEqual(isUnread(answered, bulk.MARKED_UNREAD), true, "marked unread, though it was answered");
+  assert.strictEqual(isUnread(answered, T0 + D), false, "opened again");
+  assert.strictEqual(isUnread(tk("s", { status: "spam" }), bulk.MARKED_UNREAD), false, "spam is never unread");
+  assert.deepStrictEqual([bulk.isMarkedUnread(-1), bulk.isMarkedUnread(0), bulk.isMarkedUnread(undefined), bulk.isMarkedUnread(T0)], [true, false, false, false]);
+  const rows = [tk("in", { inboxes: ["hello"] }), tk("arch", { inboxes: ["hello"], archived: true }), tk("junk", { inboxes: ["hello"], status: "spam", archived: true })];
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "").map((t) => t.id), ["in"]);
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "", "archived").map((t) => t.id), ["arch"]);
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "", "spam").map((t) => t.id), ["junk"], "spam wins over archived");
+  assert.deepStrictEqual(plainInboxCounts(rows, "hello"), { emails: 1, unread: 0, spam: 1, archived: 1 });
+  assert.deepStrictEqual(supportRoute("#support/hello?queue=archived"), { view: "inbox", inbox: "hello", queue: "archived", ticketId: "" });
+  assert.strictEqual(supportHash({ inbox: "aidan", queue: "archived" }), "#support/aidan?queue=archived");
+  assert.strictEqual(supportRoute("#support?queue=archived").queue, "needs-person", "the Support Inbox has no Archived: it resolves");
+  assert.strictEqual(filterTickets([tk("r", { archived: true, needsHuman: true })], "needs-person", "", "support").length, 1, "archiving doesn't touch the Support Inbox's queues");
 });
 
 let failed = 0;
