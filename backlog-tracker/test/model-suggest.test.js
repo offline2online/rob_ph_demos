@@ -75,7 +75,7 @@ const SAMPLES = [
   await test("no choice made: model takes the suggestion (modelAuto); a person's choice is kept", async () => {
     const adv = cjs.suggestModel({ desc: "Edit firestore.rules" });
     assert.deepStrictEqual(cjs.autoModelFields({ desc: "Edit firestore.rules" }, adv),
-      { modelSuggested: { model: "advanced", reasons: [{ key: "security", text: "touches security rules" }], version: 1 }, model: "advanced", modelAuto: true });
+      { modelSuggested: { model: "advanced", reasons: [{ key: "security", text: "touches security rules" }], version: cjs.MODEL_SUGGEST_VERSION }, model: "advanced", modelAuto: true });
     const kept = cjs.autoModelFields({ desc: "Edit firestore.rules", model: "standard", modelAuto: false }, adv);
     assert.ok(!("model" in kept) && !("modelAuto" in kept), "explicit Standard is never overridden");
     assert.ok(kept.modelSuggested, "the suggestion is still recorded");
@@ -87,6 +87,50 @@ const SAMPLES = [
     assert.deepStrictEqual(cjs.autoModelFields(auto, cjs.suggestModel(auto)).model, "standard", "an auto model follows a new description");
     const settled = { desc: "Edit firestore.rules", ...cjs.autoModelFields({ desc: "Edit firestore.rules" }, adv) };
     assert.deepStrictEqual(cjs.autoModelFields(settled, cjs.suggestModel(settled)), {}, "idempotent on its own output");
+  });
+
+  // ── Version 2 (6Nia0yWu8yAL3STGh96R, 18 Nov 2026) ──────────────────────
+  // Two finished Standard builds were refused that day: the build session's
+  // own Dependencies line re-marked each ticket Advanced at hand-over.
+  await test("v2: Test steps and Dependencies are not scored; the Outcome and Spec reference are", async () => {
+    assert.ok(cjs.MODEL_SUGGEST_VERSION >= 2);
+    const handedBack = "## Outcome\nAidan signs his emails with a new line.\n\n## Test steps\n1. Rotate the session token and check the signature.\n\n## Dependencies\nUses the model key Aidan already uses. No new secret or index.\n\n## Spec reference\nbacklog-tracker/REQUIREMENTS.md → Support Inbox";
+    assert.deepStrictEqual(cjs.suggestModel({ desc: handedBack }), { model: "standard", reasons: [], version: cjs.MODEL_SUGGEST_VERSION });
+    const existingSecret = "## Outcome\nA Test lab tab.\n\n## Dependencies\n- The `ANTHROPIC_API_KEY` function secret (already set for the Support Inbox).\n\n## Spec reference\nNone yet";
+    assert.strictEqual(cjs.suggestModel({ desc: existingSecret }).model, "standard", "a secret the ticket only needs is not a change to one");
+    assert.deepStrictEqual(keys(cjs.suggestModel({ desc: "## Outcome\nCopy.\n\n## Dependencies\nNone.\n\n## Spec reference\nbacklog-tracker/firestore.rules → supportEvalCases" })), ["security"], "the Spec reference still counts");
+    assert.deepStrictEqual(keys(cjs.suggestModel({ desc: "## Outcome\nLet viewers read it in firestore.rules\n\n## Test steps\n1. Open it." })), ["security"], "the Outcome still counts");
+    assert.deepStrictEqual(keys(cjs.suggestModel({ title: "Rotate refresh tokens", desc: "## Outcome\nx" })), ["security"], "the title still counts");
+  });
+
+  await test("v2: a negated keyword does not count; an un-negated one in the same text still does", async () => {
+    for (const d of ["No new secret or index.", "Does not change auth-gate.js", "Done without touching firestore.rules", "This never needs a data migration"]) {
+      assert.strictEqual(cjs.suggestModel({ desc: d }).model, "standard", d);
+    }
+    assert.deepStrictEqual(keys(cjs.suggestModel({ desc: "No new UI. Rotate refresh tokens." })), ["security"], "the negator belongs to another sentence");
+    assert.deepStrictEqual(keys(cjs.suggestModel({ desc: "No new secret, but firestore.rules gains a rule" })), ["security"], "a second, plain mention counts");
+    assert.deepStrictEqual(keys(cjs.suggestModel({ desc: "The console no longer stores refresh tokens in the page" })), ["security"], "'no longer' is not a negation of the keyword");
+  });
+
+  await test("buildInFlight: a handed-back patch, or a started attempt with no report since, holds the model", async () => {
+    const fire = { status: "started", buildAttemptId: "a1", at: "2026-11-18T10:00:00Z" };
+    assert.strictEqual(cjs.buildInFlight({ patchReady: true }), true);
+    assert.strictEqual(cjs.buildInFlight({ buildAttemptId: "a1", lastFire: fire }), true, "started, no report");
+    assert.strictEqual(cjs.buildInFlight({ buildAttemptId: "a1", lastFire: fire, buildSession: { status: "done", reportedAt: "2026-11-18T09:00:00Z" } }), true, "a report from an earlier attempt does not count");
+    assert.strictEqual(cjs.buildInFlight({ buildAttemptId: "a1", lastFire: fire, buildSession: { status: "done", reportedAt: { toMillis: () => Date.parse("2026-11-18T11:00:00Z") } } }), false, "reported since the fire");
+    assert.strictEqual(cjs.buildInFlight({ buildAttemptId: "a2", lastFire: fire }), false, "the fire is not the current attempt");
+    assert.strictEqual(cjs.buildInFlight({ buildAttemptId: "a1", lastFire: { ...fire, status: "failed" } }), false, "the fire never started a session");
+    assert.strictEqual(cjs.buildInFlight({}), false);
+
+    // The 18 Nov hand-over: fired Standard, the description completed with
+    // a security word in the same PATCH as patchReady. The suggestion is
+    // recorded; the model is not raised under the build.
+    const card = { model: "standard", modelAuto: true, patchReady: true, desc: "## Outcome\nEdit firestore.rules" };
+    const f = cjs.autoModelFields(card, cjs.suggestModel(card));
+    assert.strictEqual(f.modelSuggested.model, "advanced");
+    assert.ok(!("model" in f) && !("modelAuto" in f), "model left as fired");
+    const after = { ...card, ...f, patchReady: false };
+    assert.strictEqual(cjs.autoModelFields(after, cjs.suggestModel(after)).model, "advanced", "it follows once nothing holds it");
   });
 
   await test("the chip and the hint", async () => {
