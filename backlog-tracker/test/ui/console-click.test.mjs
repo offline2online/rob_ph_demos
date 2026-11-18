@@ -125,10 +125,13 @@ const scenarios = [
       await c.visible('[data-settings-pane="routine"]', "My Claude Routine opens");
       await c.waitText("#routine-binding-status", "Not set up", "it says I have none");
       assert.ok((await c.page.inputValue("#routine-bootstrap-prompt")).includes("ROUTINE_INSTRUCTIONS.md"), "the prompt to paste is there");
+      assert.strictEqual(await c.page.isDisabled("#routine-binding-save"), true, "nothing typed: Save is disabled");
       await c.page.fill("#routine-fire-url", "https://api.anthropic.com/v1/claude_code/routines/trig_1/fire");
+      assert.strictEqual(await c.page.isDisabled("#routine-binding-save"), false, "something typed: Save enables");
       await c.page.fill("#routine-fire-token", "sk-test-token");
       await c.click("#routine-binding-save", "Save");
       await c.waitText("#routine-binding-status", "Connected", "it says connected");
+      assert.strictEqual(await c.page.isDisabled("#routine-binding-save"), true, "saved and cleared: Save is disabled again");
       assert.deepStrictEqual(c.routineWrites.map((w) => w.fireUrl), ["https://api.anthropic.com/v1/claude_code/routines/trig_1/fire"]);
       assert.strictEqual(await c.page.inputValue("#routine-fire-token"), "", "the token is not left on the page");
       assert.strictEqual(await c.page.isVisible("#routine-binding-clear"), true, "Disconnect is offered");
@@ -486,9 +489,16 @@ const scenarios = [
       await c.page.locator('.role-edit[aria-label="Edit Support"]').click();
       await c.visible("#role-detail-page", "the role page opens");
       assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll("#role-permissions .role-group h3")].map((e) => e.textContent)), ["Build", "Promote", "Support", "Settings", "Other"]);
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "nothing changed: Save role is disabled");
+      await c.page.fill("#role-name", "Support team");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), false, "a changed name enables Save role");
+      await c.page.fill("#role-name", "Support");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "reverted: disabled again");
       await c.page.fill("#role-name", "Support team");
       await c.page.selectOption("#role-perm-concepts", "view");
       await c.click("#role-save", "Save role");
+      await c.waitText("#role-status", "Role saved.", "the save finishes");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "saved: Save role is disabled again");
       await until(async () => (await c.page.evaluate(() => { for (const d of globalThis.__fbStub.col("roles").values()) if (d.name === "Support team") return (d.permissions || {}).concepts; })) === "view", "the renamed role and its permission to persist", 8000);
       await c.click("#role-back-btn", "back to Roles");
       await c.visible("#roles-grid .ag-row", "roles listed again");
@@ -1890,9 +1900,14 @@ const scenarios = [
       await c.page.selectOption("#role-perm-concepts", "none");
       await c.click("#role-save", "Save role");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {}).concepts)) === "none", "the change to persist", 5000);
+      // The save redraws the page; wait for it, or the next edit is made on the form it replaces.
+      await c.waitText("#role-status", "Role saved.", "the save finishes");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "saved: Save role is disabled again");
       // an admin keeps User Management even when a role they hold says none
+      // The role already says none for User Management (the first save stored
+      // every section), so choosing none again changes nothing: Save stays off.
       await c.page.selectOption("#role-perm-user-management", "none");
-      await c.click("#role-save", "Save role");
+      assert.strictEqual(await c.page.isDisabled("#role-save"), true, "no change: Save role stays disabled");
       await until(async () => (await c.page.evaluate(() => (globalThis.__fbStub.col("roles").get("rEng").permissions || {})["user-management"])) === "none", "the lock-out attempt to persist", 5000);
       assert.strictEqual(await c.page.evaluate(() => document.getElementById("role-detail-page").hidden), false, "User Management is still open");
       // legacy links redirect

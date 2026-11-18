@@ -33,7 +33,9 @@ for (const width of [1280, 390]) {
       assert.match(text, /Saved, ends WXYZ/);
       assert.match(text, /Not set/);
       const ltx = c.page.locator('[data-media-key="ltx"]');
+      assert.strictEqual(await c.page.locator('[data-media-key-act="save-key"]:not([disabled])').count(), 0, "no key pasted: every Save is disabled");
       await ltx.locator("[data-media-key-value]").fill("ltxv_secret_value_123456");
+      assert.strictEqual(await c.page.locator('[data-media-key-act="save-key"]:not([disabled])').count(), 1, "only the row with a pasted key can be saved");
       await ltx.locator('[data-media-key-act="save-key"]').click();
       await until(() => c.mediaKeyWrites.some((w) => w.path.endsWith("/keys/ltx/test")), "save then test");
       const save = c.mediaKeyWrites.find((w) => w.method === "POST" && w.path === "/mediaKeys/v1/keys/ltx");
