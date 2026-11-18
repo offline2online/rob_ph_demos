@@ -3207,6 +3207,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); `aidanImprovements`, his self-improvement tickets (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
+| `functions/support-lab.js`, `functions/support-lab-core.js` | The Test lab's routes (`/supportMail/v1/lab/**`: Ask, cases, Add to test lab, runs and their steps) and its pure rules: a case checked (`cleanCaseInput`), what passes (`judgeCase`, shared with `scripts/support-eval.js`), claiming the next cases of a run (`claimNext`), a ticket's question and final answer (`caseFromTicket`) (`test/support-lab.test.js`) |
+| `public/js/support-lab.js`, `public/js/support-lab-core.js` | The Test lab tab (`#support/lab`, `#support/lab/case/<id>`) and its pure rules: a case's state, accuracy over time, failing cases, what is proposed after Ask |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
 
 **Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
@@ -3593,7 +3595,9 @@ the engine, as a customer's email to support@ and as the same email tagged
 `EVAL_PATHS=support` or `aidan` runs one. `test/answer-core.test.js` runs
 the same fixtures through both paths with a stand-in model, on every
 train. Run it after changing the prompts or the
-Help Centre, and add a case whenever a real email is matched badly.
+Help Centre, and add a case whenever a real email is matched badly: the
+Test lab's "Add to test lab" does that from the ticket, and the script runs
+the lab's cases too (below).
 
 Then one rule (`decideAction`) decides, for the Support Inbox only (Aidan's
 answer runs use the engine above and none of these gates):
@@ -3635,6 +3639,54 @@ server (`composeProblem` in both `support-core.js` files); a member can send
 `supportStats`, the `/v1/preview` route and their styles. `#support/stats`
 and `#support/try` open the inbox. The support figures are the three on the
 Dashboard's Support tile (below).
+
+**Test lab (18 Nov 2026).** The fourth tab, **Test lab** (`#support/lab`),
+asks the answering engine questions and tracks how often it answers right.
+No email is sent and no ticket is filed; the mailbox needn't be connected.
+
+- **Ask a question** (editors): a subject (optional) and the question.
+  **Ask** posts to `/supportMail/v1/lab/ask`, which runs the question through
+  `answerFromHelpCentre` (`functions/answer-core.js`) exactly as a
+  customer's first email to support@ from an ordinary sender, and answers
+  with the draft, every article the match step chose (each a link to its
+  Help Centre editor, `#faq-article/<id>`), the confidence and its steps
+  ("55% from 1 article, 82% with 2 combined"), and what `decideAction`
+  would do with today's settings: Sent by itself, Draft to approve or Needs
+  a person, with the reason. 60 questions an hour per member.
+- **Rate and keep**: Correct, Partly or Wrong; what should happen (these
+  articles, picked by searching the published Help Centre; no answer yet;
+  not about Personalisation Hub), proposed from what the engine did; and a
+  note. **Save to test set** stores it in `supportEvalCases`.
+- **Run all cases** starts a run (`/v1/lab/runs`) and steps through it from
+  the tab (`/v1/lab/runs/{id}/step`), three cases a step, side by side, so
+  each call ends inside the console address's one-minute limit. Each step
+  claims its cases in a transaction, so two tabs never run one twice; a
+  claim nobody finished in 2.5 minutes is run again, and Run all cases
+  continues a run a closed tab left (a run left for an hour is stopped).
+  `supportEvalRuns` records who, when, passed, failed, accuracy and each
+  case's result (ids and the judge's wording, never a question or a draft).
+  The tab shows the progress, the accuracy of the last 12 runs as bars,
+  the newest run's failing cases with the expected and matched article
+  titles, and every case as Not run, Passed, Failed or Needs review.
+- **Add to test lab** on a Support Inbox ticket, or an email in the Aidan
+  tab, copies the last customer email before the final answer, and that
+  answer, as case `t-<ticket id>` (once per ticket), and opens it. When
+  the answer recorded its articles (an automatic reply, Aidan's Help Centre
+  answer) they become the expected articles; otherwise the case reads
+  Needs review and is left out of runs until someone says what should
+  happen and saves.
+- A case passes by the same rule as the fixtures (`judgeCase`): the right
+  "about Personalisation Hub" call, one of the expected articles among
+  those chosen, no claim that the Help Centre answers a question it
+  doesn't, no reply to mail that isn't about the platform.
+- `scripts/support-eval.js` also runs the lab's cases, read straight from
+  Firestore when the workflow has the service account (`LAB_CASES=0` skips
+  them), printing only each case's id, source and article titles. A failing
+  lab case is reported, not a failed check.
+- Members read cases and runs (a case from a ticket holds a customer's
+  email); only the function writes them (`firestore.rules`). A view-only
+  member sees the set, the runs and each case, with no Ask, Save, Delete or
+  Run. Requirements: SUP-LAB-1 to 14.
 
 ### Connecting the mailbox (once, by an admin)
 
@@ -3708,6 +3760,7 @@ holds it to them:
 - **Tests**: `node test/support-core.test.js`, `node test/support-mail.test.js`
   (connection, sync, every gate before an automatic send, replies, spam,
   escalation; Firestore, Google and the model stubbed),
+  `node test/support-lab.test.js` (the Test lab's routes and runs),
   `node test/support-page-core.test.mjs`, `node test/ui/support-inbox.test.mjs`
   (the page in Chromium at 390, 820 and 1280 px, light and dark) and
   `node test/ui/support-touch.test.mjs` (the iPad, above).

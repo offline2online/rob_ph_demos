@@ -7142,6 +7142,80 @@ matching open one) when a run did not fully or well meet its request
   Inbox applies its gates (SUP-AI-2, SUP-AI-3); Aidan applies none
   (SUP-AID-22).
 
+### Test lab (18 Nov 2026)
+
+Requested 18 Nov 2026 (ticket x3MqwdJxQ0tJMGlcDi1Y): a place to ask the
+answering engine questions, rate the answers and track accuracy over time,
+with nothing sent and nothing touching the mailbox.
+
+- **SUP-LAB-1** Support › Support Inbox has a fourth tab, **Test lab**
+  (`#support/lab`), with two parts: "Ask a question" and "Test set". It
+  needs no connected mailbox.
+- **SUP-LAB-2** Ask takes a subject (optional) and a question (required, at
+  most 8,000 characters). It runs the question through the one answering
+  engine (`answerFromHelpCentre`, SUP-AI-13) as a customer's first email to
+  support@ from an ordinary sender, against the published Help Centre.
+  No email is sent, no ticket is filed and Google is never called. A member
+  can ask 60 questions an hour.
+- **SUP-LAB-3** The answer shows the drafted reply as the Support Inbox
+  would draft it, every article the match step chose (each a link to its
+  Help Centre editor, the ones used in the reply marked), the confidence,
+  and the change when articles were combined ("55% from 1 article, 82%
+  with 2 combined"), or "Not about PH" when the engine says so.
+- **SUP-LAB-4** It shows what `decideAction` would do with that answer for
+  such an email with today's settings: Sent by itself, Draft to approve or
+  Needs a person, with the reason. The lab calls `decideAction` unchanged;
+  it never changes a gate.
+- **SUP-LAB-5** An answer is rated Correct, Partly or Wrong, and given what
+  should happen: these articles (up to 3, picked by searching the published
+  Help Centre), no answer yet (the Help Centre doesn't answer it), or not
+  about Personalisation Hub. The choice starts from what the engine did. A
+  note says what was missing. **Save to test set** keeps it as a case.
+- **SUP-LAB-6** A case passes when the engine makes the right "about
+  Personalisation Hub" call, chooses at least one expected article, does not
+  claim the Help Centre answers a question with no expected article, and
+  writes no reply to mail that isn't about the platform: the same rule
+  (`judgeCase`) as `scripts/support-eval.js`'s fixtures.
+- **SUP-LAB-7** **Run all cases** runs every case except those needing
+  review through the engine on the server, a few at a time, each call
+  inside the console address's one-minute limit. Each case is run once per
+  run even with two tabs stepping it; a case left half-run by a closed tab
+  is run again after 2.5 minutes, and Run all cases continues a run still in
+  progress (one left for an hour is stopped). At most 300 cases a run and 10
+  runs an hour per member.
+- **SUP-LAB-8** A run records who started it, when, the cases passed and
+  failed, the accuracy and each case's result: the judge's wording and
+  article ids, never a question or a draft. Each case keeps its last
+  result.
+- **SUP-LAB-9** The tab shows "Running: n of m cases done" while a run is
+  in progress, the accuracy of the last 12 finished runs as bars with
+  passed and failed, and the newest run's failing cases with the expected
+  and the matched article titles. Every case is listed as Not run, Passed,
+  Failed or Needs review, with its rating and where it came from.
+- **SUP-LAB-10** A case opens at `#support/lab/case/<id>`, where an editor
+  changes its question, rating, what should happen and note, or deletes it.
+  Changing the question or what should happen clears its last result.
+- **SUP-LAB-11** **Add to test lab** on a Support Inbox ticket, or an email
+  in the Aidan tab, copies the last customer email before the final answer
+  and that answer ("The answer that was sent") as one case per ticket
+  (`t-<ticket id>`), and opens it. When the answer recorded its articles
+  (an automatic reply, Aidan's Help Centre answer) they are the expected
+  articles; otherwise the case reads Needs review and is left out of runs
+  until someone says what should happen.
+- **SUP-LAB-12** Members read cases and runs; only the supportMail function
+  writes them. A view-only member sees the set, the runs and each case,
+  with no Ask, Save, Delete or Run. Without `ANTHROPIC_API_KEY`, Ask and
+  Run all cases say no drafting model is configured.
+- **SUP-LAB-13** `scripts/support-eval.js` also runs the lab's cases, read
+  straight from Firestore when it has the service account (`LAB_CASES=0`
+  skips them). Its log shows only each case's id, source and article
+  titles, never a question, subject or draft; a failing lab case is
+  reported and does not fail the check. The function logs ids and counts
+  only.
+- **SUP-LAB-14** Every control is a button, a link or a form field acting
+  on click (iPad taps), works at 390, 820 and 1280 px with no sideways
+  scroll, and a field being typed in is not redrawn by incoming data.
+
 ### High-value senders
 
 - **SUP-HV-1** High value means: the sender's domain matches a Prospects
@@ -7238,6 +7312,20 @@ true`, `confidence` and `articles`. `supportSecrets/aidan`: Aidan's `allowedSend
 collateral `example: true`, `format`, `industry` (SUP-AID-34) (members read;
 only the function writes). Aidan's sent collateral reply has `collateral:
 true` and both files in `attachments`.
+`supportEvalCases/{id}` (the Test lab, SUP-LAB): `subject`, `text`,
+`expect` (`articles` | `none` | `unrelated`; empty while it needs review),
+`articleIds` (up to 3), `rating` (`correct` | `partly` | `wrong` | empty),
+`note`, `needsReview`, `source` (`lab` | `support` | `aidan`), `ticketId`,
+`ticketKey`, `finalAnswer`, `answeredBy` (`ai` | `aidan` | `person`, on a
+case from a ticket), `answered {articleIds, confidence}` (what the engine
+answered when rated), `lastResult {runId, at, passed, problems[], chosen[],
+cited[], confidence, relevant, answerable, error?}`, `createdBy`,
+`createdAt`, `updatedBy`, `updatedAt`. `supportEvalRuns/{id}`: `status`
+(`running` | `done` | `stopped`), `startedBy`, `startedAt`, `updatedAt`,
+`finishedAt`, `total`, `caseIds`, `pending`, `claims [{id, at}]`, `results
+{<caseId>: {passed, problems[], chosen[], cited[], confidence, relevant,
+answerable, error?}}`, `passed`, `failed`, `done`, `accuracy` (0 to 1).
+Both member-read, function-written.
 
 ### Known gaps
 

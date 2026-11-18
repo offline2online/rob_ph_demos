@@ -5,6 +5,9 @@
 // Aidan are plain inboxes: an email list and the thread, with Reply (and, in
 // Aidan, what Aidan did with each thread).
 // The email icon in the header writes a new email from the mailbox (#support/compose).
+// A fourth tab, Test lab (#support/lab, support-lab.js), asks the answering
+// engine questions and tracks its accuracy; "Add to test lab" on a Support
+// Inbox or Aidan ticket copies its question and final answer there.
 // Tickets are read straight from Firestore (supportTickets + messages); every
 // change goes through the supportMail function (/supportMail/v1/**), which
 // sends the email, keeps Gmail in step and records who did what. Rules are in
@@ -20,6 +23,7 @@ import {
   aidanView, aidanThreadState, aidanCollateral, aidanParts, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
   MARKED_UNREAD, isMarkedUnread, bulkActions, bulkAction, BULK_MOVES, bulkSpamConfirmText, bulkResultText, keepSelected,
 } from "./support-core.js";
+import { mountSupportLab } from "./support-lab.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
@@ -109,6 +113,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   let composer = { ticketId: "", text: "", usedDraft: false, faq: "" };
   let busy = false, syncTimer = null, visible = false, stale = false;
   const opened = readOpened();
+  // The Test lab draws into the same view; its own data redraws through render().
+  const lab = mountSupportLab({ db, view, canEdit, apiHeaders, go, alert, confirm, requestRender: (force) => render(force) });
   // The rows ticked on the list on show, and the message left by the last
   // action on them. Both go when the tab or queue changes (show()); a redraw
   // from new data keeps the ticks of every thread still in the list.
@@ -198,13 +204,16 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     refocus(focused);
   }
   function draw() {
+    const tab = route.view === "lab" ? "lab" : tabOf(inboxKey());
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
-      const on = b.dataset.supportTab === tabOf(inboxKey());
+      const on = b.dataset.supportTab === tab;
       b.classList.toggle("active", on);
       b.setAttribute("aria-selected", String(on));
     });
     $("support-sync-btn").hidden = !(status && status.connected);
     $("support-compose-btn").hidden = !(status && status.connected);
+    // The lab needs no mailbox and no tickets.
+    if (route.view === "lab") return lab.render();
     if (status && !status.connected && !tickets.length) {
       view.innerHTML = `<div class="support-empty">${icon("mark_email_unread")}<p>Connect the support mailbox to start receiving tickets.</p>
         <button type="button" class="btn-primary" data-support-act="open-settings">Open Settings</button></div>`;
@@ -394,7 +403,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       </div>
       ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
         ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`
-        : `<button type="button" class="btn-ghost" data-support-status="spam">${icon("report")} Mark as spam</button>`}</div>` : ""}
+        : `<button type="button" class="btn-ghost" data-support-status="spam">${icon("report")} Mark as spam</button>`}${box.agent && !spam ? `<button type="button" class="btn-ghost" data-support-act="to-lab">${icon("fact_check")} Add to test lab</button>` : ""}</div>` : ""}
       <ol class="support-thread" id="support-thread" aria-label="Conversation"></ol>
       ${!edit || spam ? "" : `<div class="support-composer">
         <label class="field-label" for="support-reply">Reply to ${esc(t.customerEmail)}</label>
@@ -439,6 +448,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         ${t.status === "resolved" ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("undo")} Reopen</button>` : `<button type="button" class="btn-ghost" data-support-status="resolved">${icon("task_alt")} Resolve</button>`}
         <button type="button" class="btn-ghost" data-support-status="spam">${icon("report")} Mark as spam</button>
         ${t.kanbanKey ? "" : `<button type="button" class="btn-ghost" data-support-act="escalate">${icon("view_kanban")} Raise on Staff Kanban</button>`}
+        ${t.automated ? "" : `<button type="button" class="btn-ghost" data-support-act="to-lab">${icon("fact_check")} Add to test lab</button>`}
         <label class="support-assign">Assigned to <select id="support-assign" aria-label="Assigned to"><option value="">No one</option>${(members || []).map((m) => `<option value="${esc(m.email)}"${m.email === t.assignee ? " selected" : ""}>${esc(m.name)}</option>`).join("")}${t.assignee && !(members || []).some((m) => m.email === t.assignee) ? `<option value="${esc(t.assignee)}" selected>${esc(t.assignee)}</option>` : ""}</select></label>`}
       </div>`;
     const draftCard = draft && edit && t.status !== "spam" ? `<div class="support-draft">
@@ -615,6 +625,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (a === "use-draft" && t.aiDraft) { composer.text = t.aiDraft.text; composer.usedDraft = true; renderTicket(); return $("support-reply").focus(); }
     if (a === "redraft") return act(() => api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/draft`), "A reply couldn't be drafted");
     if (a === "escalate") return act(() => api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/escalate`), "The Staff Kanban ticket wasn't raised");
+    // Its question and final answer become a Test lab case (once per ticket), opened to say what should happen.
+    if (a === "to-lab") {
+      let id = "";
+      await act(async () => { id = (await api(apiHeaders, "lab/from-ticket", { body: { ticketId: t.id, source: isPlainInbox(inboxKey()) ? "aidan" : "support" } })).id; }, "The ticket wasn't added to the test lab");
+      return id ? go(supportHash({ view: "lab", caseId: id })) : undefined;
+    }
     if (a === "send") return sendReply(false);
     if (a === "send-resolve") return sendReply(true);
     if (a === "note") {
@@ -625,6 +641,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   });
   document.querySelectorAll("[data-support-tab]").forEach((b) => b.addEventListener("click", () => {
     const tab = b.dataset.supportTab;
+    if (tab === "lab") return go(supportHash({ view: "lab" }));
     const inbox = INBOXES.find((i) => tabOf(i.key) === tab);
     if (inbox) go(supportHash({ inbox: inbox.key }));
   }));
@@ -639,6 +656,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       if (key !== listKey) { selected = new Set(); bulkResult = ""; listKey = key; }
       route = r;
       start();
+      if (r.view === "lab") lab.show(r);
       render(true);
       if (!syncTimer) {
         syncTimer = setInterval(() => { if (!document.hidden) sync({ quiet: true }); }, SYNC_EVERY_MS);

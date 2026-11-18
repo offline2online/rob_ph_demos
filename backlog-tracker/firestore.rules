@@ -1087,6 +1087,19 @@ service cloud.firestore {
     match /supportCounters/{doc} {
       allow read, write: if false;
     }
+    // The Support Inbox's Test lab (functions/support-lab.js):
+    // supportEvalCases/{id} is one test question with what should happen to it
+    // (a case copied from a ticket holds that customer's email), and
+    // supportEvalRuns/{id} one run of every case (ids and counts only). Members
+    // read both; only the supportMail function writes them.
+    match /supportEvalCases/{caseId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    match /supportEvalRuns/{runId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
 
     // ── AWS Partner Central (functions/partner-central.js) ─────────────────
     // Call audit, connection state and catalogue setting are server-only: the

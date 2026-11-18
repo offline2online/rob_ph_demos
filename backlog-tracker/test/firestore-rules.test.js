@@ -94,6 +94,9 @@ async function reset() {
     // Aidan (functions/aidan.js): its configuration and one kept reference.
     await setDoc(doc(db, "supportSecrets/aidan"), { allowedSenders: ["owner@example.com"], enabled: true });
     await setDoc(doc(db, "skillReferences/r1"), { skillId: "s1", subject: "Onboarding notes", text: "Notes", files: [] });
+    // The Support Inbox's Test lab (functions/support-lab.js): one case and one run.
+    await setDoc(doc(db, "supportEvalCases/c1"), { subject: "Displays", text: "How do I add a display?", expect: "articles", articleIds: ["a1"] });
+    await setDoc(doc(db, "supportEvalRuns/r1"), { status: "done", total: 1, passed: 1, failed: 0, accuracy: 1, results: {} });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -609,6 +612,11 @@ async function main() {
   await check("A member may read Aidan's reference material", "allow", () => getDoc(doc(as(MEMBER), "skillReferences/r1")));
   await check("A stranger cannot read Aidan's reference material", "deny", () => getDoc(doc(as(STRANGER), "skillReferences/r1")));
   await check("An editor cannot write reference material from a client", "deny", () => setDoc(doc(as(MEMBER), "skillReferences/r2"), { skillId: "s1", text: "x" }));
+  // The Test lab: member-read, server-written (a case may hold a customer's email).
+  await check("A member may read the Test lab's cases and runs", "allow", () => Promise.all([getDoc(doc(as(MEMBER), "supportEvalCases/c1")), getDocs(collection(as(MEMBER), "supportEvalRuns"))]));
+  await check("A stranger cannot read a Test lab case", "deny", () => getDoc(doc(as(STRANGER), "supportEvalCases/c1")));
+  await check("An editor cannot write a Test lab case from a client", "deny", () => setDoc(doc(as(MEMBER), "supportEvalCases/c2"), { text: "x", expect: "none" }));
+  await check("A team admin cannot write a Test lab run from a client", "deny", () => updateDoc(doc(as(TEAM_ADMIN), "supportEvalRuns/r1"), { accuracy: 1 }));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 

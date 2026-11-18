@@ -331,8 +331,9 @@ export function filterTickets(tickets, queueKey, search, inbox) {
 }
 
 // "#support", "#support?queue=spam", "#support/hello", "#support/aidan?queue=spam",
-// "#support/compose", "#support/ticket/<id>", "#support/hello/ticket/<id>"
-// -> { view, inbox, queue, ticketId }, or null when the hash is not a Support Inbox route.
+// "#support/compose", "#support/ticket/<id>", "#support/hello/ticket/<id>",
+// "#support/lab", "#support/lab/case/<id>" (the Test lab, support-lab.js)
+// -> { view, inbox, queue, ticketId, caseId }, or null when the hash is not a Support Inbox route.
 // Routes are split by inbox: the Support Inbox has its queues; Hello and Aidan
 // have none, so their `queue` is "" (the emails), "spam" or "archived", and an
 // old link to any other queue of theirs opens the emails.
@@ -345,6 +346,10 @@ export function supportRoute(hash) {
   if (path !== "#support" && !path.startsWith("#support/")) return null;
   let rest = path.slice("#support".length).replace(/^\//, "");
   if (rest === "compose") return { view: "compose", inbox: DEFAULT_INBOX, queue: "", ticketId: "" };
+  if (rest === "lab" || rest.startsWith("lab/")) {
+    const c = rest.match(/^lab\/case\/(.+)$/);
+    return { view: "lab", inbox: DEFAULT_INBOX, queue: "", ticketId: "", caseId: c ? decodeURIComponent(c[1]) : "" };
+  }
   if (rest === "stats" || rest === "try") rest = "";
   let inbox = DEFAULT_INBOX;
   const named = INBOX_KEYS.find((k) => k !== DEFAULT_INBOX && (rest === k || rest.startsWith(`${k}/`)));
@@ -355,8 +360,9 @@ export function supportRoute(hash) {
   if (isPlainInbox(inbox)) return { view: "inbox", inbox, queue: PLAIN_LISTS.includes(queue) ? queue : "", ticketId: "" };
   return { view: "inbox", inbox, queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
-export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "" } = {}) {
+export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "", caseId = "" } = {}) {
   if (view === "compose") return "#support/compose";
+  if (view === "lab") return caseId ? `#support/lab/case/${encodeURIComponent(caseId)}` : "#support/lab";
   const key = inboxOf(inbox).key;
   const base = key === DEFAULT_INBOX ? "#support" : `#support/${key}`;
   if (view === "ticket") return `${base}/ticket/${encodeURIComponent(ticketId)}`;

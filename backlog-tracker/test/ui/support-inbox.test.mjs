@@ -125,8 +125,8 @@ try {
       await page.keyboard.press("Enter");
       await until(() => o.supportCalls.some((c) => c.path === "tickets/t1/status"), "the spam call");
       assert.strictEqual(o.supportCalls.find((c) => c.path === "tickets/t1/status").body.status, "spam");
-      // The Stats and Try an email tabs are gone: three inbox tabs, and an old link to either opens the inbox.
-      assert.deepStrictEqual(await page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"]);
+      // The Stats and Try an email tabs are gone: three inbox tabs and the Test lab, and an old link to either opens the inbox.
+      assert.deepStrictEqual(await page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan", "Test lab"]);
       for (const old of ["#support/stats", "#support/try"]) {
         await page.evaluate((hash) => { location.hash = hash; }, old);
         await until(() => page.locator("#support-page .support-row").count(), `the inbox at ${old}`);
@@ -583,5 +583,41 @@ try {
     await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
     assert.strictEqual(await page.locator("[data-support-pick], #support-pick-all, #support-bulk").count(), 0);
   });
+  // The Test lab (x3MqwdJxQ0tJMGlcDi1Y): an answer, the rating controls, a run and a failing case fit
+  // at every width, light and dark, with 44px touch targets and no sideways scroll.
+  const labDocs = {
+    ...docs,
+    faqArticles: { ...docs.faqArticles, a3: { status: "published", title: "Pair a screen with a store", keywords: ["pair"] } },
+    supportEvalCases: {
+      c1: { subject: "A rather long subject line for a question about adding a display to a store, to see it wrap", text: "How?", expect: "articles", articleIds: ["a3"], rating: "wrong", source: "support", ticketKey: "SUP-1", createdAt: T0, updatedAt: T0, lastResult: { runId: "r1", passed: false, problems: ["no right article chosen"], chosen: ["a1"] } },
+      c2: { text: "Waiting for review", needsReview: true, expect: "", source: "aidan", ticketKey: "SUP-9", createdAt: T0, updatedAt: T0 },
+    },
+    supportEvalRuns: { r1: { status: "done", startedAt: t(T0), finishedAt: t(T0 + 9000), total: 1, done: 1, passed: 0, failed: 1, accuracy: 0, results: { c1: { passed: false, problems: ["no right article chosen"], chosen: ["a1"] } } } },
+  };
+  const labAnswer = { ok: true, relevant: true, answerable: true, confidence: 0.62, confidenceSteps: [{ articles: 1, confidence: 0.5 }, { articles: 2, confidence: 0.62 }],
+    matched: [{ id: "a1", title: "Add a display to a store" }], articles: [{ id: "a1", title: "Add a display to a store" }], draft: "Hi there,\n\nThanks for your email.\n\nOpen Displays.",
+    decision: { action: "review", label: "Draft to approve", reason: "Sending by itself is switched off." } };
+  for (const theme of ["light", "dark"]) for (const width of [390, 820, 1280]) {
+    await run(`Test lab ${theme} @${width}px`, { seed: seedFor("editor", { docs: labDocs, supportAnswers: { "lab/ask": labAnswer } }), width, height: 900, hash: "#support/lab" }, async (page) => {
+      if (theme === "dark") await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+      await until(() => page.locator(".support-lab-run").count(), "the run", 15000);
+      await page.fill("#lab-text", "How do I add a display?");
+      await page.click('[data-lab-act="ask"]');
+      await until(() => page.locator("#lab-result").count(), "the answer");
+      await page.click('[data-lab-rate="partly"]');
+      await page.fill("#lab-rate-pick", "pair");
+      await until(() => page.locator('[data-lab-pick="a3"]').count(), "the article search");
+      await page.click('[data-lab-pick="a3"]');
+      let a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on the Test lab (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], "touch targets under 44px on the Test lab");
+      if (theme === "light") await shot(page, `lab-${width}`);
+      await page.click('[data-lab-case="c2"]');
+      await until(() => page.locator("#lab-case-text").count(), "the case page");
+      a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on a case (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], "touch targets under 44px on a case");
+    });
+  }
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);
