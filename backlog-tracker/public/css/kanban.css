@@ -795,6 +795,11 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
 .kb-bell-item.unread { background: var(--primary-tint); }
 .kb-bell-item > span:last-child { display: flex; flex-direction: column; gap: 2px; }
 .kb-bell-empty { padding: 8px; margin: 0; }
+/* The comment behind a "mentioned you in a comment" notification, on hover or keyboard focus (KB-NAV-2).
+   Beside the panel; under its notification (.inline) where the window has no room beside. */
+.kb-bell-preview { position: absolute; z-index: 31; width: 280px; max-width: calc(100vw - 32px); box-sizing: border-box; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--ap-radius); background: var(--ap-card); box-shadow: 0 0 0 .5px var(--ap-divider), 0 14px 36px rgba(0, 0, 0, .18); font-size: 13px; line-height: 1.45; color: var(--text); text-align: left; pointer-events: none; }
+.kb-bell-preview.inline { position: static; width: auto; max-width: none; margin: 2px 8px 6px 42px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); box-shadow: none; }
+.kb-bell-preview-text { white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 12; line-clamp: 12; overflow: hidden; }
 /* The console's confirm dialog opens over the task modal (Delete ticket). */
 html[data-page="staff-kanban"] #dialog-backdrop { z-index: 60; }
 .kb-team-name { display: inline-flex; align-items: center; gap: 6px; margin-left: 12px; font-size: 12px; }
