@@ -456,7 +456,7 @@ export function defineNewCases(E) {
     assert.ok(status, `a status line: ${log.join(" | ")}`);
     const text = log.join(" | ");
     assert.match(text, /changed Priority from \w+ to Lowest/, text);
-    assert.match(text, /assigned to Th\S+/, text);
+    assert.match(text, new RegExp(`assigned to ${E.person("thao")}`), text);
     assert.match(text, /changed Estimate from .+ to 2d/, text);
     assert.match(text, /changed Time logged from .+ to 4h/, text);
     assert.match(text, /changed Due date from .+ to 2026-12-01/, text);
@@ -577,7 +577,7 @@ export function defineNewCases(E) {
       for (const from of ["backlog", "approved", "completed"]) {
         await statusMove(p, dev, from); await statusMove(p, dev, "ready-for-testing");
         const x = await where(p, dev);
-        assert.equal(x.status, "ready-for-testing", `from ${from}`); assert.equal(x.avatar, "Huy", `from ${from}: assignee unchanged`);
+        assert.equal(x.status, "ready-for-testing", `from ${from}`); assert.equal(x.avatar, E.person("huy"), `from ${from}: assignee unchanged`);
       }
       await p.done();
       return;
@@ -608,9 +608,9 @@ export function defineNewCases(E) {
       const x = await where(p, dev);
       assert.equal(x.status, "ready-for-testing", `from ${from}`);
       assert.equal(x.avatar, tester, `from ${from}: handed to the tester`);
-      assert.match(await p.textContent(`${card(dev)} .kb-handoff`), /From Huy/, `from ${from}: remembers the developer`);
+      assert.match(await p.textContent(`${card(dev)} .kb-handoff`), new RegExp(`From ${E.person("huy")}`), `from ${from}: remembers the developer`);
       await statusMove(p, dev, "in-progress");
-      assert.equal((await where(p, dev)).avatar, "Huy", `back from testing (from ${from}) returns it to Huy`);
+      assert.equal((await where(p, dev)).avatar, E.person("huy"), `back from testing (from ${from}) returns it to Huy`);
     }
     // out of Ready for Testing to Approved, Backlog and closed: the spec only names In Progress and Ready for Dev
     const seen = [];
@@ -1273,12 +1273,12 @@ export function defineNewCases(E) {
     const a = await open(prof, E.hash("kanban"));
     await openTask(a, "PH-20");
     assert.equal((await menus(a)).filter((m) => m.menu).length, 2, "an admin sees ⋮ on every comment");
-    const huyMenu = '#f-comments .kb-comment:has(b:text-is("Huy")) ';
+    const huyMenu = `#f-comments .kb-comment:has(b:text-is("${E.person("huy")}")) `;
     await press(a, huyMenu + "[data-comment-menu]");
     assert.equal(await a.$$eval(huyMenu + ".kb-comment-menu button", (b) => b.map((x) => x.textContent.trim()).join()), "Delete", "no Edit on someone else's");
     await press(a, huyMenu + "[data-comment-delete]");
     await a.waitForSelector("#dialog-backdrop:not([hidden])"); await press(a, "#dialog-ok"); await sleep(400);
-    assert.equal((await menus(a)).some((m) => m.who === "Huy"), false, "Huy's comment is gone");
+    assert.equal((await menus(a)).some((m) => m.who === E.person("huy")), false, "Huy's comment is gone");
     assert.equal((await stored(a, "PH-20")).commentCount, 1);
     await a.done();
   });
@@ -1417,32 +1417,43 @@ export function defineNewCases(E) {
   // TC-27 and TC-29 depend on how the build holds photos and roles: the hooks say how.
   const consoleOnly = (why) => (C ? {} : { skip: why });
 
-  T("TC-30", "an admin changes \"Shown as\"; the new name is on cards, filters, the assignee list, report and mentions; Vietnamese diacritics render and sort", { ...consoleOnly("Console only: the prototype's team is fixed demo data and has no Shown as setting"), timeout: 200000 }, async (prof) => {
+  T("TC-30", "people are shown by full name on cards, filters, the assignee list, report and mentions; an admin's short name changes what @ matches, not the name shown; Vietnamese diacritics render and sort", { ...consoleOnly("Console only: the prototype's team is fixed demo data, shown by first name, and has no short-name setting"), timeout: 200000 }, async (prof) => {
     const p = await open(prof, E.hash("kanban"));
-    const huy = E.pid("huy");
-    // before: the board says "Huy" (Lê Quang Huy)
+    const huy = E.pid("huy"), HUY = E.person("huy");
+    // the board says "Lê Quang Huy", not "Huy"
     const chipNames = () => p.$$eval(".kb-person-chip > span:last-child", (e) => e.map((x) => x.textContent.trim()));
     const chips0 = await chipNames();
-    assert.deepEqual(chips0.slice(0, 7), ["Rob", "Đức", "Huy", "Linh", "Minh", "Thảo", "Unassigned"], "diacritics render and sort (Đ with D, Ả with A)");
+    assert.deepEqual(chips0.slice(0, 7), [E.person("rob"), E.person("duc"), HUY, E.person("minh"), E.person("thao"), E.person("linh"), "Unassigned"], "full names; diacritics render and sort (Đ with D)");
+    const shown = async (step) => {
+      assert.ok((await chipNames()).includes(HUY), `${step}: filter chip`);
+      assert.equal(await p.$eval(`.kb-person-chip[data-person="${huy}"]`, (e) => e.title), HUY, `${step}: filter chip tooltip`);
+      assert.equal(await p.$eval(`${card("PH-29")} .kb-card-footer .kb-avatar`, (e) => e.title), HUY, `${step}: card`);
+    };
+    await shown("before");
     await E.go(p, "settings"); await p.waitForSelector("[data-first-for]");
-    await p.fill(`[data-first-for="${huy}"]`, "Quang"); await p.keyboard.press("Tab"); await sleep(300);
-    assert.match(await toastText(p), /Shown as .*Quang/);
+    assert.ok((await p.$$eval(".kb-team li b", (e) => e.map((x) => x.textContent.trim()))).includes(HUY), "Team lists full names");
+    await p.fill(`[data-first-for="${huy}"]`, "Bear"); await p.keyboard.press("Tab"); await sleep(300);
+    assert.match(await toastText(p), /Short name is .*Bear/);
     await E.go(p, "kanban"); await p.waitForSelector(".kb-card");
-    assert.ok((await chipNames()).includes("Quang"), "filter chip");
-    assert.equal(await p.$eval(`${card("PH-29")} .kb-card-footer .kb-avatar`, (e) => e.title), "Quang", "card");
+    await shown("after a short name is set");
+    assert.ok(!(await chipNames()).includes("Bear"), "the short name is not shown as their name");
     await openTask(p, "PH-29");
-    assert.ok((await p.$$eval("#f-assignee option", (e) => e.map((x) => x.textContent))).includes("Quang"), "assignee list");
-    await typeDescription(p, " @qua"); await sleep(200);
-    assert.ok((await p.$$eval(".kb-mention-item", (e) => e.map((x) => x.textContent))).some((t) => t.slice(1).startsWith("Quang")), "mention list");
+    const options = await p.$$eval("#f-assignee option", (e) => e.map((x) => x.textContent));
+    assert.ok(options.includes(HUY) && !options.includes("Bear") && !options.includes("Huy"), `assignee list: ${options.join(", ")}`);
+    await typeDescription(p, " @bea"); await sleep(200);
+    const offered = await p.$$eval(".kb-mention-item", (e) => e.map((x) => x.textContent.trim()));
+    assert.ok(offered.length === 1 && offered[0].endsWith(HUY), `typing the short name after @ finds them, listed by full name: ${offered.join(" | ")}`);
+    await p.keyboard.press("Enter"); await sleep(150);
+    assert.equal(await p.$eval(`[data-field="description"] .kb-mention[data-user="${huy}"]`, (e) => e.textContent.trim()), `@${HUY}`, "the mention chip carries the full name");
     await p.keyboard.press("Escape").catch(() => {});
     if (await modalOpen(p)) await closeTask(p);
     await E.go(p, "report", `release=${E.rel("4.12")}`); await p.waitForSelector(".kb-bar-row");
-    assert.ok((await p.$$eval(".kb-bar-name", (e) => e.map((x) => x.textContent.trim()))).some((t) => t.endsWith("Quang")), "report");
-    // reset: an empty name goes back to the first word of the full name
+    assert.ok((await p.$$eval(".kb-bar-name", (e) => e.map((x) => x.textContent.trim()))).some((t) => t.endsWith(HUY)), "report");
+    assert.ok((await p.$$eval("#kb-view select option", (e) => e.map((x) => x.textContent.trim()))).includes(HUY), "the report's Staff member filter lists full names");
+    // reset the short name
     await E.go(p, "settings"); await p.waitForSelector("[data-first-for]");
     await p.fill(`[data-first-for="${huy}"]`, ""); await p.keyboard.press("Tab"); await sleep(300);
-    await E.go(p, "kanban"); await p.waitForSelector(".kb-card");
-    assert.ok(!(await chipNames()).includes("Quang"));
+    assert.match(await toastText(p), /Short name reset/);
     await p.done();
   });
 
@@ -1455,7 +1466,7 @@ export function defineNewCases(E) {
     await openTask(p, "PH-34");
     assert.ok((await p.$$eval("#f-assignee option", (e) => e.map((x) => x.value))).includes(newbie), "in the assignee list");
     await p.selectOption("#f-assignee", newbie); await saveTask(p);
-    assert.equal(await p.$eval(`${card("PH-34")} .kb-card-footer .kb-avatar`, (e) => e.title), "Noor", "the ticket shows the new member");
+    assert.equal(await p.$eval(`${card("PH-34")} .kb-card-footer .kb-avatar`, (e) => e.title), "Noor Ali", "the ticket shows the new member by full name");
     // disabled: gone from the pickers, still named on the ticket
     await p.evaluate((n) => { const b = globalThis.__fbStub; const c = b.col("memberDirectory"); c.set(n, { ...c.get(n), disabled: true }); b.notify(); }, newbie);
     await sleep(500);

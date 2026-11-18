@@ -223,7 +223,7 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 
 | Read | Write (editor and admin) |
 | --- | --- |
-| `kanban_list_people` (members by first name, releases, sprints, projects, current release) | `kanban_create_task` (always into Backlog, next PH-n key) |
+| `kanban_list_people` (members by short name and the full name the board shows, releases, sprints, projects, current release) | `kanban_create_task` (always into Backlog, next PH-n key) |
 | `kanban_list_tasks` (the board's filters: assignee or `me`, release, status, type, priority, sprint, project, label, flagged, search) | `kanban_update_task` (any field but the column) |
 | `kanban_get_task` (everything, with comments, activity, `descriptionHtml`, links (stored on both tickets), the ticket's `level` / `levelName` and its children) | `kanban_move_task` (status, plus `completed` / `withdrawn` for the last column; applies the testing hand-off; a parent whose children are then all done moves to Ready for Testing by itself, `parentsMovedToTesting`) |
 | `kanban_search_tickets` (number or words, best 50, server-side) | `kanban_assign_task`, `kanban_flag_task` |
@@ -239,8 +239,8 @@ server instructions. `test/kanban-mcp.test.js` checks both.
 
 ### Staff Kanban: staff names and pronunciation
 
-Agents, voice agents especially, must spell and say staff names correctly. Each member has the
-board's spelling (`name`), a `fullName` and a hidden `pronunciation`: a plain-English sound-alike
+Agents, voice agents especially, must spell and say staff names correctly. Each member has a
+short name (`name`, the spelling to use), a `fullName` (what the board shows; `assigneeName`, `fromName` and the notes the tools write use it) and a hidden `pronunciation`: a plain-English sound-alike
 such as `Said "Zui"`. It lives in the server-only `staffPronunciations/{email}` collection
 (`firestore.rules` deny every client), so **no board page, profile or settings screen can show it,
 including to the member it is about**; it is not on `memberDirectory`. `kanban_list_people` and

@@ -6,9 +6,9 @@
 // limit(30) listener ordered by `at` (newest first), plus a count() for the
 // unread badge, re-run whenever that listener's result changes.
 import {
-  collection, doc, getDocs, getCountFromServer, onSnapshot, query, where, orderBy, limit, writeBatch,
+  collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, query, where, orderBy, limit, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { avatarHTML, memberLabel, normEmail } from "../avatar.js";
+import { avatarHTML, getAvatarMember, memberLabel, normEmail } from "../avatar.js";
 import { canonicalEmail } from "./kanban-core.js";
 
 export const BELL_LIMIT = 30;
@@ -18,9 +18,19 @@ export const PRUNE_BATCH = 200;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const isoOf = (v) => (v && v.toDate ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : typeof v === "string" ? v : "");
 
-// What happened, in words: "Rob assigned PH-7 to you".
-export function describe(n, firstOf = (e) => String(memberLabel(e) || "").split(/[\s@]/)[0] || "Someone") {
-  const who = `<b>${esc(firstOf(n.from))}</b>`;
+// A person's full name: first name + last name as saved in Users, else their
+// display name, else the part of their address before the @.
+export function fullNameOf(e, row) {
+  const m = row || getAvatarMember(e) || {};
+  const saved = [m.firstName, m.lastName].map((x) => String(x || "").trim()).filter(Boolean).join(" ");
+  if (saved) return saved;
+  const label = String((row && row.displayName) || memberLabel(e) || "").trim();
+  return (label.includes("@") && !/\s/.test(label) ? label.split("@")[0] : label) || "Someone";
+}
+
+// What happened, in words: "Minh Nguyen assigned this to you".
+export function describe(n, nameOf = fullNameOf) {
+  const who = `<b>${esc(nameOf(n.from))}</b>`;
   switch (n.kind) {
     case "assigned": return `${who} assigned this to you`;
     case "testing": return `${who} handed this to you for testing`;
@@ -47,9 +57,23 @@ export function groupByTicket(list) {
 export function mountNotificationBell({ db, me, host, openTicket, onError = () => {} }) {
   // Notifications are addressed to a person's own address, whichever of their addresses they signed in with.
   const mine = canonicalEmail(normEmail(me));
-  const state = { list: [], unread: 0, open: false, firstNames: {}, error: "", busy: false };
-  // The first names the Kanban settings give people ("Huy"), else the first word of their name.
-  const firstOf = (e) => state.firstNames[normEmail(e)] || String(memberLabel(e) || "").split(/[\s@]/)[0] || "Someone";
+  const state = { list: [], unread: 0, open: false, names: {}, error: "", busy: false };
+  // Who each notification is from, by full name. The console's own record of a
+  // member may not be loaded on this page yet, so each sender's directory row
+  // is read once (memberDirectory: name and photo, readable by every member).
+  const nameOf = (e) => state.names[normEmail(e)] || fullNameOf(e);
+  const asked = new Set();
+  function loadNames(list) {
+    for (const e of new Set(list.map((n) => normEmail(n.from)).filter(Boolean))) {
+      if (asked.has(e)) continue;
+      asked.add(e);
+      getDoc(doc(db, "memberDirectory", e)).then((s) => {
+        if (!s.exists()) return;
+        state.names[e] = fullNameOf(e, s.data() || {});
+        draw();
+      }).catch(onError);
+    }
+  }
   host.classList.add("kb-bell-wrap");
   host.innerHTML = `<button type="button" class="icon-btn kb-bell" id="kb-bell" aria-haspopup="true" aria-expanded="false" aria-label="Notifications"></button><div class="kb-bell-panel" id="kb-bell-panel" hidden></div>`;
   const btn = host.querySelector("#kb-bell"), panel = host.querySelector("#kb-bell-panel");
@@ -64,7 +88,7 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     const groups = groupByTicket(state.list);
     panel.innerHTML = `<div class="kb-bell-head"><b>Notifications</b>${unread ? `<button type="button" class="link-btn" id="kb-bell-read"${state.busy ? " disabled" : ""}>Mark all as read</button>` : ""}</div>`
       + (state.error ? `<p class="kb-none kb-bell-empty" role="alert" id="kb-bell-error">${esc(state.error)}</p>` : "")
-      + (groups.map((g) => `<div class="kb-bell-group"><div class="kb-bell-ticket"><b>${esc(g.key)}</b> ${esc(g.title)}</div>${g.items.map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatarHTML(n.from, 24)}<span>${describe(n, firstOf)}<span class="kb-none">${esc(when(n.at))}</span></span></button>`).join("")}</div>`).join("")
+      + (groups.map((g) => `<div class="kb-bell-group"><div class="kb-bell-ticket"><b>${esc(g.key)}</b> ${esc(g.title)}</div>${g.items.map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatarHTML(n.from, 24)}<span>${describe(n, nameOf)}<span class="kb-none">${esc(when(n.at))}</span></span></button>`).join("")}</div>`).join("")
         || '<p class="kb-none kb-bell-empty">Nothing yet</p>');
   }
   const when = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? "" : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
@@ -82,10 +106,9 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
   const unsub = onSnapshot(query(collection(db, "kanbanNotifications"), where("to", "==", mine), orderBy("at", "desc"), limit(BELL_LIMIT)), (snap) => {
     state.list = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).map((n) => ({ ...n, at: isoOf(n.at) }));
     draw();
+    loadNames(state.list);
     recount();
   }, onError);
-
-  const unsubNames = onSnapshot(doc(db, "kanbanSettings", "main"), (s) => { state.firstNames = (s.exists() && s.data().firstNames) || {}; draw(); }, onError);
 
   async function markRead(ids) {
     const b = writeBatch(db);
@@ -143,5 +166,5 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
   };
   document.addEventListener("click", onClick);
   draw();
-  return { destroy() { unsub(); unsubNames(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
+  return { destroy() { unsub(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
 }
