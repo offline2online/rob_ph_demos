@@ -186,7 +186,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   // The board's two listeners (open tickets, the latest closed), on the cards
   // or, while they are behind, on the tickets.
-  let boardUnsubs = [];
+  let boardUnsubs = [], stopped = false;
   function listenBoard() {
     boardUnsubs.splice(0).forEach((u) => u());
     boardUnsubs.push(listen("open", query(boardRef(), where("open", "==", true)), () => { state.ready.open = true; }));
@@ -199,16 +199,22 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   // Which collection the board reads. Behind: read the tickets, ask the server
   // to fill the cards, and move to them when they have caught up.
   async function chooseBoard() {
+    // The cards are listened to at once: the local cache answers before the network does, and the
+    // two counts below (a server round trip) no longer stand between opening the page and its cards.
+    boardColl = "kanbanCards";
+    listenBoard();
     let behind = false;
     // A count that can't be read (offline, a dropped connection) says nothing about the cards: stay on them.
     // Reading every open ticket in full instead is the costly path, for the one case the cards are known behind.
     try { behind = await cardsBehind(); } catch (e) { behind = false; }
-    boardColl = behind ? "kanbanTasks" : "kanbanCards";
+    if (!behind || stopped) return;
+    boardColl = "kanbanTasks";
     listenBoard();
-    if (!behind || !backfill) return;
+    changed("tasks");
+    if (!backfill) return;
     try {
       await backfill();
-      if (!(await cardsBehind())) { boardColl = "kanbanCards"; listenBoard(); changed("tasks"); }
+      if (!stopped && !(await cardsBehind()) && !stopped) { boardColl = "kanbanCards"; listenBoard(); changed("tasks"); }
     } catch (e) { console.warn("staff kanban: card backfill:", e); }
   }
 
@@ -238,7 +244,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       changed("members");
     }, onError));
   }
-  function stop() { unsubs.splice(0).forEach((u) => u()); if (releaseUnsub) releaseUnsub(); releaseUnsub = null; releaseWatched = ""; }
+  function stop() { stopped = true; for (const w of warm.values()) w(); unsubs.splice(0).forEach((u) => u()); if (releaseUnsub) releaseUnsub(); releaseUnsub = null; releaseWatched = ""; }
 
   // Every ticket of one release, closed ones included (the board's Release filter).
   function watchRelease(releaseId) {
@@ -250,13 +256,51 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
 
   // ── Reads on demand ──────────────────────────────────────────────────
   // The full ticket, read fresh: what the board holds is only its card.
-  async function fetchTask(key) {
+  // A save shows at once (updateTask) and may read the ticket before it commits; until the
+  // commit is on its way, a read from the server would hand back the ticket without that save.
+  // `sending` holds such patches, and every read lays them over what the server said.
+  const sending = new Map();     // key -> [patch, …] not yet handed to a commit
+  const withCount = (t, p) => ({
+    ...t, ...p,
+    ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}),
+    ...("acceptanceCriteria" in p ? { acTotal: acCounts(p.acceptanceCriteria).total, acDone: acCounts(p.acceptanceCriteria).done } : {}),
+  });
+  async function readTask(key) {
     const s = await getDoc(doc(db, "kanbanTasks", key));
-    if (!s.exists()) { full.delete(key); return null; }
-    const t = taskFromDoc(s.id, s.data());
+    return s.exists() ? taskFromDoc(s.id, s.data()) : null;
+  }
+  const cardStamp = (key) => { const c = tasks.get(key); return c ? c.updated || "" : null; };
+  const readWith = new Map();    // key -> its card's stamp when the full copy was asked for
+  async function fetchTask(key) {
+    // (the stamp is taken before the read: a write that lands while it is in flight moves the card on)
+    const stamp0 = cardStamp(key);
+    let t = await readTask(key);
+    if (!t) { full.delete(key); readWith.delete(key); return null; }
+    for (const p of sending.get(key) || []) t = withCount(t, p);
     full.set(key, t);
+    if (stamp0 == null) readWith.delete(key); else readWith.set(key, stamp0);
     pin([t]);
     return t;
+  }
+  // The full ticket the page already holds, when it is still the ticket as it stands: every
+  // save writes the ticket's card too (stamped with the time of the write), and the card is
+  // live. So a copy read while the card carried the stamp it carries now has not been
+  // written to since. Null when there is no such copy, the card has moved on, or a save of
+  // this browser's own is still on its way.
+  function current(key) {
+    const f = full.get(key);
+    return f && readWith.has(key) && readWith.get(key) === cardStamp(key) && !(sending.get(key) || []).length ? f : null;
+  }
+  // A ticket's comments and activity, asked for as soon as it is being opened, so they are
+  // read alongside the ticket itself and not after it. The modal's own listeners join these
+  // (one query, one read); they are let go a little later.
+  const warm = new Map();
+  function warmThread(key) {
+    if (!key || warm.has(key) || stopped) return;
+    const offs = ["comments", "activity"].map((sub) => onSnapshot(collection(db, "kanbanTasks", key, sub), () => {}, () => {}));
+    const timer = setTimeout(() => off(), 20000);
+    const off = () => { clearTimeout(timer); warm.delete(key); offs.forEach((u) => { try { u(); } catch (e) { /* already gone */ } }); };
+    warm.set(key, off);
   }
   // A ticket's full record as the page last read or saved it (else the card).
   const getFull = (key) => full.get(key) || get(key);
@@ -377,11 +421,18 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
       for (const l of linked) tx.update(doc(db, "kanbanTasks", l.key), { links: arrayUnion(inverseOf(key, l)), ...stamp() });
       return { key, linked };
     }).then((r) => { linkedOnCreate = r.linked; return r.key; });
+    // What was just written is the ticket: kept as its full copy, so nothing reads it back.
+    // (Its stamp is this browser's clock, not the server's: the first open still reads it fresh.)
+    const now = new Date().toISOString();
+    const made = taskFromDoc(key, { ...storedPatch({ ...fields, key }), ...derivedFields({ ...fields, key }), status: fields.status || "backlog", commentCount: 0, createdBy: me, createdAt: now, updatedAt: now });
+    full.set(key, made);
+    pin([made]);
     if ((activity && activity.length) || linkedOnCreate.length) {
+      // The log lines follow the ticket; creating it doesn't wait for them.
       const b = writeBatch(db);
       activityOps(b, key, activity);
       for (const l of linkedOnCreate) activityOps(b, l.key, [`linked: ${inverseOf(key, l).type} ${key}`]);
-      await b.commit();
+      b.commit().catch(onError);
     }
     return key;
   }
@@ -389,48 +440,70 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   // patch: stored fields to change; activity: lines for the log. Other
   // tickets' patches (an epic's children) ride in the same batch.
   async function updateTask(key, patch, activity, others = []) {
-    const b = writeBatch(db);
-    const cur = (await ensure(key));
-    // Search words come from the description, which a card doesn't hold.
-    const derive = DERIVED_FROM.some((k) => k in patch);
-    const whole = derive && !("description" in patch) ? (await fetchTask(key)) || cur : cur;
-    const data = { ...storedPatch(patch), ...stamp() };
-    // The other side of a changed link rides in the same batch; the ticket's own
-    // links are read in full, as a card holds none.
-    const touchedLinks = "links" in patch ? await linkOps(b, key, ((await fetchTask(key)) || cur).links || [], patch.links || []) : [];
-    if (derive) Object.assign(data, derivedFields({ ...whole, ...patch, key }));
-    const closed = "status" in patch ? statusExtras(patch.status) : null;
-    if (closed) Object.assign(data, closed);
-    b.update(doc(db, "kanbanTasks", key), data);
-    cardOps(b, key, cur, patch, closed);
-    activityOps(b, key, activity);
-    const kids = [];
-    for (const o of others) {
-      kids.push([o.key, await ensure(o.key)]);
-      b.update(doc(db, "kanbanTasks", o.key), { ...storedPatch(o.patch), ...stamp() });
-      cardOps(b, o.key, kids[kids.length - 1][1], o.patch, null);
-      activityOps(b, o.key, o.activity);
-    }
-    // Optimistic: the listener's echo replaces this a moment later; a failed
-    // write puts the old values back.
-    const before = [[key, get(key)], ...others.map((o) => [o.key, get(o.key)])];
+    // Optimistic, and before anything is awaited: the change is on the board in the same
+    // turn as the click or the drop, whatever this save has to read first. The listener's
+    // echo replaces it a moment later; a failed write puts the old values back.
     const put = (k, v) => { if (!v) return; (tasks.has(k) ? tasks : extra).set(k, v); bump(); };
-    const withCount = (t, p) => ({
-      ...t, ...p,
-      ...("attachments" in p ? { attachmentCount: (p.attachments || []).length } : {}),
-      ...("acceptanceCriteria" in p ? { acTotal: acCounts(p.acceptanceCriteria).total, acDone: acCounts(p.acceptanceCriteria).done } : {}),
-    });
-    put(key, cur.key ? withCount(cur, patch) : null);
-    for (const o of others) { const t = get(o.key); put(o.key, t ? withCount(t, o.patch) : null); }
-    const otherFull = touchedLinks.filter((x) => full.has(x.key)).map((x) => [x.key, full.get(x.key)]);
-    for (const x of touchedLinks) {
-      const f = full.get(x.key);
-      if (f) full.set(x.key, { ...f, links: x.add ? [...(f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)), x.inv] : (f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)) });
+    const before = [[key, get(key), patch], ...others.map((o) => [o.key, get(o.key), o.patch])];
+    let fullBefore = full.get(key), derived = {}, otherFull = [];
+    const late = [];
+    const show = () => {
+      for (const [k, v, p] of before) put(k, v ? withCount(v, p) : null);
+      if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...derived });
+    };
+    show();
+    if (!sending.has(key)) sending.set(key, []);
+    sending.get(key).push(patch);
+    const sent = () => { const l = sending.get(key) || []; const i = l.indexOf(patch); if (i >= 0) l.splice(i, 1); if (!l.length) sending.delete(key); };
+    try {
+      const b = writeBatch(db);
+      // What a write needs of a ticket that the board may not hold.
+      let cur = before[0][1] || fullBefore;
+      if (!cur) { cur = (await readTask(key)) || {}; if (cur.key) { before[0][1] = cur; fullBefore = cur; pin([cur]); late.push(before[0]); } }
+      // Search words come from the description, which a card doesn't hold.
+      const derive = DERIVED_FROM.some((k) => k in patch);
+      // (the ticket as the server has it now: its description for the search words, its links for their other sides)
+      const fresh = (derive && !("description" in patch)) || "links" in patch ? await readTask(key) : null;
+      if (fresh) fullBefore = fresh;
+      const whole = fresh || cur;
+      const data = { ...storedPatch(patch), ...stamp() };
+      // The other side of a changed link rides in the same batch; the ticket's own
+      // links are read in full, as a card holds none.
+      const touchedLinks = "links" in patch ? await linkOps(b, key, (fresh || cur).links || [], patch.links || []) : [];
+      if (derive) { Object.assign(data, derivedFields({ ...whole, ...patch, key })); derived = { descriptionText: data.descriptionText }; }
+      const closed = "status" in patch ? statusExtras(patch.status) : null;
+      if (closed) Object.assign(data, closed);
+      b.update(doc(db, "kanbanTasks", key), data);
+      cardOps(b, key, cur, patch, closed);
+      activityOps(b, key, activity);
+      for (const o of others) {
+        const row = before.find((r) => r[0] === o.key);
+        const kid = row[1] || full.get(o.key) || (await readTask(o.key)) || {};
+        if (!row[1] && kid.key) { row[1] = kid; pin([kid]); late.push(row); }
+        b.update(doc(db, "kanbanTasks", o.key), { ...storedPatch(o.patch), ...stamp() });
+        cardOps(b, o.key, kid, o.patch, null);
+        activityOps(b, o.key, o.activity);
+      }
+      // What was read on the way: a ticket the board didn't hold, and the full copy as the server has it.
+      for (const row of late) put(row[0], withCount(row[1], row[2]));
+      if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...derived });
+      otherFull = touchedLinks.filter((x) => full.has(x.key)).map((x) => [x.key, full.get(x.key)]);
+      for (const x of touchedLinks) {
+        const f = full.get(x.key);
+        if (f) full.set(x.key, { ...f, links: x.add ? [...(f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)), x.inv] : (f.links || []).filter((l) => !(l.type === x.inv.type && l.key === x.inv.key)) });
+      }
+      const done = b.commit();
+      // From here the SDK holds the write, and every read sees it.
+      sent();
+      await done;
+    } catch (err) {
+      sent();
+      for (const [k, v] of before) put(k, v);
+      for (const [k, v] of otherFull) full.set(k, v);
+      if (fullBefore) full.set(key, fullBefore);
+      changed("tasks");
+      throw err;
     }
-    const fullBefore = full.get(key);
-    if (fullBefore) full.set(key, { ...withCount(fullBefore, patch), ...(derive ? { descriptionText: data.descriptionText } : {}) });
-    try { await b.commit(); }
-    catch (err) { for (const [k, v] of before) put(k, v); for (const [k, v] of otherFull) full.set(k, v); if (fullBefore) full.set(key, fullBefore); changed("tasks"); throw err; }
   }
 
   // A change to a ticket's acceptance criteria (KB-TASK-12), made against the
@@ -570,7 +643,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   }
 
   return {
-    state, get, getFull, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
+    state, get, getFull, current, warmThread, start, stop, watchRelease, fetchTask, fetchChildren, searchServer, watchComments, watchActivity,
     createTask, updateTask, changeCriteria, deleteTask, addComment, editComment, deleteComment, setWatching, upload, externaliseImages, saveSettings, addSprint, watchAgentTickets, backfill: () => (backfill ? backfill() : Promise.resolve()),
   };
 }

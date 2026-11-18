@@ -51,6 +51,44 @@
   <link rel="modulepreload" href="js/train-overlap.js">
   <link rel="modulepreload" href="js/firebase-config.js">
   <link rel="modulepreload" href="js/version.js">
+  <!-- …and every other module app.js and the page's own scripts import, so none
+       of them is first asked for after sign-in has resolved (18 Nov 2026: 28
+       were, and a first load after a release waited about three seconds on
+       them). test/preload-graph.test.mjs fails when this list and the import
+       graph differ, and names the line to add or remove. -->
+  <link rel="modulepreload" href="js/avatar.js">
+  <link rel="modulepreload" href="js/card-state.js">
+  <link rel="modulepreload" href="js/concept-critiques.js">
+  <link rel="modulepreload" href="js/dictation-results.js">
+  <link rel="modulepreload" href="js/docs-grid.js">
+  <link rel="modulepreload" href="js/docs-markdown.js">
+  <link rel="modulepreload" href="js/entity-type.js">
+  <link rel="modulepreload" href="js/groom-packages.js">
+  <link rel="modulepreload" href="js/internal-map.js">
+  <link rel="modulepreload" href="js/item-attachments.js">
+  <link rel="modulepreload" href="js/kanban/kanban-bell.js">
+  <link rel="modulepreload" href="js/kanban/kanban-core.js">
+  <link rel="modulepreload" href="js/local-cache.js">
+  <link rel="modulepreload" href="js/modal-polish.js">
+  <link rel="modulepreload" href="js/model-suggest.js">
+  <link rel="modulepreload" href="js/owner-fire.js">
+  <link rel="modulepreload" href="js/permissions.js">
+  <link rel="modulepreload" href="js/promote-plan.js">
+  <link rel="modulepreload" href="js/promote-section.js">
+  <link rel="modulepreload" href="js/quill-loader.js">
+  <link rel="modulepreload" href="js/rejection-summary.js">
+  <link rel="modulepreload" href="js/release-audit.js">
+  <link rel="modulepreload" href="js/release-groups.js">
+  <link rel="modulepreload" href="js/roles.js">
+  <link rel="modulepreload" href="js/settings-section.js">
+  <link rel="modulepreload" href="js/support-core.js">
+  <link rel="modulepreload" href="js/system-map.js">
+  <link rel="modulepreload" href="js/test-rounds-view.js">
+  <link rel="modulepreload" href="js/touch-click.js">
+  <link rel="modulepreload" href="js/ui-polish.js">
+  <link rel="modulepreload" href="js/user-management.js">
+  <link rel="modulepreload" href="js/whiteboard-core.js">
+  <link rel="modulepreload" href="js/wp-publish-status.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js">
   <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js">
@@ -62,17 +100,18 @@
           runs the same check and takes over; this only decides what the first
           paint shows, so html[data-restoring] hides the card (css/styles.css)
           until auth-gate.js has made up its mind and removes the flag.
-       2. On the Staff Kanban route the four Kanban modules are preloaded now,
+       2. On the Staff Kanban route the Kanban modules are preloaded now,
           so they download in parallel with app.js instead of one import round
-          trip after it (kanban-page.js imports kanban-store, kanban-core and
-          kanban-editor). Other routes never fetch them. -->
+          trip after it (kanban-page.js imports kanban-store and kanban-editor;
+          kanban-core is in the list above, the notification bell needs it on
+          every page). Other routes never fetch them. -->
   <script>
     (function () {
       try { if (localStorage.getItem("ph-console-signed-in") === "1") document.documentElement.setAttribute("data-restoring", "1"); } catch (e) { /* private mode: the card shows */ }
       // If auth-gate.js never runs (a blocked CDN), don't leave the card hidden.
       setTimeout(function () { document.documentElement.removeAttribute("data-restoring"); }, 10000);
       if (/^#staff-kanban(\/|\?|$)/.test(location.hash)) {
-        ["kanban/kanban-page.js", "kanban/kanban-store.js", "kanban/kanban-core.js", "kanban/kanban-editor.js"].forEach(function (f) {
+        ["kanban/kanban-page.js", "kanban/kanban-store.js", "kanban/kanban-editor.js"].forEach(function (f) {
           var l = document.createElement("link"); l.rel = "modulepreload"; l.href = "js/" + f; document.head.appendChild(l);
         });
       }
