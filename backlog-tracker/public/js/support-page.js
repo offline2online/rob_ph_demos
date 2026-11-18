@@ -666,20 +666,16 @@ const CALLBACK_ERRORS = {
 function aidanSettingsHtml(aidan, admin) {
   const a = aidan || { enabled: false, switchedOn: true, senderCount: 0, sendersMasked: [] };
   const dis = admin ? "" : " disabled";
-  const name = a.fromName || "Aidan";
   const state = a.senderCount
     ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
     : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
   return `<div class="docs-block" id="support-aidan-settings"><div class="docs-block-header"><h3>Aidan
-      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction. A request to write something is written with the matching skill and sent to everyone on the email as an attachment. A request for sales collateral, such as a one-pager, a platform overview or a deck, is written with the brand skill and sent as a branded PDF with its Markdown source. A request to keep something stores the email and its attachments as reference material for a skill. Anything else, such as a question or a request to confirm, is answered in the reply itself, with no attachment. A question about the platform is answered from the Help Centre, the way the Support Inbox drafts a reply, and the ticket shows the articles and the confidence. Anyone else, and an email with no tag, gets nothing. Every reply is written in Aidan's voice, with at most one light aside after the answer and none on a complaint, a fault or anything commercial; an attached document or collateral always follows the brand voice. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
+      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction. A request to write something is written with the matching skill and sent to everyone on the email as an attachment. A request for sales collateral, such as a one-pager, a platform overview or a deck, is written with the brand skill and sent as a branded PDF with its Markdown source. A request to keep something stores the email and its attachments as reference material for a skill. Anything else, such as a question or a request to confirm, is answered in the reply itself, with no attachment. A question about the platform is answered from the Help Centre, the way the Support Inbox drafts a reply, and the ticket shows the articles and the confidence. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
       ${state}
       <div class="support-set-grid">
         <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>
         ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
         <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
-        <label class="support-check"><input type="checkbox" id="support-aidan-sigline-on"${a.signatureLineOn ? " checked" : ""}${dis}> Add a signature line under "${esc(name)}, Personalisation Hub"</label>
-        <label class="field-label" for="support-aidan-sigline">Signature line</label>
-        <input type="text" id="support-aidan-sigline" maxlength="80" autocomplete="off" placeholder="PH's digital assistant" value="${esc(a.signatureLine || "")}"${dis}>
       </div>
       ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan" disabled>Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
     </div>`;
@@ -690,7 +686,7 @@ function aidanSettingsHtml(aidan, admin) {
 const SAVE_CONTROLS = {
   "save-client": ["support-client-id", "support-client-secret"],
   "save-settings": ["support-auto", "support-threshold", "support-from", "support-signature", "support-assignee", "support-vip"],
-  "save-aidan": ["support-aidan-on", "support-aidan-senders", "support-aidan-sigline-on", "support-aidan-sigline"],
+  "save-aidan": ["support-aidan-on", "support-aidan-senders"],
 };
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
@@ -802,8 +798,7 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         await load();
         host.querySelector("#support-settings-status").textContent = "Saved.";
       } else if (a === "save-aidan") {
-        await api(apiHeaders, "aidan", { body: { enabled: host.querySelector("#support-aidan-on").checked, allowedSenders: val("support-aidan-senders"),
-          signatureLineOn: host.querySelector("#support-aidan-sigline-on").checked, signatureLine: val("support-aidan-sigline") } });
+        await api(apiHeaders, "aidan", { body: { enabled: host.querySelector("#support-aidan-on").checked, allowedSenders: val("support-aidan-senders") } });
         await load();
         host.querySelector("#support-aidan-status").textContent = "Saved.";
       }

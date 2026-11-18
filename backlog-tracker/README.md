@@ -2591,19 +2591,6 @@ skills. Misses are tracked with
 `report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
 `references/` files on the two request skills.
 
-### Aidan voice skill (18 Nov 2026)
-
-`skill-sources/aidan-voice.md` is the repo copy of the `aidan-voice` skill:
-the character brief, the fixed rules and the example replies Aidan's email
-voice is written from ("Support Inbox" → "replies in his own voice"). The
-same text is `DEFAULT_SKILL_MD` in `functions/aidan-voice.js`
-(`test/aidan-voice.test.js` keeps the two equal), and Aidan's first run that
-finds no skill with that slug adds it to the live library. After that the
-library copy is the one read: tune it on the Skills page or with
-`update_skill`, and report a reply whose tone was wrong with
-`report_skill_miss`. The rules marked fixed in it are enforced in code, so
-editing them out of the skill does not switch them off.
-
 ### Docs stay in step with code (20 Oct 2026)
 
 `skill-sources/` holds the repo copies of the skill text for this rule:
@@ -3214,7 +3201,6 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan with its one Code Mode run (`cleanConsolePlan`, `AIDAN_INSIGHTS`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`); the self-check (`assessRun`, `improvementKey`, `matchImprovement`, `improvementDesc`, the project a run was about by id or name: `resolveProjectRef`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`, one Code Mode run first) and the read-only reply (`readOnlyReply`); the self-check that files or comments on a Backlog ticket (`reflect`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
-| `functions/aidan-voice.js` | Aidan's voice, pure: the `aidan-voice` skill as first written (`DEFAULT_SKILL_MD`, the same text as `skill-sources/aidan-voice.md`), no quirk on anything sensitive (`sensitiveReason`), "are you a bot?" (`asksIfAi`, `ensureAiDisclosure`), the one aside made safe and added after the reply (`cleanQuirk`, `withQuirk`) (`test/aidan-voice.test.js`) |
 | `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
 | `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
@@ -3552,37 +3538,10 @@ thread. A run:
   that read no content shows nothing (`aidan.refersToThread` is cleared).
   Rob's new text with no reference to the thread behaves exactly as before
   (REQUIREMENTS SUP-AID-26 to 29);
-- **replies in his own voice** (18 Nov 2026, ticket SYkk20srKT7pIKM1HS8Z):
-  slightly quirky, a developer advocate with a dash of agency planner. The
-  character brief and its examples are the **`aidan-voice` skill** in the
-  skills library (repo copy `skill-sources/aidan-voice.md`; the first run
-  that finds none adds it), so the tone is tuned from Settings › Skills
-  without a deploy. The voice is a layer, not a rewrite: the reply is
-  written first, substance first, by whatever produced the facts, and one
-  more short model call (`inVoice`, 20 seconds, never retried) may add
-  **one sentence after it**. So there is at most one quirk per email, after
-  the substance, and the facts are never touched; a sentence with a figure,
-  a link or an address in it is dropped. **Email body only**: an attached
-  document or collateral never passes through it and stays on brand voice.
-  **No quirk at all** on a complaint, an outage, a fault or anything
-  commercial such as pricing or contracts (decided from the words of the
-  email, the thread it was asked to answer and the reply, before the model
-  is asked, `sensitiveReason`), and none when the voice can't be
-  reached: the reply goes plain. He does not volunteer that he is an AI;
-  **asked whether he is a bot or an AI he says yes**, in character, and a
-  reply that dodges or denies it is corrected in code
-  (`ensureAiDisclosure`: a dodge gets the yes put first, a denying sentence
-  is taken out and the rest kept), in every kind of reply including a
-  write's cover note, and plainly, with no joke, on a complaint, an outage
-  or anything commercial. The same for every recipient. He signs **"Aidan,
-  Personalisation Hub"**; Settings › Support inbox › Aidan has an optional
-  signature line (for example "PH's digital assistant"), off by default.
-  The ticket records what the voice did (`aidan.voice`)
-  (REQUIREMENTS SUP-AID-42 to 47);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute, the voice 20 seconds), so a whole run fits inside the
+(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute), so a whole run fits inside the
 function's 540 seconds (the function has 1 GiB for the PDF printer); a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
@@ -3593,7 +3552,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 47.
+SUP-AID-1 to 41.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
