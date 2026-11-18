@@ -6287,6 +6287,14 @@ support@ are on the Dashboard, and an email icon writes a new email. See
   no write controls.
 - **SUP-NAV-3** Settings has a "Support inbox" page (`#settings/support`).
   Every member can read it; only an admin can change it.
+- **SUP-NAV-4** (18 Nov 2026) Each Save button on that page (Save client,
+  Save settings, Save Aidan) is disabled until one of its own fields differs
+  from the saved value, and is disabled again when the edit is reverted or
+  the save succeeds. A failed save leaves it enabled. The write-only boxes
+  (client ID and secret, Aidan's allowed senders) count as changed once
+  something is typed in them. The same rule holds for the other Settings
+  forms that save in place: a Media Studio key row, My Claude Routine and
+  the role editor's Save role.
 
 ### Inboxes (17 Nov 2026)
 

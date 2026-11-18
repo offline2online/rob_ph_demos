@@ -11881,7 +11881,22 @@ function renderRolePage() {
   }).join("")}</div>`).join("");
   document.getElementById("role-error").hidden = true;
   document.getElementById("role-status").textContent = "";
+  roleSavedState = roleFormState();
+  syncRoleSave();
 }
+// Save role is enabled only while the name, description or a permission
+// differs from the saved role (and never for the locked Admin role).
+let roleSavedState = "";
+function roleFormState() {
+  return JSON.stringify([document.getElementById("role-name").value, document.getElementById("role-description").value,
+    ...[...rolePage.querySelectorAll("select[data-perm-section]")].map((sel) => sel.value)]);
+}
+function syncRoleSave() {
+  const r = findRole(rolePageId);
+  document.getElementById("role-save").disabled = !r || isAdminRole(r) || roleFormState() === roleSavedState;
+}
+rolePage.addEventListener("input", syncRoleSave);
+rolePage.addEventListener("change", syncRoleSave);
 async function openRolePage(id) {
   if (!pageAllowed("user-management") || !isConsoleAdmin()) return;
   closeAllSubPages();
@@ -12523,6 +12538,15 @@ document.getElementById("routine-copy-prompt")?.addEventListener("click", async 
   catch { prompt.select(); try { document.execCommand("copy"); } catch { /* the text stays selected */ } }
   if (btn) { btn.textContent = "Copied"; setTimeout(() => { btn.textContent = "Copy prompt"; }, 2000); }
 });
+// Save is enabled only once something has been typed: both boxes are
+// write-only, so empty is the saved state.
+function syncRoutineBindingSave() {
+  const btn = document.getElementById("routine-binding-save");
+  if (!btn) return;
+  btn.disabled = !["routine-fire-url", "routine-fire-token"].some((id) => (document.getElementById(id)?.value || "").trim());
+}
+document.getElementById("routine-binding-form")?.addEventListener("input", syncRoutineBindingSave);
+syncRoutineBindingSave();
 document.getElementById("routine-binding-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const urlEl = document.getElementById("routine-fire-url");
@@ -12536,6 +12560,7 @@ document.getElementById("routine-binding-form")?.addEventListener("submit", asyn
     await saveRoutineBinding(fireUrl, token);
     if (tokenEl) tokenEl.value = "";
     if (urlEl) urlEl.value = "";
+    syncRoutineBindingSave();
   } catch (err) {
     if (errEl) errEl.textContent = err && err.message ? err.message : String(err);
   }
@@ -12564,9 +12589,11 @@ function mediaKeyDate(iso) {
   const d = new Date(iso);
   return isNaN(d) ? "" : d.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
+let mediaKeysEncryptionReady = false;
 function renderMediaKeys(status) {
   const box = document.getElementById("media-keys-list");
   if (!box) return;
+  mediaKeysEncryptionReady = !!status.encryptionReady;
   const warn = status.encryptionReady ? "" : '<p class="field-hint" style="color:#c62828;">Encryption isn\'t set up yet: the next console deploy creates its key. Until then keys can\'t be saved.</p>';
   box.innerHTML = warn + status.providers.map((p) => {
     const bits = [];
@@ -12597,7 +12624,7 @@ function renderMediaKeys(status) {
       <div class="media-key-form">
         ${p.id === "wordpress" ? `<input type="url" data-media-key-site placeholder="https://personalisationhub.com" value="${escapeHTML(p.siteUrl || "")}" aria-label="WordPress site URL" autocomplete="off" spellcheck="false">` : ""}
         <input type="password" data-media-key-value placeholder="${escapeHTML(placeholder)}" aria-label="${escapeHTML(p.label)} key" autocomplete="new-password" spellcheck="false">
-        <button type="button" class="btn-primary" data-media-key-act="save-key"${status.encryptionReady ? "" : " disabled"}>Save</button>
+        <button type="button" class="btn-primary" data-media-key-act="save-key" disabled>Save</button>
       </div>
     </div>`;
   }).join("");
@@ -12643,6 +12670,17 @@ async function loadMediaKeys() {
     box.innerHTML = `<p class="interface-row-empty">Couldn't load the Media Studio keys: ${escapeHTML(err.message)}</p>`;
   }
 }
+// A key row's Save is enabled only while its row differs from what is saved:
+// a key has been pasted (the box is write-only, so empty is the saved state)
+// or the WordPress site address has been changed.
+function syncMediaKeySave(row) {
+  const btn = row && row.querySelector('[data-media-key-act="save-key"]');
+  if (!btn) return;
+  const site = row.querySelector("[data-media-key-site]");
+  const changed = !!row.querySelector("[data-media-key-value]").value.trim() || (!!site && site.value.trim() !== site.defaultValue.trim());
+  btn.disabled = !mediaKeysEncryptionReady || !changed;
+}
+document.getElementById("media-keys-list")?.addEventListener("input", (e) => syncMediaKeySave(e.target.closest("[data-media-key]")));
 document.getElementById("media-keys-list")?.addEventListener("click", async (e) => {
   const btn = e.target.closest("[data-media-key-act]");
   if (!btn) return;
@@ -12676,6 +12714,7 @@ document.getElementById("media-keys-list")?.addEventListener("click", async (e) 
     await showAlert(`${label}: ${err.message}`);
   } finally {
     btn.disabled = false;
+    if (act === "save-key" && row.isConnected) syncMediaKeySave(row);
   }
 });
 // The two commands that install the console as a Claude plugin

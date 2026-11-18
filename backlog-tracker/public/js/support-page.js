@@ -443,11 +443,33 @@ function aidanSettingsHtml(aidan, admin) {
         ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
         <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
       </div>
-      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan">Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
+      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan" disabled>Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
     </div>`;
 }
+// The controls each Save button on Settings › Support inbox sends. A button is
+// enabled only while one of its controls differs from what was drawn, i.e.
+// from the saved value (the write-only boxes are drawn empty).
+const SAVE_CONTROLS = {
+  "save-client": ["support-client-id", "support-client-secret"],
+  "save-settings": ["support-auto", "support-threshold", "support-from", "support-signature", "support-assignee", "support-vip"],
+  "save-aidan": ["support-aidan-on", "support-aidan-senders"],
+};
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
+  // What each Save button's controls held when the page was last drawn.
+  let savedState = {};
+  const controlsState = (ids) => JSON.stringify(ids.map((id) => {
+    const el = host.querySelector(`#${id}`);
+    return !el ? null : el.type === "checkbox" ? el.checked : el.value;
+  }));
+  function syncSaveButtons() {
+    for (const [act, ids] of Object.entries(SAVE_CONTROLS)) {
+      const b = host.querySelector(`[data-ss-act="${act}"]`);
+      if (!b) continue;
+      const ready = act !== "save-client" || !!(status && status.encryptionReady);
+      b.disabled = !ready || controlsState(ids) === savedState[act];
+    }
+  }
   // `returned` is the query Google's sign-in came back with ("connected=1" or "error=…").
   // The Settings page can be drawn more than once while it opens, so the answer is kept until the next action.
   let lastReturn = "";
@@ -480,7 +502,7 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <div class="media-key-form">
             <input type="text" id="support-client-id" placeholder="${s.clientSet ? "Client ID saved — paste to replace" : "Client ID (…apps.googleusercontent.com)"}" aria-label="Google OAuth client ID" autocomplete="off" spellcheck="false">
             <input type="password" id="support-client-secret" placeholder="Client secret" aria-label="Google OAuth client secret" autocomplete="new-password" spellcheck="false">
-            <button type="button" class="btn-ghost" data-ss-act="save-client"${s.encryptionReady ? "" : " disabled"}>Save client</button></div>
+            <button type="button" class="btn-ghost" data-ss-act="save-client" disabled>Save client</button></div>
           ${s.clientSet ? `<div class="media-key-state is-set"><span class="media-key-dot" aria-hidden="true"></span>Client saved: <code>${esc(s.clientId)}</code></div>` : ""}
           <span class="field-label">2. Mailbox</span>
           <div class="form-row" style="justify-content:flex-start;gap:8px;margin-top:0;">
@@ -506,10 +528,14 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <label class="field-label" for="support-vip">Extra high-value domains</label>
           <textarea id="support-vip" rows="3" placeholder="bigretailer.com, another.co.uk"${dis}>${esc(set.vipDomains.join(", "))}</textarea>
         </div>
-        ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings">Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
+        ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings" disabled>Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
       </div>
       ${aidanSettingsHtml(s.aidan, admin)}`;
+    savedState = Object.fromEntries(Object.entries(SAVE_CONTROLS).map(([act, ids]) => [act, controlsState(ids)]));
+    syncSaveButtons();
   }
+  host.addEventListener("input", syncSaveButtons);
+  host.addEventListener("change", syncSaveButtons);
   host.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-ss-act]");
     if (!b) return;
@@ -543,7 +569,10 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         host.querySelector("#support-aidan-status").textContent = "Saved.";
       }
     } catch (err) { await alert(err.message); }
+    // A save redraws the page with its buttons disabled again; a failed one
+    // leaves the edits in place, so its button goes back to enabled.
     if (b.isConnected) b.disabled = false;
+    syncSaveButtons();
   });
   return { load };
 }
