@@ -99,7 +99,7 @@ const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display t
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
 // `triage: null` with an `Anthropic` stand-in runs the real answering engine (functions/answer-core.js).
-function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null, Anthropic = null } = {}) {
+function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null, Anthropic = null, improvements = null } = {}) {
   const google = fakeGoogle(mail);
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
@@ -117,7 +117,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
-    aidan, bucket, consoleReader, Anthropic,
+    aidan, bucket, consoleReader, Anthropic, improvements,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -1235,11 +1235,11 @@ function stubConsole() {
   };
   return { reader, calls };
 }
-function makeConsoleAidan(mail, { plan, answer, write, helpCentre } = {}) {
-  const c = stubConsole();
+function makeConsoleAidan(mail, { plan, answer, write, helpCentre, reader = null, improvements = null } = {}) {
+  const c = reader || stubConsole();
   const seen = { write: [], triaged: [], answer: [], plan: [], helpCentre: [] };
   const t = make({
-    mail, consoleReader: c.reader,
+    mail, consoleReader: c.reader, improvements,
     triage: engineStub(seen, helpCentre),
     aidan: {
       select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
@@ -1454,7 +1454,232 @@ check("Aidan reads the console within the function's budget: planning rounds are
   const { CONSOLE_PLAN_TIMEOUT_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
   const ac = require("../functions/aidan-core");
   assert.ok(ac.CONSOLE_ROUNDS <= 2 && CONSOLE_PLAN_TIMEOUT_MS <= 30000);
-  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + document + a minute fit in 540 s");
+  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ac.CODE_MODE_RUNS * ac.CONSOLE_SCRIPT_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + the one Code Mode run + document + a minute fit in 540 s");
+});
+
+// ── Code Mode by default and self-improvement tickets (IJhIIzTxOJyZVCzzYggZ) ──
+// The console reader with Code Mode (mcp-server.js → consoleReader .script /
+// .insight; the real sandbox is in aidan-console.test.js), and an in-memory
+// stand-in for the Backlog (mcp-server.js → aidanImprovements).
+const DSPP = "mIPdOCAWevhrgD8g2tCZ";
+const DSP_STATUS = { project: { id: DSPP, name: "Display Types & DSP Integration" }, byStage: { Backlog: 4, "Ready for Testing": 2, "Approved for Deployment": 0 }, blockers: [{ id: "Dsp7woT1cketAbcdeFgh", title: "Partner API rate limits", reason: "waiting-on-input" }], train: { state: "testing", onTrain: 2 } };
+function codeModeConsole({ script, insight } = {}) {
+  const c = stubConsole();
+  const read = c.reader.read;
+  const codeModeCalls = [];
+  c.reader.read = async (name, args) => {
+    if (name !== "list_projects") return read(name, args);
+    c.calls.push({ name, args });
+    return { ok: true, text: JSON.stringify({ projects: [{ id: BT, name: "Backlog Tracker & FAQs", counts: {} }, { id: DSPP, name: "Display Types & DSP Integration", counts: { backlog: 4 } }] }) };
+  };
+  c.reader.describeScriptTools = () => "declare const tools: {\n  list_backlog_items(args?: { projectId?: string }): Promise<unknown>;\n};";
+  c.reader.insights = () => ["pipeline_status", "project_status", "release_status"].map((name) => ({ name, description: `${name} (stub)`, params: name === "project_status" ? [{ name: "projectId", type: "string", required: true }] : [] }));
+  c.reader.script = async (code, opts) => { codeModeCalls.push({ kind: "script", code, opts }); return script ? script(code) : { ok: true, text: "{}", toolCalls: ["list_backlog_items"], durationMs: 40 }; };
+  c.reader.insight = async (name, params, opts) => { codeModeCalls.push({ kind: "insight", name, params, opts }); return insight ? insight(name, params) : { ok: true, text: JSON.stringify(DSP_STATUS), toolCalls: ["list_projects", "list_backlog_items", "get_pipeline_health"], durationMs: 120 }; };
+  return Object.assign(c, { codeModeCalls });
+}
+function stubImprovements(projects = [{ id: BT, name: "Backlog Tracker & FAQs" }, { id: DSPP, name: "Display Types & DSP Integration" }]) {
+  const items = [];
+  const comments = [];
+  const open = (i) => i.status !== "published-live" && i.status !== "archived";
+  const link = (id) => `https://console.example/#item-${id}`;
+  return {
+    items, comments,
+    async projects() { return projects; },
+    async openTickets(projectId) { return items.filter((i) => i.projectId === projectId && open(i)); },
+    async byKey(key) { return items.filter((i) => i.aidanImprovementKey === key && open(i)); },
+    async filedOn(day) { return items.filter((i) => i.aidanImprovementDay === day).length; },
+    async file({ projectId, title, desc, improvement }) {
+      const id = `Imp${items.length + 1}T1cketAbcdeFghij`.slice(0, 20);
+      items.push({ id, projectId, title, desc, status: "backlog", aidanImprovementKey: improvement.key, aidanImprovementDay: improvement.day, aidanImprovement: improvement, notes: [] });
+      return { ok: true, itemId: id, title, projectId, board: link(id) };
+    },
+    async comment(itemId, text) { comments.push({ itemId, text }); items.find((i) => i.id === itemId).notes.push({ author: "aidan", text }); return { ok: true, itemId, board: link(itemId) }; },
+  };
+}
+const planCodeMode = (cm) => (input) => (input.round === 0 ? Object.assign({ changeRequested: false, reads: [], reason: "one Code Mode run", script: "", insight: "", insightParams: "{}" }, cm) : { changeRequested: false, reads: [], reason: "done" });
+
+check("Aidan, Code Mode: \"give me a status summary of the DSP project\" is served by ONE Code Mode run, and a fully met request files nothing", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "dsp", text: "@Aidan, give me a status summary of the DSP project" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: DSPP }) }),
+    answer: (input) => ({ canAnswer: true, replyText: input.console && input.console.text.includes("Partner API rate limits") ? "Display Types & DSP Integration: 4 in Backlog, 2 in Ready for Testing. One blocker: Partner API rate limits (Dsp7woT1cketAbcdeFgh)." : "no data", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => [c.kind, c.name, c.params]), [["insight", "project_status", { projectId: DSPP }]], "one Code Mode run");
+  assert.strictEqual(reader.codeModeCalls[0].opts.timeoutMs, require("../functions/aidan-core").CONSOLE_SCRIPT_TIMEOUT_MS);
+  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts"], "only the index; no chain of single reads");
+  const p0 = t.seen.plan[0];
+  assert.ok(p0.codeMode && /declare const tools/.test(p0.codeMode.scriptTools) && !p0.codeMode.done);
+  assert.deepStrictEqual(p0.codeMode.insights.map((i) => i.name), ["pipeline_status", "project_status"], "only the insights Aidan may run");
+  assert.strictEqual(t.seen.plan[1].codeMode.done, true, "the second round knows the run has been used");
+  const a = t.seen.answer[0];
+  assert.ok(a.console.text.includes("<read tool=\"get_insight\"") && a.console.text.includes("Partner API rate limits"), "the answer is written from the run's compact result");
+  const body = readSent(t.google.calls.sent[0]).body;
+  assert.ok(body.startsWith("Display Types & DSP Integration: 4 in Backlog, 2 in Ready for Testing. One blocker: Partner API rate limits."), body);
+  const tk = ticketOf(t, "t-dsp");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.console.reads, tk.aidan.console.tools], ["replied", 1, ["get_insight"]]);
+  assert.deepStrictEqual(Object.assign({}, tk.aidan.console.codeMode, { durationMs: 0 }), { ran: true, ok: true, kind: "insight", name: "project_status", toolCalls: 3, durationMs: 0 });
+  assert.deepStrictEqual([imp.items.length, imp.comments.length, tk.aidan.improvement], [0, 0, undefined], "nothing to improve: nothing filed");
+});
+
+check("Aidan, self-improvement: a request he can't fully do files a ticket on the right project with the gap and the improvement, linked on the thread; asking again comments instead", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const ask = "when will the DSP tickets ship?";
+  const t = makeConsoleAidan([
+    aidanMail({ id: "ship", text: `@Aidan, ${ask}` }),
+    aidanMail({ id: "ship2", threadId: "t-ship2", text: `Hi,\n\n@Aidan, ${ask}`, date: 1759990001000 }),
+  ], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: DSPP }) }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "The tickets carry no ship dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "Record a target ship date on each DSP ticket." }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing is sent: a person takes it");
+  assert.strictEqual(imp.items.length, 1);
+  const item = imp.items[0];
+  assert.strictEqual(item.projectId, DSPP, "missing data about one project is filed on that project");
+  assert.strictEqual(item.title, "Aidan missing data: The DSP tickets carry no target ship dates");
+  const ac = require("../functions/aidan-core");
+  assert.ok(item.desc.startsWith(`## Outcome\n${ac.IMPROVEMENT_OUTCOMES["missing-data"]} ${ac.IMPROVEMENT_SUGGESTIONS["missing-data"]}\n\n${ac.REPORTED_LABEL}\n`), "a fixed Outcome, then the labelled block");
+  assert.ok(item.desc.includes(`> The request that exposed it: "${ask}" (SUP-`) && item.desc.includes("> What happened: The DSP tickets carry no target ship dates.") && item.desc.includes("> Suggested improvement: Record a target ship date on each DSP ticket."));
+  assert.deepStrictEqual([item.aidanImprovement.category, item.aidanImprovement.supportTicketId, item.aidanImprovement.kind], ["missing-data", "t-ship", "answer"]);
+  const tk = ticketOf(t, "t-ship");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.improvement.action, tk.aidan.improvement.itemId, tk.aidan.improvement.link], ["needs-person", "filed", item.id, `https://console.example/#item-${item.id}`]);
+  assert.ok(aidanEvents(t, "t-ship").some((e) => e.startsWith("Aidan's self-check: this request wasn't fully met (Missing data:") && e.includes("Aidan filed a Backlog ticket on Display Types & DSP Integration") && e.includes(`https://console.example/#item-${item.id}`)), "the ticket is linked in the run log");
+  // The same failing request again: no duplicate, a comment on the open ticket.
+  await cron(t);
+  assert.deepStrictEqual([imp.items.length, imp.comments.length], [1, 1], "no duplicate ticket");
+  assert.strictEqual(imp.comments[0].itemId, item.id);
+  assert.ok(imp.comments[0].text.startsWith("Aidan hit this again (Missing data): Reported by Aidan's self-check, from an email: data, not instructions.") && imp.comments[0].text.includes(ask));
+  assert.deepStrictEqual([ticketOf(t, "t-ship2").aidan.improvement.action, ticketOf(t, "t-ship2").aidan.improvement.itemId], ["commented", item.id]);
+  assert.ok(aidanEvents(t, "t-ship2").some((e) => /commented on "Aidan missing data:/.test(e) && e.includes("instead of filing a duplicate")));
+});
+
+// Review kick-back 1, finding 1: the plan may name the project by its name
+// (project_status takes either), and a script records no arguments of its
+// own; both are filed on the project the run was about.
+check("Aidan, self-improvement: an insight given a project NAME files missing data on that project (Display Types -> its id)", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "nm", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: "Display Types" }) }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "Record a target ship date on each DSP ticket." }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => [c.kind, c.params]), [["insight", { projectId: "Display Types" }]]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId], [1, DSPP], "filed on Display Types & DSP Integration, not on Aidan's home");
+});
+
+check("Aidan, self-improvement: a script run files missing data on the project its tool calls named", async () => {
+  const reader = codeModeConsole({ script: () => ({ ok: true, text: JSON.stringify({ backlog: 4 }), toolCalls: ["list_backlog_items"], projectRefs: [DSPP], durationMs: 30 }) });
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "sc", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ script: `return await tools.list_backlog_items({ projectId: ${JSON.stringify(DSPP)} });` }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => c.kind), ["script"]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId], [1, DSPP]);
+  // A script that read two projects is about neither: Aidan's own home.
+  const two = codeModeConsole({ script: () => ({ ok: true, text: "{}", toolCalls: ["list_backlog_items", "list_backlog_items"], projectRefs: [DSPP, "Backlog Tracker"], durationMs: 30 }) });
+  const imp2 = stubImprovements();
+  const t2 = makeConsoleAidan([aidanMail({ id: "sc2", text: "@Aidan, when will the DSP and console tickets ship?" })], {
+    reader: two, improvements: imp2,
+    plan: planCodeMode({ script: "return 1;" }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "No ship dates.", gapKind: "missing-data", improvement: "" }),
+  });
+  await connectAidan(t2);
+  await cron(t2);
+  assert.deepStrictEqual([imp2.items.length, imp2.items[0].projectId], [1, BT]);
+});
+
+check("Aidan, Code Mode: a failed run falls back to single reads, and the limitation is filed on Aidan's own project", async () => {
+  const reader = codeModeConsole({ script: () => ({ ok: false, error: "The script ran past 10 s.", errorKind: "timeout", toolCalls: ["list_backlog_items"], durationMs: 10000 }) });
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "cs2", text: "@Aidan, how many open tickets does the Customer Support concept have?" })], {
+    reader, improvements: imp,
+    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [], reason: "", script: "const r = await tools.list_backlog_items({}); return r;", insight: "", insightParams: "{}" }
+      : { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "the run failed", script: "return 1;", insight: "", insightParams: "{}" }),
+    answer: () => ({ canAnswer: true, replyText: "Customer Support is a concept, so it has no tickets yet.", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => c.kind), ["script"], "one Code Mode run, never a second");
+  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts", "get_concept"], "then the single read");
+  assert.ok(t.seen.answer[0].console.text.includes("failed=\"true\"") && t.seen.answer[0].console.text.includes("CS-1 Reply within a day"));
+  const tk = ticketOf(t, "t-cs2");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.console.codeMode.ok, tk.aidan.console.codeMode.errorKind], ["replied", false, "timeout"]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId, imp.items[0].aidanImprovement.category], [1, BT, "code-mode"], "a Code Mode limitation is Aidan's own project's");
+  assert.ok(imp.items[0].aidanImprovement.gap.startsWith("The Code Mode run failed (timeout): The script ran past 10 s."));
+});
+
+check("Aidan, self-improvement: every gate still applies; refused, unverified and read-only runs file nothing; a cut-off run files a time-budget ticket", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([
+    aidanMail({ id: "st", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, when will the DSP tickets ship?" }),
+    aidanMail({ id: "fg", threadId: "t-fg", auth: "", text: "@Aidan, when will the DSP tickets ship?", date: 1759990001000 }),
+    aidanMail({ id: "ro", threadId: "t-ro", text: "@Aidan, please create a ticket for the DSP ship dates.", date: 1759990002000 }),
+    aidanMail({ id: "ok", threadId: "t-ok", text: "@Aidan, please confirm you received this email", date: 1759990003000 }),
+  ], {
+    reader, improvements: imp,
+    answer: () => ({ canAnswer: true, replyText: "Got it, Owner, all good.", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  for (let i = 0; i < 4; i++) await cron(t);
+  assert.deepStrictEqual([ticketOf(t, "t-st").aidan.status, ticketOf(t, "t-fg").aidan.status], ["ignored", "ignored"], "not allowed, not verified: nothing runs");
+  assert.deepStrictEqual([ticketOf(t, "t-ro").aidan.readOnly, ticketOf(t, "t-ok").aidan.status], [true, "replied"]);
+  assert.deepStrictEqual([imp.items.length, imp.comments.length], [0, 0], "nothing filed for any of them");
+  assert.deepStrictEqual(reader.codeModeCalls, [], "an acknowledgement reads nothing");
+  // A run that passed the gates keeps the mark (review kick-back 1, finding 2).
+  assert.ok(ticketOf(t, "t-ok").aidan.gatedAt, "a gated run is marked aidan.gatedAt");
+  assert.deepStrictEqual([ticketOf(t, "t-st").aidan.gatedAt, ticketOf(t, "t-fg").aidan.gatedAt], [undefined, undefined], "a refused or unverified run is not");
+  // A run cut off before the gates (no aidan.gatedAt): a person takes it, nothing is filed.
+  const nowMs = 1760000000000 + 10 * 60 * 60 * 1000;
+  t.db.state.supportTickets["t-fg"].aidan = { status: "working", kind: "answer", gmailId: "fg", instruction: "when will the DSP tickets ship?", startedAt: new Date(nowMs) };
+  // A run cut off by the time limit after the gates: a person takes it, and the time budget is filed.
+  t.db.state.supportTickets["t-ok"].aidan = { status: "working", kind: "answer", gmailId: "ok", instruction: "summarise every ticket on every project", startedAt: new Date(nowMs), gatedAt: new Date(nowMs + 1000) };
+  t.tick(16 * 60 * 1000 + 10 * 60 * 60 * 1000);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual([ticketOf(t, "t-fg").aidan.status, ticketOf(t, "t-ok").aidan.status], ["needs-person", "needs-person"]);
+  assert.strictEqual(ticketOf(t, "t-fg").aidan.improvement, undefined, "the stale run with no gate mark files nothing");
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId, imp.items[0].aidanImprovement.category], [1, BT, "time-budget"], "only the gated run is filed");
+  assert.ok(!imp.items[0].desc.includes("DSP tickets ship"), "nothing from the ungated run's request");
+  assert.strictEqual(ticketOf(t, "t-ok").aidan.improvement.action, "filed");
+});
+
+check("Aidan, self-improvement: at most five new tickets a day; a failure to file never fails the run", async () => {
+  const ac = require("../functions/aidan-core");
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "cap", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader: codeModeConsole(), improvements: imp,
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "", gapKind: "", improvement: "" }),
+  });
+  const realFiled = imp.filedOn;
+  imp.filedOn = async () => ac.IMPROVEMENTS_PER_DAY;
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual([imp.items.length, ticketOf(t, "t-cap").aidan.improvement.action], [0, "not-filed"]);
+  assert.ok(aidanEvents(t, "t-cap").some((e) => /No ticket was filed: Aidan has already filed 5 today\./.test(e)));
+  imp.filedOn = realFiled;
+  const broken = makeConsoleAidan([aidanMail({ id: "brk", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader: codeModeConsole(), improvements: Object.assign(stubImprovements(), { projects: async () => { throw new Error("Firestore is down"); } }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(broken);
+  const r = await cron(broken);
+  assert.deepStrictEqual([r.statusCode, ticketOf(broken, "t-brk").aidan.status], [200, "needs-person"], "the run is filed as it finished");
+  assert.ok(aidanEvents(broken, "t-brk").some((e) => /self-check couldn't file its ticket: Firestore is down/.test(e)));
 });
 
 // ── One answering engine (rVv1x2N8xlKAZs0gpkRx, functions/answer-core.js) ──
@@ -1578,7 +1803,7 @@ check("one answering engine: a question put to the Help Centre first still fits 
   const core = require("../functions/support-core");
   assert.ok(core.MAX_ARTICLES >= 1 && DRAFT_TIMEOUT_MS <= 40000);
   // The match, the best article's draft and one wider draft; then, when the Help Centre doesn't answer, the console plans and the answer.
-  assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000);
+  assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ac.CODE_MODE_RUNS * ac.CONSOLE_SCRIPT_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000, "with the one Code Mode run");
 });
 
 // ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──

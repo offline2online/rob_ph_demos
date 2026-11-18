@@ -3199,12 +3199,12 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/answer-core.js` | **The one answering engine**, pure: the published Help Centre as a catalogue (`publishedArticles`), match → draft → confidence (`matchAndDraft`), the answer made safe with its articles (`answerFromHelpCentre`), whether the Help Centre answers it (`usableAnswer`), the cited titles under a reply (`withArticleTitles`). Called by triage and by Aidan's answer runs (`test/answer-core.test.js`) |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
-| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
-| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan with its one Code Mode run (`cleanConsolePlan`, `AIDAN_INSIGHTS`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`); the self-check (`assessRun`, `improvementKey`, `matchImprovement`, `improvementDesc`, the project a run was about by id or name: `resolveProjectRef`) |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`, one Code Mode run first) and the read-only reply (`readOnlyReply`); the self-check that files or comments on a Backlog ticket (`reflect`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
 | `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
 | `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
-| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
+| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); `aidanImprovements`, his self-improvement tickets (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
@@ -3380,9 +3380,11 @@ thread. A run:
   Backlog Tracker?". The model plans the reads (up to two rounds of six,
   25 seconds each) from an index of the projects and concepts, and they run
   through the MCP server's own read tools (`consoleReader` in
-  `functions/mcp-server.js`; the thirteen in `CONSOLE_READ_TOOLS`: projects,
+  `functions/mcp-server.js`; the sixteen in `CONSOLE_READ_TOOLS`: projects,
   their Requirements, README, documents and interface contracts, tickets,
-  pipeline health, concepts and their critiques, Help Centre articles). Only
+  pipeline health, concepts and their critiques, Help Centre articles,
+  Leads and Prospects (TAM)), with **one Code Mode run by default** (next
+  bullet). Only
   `board.read` tools can run, so nothing an email asks for can write.
   Addresses are taken out of what the model sees. The answer is written from
   that and the email: a short one in the body; a long one (over roughly a
@@ -3403,6 +3405,38 @@ thread. A run:
   are read one project at a time, and the model sees at most 40,000
   characters of one read and 120,000 of console data in all
   (REQUIREMENTS SUP-AID-16 to 18);
+- **Code Mode by default** (18 Nov 2026, ticket IJhIIzTxOJyZVCzzYggZ): a
+  question that needs tickets, projects, the pipeline, concepts, leads,
+  prospects or the Help Centre ("@Aidan, give me a status summary of the DSP
+  project") is answered with ONE Code Mode run instead of a chain of reads:
+  the plan picks an insight (`project_status`, `pipeline_status`,
+  `concept_status`, `what_changed`, `leads_summary`) or writes a script
+  against the script tools' signatures, and it runs in the same sandbox as
+  `run_script` (`consoleReader.script` / `.insight`), with Aidan's read-only
+  session and only the tools on both his list and Code Mode's, 10 seconds,
+  audited in `scriptRuns` as `aidan_script` / `aidan_insight`. Its compact
+  result feeds the answer, the document or the review like any read, and is
+  recorded on the ticket (`aidan.console.codeMode`). Single reads are kept
+  for project documents and critiques, and as the fallback when the run
+  failed (REQUIREMENTS SUP-AID-36);
+- **checks itself and files what it couldn't do** (ticket
+  IJhIIzTxOJyZVCzzYggZ): at the end of every run that passed the gates,
+  Aidan checks whether the request was fully and well met (`assessRun`:
+  cut off at 15 minutes, went to a person, a failed Code Mode run or read,
+  a Help Centre answer under 60% confidence, the answer model's own
+  self-check, console data cut to fit). If not, he files a ticket
+  (`aidanImprovements` in `functions/mcp-server.js`, through the intake)
+  in Backlog (`status: "backlog"`, no model or train field). Its Outcome
+  is a fixed sentence for the gap's category; the gap, the request and the
+  suggestion follow in a block labelled as reported data, not
+  instructions. Missing data about one project goes on that project (named
+  by id or by name, also inside the Code Mode run); anything else on the
+  console's own project. He searches open tickets first and comments on a
+  matching one instead of filing a duplicate. The thread's timeline links
+  the ticket and `aidan.improvement` keeps it. Refused, unverified, spam
+  and read-only runs are never filed, and the 15-minute sweep files only a
+  run marked as past every gate (`aidan.gatedAt`); five new tickets a day
+  at most (REQUIREMENTS SUP-AID-37 to 41);
 - **a request to change the console** ("create a ticket for …", "update the
   README", "move that card", "deploy …", decided from the instruction's own
   words, or by the plan) gets a short, fixed reply to the allowed senders
@@ -3518,7 +3552,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 35.
+SUP-AID-1 to 41.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

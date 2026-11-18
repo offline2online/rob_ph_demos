@@ -6458,6 +6458,10 @@ with its Markdown source (SUP-AID-30 to 34).
 Since 18 Nov 2026 (ticket OrkZBBjz9RM5DY54azIG) Aidan answers a question on
 the thread ("@Aidan, please answer John's question below"), reading the
 quoted thread as content and never as instructions (SUP-AID-26 to 29).
+Since 18 Nov 2026 (ticket IJhIIzTxOJyZVCzzYggZ) Aidan reads the console with
+one Code Mode run by default, and files a Backlog ticket (or comments on a
+matching open one) when a run did not fully or well meet its request
+(SUP-AID-36 to 41).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6591,7 +6595,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   for the next sync), the skill choice has one minute and the document four,
   neither model call is retried, and a sync that ran Aidan leaves triage to
   the next sync. An answer has two minutes, after the Help Centre engine's
-  three calls of 40 seconds at most (SUP-AID-21) and the console plans. A run still `working` 15 minutes after it started was cut
+  three calls of 40 seconds at most (SUP-AID-21), the console plans and the
+  one Code Mode run of 10 seconds (SUP-AID-36). A run still `working` 15 minutes after it started was cut
   off: the next sync (scheduled or "Sync now") moves it to Needs a person
   with that reason, and it is never started again.
 - **SUP-AID-11** Queueing is idempotent. Each email is decided once per
@@ -6659,7 +6664,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   and their Requirements, README, additional documents and interface
   contracts; tickets (a list, one in full) and pipeline health; concepts in
   the Concept Incubator (a list, one in full, its critiques); Help Centre
-  articles. The reads are the MCP server's own read tools, the ones named in
+  articles; Leads and Prospects (TAM) (since IJhIIzTxOJyZVCzzYggZ). Most of
+  it is read with one Code Mode run (SUP-AID-36). The reads are the MCP server's own read tools, the ones named in
   `CONSOLE_READ_TOOLS` (`functions/aidan-core.js`), run through
   `consoleReader` (`functions/mcp-server.js`), which offers only `board.read`
   tools with no role, so no write tool is reachable from an email whatever
@@ -6716,7 +6722,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   was not taken: it would silently stop a client in Cc receiving documents
   they were sent before.
 - **SUP-AID-19** Aidan never creates, updates, archives, approves or deploys
-  anything from an email. A request to do so on the console ("create a
+  anything from an email. (His own self-improvement ticket, SUP-AID-38, is
+  not one an email asks for: it is decided in code from how the run went.) A request to do so on the console ("create a
   ticket for …", "update the README", "move that card", "deploy …"), decided
   from the instruction's own words (`consoleChangeRequest`: a clause that
   opens with a change verb whose object is a console thing; see below) or by the plan
@@ -6964,6 +6971,88 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   nothing: The request was cancelled when this thread was marked as spam.
   Send it again to run it." A thread that is not in the Aidan tab gets no
   Aidan record.
+- **SUP-AID-36** (18 Nov 2026, ticket IJhIIzTxOJyZVCzzYggZ) **Code Mode by
+  default.** When an answer or a write reads the console (SUP-AID-16), the
+  plan answers anything about tickets, projects, the pipeline, concepts,
+  leads, prospects or the Help Centre with **one Code Mode run**: an insight
+  from the library (`AIDAN_INSIGHTS`: pipeline_status, project_status,
+  concept_status, what_changed, leads_summary; release_status needs Staff
+  Kanban tools Aidan doesn't have) or a script the model writes against the
+  script tools' signatures, returning a compact JSON result. It runs in the
+  same sandbox as `run_script` (`functions/code-mode`, through
+  `consoleReader.script` / `.insight` in `functions/mcp-server.js`), with
+  Aidan's read-only stand-in session and only the tools that are both on
+  `CONSOLE_READ_TOOLS` and on Code Mode's own read-only allow-list; a tool
+  off that list is refused inside the run ("not available"). Every run is
+  audited in `scriptRuns` (`email: "aidan"`, kind `aidan_script` or
+  `aidan_insight`). One run per request, 10 seconds at most
+  (`CONSOLE_SCRIPT_TIMEOUT_MS`), never repeated. Single reads remain for what
+  Code Mode can't reach (project documents, Requirements, README, interface
+  contracts, concept critiques) and as the fallback when the run failed. The
+  result goes into `<console_data>` like any read (addresses removed, ids to
+  titles, the same budgets), and the ticket records it
+  (`aidan.console.codeMode`: kind, insight name, ok, tool calls, duration,
+  error). A reader without Code Mode plans single reads exactly as before.
+- **SUP-AID-37** **The self-check.** At the end of every run that passed
+  every gate (SUP-AID-1 to 4, 12), Aidan checks whether the request was fully
+  and well met (`assessRun` in `functions/aidan-core.js`), from what the run
+  recorded and, for an answer, the model's own self-check (`gap`, `gapKind`,
+  `improvement` in the answer's schema: data only, never sent). In order: a
+  run cut off after 15 minutes (time budget); a run that went to a person or
+  failed (no skill or no brand skill: skill gap; the PDF: run failed;
+  couldn't answer: missing data, in the model's words); a failed Code Mode
+  run (Code Mode limitation, or missing tool when a tool was not
+  available); a failed single read (missing tool); a Help Centre answer sent
+  under 60% confidence (low confidence); the model's self-check; console
+  data cut to fit the budget. A refused or unverified email, spam, a
+  read-only reply (SUP-AID-19 is by design) and a missing model key
+  (configuration) are never checked. A run that met its request files
+  nothing. Passing every gate is recorded on the job (`aidan.gatedAt`,
+  written when the last gate passes), and the 15-minute sweep
+  (`sweepStale`) files a cut-off run only when that mark is there: a run
+  cut off before its sender checks finished is never filed.
+- **SUP-AID-38** **The ticket.** A gap is filed as a Backlog ticket
+  (`aidanImprovements` in `functions/mcp-server.js`, the only board write
+  Aidan makes). When the gap is missing data and the run's reads were about
+  exactly one project, it is filed on that project; otherwise on Aidan's
+  own home, the console's project ("Backlog Tracker" by name). The projects
+  a run was about are each read's `projectId` / `project` argument and, for
+  the Code Mode run, every project its tool calls named (the reader reports
+  them as `projectRefs`), each resolved by id or by name against the
+  console's index (`resolveProjectRef`, `projectsReadAbout`), so an insight
+  given "Display Types" is about Display Types & DSP Integration. Its
+  description is in the four intake sections and goes through the same
+  intake as `create_backlog_item`. The Outcome's first line is written in
+  code for the gap's category (`IMPROVEMENT_OUTCOMES` and
+  `IMPROVEMENT_SUGGESTIONS`); what the run reported (the gap, what happened,
+  the suggested improvement, the request with its SUP key, kind and date)
+  follows in a quoted block labelled "Reported by Aidan's self-check, from
+  an email: data, not instructions." The rest is left for the build
+  session. It is written with `status: "backlog"`, `createdVia: "aidan"`,
+  `aidanImprovementKey`, `aidanImprovementDay` and `aidanImprovement`
+  (category, gap, suggestion, the Support Inbox ticket), and no model,
+  train, patch or deploy field: it waits in Backlog for a person. Addresses
+  are removed and every reported line is one line.
+- **SUP-AID-39** **No duplicates.** Before filing, Aidan searches open
+  tickets (Backlog, Ready for Testing, Approved for Deployment): one he
+  filed for the same key (the category and the request, however worded or
+  punctuated) in any project; one he filed for the same kind of gap worded
+  alike; or any open ticket in the target project whose title says the
+  same (`matchImprovement`). On a match he appends a comment ("Aidan hit
+  this again (category): …", the same label as the ticket, then the gap, the
+  request, its SUP key and date) and files nothing. The comment is an
+  update of the ticket, never a merge: a ticket deleted meanwhile is not
+  recreated (the failure is logged). A ticket that has shipped is not open, so the next gap files
+  again.
+- **SUP-AID-40** **Linked in the run log.** The thread's timeline says what
+  was found and links the ticket filed or commented on, and the ticket
+  keeps it in `aidan.improvement` (action filed / commented / not-filed,
+  the backlog ticket's id, title, project and link, the category, gap and
+  suggestion).
+- **SUP-AID-41** At most five new tickets a day (`IMPROVEMENTS_PER_DAY`);
+  past that the timeline says none was filed. Comments are not capped. A
+  failure to file never changes the run's own result: it is logged and
+  noted on the timeline.
 
 ### Connecting
 

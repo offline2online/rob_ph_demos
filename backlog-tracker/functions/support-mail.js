@@ -123,7 +123,7 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
-  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null,
+  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null, improvements = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -496,6 +496,10 @@ function createSupportMail({
     // (collateral-pdf.js), loaded only when collateral is printed.
     accounts,
     renderPdf: renderPdf || ((html, opts) => require("./collateral-pdf").renderPdf(html, opts)),
+    // Self-improvement tickets (mcp-server.js → aidanImprovements): a run that
+    // didn't fully meet its request files a Backlog ticket, or comments on a
+    // matching open one.
+    improvements,
   });
 
   // ── Sync ──
