@@ -170,10 +170,13 @@ function insightParams(def, given) {
   return { params: out };
 }
 
-// ── The tools ────────────────────────────────────────────────────────────
-// deps: { textResult, toolError, db, FieldValue, logger, getTool(name), atLeast(role, needed) }
-function codeModeTools(deps) {
-  const { textResult, toolError, db, FieldValue, logger, getTool, atLeast } = deps;
+// ── The runner ───────────────────────────────────────────────────────────
+// What run_script and get_insight share, and what Aidan (functions/aidan.js,
+// through mcp-server.js → consoleReader) runs his own scripts with: the
+// allow-list check, the per-caller tool test, the proxied call and the audit.
+// deps: { db, FieldValue, logger, getTool(name), atLeast(role, needed) }
+function makeRunner(deps) {
+  const { db, FieldValue, logger, getTool, atLeast } = deps;
 
   // Refuse to expose anything that is not a plain read tool. Called on first
   // use (the registry is still being built when this module loads).
@@ -192,23 +195,25 @@ function codeModeTools(deps) {
   // mcp-server.js, re-stated here so a script is held to it call by call: a
   // write tool needs the board.write scope (which a viewer's token never
   // carries), and a tool with a role needs at least that role. On top of
-  // that, a script only ever gets allow-listed read tools.
-  function mayUse(session, name) {
+  // that, a script only ever gets allow-listed read tools, and, when the
+  // caller narrows it further (`allow`, Aidan's own list), only those.
+  function mayUse(session, name, allow) {
     const tool = getTool(name);
     if (!tool || !SCRIPT_TOOL_NAMES.includes(name) || tool.scope !== "board.read") return false;
+    if (Array.isArray(allow) && !allow.includes(name)) return false;
     const scopes = Array.isArray(session.scopes) ? session.scopes : [];
     if (tool.scope === "board.write" && !scopes.includes("board.write")) return false;
     if (tool.role && !atLeast(session.role, tool.role)) return false;
     return true;
   }
-  const toolsFor = (session) => SCRIPT_TOOL_NAMES.filter((name) => mayUse(session, name));
+  const toolsFor = (session, allow) => SCRIPT_TOOL_NAMES.filter((name) => mayUse(session, name, allow));
 
   // One proxied call: the existing tool's own run(), with the caller's own
   // session. Returns the tool's JSON payload; throws an Error whose message
   // is safe to hand to the script.
-  async function callAsCaller(session, name, args) {
+  async function callAsCaller(session, name, args, allow) {
     const tool = getTool(name);
-    if (!mayUse(session, name)) throw new Error(`${name} is not available to ${session.role || "this role"} scripts.`);
+    if (!mayUse(session, name, allow)) throw new Error(`${name} is not available to ${session.role || "this role"} scripts.`);
     let result;
     try {
       result = await tool.run(args, session);
@@ -235,12 +240,19 @@ function codeModeTools(deps) {
     }
   }
 
+  // opts: the sandbox's options, plus `allow` (a narrower tool list).
   async function execute(session, kind, source, opts, auditExtra) {
     assertAllowList();
+    const o = Object.assign({}, opts || {});
+    const allow = Array.isArray(o.allow) ? o.allow : null;
+    delete o.allow;
+    // Every tool the caller's role may use is a function in the sandbox; one
+    // off a narrower `allow` list refuses when called (a ToolError the script
+    // can catch, as an insight does for Staff Kanban), never runs.
     const outcome = await sandbox.runInSandbox(source, Object.assign({
       toolNames: toolsFor(session),
-      callTool: (name, args) => callAsCaller(session, name, args),
-    }, opts));
+      callTool: (name, args) => callAsCaller(session, name, args, allow),
+    }, o));
     const max = sandbox.LIMITS.MAX_SOURCE_BYTES;
     const tooLong = Buffer.byteLength(source, "utf8") > max * 2;
     await record(session, Object.assign({
@@ -258,6 +270,48 @@ function codeModeTools(deps) {
     }, auditExtra || {}));
     return outcome;
   }
+
+  return { assertAllowList, mayUse, toolsFor, execute };
+}
+
+// ── Aidan's runner (IJhIIzTxOJyZVCzzYggZ) ────────────────────────────────
+// Aidan, the agent mailbox, answers console questions with ONE Code Mode run
+// (a script he writes, or an insight from the library) instead of many single
+// reads. Same sandbox, same limits, same audit (scriptRuns, kind
+// "aidan_script" / "aidan_insight"), with Aidan's read-only stand-in session
+// and only the tools on his own list (`allow`, from aidan-core.js →
+// CONSOLE_READ_TOOLS): nothing he can reach writes.
+// Returns { toolNames(session, allow), describe(session, allow),
+//   insights(), run(session, code, { allow, timeoutMs }),
+//   insight(session, name, params, { allow, timeoutMs }) }; run and insight
+// resolve the sandbox's outcome and never reject.
+function scriptRunner(deps) {
+  const runner = makeRunner(deps);
+  const clampMs = (ms) => (Number.isFinite(ms) ? ms : sandbox.LIMITS.DEFAULT_TIMEOUT_MS);
+  return {
+    toolNames(session, allow) { runner.assertAllowList(); return runner.toolsFor(session, allow); },
+    describe(session, allow) { runner.assertAllowList(); return describeText(runner.toolsFor(session, allow)); },
+    insights: () => [...INSIGHTS.values()].map((d) => ({ name: d.name, description: d.description, params: d.params.map((p) => ({ name: p.name, type: p.type, required: !!p.required, description: p.description })) })),
+    run(session, code, { allow = null, timeoutMs } = {}) {
+      return runner.execute(session, "aidan_script", String(code == null ? "" : code), { allow, timeoutMs: clampMs(timeoutMs), filename: "aidan-script.js" });
+    },
+    async insight(session, name, params, { allow = null, timeoutMs } = {}) {
+      const def = INSIGHTS.get(String(name || ""));
+      if (!def) return { ok: false, error: { kind: "insight", name: "NoSuchInsight", message: `No insight called "${name}".` }, toolCalls: [], durationMs: 0 };
+      const p = insightParams(def, params);
+      if (p.error) return { ok: false, error: { kind: "insight", name: "BadParams", message: p.error }, toolCalls: [], durationMs: 0 };
+      return runner.execute(session, "aidan_insight", insightSource(def),
+        { allow, params: p.params, timeoutMs: clampMs(timeoutMs), filename: `insight-${def.name}.js`, maxSourceBytes: 0 },
+        { insight: def.name, insightVersion: def.version, params: p.params });
+    },
+  };
+}
+
+// ── The tools ────────────────────────────────────────────────────────────
+// deps: { textResult, toolError, db, FieldValue, logger, getTool(name), atLeast(role, needed) }
+function codeModeTools(deps) {
+  const { textResult, toolError } = deps;
+  const { assertAllowList, toolsFor, execute } = makeRunner(deps);
 
   const calls = (outcome) => outcome.toolCalls.map((c) => ({ name: c.name, durationMs: c.durationMs }));
   function errorResult(outcome, extra) {
@@ -345,4 +399,4 @@ function codeModeTools(deps) {
   ];
 }
 
-module.exports = { codeModeTools, SCRIPT_TOOLS, SCRIPT_TOOL_NAMES, INSIGHT_NAMES, INSIGHTS, insightSource, insightParams, describeText, sandbox };
+module.exports = { codeModeTools, scriptRunner, SCRIPT_TOOLS, SCRIPT_TOOL_NAMES, INSIGHT_NAMES, INSIGHTS, insightSource, insightParams, describeText, sandbox };
