@@ -832,6 +832,13 @@ dead. A reload fixed it, and Chromium tests (always fresh files) never could.
   can only load its own scripts. Never remove that, and never load a
   first-party script by a hand-written URL that the build can't stamp.
   The symptom "old menu items work, new ones don't" means old scripts.
+- **18 Nov 2026: scripts and stylesheets are now kept by the browser for a
+  year (`immutable`), the page still never.** That is safe only because of
+  the stamp above: a stamped URL never changes what it answers. So the rule
+  is stricter now, not looser: **a first-party script or stylesheet requested
+  without the stamp would be kept for a year.** The build fails on one,
+  `test/ui/minified.test.mjs` fails on one the running console asks for, and
+  `test/ui/stale-page.test.mjs` fails if any rule lets a page be kept.
 - `/` and `**/` are now no-cache, and a failed start reloads once by itself
   (`reloadOnceAfterBootFailure` in `auth-gate.js`). `test/ui/stale-page.test.mjs`
   reproduces the iPad failure and must stay green.

@@ -5142,10 +5142,22 @@ wired up. Chromium tests always load fresh files, so none caught it.
 
 Rules:
 
-- **`firebase.json` sends `Cache-Control: no-cache, must-revalidate` for `/`
-  and `**/`** as well as for `.html`, `.js` and `.css`. The page and its
-  scripts are revalidated together on every load. Never let a page that
-  loads module scripts be cached on its own.
+- **`firebase.json` sends `Cache-Control: no-cache, must-revalidate` for `/`,
+  `**/` and every `.html`.** The page is asked for on every load. Never let a
+  page that loads module scripts be cached.
+- **Scripts and stylesheets are kept for a year** (`public, max-age=31536000,
+  immutable`, 18 Nov 2026). Until then they were `no-cache` too, and a reload
+  of the console asked the server for about 56 files, each waiting on an
+  answer and queuing behind the others (measured on the live console: about
+  370 ms a file, first cards after roughly seven seconds on that connection).
+  This is safe only because of the next rule: the page names every script and
+  stylesheet by its build's content stamp, so a stamped URL never changes
+  what it answers, and a new release's page asks for URLs no cache holds.
+  **A first-party script or stylesheet must never be requested without the
+  stamp**: it would be kept for a year. `scripts/build-console.js` fails the
+  build on one it can see, `test/ui/minified.test.mjs` fails on one the
+  running console asks for, and `test/ui/stale-page.test.mjs` fails if any
+  rule lets a page be kept.
 - **Every script and stylesheet URL carries the build's id** (17 Nov 2026,
   after Dashboard and Support Inbox did nothing on the iPad while the menu
   items from before that release worked, and a fresh tab didn't help: the

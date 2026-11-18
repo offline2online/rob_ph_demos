@@ -1776,6 +1776,110 @@ T("KB-C27", "the microphone is asked for once, and typing in a dictated comment 
   await p.done();
 });
 
+// Nothing a person does waits on the server (18 Nov 2026). On the live console a round trip
+// took about half a second, and opening a ticket, saving one and creating one each showed
+// nothing until one to three of them had come back. Here every server read, count and commit
+// takes 400 ms (window.__FB_LATENCY, firebase-stub.mjs), and each step is checked in the same
+// turn as its click, before any of them can have answered.
+const SLOW = { fn: () => { window.__FB_LATENCY = 400; } };
+T("KB-C28", "with a slow server: a ticket's dialog, a save and a create all answer at the click; a failed save or create is put back", { timeout: 120000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: SLOW });
+  const key = "PH-32"; // a Backlog task
+  const title0 = KB.kanbanTasks[key].title;
+  const clickCard = (k) => p.evaluate((k) => {
+    document.querySelector(`.kb-card[data-key="${k}"]`).click();
+    const bd = document.querySelector("#task-backdrop");
+    return { shown: !bd.hidden, head: document.querySelector("#task-title-h").textContent, body: document.querySelector("#task-form").textContent, form: !!document.querySelector("#f-title") };
+  }, k);
+  const closed = () => p.evaluate(() => document.querySelector("#task-backdrop").hidden);
+  const setTitle = (v) => p.evaluate((v) => { const f = document.querySelector("#f-title"); f.value = v; f.dispatchEvent(new Event("input", { bubbles: true })); }, v);
+  const saveNow = () => p.evaluate((k) => {
+    document.querySelector("#f-save").click();
+    const card = document.querySelector(`.kb-card[data-key="${k}"]`);
+    return { closed: document.querySelector("#task-backdrop").hidden, card: card ? card.textContent : "" };
+  }, key);
+
+  // 1. the dialog is there at the click, with the ticket's key and title; the form follows
+  let at = await clickCard(key);
+  assert.ok(at.shown, "the dialog shows in the same turn as the click");
+  assert.equal(at.form, false, "the ticket itself is still being read");
+  assert.ok(at.head.includes(key) && at.body.includes(title0), `the dialog names the ticket while it is read: "${at.head}" / "${at.body}"`);
+  await until(() => p.$("#f-title"), "the ticket's form");
+  assert.equal(await p.inputValue("#f-title"), title0);
+  // closing while a ticket is still being read opens nothing afterwards
+  await press(p, "#task-close");
+  const other = "PH-34";
+  at = await clickCard(other);
+  assert.ok(at.shown && !at.form);
+  await p.evaluate(() => document.querySelector("#task-close").click());
+  await p.waitForTimeout(900);
+  assert.ok(await closed(), "a ticket closed while it was being read stays closed");
+
+  // 2. a ticket read a moment ago and not changed since opens whole, at once
+  at = await clickCard(key);
+  assert.ok(at.shown && at.form, "an unchanged ticket opens from the copy the page holds, without a read");
+  await until(() => p.isEnabled("#f-save").then((x) => !x), "Save off: nothing changed");
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  await p.waitForTimeout(700); // (the read behind the form has landed and changed nothing)
+  assert.equal(await p.inputValue("#f-title"), title0);
+
+  // 3. Save closes the form and shows the change on the card in the same turn
+  await setTitle("Renamed without waiting");
+  await until(() => p.isEnabled("#f-save"), "Save on");
+  let saved = await saveNow();
+  assert.ok(saved.closed, "the form closes at the click");
+  assert.ok(saved.card.includes("Renamed without waiting"), "the card shows the new title at the click");
+  await until(() => p.evaluate((k) => (globalThis.__fbStub.col("kanbanTasks").get(k) || {}).title === "Renamed without waiting", key), "the save reaching the server");
+  // (a ticket just saved has changed since it was read: it is read again, never opened from the old copy)
+  at = await clickCard(key);
+  assert.ok(at.shown && !at.form, "a ticket changed since it was read is read again");
+  await until(() => p.$("#f-title"), "the ticket's form");
+  assert.equal(await p.inputValue("#f-title"), "Renamed without waiting");
+
+  // 4. a save the server refuses says so and puts the old title back on the card
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  await setTitle("This one is refused");
+  await until(() => p.isEnabled("#f-save"), "Save on");
+  await p.evaluate(() => { const b = globalThis.__fbStub; b.__commit = b.commit; b.commit = () => { throw Object.assign(new Error("refused"), { code: "permission-denied" }); }; });
+  saved = await saveNow();
+  assert.ok(saved.closed && saved.card.includes("This one is refused"));
+  await until(async () => /wasn't saved/.test(await toastText(p)), "the refusal said");
+  await until(() => p.evaluate((k) => document.querySelector(`.kb-card[data-key="${k}"]`).textContent.includes("Renamed without waiting"), key), "the old title back on the card");
+
+  // 5. a new ticket that can't be created comes back with everything that was typed
+  await press(p, "#kb-new-btn");
+  await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the New task form");
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  await setTitle("Created without waiting");
+  await p.evaluate(() => document.querySelector("#f-save").click());
+  await until(() => p.$("#f-error:not([hidden])"), "the form back, with the reason");
+  assert.match(await p.textContent("#f-error"), /permission to create/);
+  assert.equal(await p.inputValue("#f-title"), "Created without waiting", "what was typed is still in the form");
+  await p.evaluate(() => { const b = globalThis.__fbStub; b.commit = b.__commit; });
+
+  // 6. Create closes the form at the click; the ticket and its number follow
+  await until(() => p.$("#f-description .ql-editor"), "the editor");
+  const made = await p.evaluate(() => { document.querySelector("#f-save").click(); return { closed: document.querySelector("#task-backdrop").hidden, toast: document.querySelector("#kb-toast").textContent }; });
+  assert.ok(made.closed, "the New task form closes at the click");
+  assert.match(made.toast, /Creating the ticket/);
+  await until(async () => /PH-\d+ created in Backlog/.test(await toastText(p)), "the created toast");
+  const newKey = /PH-\d+/.exec(await toastText(p))[0];
+  assert.equal(await p.evaluate((k) => globalThis.__fbStub.col("kanbanTasks").get(k).title, newKey), "Created without waiting");
+  await p.done();
+});
+// The board's cards never wait for the two counts that check the cards are complete: with a
+// server that takes five seconds to answer, the cards (the listener answers from the local
+// cache) are on the page long before.
+T("KB-C29", "the board shows its cards without waiting for the server's counts", { timeout: 60000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", { init: { fn: () => {
+    window.__FB_LATENCY = 5000;
+    new MutationObserver((_, ob) => { if (document.querySelector(".kb-card")) { window.__firstCard = performance.now(); ob.disconnect(); } }).observe(document, { childList: true, subtree: true });
+  } } });
+  const first = await p.evaluate(() => window.__firstCard);
+  assert.ok(first > 0 && first < 5000, `the first cards came ${Math.round(first)} ms in, before any count could have answered (5000 ms)`);
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");

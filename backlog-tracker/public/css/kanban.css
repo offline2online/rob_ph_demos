@@ -390,6 +390,12 @@ textarea.kb-input { resize: vertical; line-height: 1.5; }
 .kb-agent-link .material-symbols-outlined { font-size: 17px; color: var(--violet); }
 .kb-agent-working .kb-field[data-field] .kb-input { background-image: linear-gradient(90deg, transparent, rgba(151, 71, 255, .08), transparent); background-size: 200% 100%; animation: kb-shimmer 1s linear infinite; }
 @keyframes kb-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+/* A ticket being read: the dialog is there at the click, its form a moment later. */
+.kb-opening { display: flex; flex-direction: column; gap: 12px; padding: 20px; min-height: 240px; }
+.kb-opening-title { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.kb-opening-line { display: block; height: 12px; border-radius: 6px; background: var(--active-bg) linear-gradient(90deg, transparent, var(--surface), transparent) 0 0 / 200% 100%; animation: kb-shimmer 1.2s linear infinite; }
+.kb-opening-short { width: 60%; }
+@media (prefers-reduced-motion: reduce) { .kb-opening-line { animation: none; } }
 .kb-agent-filled .kb-input, .kb-agent-filled .type-toggle { box-shadow: 0 0 0 1.5px rgba(151, 71, 255, .55); }
 .kb-agent-filled .field-label::after { content: "Agent"; margin-left: 6px; font-size: 9.5px; letter-spacing: .04em; padding: 1px 6px; border-radius: 9999px; color: #fff; background: linear-gradient(135deg, var(--primary), var(--violet)); }
 /* Round mic inside a text box; turns into a red stop button while listening. */
