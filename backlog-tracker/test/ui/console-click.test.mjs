@@ -3637,6 +3637,44 @@ const scenarios = [
       assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/r1", "it opens inside the Aidan tab");
     },
   },
+  {
+    // 303SwmU5aQdyJNHxlTtQ: Aidan answers in the email itself (no attachment),
+    // and every ticket Aidan ran says what was asked for: Answer, Write or Store.
+    name: "Support Inbox: an Aidan answer shows on the thread, and each run shows its kind (Answer, Write, Store)",
+    hash: "#support/aidan?queue=all",
+    seed: () => {
+      const s = only("b1");
+      const tk = (n, d) => ({ key: `SUP-${n}`, subject: `Subject ${n}`, customerEmail: "owner@example.com", customerName: "Owner Person", status: "resolved", resolvedBy: "aidan", inboxes: ["aidan"], createdAt: t(T0), lastMessageAt: t(T0 + n * 60000), ...d });
+      s.docs.supportTickets = {
+        w1: tk(1, { subject: "Kestrel onboarding", aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "aws-onboarding-pack-kestrel.md" }, recipients: 3 } }),
+        s1: tk(2, { subject: "Notes for the pack", aidan: { status: "ingested", kind: "store", skillName: "AWS onboarding pack", files: [{ name: "brief.pdf" }] } }),
+        n1: tk(3, { subject: "Please send everything", status: "open", resolvedBy: "", customerEmail: "someone@shop.example", aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." } }),
+        a1: tk(4, { subject: "Did this reach you", aidan: { status: "replied", kind: "answer", recipients: 2 } }),
+      };
+      s.docs["supportTickets/a1/messages"] = {
+        m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, please confirm you received this email.", at: t(T0) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+      };
+      return s;
+    },
+    run: async (c) => {
+      await c.visible("#support-page .support-row");
+      await until(async () => (await c.page.locator(".support-row").count()) === 4, "all four Aidan tickets");
+      c.at("each run says its kind beside what Aidan did; a refused tag has none");
+      const kinds = await c.page.$$eval(".support-row", (rows) => rows.map((r) => [(r.querySelector(".support-aidan-badge") || {}).textContent || "", (r.querySelector(".support-aidan-kind") || {}).textContent || ""]));
+      assert.deepStrictEqual(kinds.map((k) => k.join(" / ")).sort(), ["Aidan replied / Answer", "Aidan replied / Write", "Aidan: no action / ", "Ingested / Store"]);
+      c.at("the answer is on the thread, to everyone on the email, with nothing attached");
+      await c.click('[data-support-ticket="a1"]', "the answered ticket");
+      await c.visible(".support-msg-aidan");
+      assert.strictEqual((await c.text(".support-aidan-line")).replace("smart_toy", "").trim(), "Aidan answered in the email itself, to 2 people on this email. Nothing was attached.");
+      assert.strictEqual(await c.page.$eval(".support-ticket-meta .support-aidan-kind", (el) => el.textContent), "Answer", "the kind is on the ticket too");
+      // textContent, not innerText: badges are shown in capitals.
+      const sent = await c.page.evaluate(() => document.querySelector(".support-msg-aidan").textContent.replace(/\s+/g, " "));
+      for (const want of ["Sent by Aidan · Answer", "To owner@example.com", "Cc client@shop.example", "Got it, Owner, all good."]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
+      assert.strictEqual(await c.page.locator(".support-msg-aidan .support-msg-files").count(), 0, "no attachment line");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/a1");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

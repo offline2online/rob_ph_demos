@@ -609,8 +609,8 @@ function aidanMail({ id, threadId = `t-${id}`, from = `Owner Person <${OWNER}>`,
   if (parts) m.payload = { mimeType: "multipart/mixed", headers: m.payload.headers, parts: [{ mimeType: "text/plain", body: m.payload.body }, ...parts] };
   return m;
 }
-function makeAidan(mail, { write } = {}) {
-  const seen = { write: [], triaged: [] };
+function makeAidan(mail, { write, answer } = {}) {
+  const seen = { write: [], triaged: [], answer: [] };
   const stored = [];
   const t = make({
     mail,
@@ -619,6 +619,8 @@ function makeAidan(mail, { write } = {}) {
       // The model's choice when no skill is named: none fits.
       select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
       write: async (input) => { seen.write.push(input); return write ? write(input) : DOC; },
+      // An answer in the email itself. By default the model says it can't answer from the email.
+      answer: async (input) => { seen.answer.push(input); return answer ? answer(input) : { canAnswer: false, replyText: "", reason: "it needs a document" }; },
     },
     bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
   });
@@ -711,7 +713,7 @@ check("Aidan: \"store this\" keeps the email and its attachments for the named s
 
 check("Aidan: no matching skill goes to a person; only the scheduled sync runs Aidan; one run per sync", async () => {
   const t = makeAidan([
-    aidanMail({ id: "vague", text: "@Aidan, do the usual thing for them please." }),
+    aidanMail({ id: "vague", text: "@Aidan, write the usual thing for them please." }),
     aidanMail({ id: "two", threadId: "t-two", text: "@Aidan, write the POC summary for Kestrel.", date: 1759990001000 }),
   ]);
   await connectAidan(t);
@@ -724,7 +726,9 @@ check("Aidan: no matching skill goes to a person; only the scheduled sync runs A
   assert.strictEqual(r2.body.aidanRuns, 1);
   const vague = ticketOf(t, "t-vague");
   assert.deepStrictEqual([vague.aidan.status, vague.needsHuman], ["needs-person", true], "no skill matched: a person takes it, nothing is sent");
-  assert.deepStrictEqual(t.seen.select, ["do the usual thing for them please."], "the model was asked only when no skill was named");
+  assert.deepStrictEqual(t.seen.select, ["write the usual thing for them please."], "the model was asked only when no skill was named");
+  assert.deepStrictEqual([t.seen.answer.length, vague.aidan.kind], [1, "generate"], "it was tried as an answer first, and the email alone couldn't answer it");
+  assert.ok(/No skill matches the instruction \(nothing in the library fits\), and it couldn't be answered from the email alone \(it needs a document\)\./.test(vague.aidan.reason), vague.aidan.reason);
   assert.strictEqual(ticketOf(t, "t-two").aidan.status, "replied");
   assert.strictEqual(t.google.calls.sent.length, 1);
 });
@@ -761,6 +765,75 @@ check("Aidan: \"@Aidan thanks, looks great\" is recorded as a tag that was not r
   assert.deepStrictEqual([thx.aidan.status, Boolean(thx.aidanPending)], ["ignored", false]);
   assert.ok(/not with an instruction/.test(thx.aidan.reason), thx.aidan.reason);
   assert.strictEqual(ticketOf(t, "t-pos").aidan, undefined, "no tag, nothing recorded");
+});
+
+// ── Answer, the third kind (303SwmU5aQdyJNHxlTtQ) ──
+check("Aidan: \"please confirm you received this email\" is answered in the email itself, to everyone on it, with no attachment and no skill", async () => {
+  const t = makeAidan([aidanMail({ id: "ack", cc: "Client <client@shop.example>, colleague@shop.example", text: "Hi all,\n\n@Aidan, please confirm you received this email.\n\nThanks" })],
+    { answer: () => ({ canAnswer: true, replyText: "Got it, Owner, all good.", reason: "" }) });
+  await connectAidan(t);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  const queued = ticketOf(t, "t-ack");
+  assert.deepStrictEqual([queued.aidan.status, queued.aidan.kind, queued.aidanPending, queued.aidan.instruction], ["queued", "answer", true, "please confirm you received this email."], "queued as an answer; Sync now does not run it");
+  const r = await cron(t);
+  assert.deepStrictEqual([r.statusCode, r.body.aidanRuns], [200, 1]);
+  assert.deepStrictEqual([t.seen.select, t.seen.write.length, t.seen.triaged], [undefined, 0, []], "no skill is chosen, no document is written, no Help Centre draft");
+  const a = t.seen.answer[0];
+  assert.deepStrictEqual([a.skill, a.instruction], [null, "please confirm you received this email."]);
+  assert.ok(JSON.stringify(a.content).includes("Instruction to Aidan: please confirm you received this email.") && JSON.stringify(a.content).includes("The sender's first name: Owner"));
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  const sent = t.google.calls.sent[0];
+  assert.strictEqual(sent.threadId, "t-ack", "on the original thread");
+  assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && sent.mail.includes("Cc: client@shop.example, colleague@shop.example"), "reply-all, as a write");
+  assert.ok(!/^(To|Cc):.*aidan@/m.test(sent.mail), "never to Aidan's own address");
+  assert.ok(/Content-Type: text\/plain/.test(sent.mail) && !/multipart|Content-Disposition|filename=/i.test(sent.mail), "a plain email: nothing attached");
+  assert.ok(sent.mail.includes("Auto-Submitted: auto-generated"));
+  const tk = ticketOf(t, "t-ack");
+  assert.deepStrictEqual([tk.status, tk.resolvedBy, tk.needsHuman, tk.aidanPending, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.document, tk.aidan.skillId], ["resolved", "aidan", false, false, "replied", "answer", 3, undefined, undefined]);
+  const out = messagesOf(t, "t-ack").find((m) => m.direction === "out");
+  assert.deepStrictEqual([out.source, out.sentBy, out.kind, out.to, out.cc, out.attachments, out.text], ["aidan", "aidan", "answer", [OWNER], ["client@shop.example", "colleague@shop.example"], [], "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub"], "the reply is on the thread in the Aidan tab");
+  assert.ok(messagesOf(t, "t-ack").some((m) => m.direction === "event" && /Aidan answered on the email and replied to 3 people/.test(m.text)));
+  // The next sync reads the sent answer back from Gmail: nothing is filed twice or run again.
+  t.mail.push(gmailMessage({ id: sent.id, threadId: "t-ack", from: `Aidan <${MAILBOX}>`, labels: ["SENT"], date: 1760000900000, text: "Got it, Owner, all good." }));
+  await cron(t);
+  assert.deepStrictEqual([t.google.calls.sent.length, t.seen.answer.length], [1, 1]);
+});
+
+check("Aidan: a question is answered from the email and the thread quoted in it; a skill named in it is read; the same gates as a write", async () => {
+  const quoted = "@Aidan, what's the status of the Kestrel POC?\n\nOn Mon, 16 Nov 2026 at 10:00, Client <client@shop.example> wrote:\n> The Kestrel POC went live in 12 stores on Friday.";
+  const t = makeAidan([
+    aidanMail({ id: "q", cc: "client@shop.example", text: quoted }),
+    aidanMail({ id: "named", threadId: "t-named", text: "@Aidan, what does the POC summary skill need from me?", date: 1759990001000 }),
+    // Not allowed, and not verified: neither is answered.
+    aidanMail({ id: "stranger", threadId: "t-stranger", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, please confirm you received this email", date: 1759990002000 }),
+    aidanMail({ id: "forged", threadId: "t-forged", auth: "", text: "@Aidan, please confirm you received this email", date: 1759990003000 }),
+  ], { answer: (input) => ({ canAnswer: true, replyText: input.skill ? "It needs the trial dates and the store list." : "It went live in 12 stores on Friday.", reason: "" }) });
+  await connectAidan(t);
+  for (let i = 0; i < 4; i++) await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 2, "one answer each for the two allowed, verified questions");
+  const q = t.seen.answer.find((x) => !x.skill), named = t.seen.answer.find((x) => x.skill);
+  assert.ok(JSON.stringify(q.content).includes("went live in 12 stores"), "the quoted thread is there to answer from");
+  assert.ok(/untrusted data/.test(q.system) && !/<skill /.test(q.system), "as untrusted content, with no skill");
+  assert.strictEqual(named.skill.id, "s2");
+  assert.ok(/Summarise the POC\./.test(named.system), "a skill named in the question is read");
+  assert.deepStrictEqual([ticketOf(t, "t-named").aidan.kind, ticketOf(t, "t-named").aidan.skillName], ["answer", "POC summary"]);
+  assert.deepStrictEqual([ticketOf(t, "t-stranger").aidan.status, ticketOf(t, "t-forged").aidan.status], ["ignored", "ignored"]);
+  assert.ok(/not allowed/.test(ticketOf(t, "t-stranger").aidan.reason) && /couldn't be verified/.test(ticketOf(t, "t-forged").aidan.reason));
+});
+
+check("Aidan: a question the email can't answer goes to a person and nothing is sent; a write no skill matches is answered when the email can answer it", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "hard", text: "@Aidan, what did we agree with Heron last year?" }),
+    aidanMail({ id: "sum", threadId: "t-sum", text: "@Aidan, summarise this thread for everyone.\n\nOn Mon, 16 Nov 2026 at 10:00, Client <client@shop.example> wrote:\n> We start on Monday.", date: 1759990001000 }),
+  ], { answer: (input) => (/Heron/.test(input.instruction) ? { canAnswer: false, replyText: "", reason: "The email says nothing about Heron." } : { canAnswer: true, replyText: "In short: you start on Monday.", reason: "" }) });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const hard = ticketOf(t, "t-hard"), sum = ticketOf(t, "t-sum");
+  assert.deepStrictEqual([hard.aidan.status, hard.aidan.kind, hard.needsHuman, hard.aidan.reason], ["needs-person", "answer", true, "Aidan couldn't answer this from the email alone (The email says nothing about Heron.)."]);
+  assert.deepStrictEqual(t.seen.select, ["summarise this thread for everyone."], "a request to write still looks for its skill first");
+  assert.deepStrictEqual([sum.aidan.status, sum.aidan.kind, sum.status, t.seen.write.length, t.google.calls.sent.length], ["replied", "answer", "resolved", 0, 1], "no skill fits, the email answers it: answered in the email, no document");
+  assert.ok(!/filename=/.test(t.google.calls.sent[0].mail));
 });
 
 check("Aidan: only Gmail's topmost Authentication-Results counts; a passing header injected below it does not", async () => {
@@ -848,26 +921,42 @@ check("Aidan: a run fits the function's budget: it starts early, before triage, 
 });
 
 check("Aidan's model calls: no retry, and timeouts that fit the function", async () => {
-  const { createAidan, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
+  const { createAidan, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
+  assert.ok(ANSWER_TIMEOUT_MS <= DOC_TIMEOUT_MS, "an answer, even after a skill choice that found none, takes no longer than a document");
   assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + document + a minute for attachments and the send fit in 540 s");
   const db = fakeDb();
   const calls = [];
   db.state.skills = JSON.parse(JSON.stringify(SKILLS));
   db.state.supportSecrets = { aidan: { allowedSenders: [OWNER], enabled: true } };
-  db.state.supportTickets = { t1: { inboxes: ["aidan"], threadId: "t1", subject: "S", aidanPending: true, aidan: { status: "queued", kind: "generate", gmailId: "g1", instruction: "do the usual thing for Kestrel" } } };
-  db.state["supportTickets/t1/messages"] = { g1: { direction: "in", from: OWNER, fromName: "Owner Person", to: [AIDAN], cc: [], text: "@Aidan, do the usual thing for Kestrel", subject: "S" } };
+  db.state.supportTickets = { t1: { inboxes: ["aidan"], threadId: "t1", subject: "S", aidanPending: true, aidan: { status: "queued", kind: "generate", gmailId: "g1", instruction: "write the usual thing for Kestrel" } } };
+  db.state["supportTickets/t1/messages"] = { g1: { direction: "in", from: OWNER, fromName: "Owner Person", to: [AIDAN], cc: [], text: "@Aidan, write the usual thing for Kestrel", subject: "S" } };
   const a = createAidan({
     db, tickets: () => db.collection("supportTickets"), secretsRef: (n) => db.collection("supportSecrets").doc(n),
     // Gmail's copy of the email: the run reads the tag and the From address from it, not from the stored text.
-    gmail: async (path) => (path.startsWith("messages/send") ? { id: "sent-1" } : { payload: { mimeType: "text/plain", body: { data: b64("@Aidan, do the usual thing for Kestrel") },
+    gmail: async (path) => (path.startsWith("messages/send") ? { id: "sent-1" } : { payload: { mimeType: "text/plain", body: { data: b64("@Aidan, write the usual thing for Kestrel") },
       headers: [{ name: "From", value: `Owner Person <${OWNER}>` }, { name: "Authentication-Results", value: VERIFIED }] } }),
     readSettings: async () => ({ connectedEmail: MAILBOX }), logEvent: async () => {}, now: () => new Date(), logger: { error() {} },
-    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, schema: opts.schema && Object.keys(opts.schema.properties) }); return opts.schema.properties.skillId ? { skillId: "s2", client: "Kestrel", reason: "fits" } : DOC; },
+    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, schema: opts.schema && Object.keys(opts.schema.properties) }); return opts.schema.properties.skillId ? { skillId: "s2", client: "Kestrel", reason: "fits" } : opts.schema.properties.canAnswer ? { canAnswer: true, replyText: "Got it.", reason: "" } : DOC; },
     apiKey: () => "sk-test",
   });
   await a.runOne("t1");
   assert.deepStrictEqual(calls.map((c) => [c.timeout, c.maxRetries]), [[SELECT_TIMEOUT_MS, 0], [DOC_TIMEOUT_MS, 0]]);
   assert.strictEqual(db.state.supportTickets.t1.aidan.status, "replied");
+  // An answer: one model call, no skill choice, no retry, its own shorter timeout.
+  db.state.supportTickets.t2 = { inboxes: ["aidan"], threadId: "t2", subject: "S", aidanPending: true, aidan: { status: "queued", kind: "answer", gmailId: "g2", instruction: "please confirm you received this" } };
+  db.state["supportTickets/t2/messages"] = { g2: { direction: "in", from: OWNER, fromName: "Owner Person", to: [AIDAN], cc: [], text: "@Aidan, please confirm you received this", subject: "S" } };
+  const b = createAidan({
+    db, tickets: () => db.collection("supportTickets"), secretsRef: (n) => db.collection("supportSecrets").doc(n),
+    gmail: async (path) => (path.startsWith("messages/send") ? { id: "sent-2" } : { payload: { mimeType: "text/plain", body: { data: b64("@Aidan, please confirm you received this") },
+      headers: [{ name: "From", value: `Owner Person <${OWNER}>` }, { name: "Authentication-Results", value: VERIFIED }] } }),
+    readSettings: async () => ({ connectedEmail: MAILBOX }), logEvent: async () => {}, now: () => new Date(), logger: { error() {} },
+    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, answer: Boolean(opts.schema.properties.canAnswer) }); return { canAnswer: true, replyText: "Got it.", reason: "" }; },
+    apiKey: () => "sk-test",
+  });
+  calls.length = 0;
+  await b.runOne("t2");
+  assert.deepStrictEqual(calls, [{ timeout: ANSWER_TIMEOUT_MS, maxRetries: 0, answer: true }]);
+  assert.deepStrictEqual([db.state.supportTickets.t2.aidan.status, db.state.supportTickets.t2.aidan.kind], ["replied", "answer"]);
 });
 
 check("Aidan's allowed senders: an admin sets them, they are never read back in full, and switching Aidan off stops runs", async () => {

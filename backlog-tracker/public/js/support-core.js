@@ -81,7 +81,8 @@ export function normaliseTicket(id, d) {
 // ── Aidan, the agent mailbox ──────────────────────────────────────────────
 // An email in the Aidan tab from an allowed sender that tags "@Aidan" with an
 // instruction is answered by Aidan (functions/aidan.js). `aidan.status` on
-// the ticket says how far it got; this is how the page words it.
+// the ticket says how far it got and `aidan.kind` what was asked for; this is
+// how the page words them.
 // tone: "done" | "working" | "attention"
 const AIDAN_STATES = {
   queued: { badge: "Aidan: queued", tone: "working" },
@@ -92,22 +93,28 @@ const AIDAN_STATES = {
   "needs-person": { badge: "Aidan: needs a person", tone: "attention" },
   error: { badge: "Aidan: failed", tone: "attention" },
 };
-// { badge, tone, line } for a ticket's Aidan state, or null when Aidan has nothing to say.
+// What Aidan was asked to do (functions/aidan-core.js → kindOf): answer in the
+// email itself, write a document with a skill, or keep the email for a skill.
+export const AIDAN_KINDS = { answer: "Answer", generate: "Write", store: "Store" };
+const AIDAN_ASKED = { answer: "answer on the email", generate: "write documentation", store: "keep this email for a skill" };
+// { badge, tone, line, kind } for a ticket's Aidan state, or null when Aidan has
+// nothing to say. `kind` is "Answer", "Write" or "Store" ("" when no run was accepted).
 export function aidanView(aidan) {
   const a = aidan && AIDAN_STATES[aidan.status] ? aidan : null;
   if (!a) return null;
   const s = AIDAN_STATES[a.status];
   const skill = a.skillName ? ` with the ${a.skillName} skill` : "";
+  const people = `${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"}`;
   const line = {
-    queued: `Aidan was asked to ${a.kind === "store" ? "keep this email for a skill" : "write documentation"}: "${a.instruction || ""}". It runs at the next scheduled sync.`,
+    queued: `Aidan was asked to ${AIDAN_ASKED[a.kind] || AIDAN_ASKED.generate}: "${a.instruction || ""}". It runs at the next scheduled sync.`,
     working: `Aidan is working on: "${a.instruction || ""}".`,
-    replied: `Aidan wrote ${a.document && a.document.name ? a.document.name : "the documentation"}${skill} and replied to ${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"} on this email.`,
+    replied: a.kind === "answer" ? `Aidan answered in the email itself, to ${people} on this email. Nothing was attached.` : `Aidan wrote ${a.document && a.document.name ? a.document.name : "the documentation"}${skill} and replied to ${a.recipients || 0} ${a.recipients === 1 ? "person" : "people"} on this email.`,
     ingested: `Ingested: kept as reference material for the ${a.skillName || "named"} skill${a.files && a.files.length ? ` (${a.files.length} attachment${a.files.length === 1 ? "" : "s"})` : ""}.`,
     ignored: `Aidan did nothing: ${a.reason || "the request wasn't accepted."}`,
     "needs-person": `Aidan needs a person: ${a.reason || ""}`,
     error: a.reason || "Aidan couldn't finish.",
   }[a.status];
-  return { badge: s.badge, tone: s.tone, line };
+  return { badge: s.badge, tone: s.tone, line, kind: AIDAN_KINDS[a.kind] || "" };
 }
 
 // Queue + free-text filter, newest activity first (high-value first inside

@@ -3190,8 +3190,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
-| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), store or write (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached |
-| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`) |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
@@ -3213,7 +3213,8 @@ Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
 An email in the Aidan tab starts a run only when all three hold: it is in
 the Aidan tab (aidan@ in To or Cc), it was written by one of the **allowed
 senders**, and its new text tags `@Aidan` with an instruction ("@Aidan, send
-the AWS onboarding pack for client X"). The new text is read strictly
+the AWS onboarding pack for client X", "@Aidan, please confirm you received
+this"). The new text is read strictly
 (`splitQuoted` in `functions/aidan-core.js`), and everything from the first
 sign of quoted or forwarded history on is dropped: an attribution line ("On
 … wrote:", "Am … schrieb …:", "Le … a écrit :" and the other languages in
@@ -3237,8 +3238,10 @@ as the allowed sender's own only if Gmail verified it, and even then not its
 quoted part). This is checked when the email is filed and again when the run
 starts. "@Aidan thanks, looks great" is a tag but not an instruction, and so
 is "@Aidan thanks, the pack was great, I'll check it again tomorrow": text
-that opens with thanks counts only when one of its clauses opens with a
-request to write or keep something ("thanks, now send the summary").
+that opens with thanks or a greeting counts only when one of its clauses
+opens with a request to write or keep something ("thanks, now send the
+summary") or asks something ("hi, please confirm you received this", or any
+"?").
 "@Aidan's" is not a tag. A plain Cc, a tag from anyone else, a tag with no
 instruction, an email with more than one From address and machine-sent mail
 do nothing: the email just sits in the tab (a refused tag shows "Aidan: no
@@ -3260,8 +3263,23 @@ thread. A run:
   passes. Domains match exactly: a parent or child domain is a different
   domain. A header further down is never read, so a forged From with a
   forged header does nothing;
-- picks the skill from the skills library (named in the instruction, or
-  chosen by Claude from the list; none fitting goes to a person);
+- decides the kind from the instruction's own words (`kindOf`), never by
+  asking the model: **Answer**, **Write** or **Store**. The Aidan tab shows
+  the kind beside what Aidan did;
+- **answer** (every instruction that is not a write or a store: "please
+  confirm you received this email", "what's the status of X?", "give me a
+  quick summary of Y", any question): replies to everyone on the email, the
+  same people as a write, with a short reply written in the email itself and
+  **no attachment**, for example "Got it, Rob, all good." It needs no skill
+  (one named in the instruction is read) and answers only from the email, the
+  thread quoted in it and its attachments. When the email can't answer it
+  (it needs a document, or facts that are not there), nothing is sent and the
+  ticket goes to **Needs a person** with the reason;
+- for a write or a store, picks the skill from the skills library (named in
+  the instruction, or chosen by Claude from the list). A store with no
+  fitting skill goes to a person. A write with no fitting skill is tried as
+  an answer first ("summarise this thread"), and goes to a person only when
+  the email can't answer it;
 - **write** (any request to send, write, draft, prepare … something, even
   one that also says "keep" or "add"): writes the documentation with that
   skill from the email, its attachments (text, PDF and images are read; up
@@ -3280,7 +3298,7 @@ thread. A run:
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, document 4 minutes), so a whole run fits inside the
+(skill choice 1 minute, document 4 minutes, an answer 2 minutes), so a whole run fits inside the
 function's 540 seconds; a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
@@ -3291,7 +3309,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 13.
+SUP-AID-1 to 15.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

@@ -19,7 +19,13 @@
 //                 everyone on the email (From, To, Cc; never Reply-To) with it
 //                 attached, from the mailbox; or
 //       store:    keeps the email and its attachments as reference material
-//                 for the skill (skillReferences), used by later runs.
+//                 for the skill (skillReferences), used by later runs; or
+//       answer:   replies to everyone on the email in the email's own body,
+//                 with no attachment (an acknowledgement, or the answer to a
+//                 question). No skill is needed; one named in the instruction
+//                 is read. A request to write that no skill matches is tried
+//                 as an answer too, and goes to a person only when it can't
+//                 be answered from the email.
 //     A run still "working" after 15 minutes was cut off: the next sync moves
 //     it to a person (`sweepStale`).
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
@@ -44,11 +50,13 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // only in the first LATEST_START_MS of a sync, the skill choice gets
 // SELECT_TIMEOUT_MS, the document DOC_TIMEOUT_MS, and neither model call is
 // retried (worst case about 2 + 1 + 4 minutes, plus attachment reads and the
-// send). A run that is cut off anyway is moved to a person by the next sync
+// send; an answer gets ANSWER_TIMEOUT_MS, so 2 + 1 + 2 at most). A run that is cut off anyway is moved to a person by the next sync
 // (sweepStale) once it has been "working" for STALE_MS.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
 const DOC_TIMEOUT_MS = 240000;
+const ANSWER_TIMEOUT_MS = 120000;
+const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the thread quoted in it) an answer reads
 const STALE_MS = 15 * 60 * 1000;
 const SEEN_KEEP = 50;                    // gmailIds remembered per ticket (aidanSeen), so a message is decided once
 const ACTIVE = ["queued", "working"];
@@ -142,6 +150,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (out.action === "store" || out.action === "generate") {
       await logEvent(m.threadId, "aidan", out.action === "store" ? "Aidan was asked to keep this email for a skill." : "Aidan was asked to write documentation.");
     }
+    if (out.action === "answer") await logEvent(m.threadId, "aidan", "Aidan was asked to answer on the email.");
     return out.action;
   }
 
@@ -277,7 +286,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const size = Buffer.byteLength(doc.documentMd, "utf8");
     await tickets().doc(ticketId).collection("messages").doc(sentId).set({
       direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
-      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan",
+      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan", kind: "generate",
       attachments: [{ name: doc.fileName, type: "text/markdown", size }], skillId: skill.id, skillName: skill.name || skill.slug,
     });
     const n = recipients.to.length + recipients.cc.length;
@@ -286,6 +295,52 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill and replied to ${n} ${n === 1 ? "person" : "people"}.`);
+  }
+
+  // An "answer" run: reply to everyone on the email (the same recipients as a
+  // write) in the email's own body, with no attachment. The model reads the
+  // whole email, with the thread quoted in it, as untrusted content; the only
+  // instruction is the one decideAidan accepted. `skill` is one the
+  // instruction names, or null. When the model says it can't answer from what
+  // it has (the request needs a document or facts that aren't there), nothing
+  // is sent and a person takes it; `noSkill` is why a write got here.
+  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const n = recipients.to.length + recipients.cc.length;
+    const firstName = ac.greetingName(msg.fromName);
+    const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${firstName ? `\nThe sender's first name: ${firstName}` : ""}\nPeople the reply goes to: ${n}`;
+    const refs = skill ? await referencesFor(skill.id) : { text: "", count: 0 };
+    const system = `${ac.ANSWER_SYSTEM}${skill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : ""}${refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : ""}`;
+    const content = contentBlocks({ header, email: core.clip(String(msg.text || ""), ANSWER_EMAIL_MAX), inputs, skipped });
+    const raw = runImpl && runImpl.answer ? await runImpl.answer({ skill, instruction, system, content, references: refs.count })
+      : await model({ system, schema: ac.ANSWER_SCHEMA, effort: "medium", maxTokens: 4000, content, timeout: ANSWER_TIMEOUT_MS });
+    const answer = ac.cleanAnswer(raw);
+    if (!answer.canAnswer) {
+      const why = answer.reason ? ` (${answer.reason})` : "";
+      const reason = noSkill !== null ? `No skill matches the instruction${noSkill ? ` (${core.clip(noSkill, 200)})` : ""}, and it couldn't be answered from the email alone${why}.`
+        : `Aidan couldn't answer this from the email alone${why}.`;
+      return finish({ aidan: { status: "needs-person", reason }, needsHuman: true }, noSkill !== null ? "Aidan couldn't tell which skill to use, so a person takes it." : "Aidan couldn't answer this from the email, so a person takes it.");
+    }
+    const text = ac.composeAidanAnswer({ replyText: answer.replyText, fromName: config.fromName });
+    const raw5322 = ac.buildMultipartRaw({
+      fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
+      inReplyTo: msg.messageId, references: msg.references, attachments: [],
+    });
+    const sent = await gmail("messages/send", { method: "POST", body: { raw: raw5322, threadId: ticket.threadId || ticketId } });
+    const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
+    const named = skill ? { skillId: skill.id, skillName: skill.name || skill.slug } : {};
+    await tickets().doc(ticketId).collection("messages").doc(sentId).set(Object.assign({
+      direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
+      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan", kind: "answer", attachments: [],
+    }, named));
+    return finish({
+      aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId }, named),
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan answered on the email and replied to ${n} ${n === 1 ? "person" : "people"}.`);
   }
 
   async function runOne(ticketId) {
@@ -333,13 +388,25 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       if (!runImpl && (!key || key === "unset")) return finish({ aidan: { status: "needs-person", reason: "No model is configured (ANTHROPIC_API_KEY)." }, needsHuman: true });
       const skills = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
       const email = core.stripQuoted(msg.text || "");
+      const base = { ticketId, ticket, job, msg, config, instruction: d.instruction, email, finish };
+      // An answer needs no skill: one named in the instruction is read, and
+      // the model is never asked to choose one.
+      if (d.action === "answer") {
+        return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { skill: ac.skillNamedIn(d.instruction, skills) }));
+      }
       const chosen = await chooseSkill({ instruction: d.instruction, email, skills });
       if (!chosen.skill) {
+        // A request to write that no skill matches may still be something the
+        // email itself answers ("summarise this thread"): try it as an answer.
+        // A request to keep material has nowhere to go without its skill.
+        if (d.action === "generate") {
+          return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { noSkill: chosen.reason || "" }));
+        }
         return finish({ aidan: { status: "needs-person", kind: d.action, reason: `No skill matches the instruction${chosen.reason ? ` (${core.clip(chosen.reason, 200)})` : ""}.` }, needsHuman: true },
           "Aidan couldn't tell which skill to use, so a person takes it.");
       }
       const { inputs, skipped } = await readAttachments(job.gmailId, full && full.payload);
-      const run = { ticketId, ticket, job, msg, config, skill: chosen.skill, client: chosen.client, instruction: d.instruction, email, inputs, skipped, finish };
+      const run = Object.assign(base, { skill: chosen.skill, client: chosen.client, inputs, skipped });
       return d.action === "store" ? keepReference(run) : generateAndReply(run);
     } catch (err) {
       // Never customer text in the log: the ticket id and the error only.
@@ -387,4 +454,4 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, factsOf: ac.mailFacts };
 }
 
-module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, STALE_MS };
+module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, STALE_MS };

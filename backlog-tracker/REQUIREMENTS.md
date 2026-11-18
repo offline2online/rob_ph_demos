@@ -6327,7 +6327,9 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
 
 Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
 assistant: tagged requests from Rob run a skill and are answered with the
-documentation, by reply-all.
+documentation, by reply-all. Since 18 Nov 2026 (ticket 303SwmU5aQdyJNHxlTtQ)
+a tagged request that asks for neither a document nor for something to be
+kept is answered in the email itself (SUP-AID-14, SUP-AID-15).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6371,10 +6373,13 @@ documentation, by reply-all.
   what follows it asks for something. Text that opens with an
   acknowledgement ("thanks", "great", "hi" …) is an instruction only when one
   of its clauses opens with a request to write or keep something ("thanks,
-  now send the summary"); "@Aidan thanks, the AWS onboarding pack was great,
-  I'll check it again tomorrow" is not one. Other text is an instruction when
-  it has an action verb (send, write, draft, store, keep …) or is three or
-  more words. A tag that is not an instruction is recorded as "Aidan: no
+  now send the summary") or asks something (it has a "?", or a clause opens
+  with "please", "can you", "confirm", "let me know", "tell me" or a question
+  word: "hi, please confirm you received this"); "@Aidan thanks, the AWS
+  onboarding pack was great, I'll check it again tomorrow" is not one. Other
+  text is an instruction when it has an action verb (send, write, draft,
+  store, keep …), is three or more words, or is two words and a question
+  ("any update?"). A tag that is not an instruction is recorded as "Aidan: no
   action" with that reason and does not run. Where a quote format is not
   recognised at all, SUP-AID-12 is the safeguard.
 - **SUP-AID-2** Only the author of the tagged email counts. A tag written by
@@ -6410,9 +6415,12 @@ documentation, by reply-all.
   `smtp.mailfrom` domain is exactly the From domain, passes. Domains match
   exactly: a parent or child domain never does. Headers further down are
   never read. Otherwise nothing is done.
-- **SUP-AID-5** The skill is the one the instruction names (by slug or
-  name), or else the one Claude picks from the skills library. With no
-  matching skill, nothing is sent and the ticket goes to Needs a person.
+- **SUP-AID-5** For a write or a store, the skill is the one the
+  instruction names (by slug or name), or else the one Claude picks from the
+  skills library. A store with no matching skill sends nothing and goes to
+  Needs a person. A write with no matching skill is tried as an answer
+  (SUP-AID-14); when the email can't answer it, nothing is sent and the
+  ticket goes to Needs a person. An answer needs no skill.
 - **SUP-AID-6** A request to write produces the documentation with that
   skill from the email, its attachments (text, PDF and images; at most 8
   files and 20 MB) and the skill's kept reference material. Any instruction
@@ -6426,7 +6434,12 @@ documentation, by reply-all.
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
   "Aidan", signed as Rob's assistant, with the document attached as a
-  Markdown file, and is marked `Auto-Submitted: auto-generated`.
+  Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
+  add, update, edit, fix, turn, convert, include, attach or compile
+  something is a write too. "This email", "your reply" and "by email" name
+  things: they are not a verb to email or reply. A question, or a request to
+  confirm receipt, is an answer even with one of these verbs in it
+  (SUP-AID-14).
 - **SUP-AID-7** The sent reply is filed on the ticket and shown in the Aidan
   tab with who it went to and the file attached. The ticket is resolved by
   Aidan.
@@ -6479,6 +6492,39 @@ documentation, by reply-all.
   From header, the address headers), not from the stored text, both when
   the email is filed and when the run starts. A From header that holds more
   than one address, or an email with more than one From header, never runs.
+- **SUP-AID-14** An instruction that is neither a write (SUP-AID-6) nor a
+  store (SUP-AID-8) is an **answer**: "please confirm you received this
+  email", "what's the status of X?", "give me a quick summary of Y". The kind
+  is decided from the instruction's own words (`kindOf`), never by the
+  model, in this order: a request to confirm receipt ("confirm", "let me
+  know", "make sure" … "received", "got", "reached you"), unless it also
+  asks for a document; a question (its first clause opens with a question
+  word, "did you", "is there", "any update" …, or it has a "?" and a clause
+  that does), unless one of its clauses opens with a request ("thanks, now
+  send the pack. Did the last one arrive?"); a write; a store; and
+  everything else is an answer. An answer run passes every gate a write
+  does (SUP-AID-1 to 4, 10 to 13) and replies to the same people
+  (SUP-AID-6: From and the rest of To in To, the original Cc in Cc, never
+  Reply-To, never our own addresses), on the same thread, at once, from the
+  mailbox as "Aidan", marked `Auto-Submitted: auto-generated`. The reply is
+  a short plain-text email written in the body ("Got it, Rob, all good."),
+  signed as Rob's assistant, with **no attachment**. It needs no skill and
+  the model is never asked to choose one; a skill the instruction names is
+  read, with its kept reference material. The model reads the whole email,
+  the thread quoted in it and its attachments as untrusted content, answers
+  only from them, and has two minutes with no retry. When it reports that
+  the email can't answer the instruction (it needs a document written with a
+  skill, or facts that are not there), or writes nothing, no email is sent
+  and the ticket goes to Needs a person with the reason. A plain
+  acknowledgement, or a question the email itself answers, never goes to
+  Needs a person. The ticket is resolved by Aidan and the sent reply is
+  filed on it (SUP-AID-7).
+- **SUP-AID-15** The Aidan tab shows the kind of every accepted request
+  beside what Aidan did, in the list and on the ticket: **Answer**,
+  **Write** or **Store** (`aidan.kind`: `answer`, `generate`, `store`). A
+  refused tag has no kind. An answer's reply on the thread is marked "Sent
+  by Aidan · Answer" and shows who it went to; the ticket says it was
+  answered in the email itself with nothing attached.
 
 ### Connecting
 

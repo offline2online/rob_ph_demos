@@ -164,6 +164,13 @@ check("Aidan's state on a ticket reads as a badge and one line; nothing when Aid
   assert.strictEqual(aidanView({ status: "ignored", reason: "The sender is not allowed to instruct Aidan." }).tone, "attention");
   assert.ok(aidanView({ status: "queued", kind: "generate", instruction: "send the pack" }).line.includes("next scheduled sync"));
   assert.strictEqual(aidanView(null), null);
+  // The kind: Answer, Write or Store; none on a tag that was refused.
+  assert.deepStrictEqual([replied.kind, ingested.kind, aidanView({ status: "ignored", reason: "x" }).kind], ["", "", ""], "a ticket with no kind recorded shows none");
+  assert.deepStrictEqual(["answer", "generate", "store"].map((kind) => aidanView({ status: "queued", kind, instruction: "x" }).kind), ["Answer", "Write", "Store"]);
+  const answered = aidanView({ status: "replied", kind: "answer", recipients: 3 });
+  assert.deepStrictEqual([answered.badge, answered.kind, answered.line], ["Aidan replied", "Answer", "Aidan answered in the email itself, to 3 people on this email. Nothing was attached."]);
+  assert.strictEqual(aidanView({ status: "replied", kind: "answer", recipients: 1 }).line, "Aidan answered in the email itself, to 1 person on this email. Nothing was attached.");
+  assert.ok(aidanView({ status: "queued", kind: "answer", instruction: "please confirm you received this" }).line.startsWith('Aidan was asked to answer on the email: "please confirm you received this".'));
 });
 
 let failed = 0;

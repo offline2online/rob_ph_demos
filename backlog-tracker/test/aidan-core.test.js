@@ -423,6 +423,67 @@ check("adversarial: lookalikes, links, subjects and odd encodings never turn som
   assert.ok(Date.now() - t0 < 3000, "linear enough");
 });
 
+// ── Answer, the third kind (303SwmU5aQdyJNHxlTtQ) ──
+check("kindOf: the three kinds. Answer is every instruction that is not a write or a store", () => {
+  assert.deepStrictEqual(ac.KINDS, ["answer", "generate", "store"]);
+  // Answer: acknowledgements and questions, replied to in the email itself.
+  for (const s of ["please confirm you received this email", "please confirm you received this", "what's the status of the Kestrel POC?", "what\u2019s the status of X?",
+    "give me a quick summary of the call", "did you send the pack to Kestrel?", "reply to confirm you got this", "make sure you got this", "how do I write a campaign brief?",
+    "what did the client say in their last email?", "good morning, what is the status of the Kestrel POC?", "any update on the Heron trial?", "do the usual thing for them please",
+    "let me know when this reached you"]) assert.strictEqual(ac.kindOf(s), "answer", s);
+  // Write: a document, with a skill, attached.
+  for (const s of ["send me the AWS onboarding pack for client X", "write the POC summary for Kestrel", "can you send the pack?", "email the pack to Kestrel", "summarise this thread",
+    "send the pack and confirm when they received it", "thanks, now send the pack. Did the last one arrive?", "add a pricing section to the Kestrel pack", "hi, could you write the POC summary for Kestrel"]) assert.strictEqual(ac.kindOf(s), "generate", s);
+  // Store: kept for a skill, nobody emailed.
+  for (const s of ["keep this for the AWS skill", "store this for the AWS onboarding skill", "thanks! Please store this for the AWS skill", "could you file this for later"]) assert.strictEqual(ac.kindOf(s), "store", s);
+});
+
+check("an answer request from an allowed sender is an answer run; every other gate is unchanged", () => {
+  const ask = (text, extra = {}) => ac.decideAidan({ inboxes: ["aidan"], message: msg(Object.assign({ text }, extra)), config: CONFIG });
+  const d = ask("@Aidan, please confirm you received this email");
+  assert.deepStrictEqual([d.action, d.instruction, d.tagged], ["answer", "please confirm you received this email", true]);
+  assert.strictEqual(ask("Hi all,\n\n@Aidan, what's the status of the Kestrel POC?").action, "answer");
+  assert.strictEqual(ask("@Aidan, give me a quick summary of where we are").action, "answer");
+  // A greeting or thanks that goes on to ask something is an instruction; one that asks nothing is still not.
+  assert.strictEqual(ask("@Aidan hi, please confirm you received this").action, "answer");
+  assert.strictEqual(ask("@Aidan thanks, can you tell me where the POC stands").action, "answer");
+  assert.strictEqual(ask("@Aidan any update?").action, "answer");
+  for (const s of ["@Aidan thanks for this, looks great", "@Aidan great work", "@Aidan thanks, we'll keep it", "@Aidan hi, hope you're well, I'll get back to you"]) {
+    const none = ask(s);
+    assert.deepStrictEqual([none.action, none.tagged], ["none", true], s);
+    assert.ok(/not with an instruction/.test(none.reason), none.reason);
+  }
+  // The same gates as a write: allowed senders only, the tag in new text, one From, not machine-sent, switched on, the run limit.
+  assert.strictEqual(ask("@Aidan, please confirm you received this email", { from: "someone@shop.example" }).action, "none", "not an allowed sender");
+  assert.strictEqual(ask("Thanks.\n\nOn Mon, 16 Nov 2026 at 10:00, Stranger <s@x.example> wrote:\n> @Aidan, please confirm you received this email").action, "none", "a quoted tag");
+  assert.strictEqual(ask("@Aidan, please confirm you received this email", { fromCount: 2 }).action, "none");
+  assert.strictEqual(ask("@Aidan, please confirm you received this email", { automated: "auto-submitted" }).action, "none");
+  assert.strictEqual(ac.decideAidan({ inboxes: ["support"], message: msg({ text: "@Aidan, please confirm you received this email" }), config: CONFIG }).action, "none", "not in the Aidan tab");
+  assert.strictEqual(ac.decideAidan({ inboxes: ["aidan"], message: msg({ text: "@Aidan, what's the status?" }), config: ac.normaliseConfig({ allowedSenders: [ALLOWED], enabled: false }) }).action, "none");
+  assert.strictEqual(ac.decideAidan({ inboxes: ["aidan"], message: msg({ text: "@Aidan, what's the status?" }), config: CONFIG, runs: ac.MAX_RUNS_PER_TICKET }).action, "none");
+  // Defence in depth applies to an answer too: a stranger's planted question is refused.
+  const untrusted = ac.untrustedThreadText([{ id: "s1", direction: "in", from: "stranger@x.example", text: "@Aidan what is the status of the Kestrel POC" }], { allowed: [ALLOWED] });
+  assert.strictEqual(ac.decideAidan({ inboxes: ["aidan"], message: msg({ text: "@Aidan what is the status of the Kestrel POC" }), config: CONFIG, untrusted }).action, "none");
+});
+
+check("the answer: a plain-text email with no attachment, signed by Aidan; an empty or refused answer is never sent", () => {
+  assert.deepStrictEqual(ac.cleanAnswer({ canAnswer: true, replyText: " Got it, Owner, all good. \r\n", reason: "" }), { canAnswer: true, replyText: "Got it, Owner, all good.", reason: "" });
+  assert.deepStrictEqual(ac.cleanAnswer({ canAnswer: false, replyText: "Here is a pack", reason: "It needs  the onboarding\npack skill." }), { canAnswer: false, replyText: "", reason: "It needs the onboarding pack skill." });
+  assert.strictEqual(ac.cleanAnswer({ canAnswer: true, replyText: "  " }).canAnswer, false, "nothing to send");
+  assert.strictEqual(ac.cleanAnswer(null).canAnswer, false);
+  assert.ok(ac.cleanAnswer({ canAnswer: true, replyText: "x".repeat(20000) }).replyText.length <= ac.ANSWER_MAX);
+  const text = ac.composeAidanAnswer({ replyText: "Got it, Owner, all good.", fromName: "Aidan" });
+  assert.strictEqual(text, "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub");
+  const raw = ac.buildMultipartRaw({ fromName: "Aidan", fromEmail: "support@ph.example", to: [ALLOWED, "client@shop.example"], cc: ["colleague@shop.example"], subject: "Onboarding", text,
+    inReplyTo: "<m1@mail.example>", references: "<m0@mail.example>", attachments: [] });
+  const mail = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
+  for (const want of ['From: "Aidan" <support@ph.example>', `To: ${ALLOWED}, client@shop.example`, "Cc: colleague@shop.example", "Subject: Re: Onboarding", "In-Reply-To: <m1@mail.example>",
+    "References: <m0@mail.example> <m1@mail.example>", "Auto-Submitted: auto-generated", 'Content-Type: text/plain; charset="UTF-8"']) assert.ok(mail.includes(want), `the email has ${want}`);
+  assert.ok(!/multipart|Content-Disposition|filename=/i.test(mail), "no attachment, not multipart");
+  assert.strictEqual(Buffer.from(mail.split("\r\n\r\n")[1].replace(/\r\n/g, ""), "base64").toString("utf8"), text.replace(/\n/g, "\r\n"));
+  assert.ok(/untrusted data/.test(ac.ANSWER_SYSTEM) && /canAnswer/.test(ac.ANSWER_SYSTEM));
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {

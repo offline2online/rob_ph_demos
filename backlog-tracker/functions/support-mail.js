@@ -26,7 +26,8 @@
 //   • Aidan (aidan@, functions/aidan.js): an email in the Aidan tab from an
 //     allowed sender that tags "@Aidan" with an instruction is answered by
 //     Aidan instead of a Help Centre draft: documentation written with a skill
-//     and sent to everyone on the email, or the email kept for a skill.
+//     and sent to everyone on the email, the email kept for a skill, or an
+//     answer written in the reply itself (no attachment).
 //
 // Routes (Hosting rewrite /supportMail/** → this function):
 //   GET  /v1/status                    member  connection + settings (no secrets)
