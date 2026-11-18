@@ -14,6 +14,10 @@
 //     ticket, the suggested reply, a Help Centre article, a note, Send, Raise
 //     on Staff Kanban, Mark as spam and its confirmation, the email icon and its
 //     controls, Sync now, and Settings › Support inbox (the switch and Save).
+//     The Hello and Aidan tabs (plain inboxes: no queues or triage) are part
+//     of it: the tab, an email, Reply, a note, Spam and back, Mark as spam.
+//     So are the lists' checkboxes: two rows ticked, Select all, and the
+//     selection bar's Mark as spam with its one confirmation.
 //     Each tap must do its job EXACTLY once: a dropped tap does nothing, a
 //     doubled one sends a customer two emails.
 //  B. A page kept from before this release, running this release's scripts,
@@ -44,6 +48,16 @@ const seed = { user: { email: "admin@personalisationhub.com", role: "admin" }, s
     t2: ticket(2, { needsHuman: true }), t3: ticket(3, { needsHuman: true }), t4: ticket(4, { automated: "mailing list" }),
     t5: ticket(5, { status: "resolved", resolvedBy: "ai", firstResponseAt: t(T0 + 60000), resolvedAt: t(T0 + 60000) }),
     t6: ticket(6, { status: "pending", humanInvolved: true }), t7: ticket(7, { status: "spam" }),
+    // Hello and Aidan: plain inboxes. What the Support Inbox would act on (a draft, needs a person) shows nothing there.
+    h1: ticket(11, { subject: "Partnership", customerName: "Hattie Shaw", customerEmail: "hattie@shop.example", needsHuman: true, aiDraft: DRAFT, lastInboundAt: t(T0 + 11 * 60000), inboxes: ["hello"] }),
+    h2: ticket(12, { subject: "Hello junk", status: "spam", inboxes: ["hello"] }),
+    a1: ticket(13, { subject: "Send the pack", status: "resolved", resolvedBy: "aidan", aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "pack.md" }, recipients: 2 }, inboxes: ["aidan"] }),
+    a2: ticket(14, { subject: "Copied to Aidan", inboxes: ["aidan"] }),
+  },
+  "supportTickets/h1/messages": { m1: { direction: "in", from: "hattie@shop.example", fromName: "Hattie Shaw", text: "Could we talk?", at: t(T0) } },
+  "supportTickets/a1/messages": {
+    m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", text: "@Aidan, send the pack.", at: t(T0) },
+    m2: { direction: "out", source: "aidan", sentBy: "aidan", to: ["owner@example.com"], cc: [], text: "Here is the pack.", attachments: [{ name: "pack.md" }], skillName: "AWS onboarding pack", at: t(T0 + 60000) },
   },
   "supportTickets/t1/messages": { m1: { direction: "in", from: "ann@shop.example", fromName: "Ann Lee", text: "How do I add a display?", at: t(T0) } },
   faqArticles: { a1: { status: "published", title: "Add a display to a store", directAnswer: "Open Displays and Devices, then choose Add display.", keywords: ["display"] } },
@@ -216,6 +230,134 @@ try {
         await until(async () => (await hash()) === "#support/ticket/t2", "the ticket route", 3000);
         await tapSel('[data-support-act="back"]');
         await until(async () => (await hash()) === "#support", "the inbox", 3000);
+      });
+
+      // What only the Support Inbox has. None of it may show in Hello or Aidan.
+      const SUPPORT_ONLY = '.support-queue, .support-conf, .support-draft, #support-assign, #support-faq-search, [data-support-act="use-draft"], [data-support-act="redraft"], [data-support-act="escalate"], [data-support-act="send-resolve"], [data-support-status="resolved"]';
+      const plainOnly = async (what) => assert.strictEqual(await page.locator(SUPPORT_ONLY).count(), 0, `${what}: a Support Inbox control is showing`);
+
+      await step("the Hello tab opens by tap: a plain email list, and Spam and back", async () => {
+        await tapSel('[data-support-tab="hello"]');
+        await until(async () => (await hash()) === "#support/hello", "the Hello route", 3000);
+        await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails");
+        await plainOnly("the Hello list");
+        assert.strictEqual(await page.locator(".support-mail-row").count(), 1, "Hello lists its own emails, spam apart");
+        assert.strictEqual(await page.locator(".support-mail-row.is-unread .support-unread").count(), 1, "the unanswered email reads Unread");
+        await tapSel('[data-support-queue="spam"]');
+        await until(async () => (await hash()) === "#support/hello?queue=spam", "Hello's spam", 3000);
+        await until(() => page.locator('[data-support-ticket="h2"]').count(), "the spam email");
+        await tapSel('[data-support-act="back"]');
+        await until(async () => (await hash()) === "#support/hello", "back in Hello", 3000);
+      });
+
+      await step("a Hello email opens by tap, and Reply sends one email", async () => {
+        await tapSel('[data-support-ticket="h1"]');
+        await until(async () => (await hash()) === "#support/hello/ticket/h1", "the Hello email route", 3000);
+        await until(() => page.locator(".support-msg-in").count(), "the Hello conversation");
+        await page.waitForTimeout(500);
+        await plainOnly("the Hello thread");
+        assert.deepStrictEqual(o.supportCalls.filter((c) => c.path.startsWith("tickets/h1/")), [], "opening an email must not act on it");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
+        await page.fill("#support-reply", "Thanks Hattie.");
+        const n = calls("tickets/h1/reply").length;
+        await tapSel('[data-support-act="send"]');
+        const c = await once("tickets/h1/reply", n, "the Hello reply");
+        assert.deepStrictEqual(c.body, { text: "Thanks Hattie.", resolve: false, draft: "manual" });
+        await until(async () => (await page.inputValue("#support-reply")) === "", "the box to clear");
+      });
+
+      await step("a Hello note is saved once, and Mark as spam asks first", async () => {
+        await page.fill("#support-reply", "Met at the show.");
+        const n = calls("tickets/h1/note").length;
+        await tapSel('[data-support-act="note"]');
+        const c = await once("tickets/h1/note", n, "the Hello note");
+        assert.strictEqual(c.body.text, "Met at the show.");
+        const m = calls("tickets/h1/status").length;
+        await tapSel('[data-support-status="spam"]');
+        await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the confirmation", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), true, "the confirmation opened and shut at once");
+        assert.strictEqual(calls("tickets/h1/status").length, m, "spam was sent before it was confirmed");
+        await tapSel("#dialog-ok");
+        const sp = await once("tickets/h1/status", m, "the Hello spam change");
+        assert.strictEqual(sp.body.status, "spam");
+        await until(async () => (await hash()) === "#support/hello", "back in Hello", 3000);
+      });
+
+      await step("the Aidan tab opens by tap: each thread says what Aidan did, and his reply is on the thread", async () => {
+        await tapSel('[data-support-tab="aidan"]');
+        await until(async () => (await hash()) === "#support/aidan", "the Aidan route", 3000);
+        await until(() => page.locator('[data-support-ticket="a1"]').count(), "the Aidan emails");
+        await plainOnly("the Aidan list");
+        assert.deepStrictEqual((await page.locator(".support-aidan-badge").allTextContents()).sort(), ["Aidan replied", "Aidan: no action"]);
+        await tapSel('[data-support-ticket="a1"]');
+        await until(async () => (await hash()) === "#support/aidan/ticket/a1", "the Aidan email route", 3000);
+        await until(() => page.locator(".support-msg-aidan").count(), "Aidan's reply");
+        await page.waitForTimeout(500);
+        await plainOnly("the Aidan thread");
+        assert.deepStrictEqual(o.supportCalls.filter((c) => c.path.startsWith("tickets/a1/")), [], "opening an email must not act on it");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
+        await tapSel('[data-support-act="back"]');
+        await until(async () => (await hash()) === "#support/aidan", "back in Aidan", 3000);
+      });
+
+      // mMQ4yBYu4uwvOSHK9WlA: Mark as spam is in the Aidan tab too, and a tap acts exactly once.
+      await step("Mark as spam in the Aidan tab asks first, and the confirmation works by tap, once", async () => {
+        await tapSel('[data-support-ticket="a2"]');
+        await until(async () => (await hash()) === "#support/aidan/ticket/a2", "the Aidan email route", 3000);
+        await until(() => page.locator('[data-support-status="spam"]').count(), "Mark as spam on the Aidan thread");
+        const m = calls("tickets/a2/status").length;
+        await tapSel('[data-support-status="spam"]');
+        await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the confirmation", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), true, "the confirmation opened and shut at once");
+        assert.strictEqual(calls("tickets/a2/status").length, m, "spam was sent before it was confirmed");
+        await tapSel("#dialog-ok");
+        const sp = await once("tickets/a2/status", m, "the Aidan spam change");
+        assert.strictEqual(sp.body.status, "spam");
+        await until(async () => (await hash()) === "#support/aidan", "back in Aidan", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(calls("tickets/a2/status").length, m + 1, "one tap, one change");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
+        await tapSel('[data-support-tab="inbox"]');
+        await until(async () => (await hash()) === "#support", "the Support Inbox route", 3000);
+        await until(async () => (await page.locator(".support-queue").count()) === 7, "the Support Inbox's queues");
+      });
+
+      // b3NmU4mdmiGOZgHLURgK: the checkboxes on a list and the selection bar's buttons, each tap exactly once.
+      await step("two rows are ticked by tap (neither opens), Select all ticks and unticks, and bulk Mark as spam asks once and sends one call", async () => {
+        const picked = () => page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
+        await until(() => page.locator('[data-support-pick="t2"]').count(), "the rows' checkboxes");
+        for (const [id, want] of [["t2", ["t2"]], ["t3", ["t2", "t3"]]]) {
+          await tapSel(`[data-support-pick="${id}"]`);
+          await until(async () => (await picked()).join() === want.join(), `${id} to be ticked`, 3000);
+          await page.waitForTimeout(700);
+          assert.deepStrictEqual(await picked(), want, `${id} unticked itself (the tap fired twice)`);
+          assert.strictEqual(await hash(), "#support", "ticking a row must not open it");
+        }
+        assert.strictEqual(await page.textContent("#support-bulk-count"), "2 selected");
+        await tapSel("#support-pick-all");
+        await until(async () => (await picked()).length === 0, "Select all to untick every row (all were ticked)", 3000);
+        await page.waitForTimeout(700);
+        assert.deepStrictEqual(await picked(), [], "Select all ticked itself back (the tap fired twice)");
+        await tapSel("#support-pick-all");
+        await until(async () => (await picked()).join() === "t2,t3", "Select all to tick every row", 3000);
+        await page.waitForTimeout(700);
+        assert.deepStrictEqual(await picked(), ["t2", "t3"], "Select all unticked itself (the tap fired twice)");
+        const n = calls("tickets/bulk").length;
+        await tapSel('[data-support-bulk="spam"]');
+        await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the one confirmation for the batch", 3000);
+        await page.waitForTimeout(500);
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), true, "the confirmation opened and shut at once");
+        assert.strictEqual(calls("tickets/bulk").length, n, "spam was sent before it was confirmed");
+        await tapSel("#dialog-ok");
+        const c = await once("tickets/bulk", n, "the bulk spam change");
+        assert.deepStrictEqual(c.body, { ids: ["t3", "t2"], action: "status", status: "spam" });
+        await until(() => page.locator("#support-bulk-result").count(), "the one result message", 3000);
+        assert.strictEqual(await page.textContent("#support-bulk-result > span:last-child"), "2 tickets marked as spam.");
+        assert.deepStrictEqual([await picked(), await hash()], [[], "#support"], "the selection clears, and no row was opened");
+        assert.strictEqual(o.supportCalls.filter((x) => /^tickets\/t[23]\//.test(x.path)).length, 0, "no single-ticket call was made");
+        assert.strictEqual(await page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), false, "a late click opened a dialog");
       });
 
       await step("the email icon opens the new email form, and Send sends it once", async () => {

@@ -33,10 +33,37 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-row-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
 .support-badge-hv { background: rgba(151, 71, 255, .14); color: #6b2fd0; }
 :root[data-theme="dark"] .support-badge-hv { color: #c9a6ff; }
+/* Selecting several threads: a checkbox beside each row (the row itself still opens the thread),
+   Select all above the list, and the selection bar with that inbox's actions. */
+.support-list > li.support-li { display: flex; align-items: stretch; }
+.support-list-wrap { min-width: 0; }
+.support-li > .support-row { flex: 1; min-width: 0; padding-left: 4px; }
+.support-pick { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-width: 44px; min-height: 44px; cursor: pointer; }
+.support-pick input { width: 18px; height: 18px; margin: 0; accent-color: var(--primary); cursor: pointer; }
+.support-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-height: 44px; margin-bottom: 8px; }
+.support-pick-all { justify-content: flex-start; gap: 8px; padding: 0 13px; font-size: 13px; color: var(--text-muted); }
+.support-bulk-count { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.support-bulk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.support-bulk-actions .btn-ghost { min-height: 44px; }
+.support-bulk-actions .material-symbols-outlined { font-size: 18px; vertical-align: -4px; }
+.support-bulk-pick { min-height: 44px; max-width: 200px; font: inherit; font-size: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 0 8px; background: var(--bg); color: var(--text); }
+.support-bulk-result { display: flex; align-items: flex-start; gap: 6px; flex: 1 0 100%; margin: 0; font-size: 13px; color: var(--text-muted); }
+.support-bulk-result .material-symbols-outlined { font-size: 18px; color: var(--success); }
+.support-row.is-unread .support-row-subject { font-weight: 700; }
 .support-status-open { background: var(--primary-tint); color: var(--primary-text); }
 .support-status-pending { background: rgba(201, 138, 10, .12); color: var(--warning); }
 .support-status-resolved { background: rgba(82, 196, 26, .12); color: var(--success); }
 .support-status-spam { background: var(--danger-tint); color: var(--danger); }
+
+/* Hello and Aidan: a plain email list (no queue rail), sender first, unread in bold with a word. */
+.support-plain { max-width: 900px; }
+.support-plain-h { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+.support-plain-foot { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.support-plain-foot .material-symbols-outlined { font-size: 18px; vertical-align: -4px; }
+.support-mail-row .support-row-from { font-size: 14.5px; color: var(--text); }
+.support-mail-row .support-row-subject { font-size: 14px; font-weight: 400; }
+.support-mail-row.is-unread .support-row-from, .support-mail-row.is-unread .support-row-subject { font-weight: 700; }
+.support-unread { background: var(--primary-tint); color: var(--primary-text); }
 
 /* One ticket */
 .support-ticket { max-width: 900px; }
@@ -77,6 +104,32 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-draft-text { margin: 8px 0; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .support-draft-sources { font-size: 12.5px; color: var(--text-muted); }
 .support-draft-sources a { color: var(--primary-text); }
+/* An answer Aidan took from the Help Centre: its confidence, then the articles it was written from. */
+.support-aidan-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
+/* Branded collateral Aidan wrote (JtkLrEG0aTnC5JfkdPA1): label and text rows, text only. */
+.support-aidan-collateral { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
+.support-aidan-coll-row { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; padding: 4px 0; }
+.support-aidan-coll-row + .support-aidan-coll-row { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.support-aidan-coll-row dt { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; color: var(--text-muted); }
+.support-aidan-coll-row dt .material-symbols-outlined { font-size: 16px; }
+.support-aidan-coll-row dd { margin: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.support-aidan-coll-row small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.support-aidan-files { margin: 0; padding: 0; list-style: none; }
+.support-aidan-files li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
+.support-aidan-files small { display: inline; margin: 0; }
+@media (max-width: 640px) { .support-aidan-coll-row { grid-template-columns: minmax(0, 1fr); } }
+/* Which part of the email Aidan acted on (the instruction) and which it only read (the content). */
+.support-aidan-parts { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
+.support-aidan-part { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; padding: 4px 0; }
+.support-aidan-part + .support-aidan-part { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.support-aidan-part dt { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; color: var(--text-muted); }
+.support-aidan-part dt .material-symbols-outlined { font-size: 16px; }
+.support-aidan-part dd { margin: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.support-aidan-part small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
+.support-aidan-quote { display: block; margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--border); color: var(--text-muted); quotes: none; }
+.support-aidan-ignored dt, .support-aidan-ignored dt .material-symbols-outlined { color: var(--danger); }
+.support-aidan-ignored ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-muted); }
+@media (max-width: 640px) { .support-aidan-part { grid-template-columns: minmax(0, 1fr); } }
 .support-draft-actions, .support-send { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .support-faq { margin-top: 10px; }
 .support-faq .um-search { display: block; max-width: none; }

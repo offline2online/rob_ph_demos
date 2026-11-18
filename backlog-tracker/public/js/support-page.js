@@ -1,34 +1,77 @@
 // Support › Support Inbox (#support) and Settings › Support inbox.
 // Three inboxes, one tab each (Support Inbox, Hello, Aidan): the address an
 // email was written to decides which it is filed under (support-core.js).
+// Only the Support Inbox has queues, triage and suggested replies. Hello and
+// Aidan are plain inboxes: an email list and the thread, with Reply (and, in
+// Aidan, what Aidan did with each thread).
 // The email icon in the header writes a new email from the mailbox (#support/compose).
 // Tickets are read straight from Firestore (supportTickets + messages); every
 // change goes through the supportMail function (/supportMail/v1/**), which
 // sends the email, keeps Gmail in step and records who did what. Rules are in
 // support-core.js. Every control is a <button> acting on click (iPad taps).
+// Every list has a checkbox on each row and one above it (select all shown):
+// the selection bar then offers that inbox's actions for all of them at once,
+// sent to /supportMail/v1/tickets/bulk in batches, with one message at the end.
 import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView,
+  aidanView, aidanThreadState, aidanCollateral, aidanParts, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
+  MARKED_UNREAD, isMarkedUnread, bulkActions, bulkAction, BULK_MOVES, bulkSpamConfirmText, bulkResultText, keepSelected,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 const icon = (name) => `<span class="material-symbols-outlined" aria-hidden="true">${name}</span>`;
 const LIST_LIMIT = 500;
 const SYNC_EVERY_MS = 3 * 60 * 1000;
+// Threads per bulk call: each call must finish inside the console address's one-minute limit.
+const BULK_CHUNK = 25;
 // The confidence beside a suggested reply: a word and a number, coloured by band.
 const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); return `<span class="support-conf support-conf-${b}" title="How sure the AI is that this reply is correct and complete">${short ? `AI draft · ${pct(c)}` : `${CONFIDENCE_LABEL[b]} · ${pct(c)}`}</span>`; };
 const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
 const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 // Aidan, the agent mailbox (aidan@): its state on a ticket, and the reply it sent to everyone on the email.
-const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting" };
-const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>` : ""; };
-const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>` : ""; };
+const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting", none: "badge-status-draft" };
+// The state badge, then what was asked for: Answer, Write or Store.
+const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}` : ""; };
+// The Aidan tab: every thread carries a state, "no action" included, then what was asked for.
+const aidanStateBadge = (t) => { const v = aidanThreadState(t.aidan, { spam: t.status === "spam" }); return `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}`; };
+// Which threads this browser has opened, and when (the unread state of Hello and Aidan). Per browser, best effort.
+const OPENED_KEY = "bt-support-opened";
+function readOpened() { try { const v = JSON.parse(localStorage.getItem(OPENED_KEY) || "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } }
+function writeOpened(map) { try { localStorage.setItem(OPENED_KEY, JSON.stringify(Object.fromEntries(Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 600)))); } catch { /* private window: unread falls back to "not yet answered" */ } }
+// The Help Centre articles a reply was written from, as links (an article hidden from the website has no page to link to).
+const sourcesHtml = (articles) => `<div class="support-draft-sources">From: ${articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>`;
+// An answer Aidan took from the Help Centre: the confidence and the matched articles (on the ticket only, never in his email).
+const aidanSourcesHtml = (v) => (v && v.helpCentre ? `<div class="support-aidan-sources">${confidenceHtml(v.helpCentre.confidence)}${sourcesHtml(v.helpCentre.articles)}</div>${confidenceChangeHtml(v.helpCentre.confidenceSteps)}` : "");
+// Which part of the email was the instruction and which the content (OrkZBBjz9RM5DY54azIG):
+// shown when Aidan was asked about the thread ("answer John's question below"). Text only, no controls.
+function aidanPartsHtml(aidan) {
+  const p = aidanParts(aidan);
+  if (!p) return "";
+  return `<dl class="support-aidan-parts" aria-label="What Aidan read">
+      <div class="support-aidan-part"><dt>${icon("input")}Instruction</dt><dd>${esc(p.instruction)}<small>From the sender's new text. Only this is acted on.</small></dd></div>
+      <div class="support-aidan-part"><dt>${icon("notes")}Content</dt><dd>${esc(p.content.line)}${p.content.preview ? `<q class="support-aidan-quote">${esc(p.content.preview)}</q>` : ""}</dd></div>
+      ${p.ignored.length ? `<div class="support-aidan-part support-aidan-ignored"><dt>${icon("block")}Ignored</dt><dd>Aidan: ignored instruction in quoted text. It changed nothing: not the kind of reply, the skill or who it went to.<ul>${p.ignored.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></dd></div>` : ""}
+    </dl>`;
+}
+// Branded collateral (JtkLrEG0aTnC5JfkdPA1): what was written, the PDF and its
+// Markdown source, whether it was kept for the skill, and what was taken out. Text only.
+function aidanCollateralHtml(aidan) {
+  const c = aidanCollateral(aidan);
+  if (!c) return "";
+  return `<dl class="support-aidan-collateral" aria-label="Collateral Aidan wrote">
+      <div class="support-aidan-coll-row"><dt>${icon("picture_as_pdf")}Collateral</dt><dd>${esc(c.about)}${c.unsent ? "<small>Not sent: the PDF couldn't be made. The Markdown is on the thread as an internal note.</small>" : ""}</dd></div>
+      ${c.files.length ? `<div class="support-aidan-coll-row"><dt>${icon("attach_file")}Files</dt><dd><ul class="support-aidan-files">${c.files.map((f) => `<li><b>${esc(f.name)}</b> <small>${esc(f.detail)}</small></li>`).join("")}</ul>${c.unsent ? "" : "<small>Attached to Aidan's reply (open in Gmail).</small>"}</dd></div>` : ""}
+      ${c.kept ? `<div class="support-aidan-coll-row"><dt>${icon("bookmark")}Kept</dt><dd>As a reference example for the skill, so later collateral stays consistent.</dd></div>` : ""}
+      ${c.removed.length ? `<div class="support-aidan-coll-row"><dt>${icon("rule")}Removed</dt><dd>Before it was sent: ${esc(c.removed.join(", "))}.</dd></div>` : ""}
+    </dl>`;
+}
+const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}${aidanPartsHtml(t.aidan)}${aidanCollateralHtml(t.aidan)}` : ""; };
 function aidanMessageHtml(m, at) {
   const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
-  return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
+  return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.kind === "answer" ? " · Answer" : ""}${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
     <div class="support-msg-addr">To ${esc((m.to || []).join(", "))}${(m.cc || []).length ? ` · Cc ${esc(m.cc.join(", "))}` : ""}</div>
     <div class="support-msg-body">${esc(m.text)}</div>${files}</li>`;
 }
@@ -65,6 +108,11 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   let members = null, articles = null;
   let composer = { ticketId: "", text: "", usedDraft: false, faq: "" };
   let busy = false, syncTimer = null, visible = false, stale = false;
+  const opened = readOpened();
+  // The rows ticked on the list on show, and the message left by the last
+  // action on them. Both go when the tab or queue changes (show()); a redraw
+  // from new data keeps the ticks of every thread still in the list.
+  let selected = new Set(), bulkResult = "", listKey = "";
 
   function start() {
     if (unsubTickets) return;
@@ -89,7 +137,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       if (route.view === "ticket" && route.ticketId === ticketId) renderThread();
     }, (err) => console.warn("backlog-tracker: support messages", err));
   }
-  async function ensureMembers() {
+  let membersLoading = null;
+  function ensureMembers() {
+    if (!membersLoading) membersLoading = loadMembers();
+    return membersLoading;
+  }
+  async function loadMembers() {
     if (members) return members;
     try { members = (await getDocs(collection(db, "memberDirectory"))).docs.map((d) => d.data() || {}).filter((m) => m.email && !m.disabled).map((m) => ({ email: String(m.email).toLowerCase(), name: m.displayName || m.email })); }
     catch { members = []; }
@@ -119,22 +172,32 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (statusError) { el.textContent = `The mailbox status didn't load: ${statusError}`; return; }
     if (!status) { el.textContent = ""; return; }
     if (!status.connected) { el.textContent = "No mailbox is connected."; return; }
-    const c = queueCounts(tickets, inboxKey());
+    const plain = isPlainInbox(inboxKey());
+    const c = plain ? plainInboxCounts(tickets, inboxKey(), opened) : queueCounts(tickets, inboxKey());
     const problem = status.connectionError || (!status.lastSyncOk && status.lastSyncError ? `Last sync failed: ${status.lastSyncError}` : "");
-    el.innerHTML = `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve · ${esc(status.connectedEmail)}`
+    el.innerHTML = (plain ? `<b>${c.unread}</b> unread` : `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve`) + ` · ${esc(status.connectedEmail)}`
       + (status.lastSyncAt ? ` · synced ${esc(fmtWhen(Date.parse(status.lastSyncAt)))}` : " · not synced yet")
       + (problem ? ` · <span class="support-problem">${esc(problem)}</span>` : "");
   }
   // Someone typing in the page (a reply, a search, the assign list open). On the
   // iPad, rebuilding the field under them closes the keyboard and drops the
   // caret, so a redraw that nobody asked for waits until they leave the field.
-  const typing = () => { const a = document.activeElement; return !!a && view.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName); };
+  // A ticked checkbox is not typing: the list redraws under it and keeps the tick.
+  const typing = () => { const a = document.activeElement; return !!a && view.contains(a) && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName) && a.type !== "checkbox"; };
+  // The checkbox that has the focus, found again after a redraw (keyboard users keep their place).
+  const focusedPick = () => { const a = document.activeElement; return !a || !view.contains(a) ? "" : a.id === "support-pick-all" ? "#support-pick-all" : a.dataset.supportPick ? `[data-support-pick="${CSS.escape(a.dataset.supportPick)}"]` : ""; };
+  const refocus = (sel) => { const el = sel && view.querySelector(sel); if (el && el !== document.activeElement) el.focus({ preventScroll: true }); };
   // `force`: the person just did something (opened a page, pressed a button), so draw now.
   function render(force) {
     if (!visible) return;
     headerLine();
     if (!force && typing()) { stale = true; return; }
     stale = false;
+    const focused = focusedPick();
+    draw();
+    refocus(focused);
+  }
+  function draw() {
     document.querySelectorAll("[data-support-tab]").forEach((b) => {
       const on = b.dataset.supportTab === tabOf(inboxKey());
       b.classList.toggle("active", on);
@@ -150,7 +213,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (listError) { view.innerHTML = `<p class="support-problem" role="alert">Tickets didn't load: ${esc(listError)}</p>`; return; }
     if (!loaded) { view.innerHTML = `<p class="interface-row-empty">Loading…</p>`; return; }
     if (route.view === "compose") renderCompose();
-    else if (route.view === "ticket") renderTicket();
+    else if (route.view === "ticket") (isPlainInbox(inboxKey()) ? renderPlainTicket : renderTicket)();
+    else if (isPlainInbox(route.inbox)) renderPlainInbox();
     else renderInbox();
   }
 
@@ -176,32 +240,181 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       <div class="support-list-wrap">
         <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
           <input type="search" id="support-search" placeholder="Search tickets" aria-label="Search tickets" value="${esc(search)}"></label>
+        ${bulkBarHtml()}
         <ul class="support-list" id="support-list" aria-label="Tickets"></ul>
         ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active tickets.</p>` : ""}
       </div></div>`;
     renderList();
+    if (canEdit() && !members) ensureMembers().then(() => { if (route.view === "inbox" && !typing()) renderBulk(); });
+  }
+  // ── Selecting several threads ──
+  // The list on show: `withSearch` false is every thread in it, whatever the search box hides.
+  const listRows = (withSearch = true) => (isPlainInbox(route.inbox)
+    ? plainInboxRows(tickets, route.inbox, withSearch ? search : "", route.queue)
+    : filterTickets(tickets, route.queue, withSearch ? search : "", route.inbox));
+  // The row's own checkbox: a labelled control beside the row's button, so the row still opens the thread.
+  const pickHtml = (t) => (canEdit() ? `<label class="support-pick"><input type="checkbox" class="no-switch" data-support-pick="${esc(t.id)}" aria-label="Select ${esc(t.subject)}"${selected.has(t.id) ? " checked" : ""}></label>` : "");
+  const bulkBarHtml = () => (canEdit() ? `<div class="support-bulk" id="support-bulk" role="group" aria-label="Selection"></div>` : "");
+  function renderBulk() {
+    const bar = $("support-bulk");
+    if (!bar) return;
+    const shown = listRows();
+    const n = selected.size;
+    const picked = shown.filter((t) => selected.has(t.id)).length;
+    const control = (a) => {
+      if (a.pick === "member") return `<select class="support-bulk-pick" data-support-bulk-pick="${a.key}" aria-label="Assign the selected tickets to"><option value="">Assign to…</option><option value="__none">No one</option>${(members || []).map((m) => `<option value="${esc(m.email)}">${esc(m.name)}</option>`).join("")}</select>`;
+      if (a.pick === "move") return `<select class="support-bulk-pick" data-support-bulk-pick="${a.key}" aria-label="Move the selected tickets to"><option value="">Move to…</option>${BULK_MOVES.map((m) => `<option value="${m.key}">${esc(m.label)}</option>`).join("")}</select>`;
+      return `<button type="button" class="btn-ghost" data-support-bulk="${a.key}">${icon(a.icon)} ${esc(a.label)}</button>`;
+    };
+    const focused = focusedPick();
+    bar.innerHTML = `<label class="support-pick support-pick-all"><input type="checkbox" class="no-switch" id="support-pick-all" aria-label="Select all ${shown.length} shown"${shown.length && picked === shown.length ? " checked" : ""}${shown.length ? "" : " disabled"}><span>Select all</span></label>
+      ${n ? `<span class="support-bulk-count" id="support-bulk-count">${n} selected</span>
+      <span class="support-bulk-actions">${bulkActions(route.inbox, route.queue).map(control).join("")}
+        <button type="button" class="btn-ghost" data-support-bulk="clear">Clear</button></span>` : ""}
+      ${bulkResult ? `<p class="support-bulk-result" id="support-bulk-result" role="status">${icon("check_circle")}<span>${esc(bulkResult)}</span></p>` : ""}`;
+    bar.classList.toggle("has-selection", n > 0);
+    const all = $("support-pick-all");
+    if (all) all.indeterminate = picked > 0 && picked < shown.length;
+    refocus(focused);
+  }
+  // One action on every selected thread: asked once, sent in batches, one message at the end.
+  async function runBulk(key, choice = "") {
+    const def = bulkAction(route.inbox, route.queue, key);
+    const rows = listRows(false).filter((t) => selected.has(t.id));
+    if (!def || !rows.length || busy) return;
+    const plain = isPlainInbox(route.inbox);
+    if (def.local) {
+      for (const t of rows) opened[t.id] = def.local === "unread" ? MARKED_UNREAD : Math.max(Date.now(), t.lastInboundAt || 0);
+      writeOpened(opened);
+      selected = new Set();
+      bulkResult = bulkResultText(key, { done: rows.length }, { plain });
+      return render(true);
+    }
+    let send = { action: def.action, ...(def.status ? { status: def.status } : {}), ...(def.action === "archive" ? { archived: def.archived } : {}) }, detail = "";
+    if (def.pick === "member") {
+      const assignee = choice === "__none" ? "" : choice;
+      const m = (members || []).find((x) => x.email === assignee);
+      send.assignee = assignee;
+      detail = assignee ? `to ${m ? m.name : assignee}` : "to no one";
+    } else if (def.pick === "move") {
+      const m = BULK_MOVES.find((x) => x.key === choice);
+      if (!m) return;
+      send = { action: m.action, ...(m.status ? { status: m.status } : {}) };
+      detail = `to ${m.label}`;
+    }
+    if (def.danger && !(await confirm(bulkSpamConfirmText(rows, { plain }), { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return renderBulk();
+    if (def.confirm && !(await confirm(`Raise ${rows.length === 1 ? "a Staff Kanban ticket for the selected support ticket" : `${rows.length} Staff Kanban tickets, one for each selected support ticket`}? A ticket that already has one keeps it.`, { title: "Raise on Staff Kanban", okLabel: "Raise" }))) return renderBulk();
+    await act(async () => {
+      const total = { done: 0, failed: 0, skipped: 0, error: "" };
+      const ids = rows.map((t) => t.id);
+      for (let i = 0; i < ids.length; i += BULK_CHUNK) {
+        const part = ids.slice(i, i + BULK_CHUNK);
+        try {
+          const r = await api(apiHeaders, "tickets/bulk", { body: { ids: part, ...send } });
+          const failed = Number(r.failed) || 0, skipped = Number(r.skipped) || 0;
+          total.done += typeof r.done === "number" ? r.done : part.length - failed - skipped;
+          total.failed += failed;
+          total.skipped += skipped;
+          if (!total.error && Array.isArray(r.errors) && r.errors[0]) total.error = String(r.errors[0].error || "");
+        } catch (err) { total.failed += part.length; if (!total.error) total.error = err.message; }
+      }
+      selected = new Set();
+      bulkResult = bulkResultText(key, total, { plain, detail });
+    }, "The selection wasn't changed");
   }
   function renderList() {
     const box = $("support-list");
     if (!box) return;
-    const rows = filterTickets(tickets, route.queue, search, route.inbox);
-    box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
+    // A thread that left this list (resolved, marked as spam, moved by someone else) is no longer selected.
+    selected = keepSelected(selected, listRows(false));
+    renderBulk();
+    if (isPlainInbox(route.inbox)) {
+      const mail = listRows();
+      box.innerHTML = mail.length ? mail.map(plainRowHtml).join("")
+        : `<li class="support-empty-row">${search ? "Nothing matches that search." : route.queue === "spam" ? "Nothing in spam." : route.queue === "archived" ? "Nothing archived." : "No emails yet."}</li>`;
+      return;
+    }
+    const rows = listRows();
+    box.innerHTML = rows.length ? rows.map((t) => { const unread = t.status !== "spam" && isMarkedUnread(opened[t.id]); return `<li class="support-li">${pickHtml(t)}<button type="button" class="support-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
           <span class="support-row-from">${esc(t.customerName || t.customerEmail)}${t.account && t.account.name ? ` · ${esc(t.account.name)}` : ""}</span>
           <span class="support-row-snippet">${esc(t.summary || t.snippet)}</span></span>
         <span class="support-row-side"><span class="support-row-when" title="${esc(fullDate(t.lastMessageAt))}">${esc(fmtWhen(t.lastMessageAt))}</span>
-          <span class="support-row-key">${esc(t.key)}</span><span class="support-row-badges">${badges(t)}</span></span></button></li>`).join("")
+          <span class="support-row-key">${esc(t.key)}</span><span class="support-row-badges">${unread ? `<span class="badge support-unread">Unread</span>` : ""}${badges(t)}</span></span></button></li>`; }).join("")
       : `<li class="support-empty-row">${search ? "Nothing matches that search." : "Nothing in this queue."}</li>`;
+  }
+
+  // ── Hello and Aidan: a plain inbox (an email list, no queues or triage) ──
+  function renderPlainInbox() {
+    const box = inboxOf(route.inbox);
+    const spam = route.queue === "spam", archived = route.queue === "archived";
+    const counts = plainInboxCounts(tickets, box.key, opened);
+    view.innerHTML = `<div class="support-plain">
+        ${spam || archived ? `<button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button><h3 class="support-plain-h">${spam ? "Spam" : "Archived"}</h3>` : ""}
+        <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" id="support-search" placeholder="Search emails" aria-label="Search emails" value="${esc(search)}"></label>
+        ${bulkBarHtml()}
+        <ul class="support-list" id="support-list" aria-label="${esc(spam ? `${box.label} spam` : archived ? `${box.label} archived emails` : `${box.label} emails`)}"></ul>
+        ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active emails.</p>` : ""}
+        ${!spam && !archived && (counts.spam || counts.archived) ? `<div class="support-plain-foot">${counts.archived ? `<button type="button" class="btn-ghost" data-support-queue="archived">${icon("archive")} Archived (${counts.archived})</button>` : ""}${counts.spam ? `<button type="button" class="btn-ghost" data-support-queue="spam">${icon("report")} Spam (${counts.spam})</button>` : ""}</div>` : ""}
+      </div>`;
+    renderList();
+  }
+  function plainRowHtml(t) {
+    const box = inboxOf(route.inbox);
+    const unread = isUnread(t, opened[t.id]);
+    const state = box.agent ? aidanThreadState(t.aidan, { spam: t.status === "spam" }) : null;
+    return `<li class="support-li">${pickHtml(t)}<button type="button" class="support-row support-mail-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
+        <span class="support-row-main"><span class="support-row-from">${esc(t.customerName || t.customerEmail || "Unknown sender")}</span>
+          <span class="support-row-subject">${esc(t.subject)}</span>
+          ${state ? `<span class="support-row-snippet">${esc(state.line)}</span>` : ""}</span>
+        <span class="support-row-side"><span class="support-row-when" title="${esc(fullDate(t.lastMessageAt))}">${esc(fmtWhen(t.lastMessageAt))}</span>
+          <span class="support-row-badges">${unread ? `<span class="badge support-unread">Unread</span>` : ""}${state ? aidanStateBadge(t) : ""}</span></span></button></li>`;
+  }
+  function renderPlainTicket() {
+    const t = tickets.find((x) => x.id === route.ticketId);
+    const box = inboxOf(inboxKey());
+    if (!t) { view.innerHTML = `<p class="interface-row-empty">That email isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>`; return; }
+    watchMessages(t.id);
+    if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
+    // Opening the thread reads it (in this browser).
+    const seen = Math.max(Date.now(), t.lastInboundAt || 0);
+    if ((opened[t.id] || 0) < (t.lastInboundAt || 1)) { opened[t.id] = seen; writeOpened(opened); headerLine(); }
+    const edit = canEdit();
+    const spam = t.status === "spam";
+    const state = box.agent ? aidanThreadState(t.aidan, { spam: t.status === "spam" }) : null;
+    view.innerHTML = `<div class="support-ticket support-plain-ticket">
+      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>
+      <div class="support-ticket-head">
+        <h3>${esc(t.subject)}</h3>
+        <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : t.archived ? `<span class="badge badge-status-draft">Archived</span>` : ""}${state ? aidanStateBadge(t) : ""}
+          ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
+          <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
+        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}${aidanPartsHtml(t.aidan)}${aidanCollateralHtml(t.aidan)}` : ""}
+      </div>
+      ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
+        ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`
+        : `<button type="button" class="btn-ghost" data-support-status="spam">${icon("report")} Mark as spam</button>`}</div>` : ""}
+      <ol class="support-thread" id="support-thread" aria-label="Conversation"></ol>
+      ${!edit || spam ? "" : `<div class="support-composer">
+        <label class="field-label" for="support-reply">Reply to ${esc(t.customerEmail)}</label>
+        <textarea id="support-reply" rows="7" placeholder="Write a reply">${esc(composer.text)}</textarea>
+        <div class="support-send"><button type="button" class="btn-primary" data-support-act="send">Reply</button>
+          <button type="button" class="btn-ghost" data-support-act="note">Save as internal note</button></div></div>`}</div>`;
+    renderThread();
   }
 
   function messageHtml(m) {
     const at = toMs(m.at);
+    // A plain inbox shows the emails and notes only: no ticket history, no draft or confidence tags.
+    const plain = isPlainInbox(inboxKey());
+    if (plain && m.direction === "event") return "";
     if (m.direction === "event") return `<li class="support-event">${icon("history")}<span>${esc(m.text)} <small>${esc(m.by === "ai" ? "AI" : m.by || "")} · ${esc(fullDate(at))}</small></span></li>`;
     if (m.direction === "note") return `<li class="support-msg support-msg-note"><div class="support-msg-head"><b>Internal note</b> · ${esc(m.by || "")}<small>${esc(fullDate(at))}</small></div><div class="support-msg-body">${esc(m.text)}</div></li>`;
     if (m.direction === "out" && m.source === "aidan") return aidanMessageHtml(m, at);
     const out = m.direction === "out";
     const who = out ? (m.auto ? "AI reply" : m.sentBy === "gmail" ? "Sent from Gmail" : `${m.sentBy || "Support"}`) : (m.fromName || m.from);
-    const tag = out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
+    const tag = plain ? "" : out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
     const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
     return `<li class="support-msg ${out ? "support-msg-out" : "support-msg-in"}"><div class="support-msg-head"><b>${esc(who)}</b>${out ? "" : ` <span class="support-msg-addr">${esc(m.from || "")}</span>`}${tag}<small>${esc(fullDate(at))}</small></div>
       <div class="support-msg-body">${esc(m.text)}</div>${files}</li>`;
@@ -217,6 +430,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (!t) { view.innerHTML = `<p class="interface-row-empty">That ticket isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(inboxOf(inboxKey()).label)}</button>`; return; }
     watchMessages(t.id);
     if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
+    // A ticket marked unread from the list is read once it is opened.
+    if (isMarkedUnread(opened[t.id])) { opened[t.id] = Date.now(); writeOpened(opened); }
     const edit = canEdit();
     const draft = t.aiDraft;
     const actions = !edit ? "" : `<div class="support-actions" role="group" aria-label="Ticket actions">
@@ -231,7 +446,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
           ${draft.answerable ? "" : `<span class="badge badge-wp-waiting">Holding reply: the Help Centre doesn't answer this</span>`}</div>
         ${confidenceChangeHtml(draft.confidenceSteps)}
         <div class="support-draft-text">${esc(draft.text)}</div>
-        ${draft.articles.length ? `<div class="support-draft-sources">From: ${draft.articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>` : ""}
+        ${draft.articles.length ? sourcesHtml(draft.articles) : ""}
         <div class="support-draft-actions"><button type="button" class="btn-ghost" data-support-act="use-draft">Use this reply</button><button type="button" class="btn-ghost" data-support-act="redraft">Write another</button></div></div>`
       : edit && t.status !== "spam" && !t.automated ? `<div class="support-draft support-draft-none">${icon("auto_awesome")}<span>${esc(t.triagePending ? "A reply is being drafted…" : t.triageReason || "No suggested reply.")}</span><button type="button" class="btn-ghost" data-support-act="redraft">Draft a reply</button></div>` : "";
     const composerHtml = !edit || t.status === "spam" ? "" : `<div class="support-composer">
@@ -351,7 +566,21 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   });
   view.addEventListener("focusout", () => setTimeout(() => { if (stale && !typing()) render(); }, 0));
   view.addEventListener("change", (e) => {
-    if (e.target.id !== "support-assign") return;
+    const el = e.target;
+    if (el.dataset.supportPick) {
+      if (el.checked) selected.add(el.dataset.supportPick); else selected.delete(el.dataset.supportPick);
+      bulkResult = "";
+      return renderBulk();
+    }
+    if (el.id === "support-pick-all") {
+      const shown = listRows();
+      for (const t of shown) { if (el.checked) selected.add(t.id); else selected.delete(t.id); }
+      view.querySelectorAll("[data-support-pick]").forEach((c) => { c.checked = selected.has(c.dataset.supportPick); });
+      bulkResult = "";
+      return renderBulk();
+    }
+    if (el.dataset.supportBulkPick) { if (el.value) runBulk(el.dataset.supportBulkPick, el.value); return; }
+    if (el.id !== "support-assign") return;
     const t = current();
     if (t) act(() => api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/assign`, { body: { assignee: e.target.value } }), "The ticket wasn't assigned");
   });
@@ -359,6 +588,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     const b = e.target.closest("button");
     if (!b || !view.contains(b)) return;
     if (b.dataset.supportQueue) return go(supportHash({ inbox: route.inbox, queue: b.dataset.supportQueue }));
+    if (b.dataset.supportBulk === "clear") { selected = new Set(); bulkResult = ""; return render(true); }
+    if (b.dataset.supportBulk) return runBulk(b.dataset.supportBulk);
     if (b.dataset.supportTicket) return go(supportHash({ view: "ticket", inbox: route.inbox, ticketId: b.dataset.supportTicket }));
     const t = current();
     if (b.dataset.supportArticle) {
@@ -370,8 +601,9 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }
     if (b.dataset.supportStatus && t) {
       const to = b.dataset.supportStatus;
-      if (to === "spam" && !(await confirm(`Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
-      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, "The ticket wasn't changed");
+      const plain = isPlainInbox(inboxKey());
+      if (to === "spam" && !(await confirm(spamConfirmText(t, { plain }), { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
+      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, plain ? "The email wasn't changed" : "The ticket wasn't changed");
     }
     const a = b.dataset.supportAct;
     if (a === "open-settings") return openSettings();
@@ -402,6 +634,9 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   return {
     show(r) {
       visible = true;
+      // Another tab, queue or page: nothing stays selected, and the last result goes.
+      const key = `${r.view}|${r.inbox}|${r.queue}`;
+      if (key !== listKey) { selected = new Set(); bulkResult = ""; listKey = key; }
       route = r;
       start();
       render(true);
@@ -435,18 +670,40 @@ function aidanSettingsHtml(aidan, admin) {
     ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
     : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
   return `<div class="docs-block" id="support-aidan-settings"><div class="docs-block-header"><h3>Aidan
-      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction: it writes the documentation with the matching skill and replies to everyone on the email with it attached, or keeps the email and its attachments as reference material for a skill. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
+      <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan" data-tip="Aidan answers email written to aidan@ when an allowed sender tags @Aidan with an instruction. A request to write something is written with the matching skill and sent to everyone on the email as an attachment. A request for sales collateral, such as a one-pager, a platform overview or a deck, is written with the brand skill and sent as a branded PDF with its Markdown source. A request to keep something stores the email and its attachments as reference material for a skill. Anything else, such as a question or a request to confirm, is answered in the reply itself, with no attachment. A question about the platform is answered from the Help Centre, the way the Support Inbox drafts a reply, and the ticket shows the articles and the confidence. Anyone else, and an email with no tag, gets nothing. The allowed addresses are kept on the server and never shown in full; paste the whole list to replace it, or leave the box empty to keep it."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></h3></div>
       ${state}
       <div class="support-set-grid">
         <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>
         ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
         <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
       </div>
-      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan">Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
+      ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-aidan" disabled>Save Aidan</button><span class="field-hint" id="support-aidan-status" role="status"></span></div>` : ""}
     </div>`;
 }
+// The controls each Save button on Settings › Support inbox sends. A button is
+// enabled only while one of its controls differs from what was drawn, i.e.
+// from the saved value (the write-only boxes are drawn empty).
+const SAVE_CONTROLS = {
+  "save-client": ["support-client-id", "support-client-secret"],
+  "save-settings": ["support-auto", "support-threshold", "support-from", "support-signature", "support-assignee", "support-vip"],
+  "save-aidan": ["support-aidan-on", "support-aidan-senders"],
+};
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
+  // What each Save button's controls held when the page was last drawn.
+  let savedState = {};
+  const controlsState = (ids) => JSON.stringify(ids.map((id) => {
+    const el = host.querySelector(`#${id}`);
+    return !el ? null : el.type === "checkbox" ? el.checked : el.value;
+  }));
+  function syncSaveButtons() {
+    for (const [act, ids] of Object.entries(SAVE_CONTROLS)) {
+      const b = host.querySelector(`[data-ss-act="${act}"]`);
+      if (!b) continue;
+      const ready = act !== "save-client" || !!(status && status.encryptionReady);
+      b.disabled = !ready || controlsState(ids) === savedState[act];
+    }
+  }
   // `returned` is the query Google's sign-in came back with ("connected=1" or "error=…").
   // The Settings page can be drawn more than once while it opens, so the answer is kept until the next action.
   let lastReturn = "";
@@ -479,7 +736,7 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <div class="media-key-form">
             <input type="text" id="support-client-id" placeholder="${s.clientSet ? "Client ID saved — paste to replace" : "Client ID (…apps.googleusercontent.com)"}" aria-label="Google OAuth client ID" autocomplete="off" spellcheck="false">
             <input type="password" id="support-client-secret" placeholder="Client secret" aria-label="Google OAuth client secret" autocomplete="new-password" spellcheck="false">
-            <button type="button" class="btn-ghost" data-ss-act="save-client"${s.encryptionReady ? "" : " disabled"}>Save client</button></div>
+            <button type="button" class="btn-ghost" data-ss-act="save-client" disabled>Save client</button></div>
           ${s.clientSet ? `<div class="media-key-state is-set"><span class="media-key-dot" aria-hidden="true"></span>Client saved: <code>${esc(s.clientId)}</code></div>` : ""}
           <span class="field-label">2. Mailbox</span>
           <div class="form-row" style="justify-content:flex-start;gap:8px;margin-top:0;">
@@ -505,10 +762,14 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
           <label class="field-label" for="support-vip">Extra high-value domains</label>
           <textarea id="support-vip" rows="3" placeholder="bigretailer.com, another.co.uk"${dis}>${esc(set.vipDomains.join(", "))}</textarea>
         </div>
-        ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings">Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
+        ${admin ? `<div class="form-row" style="justify-content:flex-start;"><button type="button" class="btn-primary" data-ss-act="save-settings" disabled>Save settings</button><span class="field-hint" id="support-settings-status" role="status"></span></div>` : ""}
       </div>
       ${aidanSettingsHtml(s.aidan, admin)}`;
+    savedState = Object.fromEntries(Object.entries(SAVE_CONTROLS).map(([act, ids]) => [act, controlsState(ids)]));
+    syncSaveButtons();
   }
+  host.addEventListener("input", syncSaveButtons);
+  host.addEventListener("change", syncSaveButtons);
   host.addEventListener("click", async (e) => {
     const b = e.target.closest("[data-ss-act]");
     if (!b) return;
@@ -542,7 +803,10 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         host.querySelector("#support-aidan-status").textContent = "Saved.";
       }
     } catch (err) { await alert(err.message); }
+    // A save redraws the page with its buttons disabled again; a failed one
+    // leaves the edits in place, so its button goes back to enabled.
     if (b.isConnected) b.disabled = false;
+    syncSaveButtons();
   });
   return { load };
 }

@@ -3197,18 +3197,71 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | File | What it does |
 |---|---|
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
+| `functions/answer-core.js` | **The one answering engine**, pure: the published Help Centre as a catalogue (`publishedArticles`), match → draft → confidence (`matchAndDraft`), the answer made safe with its articles (`answerFromHelpCentre`), whether the Help Centre answers it (`usableAnswer`), the cited titles under a reply (`withArticleTitles`). Called by triage and by Aidan's answer runs (`test/answer-core.test.js`) |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
-| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), store or write (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached |
-| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), or keeping the email for a skill (`keepReference`, `skillReferences`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
-| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
-| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
+| `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
+| `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
+| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
+| `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
+| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
 
 **Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
 support@, hello@ and aidan@ (at personalisationhub.com), all delivered to the one
 connected mailbox. The page has a tab for each: **Support Inbox**, **Hello**
-and **Aidan**, each with its own queues, counts, list and ticket view
-(`#support`, `#support/hello`, `#support/aidan`). `aliasesOf` in
+and **Aidan**, each with its own list and thread view
+(`#support`, `#support/hello`, `#support/aidan`). Only the Support Inbox is
+worked as support tickets. **Hello and Aidan are plain inboxes (18 Nov
+2026)**: an email list (sender, subject, date, Unread) and the thread with
+Reply, an internal note and Mark as spam. They have no queue strip, no
+triage badges, no suggested reply or confidence, no Raise on Staff Kanban,
+no Resolve and no assignment, and their header line counts unread email.
+Their only other view is Spam (`#support/hello?queue=spam`); a link to any
+other queue of theirs opens the emails. Unread means the sender's latest
+email is newer than our last reply and than the last time that browser
+opened the thread (kept in the browser, `bt-support-opened`). In Aidan
+every thread also says what Aidan did (no action and why, queued, working,
+replied, ingested, needs a person) and his reply is on the thread. An email
+in two inboxes shows whichever view belongs to the tab it was opened from.
+**Mark as spam is in all three tabs (18 Nov 2026).** On any thread, in
+Support Inbox, Hello or Aidan, it asks first, sets the ticket's status to
+Spam and moves the thread to Gmail's Spam (`setStatus` in
+`functions/support-mail.js`). The status is the ticket's, so a thread in
+two tabs leaves both and is in each one's Spam, where **Not spam** puts it
+back. In Aidan a spam thread reads "Aidan: no action — spam": a request
+Aidan had queued on it is cancelled and never runs, a run already working
+sends nothing, and mail arriving on a spam thread queues nothing
+(`markSpam`, `markNotSpam` and `stopIfSpam` in `functions/aidan.js`). Not
+spam does not run a cancelled request; the sender asks again. Requirements:
+SUP-INB-14, SUP-INB-15, SUP-AID-35.
+**Selecting several threads (18 Nov 2026).** For a member with Edit, every
+list in all three tabs has a checkbox beside each row and **Select all**
+above it. Ticking a row never opens it. With rows ticked, a selection bar
+shows the count and that list's actions: Mark as spam (one confirmation
+for the batch), Mark as read / unread, and Resolve, Assign to, Move to and
+Raise on Staff Kanban in the Support Inbox, or Archive in Hello and Aidan
+(plus Dismiss Aidan's state in Aidan). Each action is one call to
+`POST /supportMail/v1/tickets/bulk` (`handleBulk` in
+`functions/support-mail.js`; 25 threads a call from the page, 50 at most),
+which changes each thread with the same code as its single action and
+answers `{done, failed, skipped, errors}`; the page shows one result
+message. The selection clears after an action and on changing tab or
+queue, and survives a redraw from new data. **Archive** sets `archived` on
+the ticket (not a status): the email leaves the Hello or Aidan list for
+"Archived (N)" under it (`#support/hello?queue=archived`) and comes back
+on Move to inbox or when the sender writes again. **Dismiss Aidan's
+state** clears a no action / needs a person / failed record
+(`dismiss` in `functions/aidan.js`) and nothing else. Read and unread are
+kept in the browser (`bt-support-opened`), and a ticket marked unread stays
+so until opened. The rules (which actions each list has, the confirmation
+and result wording) are `bulkActions`, `bulkSpamConfirmText` and
+`bulkResultText` in `public/js/support-core.js`. Requirements: SUP-INB-16
+to 23.
+The server's intake is unchanged: it still files, sorts and drafts for every
+address, and the plain tabs do not show it. `aliasesOf` in
 `functions/support-core.js` reads the address an email was written to from
 its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
 from the mailbox it landed in, and the ticket keeps the result in `inboxes`.
@@ -3221,7 +3274,8 @@ Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
 An email in the Aidan tab starts a run only when all three hold: it is in
 the Aidan tab (aidan@ in To or Cc), it was written by one of the **allowed
 senders**, and its new text tags `@Aidan` with an instruction ("@Aidan, send
-the AWS onboarding pack for client X"). The new text is read strictly
+the AWS onboarding pack for client X", "@Aidan, please confirm you received
+this"). The new text is read strictly
 (`splitQuoted` in `functions/aidan-core.js`), and everything from the first
 sign of quoted or forwarded history on is dropped: an attribution line ("On
 … wrote:", "Am … schrieb …:", "Le … a écrit :" and the other languages in
@@ -3245,8 +3299,10 @@ as the allowed sender's own only if Gmail verified it, and even then not its
 quoted part). This is checked when the email is filed and again when the run
 starts. "@Aidan thanks, looks great" is a tag but not an instruction, and so
 is "@Aidan thanks, the pack was great, I'll check it again tomorrow": text
-that opens with thanks counts only when one of its clauses opens with a
-request to write or keep something ("thanks, now send the summary").
+that opens with thanks or a greeting counts only when one of its clauses
+opens with a request to write or keep something ("thanks, now send the
+summary") or asks something ("hi, please confirm you received this", or any
+"?").
 "@Aidan's" is not a tag. A plain Cc, a tag from anyone else, a tag with no
 instruction, an email with more than one From address and machine-sent mail
 do nothing: the email just sits in the tab (a refused tag shows "Aidan: no
@@ -3268,8 +3324,41 @@ thread. A run:
   passes. Domains match exactly: a parent or child domain is a different
   domain. A header further down is never read, so a forged From with a
   forged header does nothing;
-- picks the skill from the skills library (named in the instruction, or
-  chosen by Claude from the list; none fitting goes to a person);
+- decides the kind from the instruction's own words (`kindOf`), never by
+  asking the model: **Answer**, **Write** or **Store**. The Aidan tab shows
+  the kind beside what Aidan did;
+- **answer** (every instruction that is not a write or a store: "please
+  confirm you received this email", "what's the status of X?", "give me a
+  quick summary of Y", any question): replies to everyone on the email, the
+  same people as a write, with a short reply written in the email itself and
+  **no attachment**, for example "Got it, Rob, all good." It needs no skill
+  (one named in the instruction is read) and answers only from the email, the
+  thread quoted in it and its attachments. When the email can't answer it
+  (it needs a document, or facts that are not there), nothing is sent and the
+  ticket goes to **Needs a person** with the reason;
+- **answers a platform question with the Support Inbox's own Help Centre
+  pipeline** (18 Nov 2026, one answering engine, `functions/answer-core.js`):
+  an answer run that asks something ("@Aidan, how do I set up targeting?")
+  is first matched against the whole published Help Centre and drafted
+  exactly as "How a ticket flows" below describes: the same prompts, the
+  same articles, the same 80% rule for adding articles. When the Help Centre
+  answers it, Aidan replies in the email itself to everyone on the email,
+  opening "Hi <first name>," with the same reply body the Support Inbox
+  would draft for a customer, and a line naming each cited article by title
+  with its link (an article hidden from the website is never named). **None
+  of the Support Inbox's sending gates apply**: no confidence threshold, no
+  auto-send switch; he always replies to an allowed sender. The confidence
+  and the matched articles are kept on the ticket (`aidan.helpCentre`) and
+  shown on it in the Aidan tab, never written in the email. An
+  acknowledgement and an instruction that names a skill are not put to the
+  Help Centre. Whatever it doesn't answer (a project or documentation
+  question, a question about the email) carries on to the console and the
+  email as below (REQUIREMENTS SUP-AID-20 to 25);
+- for a write or a store, picks the skill from the skills library (named in
+  the instruction, or chosen by Claude from the list). A store with no
+  fitting skill goes to a person. A write with no fitting skill is tried as
+  an answer first ("summarise this thread"), and goes to a person only when
+  the email can't answer it;
 - **write** (any request to send, write, draft, prepare … something, even
   one that also says "keep" or "add"): writes the documentation with that
   skill from the email, its attachments (text, PDF and images are read; up
@@ -3284,12 +3373,142 @@ thread. A run:
   skill / for later"): keeps the email and its attachments as reference
   material for that skill (`skillReferences`, PDFs and images in Storage
   under `skill-references/`), used by every later run of the skill, and
-  marks the ticket **Ingested**. It emails no one.
+  marks the ticket **Ingested**. It emails no one;
+- **reads the console, read-only** (18 Nov 2026), for an answer or a write:
+  "@Aidan, summarise the Customer Support concept", "how does the Support
+  Inbox decide whether to auto-send?", "what's in Ready for Testing on the
+  Backlog Tracker?". The model plans the reads (up to two rounds of six,
+  25 seconds each) from an index of the projects and concepts, and they run
+  through the MCP server's own read tools (`consoleReader` in
+  `functions/mcp-server.js`; the thirteen in `CONSOLE_READ_TOOLS`: projects,
+  their Requirements, README, documents and interface contracts, tickets,
+  pipeline health, concepts and their critiques, Help Centre articles). Only
+  `board.read` tools can run, so nothing an email asks for can write.
+  Addresses are taken out of what the model sees. The answer is written from
+  that and the email: a short one in the body; a long one (over roughly a
+  page, 3,000 characters or 45 lines) attached as Markdown with a two-line
+  summary in the body. Tickets, projects and concepts are named by title;
+  an id the model writes is replaced by its title (or dropped) unless the
+  instruction asks for ids. **A reply with console data goes only to the
+  allowed senders on the email** (the sender, and any other allowed sender
+  in To or Cc), never to a client or partner copied in; the ticket notes how
+  many were left off. A plain acknowledgement reads nothing, and a failed
+  read leaves the answer to the email alone;
+  a write (a skill's document) reads the console only when the instruction
+  is clearly about it (tickets, the backlog, a concept, the pipeline, the
+  Help Centre, a README; `writeReadsConsole`), so "write the POC summary for
+  Kestrel" still goes to everyone on the email, and when it does read it the
+  prompt says the reply goes to the allowed senders only. Ids are replaced
+  by titles in a write's reply and document too. Tickets and the pipeline
+  are read one project at a time, and the model sees at most 40,000
+  characters of one read and 120,000 of console data in all
+  (REQUIREMENTS SUP-AID-16 to 18);
+- **a request to change the console** ("create a ticket for …", "update the
+  README", "move that card", "deploy …", decided from the instruction's own
+  words, or by the plan) gets a short, fixed reply to the allowed senders
+  on the email: Aidan can only read the console, so it hasn't created or
+  changed anything. No model writes it and nothing is changed.
+  Only when the console thing is the head of the object: "create a project
+  plan for Kestrel", "create a FAQ for the client", "approve this" or
+  "archive this email" are not refused, and "open the README and summarise
+  it" or "update me on …" is a read (REQUIREMENTS SUP-AID-19);
+- **writes branded sales collateral as a PDF** (18 Nov 2026, ticket
+  JtkLrEG0aTnC5JfkdPA1): a write whose instruction names collateral ("@Aidan,
+  send me a one-pager for Kestrel", "@Aidan, prepare a platform overview for
+  CP Group for my AWS contact, retail grocery", a feature deep-dive, a deck,
+  a brochure; `collateralFormat` in `functions/collateral-core.js`) needs the
+  brand skill (`ph-brand`) in the skills library, and goes to a person when
+  it isn't there. The document is written with the brand skill (voice,
+  messaging, the call to action) and the chosen collateral skill (format and
+  depth; the brand skill alone when none fits), from the instruction, the
+  email's new text and attachments (its quoted history only as thread
+  content, when the instruction refers to the thread, under the same audience
+  rule as any run: see the next bullet), the skill's kept reference material, the published Help Centre (articles on the website
+  only, the industry's first) and, from Prospects (TAM) or Leads, the
+  company's **industry and country and nothing else** (never revenue, store
+  counts, contacts, notes or anything about the retailer's customers). The
+  industry is the one the instruction names, else the record's. It reads no
+  other console data, so it goes to everyone on the email like any write.
+  Before it is printed, what the model wrote is cleaned in code
+  (`guardCollateral`): any sentence naming Sydney or Australia is dropped
+  (the company is presented as global; when the prospect is Australian, its
+  own country may still be named and only a sentence that places
+  Personalisation Hub there goes), so is one naming an internal project (the
+  console's project names and the brand skill's list), the brand skill's
+  renames are applied ("PH Core" → "Personalisation Hub"), and no long dash
+  survives (a comma, "to" in a range such as "Monday to Friday", a hyphen
+  between other words such as "end-to-end"). It is then printed to an A4 PDF
+  on the server (`functions/collateral-pdf.js`; a print that runs past its
+  minute has Chromium killed, and goes to a person) from a page laid out by
+  the brand skill (`functions/collateral-layout.js`): its
+  light-surface colours, Kantumruy Pro, the thin four-colour bar once, its
+  full-colour logo file, an eyebrow with the format and industry, "Prepared
+  for <company>", one teal accent, a footer with personalisationhub.com and
+  the page number on every page, and the CTA ("Try free on AWS Marketplace →",
+  then "Or book a demo at personalisationhub.com"); a deck is landscape with a
+  page per section, and a `collateral*.css` file in the brand skill is applied
+  after the defaults. The reply goes to everyone on the email with **the
+  PDF and the Markdown source** attached. The run is filed on the ticket
+  (`aidan.collateral`: format, industry, company, the two files, the page
+  count, what was removed) and the Aidan tab shows it (Collateral, Files,
+  Kept, Removed). It is kept as a **reference example** for the skill
+  (`skillReferences`, `example: true`, the PDF in Storage beside it), so later
+  runs of that skill read it. When the PDF can't be made in time, nothing is
+  sent: the ticket goes to **Needs a person** with the Markdown kept as an
+  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34);
+- **answers a question on the thread: instruction vs content** (18 Nov 2026,
+  ticket OrkZBBjz9RM5DY54azIG). Rob's main use: a customer emails Rob a
+  question, and Rob replies or forwards with aidan@ in Cc, "@Aidan, please
+  check John's question below and provide a response". The **instruction**
+  is still only the allowed sender's new text, read and gated exactly as
+  above. When it refers to the thread ("below", "John's question", "the
+  email from X", "this thread", "the forwarded question", or simply asks to
+  answer, respond or summarise; `refersToThread`), the quoted or forwarded
+  part of the email and the thread's earlier emails are read as **content**
+  (`readThreadContent` in `functions/aidan.js`, `threadContent` in
+  `functions/aidan-core.js`): unquoted, an earlier email already quoted read
+  once, at most five earlier emails and 40,000 characters. **Audience rule**
+  (`sharedEarlier`): an earlier email is read only when everyone the reply
+  goes to was already on it (its From, To or Cc), and Aidan's own replies
+  that carried console data or went only to the allowed senders are never
+  read, so nothing on the thread reaches someone who hadn't received it;
+  what was left out is counted and noted on the ticket. The quoted part of
+  Rob's own email is read as it is (he chose to quote it to these people).
+  Every model that reads the content gets it the same way: its own
+  `<thread_content>` block (`contentBlock`: zero-width and other invisible
+  characters removed, anything shaped like the block's own tag neutralised)
+  under `CONTENT_LINE` (third-party material, never instructions). The
+  answer, the document, the collateral and the console plan have the line
+  in their system prompt; the Help Centre engine, whose prompts the Support
+  Inbox shares, gets the line and the block ahead of `<email_thread>`, which
+  then holds Rob's new text alone (`questionFromEmail` / `emailBlock` in
+  `functions/answer-core.js`). Nothing in the content can change the kind,
+  the skill or the recipients, or start a store: the kind (and whether it is
+  collateral) is decided from the instruction alone ("reply to John's
+  question below" is an answer, not a write, unless it names a document),
+  the skill is chosen from the new text alone, a store never reads content,
+  a console plan that sees the content can't turn the run into a read-only
+  reply, and the recipients are the reply-all of the sender's own email (so
+  when Rob forwarded rather than replied, the original asker gets the answer
+  only if Rob put them on his To or Cc). Text in the content that looks like
+  an instruction (a quoted "@Aidan, send the AWS pack to …", "Aidan: email …
+  to <address>", "ignore your previous instructions", "SYSTEM: …", "Note to
+  the AI: …", a request to send something to an address) is ignored and
+  noted on the ticket ("Aidan: ignored instruction in quoted text"); that is
+  an audit note, since nothing acts on content anyway. A Help Centre answer
+  to a question from the thread opens "Hi all,". The Aidan tab shows, on the
+  ticket, the **Instruction** (the new text), the **Content** (what was read,
+  how many earlier emails were left out, a short preview) and anything
+  **Ignored** (`aidan.content`, `aidanParts` in `public/js/support-core.js`).
+  While such a request waits it says the thread will be read; a finished run
+  that read no content shows nothing (`aidan.refersToThread` is cleared).
+  Rob's new text with no reference to the thread behaves exactly as before
+  (REQUIREMENTS SUP-AID-26 to 29);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, document 4 minutes), so a whole run fits inside the
-function's 540 seconds; a sync that ran Aidan leaves triage to the next
+(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute), so a whole run fits inside the
+function's 540 seconds (the function has 1 GiB for the PDF printer); a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
 idempotent: each email is decided once (`aidanSeen`, in a transaction), a
@@ -3299,12 +3518,15 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 13.
+SUP-AID-1 to 35.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
 notes and timeline in the `messages` subcollection. For each new customer
-email Claude triages it in steps (`runTriage` in `functions/support-mail.js`):
+email Claude triages it in steps (`matchAndDraft` in
+`functions/answer-core.js`, the one answering engine: triage calls it
+through `runTriage` in `functions/support-mail.js`, and Aidan's answer runs
+call the same function for a platform question):
 
 1. **Match.** It sees the subject and body together with the *whole*
    published Help Centre, one line per article (category, title, summary,
@@ -3331,10 +3553,16 @@ confidence is shown beside every suggested reply as a word and a number
 `support-eval.yml`) runs 33 made-up emails with known right answers
 (`test/fixtures/support-eval.json`) against the real model and the
 published Help Centre, and re-runs the newest real tickets, printing only
-their SUP key and article titles. Run it after changing the prompts or the
+their SUP key and article titles. Each email goes through both paths of
+the engine, as a customer's email to support@ and as the same email tagged
+"@Aidan, …" (with the reply Aidan would send), judged by the same rules;
+`EVAL_PATHS=support` or `aidan` runs one. `test/answer-core.test.js` runs
+the same fixtures through both paths with a stand-in model, on every
+train. Run it after changing the prompts or the
 Help Centre, and add a case whenever a real email is matched badly.
 
-Then one rule (`decideAction`) decides:
+Then one rule (`decideAction`) decides, for the Support Inbox only (Aidan's
+answer runs use the engine above and none of these gates):
 
 - **Sent by itself** and the ticket resolved by AI: only when sending is
   switched on in Settings, the articles answer the question, the reply cites

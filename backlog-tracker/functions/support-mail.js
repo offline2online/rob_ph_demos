@@ -16,7 +16,8 @@
 //     (`inboxes`, from To / Cc / Delivered-To / X-Original-To), and the page
 //     shows one tab per address. Mail naming none of them is Support's.
 //   • Triage: each new customer message is drafted an answer from the
-//     published help-centre articles (Claude). support-core.js decides
+//     published help-centre articles (Claude; the engine is
+//     functions/answer-core.js, shared with Aidan). support-core.js decides
 //     whether it is sent by itself, waits for approval, or needs a person.
 //     Machine-sent mail is never answered, and a thread is answered
 //     automatically once at most, so two auto-responders cannot loop.
@@ -26,7 +27,10 @@
 //   • Aidan (aidan@, functions/aidan.js): an email in the Aidan tab from an
 //     allowed sender that tags "@Aidan" with an instruction is answered by
 //     Aidan instead of a Help Centre draft: documentation written with a skill
-//     and sent to everyone on the email, or the email kept for a skill.
+//     and sent to everyone on the email, the email kept for a skill, or an
+//     answer written in the reply itself (no attachment). A platform question
+//     is answered by the same engine as triage (functions/answer-core.js),
+//     with none of the sending gates below.
 //
 // Routes (Hosting rewrite /supportMail/** → this function):
 //   GET  /v1/status                    member  connection + settings (no secrets)
@@ -45,6 +49,7 @@
 //   POST /v1/tickets/{id}/note         editor  {text}
 //   POST /v1/tickets/{id}/assign       editor  {assignee}
 //   POST /v1/tickets/{id}/escalate     editor  raise a Staff Kanban ticket
+//   POST /v1/tickets/bulk              editor  {ids, action, …}: one action on many threads (the lists' checkboxes)
 //
 // Pure module: index.js injects Firestore, ID-token verification, the secrets
 // and the Staff Kanban writer, so test/support-mail.test.js runs it with no
@@ -53,7 +58,8 @@
 const crypto = require("crypto");
 const core = require("./support-core");
 const { createAidan } = require("./aidan");
-const faqFeed = require("./faq-feed");
+const answerCore = require("./answer-core");
+const { articleView } = answerCore;
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
 
 const TICKETS = "supportTickets";
@@ -79,18 +85,11 @@ const DRAFT_TIMEOUT_MS = 40000;
 const COMPOSED_PER_HOUR = 30;      // new emails one member may send from the mailbox
 // Aidan runs per scheduled sync: one writes a whole document (minutes).
 const AIDAN_PER_RUN = 1;
-
-// An article as triage uses it. `hidden` (hiddenFromWebsite on the article or
-// its category/folder, see functions/faq-feed.js) keeps it in the catalogue
-// the reply is written from, with no url: it has no public page to link to.
-function articleView(a, categoryName = "", hidden = false) {
-  return {
-    id: a.id, title: a.title || "", summary: a.summary || "", directAnswer: a.directAnswer || "", keywords: a.keywords || [], questionVariants: a.questionVariants || [],
-    categoryName, bodyMd: a.bodyMd || "", body: core.htmlToText(a.bodyMd || ""),
-    url: hidden ? "" : `https://personalisationhub.com/support-centre/article.html?id=${encodeURIComponent(a.id)}`,
-    hiddenFromWebsite: !!hidden,
-  };
-}
+// The lists' checkboxes: threads per call (the page sends more in batches), and
+// how many are changed at once. Staff Kanban tickets are raised one at a time.
+const BULK_MAX = 50;
+const BULK_AT_ONCE = 5;
+const BULK_ACTIONS = ["status", "assign", "needs-person", "escalate", "archive", "aidan-dismiss"];
 
 // One structured call to the model. Returns the parsed JSON, or throws.
 async function callJson({ apiKey, workspaceId, Anthropic, system, schema, content, effort = "medium", maxTokens = 4000, timeout = DRAFT_TIMEOUT_MS, maxRetries = 1 }) {
@@ -111,69 +110,20 @@ async function callJson({ apiKey, workspaceId, Anthropic, system, schema, conten
   return JSON.parse(text);
 }
 
-// The email as both steps see it: who sent it, the subject, and the thread
-// (quoted history removed, newest last).
-function emailBlock(ticket, messages) {
-  const thread = messages.filter((m) => m.direction === "in" || m.direction === "out").slice(-8).map((m) =>
-    `[${m.direction === "in" ? "customer" : "support"}]\n${core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
-  return `From: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail || ""}>\nSubject: ${ticket.subject || "(no subject)"}\n\n<email_thread>\n${thread}\n</email_thread>`;
-}
-
-// Triage of one thread in two steps. Step 1 sees every published article
-// (one line each) and decides whether the email is about Personalisation Hub
-// and which articles answer it; step 2 writes the reply from the full text of
-// those articles only. Returns the raw combined answer for core.cleanTriage.
-// `articles`: [{id, title, summary, directAnswer, keywords, questionVariants, categoryName, body, url}]
-async function runTriage({ apiKey, workspaceId, Anthropic, ticket, messages, articles }) {
-  const email = emailBlock(ticket, messages);
-  const catalogue = articles.map((a) => core.articleIndexLine(a, a.categoryName)).join("\n");
-  const sel = core.cleanSelection(await callJson({
-    apiKey, workspaceId, Anthropic, system: core.SELECT_SYSTEM, schema: core.SELECT_SCHEMA, effort: "medium", maxTokens: 2000,
-    content: `<catalogue>\n${catalogue}\n</catalogue>\n\n${email}`,
-  }), articles.map((a) => a.id));
-  const base = { relevant: sel.relevant, category: sel.category, summary: sel.question, spamLikely: sel.spamLikely, selectedIds: sel.articleIds };
-  if (!sel.relevant || sel.spamLikely) return Object.assign(base, { answerable: false, confidence: 0, reply: "", articleIds: [] });
-  const byId = new Map(articles.map((a) => [a.id, a]));
-  const chosen = sel.articleIds.map((id) => byId.get(id)).filter(Boolean).slice(0, core.MAX_ARTICLES);
-  const draftFrom = async (list) => {
-    const texts = list.map((a) =>
-      `<article id="${a.id}" url="${a.url}">\nTitle: ${a.title}\n${a.directAnswer ? `Short answer: ${a.directAnswer}\n` : ""}${a.summary ? `Summary: ${a.summary}\n` : ""}${core.clip(a.body, 8000)}\n</article>`).join("\n\n");
-    const d = await callJson({
-      apiKey, workspaceId, Anthropic, system: core.TRIAGE_SYSTEM, schema: core.TRIAGE_SCHEMA, effort: "medium",
-      content: `${email}\n\nWhat they need, as understood: ${sel.question || "(not stated)"}\n\n<help_articles>\n${texts || "(no article answers this)"}\n</help_articles>`,
-    });
-    const ids = new Set(list.map((a) => a.id));
-    const c = Number(d.confidence);
-    return {
-      summary: d.summary, reply: d.reply, answerable: d.answerable === true && list.length > 0,
-      confidence: Number.isFinite(c) ? Math.min(1, Math.max(0, c)) : 0,
-      articleIds: (Array.isArray(d.articleIds) ? d.articleIds : []).filter((id) => ids.has(id)),
-      articles: list.length,
-    };
-  };
-  // The best article alone first; 2 or 3 together only when that scores low.
-  let best = await draftFrom(chosen.slice(0, 1));
-  const steps = chosen.length ? [{ articles: best.articles, confidence: best.confidence }] : [];
-  if (chosen.length > 1 && best.confidence < core.CONFIDENCE_BOOST_BELOW) {
-    const wider = await draftFrom(chosen);
-    steps.push({ articles: wider.articles, confidence: wider.confidence });
-    if (wider.confidence >= best.confidence) best = wider;
-  }
-  return Object.assign(base, {
-    summary: best.summary || sel.question,
-    answerable: best.answerable,
-    confidence: best.confidence,
-    confidenceSteps: steps,
-    reply: best.reply,
-    articleIds: best.articleIds,
-  });
+// Triage of one thread: the shared answering engine (functions/answer-core.js
+// → matchAndDraft: match against the whole published Help Centre, draft from
+// the best article, add articles when confidence is under 80%), with this
+// file's model caller. Aidan's answer runs call the same engine. Returns the
+// raw combined answer for core.cleanTriage.
+function runTriage({ apiKey, workspaceId, Anthropic, ticket, messages, articles }) {
+  return answerCore.matchAndDraft({ call: (opts) => callJson(Object.assign({ apiKey, workspaceId, Anthropic }, opts)), ticket, messages, articles });
 }
 
 function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
-  aidan: aidanImpl = null, bucket = null,
+  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -286,12 +236,10 @@ function createSupportMail({
     return value;
   }
   const rowsOf = async (name) => { const snap = await db.collection(name).get(); const out = []; snap.forEach((d) => out.push(Object.assign({ id: d.id }, d.data() || {}))); return out; };
+  // The published Help Centre, hidden-from-website articles included (answer-core.js → publishedArticles).
   const articles = () => cached("articles", async () => {
     const [rows, cats] = await Promise.all([rowsOf("faqArticles"), rowsOf("faqCategories")]);
-    const catName = new Map(cats.map((c) => [c.id, c.name || ""]));
-    // Hidden-from-website articles are answered from too (3HabqHlC4WwL137CYTv1).
-    const hiddenCats = faqFeed.hiddenCategoryIds(cats);
-    return rows.filter((a) => a.status === "published").map((a) => articleView(a, catName.get(a.categoryId) || "", faqFeed.isHiddenFromWebsite(a, hiddenCats)));
+    return answerCore.publishedArticles(rows, cats);
   });
   const accounts = () => cached("accounts", async () => {
     const [prospects, leads] = await Promise.all([rowsOf("prospects"), rowsOf("leads")]);
@@ -360,6 +308,8 @@ function createSupportMail({
         patch.status = "open";
         patch.triagePending = true;
         patch.aiDraft = null;
+        // An archived Hello or Aidan email comes back to its inbox when the sender writes again.
+        if (cur.archived) patch.archived = false;
       }
     } else {
       // Sent from Gmail itself, not from the console: a person answered there.
@@ -430,6 +380,9 @@ function createSupportMail({
     }
   }
 
+  // The engine's model caller: this file's callJson with the key and workspace filled in.
+  const modelCall = (key) => (opts) => callJson(Object.assign({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic }, opts));
+
   // Draft, decide, and (when allowed) answer one ticket.
   async function triageTicket(ticketId, { by = "system", forceDraft = false } = {}) {
     const ref = tickets().doc(ticketId);
@@ -438,15 +391,17 @@ function createSupportMail({
     if (ticket.status === "spam" && !forceDraft) { await ref.set({ triagePending: false }, { merge: true }); return { ok: true, action: "none" }; }
     const settings = await readSettings();
     const messages = await threadMessages(ticketId);
-    let triage = null, aiError = "", all = [];
+    let triage = null, aiError = "", all = [], cited = [];
     if (!ticket.automated) {
       const key = String(anthropicKey() || "");
       if (!triageImpl && (!key || key === "unset")) aiError = "No drafting model is configured (ANTHROPIC_API_KEY).";
       else {
         all = await articles();
         try {
-          const raw = await (triageImpl || runTriage)({ apiKey: key, workspaceId: anthropicWorkspace(), Anthropic, ticket, messages, articles: all });
-          triage = core.cleanTriage(raw, all.map((a) => a.id));
+          // The answering engine Aidan's answer runs use too (answer-core.js); the gates below are the Support Inbox's own.
+          const answered = await answerCore.answerFromHelpCentre({ run: triageImpl, call: modelCall(key), ticket, messages, articles: all, source: "support" });
+          triage = answered.triage;
+          cited = answered.cited;
         } catch (err) {
           aiError = `The draft couldn't be written: ${core.clip(String(err && err.message ? err.message : err), 200)}`;
           logger.warn("support: triage failed", { ticketId, error: aiError });
@@ -455,7 +410,6 @@ function createSupportMail({
     }
     const decision = core.decideAction({ triage, settings, highValue: ticket.highValue, automated: ticket.automated, autoRepliesSent: ticket.autoRepliesSent || 0, humanInvolved: ticket.humanInvolved,
       replyToDiffers: Boolean(ticket.fromEmail && ticket.fromEmail !== ticket.customerEmail), inboxes: ticket.inboxes });
-    const cited = triage ? triage.articleIds.map((id) => all.find((a) => a.id === id)).filter(Boolean).map((a) => ({ id: a.id, title: a.title, url: a.url })) : [];
     // Every draft opens "Hi <first name>, / Thanks for your email." (added here, not by the model).
     const draftText = triage && triage.reply ? core.composeReply(core.firstNameOf(ticket.customerName, ticket.fromEmail || ticket.customerEmail), triage.reply) : "";
     const patch = {
@@ -532,6 +486,16 @@ function createSupportMail({
   const aidan = createAidan({
     db, tickets, secretsRef: (name) => db.collection(SECRETS).doc(name), gmail, readSettings, logEvent, now, logger,
     callJson, apiKey: anthropicKey, workspaceId: anthropicWorkspace, Anthropic, run: aidanImpl, bucket,
+    // The console's read-only MCP tools (mcp-server.js → consoleReader), so Aidan can answer from the console's data.
+    consoleReader,
+    // The Help Centre answering engine, for a platform question in an answer
+    // run: the same catalogue and the same stand-in (`triage`) triage uses.
+    helpCentre: { articles, run: triageImpl },
+    // Branded collateral: the prospect's industry and country (from the same
+    // cached Prospects (TAM) and Leads), and the server-side PDF printer
+    // (collateral-pdf.js), loaded only when collateral is printed.
+    accounts,
+    renderPdf: renderPdf || ((html, opts) => require("./collateral-pdf").renderPdf(html, opts)),
   });
 
   // ── Sync ──
@@ -622,6 +586,13 @@ function createSupportMail({
       Object.assign(patch, { needsHuman: false, resolvedAt: null, resolvedBy: "" });
     }
     await tickets().doc(ticketId).set(patch, { merge: true });
+    // Aidan (functions/aidan.js): spam cancels a request queued on the thread
+    // and records "no action — spam", whichever tab it was marked in; not spam
+    // puts back what Aidan had recorded. A failure here doesn't undo the ticket.
+    if (status === "spam" || ticket.status === "spam") {
+      try { if (status === "spam") await aidan.markSpam(ticketId); else await aidan.markNotSpam(ticketId); }
+      catch (err) { logger.error("support: Aidan spam change failed", { ticketId, error: String(err && err.message ? err.message : err) }); }
+    }
     // Keep Gmail's own spam folder in step; a failure here doesn't undo the ticket.
     if (status === "spam" || ticket.status === "spam") {
       const body = status === "spam" ? { addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] } : { addLabelIds: ["INBOX"], removeLabelIds: ["SPAM"] };
@@ -704,6 +675,90 @@ function createSupportMail({
     return send(res, 404, { error: "not found" });
   }
 
+  // ── One action on many threads (the checkboxes on each inbox's list) ──
+  // Each thread is changed by the same code as its single action, and a
+  // failure on one doesn't stop the rest. Answers { ok, done, failed, skipped,
+  // errors: [{ id, error }] } (the first few errors): `skipped` is a thread the
+  // action doesn't apply to.
+  async function bulkOne(ticketId, action, body, by, shared) {
+    const ref = tickets().doc(ticketId);
+    const ticket = data(await ref.get());
+    if (!ticket) return { ok: false, error: "no such ticket" };
+    if (action === "status") {
+      if (body.status !== ticket.status) await setStatus(ticketId, ticket, body.status, by);
+      return { ok: true };
+    }
+    if (action === "assign") {
+      if ((ticket.assignee || "") === shared.assignee) return { ok: true };
+      await ref.set({ assignee: shared.assignee, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, shared.assignee ? `Assigned to ${shared.assignee}.` : "Unassigned.");
+      return { ok: true };
+    }
+    if (action === "needs-person") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      if (ticket.status === "open" && ticket.needsHuman) return { ok: true };
+      if (ticket.status !== "open") await setStatus(ticketId, ticket, "open", by);
+      await ref.set({ needsHuman: true, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, "Moved to Needs a person.");
+      return { ok: true };
+    }
+    if (action === "escalate") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      const r = await escalate(ticketId, ticket, shared.settings, by);
+      if (r.ok) await ref.set({ needsHuman: true }, { merge: true });
+      return r.ok ? { ok: true } : { ok: false, error: r.error };
+    }
+    if (action === "archive") {
+      if (ticket.status === "spam") return { ok: false, error: "marked as spam" };
+      const archived = body.archived !== false;
+      if (Boolean(ticket.archived) === archived) return { ok: true };
+      await ref.set({ archived, updatedAt: now() }, { merge: true });
+      await logEvent(ticketId, by, archived ? "Archived." : "Moved back to the inbox.");
+      return { ok: true };
+    }
+    // aidan-dismiss: clear what Aidan recorded, where there is something to clear.
+    if (typeof aidan.dismiss !== "function") return { ok: false, error: "Aidan isn't available" };
+    const r = await aidan.dismiss(ticketId, by);
+    return r.dismissed ? { ok: true } : { ok: true, skipped: true };
+  }
+  async function handleBulk(req, res) {
+    const who = await requireRole(req, "editor");
+    if (!who.ok) return send(res, who.status, { error: who.error });
+    if (req.method !== "POST") return send(res, 405, { error: "POST only" });
+    const by = who.user.email;
+    const body = req.body && typeof req.body === "object" ? req.body : {};
+    const action = String(body.action || "");
+    if (!BULK_ACTIONS.includes(action)) return send(res, 400, { error: `action is one of ${BULK_ACTIONS.join(", ")}` });
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map((id) => String(id)))];
+    if (!ids.length) return send(res, 400, { error: "Select at least one." });
+    if (ids.length > BULK_MAX) return send(res, 400, { error: `At most ${BULK_MAX} at a time.` });
+    if (ids.some((id) => !/^[A-Za-z0-9_-]{1,80}$/.test(id))) return send(res, 400, { error: "That isn't a ticket id." });
+    const shared = {};
+    if (action === "status" && !core.STATUSES.includes(body.status)) return send(res, 400, { error: `status is one of ${core.STATUSES.join(", ")}` });
+    if (action === "assign") {
+      shared.assignee = core.lower(body.assignee);
+      if (shared.assignee && !(await resolveConsoleUser(shared.assignee))) return send(res, 400, { error: `${shared.assignee} isn't a member of the console.` });
+    }
+    if (action === "escalate") shared.settings = await readSettings();
+    const out = { ok: true, done: 0, failed: 0, skipped: 0, errors: [] };
+    const queue = ids.slice();
+    const worker = async () => {
+      for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+        let r;
+        try { r = await bulkOne(id, action, body, by, shared); }
+        catch (err) {
+          logger.error("support: bulk action failed", { ticketId: id, action, error: String(err && err.message ? err.message : err) });
+          r = { ok: false, error: String(err && err.message ? err.message : err) };
+        }
+        if (!r.ok) { out.failed += 1; if (out.errors.length < 5) out.errors.push({ id, error: core.clip(r.error || "failed", 200) }); }
+        else if (r.skipped) out.skipped += 1;
+        else out.done += 1;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(action === "escalate" ? 1 : BULK_AT_ONCE, ids.length) }, worker));
+    return send(res, 200, out);
+  }
+
   // ── HTTP ──
   async function handle(req, res) {
     const path = String((req.path || req.url || "/").split("?")[0]).replace(/^\/supportMail(?=\/|$)/, "").replace(/\/+$/, "") || "/";
@@ -751,6 +806,7 @@ function createSupportMail({
       return send(res, 200, Object.assign(await status(), { aidan: await aidan.status({ admin: who.user.role === "admin" }) }));
     }
 
+    if (path === "/v1/tickets/bulk") return handleBulk(req, res);
     const t = /^\/v1\/tickets\/([A-Za-z0-9_-]{1,80})\/(reply|draft|status|note|assign|escalate)$/.exec(path);
     if (t) return handleTicket(req, res, t[1], t[2]);
 
@@ -855,4 +911,4 @@ function createSupportMail({
   return { handle, sync, status, triageTicket, ingest, aidan };
 }
 
-module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL };
+module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL, DRAFT_TIMEOUT_MS, BULK_MAX, BULK_ACTIONS };

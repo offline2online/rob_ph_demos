@@ -2776,7 +2776,8 @@ async function supportKanbanCall(name, args, actor) {
   if (!out || !out.ok) throw new Error((out && out.error) || `${name} failed`);
   return out.value;
 }
-exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, SUPPORT_ANTHROPIC_KEY, SUPPORT_ANTHROPIC_WORKSPACE], cors: false, timeoutSeconds: 540, memory: "512MiB", maxInstances: 3 }, (req, res) => {
+// 1 GiB: Aidan prints branded collateral to PDF in headless Chromium (collateral-pdf.js).
+exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, SUPPORT_ANTHROPIC_KEY, SUPPORT_ANTHROPIC_WORKSPACE], cors: false, timeoutSeconds: 540, memory: "1GiB", maxInstances: 3 }, (req, res) => {
   if (!supportMailApi) {
     const { getAuth } = require("firebase-admin/auth");
     supportMailApi = createSupportMail({
@@ -2792,6 +2793,10 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
       commentKanbanTask: (key, text, actor) => supportKanbanCall("kanban_comment", { key, text }, actor),
       // Aidan keeps PDFs and images sent "for a skill" here (skill-references/…, no client access in storage.rules).
       bucket: () => require("firebase-admin/storage").getStorage().bucket("backlog-tracker-e4ed2.firebasestorage.app"),
+      // Aidan answers from the console's own data through the MCP server's
+      // read tools, only those named in aidan-core.js and only board.read
+      // ones (mcp-server.js → consoleReader): nothing it can reach writes.
+      consoleReader: mcp.consoleReader(require("./aidan-core").CONSOLE_READ_TOOLS),
       logger,
     });
   }

@@ -5,7 +5,9 @@
 // inserting a Help Centre article, sending (what the server is asked to do),
 // marking spam, the Stats tab's figures, the three inbox tabs (Support Inbox,
 // Hello, Aidan) each with its own list, the Settings page, a viewer getting
-// no write controls, no sideways scroll and 44px touch targets.
+// no write controls, no sideways scroll and 44px touch targets. Also the
+// checkboxes on every list: select, select all, each inbox's bulk actions as
+// one call with one result message, and what clears or keeps the selection.
 // Run with:  cd backlog-tracker/test && node ui/support-inbox.test.mjs
 // SHOTS=1 also saves screenshots to ui/out/.
 import assert from "node:assert";
@@ -210,10 +212,27 @@ try {
     await until(async () => (await page.textContent("#support-settings")).includes("Mailbox connected."), "the result of Google's sign-in");
     assert.strictEqual(await page.isChecked("#support-auto"), false, "sending by itself is off by default");
     assert.strictEqual(await page.inputValue("#support-client-secret"), "", "no secret is ever shown");
+    // Every Save is disabled until one of its own fields differs from what is saved.
+    const saveOff = (act) => page.isDisabled(`[data-ss-act="${act}"]`);
+    assert.deepStrictEqual([await saveOff("save-client"), await saveOff("save-settings"), await saveOff("save-aidan")], [true, true, true], "nothing changed: every Save is disabled");
+    await page.fill("#support-client-id", "abc.apps.googleusercontent.com");
+    assert.deepStrictEqual([await saveOff("save-client"), await saveOff("save-settings"), await saveOff("save-aidan")], [false, true, true], "only the changed block's Save enables");
+    await page.fill("#support-client-id", "");
+    assert.strictEqual(await saveOff("save-client"), true, "cleared again: Save client is disabled");
+    await page.check("#support-auto");
+    assert.strictEqual(await saveOff("save-settings"), false, "a changed field enables Save settings");
+    await page.uncheck("#support-auto");
+    assert.strictEqual(await saveOff("save-settings"), true, "reverted: Save settings is disabled again");
+    await page.selectOption("#support-assignee", "");
+    assert.strictEqual(await saveOff("save-settings"), false, "a changed select enables it");
+    await page.selectOption("#support-assignee", "admin@personalisationhub.com");
+    assert.strictEqual(await saveOff("save-settings"), true, "and back to the saved choice disables it");
     await page.check("#support-auto");
     await page.fill("#support-threshold", "90");
     await page.click('[data-ss-act="save-settings"]');
     await until(() => o.supportCalls.some((c) => c.path === "settings"), "the settings call");
+    await until(async () => (await page.textContent("#support-settings-status")) === "Saved.", "the save to finish");
+    assert.strictEqual(await saveOff("save-settings"), true, "saved: Save settings is disabled again");
     const saved = o.supportCalls.find((c) => c.path === "settings").body;
     assert.deepStrictEqual([saved.autoReply, saved.autoReplyThreshold, saved.vipDomains, saved.escalationAssignee], [true, 0.9, "vip.example", "admin@personalisationhub.com"]);
     const a = await audit(page, "#support-settings");
@@ -226,55 +245,126 @@ try {
   const inboxDocs = { ...docs, supportTickets: {
     s1: ticket(1, { subject: "Written to support", needsHuman: true, inboxes: ["support"] }),
     s2: ticket(2, { subject: "From before the tabs", needsHuman: true }),
-    h1: ticket(3, { subject: "Written to hello", needsHuman: true, inboxes: ["hello"] }),
-    h2: ticket(4, { subject: "Hello, resolved", status: "resolved", resolvedBy: "editor@ph.example", humanInvolved: true, inboxes: ["hello"] }),
-    a1: ticket(5, { subject: "Written to aidan", aiDraft: DRAFT, inboxes: ["aidan"] }),
+    h1: ticket(3, { subject: "Written to hello", customerName: "Hattie Shaw", customerEmail: "hattie@shop.example", needsHuman: true, aiDraft: DRAFT, highValue: true, account: { kind: "prospect", id: "p1", name: "Big Retail", reason: "Prospects (TAM) company" }, kanbanKey: "PH-9", summary: "Wants a partnership.", lastInboundAt: t(T0 + 3 * 60000), inboxes: ["hello"] }),
+    h2: ticket(4, { subject: "Hello, resolved", status: "resolved", resolvedBy: "ai", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 4 * 60000), inboxes: ["hello"] }),
+    h3: ticket(9, { subject: "Hello, junk", status: "spam", inboxes: ["hello"] }),
+    a1: ticket(5, { subject: "Written to aidan", status: "resolved", resolvedBy: "aidan", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 5 * 60000), aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "pack.md" }, recipients: 2 }, inboxes: ["aidan"] }),
+    a2: ticket(7, { subject: "Refused by Aidan", aiDraft: DRAFT, aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." }, inboxes: ["aidan"] }),
+    a3: ticket(8, { subject: "Queued for Aidan", aidan: { status: "queued", kind: "generate", instruction: "send the pack" }, inboxes: ["aidan"] }),
     sa: ticket(6, { subject: "Support with aidan in Cc", needsHuman: true, inboxes: ["support", "aidan"] }),
-  }, "supportTickets/sa/messages": { m1: { direction: "in", from: "c6@shop.example", fromName: "Customer 6", text: "For you both.", at: t(T0) } } };
-  for (const width of [390, 820, 1280]) await run(`three inboxes by alias @${width}px`, { seed: { ...seedFor("editor"), docs: inboxDocs }, width, height: 900, hash: "#support" }, async (page) => {
+  }, "supportTickets/sa/messages": { m1: { direction: "in", from: "c6@shop.example", fromName: "Customer 6", text: "For you both.", at: t(T0) } },
+  "supportTickets/h1/messages": {
+    m1: { direction: "in", from: "hattie@shop.example", fromName: "Hattie Shaw", text: "Could we talk about a partnership?", at: t(T0) },
+    e1: { direction: "event", text: "Raised on the Staff Kanban as PH-9.", by: "system", at: t(T0 + 1000) },
+    n1: { direction: "note", text: "Met at the show.", by: "editor@ph.example", at: t(T0 + 2000) },
+  },
+  "supportTickets/a1/messages": {
+    m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", text: "@Aidan, send the pack.", at: t(T0) },
+    m2: { direction: "out", source: "aidan", sentBy: "aidan", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Here is the pack.", attachments: [{ name: "pack.md" }], skillName: "AWS onboarding pack", at: t(T0 + 60000) },
+  } };
+  // What only the Support Inbox has: the queue strip, triage, the suggested reply and its confidence, Staff Kanban, assignment.
+  const SUPPORT_ONLY = '.support-queue, .support-conf, .support-draft, .support-badge-hv, .support-account, .support-row-key, .support-event, #support-assign, #support-faq-search, [data-support-act="use-draft"], [data-support-act="redraft"], [data-support-act="escalate"], [data-support-act="open-kanban"], [data-support-act="send-resolve"], [data-support-status="resolved"]';
+  for (const width of [390, 820, 1280]) await run(`three inboxes by alias: Support Inbox with queues, Hello and Aidan plain @${width}px`, { seed: { ...seedFor("editor"), docs: inboxDocs }, width, height: 900, hash: "#support" }, async (page, o) => {
     await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
     const tabs = () => page.evaluate(() => [...document.querySelectorAll("#support-page .support-tab")].filter((b) => b.getClientRects().length).map((b) => [b.textContent, b.getAttribute("aria-selected")]));
     assert.deepStrictEqual((await tabs()).slice(0, 3), [["Support Inbox", "true"], ["Hello", "false"], ["Aidan", "false"]], "the tab names, exactly, Support Inbox first");
     const subjects = () => page.locator(".support-row-subject").allTextContents();
     const counts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-queue")].map((b) => [b.dataset.supportQueue, b.querySelector(".support-queue-count").textContent])));
-    // Support Inbox: mail to support@, mail from before the tabs, and the one that copied aidan@.
+    const hashNow = () => page.evaluate(() => location.hash);
+    const none = async (what) => assert.strictEqual(await page.locator(SUPPORT_ONLY).count(), 0, `${what}: a Support Inbox control is showing`);
+    const fits = async (what) => {
+      const a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on ${what} (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], `touch targets under 44px on ${what}`);
+    };
+    // Support Inbox: mail to support@, mail from before the tabs, and the one that copied aidan@. Queues and triage as before.
     assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc", "From before the tabs", "Written to support"]);
+    assert.strictEqual(await page.locator(".support-queue").count(), 7, "the Support Inbox keeps its seven queues");
     assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).all], ["3", "3"]);
     assert.ok((await page.textContent("#support-count")).startsWith("3 need a person · 0 AI drafts"));
-    // Hello: its own list and counts.
+
+    // Hello: a plain email list. Sender, subject, date and unread; nothing from the Support Inbox.
     await page.click('[data-support-tab="hello"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/hello", "the Hello route");
+    await until(async () => (await hashNow()) === "#support/hello", "the Hello route");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
-    assert.deepStrictEqual(await subjects(), ["Written to hello"]);
-    assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).resolved, (await counts()).all], ["1", "1", "2"]);
-    assert.ok((await page.textContent("#support-count")).startsWith("1 need a person"));
-    await page.click('[data-support-queue="resolved"]');
-    assert.strictEqual(await page.evaluate(() => location.hash), "#support/hello?queue=resolved", "a queue stays in its inbox");
-    assert.deepStrictEqual(await subjects(), ["Hello, resolved"]);
-    let a = await audit(page, "#support-page");
-    assert.ok(a.overflow <= 0, `no sideways scroll on Hello (${a.overflow}px)`);
-    assert.deepStrictEqual(a.small, [], "touch targets under 44px on Hello");
+    assert.deepStrictEqual(await subjects(), ["Hello, resolved", "Written to hello"], "every Hello email whatever its support status, newest first; spam apart");
+    await none("the Hello list");
+    assert.deepStrictEqual(await page.locator(".support-mail-row .support-row-from").allTextContents(), ["Customer 4", "Hattie Shaw"], "the sender");
+    assert.strictEqual(await page.locator('[data-support-ticket="h1"] .support-row-when').count(), 1, "the date");
+    assert.deepStrictEqual(await page.evaluate(() => [...document.querySelectorAll(".support-mail-row")].map((r) => [r.dataset.supportTicket, r.classList.contains("is-unread"), !!r.querySelector(".support-unread")])), [["h2", false, false], ["h1", true, true]], "unread is bold and says so; an answered email is read");
+    assert.ok((await page.textContent("#support-count")).startsWith("1 unread ·"), "the header counts unread email");
+    await fits("Hello");
     const strip = await page.evaluate(() => { const n = document.querySelector(".support-tabs"); return n.scrollWidth - n.clientWidth; });
     assert.ok(strip <= 0, `the tabs are not in a sideways-scrolling strip (${strip}px)`);
     await shot(page, `hello-${width}`);
-    // Aidan: the AI draft written to aidan@, and (needing a person) the support@ email that copied aidan@.
+    // An old link to one of its queues opens the emails; spam is one tap away and comes back.
+    await page.evaluate(() => { location.hash = "#support/hello?queue=resolved"; });
+    await page.waitForTimeout(150);
+    assert.deepStrictEqual(await subjects(), ["Hello, resolved", "Written to hello"]);
+    await page.click('[data-support-queue="spam"]');
+    await until(async () => (await hashNow()) === "#support/hello?queue=spam", "Hello's spam");
+    assert.deepStrictEqual(await subjects(), ["Hello, junk"]);
+    await none("Hello's spam");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/hello", "back in Hello");
+    // The thread: the emails and notes, Reply, an internal note and Mark as spam. No draft, confidence, Kanban, resolve or history.
+    await page.click('[data-support-ticket="h1"]');
+    await until(() => page.locator(".support-msg-in").count(), "the Hello conversation");
+    assert.strictEqual(await hashNow(), "#support/hello/ticket/h1");
+    await none("the Hello thread");
+    const head = await page.textContent(".support-ticket-head");
+    assert.ok(head.includes("Written to hello") && head.includes("Hattie Shaw <hattie@shop.example>"), "the subject and who wrote");
+    assert.ok(!/SUP-3|PH-9|Wants a partnership|High value|Answered by AI/i.test(await page.textContent("#support-view")), "no ticket key, Kanban link, AI summary or support badge");
+    assert.strictEqual(await page.locator(".support-msg-note").count(), 1, "an internal note may stay");
+    assert.deepStrictEqual(await page.locator(".support-actions button").allTextContents().then((x) => x.map((s) => s.replace("report", "").trim())), ["Mark as spam"]);
+    assert.deepStrictEqual(await page.locator(".support-send button").allTextContents(), ["Reply", "Save as internal note"]);
+    await fits("the Hello thread");
+    await shot(page, `hello-thread-${width}`);
+    await page.fill("#support-reply", "Thanks Hattie, I will call you tomorrow.");
+    await page.click('[data-support-act="send"]');
+    await until(() => o.supportCalls.some((c) => c.path === "tickets/h1/reply"), "the reply");
+    assert.deepStrictEqual(o.supportCalls.find((c) => c.path === "tickets/h1/reply").body, { text: "Thanks Hattie, I will call you tomorrow.", resolve: false, draft: "manual" });
+    await until(async () => (await page.inputValue("#support-reply")) === "", "the box to clear");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/hello", "back in Hello again");
+    assert.strictEqual(await page.locator(".support-mail-row.is-unread").count(), 0, "an opened email is no longer unread");
+
+    // Aidan: a plain email list where every thread says what Aidan did.
     await page.click('[data-support-tab="aidan"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "the Aidan route");
-    assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc"]);
-    assert.deepStrictEqual([(await counts())["needs-person"], (await counts())["ai-drafts"], (await counts()).all], ["1", "1", "2"]);
-    // Its thread opens inside Aidan, says it is in both, and Back returns to Aidan.
+    await until(async () => (await hashNow()) === "#support/aidan", "the Aidan route");
+    assert.deepStrictEqual(await subjects(), ["Queued for Aidan", "Refused by Aidan", "Support with aidan in Cc", "Written to aidan"]);
+    await none("the Aidan list");
+    assert.deepStrictEqual(await page.locator(".support-aidan-badge").allTextContents(), ["Aidan: queued", "Aidan: no action", "Aidan: no action", "Aidan replied"], "each thread carries Aidan's state");
+    assert.ok((await page.textContent('[data-support-ticket="a2"] .support-row-snippet')).includes("The sender is not allowed to instruct Aidan."), "no action says why");
+    assert.ok((await page.textContent('[data-support-ticket="sa"] .support-row-snippet')).includes("no @Aidan request"), "an email Aidan was never asked about says so");
+    await fits("Aidan");
+    await shot(page, `aidan-${width}`);
+    // A replied thread shows his reply.
+    await page.click('[data-support-ticket="a1"]');
+    await until(() => page.locator(".support-msg-aidan").count(), "Aidan's reply on the thread");
+    assert.strictEqual(await hashNow(), "#support/aidan/ticket/a1");
+    await none("the Aidan thread");
+    assert.ok((await page.textContent(".support-aidan-line")).includes("Aidan wrote pack.md with the AWS onboarding pack skill"));
+    assert.ok((await page.textContent(".support-msg-aidan")).includes("Here is the pack."));
+    await fits("the Aidan thread");
+    await shot(page, `aidan-thread-${width}`);
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/aidan", "back in Aidan from the reply");
+    // An email in two inboxes opens inside Aidan, says it is in both, and Back returns to Aidan.
     await page.click('[data-support-ticket="sa"]');
     await until(() => page.locator(".support-msg-in").count(), "the conversation");
-    assert.strictEqual(await page.evaluate(() => location.hash), "#support/aidan/ticket/sa");
+    assert.strictEqual(await hashNow(), "#support/aidan/ticket/sa");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "false", "true"]);
     assert.ok((await page.textContent(".support-ticket-meta")).includes("In Support Inbox, Aidan"));
     assert.strictEqual((await page.textContent(".support-back")).replace("arrow_back", "").trim(), "Aidan");
+    await none("a shared email opened in Aidan");
     await page.click('[data-support-act="back"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "back in Aidan");
+    await until(async () => (await hashNow()) === "#support/aidan", "back in Aidan");
     // The same ticket by its old address opens under Support Inbox; a Hello ticket by that address opens under Hello.
     await page.evaluate(() => { location.hash = "#support/ticket/sa"; });
     await until(() => page.locator(".support-msg-in").count(), "the conversation again");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["true", "false", "false"]);
+    assert.ok(await page.locator('[data-support-act="escalate"]').count() && await page.locator('[data-support-status="resolved"]').count() && await page.locator("#support-assign").count(), "in the Support Inbox the same email keeps its triage controls");
     await page.evaluate(() => { location.hash = "#support/ticket/h1"; });
     await until(async () => (await page.textContent(".support-ticket-head h3")).includes("Written to hello"), "the Hello ticket");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
@@ -282,6 +372,7 @@ try {
     await page.click('[data-support-tab="inbox"]');
     await until(async () => (await page.evaluate(() => location.hash)) === "#support", "the Support Inbox route");
     assert.strictEqual((await subjects()).length, 3);
+    assert.strictEqual(await page.locator(".support-queue").count(), 7, "the Support Inbox still has its queues");
   });
 
   await run("settings as an editor: read-only", { seed: seedFor("editor"), width: 1280, hash: "#settings/support" }, async (page) => {
@@ -297,9 +388,16 @@ try {
     assert.ok(text.includes("2 allowed senders: o***@example.com, o***@example.com"), text);
     assert.strictEqual(await page.inputValue("#support-aidan-senders"), "", "the addresses are never put back in the box");
     assert.strictEqual(await page.isChecked("#support-aidan-on"), true);
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "nothing changed: Save Aidan is disabled");
+    await page.uncheck("#support-aidan-on");
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the switch changed: Save Aidan enables");
+    await page.check("#support-aidan-on");
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "switched back: disabled again");
     await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
     await page.click('[data-ss-act="save-aidan"]');
     await until(() => o.supportCalls.some((c) => c.path === "aidan"), "the Aidan call");
+    await until(async () => (await page.textContent("#support-aidan-status")) === "Saved.", "the Aidan save to finish");
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "saved: Save Aidan is disabled again");
     const saved = o.supportCalls.find((c) => c.path === "aidan").body;
     assert.deepStrictEqual([saved.enabled, saved.allowedSenders], [true, "owner@example.com, owner.alias@example.com"]);
     const a = await audit(page, "#support-settings");
@@ -312,6 +410,178 @@ try {
     assert.ok((await page.textContent("#support-aidan-settings")).includes("2 allowed senders"));
     assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
     assert.ok(await page.locator("#support-aidan-on").isDisabled());
+  });
+  // Selecting several threads (b3NmU4mdmiGOZgHLURgK): a checkbox on every row and one above the list, in all
+  // three inboxes; the selection bar's actions go to the server in one call, with one result message.
+  const bulkDocs = { ...docs, supportTickets: {
+    s1: ticket(1, { subject: "Support one", needsHuman: true }), s2: ticket(2, { subject: "Support two", needsHuman: true }), s3: ticket(3, { subject: "Support three", needsHuman: true }),
+    s4: ticket(4, { subject: "Support junk", status: "spam" }),
+    h1: ticket(11, { subject: "Hello one", lastInboundAt: t(T0 + 11 * 60000), inboxes: ["hello"] }), h2: ticket(12, { subject: "Hello two", inboxes: ["hello"] }),
+    h3: ticket(13, { subject: "Hello three", inboxes: ["hello"] }), h4: ticket(14, { subject: "Hello four", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 2 * 60000), inboxes: ["hello"] }),
+    h5: ticket(15, { subject: "Hello archived", archived: true, inboxes: ["hello"] }),
+    a1: ticket(21, { subject: "Aidan refused", aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." }, inboxes: ["aidan"] }),
+    a2: ticket(22, { subject: "Aidan plain", inboxes: ["aidan"] }),
+  }, "supportTickets/h1/messages": { m1: { direction: "in", from: "c11@shop.example", fromName: "Customer 11", text: "Hello there.", at: t(T0) } } };
+  const setDocs = (page, changes) => page.evaluate((list) => window.__fbStub.commit(list.map(([id, data]) => ({ op: "set", merge: true, ref: { type: "doc", id, path: `supportTickets/${id}`, parentPath: "supportTickets" }, data }))), changes);
+  for (const width of [390, 820, 1280]) await run(`selecting several threads @${width}px`, { seed: seedFor("editor", { docs: bulkDocs, supportAnswer: { ok: true, done: 3, failed: 0, skipped: 0, errors: [] } }), width, height: 900, hash: "#support/hello" }, async (page, o) => {
+    const bulkCalls = () => o.supportCalls.filter((c) => c.path === "tickets/bulk");
+    const subjects = () => page.locator(".support-row-subject").allTextContents();
+    const picked = () => page.$$eval("[data-support-pick]:checked", (els) => els.map((e) => e.dataset.supportPick).sort());
+    const count = async () => ((await page.locator("#support-bulk-count").count()) ? page.textContent("#support-bulk-count") : "");
+    const barKeys = () => page.$$eval("#support-bulk [data-support-bulk], #support-bulk [data-support-bulk-pick]", (els) => els.map((e) => e.dataset.supportBulk || e.dataset.supportBulkPick));
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+
+    // Every row has its own labelled checkbox; nothing is selected and no actions show yet.
+    assert.deepStrictEqual(await page.$$eval("[data-support-pick]", (els) => els.map((e) => [e.type, e.getAttribute("aria-label"), e.closest("label") !== null, e.closest("button") === null])),
+      [["checkbox", "Select Hello four", true, true], ["checkbox", "Select Hello three", true, true], ["checkbox", "Select Hello two", true, true], ["checkbox", "Select Hello one", true, true]]);
+    assert.strictEqual(await page.getAttribute("#support-pick-all", "aria-label"), "Select all 4 shown");
+    assert.deepStrictEqual([await barKeys(), await count()], [[], ""]);
+
+    // A checkbox selects without opening the email; the row still opens it without ticking anything.
+    await page.check('[data-support-pick="h1"]');
+    assert.deepStrictEqual([await page.evaluate(() => location.hash), await count(), await picked()], ["#support/hello", "1 selected", ["h1"]]);
+    await page.click('[data-support-ticket="h2"]');
+    await until(() => page.evaluate(() => location.hash === "#support/hello/ticket/h2"), "the email opens from its row");
+    await page.click('[data-support-act="back"]');
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "back in Hello");
+    assert.deepStrictEqual(await picked(), [], "leaving the list clears the selection");
+
+    // Test step: select three emails in Hello, Mark as spam, confirm: all three gone, one result message.
+    for (const id of ["h1", "h2", "h3"]) await page.check(`[data-support-pick="${id}"]`);
+    assert.deepStrictEqual([await count(), await barKeys()], ["3 selected", ["spam", "read", "unread", "archive", "clear"]]);
+    assert.strictEqual(await page.evaluate(() => document.getElementById("support-pick-all").indeterminate), true, "some, not all");
+    const a0 = await audit(page, "#support-page");
+    assert.ok(a0.overflow <= 0, `no sideways scroll with the selection bar open (${a0.overflow}px)`);
+    assert.deepStrictEqual(a0.small, [], "touch targets under 44px");
+    assert.deepStrictEqual(await page.$$eval(".support-pick", (els) => els.filter((e) => e.getBoundingClientRect().width < 44 || e.getBoundingClientRect().height < 44).length), 0, "each checkbox's label is a 44px target");
+    await shot(page, `bulk-hello-${width}`);
+
+    // New mail arriving mid-selection redraws the list and keeps the selection.
+    await setDocs(page, [["h4", { snippet: "changed by a sync" }], ["h9", ticket(19, { subject: "Hello new", inboxes: ["hello"] })]]);
+    await until(async () => (await subjects()).includes("Hello new"), "the new email");
+    assert.deepStrictEqual([await picked(), await count()], [["h1", "h2", "h3"], "3 selected"], "a redraw from new data keeps the selection");
+
+    await page.click('[data-support-bulk="spam"]');
+    await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "one confirmation for the batch");
+    assert.ok((await page.textContent("#dialog-backdrop")).includes("Mark 3 emails as spam?"));
+    assert.strictEqual(bulkCalls().length, 0, "nothing is sent before it is confirmed");
+    await page.click("#dialog-ok");
+    await until(() => bulkCalls().length === 1, "the bulk call");
+    assert.deepStrictEqual(bulkCalls()[0].body, { ids: ["h3", "h2", "h1"], action: "status", status: "spam" }, "one call for all three");
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.deepStrictEqual([await page.locator("#support-bulk-result").count(), await page.textContent("#support-bulk-result > span:last-child")].map(String), ["1", "3 emails marked as spam."]);
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "the selection clears after the action");
+    await setDocs(page, ["h1", "h2", "h3"].map((id) => [id, { status: "spam" }]));
+    await until(async () => (await subjects()).join() === "Hello new,Hello four", "all three gone");
+    assert.strictEqual(o.supportCalls.filter((c) => /\/status$/.test(c.path)).length, 0, "not three single calls");
+    assert.ok((await page.textContent(".support-plain-foot")).includes("Spam (3)") && (await page.textContent(".support-plain-foot")).includes("Archived (1)"));
+
+    // Read and unread are this browser's own state: no call, the row changes at once.
+    await page.check('[data-support-pick="h4"]');
+    await page.click('[data-support-bulk="unread"]');
+    await until(() => page.locator('[data-support-ticket="h4"].is-unread .support-unread').count(), "Hello four reads Unread");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("1 email marked as unread."));
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual(await picked(), ["h4", "h9"], "Select all ticks every row shown");
+    await page.click('[data-support-bulk="read"]');
+    await until(async () => (await page.locator(".support-mail-row.is-unread").count()) === 0, "nothing unread");
+    assert.strictEqual(bulkCalls().length, 1, "read and unread send nothing");
+
+    // Archive: one call; the Archived list has Move to inbox.
+    await page.check('[data-support-pick="h4"]');
+    await page.click('[data-support-bulk="archive"]');
+    await until(() => bulkCalls().length === 2, "the archive call");
+    assert.deepStrictEqual(bulkCalls()[1].body, { ids: ["h4"], action: "archive", archived: true });
+    await setDocs(page, [["h4", { archived: true }]]);
+    await until(async () => (await subjects()).join() === "Hello new", "the archived email leaves the list");
+    await page.click('[data-support-queue="archived"]');
+    await until(() => page.evaluate(() => location.hash === "#support/hello?queue=archived"), "the Archived list");
+    await until(async () => (await subjects()).join() === "Hello archived,Hello four", "the archived emails");
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual(await barKeys(), ["unarchive", "spam", "clear"]);
+    await page.click('[data-support-bulk="clear"]');
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "Clear unticks everything");
+
+    // Test step: switching tab clears the selection. Aidan has its own extra action.
+    await page.check("#support-pick-all");
+    await page.click('[data-support-tab="aidan"]');
+    await until(() => page.locator('[data-support-ticket="a1"]').count(), "the Aidan emails");
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "another tab: nothing selected");
+    await page.check('[data-support-pick="a1"]');
+    await page.check('[data-support-pick="a2"]');
+    assert.deepStrictEqual(await barKeys(), ["spam", "read", "unread", "archive", "aidan-dismiss", "clear"]);
+    await page.click('[data-support-bulk="aidan-dismiss"]');
+    await until(() => bulkCalls().length === 3, "the dismiss call");
+    assert.deepStrictEqual(bulkCalls()[2].body, { ids: ["a2", "a1"], action: "aidan-dismiss" });
+
+    // Test step: select all in the Support Inbox, assign to a member: all assigned, in one call.
+    await page.click('[data-support-tab="inbox"]');
+    await until(() => page.locator('[data-support-ticket="s1"]').count(), "the Support Inbox");
+    await page.check("#support-pick-all");
+    assert.deepStrictEqual([await picked(), await count()], [["s1", "s2", "s3"], "3 selected"]);
+    assert.strictEqual(await page.isChecked("#support-pick-all"), true);
+    await until(() => page.locator('[data-support-bulk-pick="assign"] option[value="editor@ph.example"]').count(), "the members to assign to");
+    assert.deepStrictEqual(await barKeys(), ["spam", "read", "unread", "resolve", "assign", "move", "escalate", "clear"]);
+    const a1 = await audit(page, "#support-page");
+    assert.ok(a1.overflow <= 0, `no sideways scroll with the Support Inbox's actions (${a1.overflow}px)`);
+    assert.deepStrictEqual(a1.small, [], "touch targets under 44px");
+    await shot(page, `bulk-support-${width}`);
+    await page.selectOption('[data-support-bulk-pick="assign"]', "editor@ph.example");
+    await until(() => bulkCalls().length === 4, "the assign call");
+    assert.deepStrictEqual(bulkCalls()[3].body, { ids: ["s3", "s2", "s1"], action: "assign", assignee: "editor@ph.example" });
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("3 tickets assigned to Ed Itor."));
+    assert.deepStrictEqual(await picked(), []);
+
+    // Move to a queue, and one Staff Kanban ticket per selected ticket (asked once).
+    await page.check('[data-support-pick="s1"]');
+    await page.check('[data-support-pick="s2"]');
+    await page.selectOption('[data-support-bulk-pick="move"]', "pending");
+    await until(() => bulkCalls().length === 5, "the move call");
+    assert.deepStrictEqual(bulkCalls()[4].body, { ids: ["s2", "s1"], action: "status", status: "pending" });
+    await until(() => page.locator('[data-support-pick="s1"]:not(:disabled)').count(), "the list again");
+    await page.check('[data-support-pick="s1"]');
+    await page.check('[data-support-pick="s2"]');
+    await page.click('[data-support-bulk="escalate"]');
+    await until(() => page.evaluate(() => !document.getElementById("dialog-backdrop").hidden), "the Staff Kanban confirmation");
+    assert.ok((await page.textContent("#dialog-backdrop")).includes("2 Staff Kanban tickets, one for each selected support ticket"));
+    await page.click("#dialog-ok");
+    await until(() => bulkCalls().length === 6, "the escalate call");
+    assert.deepStrictEqual(bulkCalls()[5].body, { ids: ["s2", "s1"], action: "escalate" });
+
+    // Marked unread shows in the Support Inbox too, until the ticket is opened. Changing queue clears the selection.
+    await until(() => page.locator('[data-support-pick="s3"]:not(:disabled)').count(), "the list again");
+    await page.check('[data-support-pick="s3"]');
+    await page.click('[data-support-bulk="unread"]');
+    await until(() => page.locator('[data-support-ticket="s3"].is-unread .support-unread').count(), "Support three reads Unread");
+    await page.check('[data-support-pick="s1"]');
+    await page.click('[data-support-queue="spam"]');
+    await until(() => page.locator('[data-support-ticket="s4"]').count(), "the Spam queue");
+    assert.deepStrictEqual([await picked(), await count()], [[], ""], "another queue: nothing selected");
+    await page.check('[data-support-pick="s4"]');
+    assert.deepStrictEqual(await barKeys(), ["not-spam", "clear"]);
+    await page.click('[data-support-bulk="not-spam"]');
+    await until(() => bulkCalls().length === 7, "the not-spam call");
+    assert.deepStrictEqual(bulkCalls()[6].body, { ids: ["s4"], action: "status", status: "open" });
+    await page.click('[data-support-queue="needs-person"]');
+    await page.click('[data-support-ticket="s3"]');
+    await until(() => page.evaluate(() => location.hash === "#support/ticket/s3"), "the ticket");
+    await page.click('[data-support-act="back"]');
+    await until(() => page.locator('[data-support-ticket="s3"]').count(), "the list");
+    assert.strictEqual(await page.locator('[data-support-ticket="s3"].is-unread').count(), 0, "opening it reads it");
+  });
+  // A failed batch says how many failed and why, once.
+  await run("selecting several threads: a failure is counted in the one result", { seed: seedFor("editor", { docs: bulkDocs, supportAnswer: { ok: true, done: 1, failed: 1, skipped: 0, errors: [{ id: "h2", error: "no such ticket" }] } }), width: 1280, hash: "#support/hello" }, async (page) => {
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+    await page.check('[data-support-pick="h1"]');
+    await page.check('[data-support-pick="h2"]');
+    await page.click('[data-support-bulk="archive"]');
+    await until(() => page.locator("#support-bulk-result").count(), "the result message");
+    assert.ok((await page.textContent("#support-bulk-result")).includes("1 email archived. 1 failed: no such ticket"));
+  });
+  await run("selecting several threads: a viewer has no checkboxes", { seed: seedFor("viewer", { docs: bulkDocs }), width: 1280, hash: "#support/hello" }, async (page) => {
+    await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
+    assert.strictEqual(await page.locator("[data-support-pick], #support-pick-all, #support-bulk").count(), 0);
   });
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);

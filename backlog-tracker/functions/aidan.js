@@ -19,9 +19,68 @@
 //                 everyone on the email (From, To, Cc; never Reply-To) with it
 //                 attached, from the mailbox; or
 //       store:    keeps the email and its attachments as reference material
-//                 for the skill (skillReferences), used by later runs.
+//                 for the skill (skillReferences), used by later runs; or
+//       answer:   replies to everyone on the email in the email's own body,
+//                 with no attachment (an acknowledgement, or the answer to a
+//                 question). No skill is needed; one named in the instruction
+//                 is read. A request to write that no skill matches is tried
+//                 as an answer too, and goes to a person only when it can't
+//                 be answered from the email.
+//     An answer or a write may also read the agent console's own data
+//     (concepts, project documents and interface contracts, tickets and the
+//     pipeline, the Help Centre), read-only, through the MCP server's read
+//     tools (`readConsole`, `consoleReader`): the model plans the reads, they
+//     run, and the answer is written from them. An answer always may; a
+//     write (a skill's document) only when the instruction is clearly about
+//     the console (aidan-core.js → writeReadsConsole). A reply that carries
+//     console data goes only to the allowed senders on the email, with ids
+//     replaced by titles unless asked for. A request to
+//     change the console gets a polite "read-only, nothing changed" reply
+//     (`readOnlyReply`), and nothing is changed.
+//   • One answering engine (rVv1x2N8xlKAZs0gpkRx): an answer run that asks a
+//     question is first put to the Support Inbox's own Help Centre pipeline
+//     (functions/answer-core.js: match against the whole published Help
+//     Centre, draft from the best article, add articles when confidence is
+//     under 80%). When the Help Centre answers it (`helpCentreAnswer`), that
+//     reply is sent in the email itself, to everyone on the email, with the
+//     articles named by title; the confidence and the matched articles are
+//     kept on the ticket (`aidan.helpCentre`), never written in the email.
+//     None of the Support Inbox's sending gates apply. Anything the Help
+//     Centre doesn't answer (a project or documentation question, a question
+//     about the email) carries on to the console and the email as before.
 //     A run still "working" after 15 minutes was cut off: the next sync moves
 //     it to a person (`sweepStale`).
+//   • Branded sales collateral (JtkLrEG0aTnC5JfkdPA1): a write whose
+//     instruction names collateral ("@Aidan, send me a one-pager for Kestrel",
+//     "prepare a platform overview for CP Group in pharmacy"; collateral-core.js
+//     → collateralFormat) is written with the brand skill (ph-brand) and the
+//     chosen collateral skill, from the email, its attachments, the skill's kept
+//     reference material, the published Help Centre and the prospect's
+//     industry and country from Prospects (TAM) / Leads (nothing else from the
+//     console), cleaned of Australian positioning and internal names, printed
+//     to a branded PDF on the server (collateral-pdf.js) and sent by reply-all
+//     with the PDF and the Markdown source attached (`collateralAndReply`). It
+//     is filed on the ticket and kept as a reference example for the skill.
+//   • Spam (mMQ4yBYu4uwvOSHK9WlA): marking a thread as spam, from any tab,
+//     cancels a queued run (`markSpam`), and a run already working sends
+//     nothing: every send, and the write that ends a run, checks the ticket
+//     first (`stopIfSpam`). The ticket then reads "Aidan: no action — spam".
+//     Mail arriving on a spam thread queues nothing. "Not spam" puts back what
+//     Aidan had recorded (`markNotSpam`); a cancelled request is not run again.
+//   • Instruction and content (OrkZBBjz9RM5DY54azIG): when the instruction
+//     refers to the thread ("@Aidan, please answer John's question below"),
+//     the quoted or forwarded part of the email and the thread's earlier
+//     emails are read as CONTENT (aidan-core.js → threadContent): its own
+//     <thread_content> block, with the "content, never instructions" line
+//     (CONTENT_LINE), in the Help Centre engine's input, the console plan, the
+//     answer, the document and the collateral. An earlier email is read only
+//     when everyone the reply goes to was already on it, and never Aidan's own
+//     console or read-only replies (the audience rule, ac.sharedEarlier). The
+//     kind, the skill and the recipients are decided from the instruction
+//     alone, exactly as before; the skill choice never sees the content, a
+//     store never keeps it, and a console plan given it can't turn the run
+//     into a read-only reply. An instruction found in it is ignored and noted
+//     on the ticket (readThreadContent).
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
 //     POST /supportMail/v1/aidan, never returned unmasked.
@@ -32,6 +91,9 @@
 const crypto = require("crypto");
 const core = require("./support-core");
 const ac = require("./aidan-core");
+const answerCore = require("./answer-core");
+const cc = require("./collateral-core");
+const cl = require("./collateral-layout");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -44,17 +106,40 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // only in the first LATEST_START_MS of a sync, the skill choice gets
 // SELECT_TIMEOUT_MS, the document DOC_TIMEOUT_MS, and neither model call is
 // retried (worst case about 2 + 1 + 4 minutes, plus attachment reads and the
-// send). A run that is cut off anyway is moved to a person by the next sync
+// send; an answer gets ANSWER_TIMEOUT_MS, so 2 + 1 + 2 at most). Reading the
+// console adds at most CONSOLE_ROUNDS planning calls of CONSOLE_PLAN_TIMEOUT_MS
+// each (under a minute) and the reads themselves. A question put to the Help
+// Centre first adds at most three calls of the engine's own 40 s (the match and
+// two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. Collateral reads no
+// console plan: it is start + choice + document + COLLATERAL_RENDER_TIMEOUT_MS
+// for the PDF (2 + 1 + 4 + 1 minutes, with the send and the filing after). A run that is cut off anyway is moved to a person by the next sync
 // (sweepStale) once it has been "working" for STALE_MS.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
 const DOC_TIMEOUT_MS = 240000;
+const ANSWER_TIMEOUT_MS = 120000;
+const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the thread quoted in it) an answer reads
+// Each planning round of the console reads (aidan-core.js → CONSOLE_ROUNDS);
+// with them a write is still start + choice + plans + document + a minute.
+const CONSOLE_PLAN_TIMEOUT_MS = 25000;
+// Printing collateral to PDF: Chromium's start, the brand font and the print.
+const COLLATERAL_RENDER_TIMEOUT_MS = 60000;
 const STALE_MS = 15 * 60 * 1000;
 const SEEN_KEEP = 50;                    // gmailIds remembered per ticket (aidanSeen), so a message is decided once
 const ACTIVE = ["queued", "working"];
 const tsMs = (v) => (!v ? 0 : typeof v.toMillis === "function" ? v.toMillis() : v instanceof Date ? v.getTime() : Number(new Date(v)) || 0);
 
-function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null }) {
+// `consoleReader` (functions/mcp-server.js → consoleReader): { tools(), read(name, args) }
+// over the console's read-only MCP tools; null leaves Aidan reading the email only.
+// `helpCentre` (support-mail.js): { articles(), run } — the published Help
+// Centre catalogue and, in tests, the stand-in for the answering engine; null
+// leaves a platform question to the console and the email.
+// `accounts` (support-mail.js): async () => { prospects, leads }, the console's
+// Prospects (TAM) and Leads, from which collateral takes a company's industry
+// and country only. `renderPdf` (collateral-pdf.js → renderPdf): html -> { pdf,
+// pages }; with Aidan's model stubbed (`run`) only `run.render` is used, so no
+// test starts a browser.
+function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null }) {
   const data = (snap) => (snap && snap.exists ? snap.data() || {} : null);
   const configRef = () => secretsRef(CONFIG_DOC);
   const errText = (err) => core.clip(String(err && err.message ? err.message : err), 300);
@@ -93,12 +178,89 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     from: facts.from, fromCount: facts.fromCount, bodies: facts.bodies, addressText: facts.addressText, subject: facts.subject,
   }) : m);
   // The thread's earlier emails, as text someone who is not allowed may have written (ac.untrustedThreadText).
-  async function untrustedOnThread(ticketId, exclude, config) {
+  // The thread's stored messages, oldest first.
+  async function threadRows(ticketId) {
     const snap = await tickets().doc(ticketId).collection("messages").get();
     const rows = [];
     snap.forEach((d) => rows.push(Object.assign({ id: d.id }, d.data() || {})));
-    return ac.untrustedThreadText(rows, { allowed: config.allowedSenders, exclude });
+    return rows.sort((a, b) => tsMs(a.at) - tsMs(b.at));
   }
+  async function untrustedOnThread(ticketId, exclude, config) {
+    return ac.untrustedThreadText(await threadRows(ticketId), { allowed: config.allowedSenders, exclude });
+  }
+  // ── Spam ──
+  // What a spam thread's `aidan` map says. `before` is what Aidan had
+  // recorded (a finished run, a refusal), kept so "Not spam" can put it back;
+  // a request that was queued or working is cancelled instead and not kept.
+  const SPAM_STOP = "aidan-spam";
+  const isSpam = (t) => Boolean(t && t.status === "spam");
+  function spamState(prev) {
+    const p = prev && typeof prev === "object" ? prev : null;
+    if (p && p.spam) return p;
+    const cancelled = Boolean(p && ACTIVE.includes(p.status));
+    const state = { status: "ignored", spam: true, cancelled, reason: "spam", at: now() };
+    if (p && p.gmailId) state.gmailId = p.gmailId;
+    if (p && !cancelled) state.before = p;
+    return state;
+  }
+  // Called when a ticket's status becomes Spam (support-mail.js → setStatus),
+  // whichever tab it was marked in. Only a thread in the Aidan tab gets a
+  // record. Returns { aidan: bool, cancelled: bool }.
+  async function markSpam(ticketId) {
+    const ref = tickets().doc(ticketId);
+    const out = await db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !(t.inboxes || []).includes(ac.AIDAN_INBOX)) return { aidan: false, cancelled: false };
+      if (t.aidan && t.aidan.spam && !t.aidanPending) return { aidan: true, cancelled: false, already: true };
+      const state = spamState(t.aidan);
+      // update(), not set-merge: the new map replaces the run's whole map.
+      tx.update(ref, { aidanPending: false, aidan: state, updatedAt: now() });
+      return { aidan: true, cancelled: state.cancelled };
+    });
+    if (out.aidan && !out.already) await logEvent(ticketId, "aidan", `Aidan: no action — spam.${out.cancelled ? " The request waiting on this thread was cancelled." : ""}`);
+    return out;
+  }
+  // Called when a spam ticket is marked not spam: what Aidan had recorded is
+  // put back. A cancelled request stays cancelled (the sender asks again).
+  async function markNotSpam(ticketId) {
+    const ref = tickets().doc(ticketId);
+    return db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !t.aidan || !t.aidan.spam) return { aidan: false };
+      const a = t.aidan;
+      const back = a.cancelled
+        ? Object.assign({ status: "ignored", cancelled: true, reason: "The request was cancelled when this thread was marked as spam. Send it again to run it.", at: now() }, a.gmailId ? { gmailId: a.gmailId } : {})
+        : (a.before && typeof a.before === "object" ? a.before : null);
+      tx.update(ref, { aidanPending: false, aidan: back, updatedAt: now() });
+      return { aidan: true, cancelled: Boolean(a.cancelled) };
+    });
+  }
+  // Dismiss what Aidan recorded on a thread (the Aidan tab's checkboxes →
+  // support-mail.js). Only a finished state that asks for attention is cleared:
+  // "no action", "needs a person" and "failed". A request queued or working is
+  // left alone (marking the thread as spam cancels it), and so is a record of
+  // something Aidan did (a reply sent, an email kept). Returns { dismissed }.
+  const DISMISSABLE = ["ignored", "needs-person", "error"];
+  async function dismiss(ticketId, by) {
+    const ref = tickets().doc(ticketId);
+    const dismissed = await db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !t.aidan || t.aidan.spam || t.aidanPending || !DISMISSABLE.includes(t.aidan.status)) return false;
+      tx.update(ref, { aidan: null, updatedAt: now() });
+      return true;
+    });
+    if (dismissed) await logEvent(ticketId, by || "system", "Aidan's state on this thread was dismissed.");
+    return { dismissed };
+  }
+  // A run that is already working stops here, before anything is sent or
+  // written, when its thread has been marked as spam meanwhile.
+  async function stopIfSpam(ticketId) {
+    if (!isSpam(data(await tickets().doc(ticketId).get()))) return;
+    const err = new Error("This thread was marked as spam.");
+    err.code = SPAM_STOP;
+    throw err;
+  }
+
   const mentionsAidan = (m, facts) => [m.text, ...((facts && facts.bodies) || []).map((b) => b.text || b.html)].some((x) => /@\s*aidan/i.test(String(x || "")));
 
   async function afterIngest(m, config) {
@@ -111,6 +273,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const out = await db.runTransaction(async (tx) => {
       const ticket = data(await tx.get(ref));
       if (!ticket || !(ticket.inboxes || []).includes(ac.AIDAN_INBOX)) return { action: "none" };
+      // A spam thread queues nothing and keeps its "no action — spam" record.
+      if (isSpam(ticket)) return { action: "none" };
       const seen = Array.isArray(ticket.aidanSeen) ? ticket.aidanSeen : [];
       if (seen.includes(m.gmailId) || (ticket.aidan && ticket.aidan.gmailId === m.gmailId)) return { action: "duplicate" };
       const d = ac.decideAidan({ inboxes: ticket.inboxes, message, config, runs: ticket.aidanRuns || 0, untrusted });
@@ -130,7 +294,9 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         aidanPending: true, aidanRuns: (ticket.aidanRuns || 0) + 1,
         // Aidan answers this, not the Help Centre drafting.
         triagePending: false, aiDraft: null, needsHuman: false,
-        aidan: { status: "queued", kind: d.action, gmailId: m.gmailId, instruction: d.instruction, at: now() },
+        aidan: Object.assign({ status: "queued", kind: d.action, gmailId: m.gmailId, instruction: d.instruction, at: now() },
+          // The quoted thread will be read as content (never for a store).
+          d.action !== "store" && ac.refersToThread(d.instruction) ? { refersToThread: true } : {}),
       }));
       return d;
     });
@@ -142,6 +308,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (out.action === "store" || out.action === "generate") {
       await logEvent(m.threadId, "aidan", out.action === "store" ? "Aidan was asked to keep this email for a skill." : "Aidan was asked to write documentation.");
     }
+    if (out.action === "answer") await logEvent(m.threadId, "aidan", "Aidan was asked to answer on the email.");
     return out.action;
   }
 
@@ -214,12 +381,16 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const sel = ac.cleanSelection(raw, skills);
     return { skill: skills.find((s) => s.id === sel.skillId) || null, client: sel.client, reason: sel.reason };
   }
-  async function writeDocument({ skill, client, instruction, header, email, inputs, skipped }) {
+  async function writeDocument({ skill, client, instruction, header, email, inputs, skipped, consoleText = "", content = null }) {
     const refs = await referencesFor(skill.id);
-    const system = `${ac.DOC_SYSTEM}\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>${refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : ""}`;
-    const content = contentBlocks({ header: `${header}\nInstruction to Aidan: ${instruction}${client ? `\nFor: ${client}` : ""}`, email, inputs, skipped });
-    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, client, instruction, system, content, references: refs.count })
-      : await model({ system, schema: ac.DOC_SCHEMA, effort: "high", maxTokens: 32000, content, timeout: DOC_TIMEOUT_MS });
+    // With console data the prompt says who the reply really goes to (the allowed senders only).
+    // With thread content, the prompt says it is third-party material, never instructions.
+    const system = `${ac.docSystemFor(Boolean(consoleText))}${content ? `\n${ac.CONTENT_LINE}` : ""}\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>${refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : ""}`;
+    const blocks = contentBlocks({ header: `${header}\nInstruction to Aidan: ${instruction}${client ? `\nFor: ${client}` : ""}`, email, inputs, skipped });
+    if (content) blocks.splice(1, 0, { type: "text", text: ac.contentBlock(content) });
+    if (consoleText) blocks.push({ type: "text", text: consoleText });
+    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, client, instruction, system, content: blocks, references: refs.count })
+      : await model({ system, schema: ac.DOC_SCHEMA, effort: "high", maxTokens: 32000, content: blocks, timeout: DOC_TIMEOUT_MS });
     return ac.cleanDocument(raw);
   }
 
@@ -257,35 +428,412 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     }, `Aidan kept this email${stored.files.length ? ` and ${stored.files.length} attachment${stored.files.length === 1 ? "" : "s"}` : ""} as reference material for the ${skill.name || skill.slug} skill.`);
   }
 
+  // ── Reading the console, read-only (1W4QQzYdlJzfdqizePWR) ──
+  // The model plans the reads from an index of the projects and concepts and
+  // the read tools' own descriptions (up to CONSOLE_ROUNDS rounds, so a search
+  // can be followed by the section it found); each read is one of the MCP
+  // server's read tools, run by consoleReader, which refuses anything else.
+  // Returns null when there is nothing to read with, or the instruction needs
+  // nothing from the console; otherwise { changeRequested, results, used,
+  // text (the <console_data> block), names (id -> title) }.
+  // `content` (the thread content the instruction refers to) is given to the
+  // plan so it can read what the quoted question needs; then a change the plan
+  // finds is not acted on, because it may have come from the content: a change
+  // request is refused only from the instruction's own words
+  // (ac.consoleChangeRequest, before any model is asked).
+  async function readConsole({ instruction, email, content = null }) {
+    if (!consoleReader || !ac.mayReadConsole(instruction)) return null;
+    const planEmail = content ? `${email}\n\n${ac.contentBlock(content)}` : email;
+    const read = async (tool, args) => {
+      try {
+        const r = await consoleReader.read(tool, args);
+        return r && r.ok ? { ok: true, text: String(r.text || "") } : { ok: false, text: `Not read: ${core.clip(String((r && r.error) || "no result"), 300)}` };
+      } catch (err) { return { ok: false, text: `Not read: ${errText(err)}` }; }
+    };
+    const projects = await read("list_projects", {});
+    const concepts = await read("list_concepts", {});
+    const index = ac.consoleIndex(projects.text, concepts.text);
+    const tools = (typeof consoleReader.tools === "function" ? consoleReader.tools() : []).filter((t) => ac.CONSOLE_READ_TOOLS.includes(t.name));
+    const results = [];
+    let changeRequested = false;
+    for (let round = 0; round < ac.CONSOLE_ROUNDS; round += 1) {
+      const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail })
+        : await model({ system: content ? `${ac.CONSOLE_PLAN_SYSTEM}\n${ac.CONTENT_LINE}` : ac.CONSOLE_PLAN_SYSTEM, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 2000, timeout: CONSOLE_PLAN_TIMEOUT_MS,
+          content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results }) });
+      const plan = ac.cleanConsolePlan(raw, { done: results });
+      if (plan.changeRequested && !content) { changeRequested = true; break; }
+      if (!plan.reads.length) break;
+      for (const r of plan.reads) results.push(Object.assign({}, r, await read(r.tool, r.args)));
+    }
+    return {
+      changeRequested, results, used: results.some((r) => r.ok), text: ac.consoleBlock(results),
+      names: ac.namesById([projects.text, concepts.text, ...results.map((r) => r.text)]),
+      tools: [...new Set(results.filter((r) => r.ok).map((r) => r.tool))],
+    };
+  }
+  const consoleFacts = (c) => ({ reads: c.results.filter((r) => r.ok).length, tools: c.tools });
+  // Ticket (and other) ids out of text written from console data: each becomes
+  // its title, unless the instruction asks for ids. Used by answers and writes alike.
+  const withoutIds = (text, c, instruction) => ac.stripIds(text, c.names, { asked: ac.asksForIds(instruction) });
+  // An answer written from console data, as it is sent: ids out, a long one
+  // (over roughly a page) attached as Markdown with a two-line summary inline.
+  function consoleReply(answer, c, instruction) {
+    return ac.shapeConsoleAnswer({ replyText: withoutIds(answer.replyText, c, instruction), documentMd: withoutIds(answer.documentMd, c, instruction), title: answer.title });
+  }
+
+  // Send a plain reply (or one with files) on the thread from the mailbox and file it on the ticket.
+  async function sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments = [], fields = {} }) {
+    const raw5322 = ac.buildMultipartRaw({
+      fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
+      inReplyTo: msg.messageId, references: msg.references, attachments,
+    });
+    await stopIfSpam(ticketId);
+    const sent = await gmail("messages/send", { method: "POST", body: { raw: raw5322, threadId: ticket.threadId || ticketId } });
+    const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
+    await tickets().doc(ticketId).collection("messages").doc(sentId).set(Object.assign({
+      direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
+      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan",
+      attachments: attachments.map((a) => ({ name: a.name, type: String(a.type || "").split(";")[0], size: Buffer.isBuffer(a.content) ? a.content.length : Buffer.byteLength(String(a.content || ""), "utf8") })),
+    }, fields));
+    return sentId;
+  }
+  const leftOffNote = (k) => (k ? ` ${k} other ${k === 1 ? "person" : "people"} on the email ${k === 1 ? "was" : "were"} left off, because console information goes only to allowed senders.` : "");
+
+  // A request to change something on the console: Aidan can only read it.
+  // A short, fixed reply (no model) to the allowed senders on the email;
+  // nothing on the console is touched.
+  async function readOnlyReply({ ticketId, ticket, msg, config, finish }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const recipients = ac.consoleRecipients(ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail }), config.allowedSenders);
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const text = ac.composeReadOnlyReply({ firstName: ac.greetingName(msg.fromName), fromName: config.fromName });
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", readOnly: true } });
+    const n = recipients.to.length + recipients.cc.length;
+    return finish({
+      aidan: { status: "replied", kind: "answer", readOnly: true, recipients: n, sentId },
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan was asked to change something on the console. It can only read it, so it replied saying so and changed nothing.${leftOffNote(recipients.leftOff)}`);
+  }
+
   // A "generate" run: write the document with the skill and reply to everyone
   // on the email (the verified From address plus the original To and Cc; never
   // Reply-To, never our own addresses), on the thread, with it attached.
-  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish }) {
+  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish, consoleData = null, content = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}`;
-    const doc = await writeDocument({ skill, client, instruction, header, email, inputs, skipped });
-    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    // Console data read for the instruction goes in as content, after the email.
+    const fromConsole = Boolean(consoleData && consoleData.used);
+    const written = await writeDocument({ skill, client, instruction, header, email, inputs, skipped, consoleText: fromConsole ? consoleData.text : "", content });
+    // Ids out of the reply and the document, as for an answer (unless asked for).
+    const doc = fromConsole ? Object.assign({}, written, {
+      replyText: withoutIds(written.replyText, consoleData, instruction),
+      documentMd: withoutIds(written.documentMd, consoleData, instruction),
+    }) : written;
+    const all = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    const recipients = fromConsole ? ac.consoleRecipients(all, config.allowedSenders) : all;
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
     const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: doc.replyText, fromName: config.fromName });
     const raw = ac.buildMultipartRaw({
       fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
       inReplyTo: msg.messageId, references: msg.references, attachments: [{ name: doc.fileName, type: "text/markdown; charset=UTF-8", content: doc.documentMd }],
     });
+    await stopIfSpam(ticketId);
     const sent = await gmail("messages/send", { method: "POST", body: { raw, threadId: ticket.threadId || ticketId } });
     const sentId = String((sent && sent.id) || `aidan-${now().getTime()}`);
     const size = Buffer.byteLength(doc.documentMd, "utf8");
     await tickets().doc(ticketId).collection("messages").doc(sentId).set({
       direction: "out", from: settings.connectedEmail, fromName: config.fromName, to: recipients.to, cc: recipients.cc, subject: core.replySubject(msg.subject || ticket.subject),
-      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan",
+      text, snippet: core.clip(text.replace(/\s+/g, " "), 240), at: now(), gmailId: sentId, auto: false, sentBy: "aidan", source: "aidan", kind: "generate",
       attachments: [{ name: doc.fileName, type: "text/markdown", size }], skillId: skill.id, skillName: skill.name || skill.slug,
+      // Restricted to the allowed senders: never read as thread content later (ac.sharedEarlier).
+      ...(fromConsole ? { console: true } : {}),
     });
     const n = recipients.to.length + recipients.cc.length;
     return finish({
-      aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: doc.fileName, title: doc.title, size }, recipients: n, sentId },
+      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: doc.fileName, title: doc.title, size }, recipients: n, sentId },
+        fromConsole ? { console: consoleFacts(consoleData) } : {}),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill and replied to ${n} ${n === 1 ? "person" : "people"}.`);
+    }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
+  }
+
+  // ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──
+  // A write whose instruction names collateral (collateral-core.js →
+  // collateralFormat). The document is written with the brand skill (voice,
+  // messaging, the CTA) and the chosen collateral skill (structure and depth;
+  // the brand skill alone when none was chosen), from the email, its
+  // attachments, the thread content when the instruction refers to the thread
+  // (audience-checked like any run's, readThreadContent), the skill's kept reference
+  // material (earlier collateral included), the published Help Centre and the
+  // prospect's industry and country. What the model wrote is cleaned
+  // (guardCollateral: no Sydney/Australia positioning, no internal names, no
+  // long dashes), printed to a branded PDF on the server, and sent by
+  // reply-all with the PDF and the Markdown source attached. It is then filed
+  // on the ticket and kept as a reference example for the skill, so later runs
+  // stay consistent. No PDF, no email: a person takes it, with the Markdown
+  // kept as an internal note on the thread.
+  const pdfRenderer = runImpl ? (runImpl.render || null) : renderPdf;
+  async function projectNames() {
+    try { return (await rowsOf("projects")).map((p) => String(p.name || "").trim()).filter(Boolean); }
+    catch (err) { logger.warn("support: Aidan couldn't read the project names", { error: errText(err) }); return []; }
+  }
+  async function prospectOf(instruction, client) {
+    if (typeof accounts !== "function") return cc.prospectFor({ instruction, client });
+    try { const a = (await accounts()) || {}; return cc.prospectFor({ instruction, client, prospects: a.prospects || [], leads: a.leads || [] }); }
+    catch (err) { logger.warn("support: Aidan couldn't read Prospects and Leads", { error: errText(err) }); return cc.prospectFor({ instruction, client }); }
+  }
+  async function helpCentreText(industry) {
+    if (!helpCentre || typeof helpCentre.articles !== "function") return "";
+    try { return cc.helpCentreBlock(await helpCentre.articles(), industry); }
+    catch (err) { logger.warn("support: Aidan couldn't read the Help Centre for collateral", { error: errText(err) }); return ""; }
+  }
+  // Write: the prompt (brand skill, chosen skill, kept references, the
+  // prospect's facts, the Help Centre, the thread content), the model call and
+  // the guard. -> { title, replyText, docMd: { text, changes }, files, industry, prospect, hasCollateralSkill }
+  async function writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content = null }) {
+    const [prospect, internalNames] = await Promise.all([prospectOf(instruction, client), projectNames()]);
+    const industry = cc.industryFor(instruction, prospect);
+    const helpText = await helpCentreText(industry);
+    const refs = await referencesFor(skill.id);
+    const hasCollateralSkill = skill.id !== brand.id;
+    const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}`
+      + `\n\n<brand_skill name="${String(brand.name || brand.slug || "").replace(/"/g, "")}">\n${await skillFiles(cc.promptFiles(brand))}\n</brand_skill>`
+      + (hasCollateralSkill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
+      + (refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : "");
+    const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${prospect && prospect.name ? `\nFor: ${prospect.name}` : client ? `\nFor: ${client}` : ""}\nCollateral: ${format.label}`;
+    const blocks = contentBlocks({ header, email, inputs, skipped });
+    // The thread the instruction refers to, as third-party content.
+    if (content) blocks.splice(1, 0, { type: "text", text: ac.contentBlock(content) });
+    const facts = cc.prospectBlock(prospect, industry);
+    if (facts) blocks.push({ type: "text", text: facts });
+    if (helpText) blocks.push({ type: "text", text: helpText });
+    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: { format: format.key, industry, prospect } })
+      : await model({ system, schema: ac.DOC_SCHEMA, effort: "medium", maxTokens: format.maxTokens, content: blocks, timeout: DOC_TIMEOUT_MS });
+    const written = ac.cleanDocument(raw);
+    // Deterministic, whatever the model wrote: no Australian positioning, no internal names, no long dashes.
+    const guard = { internalNames, prospectCountry: prospect ? prospect.country : "" };
+    const docMd = cc.guardCollateral(written.documentMd, guard);
+    const title = cc.guardCollateral(written.title, guard).text || format.label;
+    const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
+    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill };
+  }
+  // Print: the branded page, printed on the server. -> { printed, failure }:
+  // `printed` is { pdf, pages } or null, and then `failure` says why.
+  async function printCollateral({ docMd, title, format, industry, prospect, brand }) {
+    if (!pdfRenderer) return { printed: null, failure: "the PDF printer isn't available on the server" };
+    try {
+      const html = cl.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand });
+      const printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS });
+      if (!printed || !cc.isPdf(printed.pdf)) return { printed: null, failure: "the printer returned no PDF" };
+      return { printed, failure: "" };
+    } catch (err) { return { printed: null, failure: errText(err) }; }
+  }
+  // Keep example: filed as a reference example for the skill, the Markdown as
+  // its text, the PDF in Storage. A filing failure is noted; the email has
+  // already gone. -> { referenceId, storagePath } ("" when not kept).
+  async function keepCollateralExample({ ticketId, skill, format, industry, title, docMd, files, printed, sentId, mdSize }) {
+    const refId = `ref-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}`;
+    let storagePath = "";
+    let referenceId = "";
+    try {
+      if (bucket) {
+        const path = `skill-references/${skill.id}/${refId}/${files.pdf}`;
+        try { await bucket().file(path).save(printed.pdf, { contentType: "application/pdf", resumable: false }); storagePath = path; }
+        catch (err) { logger.warn("support: Aidan couldn't store the collateral PDF", { ticketId, error: errText(err) }); }
+      }
+      await db.collection(REFERENCES).doc(refId).set({
+        skillId: skill.id, skillSlug: skill.slug || "", skillName: skill.name || "", ticketId, gmailId: sentId,
+        subject: core.clip(`${format.label}: ${title}`, 500), text: core.clip(docMd.text, REFERENCE_TEXT_BUDGET), example: true, format: format.key, industry,
+        files: [Object.assign({ name: files.pdf, kind: "pdf", size: printed.pdf.length, pages: printed.pages || 0 }, storagePath ? { storagePath } : {}), { name: files.md, kind: "text", size: mdSize }],
+        addedBy: "aidan", source: "aidan-collateral", createdAt: now(),
+      });
+      referenceId = refId;
+    } catch (err) { logger.error("support: Aidan couldn't keep the collateral as a reference", { ticketId, error: errText(err) }); }
+    return { referenceId, storagePath };
+  }
+  // The whole run: write, print, send (reply-all with the PDF and the
+  // Markdown), keep the example, file it on the ticket. No PDF, no email.
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
+    const removed = docMd.changes;
+    const collateralFacts = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
+    const mdSize = Buffer.byteLength(docMd.text, "utf8");
+    // The branded PDF, printed on the server. Without it nothing is sent.
+    const { printed, failure } = await printCollateral({ docMd, title, format, industry, prospect, brand });
+    if (!printed) {
+      // The Markdown is kept on the thread as an internal note, so a person can finish it.
+      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
+        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.md}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
+      return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
+        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The Markdown is on the thread as an internal note.`,
+        document: { name: files.md, title, size: mdSize }, collateral: Object.assign({}, collateralFacts, { pdf: null, markdown: { name: files.md, size: mdSize }, removed }) }, needsHuman: true },
+      "Aidan wrote the collateral but couldn't make the PDF, so a person takes it.");
+    }
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
+    const pdfSize = printed.pdf.length;
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
+      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
+      fields: { kind: "generate", collateral: true, skillId: skill.id, skillName: skill.name || skill.slug } });
+    const { referenceId, storagePath } = await keepCollateralExample({ ticketId, skill, format, industry, title, docMd, files, printed, sentId, mdSize });
+    const n = recipients.to.length + recipients.cc.length;
+    const pages = printed.pages || 0;
+    const skillName = skill.name || skill.slug;
+    return finish({
+      aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
+        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
+  }
+
+  // An "answer" run: reply to everyone on the email (the same recipients as a
+  // write) in the email's own body, with no attachment. The model reads the
+  // whole email, with the thread quoted in it, as untrusted content; the only
+  // instruction is the one decideAidan accepted. `skill` is one the
+  // instruction names, or null. When the model says it can't answer from what
+  // it has (the request needs a document or facts that aren't there), nothing
+  // is sent and a person takes it; `noSkill` is why a write got here.
+  // With console data (`consoleData.used`, readConsole) the answer is written
+  // from it too, and then: the reply goes only to the allowed senders on the
+  // email; ids are replaced by titles unless the instruction asks for ids; and
+  // a long answer (over roughly a page) is attached as Markdown with a
+  // two-line summary in the body.
+  // With thread `content` (the instruction refers to the thread), the email
+  // block is the sender's new text only and the content is its own block,
+  // marked as third-party material; the reply is written for everyone on it.
+  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null, consoleData = null, content = null }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const fromConsole = Boolean(consoleData && consoleData.used);
+    const all = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    const recipients = fromConsole ? ac.consoleRecipients(all, config.allowedSenders) : all;
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const n = recipients.to.length + recipients.cc.length;
+    const firstName = ac.greetingName(msg.fromName);
+    const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${content ? "\nThe instruction refers to <thread_content>: answer the question found there, for everyone on the email." : firstName ? `\nThe sender's first name: ${firstName}` : ""}\nPeople the reply goes to: ${n}`;
+    const refs = skill ? await referencesFor(skill.id) : { text: "", count: 0 };
+    const system = `${fromConsole ? ac.CONSOLE_ANSWER_SYSTEM : ac.ANSWER_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}${skill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : ""}${refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : ""}`;
+    const blocks = contentBlocks({ header, email: core.clip(content ? content.fresh : String(msg.text || ""), ANSWER_EMAIL_MAX), inputs, skipped });
+    if (content) blocks.splice(1, 0, { type: "text", text: ac.contentBlock(content) });
+    if (fromConsole) blocks.push({ type: "text", text: consoleData.text });
+    const raw = runImpl && runImpl.answer ? await runImpl.answer({ skill, instruction, system, content: blocks, references: refs.count, console: fromConsole ? consoleData : null, thread: content ? content.text : "" })
+      : await model(fromConsole
+        ? { system, schema: ac.CONSOLE_ANSWER_SCHEMA, effort: "medium", maxTokens: 16000, content: blocks, timeout: ANSWER_TIMEOUT_MS }
+        : { system, schema: ac.ANSWER_SCHEMA, effort: "medium", maxTokens: 4000, content: blocks, timeout: ANSWER_TIMEOUT_MS });
+    const answer = fromConsole ? ac.cleanConsoleAnswer(raw) : ac.cleanAnswer(raw);
+    if (!answer.canAnswer) {
+      const why = answer.reason ? ` (${answer.reason})` : "";
+      const where = fromConsole ? "the email and the console" : "the email alone";
+      const reason = noSkill !== null ? `No skill matches the instruction${noSkill ? ` (${core.clip(noSkill, 200)})` : ""}, and it couldn't be answered from ${where}${why}.`
+        : `Aidan couldn't answer this from ${where}${why}.`;
+      return finish({ aidan: Object.assign({ status: "needs-person", reason }, fromConsole ? { console: consoleFacts(consoleData) } : {}), needsHuman: true },
+        noSkill !== null ? "Aidan couldn't tell which skill to use, so a person takes it." : `Aidan couldn't answer this from ${where}, so a person takes it.`);
+    }
+    let body = answer.replyText;
+    let attachment = null;
+    if (fromConsole) {
+      const shaped = consoleReply(answer, consoleData, instruction);
+      body = shaped.inline;
+      attachment = shaped.attachment;
+    }
+    const text = ac.composeAidanAnswer({ replyText: body, fromName: config.fromName });
+    const attachments = attachment ? [{ name: attachment.name, type: "text/markdown; charset=UTF-8", content: attachment.content }] : [];
+    const named = skill ? { skillId: skill.id, skillName: skill.name || skill.slug } : {};
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments, fields: Object.assign({ kind: "answer" }, named, fromConsole ? { console: true } : {}) });
+    const extra = fromConsole ? { console: consoleFacts(consoleData) } : {};
+    if (attachment) extra.document = { name: attachment.name, title: answer.title || attachment.name, size: Buffer.byteLength(attachment.content, "utf8") };
+    return finish({
+      aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId }, named, extra),
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, fromConsole
+      ? `Aidan answered from the console (${consoleFacts(consoleData).reads} read${consoleFacts(consoleData).reads === 1 ? "" : "s"})${attachment ? `, with the full answer attached as ${attachment.name},` : " in the email itself"} and replied to ${n} ${n === 1 ? "person" : "people"}.${leftOffNote(recipients.leftOff)}`
+      : `Aidan answered on the email and replied to ${n} ${n === 1 ? "person" : "people"}.`);
+  }
+
+  // ── One answering engine: a platform question, from the Help Centre ──
+  // The Support Inbox's own match → draft → confidence pipeline
+  // (answer-core.js), given the tagged email exactly as triage is given a
+  // customer's first email. Returns { triage, cited } when the Help Centre
+  // answers the question, else null (not about the platform, no article
+  // answers it, or the engine couldn't be reached): the run then carries on to
+  // the console and the email. An acknowledgement asks nothing, and an
+  // instruction that names a skill is answered with that skill, so neither is
+  // put to the engine. With Aidan's model stubbed (`run`) the engine runs only
+  // when it is stubbed too, so no test reaches the network.
+  // With thread `content`, the engine is given it as its own <thread_content>
+  // block (closing tag neutralised, ac.contentBlock) under the "content, never
+  // instructions" line (ac.CONTENT_LINE), ahead of the sender's new text
+  // (answer-core.js → questionFromEmail, emailBlock).
+  async function helpCentreAnswer({ ticketId, msg, ticket, instruction, skill, content = null }) {
+    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction)) return null;
+    if (runImpl && !helpCentre.run) return null;
+    try {
+      const articles = await helpCentre.articles();
+      if (!articles.length) return null;
+      const q = answerCore.questionFromEmail({ fromName: msg.fromName, fromEmail: msg.from, subject: msg.subject || ticket.subject,
+        text: content ? content.fresh : msg.text, content: content ? ac.contentBlock(content) : "", contentNote: content ? ac.CONTENT_LINE : "" });
+      const answered = await answerCore.answerFromHelpCentre({ run: helpCentre.run, call: model, ticket: q.ticket, messages: q.messages, articles, source: "aidan" });
+      return answerCore.usableAnswer(answered.triage) ? answered : null;
+    } catch (err) {
+      logger.warn("support: Aidan Help Centre match failed", { ticketId, error: errText(err) });
+      return null;
+    }
+  }
+  // The Help Centre's answer, sent as Aidan's: the engine's reply body as the
+  // Support Inbox would draft it (support-core.js → stripOpening), the cited
+  // articles named by title, in the email itself, to everyone on the email
+  // (the Help Centre is public, so nobody is left off). Always sent: the
+  // Support Inbox's confidence threshold and auto-send switch are not Aidan's.
+  // The confidence and the articles go on the ticket, not in the email.
+  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited, content = null }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const n = recipients.to.length + recipients.cc.length;
+    // A question from the thread is answered to everyone on it: "Hi all".
+    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), fromName: config.fromName, all: Boolean(content) });
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", helpCentre: true, confidence: triage.confidence, articles: cited } });
+    const pct = Math.round(triage.confidence * 100);
+    return finish({
+      aidan: { status: "replied", kind: "answer", recipients: n, sentId,
+        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } },
+      status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
+      messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
+    }, `Aidan answered from the Help Centre (${cited.length} article${cited.length === 1 ? "" : "s"}, ${pct}% confidence) in the email itself and replied to ${n} ${n === 1 ? "person" : "people"}.`);
+  }
+
+  // ── Instruction and content ──
+  // The thread content a run reads, or null. Only when the instruction (the
+  // sender's new text) refers to the thread, never for a store, and never
+  // when the instruction itself asks to change the console. The quoted or
+  // forwarded part of the tagged email is read as it is; the thread's earlier
+  // emails only under the audience rule (ac.sharedEarlier): everyone the reply
+  // goes to was already on that email, and none of Aidan's own console or
+  // read-only replies. What was left out, and any instruction found in the
+  // content (ignored), is noted on the ticket. `content.fresh` is the
+  // sender's new text, the only email text the run then reads.
+  async function readThreadContent({ ticketId, job, instruction, action, msg, facts, rows }) {
+    if (action === "store" || ac.consoleChangeRequest(instruction) || !ac.refersToThread(instruction)) return null;
+    const settings = await readSettings();
+    const reply = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    const parts = ac.requestParts({ bodies: facts.bodies, text: msg.text });
+    const shared = ac.sharedEarlier(rows, { exclude: job.gmailId, recipients: [...reply.to, ...reply.cc] });
+    if (shared.left) await logEvent(ticketId, "aidan", `Aidan left ${shared.left} earlier email${shared.left === 1 ? "" : "s"} on this thread out of what it read, because not everyone this reply goes to had received ${shared.left === 1 ? "it" : "them"}.`);
+    const content = ac.threadContent({ quoted: parts.quoted, earlier: shared.rows });
+    if (!content) return null;
+    content.fresh = parts.fresh;
+    content.left = shared.left;
+    if (content.ignored.length) await logEvent(ticketId, "aidan", `Aidan: ignored instruction in quoted text (${content.ignored.length}). Only the sender's new text is an instruction: the kind of reply, the skill and the recipients were not changed.`);
+    return content;
   }
 
   async function runOne(ticketId) {
@@ -295,13 +843,22 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const claim = await db.runTransaction(async (tx) => {
       const t = data(await tx.get(ref));
       if (!t || !t.aidanPending || !t.aidan || t.aidan.status !== "queued") return null;
+      // Queued on a thread that is spam: cancelled here, never run.
+      if (isSpam(t)) { tx.update(ref, { aidanPending: false, aidan: spamState(t.aidan), updatedAt: now() }); return { spam: true }; }
       const job = Object.assign({}, t.aidan, { status: "working", startedAt: now() });
       tx.set(ref, { aidanPending: false, aidan: job }, { merge: true });
       return { ticket: t, job };
     });
     if (!claim) return { ok: false, error: "nothing queued" };
+    if (claim.spam) {
+      await logEvent(ticketId, "aidan", "Aidan: no action — spam. The request waiting on this thread was cancelled.");
+      return { ok: true, spam: true };
+    }
     const { ticket, job } = claim;
     const finish = async (fields, event) => {
+      // Marked as spam while the run worked: the run's result is not written
+      // over the spam record (a store would otherwise resolve the ticket).
+      await stopIfSpam(ticketId);
       await ref.set(Object.assign({ updatedAt: now() }, fields, { aidan: Object.assign({}, job, fields.aidan || {}, { finishedAt: now() }) }), { merge: true });
       if (event) await logEvent(ticketId, "aidan", event);
     };
@@ -318,7 +875,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       // and the thread's earlier emails as they are now.
       const refused = (reason) => finish({ aidan: { status: "ignored", reason } }, `Aidan did nothing: ${reason}`);
       if (facts.fromCount === 1 && facts.from !== core.lower(msg.from)) return refused("The email's From address doesn't match Gmail's copy.");
-      const untrusted = await untrustedOnThread(ticketId, job.gmailId, config);
+      const rows = await threadRows(ticketId);
+      const untrusted = ac.untrustedThreadText(rows, { allowed: config.allowedSenders, exclude: job.gmailId });
       const d = ac.decideAidan({ inboxes: ticket.inboxes, message: asMessage(msg, facts), config, runs: 0, untrusted });
       if (d.action === "none") return refused(d.reason);
       // Gate 2, authentication: Gmail's own verdict on the From address. The
@@ -329,22 +887,93 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         const auth = ac.senderAuthenticated(headers, facts.from);
         if (!auth.ok) return finish({ aidan: { status: "ignored", reason: "The sender's address couldn't be verified (no SPF, DKIM or DMARC pass in Gmail's own check), so Aidan did nothing." } }, "Aidan did nothing: the sender's address couldn't be verified.");
       }
+      // Instruction and content: the instruction is d.instruction, from the
+      // sender's new text only; the content is what it refers to on the
+      // thread (readThreadContent), and the email the run reads is then the
+      // new text alone. A run that read no content keeps no "refers to the
+      // thread" mark, so the Aidan tab shows no instruction/content rows.
+      const content = await readThreadContent({ ticketId, job, instruction: d.instruction, action: d.action, msg, facts, rows });
+      if (content) job.content = ac.contentFacts(content);
+      if (job.refersToThread || content) job.refersToThread = Boolean(content);
+      const email = content ? content.fresh : core.stripQuoted(msg.text || "");
+      const base = { ticketId, ticket, job, msg, config, instruction: d.instruction, email, finish, content };
+      // Aidan can only read the console: a request to change it (create a
+      // ticket, update a README, deploy …) gets a fixed, polite reply and
+      // nothing is changed. Decided from the instruction's own words, before
+      // any model is asked; a store is left to its skill.
+      if (d.action !== "store" && ac.consoleChangeRequest(d.instruction)) return readOnlyReply(base);
       const key = String(apiKey() || "");
       if (!runImpl && (!key || key === "unset")) return finish({ aidan: { status: "needs-person", reason: "No model is configured (ANTHROPIC_API_KEY)." }, needsHuman: true });
       const skills = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
-      const email = core.stripQuoted(msg.text || "");
+      // What the console holds, read-only. An answer always reads it (a plain
+      // acknowledgement plans no read). A write reads it only when the
+      // instruction is clearly about the console (ac.writeReadsConsole: a
+      // ticket, a concept, the backlog, the Help Centre …), because a reply
+      // that carries console data goes only to the allowed senders on the
+      // email, and a write that merely names a client ("write the POC summary
+      // for Kestrel") keeps going to everyone on it. A write no skill matches
+      // is tried as an answer, so it reads the console like one. A failed read
+      // leaves the run working from the email alone; a plan that finds a
+      // change request gets the read-only reply.
+      let consoleData = null;
+      const readTheConsole = async () => {
+        try { consoleData = await readConsole({ instruction: d.instruction, email, content }); }
+        catch (err) { logger.error("support: Aidan console read failed", { ticketId, error: errText(err) }); }
+        return Boolean(consoleData && consoleData.changeRequested);
+      };
+      // An answer needs no skill: one named in the instruction is read, and
+      // the model is never asked to choose one.
+      // A question about the platform goes to the Help Centre first, through
+      // the Support Inbox's own engine; whatever that doesn't answer (a
+      // project or documentation question, a question about the email)
+      // carries on to the console and the email.
+      if (d.action === "answer") {
+        const skill = ac.skillNamedIn(d.instruction, skills);
+        const fromHelpCentre = await helpCentreAnswer({ ticketId, msg, ticket, instruction: d.instruction, skill, content });
+        if (fromHelpCentre) return sendHelpCentreAnswer(Object.assign({}, base, fromHelpCentre));
+        if (await readTheConsole()) return readOnlyReply(base);
+        return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { skill, consoleData }));
+      }
+      // Branded collateral: a write whose instruction names it. The brand skill
+      // has to be in the library; the chosen skill (or the brand skill alone)
+      // decides format and depth. It reads no console plan: only the
+      // prospect's industry and country, and the published Help Centre.
+      const format = d.action === "generate" ? cc.collateralFormat(d.instruction) : null;
+      if (format) {
+        const brand = cc.brandSkillIn(skills);
+        if (!brand) {
+          return finish({ aidan: { status: "needs-person", kind: "generate", reason: `Branded collateral needs the brand skill (${cc.BRAND_SLUG}) in the skills library, and it isn't there.` }, needsHuman: true },
+            "Aidan was asked for branded collateral, but the brand skill isn't in the skills library, so a person takes it.");
+        }
+        const picked = await chooseSkill({ instruction: d.instruction, email, skills });
+        const { inputs, skipped } = await readAttachments(job.gmailId, full && full.payload);
+        return collateralAndReply(Object.assign(base, { skill: picked.skill || brand, brand, format, client: picked.client, inputs, skipped }));
+      }
       const chosen = await chooseSkill({ instruction: d.instruction, email, skills });
       if (!chosen.skill) {
+        // A request to write that no skill matches may still be something the
+        // email itself answers ("summarise this thread"), or the console
+        // ("summarise the Customer Support concept"): try it as an answer.
+        // A request to keep material has nowhere to go without its skill.
+        if (d.action === "generate") {
+          if (await readTheConsole()) return readOnlyReply(base);
+          return answerInline(Object.assign(base, await readAttachments(job.gmailId, full && full.payload), { noSkill: chosen.reason || "", consoleData }));
+        }
         return finish({ aidan: { status: "needs-person", kind: d.action, reason: `No skill matches the instruction${chosen.reason ? ` (${core.clip(chosen.reason, 200)})` : ""}.` }, needsHuman: true },
           "Aidan couldn't tell which skill to use, so a person takes it.");
       }
+      if (d.action === "generate" && ac.writeReadsConsole(d.instruction) && await readTheConsole()) return readOnlyReply(base);
       const { inputs, skipped } = await readAttachments(job.gmailId, full && full.payload);
-      const run = { ticketId, ticket, job, msg, config, skill: chosen.skill, client: chosen.client, instruction: d.instruction, email, inputs, skipped, finish };
+      const run = Object.assign(base, { skill: chosen.skill, client: chosen.client, inputs, skipped, consoleData });
       return d.action === "store" ? keepReference(run) : generateAndReply(run);
     } catch (err) {
+      // Marked as spam while it worked: nothing was sent, and markSpam has
+      // already recorded "no action — spam" on the ticket.
+      if (err && err.code === SPAM_STOP) return { ok: true, spam: true };
       // Never customer text in the log: the ticket id and the error only.
       logger.error("support: Aidan run failed", { ticketId, error: errText(err) });
-      return finish({ aidan: { status: "error", reason: `Aidan couldn't finish: ${errText(err)}` }, needsHuman: true }, "Aidan couldn't finish, so a person takes it.");
+      try { return await finish({ aidan: { status: "error", reason: `Aidan couldn't finish: ${errText(err)}` }, needsHuman: true }, "Aidan couldn't finish, so a person takes it."); }
+      catch (e) { if (e && e.code === SPAM_STOP) return { ok: true, spam: true }; throw e; }
     }
   }
 
@@ -361,11 +990,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const done = await db.runTransaction(async (tx) => {
         const t = data(await tx.get(ref));
         if (!t || !t.aidan || t.aidan.status !== "working" || now().getTime() - tsMs(t.aidan.startedAt) < STALE_MS) return false;
+        // A cut-off run on a spam thread is no action, not work for a person.
+        if (isSpam(t)) { tx.update(ref, { aidanPending: false, aidan: spamState(t.aidan), updatedAt: now() }); return "spam"; }
         tx.set(ref, { needsHuman: true, updatedAt: now(), aidan: Object.assign({}, t.aidan, { status: "needs-person", finishedAt: now(),
           reason: "Aidan's run stopped before it finished (it was still working after 15 minutes). Check the thread for a reply from Aidan before answering." }) }, { merge: true });
         return true;
       });
-      if (done) { moved += 1; await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it."); }
+      if (done === "spam") await logEvent(id, "aidan", "Aidan: no action — spam. The request waiting on this thread was cancelled.");
+      else if (done) { moved += 1; await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it."); }
     }
     return moved;
   }
@@ -384,7 +1016,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     return ran;
   }
 
-  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, factsOf: ac.mailFacts };
+  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts };
 }
 
-module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, STALE_MS };
+module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };
