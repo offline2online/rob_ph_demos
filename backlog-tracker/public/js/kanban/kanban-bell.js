@@ -5,11 +5,17 @@
 // Cost per member stays flat however many notifications they have: one
 // limit(30) listener ordered by `at` (newest first), plus a count() for the
 // unread badge, re-run whenever that listener's result changes.
+//
+// Hovering (or keyboard focus on) a "mentioned you in a comment" notification
+// shows that one comment beside the panel, so the ticket need not be opened.
+// A notification holds no comment text: the ticket's comments are read once
+// on the first hover, the same read opening the ticket makes, and kept while
+// the page is open.
 import {
   collection, doc, getDoc, getDocs, getCountFromServer, onSnapshot, query, where, orderBy, limit, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { avatarHTML, getAvatarMember, memberLabel, normEmail } from "../avatar.js";
-import { canonicalEmail } from "./kanban-core.js";
+import { canonicalEmail, mentionsIn } from "./kanban-core.js";
 
 export const BELL_LIMIT = 30;
 // Read notifications older than this go when their owner marks all read (no scheduled job).
@@ -41,6 +47,25 @@ export function describe(n, nameOf = fullNameOf) {
     case "comment": return `${who} mentioned you in a comment`;
     default: return `${who} mentioned you`;
   }
+}
+
+// A notification that came from being tagged in a comment (kind "comment" on older ones).
+export const hasCommentPreview = (n) => !!n && ((n.kind === "mention" && n.via === "comment") || n.kind === "comment");
+// How long the pointer rests on a notification before its comment shows.
+export const PREVIEW_DELAY_MS = 200;
+
+// The one comment a notification is about: written by its sender, tagging the
+// person notified. The notification is written just after the comment (or
+// after the edit that added the tag), so it is the newest such comment not
+// after the notification; null when there is none (the comment was deleted).
+export function taggedComment(n, comments, me) {
+  const same = (a, b) => canonicalEmail(normEmail(a)) === canonicalEmail(normEmail(b));
+  const time = (c) => Date.parse(c.at) || 0;
+  const tagged = (comments || []).filter((c) => same(c.author, n.from) && (c.mentions || []).some((m) => same(m, me)));
+  if (!tagged.length) return null;
+  const at = (Date.parse(n.at) || 0) + 60000;
+  const before = tagged.filter((c) => time(c) <= at).sort((a, b) => time(b) - time(a));
+  return before[0] || tagged.sort((a, b) => time(a) - time(b))[0];
 }
 
 // Newest first, grouped by ticket: a ticket sits where its newest note is.
@@ -75,8 +100,76 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     }
   }
   host.classList.add("kb-bell-wrap");
-  host.innerHTML = `<button type="button" class="icon-btn kb-bell" id="kb-bell" aria-haspopup="true" aria-expanded="false" aria-label="Notifications"></button><div class="kb-bell-panel" id="kb-bell-panel" hidden></div>`;
-  const btn = host.querySelector("#kb-bell"), panel = host.querySelector("#kb-bell-panel");
+  host.innerHTML = `<button type="button" class="icon-btn kb-bell" id="kb-bell" aria-haspopup="true" aria-expanded="false" aria-label="Notifications"></button><div class="kb-bell-panel" id="kb-bell-panel" hidden></div><div class="kb-bell-preview" id="kb-bell-preview" role="tooltip" hidden></div>`;
+  const btn = host.querySelector("#kb-bell"), panel = host.querySelector("#kb-bell-panel"), preview = host.querySelector("#kb-bell-preview");
+
+  // ── The comment a "mentioned you in a comment" notification is about, on hover ──
+  const commentsOf = new Map(); // ticket key → Promise of its comments
+  function loadComments(key) {
+    if (!commentsOf.has(key)) {
+      const p = getDocs(collection(db, "kanbanTasks", key, "comments")).then((snap) => snap.docs.map((d) => {
+        const x = d.data({ serverTimestamps: "estimate" });
+        return { id: d.id, author: x.author, text: x.text || "", at: isoOf(x.at), mentions: Array.isArray(x.mentions) ? x.mentions : mentionsIn(x.html) };
+      }));
+      // A failed read is asked again on the next hover.
+      p.catch(() => commentsOf.delete(key));
+      commentsOf.set(key, p);
+    }
+    return commentsOf.get(key);
+  }
+  const hover = { id: "", timer: 0 };
+  function hidePreview() {
+    clearTimeout(hover.timer); hover.id = "";
+    preview.hidden = true; preview.innerHTML = "";
+  }
+  // Beside the panel, level with the notification; where the window has no room there, under the notification.
+  function placePreview(item) {
+    const h = host.getBoundingClientRect(), p = panel.getBoundingClientRect(), i = item.getBoundingClientRect();
+    const below = p.left < preview.offsetWidth + 16;
+    preview.classList.toggle("below", below);
+    preview.style.right = below ? "0px" : `${Math.round(h.right - p.left + 8)}px`;
+    let top = (below ? i.bottom + 4 : i.top) - h.top;
+    const over = h.top + top + preview.offsetHeight - (window.innerHeight - 8);
+    if (over > 0 && !below) top = Math.max(top - over, p.top - h.top);
+    preview.style.top = `${Math.round(top)}px`;
+  }
+  function fillPreview(item, html) {
+    preview.innerHTML = html; preview.hidden = false;
+    placePreview(item);
+  }
+  // The notification's row as it is now: the list is redrawn whenever a notification or a sender's name arrives.
+  const itemOf = (id) => (state.open ? [...panel.querySelectorAll(".kb-bell-item[data-preview]")].find((el) => el.dataset.note === id) : null) || null;
+  function showPreview(id) {
+    const n = state.list.find((x) => x.id === id), first = itemOf(id);
+    if (!n || !first) { hidePreview(); return; }
+    const who = `<div class="kb-bell-preview-who">${avatarHTML(n.from, 20)}<b>${esc(nameOf(n.from))}</b></div>`;
+    fillPreview(first, `${who}<div class="kb-none">Loading…</div>`);
+    const fill = (html) => { const item = hover.id === id ? itemOf(id) : null; if (item) fillPreview(item, `${who}${html}`); };
+    loadComments(n.taskKey).then((list) => {
+      const c = taggedComment(n, list, mine);
+      fill(c ? `<div class="kb-bell-preview-text">${esc(c.text)}</div>` : '<div class="kb-none">This comment is no longer on the ticket.</div>');
+    }).catch((err) => {
+      onError(err);
+      fill('<div class="kb-none">Couldn\'t load the comment.</div>');
+    });
+  }
+  const previewItem = (t) => { const el = t && t.closest ? t.closest(".kb-bell-item[data-preview]") : null; return el && panel.contains(el) ? el : null; };
+  function enter(e) {
+    const item = previewItem(e.target);
+    if (!item || hover.id === item.dataset.note) return;
+    hidePreview();
+    hover.id = item.dataset.note;
+    hover.timer = setTimeout(() => showPreview(hover.id), PREVIEW_DELAY_MS);
+  }
+  function leave(e) {
+    const item = previewItem(e.target);
+    if (item && !item.contains(e.relatedTarget)) hidePreview();
+  }
+  panel.addEventListener("mouseover", enter);
+  panel.addEventListener("mouseout", leave);
+  panel.addEventListener("focusin", enter);
+  panel.addEventListener("focusout", leave);
+  panel.addEventListener("scroll", hidePreview);
 
   function draw() {
     const unread = state.unread;
@@ -84,12 +177,17 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
     btn.setAttribute("aria-label", unread ? `Notifications, ${unread} unread` : "Notifications");
     btn.setAttribute("aria-expanded", state.open ? "true" : "false");
     panel.hidden = !state.open;
-    if (!state.open) return;
+    if (!state.open) { hidePreview(); return; }
     const groups = groupByTicket(state.list);
     panel.innerHTML = `<div class="kb-bell-head"><b>Notifications</b>${unread ? `<button type="button" class="link-btn" id="kb-bell-read"${state.busy ? " disabled" : ""}>Mark all as read</button>` : ""}</div>`
       + (state.error ? `<p class="kb-none kb-bell-empty" role="alert" id="kb-bell-error">${esc(state.error)}</p>` : "")
-      + (groups.map((g) => `<div class="kb-bell-group"><div class="kb-bell-ticket"><b>${esc(g.key)}</b> ${esc(g.title)}</div>${g.items.map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}">${avatarHTML(n.from, 24)}<span>${describe(n, nameOf)}<span class="kb-none">${esc(when(n.at))}</span></span></button>`).join("")}</div>`).join("")
+      + (groups.map((g) => `<div class="kb-bell-group"><div class="kb-bell-ticket"><b>${esc(g.key)}</b> ${esc(g.title)}</div>${g.items.map((n) => `<button type="button" class="kb-bell-item${n.read ? "" : " unread"}" data-note="${esc(n.id)}" data-key="${esc(n.taskKey)}"${hasCommentPreview(n) ? ' data-preview aria-describedby="kb-bell-preview"' : ""}>${avatarHTML(n.from, 24)}<span>${describe(n, nameOf)}<span class="kb-none">${esc(when(n.at))}</span></span></button>`).join("")}</div>`).join("")
         || '<p class="kb-none kb-bell-empty">Nothing yet</p>');
+    // The list was redrawn under the pointer: keep the comment beside its notification, or drop it if that went.
+    if (hover.id) {
+      const item = itemOf(hover.id);
+      if (!item) hidePreview(); else if (!preview.hidden) placePreview(item);
+    }
   }
   const when = (iso) => { const d = new Date(iso); return Number.isNaN(+d) ? "" : d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }); };
 
@@ -166,5 +264,5 @@ export function mountNotificationBell({ db, me, host, openTicket, onError = () =
   };
   document.addEventListener("click", onClick);
   draw();
-  return { destroy() { unsub(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
+  return { destroy() { unsub(); hidePreview(); document.removeEventListener("click", onClick); host.innerHTML = ""; }, state };
 }

@@ -865,6 +865,59 @@ T("KB-C2b", "the notifications bell panel stays inside the window", { on: on.pho
   await p.done();
 });
 
+T("KB-C2g", "notifications bell: hovering a mention shows only the comment that tagged you, without opening the ticket", { on: on.mouse }, async (prof) => {
+  const at = (iso) => ({ $ts: Date.parse(iso) });
+  const seed = kanbanSeed({ extra: { kanbanNotifications: {
+    n1: { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "mention", via: "comment", read: false, at: at("2026-10-21T08:00:00Z") },
+    n2: { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "assigned", read: false, at: at("2026-10-21T07:00:00Z") },
+  } } });
+  // Five comments on the ticket; only c2 is the one the notification is about.
+  seed.docs["kanbanTasks/PH-20/comments"] = {
+    c1: { author: HUY, at: at("2026-10-20T07:00:00Z"), text: "An earlier tag", html: "", mentions: [ROB] },
+    c2: { author: HUY, at: at("2026-10-21T07:59:58Z"), text: "@Rob can you check the RRP on store 12 <today>?", html: `<p><span class="mention" data-user="${ROB}">@Rob</span> can you check the RRP on store 12 &lt;today&gt;?</p>` },
+    c3: { author: HUY, at: at("2026-10-21T07:59:59Z"), text: "An untagged follow-up", html: "<p>An untagged follow-up</p>", mentions: [] },
+    c4: { author: MINH, at: at("2026-10-21T07:59:59Z"), text: "Someone else's tag", html: "", mentions: [ROB] },
+    c5: { author: HUY, at: at("2026-10-21T09:00:00Z"), text: "A later tag", html: "", mentions: [ROB] },
+  };
+  const p = await open(prof, "#staff-kanban", { seed });
+  await until(async () => (await p.textContent("#kb-bell")).includes("2"), "the unread count");
+  await press(p, "#kb-bell");
+  await p.waitForSelector('.kb-bell-item[data-note="n1"][data-preview]');
+  assert.equal(await p.isHidden("#kb-bell-preview"), true, "nothing shows until a notification is hovered");
+  assert.equal(await p.$eval('.kb-bell-item[data-note="n2"]', (e) => e.hasAttribute("data-preview")), false, "an assignment has no comment to show");
+  const inside = async (what) => {
+    const b = await p.$eval("#kb-bell-preview", (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, b: r.bottom, w: innerWidth, h: innerHeight }; });
+    assert.ok(b.l >= 0 && b.r <= b.w + 1 && b.t >= 0 && b.b <= b.h + 1, `${what}: the comment is inside the window (${JSON.stringify(b)})`);
+  };
+  await p.hover('.kb-bell-item[data-note="n1"]');
+  await until(async () => /can you check the RRP on store 12 <today>\?/.test(await p.textContent("#kb-bell-preview")), "the comment that tagged me");
+  const shown = await p.textContent("#kb-bell-preview");
+  assert.match(shown, /Lê Quang Huy/, "who wrote it");
+  assert.doesNotMatch(shown, /earlier tag|untagged|Someone else|later tag/, "only that comment");
+  await inside("beside the panel");
+  const side = await p.evaluate(() => ({ note: document.querySelector("#kb-bell-preview").getBoundingClientRect().right, panel: document.querySelector("#kb-bell-panel").getBoundingClientRect().left }));
+  assert.ok(side.note <= side.panel, `the comment sits beside the list, not over it (${side.note} ≤ ${side.panel})`);
+  assert.equal(await p.isHidden("#task-backdrop"), true, "the ticket is not opened");
+  assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, false, "and the notification is still unread");
+  // Moving to a notification with no comment takes it away.
+  await p.hover('.kb-bell-item[data-note="n2"]');
+  await until(() => p.isHidden("#kb-bell-preview"), "the comment goes when the pointer leaves");
+  // A narrow window has no room beside the panel: the comment shows under the notification instead.
+  await p.setViewportSize({ width: 620, height: 800 });
+  await p.hover("#kb-bell");
+  await p.hover('.kb-bell-item[data-note="n1"]');
+  await until(async () => /can you check the RRP/.test(await p.textContent("#kb-bell-preview")), "the comment, in a narrow window");
+  await inside("in a narrow window");
+  // Keyboard focus shows it too, and closing the panel takes it away.
+  await p.hover("#kb-bell");
+  await until(() => p.isHidden("#kb-bell-preview"), "hidden again");
+  await p.focus('.kb-bell-item[data-note="n1"]');
+  await until(async () => /can you check the RRP/.test(await p.textContent("#kb-bell-preview")), "the comment, on keyboard focus");
+  await press(p, "#kb-bell");
+  await until(() => p.isHidden("#kb-bell-preview"), "closed with the panel");
+  await p.done();
+});
+
 T("KB-C3", "Claude's draft is used when the console has a key", async (prof) => {
   const seed = kanbanSeed();
   seed.agentDraft = { title: "Offer sweep ignores the store's time zone", description: "Stores outside London expire an hour early around DST.", type: "bug", priority: "high", assignee: HUY, release: "4-13", sprint: "", epic: "PH-1", due: "", labels: ["menu-boards"], flagged: true, estimate: 6 };
