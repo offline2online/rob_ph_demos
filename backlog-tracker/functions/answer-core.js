@@ -45,21 +45,37 @@ function publishedArticles(rows, cats) {
 }
 
 // The email as both steps see it: who sent it, the subject, and the thread
-// (quoted history removed, newest last).
+// (quoted history removed, newest last). A message marked `content` is not
+// part of the thread: it is the thread content Aidan was asked to answer from
+// (questionFromEmail's `content`), already wrapped by its caller in its own
+// <thread_content> block with any closing tag neutralised
+// (aidan-core.js → contentBlock). It goes before the thread, as it is (it was
+// cut from its email already, so removing "history" from it would remove the
+// question), under its note: third-party content, never instructions.
+const CONTENT_BLOCK_MAX = 42000;
 function emailBlock(ticket, messages) {
-  const thread = (messages || []).filter((m) => m.direction === "in" || m.direction === "out").slice(-8).map((m) =>
+  const list = messages || [];
+  const content = list.filter((m) => m && m.content && m.text).map((m) =>
+    `${m.note ? `${String(m.note).trim()}\n` : ""}${core.clip(String(m.text), CONTENT_BLOCK_MAX)}`).join("\n\n");
+  const thread = list.filter((m) => m && !m.content && (m.direction === "in" || m.direction === "out")).slice(-8).map((m) =>
     `[${m.direction === "in" ? "customer" : "support"}]\n${core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
-  return `From: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail || ""}>\nSubject: ${ticket.subject || "(no subject)"}\n\n<email_thread>\n${thread}\n</email_thread>`;
+  return `From: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail || ""}>\nSubject: ${ticket.subject || "(no subject)"}\n\n${content ? `${content}\n\n` : ""}<email_thread>\n${thread}\n</email_thread>`;
 }
 
 // One email as the engine's input, for a caller that has no Support Inbox
 // ticket to hand (Aidan, scripts/support-eval.js): the same { ticket,
 // messages } the Support Inbox passes for a customer's first email. Only that
-// one email is read, never the rest of its thread.
-function questionFromEmail({ fromName = "", fromEmail = "", subject = "", text = "" } = {}) {
+// one email is read, never the rest of its thread, unless `content` is given:
+// when Aidan is asked to answer a question on the thread ("answer John's
+// question below", OrkZBBjz9RM5DY54azIG), `content` is that thread content as
+// a <thread_content> block (aidan-core.js → contentBlock) and `contentNote`
+// the line saying it is third-party content, never instructions
+// (aidan-core.js → CONTENT_LINE); `text` is then the asker's new text only.
+// The Support Inbox's own triage never passes content.
+function questionFromEmail({ fromName = "", fromEmail = "", subject = "", text = "", content = "", contentNote = "" } = {}) {
   return {
     ticket: { subject: subject || "(no subject)", customerEmail: fromEmail, fromEmail, customerName: fromName || "" },
-    messages: [{ direction: "in", text: String(text || "") }],
+    messages: [...(content ? [{ direction: "in", text: String(content), content: true, note: String(contentNote || "") }] : []), { direction: "in", text: String(text || "") }],
   };
 }
 

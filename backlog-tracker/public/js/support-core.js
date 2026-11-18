@@ -182,6 +182,34 @@ export function aidanCollateral(aidan) {
   return { formatLabel: c.formatLabel, about, files, kept: Boolean(c.referenceId), removed, unsent: !pdf };
 }
 
+// Which part of the email was the instruction and which the content
+// (functions/aidan-core.js → threadContent, OrkZBBjz9RM5DY54azIG): when the
+// instruction refers to the thread ("answer John's question below"), the
+// quoted or forwarded part and the thread's earlier emails were read as
+// content, never as instructions; anything in them that looked like an
+// instruction was ignored. Earlier emails not everyone on the reply had
+// received were left out (`left`). While the run is queued or working, a
+// request that refers to the thread says it will be read; once it has run,
+// rows show only when it really read content. null otherwise.
+// { instruction, content: { line, preview }, ignored: [string] }
+export function aidanParts(aidan) {
+  const a = aidan && typeof aidan === "object" && AIDAN_STATES[aidan.status] ? aidan : null;
+  if (!a || !a.instruction) return null;
+  const c = a.content && typeof a.content === "object" ? a.content : null;
+  const pending = a.status === "queued" || a.status === "working";
+  if (!c && !(pending && a.refersToThread)) return null;
+  let line = "The quoted email and the earlier emails on this thread will be read as content when Aidan runs.";
+  if (c) {
+    const earlier = Math.max(0, Number(c.earlierCount) || 0);
+    const left = Math.max(0, Number(c.left) || 0);
+    const what = [Number(c.quotedChars) > 0 ? "the quoted or forwarded email" : "", earlier ? `${earlier} earlier email${earlier === 1 ? "" : "s"} on this thread` : ""].filter(Boolean).join(" and ");
+    line = `Aidan read ${what || "the thread"} as content to answer from, never as instructions.`;
+    if (left) line += ` ${left} earlier email${left === 1 ? " was" : "s were"} left out, because not everyone this reply went to had received ${left === 1 ? "it" : "them"}.`;
+  }
+  const ignored = c && Array.isArray(c.ignored) ? c.ignored.filter((x) => typeof x === "string" && x.trim()).slice(0, 3) : [];
+  return { instruction: String(a.instruction), content: { line, preview: c && typeof c.preview === "string" ? c.preview : "" }, ignored };
+}
+
 // What the Aidan tab says about a thread: always a state. A thread Aidan was
 // never asked about reads "no action", and why.
 export function aidanThreadState(aidan, { spam = false } = {}) {

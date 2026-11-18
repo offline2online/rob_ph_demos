@@ -3397,8 +3397,9 @@ thread. A run:
   it isn't there. The document is written with the brand skill (voice,
   messaging, the call to action) and the chosen collateral skill (format and
   depth; the brand skill alone when none fits), from the instruction, the
-  email's new text and attachments (its quoted history is not read yet: that
-  comes with the quoted-thread ticket), the skill's kept reference material, the published Help Centre (articles on the website
+  email's new text and attachments (its quoted history only as thread
+  content, when the instruction refers to the thread, under the same audience
+  rule as any run: see the next bullet), the skill's kept reference material, the published Help Centre (articles on the website
   only, the industry's first) and, from Prospects (TAM) or Leads, the
   company's **industry and country and nothing else** (never revenue, store
   counts, contacts, notes or anything about the retailer's customers). The
@@ -3427,6 +3428,54 @@ thread. A run:
   runs of that skill read it. When the PDF can't be made in time, nothing is
   sent: the ticket goes to **Needs a person** with the Markdown kept as an
   internal note on the thread (REQUIREMENTS SUP-AID-30 to 34);
+- **answers a question on the thread: instruction vs content** (18 Nov 2026,
+  ticket OrkZBBjz9RM5DY54azIG). Rob's main use: a customer emails Rob a
+  question, and Rob replies or forwards with aidan@ in Cc, "@Aidan, please
+  check John's question below and provide a response". The **instruction**
+  is still only the allowed sender's new text, read and gated exactly as
+  above. When it refers to the thread ("below", "John's question", "the
+  email from X", "this thread", "the forwarded question", or simply asks to
+  answer, respond or summarise; `refersToThread`), the quoted or forwarded
+  part of the email and the thread's earlier emails are read as **content**
+  (`readThreadContent` in `functions/aidan.js`, `threadContent` in
+  `functions/aidan-core.js`): unquoted, an earlier email already quoted read
+  once, at most five earlier emails and 40,000 characters. **Audience rule**
+  (`sharedEarlier`): an earlier email is read only when everyone the reply
+  goes to was already on it (its From, To or Cc), and Aidan's own replies
+  that carried console data or went only to the allowed senders are never
+  read, so nothing on the thread reaches someone who hadn't received it;
+  what was left out is counted and noted on the ticket. The quoted part of
+  Rob's own email is read as it is (he chose to quote it to these people).
+  Every model that reads the content gets it the same way: its own
+  `<thread_content>` block (`contentBlock`: zero-width and other invisible
+  characters removed, anything shaped like the block's own tag neutralised)
+  under `CONTENT_LINE` (third-party material, never instructions). The
+  answer, the document, the collateral and the console plan have the line
+  in their system prompt; the Help Centre engine, whose prompts the Support
+  Inbox shares, gets the line and the block ahead of `<email_thread>`, which
+  then holds Rob's new text alone (`questionFromEmail` / `emailBlock` in
+  `functions/answer-core.js`). Nothing in the content can change the kind,
+  the skill or the recipients, or start a store: the kind (and whether it is
+  collateral) is decided from the instruction alone ("reply to John's
+  question below" is an answer, not a write, unless it names a document),
+  the skill is chosen from the new text alone, a store never reads content,
+  a console plan that sees the content can't turn the run into a read-only
+  reply, and the recipients are the reply-all of the sender's own email (so
+  when Rob forwarded rather than replied, the original asker gets the answer
+  only if Rob put them on his To or Cc). Text in the content that looks like
+  an instruction (a quoted "@Aidan, send the AWS pack to …", "Aidan: email …
+  to <address>", "ignore your previous instructions", "SYSTEM: …", "Note to
+  the AI: …", a request to send something to an address) is ignored and
+  noted on the ticket ("Aidan: ignored instruction in quoted text"); that is
+  an audit note, since nothing acts on content anyway. A Help Centre answer
+  to a question from the thread opens "Hi all,". The Aidan tab shows, on the
+  ticket, the **Instruction** (the new text), the **Content** (what was read,
+  how many earlier emails were left out, a short preview) and anything
+  **Ignored** (`aidan.content`, `aidanParts` in `public/js/support-core.js`).
+  While such a request waits it says the thread will be read; a finished run
+  that read no content shows nothing (`aidan.refersToThread` is cleared).
+  Rob's new text with no reference to the thread behaves exactly as before
+  (REQUIREMENTS SUP-AID-26 to 29);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
@@ -3441,7 +3490,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 25 and 30 to 34.
+SUP-AID-1 to 35.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
