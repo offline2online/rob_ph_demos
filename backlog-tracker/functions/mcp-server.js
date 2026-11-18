@@ -6147,9 +6147,93 @@ function consoleReader(names) {
       const text = ((out && out.content) || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n");
       return out && out.isError ? { ok: false, error: text } : { ok: true, text };
     },
+    // Code Mode (IJhIIzTxOJyZVCzzYggZ): ONE sandboxed run that reads across
+    // sources and returns a compact result, instead of many reads. A script
+    // (or an insight from the library) calls only the tools that are both on
+    // Aidan's list and on Code Mode's own read-only allow-list, with the same
+    // read-only stand-in session; each run is audited in scriptRuns.
+    scriptTools: () => aidanScripts.toolNames(AIDAN_READ_SESSION, [...allowed]),
+    describeScriptTools: () => aidanScripts.describe(AIDAN_READ_SESSION, [...allowed]),
+    insights: () => aidanScripts.insights(),
+    async script(code, { timeoutMs } = {}) {
+      return codeModeOutcome(await aidanScripts.run(AIDAN_READ_SESSION, code, { allow: [...allowed], timeoutMs }));
+    },
+    async insight(name, params, { timeoutMs } = {}) {
+      return codeModeOutcome(await aidanScripts.insight(AIDAN_READ_SESSION, name, params, { allow: [...allowed], timeoutMs }));
+    },
   };
 }
+const aidanScripts = codeMode.scriptRunner({ db, FieldValue, logger, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) });
+// The sandbox's outcome as Aidan reads it: the result as JSON text, or why not.
+function codeModeOutcome(o) {
+  const toolCalls = ((o && o.toolCalls) || []).map((c) => c.name);
+  if (o && o.ok) return { ok: true, text: JSON.stringify(o.result === undefined ? null : o.result), toolCalls, durationMs: o.durationMs || 0 };
+  const e = (o && o.error) || {};
+  return { ok: false, error: String(e.message || "the script failed"), errorKind: String(e.kind || "error"), toolCalls, durationMs: (o && o.durationMs) || 0 };
+}
 exports.consoleReader = consoleReader;
+
+// Aidan's self-improvement tickets (IJhIIzTxOJyZVCzzYggZ): when a run did
+// not fully or well meet a request, functions/aidan.js files a Backlog ticket
+// describing the gap, or comments on a matching open one. This is the only
+// write Aidan makes on the board, it is never one an email asks for (the
+// gap is decided in code, aidan-core.js → assessRun), and it only ever adds a
+// ticket to a project's Backlog or appends a note: no status, train, deploy
+// or project field is touched. The intake shapes the description exactly as
+// create_backlog_item does, so the ticket goes through the same pipeline.
+function aidanImprovements() {
+  const items = () => db().collection("backlogItems");
+  const rowsOf = (snap) => { const out = []; snap.forEach((d) => out.push(Object.assign({ id: d.id }, d.data() || {}))); return out; };
+  const open = (x) => buildOrder.OPEN_STATUSES.includes(x.status || "backlog");
+  return {
+    boardLink: (id) => `${PUBLIC_ORIGIN}/#item-${id}`,
+    async projects() {
+      return rowsOf(await db().collection("projects").get()).map((p) => ({ id: p.id, name: String(p.name || ""), archived: p.archived === true }));
+    },
+    // Open tickets in one project (Backlog, Ready for Testing, Approved).
+    async openTickets(projectId) {
+      return rowsOf(await items().where("projectId", "==", String(projectId)).get()).filter(open)
+        .map((x) => ({ id: x.id, title: String(x.title || ""), desc: String(x.desc || ""), status: x.status || "backlog", projectId: x.projectId, aidanImprovementKey: x.aidanImprovementKey || "", aidanImprovement: x.aidanImprovement || null }));
+    },
+    // Open tickets Aidan filed for this exact gap, in any project.
+    async byKey(key) {
+      return rowsOf(await items().where("aidanImprovementKey", "==", String(key)).get()).filter(open)
+        .map((x) => ({ id: x.id, title: String(x.title || ""), status: x.status || "backlog", projectId: x.projectId }));
+    },
+    // How many Aidan filed on this UTC day (a cap, aidan-core.js → IMPROVEMENTS_PER_DAY).
+    async filedOn(day) { return (await items().where("aidanImprovementDay", "==", String(day)).get()).size || 0; },
+    async file({ projectId, desc, title, improvement }) {
+      const projectSnap = await db().collection("projects").doc(String(projectId)).get();
+      if (!projectSnap.exists) return { ok: false, error: `No project with id ${projectId}.` };
+      const frozen = finalisedRefusal(projectSnap.data(), "no new backlog items can be filed against it");
+      if (frozen) return { ok: false, error: frozen };
+      const intake = applyIntake(String(desc || ""));
+      const cleanTitle = String(title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
+      const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
+      const ref = await items().add({
+        projectId: String(projectId),
+        title: cleanTitle, desc: intake.desc, type: "feature", category: suggestCategory(String(desc || "")),
+        ...(blocked ? { blocked } : {}),
+        status: "backlog",
+        // Provenance: filed by Aidan's own self-check, not by a person or an email.
+        createdVia: "aidan",
+        aidanImprovementKey: String(improvement.key),
+        aidanImprovementDay: String(improvement.day),
+        aidanImprovement: improvement,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        notes: [{ author: "aidan", text: "Filed by Aidan's self-check after a run that didn't fully or well meet a request.", at: new Date() }],
+      });
+      return { ok: true, itemId: ref.id, title: cleanTitle, projectId: String(projectId), board: `${PUBLIC_ORIGIN}/#item-${ref.id}` };
+    },
+    // A comment on an open ticket: appended, never a rewrite of the notes.
+    async comment(itemId, text) {
+      await items().doc(String(itemId)).set({ notes: FieldValue.arrayUnion({ author: "aidan", text: String(text || "").slice(0, 4000), at: new Date() }), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      return { ok: true, itemId: String(itemId), board: `${PUBLIC_ORIGIN}/#item-${itemId}` };
+    },
+  };
+}
+exports.aidanImprovements = aidanImprovements;
 
 // The same member lookup the console endpoints use, for functions/index.js's
 // mediaKeys endpoint (media-keys.js), so both answer "who is this, and what
