@@ -12678,6 +12678,18 @@ document.getElementById("media-keys-list")?.addEventListener("click", async (e) 
     btn.disabled = false;
   }
 });
+// The two commands that install the console as a Claude plugin
+// (backlog-tracker/claude-plugin). Same text as #mcp-plugin-commands in
+// index.html; test/claude-plugin.test.js checks both against the manifests.
+const MCP_PLUGIN_COMMANDS = "/plugin marketplace add offline2online/rob_ph_demos\n/plugin install ph-agent-console@personalisation-hub";
+document.getElementById("mcp-plugin-copy-btn")?.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(MCP_PLUGIN_COMMANDS);
+    await showAlert("Copied. Run both in Claude Code, then /mcp to sign in.");
+  } catch {
+    await showAlert(`Copy didn't work in this browser — the commands are:\n${MCP_PLUGIN_COMMANDS}`);
+  }
+});
 document.getElementById("mcp-copy-btn")?.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(MCP_SERVER_URL);

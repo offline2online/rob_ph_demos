@@ -1749,14 +1749,33 @@
             <div class="docs-block">
               <div class="docs-block-header">
                 <h3>Connect your AI agent
-                  <span class="info-tip" tabindex="0" role="note" aria-label="About connecting your AI agent" data-tip="Add the console to Claude (or any MCP client) as a remote MCP server. It opens a sign-in page: use the same account you are signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
+                  <span class="info-tip" tabindex="0" role="note" aria-label="About connecting your AI agent" data-tip="Install the Claude plugin, or add the console to Claude (or any MCP client) as a remote MCP server. Either way it opens a sign-in page: use the same account you are signed in with here. Your agent never sees your password, and everything it files or comments is recorded under your email."><span class="material-symbols-outlined" aria-hidden="true">info</span></span>
                 </h3>
               </div>
               <div class="mcp-connect-box">
-                <span class="field-label" style="margin-top:0;">Server URL</span>
+                <!-- The plugin (backlog-tracker/claude-plugin, offered by the
+                     repository's .claude-plugin/marketplace.json) is the same
+                     server and the same sign-in, installed in one step.
+                     test/claude-plugin.test.js keeps these commands in step
+                     with the plugin's real names. -->
+                <!-- The PH mark: the same icon the server announces to MCP
+                     clients (SERVER_ICONS in functions/mcp-server.js), so this
+                     is what the connector looks like once it is added. -->
+                <div class="mcp-connector-id">
+                  <img src="img/ph-mark.svg" alt="" width="32" height="32" class="mcp-connector-icon">
+                  <div>
+                    <div class="mcp-connector-name">PH Agent Console</div>
+                    <div class="mcp-connector-sub">Look for this icon in your agent's list of connectors.</div>
+                  </div>
+                </div>
+                <span class="field-label">Install the Claude plugin <span class="mcp-recommended">Recommended</span></span>
+                <code id="mcp-plugin-commands">/plugin marketplace add offline2online/rob_ph_demos<br>/plugin install ph-agent-console@personalisation-hub</code>
+                <p class="field-hint">Run both in Claude Code, then <code>/mcp</code> to sign in. The plugin adds this connection and a <code>/ph-agent-console:status</code> command.</p>
+                <span class="field-label">Or add the server by hand</span>
                 <code id="mcp-url">https://backlog-tracker-e4ed2.web.app/mcp</code>
-                <p class="field-hint">In Claude Code: <code style="display:inline;padding:2px 5px;">claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code></p>
-                <div class="form-row" style="justify-content:flex-start;gap:8px;">
+                <p class="field-hint">In Claude Code: <code>claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp</code>. In claude.ai or Claude Desktop: Settings, Connectors, Add custom connector. Use the plugin or this, not both.</p>
+                <div class="form-row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;">
+                  <button type="button" class="btn-ghost" id="mcp-plugin-copy-btn">Copy plugin commands</button>
                   <button type="button" class="btn-ghost" id="mcp-copy-btn">Copy URL</button>
                   <button type="button" class="btn-ghost" id="mcp-refresh-connections">Refresh connections</button>
                 </div>

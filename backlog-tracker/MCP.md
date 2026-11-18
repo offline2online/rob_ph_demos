@@ -32,9 +32,80 @@ removing them from the console cuts their agent off in the same act.
 
 | Client | How |
 | --- | --- |
-| **Claude Code** | `claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp` then `/mcp` and authenticate |
+| **Claude Code, as a plugin** (recommended) | `/plugin marketplace add offline2online/rob_ph_demos`, then `/plugin install ph-agent-console@personalisation-hub`, then `/mcp` and authenticate. See "Install it as a plugin" below. |
+| **Claude Code, by hand** | `claude mcp add --transport http ph-console https://backlog-tracker-e4ed2.web.app/mcp` then `/mcp` and authenticate |
 | **Claude Desktop / claude.ai** | Settings → Connectors → Add custom connector → paste the URL |
 | **Anything else** | Add it as a *remote* / *HTTP* / *streamable* MCP server at that URL |
+
+### Install it as a plugin
+
+The console is also packaged as a Claude plugin (`claude-plugin/`, offered by
+`.claude-plugin/marketplace.json` at the repository root). It is the same
+server and the same sign-in; the plugin adds the connection for you and
+brings two skills with it.
+
+In Claude Code (the terminal, or a local session in the desktop app's Code tab):
+
+```text
+/plugin marketplace add offline2online/rob_ph_demos
+/plugin install ph-agent-console@personalisation-hub
+/mcp
+```
+
+`/mcp` lists the console server; choose it and complete the sign-in in the
+browser. From a shell the first two are `claude plugin marketplace add
+offline2online/rob_ph_demos` and `claude plugin install
+ph-agent-console@personalisation-hub`.
+
+In claude.ai or Cowork: zip the contents of `backlog-tracker/claude-plugin/`
+and upload the zip under Customize → Plugins → Add → Upload plugin. The
+console then appears on the plugin's Connectors tab, where each person signs
+in.
+
+What the plugin contains:
+
+| Part | What it does |
+| --- | --- |
+| The connection | One remote HTTP server at the URL above. No key, no header, nothing that runs on your machine. |
+| The console skill | Tells the agent how to use the tools: check who it is acting as, read before it writes, comment after work, and treat release tools as admin actions a person must ask for. |
+| `/ph-agent-console:status` | A short, read-only status report: what is waiting on a person, what is blocked, tickets per stage, each release train. Add a project name for one project. |
+
+**The icon.** The connector's icon is the PH mark (the four coloured bars,
+`public/img/ph-mark.svg`), and it reaches a client two ways:
+
+- The server announces it. `serverInfo.icons` in the `initialize` answer lists
+  the mark as an SVG and as 512, 192 and 64 pixel PNGs, all served from the
+  server's own address. This is the same whether the server was added through
+  the plugin or by hand, because the plugin only supplies the URL.
+- The plugin carries it. `icon` in `plugin.json` points at `icon.png`, a copy
+  of the 512 pixel PNG, which is what a plugin listing shows.
+
+Whether a given Claude screen draws either one is the client's decision, and
+Claude's documentation does not say which screens show a connector's icon.
+The console's own Connect your AI agent screen shows the same mark, so people
+know what to look for.
+
+Things to know:
+
+- **Tool names change.** Installed through the plugin, a tool is named with
+  the plugin's prefix, not the `ph-console` prefix of a hand-added server.
+  Any *Always allow* rule you set up for the hand-added server (next
+  section) has to be added again for the plugin's names.
+- **Use one or the other.** If you already added the server by hand, remove
+  it (`claude mcp remove ph-console`) after installing the plugin, or the
+  agent sees every tool twice.
+- **Access is unchanged.** The plugin holds no credential. Who may connect,
+  and what their agent may do, is still their row in Settings → Team & agent
+  access.
+- **Releasing a new version.** Raise `version` in
+  `claude-plugin/.claude-plugin/plugin.json` when the skills or the
+  connection change; people get it with `/plugin marketplace update
+  personalisation-hub`. A change to the server's tools needs no plugin
+  release.
+
+`test/claude-plugin.test.js` checks the manifests, that the plugin points at
+this server and carries no credential, and that every tool a skill names
+exists.
 
 The client opens a sign-in page. Use **Sign in with Google** with your
 Personalisation Hub account, or your email and password if that is how you
@@ -814,6 +885,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `functions/mcp-server.js` | the whole server — OAuth endpoints, sign-in page, MCP protocol, tools, admin endpoints, claim sync |
 | `functions/index.js` | exports `mcpServer` and `syncConsoleUserClaims` |
 | `functions/code-mode/` | Code Mode: the sandbox (`sandbox.js`, `sandbox-worker.js`), the four tools and the allow-list (`index.js`), the insight scripts (`insights/`) |
+| `claude-plugin/` | the Claude plugin that packages this server: manifest, `.mcp.json`, two skills (`test/claude-plugin.test.js`) |
 | `firebase.json` | hosting rewrites putting it at `/mcp` and the two `/.well-known` paths |
 | `firestore.rules` | `consoleUsers` membership model; `mcp*` collections denied to every client |
 | `storage.rules` | the `consoleEditor` claim check |

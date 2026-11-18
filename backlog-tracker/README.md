@@ -1103,6 +1103,9 @@ typed fallback, the denied-microphone error and the pinned action bar.
   `get_insight`, `list_insights`): the sandbox's limits with stub tools, then
   the four tools, the role checks and each insight through the real server.
   See `MCP.md` → "Code Mode".
+- **`claude-plugin.test.js`** checks the Claude plugin that packages the MCP
+  server (`claude-plugin/`, offered by the repository's
+  `.claude-plugin/marketplace.json`). See `MCP.md` → "Install it as a plugin".
 - **`mcp-server.test.js`** drives `functions/mcp-server.js` in-process —
   client registration, sign-in, PKCE code exchange, `tools/list`,
   `tools/call`, and every refusal that matters. It stubs the Firebase SDKs

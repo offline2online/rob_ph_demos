@@ -1,0 +1,13 @@
+{
+  "name": "personalisation-hub",
+  "owner": { "name": "Personalisation Hub" },
+  "description": "Plugins for the Personalisation Hub team.",
+  "plugins": [
+    {
+      "name": "ph-agent-console",
+      "source": "./backlog-tracker/claude-plugin",
+      "description": "Connects Claude to the PH Agent Console: the backlog board, Staff Kanban, concepts, leads and the help centre.",
+      "category": "productivity"
+    }
+  ]
+}
