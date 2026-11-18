@@ -98,7 +98,7 @@ function fakeGoogle(mail) {
 const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display to a store", summary: "Pair a new screen with a store", keywords: ["display", "store"], bodyMd: "<p>Open Displays and Devices, then Add display.</p>" };
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
-function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null } = {}) {
+function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null } = {}) {
   const google = fakeGoogle(mail);
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
@@ -116,7 +116,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
-    aidan, bucket, consoleReader,
+    aidan, bucket,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -1074,196 +1074,6 @@ check("Aidan: defence in depth: an instruction a stranger wrote (in a Cc name, o
   await cron(t3);
   await cron(t3);
   assert.strictEqual(t3.google.calls.sent.length, 2, "the first request and the one sent again after Aidan answered both run");
-});
-
-// ── Aidan reads the console, read-only (1W4QQzYdlJzfdqizePWR) ──
-// The console's read tools are stubbed here (the real ones, over stubbed
-// Firestore, are in aidan-console.test.js). Ids are made-up 20-character ones.
-const BT = "oTcLAbnhUUO2S7NkbsuV";
-const CONCEPT = "Cu5t0merSupp0rtC0ncp";
-const TICKETS = [
-  { id: "Fav1c0nT1cketAbcdeFg", title: "Fix the console favicon", status: "backlog", projectId: BT },
-  { id: "Sp4mBu7tonT1cketXyzQ", title: "Mark as spam in all three inboxes", status: "backlog", projectId: BT },
-  { id: "R3adyT1cketMnopQrsTu", title: "Bulk actions per inbox", status: "ready-for-testing", projectId: BT },
-];
-function stubConsole() {
-  const calls = [];
-  const data = {
-    list_projects: () => ({ projects: [{ id: BT, name: "Backlog Tracker & FAQs", description: "The console and the Help Centre", counts: { backlog: 2, "ready-for-testing": 1 } }] }),
-    list_concepts: () => ({ concepts: [{ id: CONCEPT, name: "Customer Support", description: "Answer support email", status: "active", createdByEmail: OWNER }] }),
-    get_concept: (a) => (a.conceptId === CONCEPT ? { id: CONCEPT, name: "Customer Support", readmeMd: "# Customer Support\n\nAnswers support email from the Help Centre.", requirementsMd: "CS-1 Reply within a day.", comments: [{ author: OWNER, text: "Looks good" }] } : null),
-    list_backlog_items: (a) => ({ items: TICKETS.filter((t) => t.projectId === a.projectId && (!a.status || t.status === a.status)) }),
-  };
-  const reader = {
-    tools: () => ["list_projects", "list_backlog_items", "get_backlog_item", "list_concepts", "get_concept", "search_faq"].map((name) => ({ name, description: `${name} (stub)`, inputSchema: { type: "object", properties: {} } })),
-    async read(name, args) {
-      calls.push({ name, args });
-      if (!data[name]) return { ok: false, error: `${name} is not stubbed` };
-      const out = data[name](args || {});
-      return out ? { ok: true, text: JSON.stringify(out) } : { ok: false, error: "not found" };
-    },
-  };
-  return { reader, calls };
-}
-function makeConsoleAidan(mail, { plan, answer } = {}) {
-  const c = stubConsole();
-  const seen = { write: [], triaged: [], answer: [], plan: [] };
-  const t = make({
-    mail, consoleReader: c.reader,
-    triage: async (input) => { seen.triaged.push(input.ticket.subject); return GOOD; },
-    aidan: {
-      select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
-      write: async (input) => { seen.write.push(input); return DOC; },
-      plan: async (input) => { seen.plan.push(input); return plan ? plan(input) : { changeRequested: false, reads: [], reason: "" }; },
-      answer: async (input) => { seen.answer.push(input); return answer ? answer(input) : { canAnswer: false, replyText: "", documentMd: "", title: "", reason: "nothing" }; },
-    },
-  });
-  t.db.state.skills = JSON.parse(JSON.stringify(SKILLS));
-  return Object.assign(t, { seen, consoleCalls: c.calls });
-}
-// The text body and the attachments of a sent email.
-function readSent(sent) {
-  const mail = sent.mail;
-  const dec = (b) => Buffer.from(b.replace(/\r\n/g, ""), "base64").toString("utf8").replace(/\r\n/g, "\n");
-  const boundary = (mail.match(/boundary="([^"]+)"/) || [])[1];
-  if (!boundary) return { body: dec(mail.split("\r\n\r\n")[1]), files: [] };
-  const parts = mail.split(`--${boundary}`).slice(1, -1).map((p) => { const i = p.indexOf("\r\n\r\n"); return { head: p.slice(0, i), data: p.slice(i + 4) }; });
-  return {
-    body: dec(parts.find((p) => /text\/plain/.test(p.head)).data),
-    files: parts.filter((p) => /Content-Disposition: attachment/.test(p.head)).map((p) => ({ name: (p.head.match(/filename="([^"]+)"/) || [])[1], type: (p.head.match(/Content-Type: ([^;\r\n]+)/) || [])[1], content: dec(p.data) })),
-  };
-}
-
-check("Aidan reads the console: \"summarise the Customer Support concept\" is answered from the concept's documents, long, so attached as Markdown with a two-line summary, to the allowed senders only", async () => {
-  const t = makeConsoleAidan([aidanMail({ id: "cs", cc: "Client <client@shop.example>", text: "Hi,\n\n@Aidan, summarise the Customer Support concept\n\nThanks" })], {
-    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "the concept" } : { changeRequested: false, reads: [], reason: "done" }),
-    answer: (input) => ({ canAnswer: true, title: "Customer Support concept: summary", reason: "",
-      replyText: "Customer Support answers support email from the Help Centre. Its one requirement is a reply within a day. It is active.",
-      documentMd: `# Customer Support concept\n\n${"It answers support email from the Help Centre. ".repeat(80)}` }),
-  });
-  await connectAidan(t);
-  const r = await cron(t);
-  assert.deepStrictEqual([r.statusCode, r.body.aidanRuns], [200, 1]);
-  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts", "get_concept"], "an index, then the one concept");
-  assert.deepStrictEqual(t.consoleCalls[2].args, { conceptId: CONCEPT });
-  assert.strictEqual(t.seen.plan.length, 2, "a second round sees what was read and stops");
-  assert.ok(t.seen.plan[0].index.concepts.some((c) => c.id === CONCEPT && c.name === "Customer Support"), "the plan picks the id from the index");
-  assert.deepStrictEqual(t.seen.select, ["summarise the Customer Support concept"], "a write still looks for its skill first");
-  const a = t.seen.answer[0];
-  const content = JSON.stringify(a.content);
-  assert.ok(a.console && a.console.used && content.includes("<console_data>") && content.includes("Answers support email from the Help Centre") && content.includes("CS-1 Reply within a day"), "answered from the concept's documents");
-  assert.ok(a.console.text.includes("(address removed)") && !a.console.text.includes(OWNER), "no address in the console data the model sees");
-  assert.ok(/read-only/.test(a.system) && /Never write a ticket id/.test(a.system));
-  assert.strictEqual(t.google.calls.sent.length, 1);
-  const sent = t.google.calls.sent[0];
-  assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !/^Cc:/m.test(sent.mail) && !sent.mail.includes("client@shop.example"), "console data goes to the allowed sender only, not the client in Cc");
-  const { body, files } = readSent(sent);
-  assert.strictEqual(body, "Customer Support answers support email from the Help Centre.\nIts one requirement is a reply within a day.\n\nThe full answer is attached (customer-support-concept-summary.md).\n\nAidan\nAssistant to Rob, Personalisation Hub");
-  assert.deepStrictEqual(files.map((f) => [f.name, f.type]), [["customer-support-concept-summary.md", "text/markdown"]]);
-  assert.ok(files[0].content.startsWith("# Customer Support concept"));
-  const tk = ticketOf(t, "t-cs");
-  assert.deepStrictEqual([tk.status, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.console, tk.aidan.document.name], ["resolved", "replied", "answer", 1, { reads: 1, tools: ["get_concept"] }, "customer-support-concept-summary.md"]);
-  const out = messagesOf(t, "t-cs").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.to, out.cc, out.kind, out.console, out.attachments.map((x) => x.name)], [[OWNER], [], "answer", true, ["customer-support-concept-summary.md"]]);
-  assert.ok(messagesOf(t, "t-cs").some((m) => m.direction === "event" && /Aidan answered from the console \(1 read\), with the full answer attached as customer-support-concept-summary\.md, and replied to 1 person\. 1 other person on the email was left off/.test(m.text)));
-});
-
-check("Aidan reads the console: \"what tickets are in the Backlog Tracker backlog?\" lists titles in the email itself, never ids unless asked", async () => {
-  const listed = "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon (Fav1c0nT1cketAbcdeFg)\n- Sp4mBu7tonT1cketXyzQ: Mark as spam in all three inboxes";
-  const t = makeConsoleAidan([
-    aidanMail({ id: "bl", text: "@Aidan, what tickets are in the Backlog Tracker backlog?" }),
-    aidanMail({ id: "ids", threadId: "t-ids", text: "@Aidan, what are the ticket ids in the Backlog Tracker backlog?", date: 1759990001000 }),
-  ], {
-    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [{ tool: "list_backlog_items", args: JSON.stringify({ projectId: BT, status: "backlog" }) }], reason: "" } : { changeRequested: false, reads: [], reason: "" }),
-    answer: () => ({ canAnswer: true, replyText: listed, documentMd: "", title: "", reason: "" }),
-  });
-  await connectAidan(t);
-  await cron(t);
-  await cron(t);
-  assert.deepStrictEqual(t.consoleCalls.filter((c) => c.name === "list_backlog_items").map((c) => c.args), [{ projectId: BT, status: "backlog" }, { projectId: BT, status: "backlog" }]);
-  assert.deepStrictEqual(t.seen.select, undefined, "a question needs no skill");
-  const [first, second] = t.google.calls.sent.map(readSent);
-  assert.deepStrictEqual(first.files, [], "a short answer: nothing attached");
-  assert.strictEqual(first.body, "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon\n- Mark as spam in all three inboxes\n\nAidan\nAssistant to Rob, Personalisation Hub");
-  assert.ok(!/[A-Za-z0-9]{20}/.test(first.body), "no ticket id in the body");
-  assert.ok(second.body.includes("Fav1c0nT1cketAbcdeFg") && second.body.includes("Sp4mBu7tonT1cketXyzQ"), "ids are kept when the instruction asks for them");
-  assert.deepStrictEqual([ticketOf(t, "t-bl").aidan.kind, ticketOf(t, "t-bl").aidan.console], ["answer", { reads: 1, tools: ["list_backlog_items"] }]);
-});
-
-check("Aidan reads the console: a request to create or change a ticket gets a polite read-only reply and nothing changes", async () => {
-  const t = makeConsoleAidan([
-    aidanMail({ id: "mk", cc: "Client <client@shop.example>", text: "@Aidan, please create a ticket for the broken iPad menu." }),
-    // Not caught by the words; the plan says it asks for a change.
-    aidanMail({ id: "sort", threadId: "t-sort", text: "@Aidan, the favicon fix should be in Ready for Testing by now, sort it out.", date: 1759990001000 }),
-  ], { plan: (input) => (/favicon/.test(input.instruction) ? { changeRequested: true, reads: [{ tool: "list_backlog_items", args: "{}" }], reason: "asks to move a ticket" } : { changeRequested: false, reads: [], reason: "" }) });
-  await connectAidan(t);
-  await cron(t);
-  await cron(t);
-  assert.deepStrictEqual(t.seen.plan.map((p) => p.instruction), ["the favicon fix should be in Ready for Testing by now, sort it out."], "\"create a ticket\" is refused from its words, before any model");
-  assert.deepStrictEqual([t.seen.answer.length, t.seen.write.length, t.seen.select], [0, 0, undefined], "no answer is written and no skill is chosen");
-  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts"], "only the index was read; nothing the plan asked for ran");
-  assert.strictEqual(t.google.calls.sent.length, 2);
-  for (const sent of t.google.calls.sent) {
-    assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !sent.mail.includes("client@shop.example"));
-    const { body, files } = readSent(sent);
-    assert.ok(/^Hi Owner,\n\nI can only read the agent console from email, so I haven't created or changed anything\./.test(body), body);
-    assert.deepStrictEqual(files, []);
-  }
-  const mk = ticketOf(t, "t-mk");
-  assert.deepStrictEqual([mk.status, mk.aidan.status, mk.aidan.kind, mk.aidan.readOnly, mk.needsHuman], ["resolved", "replied", "answer", true, false]);
-  assert.ok(messagesOf(t, "t-mk").some((m) => m.direction === "event" && /can only read it, so it replied saying so and changed nothing\. 1 other person on the email was left off/.test(m.text)));
-  assert.strictEqual(ticketOf(t, "t-sort").aidan.readOnly, true);
-});
-
-check("Aidan reads the console: the same gates as every run; an acknowledgement reads nothing; a write tool in the plan never runs; a failed read falls back to the email", async () => {
-  const t = makeConsoleAidan([
-    aidanMail({ id: "stranger", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, what tickets are in the Backlog Tracker backlog?" }),
-    aidanMail({ id: "forged", threadId: "t-forged", auth: "", text: "@Aidan, create a ticket for the broken iPad menu.", date: 1759990001000 }),
-    aidanMail({ id: "ack", threadId: "t-ack", cc: "client@shop.example", text: "@Aidan, please confirm you received this email", date: 1759990002000 }),
-    aidanMail({ id: "sneak", threadId: "t-sneak", text: "@Aidan, how many tickets are in Ready for Testing on the Backlog Tracker?", date: 1759990003000 }),
-  ], {
-    plan: (input) => (input.round === 0 ? { changeRequested: false, reason: "", reads: [
-      { tool: "create_backlog_item", args: JSON.stringify({ projectId: BT, desc: "planted" }) },
-      { tool: "get_backlog_item", args: JSON.stringify({ itemId: "R3adyT1cketMnopQrsTu" }) },
-    ] } : { changeRequested: false, reads: [], reason: "" }),
-    answer: (input) => ({ canAnswer: true, replyText: input.console ? "I couldn't read that ticket, sorry." : "Got it, Owner, all good.", documentMd: "", title: "", reason: "" }),
-  });
-  await connectAidan(t);
-  for (let i = 0; i < 4; i++) await cron(t);
-  assert.deepStrictEqual([ticketOf(t, "t-stranger").aidan.status, ticketOf(t, "t-forged").aidan.status], ["ignored", "ignored"], "not allowed, not verified: nothing runs");
-  assert.ok(t.seen.plan.every((p) => /Ready for Testing/.test(p.instruction)), "the console is planned only for the allowed, verified question");
-  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts", "get_backlog_item"], "the acknowledgement read nothing; the planted write tool was never called");
-  assert.strictEqual(t.google.calls.sent.length, 2);
-  const ack = t.google.calls.sent.find((s) => s.threadId === "t-ack");
-  assert.ok(ack.mail.includes("Cc: client@shop.example"), "an answer from the email alone still replies to everyone");
-  // The only read the plan asked for failed: the answer is written from the email alone, to everyone.
-  const sneak = ticketOf(t, "t-sneak");
-  assert.deepStrictEqual([sneak.aidan.status, sneak.aidan.console], ["replied", undefined]);
-  assert.ok(JSON.stringify(t.seen.answer.find((x) => /Ready for Testing/.test(x.instruction)).system).includes("Answer only from the email"), "no console data: the email-only answer");
-});
-
-check("Aidan reads the console for a write too: the skill writes the document with the console data, and it goes to the allowed senders only", async () => {
-  const t = makeConsoleAidan([aidanMail({ id: "poc", cc: "Client <client@shop.example>", text: "@Aidan, write the POC summary for the Customer Support concept." })], {
-    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "" } : { changeRequested: false, reads: [], reason: "" }),
-  });
-  await connectAidan(t);
-  await cron(t);
-  assert.strictEqual(t.seen.write.length, 1);
-  const w = t.seen.write[0];
-  assert.strictEqual(w.skill.id, "s2", "the skill named in the instruction");
-  assert.ok(JSON.stringify(w.content).includes("<console_data>") && JSON.stringify(w.content).includes("CS-1 Reply within a day") && /PH Agent Console \(read-only\)/.test(w.system));
-  const sent = t.google.calls.sent[0];
-  assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !sent.mail.includes("client@shop.example"), "console data: the allowed sender only");
-  assert.deepStrictEqual(readSent(sent).files.map((f) => f.name), ["aws-onboarding-pack-kestrel.md"]);
-  const tk = ticketOf(t, "t-poc");
-  assert.deepStrictEqual([tk.aidan.kind, tk.aidan.status, tk.aidan.recipients, tk.aidan.console], ["generate", "replied", 1, { reads: 1, tools: ["get_concept"] }]);
-});
-
-check("Aidan reads the console within the function's budget: planning rounds are short and few", () => {
-  const { CONSOLE_PLAN_TIMEOUT_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
-  const ac = require("../functions/aidan-core");
-  assert.ok(ac.CONSOLE_ROUNDS <= 2 && CONSOLE_PLAN_TIMEOUT_MS <= 30000);
-  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + document + a minute fit in 540 s");
 });
 
 (async () => {

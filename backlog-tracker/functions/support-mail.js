@@ -174,7 +174,7 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
-  aidan: aidanImpl = null, bucket = null, consoleReader = null,
+  aidan: aidanImpl = null, bucket = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -533,8 +533,6 @@ function createSupportMail({
   const aidan = createAidan({
     db, tickets, secretsRef: (name) => db.collection(SECRETS).doc(name), gmail, readSettings, logEvent, now, logger,
     callJson, apiKey: anthropicKey, workspaceId: anthropicWorkspace, Anthropic, run: aidanImpl, bucket,
-    // The console's read-only MCP tools (mcp-server.js → consoleReader), so Aidan can answer from the console's data.
-    consoleReader,
   });
 
   // ── Sync ──

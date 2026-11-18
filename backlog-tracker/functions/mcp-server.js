@@ -6117,40 +6117,6 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
   }
 });
 
-// Aidan's read-only view of the console (1W4QQzYdlJzfdqizePWR): the Support
-// Inbox's agent mailbox (functions/aidan.js) answers questions by email from
-// the console's own data through these same tools, so it reads exactly what a
-// member's agent reads. Only the tools named are offered, and of those only
-// board.read tools with no role of their own, so no write tool is reachable
-// from an email whatever the list says. Arguments are cut to the tool's own
-// schema; the result is the tool's own text. The session is a read-only
-// stand-in (none of the read tools act on who is asking).
-const AIDAN_READ_SESSION = Object.freeze({ email: "aidan", role: "viewer", scopes: Object.freeze(["board.read"]), via: "aidan-email" });
-function consoleReader(names) {
-  const allowed = new Set((names || []).filter((n) => {
-    const t = TOOLS_BY_NAME.get(String(n));
-    return Boolean(t) && t.scope === "board.read" && !t.role && t.destructive !== true;
-  }));
-  return {
-    tools: () => [...allowed].map((n) => { const t = TOOLS_BY_NAME.get(n); return { name: t.name, description: t.description, inputSchema: t.inputSchema }; }),
-    async read(name, args) {
-      const tool = allowed.has(String(name)) ? TOOLS_BY_NAME.get(String(name)) : null;
-      if (!tool) return { ok: false, error: `${name} is not a read-only console tool Aidan may use.` };
-      const props = (tool.inputSchema && tool.inputSchema.properties) || {};
-      const clean = {};
-      for (const [k, v] of Object.entries(args && typeof args === "object" && !Array.isArray(args) ? args : {})) {
-        if (Object.prototype.hasOwnProperty.call(props, k) && v !== null && v !== undefined && v !== "") clean[k] = v;
-      }
-      const missing = ((tool.inputSchema && tool.inputSchema.required) || []).filter((k) => clean[k] === undefined);
-      if (missing.length) return { ok: false, error: `${tool.name} needs ${missing.join(", ")}.` };
-      const out = await tool.run(clean, AIDAN_READ_SESSION);
-      const text = ((out && out.content) || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n");
-      return out && out.isError ? { ok: false, error: text } : { ok: true, text };
-    },
-  };
-}
-exports.consoleReader = consoleReader;
-
 // The same member lookup the console endpoints use, for functions/index.js's
 // mediaKeys endpoint (media-keys.js), so both answer "who is this, and what
 // role" identically.

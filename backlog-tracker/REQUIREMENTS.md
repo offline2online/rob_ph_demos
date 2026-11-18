@@ -6337,9 +6337,7 @@ Ticket EeAljfWIiY8SOPsKXlXD. aidan@ is an agent mailbox acting as Rob's
 assistant: tagged requests from Rob run a skill and are answered with the
 documentation, by reply-all. Since 18 Nov 2026 (ticket 303SwmU5aQdyJNHxlTtQ)
 a tagged request that asks for neither a document nor for something to be
-kept is answered in the email itself (SUP-AID-14, SUP-AID-15). Since 18 Nov
-2026 (ticket 1W4QQzYdlJzfdqizePWR) Aidan can answer from the console's own
-data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
+kept is answered in the email itself (SUP-AID-14, SUP-AID-15).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6535,44 +6533,6 @@ data, read-only, and refuses politely to change it (SUP-AID-16 to 19).
   refused tag has no kind. An answer's reply on the thread is marked "Sent
   by Aidan · Answer" and shows who it went to; the ticket says it was
   answered in the email itself with nothing attached.
-- **SUP-AID-16** (18 Nov 2026, ticket 1W4QQzYdlJzfdqizePWR) An answer or a
-  write run may read the agent console's own data, **read-only**: projects
-  and their Requirements, README, additional documents and interface
-  contracts; tickets (a list, one in full) and pipeline health; concepts in
-  the Concept Incubator (a list, one in full, its critiques); Help Centre
-  articles. The reads are the MCP server's own read tools, the ones named in
-  `CONSOLE_READ_TOOLS` (`functions/aidan-core.js`), run through
-  `consoleReader` (`functions/mcp-server.js`), which offers only `board.read`
-  tools with no role, so no write tool is reachable from an email whatever
-  the list says. The model plans the reads from an index of the projects and
-  concepts and the tools' own descriptions: at most two rounds of at most six
-  reads, each round 25 seconds with no retry. Email addresses are removed
-  from what the model sees. A plain acknowledgement reads nothing, and a
-  failed read leaves the answer to the email alone. Every gate of every run
-  still applies first (SUP-AID-1 to 4, 10 to 13).
-- **SUP-AID-17** An answer written from console data is short and in the
-  body when it fits roughly a page (3,000 characters, 45 lines); a longer one
-  is attached as a Markdown file with a summary of at most two lines in the
-  body and a line naming the file. Tickets, projects and concepts are named
-  by their titles: an id in the reply (or the attachment) is replaced by its
-  title, or dropped when unknown, unless the instruction asks for ids.
-- **SUP-AID-18** A reply that carries console data goes only to the allowed
-  senders on the email (the sender, and any other allowed sender in To or
-  Cc). Anyone else copied in (a client, a partner) is left off, and the
-  ticket's event line says how many. A reply from the email alone keeps the
-  reply-all of SUP-AID-6 and SUP-AID-14. The ticket records what was read
-  (`aidan.console`: the number of reads and the tools) and any attachment
-  (`aidan.document`).
-- **SUP-AID-19** Aidan never creates, updates, archives, approves or deploys
-  anything from an email. A request to do so on the console ("create a
-  ticket for …", "update the README", "move that card", "deploy …"), decided
-  from the instruction's own words (`consoleChangeRequest`: a clause that
-  opens with a change verb whose object is a console thing, or with deploy,
-  merge, approve, archive, promote or demote) or by the plan
-  (`changeRequested`), gets a short fixed reply to the allowed senders on the
-  email saying Aidan can only read the console and has changed nothing
-  (`aidan.readOnly`). No model writes it. A question about how to do it ("how
-  do I create a ticket?") is answered.
 
 ### Connecting
 
