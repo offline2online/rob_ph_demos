@@ -2792,6 +2792,10 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
       commentKanbanTask: (key, text, actor) => supportKanbanCall("kanban_comment", { key, text }, actor),
       // Aidan keeps PDFs and images sent "for a skill" here (skill-references/…, no client access in storage.rules).
       bucket: () => require("firebase-admin/storage").getStorage().bucket("backlog-tracker-e4ed2.firebasestorage.app"),
+      // Aidan answers from the console's own data through the MCP server's
+      // read tools, only those named in aidan-core.js and only board.read
+      // ones (mcp-server.js → consoleReader): nothing it can reach writes.
+      consoleReader: mcp.consoleReader(require("./aidan-core").CONSOLE_READ_TOOLS),
       logger,
     });
   }
