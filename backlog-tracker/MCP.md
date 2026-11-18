@@ -1158,10 +1158,6 @@ source, tools called with durations, total duration, outcome and error kind;
 for an insight, also its name, version and parameters. Only the server writes
 it. `firestore.rules` lets members read it and nobody change it.
 
-**Aidan uses Code Mode too** (IJhIIzTxOJyZVCzzYggZ): his runs are in
-`scriptRuns` with `email: "aidan"` and kind `aidan_script` or
-`aidan_insight` (README → "Aidan, the agent mailbox").
-
 **The insight library** (`functions/code-mode/insights/`). Project, concept
 and release parameters take an id or a name. Names are matched
 case-insensitively (exact, then starts-with, then contains); an ambiguous or

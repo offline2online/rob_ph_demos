@@ -2797,10 +2797,6 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
       // read tools, only those named in aidan-core.js and only board.read
       // ones (mcp-server.js → consoleReader): nothing it can reach writes.
       consoleReader: mcp.consoleReader(require("./aidan-core").CONSOLE_READ_TOOLS),
-      // Aidan's self-check files a Backlog ticket (or comments on a matching
-      // open one) when a run didn't fully meet its request; the only board
-      // write Aidan makes, never one an email asks for.
-      improvements: mcp.aidanImprovements(),
       logger,
     });
   }
