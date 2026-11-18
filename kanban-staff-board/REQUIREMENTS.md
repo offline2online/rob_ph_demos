@@ -476,8 +476,9 @@ stored the current release is the earliest unreleased one
 by version, on the board, the report and `kanban_release_report`; the page shows
 an unset field as "Not set (X is used)", never a value the server lacks); each
 release's date (releases themselves are the console's Releases page); sprints
-(name, start, end); the team list with photos and "Shown as" names. Members
-read settings; only admins change them.
+(name, start, end); the team list with photos, full names and each member's
+short name (admin-editable; see KB-PPL-1). Members read settings; only admins
+change them.
 
 ## 10. People and photos
 
