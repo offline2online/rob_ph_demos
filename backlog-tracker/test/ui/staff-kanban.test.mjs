@@ -797,6 +797,78 @@ T("KB-C2", "notifications bell: unread count, opening one marks it read and open
   await p.done();
 });
 
+// A mention (n1, the newest) whose comment is m1; m2 is by the same sender without a tag, m3 tags Rob after the notification.
+const mentionSeed = () => kanbanSeed({ extra: {
+  kanbanNotifications: {
+    n1: { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "mention", via: "comment", read: false, at: { $ts: Date.parse("2026-10-21T08:00:00Z") } },
+    n2: { to: ROB, from: HUY, taskKey: "PH-20", taskTitle: "Menu board preview shows RRP", kind: "commented", read: false, at: { $ts: Date.parse("2026-10-21T07:00:00Z") } },
+  },
+  "kanbanTasks/PH-20/comments": {
+    m1: { author: HUY, text: "Rob, can you confirm the Covent Garden price?", html: "", mentions: [ROB], at: { $ts: Date.parse("2026-10-21T07:59:58Z") } },
+    m2: { author: HUY, text: "Unrelated follow-up for the team.", html: "", mentions: [], at: { $ts: Date.parse("2026-10-21T07:59:59Z") } },
+    m3: { author: HUY, text: "A later tag about something else.", html: "", mentions: [ROB], at: { $ts: Date.parse("2026-10-21T09:00:00Z") } },
+  },
+} });
+T("KB-C2g", "notifications bell: hovering or focusing a mention shows the one comment that tagged you; nothing opens or is marked read", async (prof) => {
+  const p = await open(prof, "#staff-kanban", { seed: mentionSeed() });
+  const mention = '.kb-bell-item[data-note="n1"]', other = '.kb-bell-item[data-note="n2"]', card = "#kb-bell-preview";
+  const unread = async () => (await p.evaluate(() => [...globalThis.__fbStub.col("kanbanNotifications").values()].filter((n) => !n.read).length));
+  await until(async () => (await p.textContent("#kb-bell")).includes("2"), "the unread count");
+  await press(p, "#kb-bell");
+  await p.waitForSelector(mention);
+  if (prof.touch) {
+    // A touch screen has no hover: the tap opens the ticket, as before, and no comment card shows on the way.
+    await press(p, mention);
+    await p.waitForSelector("#task-backdrop:not([hidden])");
+    assert.equal(await p.textContent("#task-title-h"), "PH-20");
+    assert.equal(await p.locator(card).count(), 0, "no comment card on a touch screen");
+    await p.done();
+    return;
+  }
+  await p.hover(mention);
+  await until(async () => /Rob, can you confirm the Covent Garden price\?/.test(await p.textContent(card).catch(() => "")), "the comment that tagged Rob");
+  const text = await p.textContent(card);
+  assert.match(text, /Lê Quang Huy/, "with its author's name");
+  assert.doesNotMatch(text, /Unrelated follow-up|A later tag|cached price map|Seen on Covent Garden/, "and no other comment from the ticket");
+  const side = await p.evaluate(() => { const r = (q) => document.querySelector(q).getBoundingClientRect(); const c = r("#kb-bell-preview"), b = r("#kb-bell-panel"); return { cl: c.left, cr: c.right, ct: c.top, cb: c.bottom, bl: b.left, inPanel: !!document.querySelector("#kb-bell-panel #kb-bell-preview"), h: innerHeight }; });
+  if (side.inPanel) assert.ok(side.cl >= 0 && side.cr <= prof.width + 1, "under the notification, inside the window");
+  else assert.ok(side.cr <= side.bl && side.cl >= 0 && side.ct >= 0 && side.cb <= side.h, `beside the list, inside the window (${JSON.stringify(side)})`);
+  assert.equal(await p.getAttribute(mention, "aria-describedby"), "kb-bell-preview");
+  assert.equal(await p.isVisible("#task-backdrop:not([hidden])"), false, "the ticket does not open");
+  assert.equal(await unread(), 2, "nothing is marked read");
+  assert.match(await p.textContent("#kb-bell"), /2/, "the badge is unchanged");
+  // Another kind of notification has no card.
+  await p.hover(other);
+  await until(async () => (await p.locator(card).count()) === 0, "the card goes on leaving the mention");
+  await p.waitForTimeout(400);
+  assert.equal(await p.locator(card).count(), 0, "a plain comment notification shows none");
+  // A narrow window has no room beside the list: the comment shows under the notification.
+  await p.setViewportSize({ width: 600, height: 800 });
+  await p.hover("#kb-bell-panel .kb-bell-head");
+  await p.hover(mention);
+  await until(async () => (await p.locator("#kb-bell-panel #kb-bell-preview.inline").count()) === 1, "the comment under the notification");
+  const narrow = await p.$eval(card, (e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right, text: e.textContent }; });
+  assert.ok(narrow.l >= 0 && narrow.r <= 600, `fully inside the 600 px window (${narrow.l}–${narrow.r})`);
+  assert.match(narrow.text, /Rob, can you confirm the Covent Garden price\?/);
+  await p.setViewportSize({ width: prof.width, height: prof.height || 900 });
+  // The keyboard: tabbing to the mention shows the same comment; closing the bell takes it away.
+  await p.hover("#kb-bell-panel .kb-bell-head");
+  await until(async () => (await p.locator(card).count()) === 0, "the card goes");
+  await p.focus("#kb-bell");
+  for (let i = 0; i < 6 && !(await p.evaluate(() => document.activeElement && document.activeElement.dataset.note === "n1")); i++) await p.keyboard.press("Tab");
+  await until(async () => /Covent Garden price/.test(await p.textContent(card).catch(() => "")), "the comment on keyboard focus");
+  await p.evaluate(() => document.getElementById("kb-bell").click());
+  await until(async () => (await p.locator(card).count()) === 0, "closing the bell removes the card");
+  assert.equal(await unread(), 2, "still nothing marked read");
+  // A click still opens the ticket and marks the notification read.
+  await press(p, "#kb-bell");
+  await press(p, mention);
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  assert.equal(await p.textContent("#task-title-h"), "PH-20");
+  await eventually(async () => assert.equal((await p.evaluate(() => globalThis.__fbStub.col("kanbanNotifications").get("n1"))).read, true, "the click marks it read"));
+  await p.done();
+});
+
 T("KB-C2f", "notifications bell: the owner signed in with his second address sees the notifications addressed to his first", async (prof) => {
   const seed = bellSeed();
   seed.user = { email: "owner.alias@example.com", role: "admin" };
