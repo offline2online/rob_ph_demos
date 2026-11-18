@@ -3907,7 +3907,7 @@ const scenarios = [
       };
       s.docs["supportTickets/a1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, please confirm you received this email.", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Got it, Owner, all good.\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },
@@ -3931,39 +3931,6 @@ const scenarios = [
     },
   },
   {
-    // SYkk20srKT7pIKM1HS8Z: Aidan signs "Aidan, Personalisation Hub"; an
-    // optional signature line is a setting, off by default, saved with Save Aidan.
-    name: "Settings › Support inbox › Aidan: the signature line is off by default, and Save Aidan sends it",
-    hash: "#settings/support",
-    seed: () => {
-      const s = only("b1");
-      s.user = { email: "admin@ph.example", role: "admin" };
-      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
-      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
-        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 },
-        aidan: { enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan", signatureLineOn: false, signatureLine: "", sendersMasked: ["o***@example.com"] } };
-      s.supportAnswer = { ok: true };
-      return s;
-    },
-    run: async (c) => {
-      c.at("the Aidan block");
-      await c.visible("#support-aidan-sigline-on", "the signature line switch");
-      assert.strictEqual(await c.page.isChecked("#support-aidan-sigline-on"), false, "off by default");
-      assert.strictEqual(await c.page.inputValue("#support-aidan-sigline"), "");
-      assert.strictEqual(await c.page.getAttribute("#support-aidan-sigline", "placeholder"), "PH's digital assistant");
-      assert.ok((await c.text("#support-aidan-settings")).includes('Add a signature line under "Aidan, Personalisation Hub"'));
-      assert.strictEqual(await c.page.textContent('label[for="support-aidan-sigline"]'), "Signature line");
-      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), true, "nothing changed: Save Aidan is disabled");
-      await c.click("#support-aidan-sigline-on", "the signature line switch");
-      await c.page.fill("#support-aidan-sigline", "PH's digital assistant");
-      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), false, "changed: Save Aidan enables");
-      await c.click('[data-ss-act="save-aidan"]', "Save Aidan");
-      await c.waitText("#support-aidan-status", "Saved.", "the save finishes");
-      const saved = c.supportCalls.find((x) => x.path === "aidan").body;
-      assert.deepStrictEqual([saved.signatureLineOn, saved.signatureLine, saved.enabled], [true, "PH's digital assistant", true]);
-    },
-  },
-  {
     // rVv1x2N8xlKAZs0gpkRx: one answering engine. A platform question tagged
     // for Aidan is answered from the Help Centre by the Support Inbox's own
     // pipeline; the ticket shows the matched articles and the confidence,
@@ -3981,7 +3948,7 @@ const scenarios = [
       };
       s.docs["supportTickets/h1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, how do I set up targeting?", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", helpCentre: true, from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Hi Owner,\n\nOpen the campaign, then Targeting.\n\nHelp Centre article:\nSet up campaign targeting: https://personalisationhub.com/support-centre/article.html?id=art-1\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", helpCentre: true, from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Hi Owner,\n\nOpen the campaign, then Targeting.\n\nHelp Centre article:\nSet up campaign targeting: https://personalisationhub.com/support-centre/article.html?id=art-1\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },
@@ -4035,7 +4002,7 @@ const scenarios = [
       };
       s.docs["supportTickets/c1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["partner@aws.example"], text: "@Aidan, send me a one-pager for CP Group, retail grocery.", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "generate", collateral: true, skillName: "PH Brand", from: "support@ph.example", to: ["owner@example.com"], cc: ["partner@aws.example"], text: "Hi Owner,\n\nAttached is the one-pager for CP Group as a branded PDF, with its Markdown source.\n\nAidan, Personalisation Hub",
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "generate", collateral: true, skillName: "PH Brand", from: "support@ph.example", to: ["owner@example.com"], cc: ["partner@aws.example"], text: "Hi Owner,\n\nAttached is the one-pager for CP Group as a branded PDF, with its Markdown source.\n\nAidan\nAssistant to Rob, Personalisation Hub",
           attachments: [{ name: "cp-group-one-pager.pdf", type: "application/pdf", size: 48000 }, { name: "cp-group-one-pager.md", type: "text/markdown", size: 2100 }], at: t(T0 + 60000) },
       };
       return s;
@@ -4087,7 +4054,7 @@ const scenarios = [
       };
       s.docs["supportTickets/q1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["john@shop.example"], cc: ["aidan@ph.example"], text: "@Aidan, please answer John's question below.\n\nOn Mon, John Client wrote:\n> Hi Rob, how many stores can one campaign target?", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com", "john@shop.example"], cc: [], text: "One campaign can target every store on the account.\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com", "john@shop.example"], cc: [], text: "One campaign can target every store on the account.\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },
