@@ -1,14 +1,14 @@
 // functions/collateral-core.js — Aidan's branded sales collateral
 // (JtkLrEG0aTnC5JfkdPA1): which collateral an instruction asks for, the
 // prospect's facts (industry and country only), the guard that keeps
-// Australian positioning and internal names out, the Markdown -> HTML, the
-// branded page, and the PDF printer's request filter (functions/collateral-pdf.js).
+// Australian positioning, internal names and long dashes out, the page count
+// and file names. The branded page is test/collateral-layout.test.js; the PDF
+// printer (request filter, timeout) is test/collateral-pdf.test.js.
 // Pure: no Firebase, no network, no browser.
 // Run: node test/collateral-core.test.js
 "use strict";
 const assert = require("assert");
 const cc = require("../functions/collateral-core");
-const { allowedRequest } = require("../functions/collateral-pdf");
 
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
@@ -79,12 +79,36 @@ check("guardCollateral: no Sydney/Australia positioning, no internal names, bran
   assert.ok(!g.text.includes("## Made in"), "a heading that places us in Australia goes");
   const by = Object.fromEntries(g.changes.map((c) => [c.rule, c.count]));
   assert.deepStrictEqual([by.australia, by.internal > 0, by.renamed >= 3, by.dashes >= 2], [3, true, true, true]);
-  assert.ok(cc.guardLine(g.changes).startsWith("Removed from the collateral before it was sent: 3 sentences placing Personalisation Hub in Australia"));
+  assert.ok(cc.guardLine(g.changes).startsWith("Removed from the collateral before it was sent: 3 sentences naming Sydney or Australia"));
   assert.strictEqual(cc.guardLine([]), "");
   // An Australian retailer may be named in its own country; we still aren't based there.
   const au = cc.guardCollateral("Kestrel runs 400 stores across Australia. Personalisation Hub was founded in Sydney.", { prospectCountry: "Australia" });
   assert.strictEqual(au.text, "Kestrel runs 400 stores across Australia.");
   assert.deepStrictEqual(cc.guardCollateral("Nothing to change here.", {}), { text: "Nothing to change here.", changes: [] });
+});
+
+check("guardCollateral: no long dash survives, unspaced ones included: 'to' for a range between words, a hyphen otherwise", () => {
+  const g = cc.guardCollateral("Open Monday–Friday with end–to–end service.");
+  assert.strictEqual(g.text, "Open Monday to Friday with end-to-end service.");
+  assert.deepStrictEqual(g.changes, [{ rule: "dashes", count: 3 }]);
+  const cases = {
+    "Open Monday–Friday with end–to–end service": "Open Monday to Friday with end-to-end service",
+    "Trading hours 9am–5pm, Mon–Sat, Q1–Q3": "Trading hours 9am to 5pm, Mon to Sat, Q1 to Q3",
+    "A co–op café–bar": "A co-op café-bar",
+    "Faster—and simpler": "Faster, and simpler",
+    "Faster―and simpler": "Faster, and simpler",
+    "Pilots of 3–5 stores — in weeks": "Pilots of 3 to 5 stores, in weeks",
+    "One side –spaced": "One side -spaced",
+  };
+  for (const [input, want] of Object.entries(cases)) {
+    const out = cc.guardCollateral(input).text;
+    assert.strictEqual(out, want, input);
+    assert.ok(!/[–—―]/.test(out), `no en dash, em dash or horizontal bar left in: ${out}`);
+  }
+  // Title and list markers keep their place; a heading's dash goes too.
+  const md = cc.guardCollateral("# Grocery–ready\n\n- Week–by–week reporting\n- Jan–Mar pilots").text;
+  assert.strictEqual(md, "# Grocery-ready\n\n- Week-by-week reporting\n- Jan to Mar pilots");
+  assert.ok(cc.guardLine([{ rule: "australia", count: 1 }]).includes("1 sentence naming Sydney or Australia"), "the label says what the code removes");
 });
 
 check("collateralSystem: a page budget per format, global positioning, the banned names and the brand skill's CTA left to the layout", () => {
@@ -94,42 +118,6 @@ check("collateralSystem: a page budget per format, global positioning, the banne
   assert.ok(s.includes("PH Core") && s.includes("Retail Media Insights & Analytics Dashboards") && s.includes("Backlog Tracker"));
   assert.ok(/brand_skill/.test(s) && /Do not write a call to action/.test(s) && /never invent statistics/i.test(s) && /revenue/.test(s));
   assert.ok(cc.collateralSystem({ format: cc.FORMATS.deck }).includes("its own page"));
-});
-
-check("markdownToHtml: the title comes out, everything is escaped, only http(s)/mailto links survive", () => {
-  const { title, html } = cc.markdownToHtml("# Win at the shelf\n\nLede with **bold**, *em* and [site](https://personalisationhub.com) <script>alert(1)</script> [bad](javascript:alert(1)).\n\n## Why\n\n- one\n- two\n  continued\n\n1. first\n2. second\n\n> A callout\n\n| A | B |\n|---|---|\n| 1 | <b>2</b> |\n\n---\n\n```\ncode <x>\n```");
-  assert.strictEqual(title, "Win at the shelf");
-  assert.ok(!html.includes("<h1>"), "the title is the layout's headline, not repeated");
-  assert.ok(html.includes("<strong>bold</strong>") && html.includes("<em>em</em>") && html.includes('<a href="https://personalisationhub.com">site</a>'));
-  assert.ok(!/<script|javascript:|<b>/i.test(html) && html.includes("&lt;script&gt;") && html.includes("&lt;b&gt;2&lt;/b&gt;"), html);
-  assert.ok(html.includes("<ul><li>one</li><li>two continued</li></ul>") && html.includes("<ol><li>first</li><li>second</li></ol>"));
-  assert.ok(html.includes("<blockquote>A callout</blockquote>") && html.includes("<th>A</th>") && html.includes("<hr>") && html.includes("<pre>code &lt;x&gt;</pre>"));
-});
-
-check("collateralHtml: the brand skill's layout (light surface, the full-colour logo from the skill, its collateral CSS), the eyebrow, the CTA; no script", () => {
-  const brand = { slug: "ph-brand", files: [
-    { path: "SKILL.md", content: "# Brand" },
-    { path: "logos/ph_logo_white.svg", content: "<svg xmlns='http://www.w3.org/2000/svg'><title>white</title></svg>" },
-    { path: "logos/ph_logo_full_color.svg", content: "<svg xmlns='http://www.w3.org/2000/svg'><title>full</title></svg>" },
-    { path: "templates/collateral.css", content: ".c-eyebrow { color: #C43D82; }</style><script>x</script>" },
-  ] };
-  const html = cc.collateralHtml({ documentMd: "# Grocery that sells\n\nOpening line.\n\n## One\n\nText.", format: cc.FORMATS.overview, industry: "Grocery & Supermarkets", prospect: { name: "CP Group" }, brand });
-  assert.ok(html.includes("<h1>Grocery that sells</h1>") && html.includes('<p class="c-lede">Opening line.</p>'));
-  assert.ok(html.includes("Platform overview · Grocery &amp; Supermarkets") && html.includes("Prepared for CP Group"));
-  const logo = html.match(/src="data:image\/svg\+xml;base64,([^"]+)"/);
-  assert.ok(logo && Buffer.from(logo[1], "base64").toString().includes("<title>full</title>"), "the full-colour logo from the brand skill, never redrawn");
-  assert.ok(html.includes(".c-eyebrow { color: #C43D82; }") && !/<\/style><script/i.test(html), "the skill's collateral CSS, unable to close the style element");
-  assert.ok(html.includes("Try free on AWS Marketplace →") && html.includes("Or book a demo at personalisationhub.com") && html.includes(cc.BRAND.trialUrl.replace(/&/g, "&amp;")));
-  assert.ok(html.includes("#F5F7FB") && html.includes("#1C2540") && html.includes("Kantumruy Pro") && html.includes("#0F7A9A"));
-  assert.ok(!/[–—]/.test(html), "no long dash in the layout's own copy");
-  assert.ok(!/<script/i.test(html.replace(/&lt;script/g, "")));
-  assert.ok(cc.collateralHtml({ documentMd: "Body only.", title: "From the title", format: cc.FORMATS["one-pager"] }).includes("<h1>From the title</h1>"));
-  assert.ok(cc.collateralHtml({ documentMd: "x", format: cc.FORMATS.deck }).includes("A4 landscape"));
-  assert.deepStrictEqual(cc.brandAssets({ files: [{ path: "logos/ph_logo_full_color.svg", content: "not an svg" }] }), { logoSvg: "", css: "" });
-  assert.ok(cc.footerTemplate().includes("pageNumber") && cc.footerTemplate().includes("personalisationhub.com"));
-  assert.deepStrictEqual(cc.promptFiles(brand).files.map((f) => f.path), ["SKILL.md"], "the model reads the guidelines, not the logo files or CSS");
-  assert.strictEqual(cc.brandSkillIn([{ slug: "x" }, { slug: "ph-brand", id: "b" }]).id, "b");
-  assert.strictEqual(cc.brandSkillIn([{ slug: "x" }]), null);
 });
 
 check("helpCentreBlock: published articles on the website, the industry's first, within a budget", () => {
@@ -153,17 +141,6 @@ check("pdfPageCount, isPdf, fileNames", () => {
   assert.strictEqual(cc.isPdf(Buffer.from("not a pdf")), false);
   assert.deepStrictEqual(cc.fileNames("cp-group-platform-overview.md", "x"), { md: "cp-group-platform-overview.md", pdf: "cp-group-platform-overview.pdf" });
   assert.deepStrictEqual(cc.fileNames("", "Grocery that sells"), { md: "grocery-that-sells.md", pdf: "grocery-that-sells.pdf" });
-});
-
-check("collateral-pdf allowedRequest: the printed page reaches only data: URIs and the brand font", () => {
-  assert.strictEqual(allowedRequest("data:image/svg+xml;base64,AAAA"), true);
-  assert.strictEqual(allowedRequest("https://fonts.googleapis.com/css2?family=Kantumruy+Pro"), true);
-  assert.strictEqual(allowedRequest("https://fonts.gstatic.com/s/x.woff2"), true);
-  assert.strictEqual(allowedRequest("http://fonts.gstatic.com/s/x.woff2"), false);
-  assert.strictEqual(allowedRequest("https://evil.example/x.png"), false);
-  assert.strictEqual(allowedRequest("https://fonts.googleapis.com.evil.example/"), false);
-  assert.strictEqual(allowedRequest("http://169.254.169.254/computeMetadata/v1/"), false);
-  assert.strictEqual(allowedRequest("file:///etc/passwd"), false);
 });
 
 (async () => {

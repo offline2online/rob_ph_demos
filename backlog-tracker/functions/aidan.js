@@ -93,6 +93,7 @@ const core = require("./support-core");
 const ac = require("./aidan-core");
 const answerCore = require("./answer-core");
 const cc = require("./collateral-core");
+const cl = require("./collateral-layout");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -589,17 +590,18 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     try { return cc.helpCentreBlock(await helpCentre.articles(), industry); }
     catch (err) { logger.warn("support: Aidan couldn't read the Help Centre for collateral", { error: errText(err) }); return ""; }
   }
-  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null }) {
-    const settings = await readSettings();
-    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+  // Write: the prompt (brand skill, chosen skill, kept references, the
+  // prospect's facts, the Help Centre, the thread content), the model call and
+  // the guard. -> { title, replyText, docMd: { text, changes }, files, industry, prospect, hasCollateralSkill }
+  async function writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content = null }) {
     const [prospect, internalNames] = await Promise.all([prospectOf(instruction, client), projectNames()]);
     const industry = cc.industryFor(instruction, prospect);
     const helpText = await helpCentreText(industry);
     const refs = await referencesFor(skill.id);
-    const own = skill.id !== brand.id;
+    const hasCollateralSkill = skill.id !== brand.id;
     const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}`
       + `\n\n<brand_skill name="${String(brand.name || brand.slug || "").replace(/"/g, "")}">\n${await skillFiles(cc.promptFiles(brand))}\n</brand_skill>`
-      + (own ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
+      + (hasCollateralSkill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
       + (refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : "");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${prospect && prospect.name ? `\nFor: ${prospect.name}` : client ? `\nFor: ${client}` : ""}\nCollateral: ${format.label}`;
     const blocks = contentBlocks({ header, email, inputs, skipped });
@@ -616,39 +618,23 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const docMd = cc.guardCollateral(written.documentMd, guard);
     const title = cc.guardCollateral(written.title, guard).text || format.label;
     const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
-    const removed = docMd.changes;
-    const files = cc.fileNames(written.fileName, title);
-    const facts2 = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
-    const mdSize = Buffer.byteLength(docMd.text, "utf8");
-    // The branded PDF, printed on the server. Without it nothing is sent.
-    let printed = null;
-    let failure = "";
-    if (!pdfRenderer) failure = "the PDF printer isn't available on the server";
-    else {
-      try {
-        const html = cc.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand });
-        printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS });
-        if (!printed || !cc.isPdf(printed.pdf)) { printed = null; failure = "the printer returned no PDF"; }
-      } catch (err) { failure = errText(err); }
-    }
-    if (!printed) {
-      // The Markdown is kept on the thread as an internal note, so a person can finish it.
-      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
-        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.md}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
-      return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
-        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The Markdown is on the thread as an internal note.`,
-        document: { name: files.md, title, size: mdSize }, collateral: Object.assign({}, facts2, { pdf: null, markdown: { name: files.md, size: mdSize }, removed }) }, needsHuman: true },
-      "Aidan wrote the collateral but couldn't make the PDF, so a person takes it.");
-    }
-    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
-    if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
-    const pdfSize = printed.pdf.length;
-    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
-      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
-      fields: { kind: "generate", collateral: true, skillId: skill.id, skillName: skill.name || skill.slug } });
-    // Filed as a reference example for the skill: the Markdown as its text, the
-    // PDF in Storage. A filing failure is noted; the email has already gone.
+    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill };
+  }
+  // Print: the branded page, printed on the server. -> { printed, failure }:
+  // `printed` is { pdf, pages } or null, and then `failure` says why.
+  async function printCollateral({ docMd, title, format, industry, prospect, brand }) {
+    if (!pdfRenderer) return { printed: null, failure: "the PDF printer isn't available on the server" };
+    try {
+      const html = cl.collateralHtml({ documentMd: docMd.text, title, format, industry, prospect, brand });
+      const printed = await pdfRenderer(html, { format, timeoutMs: COLLATERAL_RENDER_TIMEOUT_MS });
+      if (!printed || !cc.isPdf(printed.pdf)) return { printed: null, failure: "the printer returned no PDF" };
+      return { printed, failure: "" };
+    } catch (err) { return { printed: null, failure: errText(err) }; }
+  }
+  // Keep example: filed as a reference example for the skill, the Markdown as
+  // its text, the PDF in Storage. A filing failure is noted; the email has
+  // already gone. -> { referenceId, storagePath } ("" when not kept).
+  async function keepCollateralExample({ ticketId, skill, format, industry, title, docMd, files, printed, sentId, mdSize }) {
     const refId = `ref-${now().getTime()}-${crypto.randomBytes(4).toString("hex")}`;
     let storagePath = "";
     let referenceId = "";
@@ -661,20 +647,50 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       await db.collection(REFERENCES).doc(refId).set({
         skillId: skill.id, skillSlug: skill.slug || "", skillName: skill.name || "", ticketId, gmailId: sentId,
         subject: core.clip(`${format.label}: ${title}`, 500), text: core.clip(docMd.text, REFERENCE_TEXT_BUDGET), example: true, format: format.key, industry,
-        files: [Object.assign({ name: files.pdf, kind: "pdf", size: pdfSize, pages: printed.pages || 0 }, storagePath ? { storagePath } : {}), { name: files.md, kind: "text", size: mdSize }],
+        files: [Object.assign({ name: files.pdf, kind: "pdf", size: printed.pdf.length, pages: printed.pages || 0 }, storagePath ? { storagePath } : {}), { name: files.md, kind: "text", size: mdSize }],
         addedBy: "aidan", source: "aidan-collateral", createdAt: now(),
       });
       referenceId = refId;
     } catch (err) { logger.error("support: Aidan couldn't keep the collateral as a reference", { ticketId, error: errText(err) }); }
+    return { referenceId, storagePath };
+  }
+  // The whole run: write, print, send (reply-all with the PDF and the
+  // Markdown), keep the example, file it on the ticket. No PDF, no email.
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null }) {
+    const settings = await readSettings();
+    if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
+    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
+    const removed = docMd.changes;
+    const collateralFacts = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
+    const mdSize = Buffer.byteLength(docMd.text, "utf8");
+    // The branded PDF, printed on the server. Without it nothing is sent.
+    const { printed, failure } = await printCollateral({ docMd, title, format, industry, prospect, brand });
+    if (!printed) {
+      // The Markdown is kept on the thread as an internal note, so a person can finish it.
+      await tickets().doc(ticketId).collection("messages").doc(`aidan-draft-${now().getTime()}`).set({ direction: "note", by: "aidan", at: now(),
+        text: core.clip(`Aidan's ${format.label.toLowerCase()} (${files.md}), not sent because the PDF couldn't be made:\n\n${docMd.text}`, 100000) });
+      return finish({ aidan: { status: "needs-person", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client,
+        reason: `The branded PDF couldn't be made (${core.clip(failure, 200)}), so nothing was sent. The Markdown is on the thread as an internal note.`,
+        document: { name: files.md, title, size: mdSize }, collateral: Object.assign({}, collateralFacts, { pdf: null, markdown: { name: files.md, size: mdSize }, removed }) }, needsHuman: true },
+      "Aidan wrote the collateral but couldn't make the PDF, so a person takes it.");
+    }
+    const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
+    if (!recipients.to.length) throw new Error("There is no one to reply to.");
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
+    const pdfSize = printed.pdf.length;
+    const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
+      attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
+      fields: { kind: "generate", collateral: true, skillId: skill.id, skillName: skill.name || skill.slug } });
+    const { referenceId, storagePath } = await keepCollateralExample({ ticketId, skill, format, industry, title, docMd, files, printed, sentId, mdSize });
     const n = recipients.to.length + recipients.cc.length;
     const pages = printed.pages || 0;
     const skillName = skill.name || skill.slug;
     return finish({
       aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
-        collateral: Object.assign({}, facts2, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
+        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${own ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
   }
 
   // An "answer" run: reply to everyone on the email (the same recipients as a

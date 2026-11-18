@@ -231,7 +231,7 @@ check("Aidan's branded collateral (JtkLrEG0aTnC5JfkdPA1): what was written and f
   assert.strictEqual(c.about, "One-pager · Grocery & Supermarkets · for CP Group (industry and country from Prospects (TAM))");
   assert.deepStrictEqual(c.files, [{ name: "cp-group.pdf", detail: "Branded PDF, 1 page, 47 KB" }, { name: "cp-group.md", detail: "Markdown source, 2 KB" }]);
   assert.deepStrictEqual([c.kept, c.unsent], [true, false]);
-  assert.deepStrictEqual(c.removed, ["2 sentences placing Personalisation Hub in Australia", "1 sentence naming an internal project"], "known rules with a count only");
+  assert.deepStrictEqual(c.removed, ["2 sentences naming Sydney or Australia", "1 sentence naming an internal project"], "known rules with a count only");
   assert.strictEqual(aidanView(a).line, "Aidan wrote the branded one-pager with the PH Brand skill and replied to 2 people on this email with the PDF and its Markdown source attached.");
   const unsent = aidanCollateral({ status: "needs-person", collateral: { formatLabel: "Platform overview", industry: "", prospect: null, pdf: null, markdown: { name: "x.md", size: 10 } } });
   assert.deepStrictEqual([unsent.about, unsent.unsent, unsent.kept, unsent.files.length], ["Platform overview", true, false, 1]);

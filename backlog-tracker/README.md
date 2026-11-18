@@ -3201,8 +3201,9 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
-| `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no Sydney/Australia positioning, no internal names, no long dashes), Markdown to safe HTML, the branded page laid out by the brand skill (`collateralHtml`), the page footer and page count (`test/collateral-core.test.js`) |
-| `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most (`test/collateral-render.test.mjs` prints the same page in Chromium) |
+| `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
+| `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
+| `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
 | `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
@@ -3429,13 +3430,17 @@ thread. A run:
   industry is the one the instruction names, else the record's. It reads no
   other console data, so it goes to everyone on the email like any write.
   Before it is printed, what the model wrote is cleaned in code
-  (`guardCollateral`): a sentence that places Personalisation Hub in Sydney or
-  Australia is dropped (the company is presented as global; an Australian
-  prospect's own country may still be named), so is one naming an internal
-  project (the console's project names and the brand skill's list), the
-  brand skill's renames are applied ("PH Core" → "Personalisation Hub"), and
-  long dashes go. It is then printed to an A4 PDF on the server
-  (`functions/collateral-pdf.js`) from a page laid out by the brand skill: its
+  (`guardCollateral`): any sentence naming Sydney or Australia is dropped
+  (the company is presented as global; when the prospect is Australian, its
+  own country may still be named and only a sentence that places
+  Personalisation Hub there goes), so is one naming an internal project (the
+  console's project names and the brand skill's list), the brand skill's
+  renames are applied ("PH Core" → "Personalisation Hub"), and no long dash
+  survives (a comma, "to" in a range such as "Monday to Friday", a hyphen
+  between other words such as "end-to-end"). It is then printed to an A4 PDF
+  on the server (`functions/collateral-pdf.js`; a print that runs past its
+  minute has Chromium killed, and goes to a person) from a page laid out by
+  the brand skill (`functions/collateral-layout.js`): its
   light-surface colours, Kantumruy Pro, the thin four-colour bar once, its
   full-colour logo file, an eyebrow with the format and industry, "Prepared
   for <company>", one teal accent, a footer with personalisationhub.com and

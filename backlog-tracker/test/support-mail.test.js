@@ -1665,7 +1665,7 @@ check("Aidan collateral: \"send me a one-pager for <prospect>\" replies to every
   assert.ok(t.stored.some((x) => x.path === `skill-references/b1/${c.referenceId}/cp-group-one-pager.pdf` && x.type === "application/pdf"), "the PDF kept in Storage beside it");
   const out = messagesOf(t, "t-c1").find((m) => m.direction === "out");
   assert.deepStrictEqual([out.collateral, out.attachments.map((a) => [a.name, a.type])], [true, [["cp-group-one-pager.pdf", "application/pdf"], ["cp-group-one-pager.md", "text/markdown"]]]);
-  assert.ok(messagesOf(t, "t-c1").some((m) => m.direction === "event" && /branded one-pager cp-group-one-pager\.pdf \(1 page\)/.test(m.text) && /3 sentences|placing Personalisation Hub in Australia/.test(m.text)));
+  assert.ok(messagesOf(t, "t-c1").some((m) => m.direction === "event" && /branded one-pager cp-group-one-pager\.pdf \(1 page\)/.test(m.text) && /3 sentences|naming Sydney or Australia/.test(m.text)));
 });
 
 check("Aidan collateral: a platform overview in pharmacy with a named collateral skill is multi-page, uses both skills, and the next run reads the kept example", async () => {

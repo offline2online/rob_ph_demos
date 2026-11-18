@@ -1,7 +1,7 @@
 // Aidan's branded collateral printed to PDF in a real Chromium
-// (JtkLrEG0aTnC5JfkdPA1): the page functions/collateral-core.js builds,
+// (JtkLrEG0aTnC5JfkdPA1): the page functions/collateral-layout.js builds,
 // printed with the same options functions/collateral-pdf.js gives the server's
-// Chromium (cc.PDF_OPTIONS), with JavaScript off and every request but data:
+// Chromium (cl.PDF_OPTIONS), with JavaScript off and every request but data:
 // URIs refused (the web font is refused too, so the wider fallback stack gives
 // a conservative measure, as the brand skill's testing section asks).
 //
@@ -18,6 +18,7 @@ import { chromium } from "playwright-core";
 
 const require = createRequire(import.meta.url);
 const cc = require("../functions/collateral-core.js");
+const cl = require("../functions/collateral-layout.js");
 
 const LOGO = `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="40" viewBox="0 0 200 40"><rect x="0" y="0" width="6" height="40" fill="#169BC2"/><rect x="0" y="0" width="40" height="6" fill="#EF60A7"/><rect x="34" y="0" width="6" height="40" fill="#FE9226"/><rect x="0" y="34" width="40" height="6" fill="#60D838"/><text x="50" y="28" font-size="20" fill="#7B7B7B">PersonalisationHub</text></svg>`;
 const BRAND = { id: "b1", slug: "ph-brand", name: "PH Brand", files: [{ path: "SKILL.md", content: "# Brand" }, { path: "logos/ph_logo_full_color.svg", content: LOGO }] };
@@ -62,9 +63,9 @@ async function open(html) {
   return { page, context, blocked };
 }
 async function print(md, format, extra = {}) {
-  const html = cc.collateralHtml(Object.assign({ documentMd: md, format, industry: "Grocery & Supermarkets", prospect: { name: "CP Group" }, brand: BRAND }, extra));
+  const html = cl.collateralHtml(Object.assign({ documentMd: md, format, industry: "Grocery & Supermarkets", prospect: { name: "CP Group" }, brand: BRAND }, extra));
   const { page, context, blocked } = await open(html);
-  const pdf = Buffer.from(await page.pdf(cc.PDF_OPTIONS(format)));
+  const pdf = Buffer.from(await page.pdf(cl.PDF_OPTIONS(format)));
   // Measured as printed: the print stylesheet at the page's content width.
   await page.emulateMedia({ media: "print" });
   const contentWidth = format.landscape ? Math.round(((297 - 36) / 25.4) * 96) : Math.round(((210 - 36) / 25.4) * 96);

@@ -3876,7 +3876,7 @@ const scenarios = [
       assert.deepStrictEqual(parts.map((p) => p[0]), ["Collateral", "Files", "Kept", "Removed"]);
       assert.strictEqual(parts[0][1], "One-pager · Grocery & Supermarkets · for CP Group (industry and country from Prospects (TAM))");
       assert.ok(parts[1][1].includes("cp-group-one-pager.pdf Branded PDF, 1 page, 47 KB") && parts[1][1].includes("cp-group-one-pager.md Markdown source, 2 KB"), parts[1][1]);
-      assert.ok(parts[3][1].includes("1 sentence placing Personalisation Hub in Australia"), parts[3][1]);
+      assert.ok(parts[3][1].includes("1 sentence naming Sydney or Australia"), parts[3][1]);
       assert.strictEqual(await c.page.locator(".support-aidan-collateral button, .support-aidan-collateral a, .support-aidan-collateral input").count(), 0, "text only: no control to tap");
       assert.ok((await c.text("#support-thread")).includes("cp-group-one-pager.pdf, cp-group-one-pager.md"), "both files on Aidan's sent reply");
       c.at("at phone width it stays inside the ticket");

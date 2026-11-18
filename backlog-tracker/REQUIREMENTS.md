@@ -6908,12 +6908,19 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   internal project (the console's project names and a fixed list: PH Agent
   Console, Backlog Tracker, Staff Kanban, Concept Incubator …) is dropped;
   the brand skill's renames are applied (PH Core, Autonomous Shopfront,
-  Context360, Live Visitor Profile, menu board project); long dashes become
-  commas, or "to" in a range. The counts are kept on the ticket.
+  Context360, Live Visitor Profile, menu board project); no long dash (en
+  dash, em dash, horizontal bar) survives: a spaced one or an em dash becomes
+  a comma, one in a range "to" ("3 to 5", "Monday to Friday", "9am to 5pm"),
+  and one between other words a hyphen ("end-to-end"). The counts are kept on
+  the ticket, and the Aidan tab's Removed row says "sentences naming Sydney or
+  Australia" for the first rule.
 - **SUP-AID-33** The collateral is printed to PDF on the server
   (`functions/collateral-pdf.js`, headless Chromium, JavaScript off, no
-  request but data: URIs and the brand font, 60 seconds at most) from a page
-  laid out by the brand skill: light surface, Kantumruy Pro with its fallback
+  request but data: URIs and the brand font, 60 seconds at most; at the limit
+  Chromium is killed and closed before the run is told, so a hung print never
+  leaves a browser running) from a page
+  laid out by the brand skill (`functions/collateral-layout.js`): light
+  surface, Kantumruy Pro with its fallback
   stack, the four-colour bar once, the skill's full-colour logo file (never
   redrawn), an eyebrow with the format and industry, "Prepared for
   <company>", one teal accent, the CTA "Try free on AWS Marketplace →"

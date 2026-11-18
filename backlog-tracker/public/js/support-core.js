@@ -164,7 +164,7 @@ export function aidanView(aidan) {
 // the skill, and what was taken out of it before it was sent. null for any
 // other run. { formatLabel, about, files: [{ name, detail }], kept, removed: [string], unsent }
 const COLLATERAL_REMOVED = {
-  australia: (n) => `${n} sentence${n === 1 ? "" : "s"} placing Personalisation Hub in Australia`,
+  australia: (n) => `${n} sentence${n === 1 ? "" : "s"} naming Sydney or Australia`,
   internal: (n) => `${n} sentence${n === 1 ? "" : "s"} naming an internal project`,
   renamed: (n) => `${n} internal name${n === 1 ? "" : "s"} renamed`,
   dashes: (n) => `${n} long dash${n === 1 ? "" : "es"} replaced`,
