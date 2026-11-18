@@ -393,13 +393,18 @@ try {
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the switch changed: Save Aidan enables");
     await page.check("#support-aidan-on");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "switched back: disabled again");
+    // The signature line (SYkk20srKT7pIKM1HS8Z): off by default, and a change to it enables Save Aidan.
+    assert.deepStrictEqual([await page.isChecked("#support-aidan-sigline-on"), await page.inputValue("#support-aidan-sigline")], [false, ""], "off by default");
+    await page.check("#support-aidan-sigline-on");
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the signature switch changed: Save Aidan enables");
+    await page.fill("#support-aidan-sigline", "PH's digital assistant");
     await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
     await page.click('[data-ss-act="save-aidan"]');
     await until(() => o.supportCalls.some((c) => c.path === "aidan"), "the Aidan call");
     await until(async () => (await page.textContent("#support-aidan-status")) === "Saved.", "the Aidan save to finish");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "saved: Save Aidan is disabled again");
     const saved = o.supportCalls.find((c) => c.path === "aidan").body;
-    assert.deepStrictEqual([saved.enabled, saved.allowedSenders], [true, "owner@example.com, owner.alias@example.com"]);
+    assert.deepStrictEqual([saved.enabled, saved.allowedSenders, saved.signatureLineOn, saved.signatureLine], [true, "owner@example.com, owner.alias@example.com", true, "PH's digital assistant"]);
     const a = await audit(page, "#support-settings");
     assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
     assert.deepStrictEqual(a.small, [], "touch targets under 44px");
@@ -410,6 +415,15 @@ try {
     assert.ok((await page.textContent("#support-aidan-settings")).includes("2 allowed senders"));
     assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
     assert.ok(await page.locator("#support-aidan-on").isDisabled());
+    assert.ok(await page.locator("#support-aidan-sigline-on").isDisabled() && await page.locator("#support-aidan-sigline").isDisabled(), "an editor sees the signature line and can't change it");
+  });
+  await run("Aidan's settings: a saved signature line is shown switched on", { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan", signatureLineOn: true, signatureLine: "PH's digital assistant", sendersMasked: ["o***@example.com"] }) }), width: 390, hash: "#settings/support" }, async (page) => {
+    await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
+    assert.deepStrictEqual([await page.isChecked("#support-aidan-sigline-on"), await page.inputValue("#support-aidan-sigline")], [true, "PH's digital assistant"]);
+    const a = await audit(page, "#support-settings");
+    assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
+    assert.deepStrictEqual(a.small, [], "touch targets under 44px");
+    await shot(page, "aidan-settings-signature-390");
   });
   // Selecting several threads (b3NmU4mdmiGOZgHLURgK): a checkbox on every row and one above the list, in all
   // three inboxes; the selection bar's actions go to the server in one call, with one result message.

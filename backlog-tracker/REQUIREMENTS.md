@@ -6462,6 +6462,10 @@ Since 18 Nov 2026 (ticket IJhIIzTxOJyZVCzzYggZ) Aidan reads the console with
 one Code Mode run by default, and files a Backlog ticket (or comments on a
 matching open one) when a run did not fully or well meet its request
 (SUP-AID-36 to 41).
+Since 18 Nov 2026 (ticket SYkk20srKT7pIKM1HS8Z) the body of every reply is
+in Aidan's voice, a slightly quirky tech-marketing character kept in the
+`aidan-voice` skill, and he signs "Aidan, Personalisation Hub"
+(SUP-AID-42 to 47).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6565,7 +6569,7 @@ matching open one) when a run did not fully or well meet its request
   in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
-  "Aidan", signed as Rob's assistant, with the document attached as a
+  "Aidan", signed "Aidan, Personalisation Hub" (SUP-AID-47), with the document attached as a
   Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
   add, update, edit, fix, turn, convert, include, attach or compile
   something is a write too. "This email", "your reply" and "by email" name
@@ -7053,6 +7057,78 @@ matching open one) when a run did not fully or well meet its request
   past that the timeline says none was filed. Comments are not capped. A
   failure to file never changes the run's own result: it is logged and
   noted on the timeline.
+- **SUP-AID-42** (18 Nov 2026, ticket SYkk20srKT7pIKM1HS8Z) **Aidan's
+  voice.** Aidan has one consistent character in the body of his email
+  replies: slightly quirky, a developer advocate (warm, a bit nerdy, loves
+  a concrete example, enthusiastic about retail media) with a dash of
+  agency planner (sharp, has a point of view, quick with a retail or media
+  analogy, never corporate). The character brief and its example replies
+  are the **`aidan-voice` skill** in the skills library
+  (`skill-sources/aidan-voice.md` is the repo copy), so they are tuned from
+  Settings › Skills without a deploy. The first run that finds no skill
+  with that slug adds it as first written (insert-only, document id
+  `aidan-voice`, `createdVia: "aidan"`). The voice skill is never a skill a
+  document is written with: it is left out of the list a run chooses from
+  and is not "a skill named in the instruction".
+- **SUP-AID-43** **A layer, never a rewrite.** The voice changes delivery
+  only, never the facts. Whatever produced the reply (the Help Centre
+  engine, the console, a skill, the email) writes it first, substance
+  first, in short plain sentences with "personalisation" spelled with an S.
+  One further model call (`inVoice` in `functions/aidan.js`, the rules in
+  `functions/aidan-voice.js`; 20 seconds, never retried) is shown the
+  finished body and may return **one short sentence**, which is added as
+  the last paragraph, after the substance and any article links and before
+  the sign-off. So there is at most one quirk per email and it is never in
+  the middle of the facts. The sentence is dropped when it has a figure, a
+  link, an address or an emoji in it, is longer than 220 characters or two
+  sentences, mentions that Aidan is an AI, or touches a sensitive subject
+  (`cleanQuirk`). When the voice fails, times out or has nothing natural to
+  add, the reply is sent plain: a reply is never held up by its voice. It
+  applies to every recipient, internal or external. The fixed "I can only
+  read the console" reply (SUP-AID-19) is not passed to it. The ticket
+  records the outcome in `aidan.voice` (`{quirk: true}`, or `{quirk:
+  false, reason}`).
+- **SUP-AID-44** **Email body only.** The voice is given only the body of
+  the email. An attached document, one-pager, deck or other collateral
+  (SUP-AID-6, SUP-AID-17, SUP-AID-30 to 34) is never passed to it and
+  follows its skill and the PH brand voice with no quirk; the write prompt
+  says so too. On a write run only the cover note gets the aside.
+- **SUP-AID-45** **No quirk on anything sensitive.** A complaint, an
+  outage, a fault, or anything commercial such as pricing or a contract
+  gets a plain reply. It is decided from the words of the instruction, the
+  subject, the email's new text, the thread content the run read
+  (SUP-AID-26) and the reply itself (`sensitiveReason`),
+  before any model is asked, and the voice call is then not made. The
+  voice call can also judge an email sensitive itself, with the same
+  result. The word lists are broad on purpose: a false match costs one
+  aside.
+- **SUP-AID-46** **Asked whether he is an AI, he says yes.** Aidan does not
+  volunteer that he is an AI (the prompts say so, and an aside that
+  mentions it is dropped). When the instruction asks whether he is a bot,
+  an AI or a real person (`asksIfAi`), it is his own to answer and is not
+  put to the Help Centre; the reply must say yes plainly, in character
+  (for example "Guilty. I'm PH's AI assistant, which is why I reply this
+  fast and never need coffee."). This holds for every kind of reply,
+  including the cover note of a write or of collateral (the attached
+  document is untouched), and whether or not the voice call runs. In code
+  (`ensureAiDisclosure`, from `inVoice`): a reply that already says yes is
+  sent as written; one that dodges gets that line put first; a sentence
+  that denies it is taken out, the rest of the reply (the substance) is
+  kept and the line is put first; and when the model has nothing to say to
+  a short instruction (80 characters) that asks only that, the line is the
+  answer. That yes is the email's one touch of character, so no aside is
+  added. On an email that gets no quirk (SUP-AID-45) the yes is the plain
+  "Yes, I'm Personalisation Hub's AI assistant." instead. The ticket
+  records `aidan.voice.aiAsked: true`.
+- **SUP-AID-47** **Signature.** Every Aidan email is signed "Aidan,
+  Personalisation Hub" (the sender name, then the company). **Settings ›
+  Support inbox › Aidan** has an optional **signature line** (for example
+  "PH's digital assistant"): a switch, off by default, and the line's text
+  (one line, 80 characters). Switched on, the line is added under the
+  signature; switched off, the text is kept and not used. It is saved by an
+  admin with **Save Aidan** (`signatureLineOn`, `signatureLine` in
+  `supportSecrets/aidan`, returned by `/v1/status`), cannot be switched on
+  empty, and needs no deploy.
 
 ### Connecting
 
