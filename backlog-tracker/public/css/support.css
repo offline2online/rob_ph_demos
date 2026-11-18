@@ -89,18 +89,6 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-draft-sources a { color: var(--primary-text); }
 /* An answer Aidan took from the Help Centre: its confidence, then the articles it was written from. */
 .support-aidan-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 8px 0 0; }
-/* Which part of the email Aidan acted on (the instruction) and which it only read (the content). */
-.support-aidan-parts { margin: 10px 0 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
-.support-aidan-part { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 4px 12px; padding: 4px 0; }
-.support-aidan-part + .support-aidan-part { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
-.support-aidan-part dt { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 500; color: var(--text-muted); }
-.support-aidan-part dt .material-symbols-outlined { font-size: 16px; }
-.support-aidan-part dd { margin: 0; overflow-wrap: anywhere; line-height: 1.45; }
-.support-aidan-part small { display: block; margin-top: 2px; font-size: 12px; color: var(--text-muted); }
-.support-aidan-quote { display: block; margin-top: 4px; padding-left: 8px; border-left: 3px solid var(--border); color: var(--text-muted); quotes: none; }
-.support-aidan-ignored dt, .support-aidan-ignored dt .material-symbols-outlined { color: var(--danger); }
-.support-aidan-ignored ul { margin: 4px 0 0; padding-left: 18px; color: var(--text-muted); }
-@media (max-width: 640px) { .support-aidan-part { grid-template-columns: minmax(0, 1fr); } }
 .support-draft-actions, .support-send { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .support-faq { margin-top: 10px; }
 .support-faq .um-search { display: block; max-width: none; }

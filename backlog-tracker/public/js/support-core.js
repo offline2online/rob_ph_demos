@@ -136,28 +136,6 @@ export function aidanView(aidan) {
   return { badge: s.badge, tone: s.tone, line, kind: AIDAN_KINDS[a.kind] || "", helpCentre };
 }
 
-// Which part of the email was the instruction and which the content
-// (functions/aidan-core.js → threadContent, OrkZBBjz9RM5DY54azIG): when the
-// instruction refers to the thread ("answer John's question below"), the
-// quoted or forwarded part and the thread's earlier emails were read as
-// content, never as instructions; anything in them that looked like an
-// instruction was ignored. null when the run read no thread content.
-// { instruction, content: { line, preview }, ignored: [string] }
-export function aidanParts(aidan) {
-  const a = aidan && typeof aidan === "object" && AIDAN_STATES[aidan.status] ? aidan : null;
-  if (!a || !a.instruction) return null;
-  const c = a.content && typeof a.content === "object" ? a.content : null;
-  if (!c && !a.refersToThread) return null;
-  let line = "The quoted email and the earlier emails on this thread will be read as content when Aidan runs.";
-  if (c) {
-    const earlier = Math.max(0, Number(c.earlierCount) || 0);
-    const what = [Number(c.quotedChars) > 0 ? "the quoted or forwarded email" : "", earlier ? `${earlier} earlier email${earlier === 1 ? "" : "s"} on this thread` : ""].filter(Boolean).join(" and ");
-    line = `Aidan read ${what || "the thread"} as content to answer from, never as instructions.`;
-  }
-  const ignored = c && Array.isArray(c.ignored) ? c.ignored.filter((x) => typeof x === "string" && x.trim()).slice(0, 3) : [];
-  return { instruction: String(a.instruction), content: { line, preview: c && typeof c.preview === "string" ? c.preview : "" }, ignored };
-}
-
 // What the Aidan tab says about a thread: always a state. A thread Aidan was
 // never asked about reads "no action", and why.
 export function aidanThreadState(aidan) {

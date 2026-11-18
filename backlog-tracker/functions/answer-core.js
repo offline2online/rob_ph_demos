@@ -45,28 +45,21 @@ function publishedArticles(rows, cats) {
 }
 
 // The email as both steps see it: who sent it, the subject, and the thread
-// (quoted history removed, newest last). A message marked `verbatim` is read
-// as it is, history and all, up to twice the length: it is the quoted
-// question Aidan was asked to answer (questionFromEmail's `content`), already
-// cut from its email, so removing "history" from it would remove the question.
+// (quoted history removed, newest last).
 function emailBlock(ticket, messages) {
   const thread = (messages || []).filter((m) => m.direction === "in" || m.direction === "out").slice(-8).map((m) =>
-    `[${m.direction === "in" ? "customer" : "support"}]\n${m.verbatim ? core.clip(String(m.text || ""), 12000) : core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
+    `[${m.direction === "in" ? "customer" : "support"}]\n${core.clip(core.stripQuoted(m.text), 6000)}`).join("\n\n---\n\n");
   return `From: ${ticket.customerName || "(name unknown)"} <${ticket.customerEmail || ""}>\nSubject: ${ticket.subject || "(no subject)"}\n\n<email_thread>\n${thread}\n</email_thread>`;
 }
 
 // One email as the engine's input, for a caller that has no Support Inbox
 // ticket to hand (Aidan, scripts/support-eval.js): the same { ticket,
 // messages } the Support Inbox passes for a customer's first email. Only that
-// one email is read, never the rest of its thread, unless `content` is given:
-// when Aidan is asked to answer a question on the thread ("answer John's
-// question below", OrkZBBjz9RM5DY54azIG), `content` is that quoted or
-// forwarded question (and the thread's earlier emails), read first and as it
-// is, and `text` is then the asker's new text only.
-function questionFromEmail({ fromName = "", fromEmail = "", subject = "", text = "", content = "" } = {}) {
+// one email is read, never the rest of its thread.
+function questionFromEmail({ fromName = "", fromEmail = "", subject = "", text = "" } = {}) {
   return {
     ticket: { subject: subject || "(no subject)", customerEmail: fromEmail, fromEmail, customerName: fromName || "" },
-    messages: [...(content ? [{ direction: "in", text: String(content), verbatim: true }] : []), { direction: "in", text: String(text || "") }],
+    messages: [{ direction: "in", text: String(text || "") }],
   };
 }
 

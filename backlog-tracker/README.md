@@ -3375,38 +3375,6 @@ thread. A run:
   plan for Kestrel", "create a FAQ for the client", "approve this" or
   "archive this email" are not refused, and "open the README and summarise
   it" or "update me on …" is a read (REQUIREMENTS SUP-AID-19);
-- **answers a question on the thread: instruction vs content** (18 Nov 2026,
-  ticket OrkZBBjz9RM5DY54azIG). Rob's main use: a customer emails Rob a
-  question, and Rob replies or forwards with aidan@ in Cc, "@Aidan, please
-  check John's question below and provide a response". The **instruction**
-  is still only the allowed sender's new text, read and gated exactly as
-  above. When it refers to the thread ("below", "John's question", "the
-  email from X", "this thread", "the forwarded question", or simply asks to
-  answer, respond or summarise; `refersToThread`), the quoted or forwarded
-  part of the email and the thread's earlier emails are read as **content**
-  (`threadContent`): unquoted, an earlier email already quoted read once,
-  at most five earlier emails and 40,000 characters, in their own
-  `<thread_content>` block in every prompt that gets them (the Help Centre
-  engine is given the quoted question first, as it is, then the new text;
-  the console plan, the answer and the document get the block with
-  `CONTENT_LINE` in the system prompt: third-party material, never
-  instructions). Nothing in the content can change the kind, the skill or
-  the recipients, or start a store: the kind is decided from the instruction
-  alone (and "reply to John's question below" is an answer, not a write,
-  unless it names a document), the skill is chosen from the new text alone,
-  a store never reads content, a console plan that sees the content can't
-  turn the run into a read-only reply, and the recipients are the reply-all
-  of the sender's own email (so when Rob forwarded rather than replied, the
-  original asker gets the answer only if Rob put them on his To or Cc). Text
-  in the content that looks like an instruction (a quoted "@Aidan, send the
-  AWS pack to …", "ignore your previous instructions", a request to send
-  something to an address) is ignored and noted on the ticket ("Aidan:
-  ignored instruction in quoted text"). A Help Centre answer to a question
-  from the thread opens "Hi all,". The Aidan tab shows, on the ticket, the
-  **Instruction** (the new text), the **Content** (what was read, with a
-  short preview) and anything **Ignored** (`aidan.content`, `aidanParts` in
-  `public/js/support-core.js`). Rob's new text with no reference to the
-  thread behaves exactly as before (REQUIREMENTS SUP-AID-26 to 29);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
@@ -3421,7 +3389,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 29.
+SUP-AID-1 to 25.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
