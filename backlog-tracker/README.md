@@ -3193,15 +3193,29 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
 | `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
-| `public/js/support-core.js` | The page's rules, pure: the three inboxes, queues, routes, what a new email needs |
-| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox, Hello and Aidan tabs, one ticket, the new email form) and Settings › Support inbox |
+| `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
+| `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
 
 **Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
 support@, hello@ and aidan@ (at personalisationhub.com), all delivered to the one
 connected mailbox. The page has a tab for each: **Support Inbox**, **Hello**
-and **Aidan**, each with its own queues, counts, list and ticket view
-(`#support`, `#support/hello`, `#support/aidan`). `aliasesOf` in
+and **Aidan**, each with its own list and thread view
+(`#support`, `#support/hello`, `#support/aidan`). Only the Support Inbox is
+worked as support tickets. **Hello and Aidan are plain inboxes (18 Nov
+2026)**: an email list (sender, subject, date, Unread) and the thread with
+Reply, an internal note and Mark as spam. They have no queue strip, no
+triage badges, no suggested reply or confidence, no Raise on Staff Kanban,
+no Resolve and no assignment, and their header line counts unread email.
+Their only other view is Spam (`#support/hello?queue=spam`); a link to any
+other queue of theirs opens the emails. Unread means the sender's latest
+email is newer than our last reply and than the last time that browser
+opened the thread (kept in the browser, `bt-support-opened`). In Aidan
+every thread also says what Aidan did (no action and why, queued, working,
+replied, ingested, needs a person) and his reply is on the thread. An email
+in two inboxes shows whichever view belongs to the tab it was opened from.
+The server is unchanged: it still files, sorts and drafts for every
+address, and the plain tabs do not show it. `aliasesOf` in
 `functions/support-core.js` reads the address an email was written to from
 its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
 from the mailbox it landed in, and the ticket keeps the result in `inboxes`.

@@ -15,19 +15,23 @@ export const CATEGORY_LABEL = {
 // on the ticket, set by functions/support-core.js; the keys must match it).
 // A ticket with none recorded (filed before the tabs existed, or written to
 // no alias) is the Support Inbox's.
+// Only the Support Inbox is worked as support tickets (queues, triage, a
+// suggested reply). Hello and Aidan are `plain`: a list of emails and the
+// thread, with Reply; Aidan's also says what Aidan did with each thread.
 export const INBOXES = [
-  { key: "support", label: "Support Inbox", address: "support@" },
-  { key: "hello", label: "Hello", address: "hello@" },
-  { key: "aidan", label: "Aidan", address: "aidan@" },
+  { key: "support", label: "Support Inbox", address: "support@", plain: false },
+  { key: "hello", label: "Hello", address: "hello@", plain: true },
+  { key: "aidan", label: "Aidan", address: "aidan@", plain: true, agent: true },
 ];
 export const DEFAULT_INBOX = "support";
 const INBOX_KEYS = INBOXES.map((i) => i.key);
 export const inboxOf = (key) => INBOXES.find((i) => i.key === key) || INBOXES[0];
+export const isPlainInbox = (key) => !!inboxOf(key).plain;
 export const inInbox = (t, key) => (t.inboxes && t.inboxes.length ? t.inboxes : [DEFAULT_INBOX]).includes(inboxOf(key).key);
 
 const open = (t) => t.status === "open";
-// The queues down the left of the inbox, in working order. A ticket is in
-// exactly one of the first six.
+// The queues down the left of the Support Inbox, in working order. A ticket is
+// in exactly one of the first six. Hello and Aidan have none (plain inboxes).
 export const QUEUES = [
   { key: "needs-person", label: "Needs a person", icon: "support_agent", test: (t) => open(t) && !!t.needsHuman },
   { key: "ai-drafts", label: "AI drafts to approve", icon: "auto_awesome", test: (t) => open(t) && !t.needsHuman && !!t.aiDraft },
@@ -117,6 +121,39 @@ export function aidanView(aidan) {
   return { badge: s.badge, tone: s.tone, line, kind: AIDAN_KINDS[a.kind] || "" };
 }
 
+// What the Aidan tab says about a thread: always a state. A thread Aidan was
+// never asked about reads "no action", and why.
+export function aidanThreadState(aidan) {
+  return aidanView(aidan) || { badge: "Aidan: no action", tone: "none", line: "Aidan did nothing: this email has no @Aidan request.", kind: "" };
+}
+
+// ── Hello and Aidan: plain inboxes ────────────────────────────────────────
+// An email list (sender, subject, date, unread) and the thread. No queues:
+// the only other place an email can be is Spam.
+// Unread: the sender's latest email is newer than our last reply and than the
+// last time this browser opened the thread (`openedAt`, ms; kept by the page).
+export function isUnread(t, openedAt = 0) {
+  return t.status !== "spam" && (t.lastInboundAt || 0) > Math.max(t.lastReplyAt || 0, Number(openedAt) || 0);
+}
+// `spam`: the inbox's Spam instead of its emails. Newest first.
+export function plainInboxRows(tickets, inbox, search, spam = false) {
+  const s = String(search || "").trim().toLowerCase();
+  return (tickets || []).filter((t) => inInbox(t, inbox) && (t.status === "spam") === !!spam
+    && (!s || [t.subject, t.customerEmail, t.customerName, t.snippet].some((v) => String(v || "").toLowerCase().includes(s))))
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+}
+// { emails, unread, spam } for a plain inbox; `opened` is { ticketId: ms }.
+export function plainInboxCounts(tickets, inbox, opened = {}) {
+  const out = { emails: 0, unread: 0, spam: 0 };
+  for (const t of tickets || []) {
+    if (!inInbox(t, inbox)) continue;
+    if (t.status === "spam") { out.spam += 1; continue; }
+    out.emails += 1;
+    if (isUnread(t, opened[t.id])) out.unread += 1;
+  }
+  return out;
+}
+
 // Queue + free-text filter, newest activity first (high-value first inside
 // "Needs a person", so the ticket that matters most is at the top).
 // `inbox`: that inbox's tickets only (every ticket when left out).
@@ -130,6 +167,9 @@ export function filterTickets(tickets, queueKey, search, inbox) {
 // "#support", "#support?queue=spam", "#support/hello", "#support/aidan?queue=spam",
 // "#support/compose", "#support/ticket/<id>", "#support/hello/ticket/<id>"
 // -> { view, inbox, queue, ticketId }, or null when the hash is not a Support Inbox route.
+// Routes are split by inbox: the Support Inbox has its queues; Hello and Aidan
+// have none, so their `queue` is "" (the emails) or "spam", and an old link
+// to any other queue of theirs opens the emails.
 // The Support Inbox's own routes carry no inbox name, so links made before the
 // Hello and Aidan tabs existed still open. "#support/stats" and "#support/try"
 // were tabs once (removed 17 Nov 2026): an old link to either opens the inbox.
@@ -145,6 +185,7 @@ export function supportRoute(hash) {
   const m = rest.match(/^ticket\/(.+)$/);
   if (m) return { view: "ticket", inbox, queue: "", ticketId: decodeURIComponent(m[1]) };
   const queue = new URLSearchParams(qs || "").get("queue");
+  if (isPlainInbox(inbox)) return { view: "inbox", inbox, queue: queue === "spam" ? "spam" : "", ticketId: "" };
   return { view: "inbox", inbox, queue: QUEUES.some((x) => x.key === queue) ? queue : DEFAULT_QUEUE, ticketId: "" };
 }
 export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "", ticketId = "" } = {}) {
@@ -152,6 +193,7 @@ export function supportHash({ view = "inbox", inbox = DEFAULT_INBOX, queue = "",
   const key = inboxOf(inbox).key;
   const base = key === DEFAULT_INBOX ? "#support" : `#support/${key}`;
   if (view === "ticket") return `${base}/ticket/${encodeURIComponent(ticketId)}`;
+  if (isPlainInbox(key)) return queue === "spam" ? `${base}?queue=spam` : base;
   return queue && queue !== DEFAULT_QUEUE ? `${base}?queue=${queue}` : base;
 }
 

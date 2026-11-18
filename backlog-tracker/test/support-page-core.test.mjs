@@ -6,7 +6,7 @@ import {
   QUEUES, queueCounts, normaliseTicket, filterTickets, supportRoute, supportHash, composeProblem, COMPOSE_MAX, toMs,
   searchArticles, articleSnippet, draftSource, confidenceBand, CONFIDENCE_LABEL, confidenceChange, INBOXES, inInbox, inboxOf,
 } from "../public/js/support-core.js";
-import { aidanView } from "../public/js/support-core.js";
+import { aidanView, aidanThreadState, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
 
@@ -95,8 +95,12 @@ check("three inboxes, each with its own route, list and counts; a ticket written
   assert.strictEqual(inInbox(rows[0], "nonsense"), true, "an unknown inbox is the Support Inbox");
   assert.strictEqual(inboxOf("aidan").label, "Aidan");
   // Routes: the Support Inbox keeps its old addresses; Hello and Aidan have their own.
-  assert.deepStrictEqual(supportRoute("#support/hello"), { view: "inbox", inbox: "hello", queue: "needs-person", ticketId: "" });
-  assert.deepStrictEqual(supportRoute("#support/aidan?queue=resolved"), { view: "inbox", inbox: "aidan", queue: "resolved", ticketId: "" });
+  // Hello and Aidan have no queues: their route's queue is "" (the emails) or "spam".
+  assert.deepStrictEqual(supportRoute("#support/hello"), { view: "inbox", inbox: "hello", queue: "", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support/aidan?queue=resolved"), { view: "inbox", inbox: "aidan", queue: "", ticketId: "" }, "an old link to a queue opens the emails");
+  assert.deepStrictEqual(supportRoute("#support/aidan?queue=spam"), { view: "inbox", inbox: "aidan", queue: "spam", ticketId: "" });
+  assert.deepStrictEqual(supportRoute("#support?queue=resolved").queue, "resolved", "the Support Inbox keeps its queues");
+  assert.strictEqual(supportHash({ inbox: "hello", queue: "resolved" }), "#support/hello", "no queue is written into a plain inbox's address");
   assert.deepStrictEqual(supportRoute("#support/aidan/ticket/19a%2Fb"), { view: "ticket", inbox: "aidan", queue: "", ticketId: "19a/b" });
   assert.strictEqual(supportRoute("#support/helloworld").inbox, "support");
   assert.deepStrictEqual([supportHash({ inbox: "support" }), supportHash({ inbox: "hello" }), supportHash({ inbox: "aidan", queue: "spam" }), supportHash({ view: "ticket", inbox: "hello", ticketId: "t1" }), supportHash({ view: "ticket", ticketId: "t1" }), supportHash({ inbox: "bogus" })],
@@ -171,6 +175,38 @@ check("Aidan's state on a ticket reads as a badge and one line; nothing when Aid
   assert.deepStrictEqual([answered.badge, answered.kind, answered.line], ["Aidan replied", "Answer", "Aidan answered in the email itself, to 3 people on this email. Nothing was attached."]);
   assert.strictEqual(aidanView({ status: "replied", kind: "answer", recipients: 1 }).line, "Aidan answered in the email itself, to 1 person on this email. Nothing was attached.");
   assert.ok(aidanView({ status: "queued", kind: "answer", instruction: "please confirm you received this" }).line.startsWith('Aidan was asked to answer on the email: "please confirm you received this".'));
+});
+
+check("Hello and Aidan are plain inboxes: an email list with unread and spam, no queues", () => {
+  assert.deepStrictEqual(INBOXES.map((i) => isPlainInbox(i.key)), [false, true, true], "only the Support Inbox is worked as tickets");
+  assert.strictEqual(isPlainInbox("nonsense"), false, "an unknown inbox is the Support Inbox");
+  const at = (h) => new Date(T0 + h * H);
+  const rows = [
+    tk("new", { inboxes: ["hello"], customerName: "Nia", lastInboundAt: at(5), lastMessageAt: at(5), needsHuman: true, aiDraft: { text: "Hi" } }),
+    tk("answered", { inboxes: ["hello"], status: "pending", lastInboundAt: at(2), lastReplyAt: at(3), lastMessageAt: at(3) }),
+    tk("resolved", { inboxes: ["hello"], status: "resolved", lastInboundAt: at(1), lastMessageAt: at(1) }),
+    tk("junk", { inboxes: ["hello"], status: "spam", lastInboundAt: at(6), lastMessageAt: at(6) }),
+    tk("both", { inboxes: ["support", "hello"], lastInboundAt: at(4), lastMessageAt: at(4) }),
+    tk("sup", { inboxes: ["support"], lastInboundAt: at(7), lastMessageAt: at(7) }),
+    tk("aid", { inboxes: ["aidan"], lastInboundAt: at(7), lastMessageAt: at(7) }),
+  ];
+  // Every email of the inbox whatever its support status, newest first; spam apart.
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "").map((t) => t.id), ["new", "both", "answered", "resolved"]);
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "", true).map((t) => t.id), ["junk"]);
+  assert.deepStrictEqual(plainInboxRows(rows, "aidan", "").map((t) => t.id), ["aid"]);
+  assert.deepStrictEqual(plainInboxRows(rows, "hello", "nia").map((t) => t.id), ["new"], "search reads the sender");
+  // Unread: the sender's latest email is newer than our last reply and than the last time it was opened here.
+  const by = Object.fromEntries(rows.map((t) => [t.id, t]));
+  assert.deepStrictEqual([isUnread(by.new), isUnread(by.answered), isUnread(by.junk)], [true, false, false]);
+  assert.strictEqual(isUnread(by.new, T0 + 5 * H), false, "opened since it arrived");
+  assert.strictEqual(isUnread(by.new, T0 + 4 * H), true, "a newer email than the last look");
+  assert.strictEqual(isUnread(tk("old", { inboxes: ["hello"] })), false, "filed before arrival times were kept");
+  assert.deepStrictEqual(plainInboxCounts(rows, "hello"), { emails: 4, unread: 3, spam: 1 });
+  assert.deepStrictEqual(plainInboxCounts(rows, "hello", { new: T0 + 5 * H, resolved: T0 + D }), { emails: 4, unread: 1, spam: 1 });
+  // The Aidan tab always says what Aidan did, "no action" included.
+  assert.deepStrictEqual(aidanThreadState(null), { badge: "Aidan: no action", tone: "none", line: "Aidan did nothing: this email has no @Aidan request.", kind: "" });
+  assert.strictEqual(aidanThreadState({ status: "ignored", reason: "The sender is not allowed to instruct Aidan." }).line, "Aidan did nothing: The sender is not allowed to instruct Aidan.");
+  assert.strictEqual(aidanThreadState({ status: "working", instruction: "send the pack" }).badge, "Aidan: working");
 });
 
 let failed = 0;

@@ -6321,15 +6321,42 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
 - **SUP-INB-5** A ticket keeps its inboxes for the life of the thread. A
   later customer email that names another alias adds that inbox; one that
   names none changes nothing.
-- **SUP-INB-6** Each tab is a separate inbox: its own queues and counts, its
-  own list and search, and its own ticket view (`#support/<inbox>/ticket/<id>`,
-  Back returns to that inbox). The header line counts the inbox on show.
-  `#support/ticket/<id>` still opens any ticket, under its own inbox's tab.
+- **SUP-INB-6** Each tab is a separate inbox: its own list and search, and
+  its own thread view (`#support/<inbox>/ticket/<id>`, Back returns to that
+  inbox). The header line counts the inbox on show. `#support/ticket/<id>`
+  still opens any ticket, under its own inbox's tab. Only the Support Inbox
+  has queues and their counts (SUP-INB-9).
 - **SUP-INB-7** The Dashboard's Support tile counts the Support Inbox
   only. Mail written only to hello@ or aidan@ is in none of its figures.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
+- **SUP-INB-9** Hello and Aidan are plain inboxes (18 Nov 2026, ticket
+  2sRT2IJNDUpZbO3xvdUx), not support queues. Neither tab shows the queue
+  strip, a triage badge (category, high value, automated, sorting), the AI
+  summary, a suggested reply or its confidence, Raise on Staff Kanban or a
+  Staff Kanban link, Resolve, "Answered by AI", assignment, Insert from the
+  Help Centre, the ticket key or the ticket's history lines. The Support
+  Inbox tab is unchanged.
+- **SUP-INB-10** A plain inbox lists every email of that inbox, newest
+  first, whatever its support status, each with the sender, the subject, the
+  date and **Unread** (in bold and as a word). Unread means the sender's
+  latest email is newer than our last reply and than the last time this
+  browser opened the thread; opening a thread reads it. The header line
+  reads "N unread". Search reads the sender, subject and text.
+- **SUP-INB-11** A plain inbox's thread shows the emails and internal
+  notes, with **Reply**, **Save as internal note** and **Mark as spam**
+  (which asks first) for a member with Edit. Spam is the only other view
+  (`#support/<inbox>?queue=spam`, a "Spam (N)" button under the list when
+  there is any, with Not spam on the thread); a link to any other queue of a
+  plain inbox opens its emails. A reply is sent as a person's own words.
+- **SUP-INB-12** In Aidan, every thread also carries Aidan's state in the
+  list and on the thread: no action and why (including "this email has no
+  @Aidan request" when Aidan was never asked), queued, working, replied,
+  ingested, needs a person or failed. A replied thread shows his reply.
+- **SUP-INB-13** An email in the Support Inbox and a plain inbox shows the
+  view of the tab it was opened from: with triage in Support Inbox, plain in
+  Hello or Aidan. It is one ticket either way (SUP-INB-3).
 
 ### Aidan, the agent mailbox (17 Nov 2026)
 

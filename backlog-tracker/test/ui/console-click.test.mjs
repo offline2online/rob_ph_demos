@@ -3540,7 +3540,7 @@ const scenarios = [
       s.docs.supportTickets = {
         s1: tk(1, { subject: "To support", inboxes: ["support"] }),
         n1: tk(2, { subject: "No alias" }),
-        h1: tk(3, { subject: "To hello", inboxes: ["hello"] }),
+        h1: tk(3, { subject: "To hello", inboxes: ["hello"], customerName: "Hattie Shaw", lastInboundAt: t(T0 + 3 * 60000), aiDraft: { text: "Hi Hattie", confidence: 0.9, answerable: true, articles: [] }, highValue: true }),
         a1: tk(4, { subject: "To aidan", inboxes: ["aidan"] }),
         sa: tk(5, { subject: "To support, Cc aidan", inboxes: ["support", "aidan"] }),
       };
@@ -3558,10 +3558,27 @@ const scenarios = [
       await until(async () => (await selected())[0] === "Hello", "Hello selected");
       assert.strictEqual(new URL(c.page.url()).hash, "#support/hello");
       assert.deepStrictEqual(await subjects(), ["To hello"]);
-      assert.strictEqual(await c.text('[data-support-queue="needs-person"] .support-queue-count'), "1", "its own counts");
+      // 2sRT2IJNDUpZbO3xvdUx: Hello and Aidan are plain inboxes, with none of the Support Inbox's queues or triage.
+      c.at("Hello is a plain inbox: sender, subject, date and unread; no queues, no AI draft, no Kanban");
+      const SUPPORT_ONLY = '.support-queue, .support-conf, .support-draft, .support-badge-hv, #support-assign, #support-faq-search, [data-support-act="use-draft"], [data-support-act="redraft"], [data-support-act="escalate"], [data-support-act="send-resolve"], [data-support-status="resolved"]';
+      assert.strictEqual(await c.page.locator(SUPPORT_ONLY).count(), 0, "no queue strip or triage control in the Hello list");
+      assert.strictEqual(await c.text(".support-mail-row .support-row-from"), "Hattie Shaw");
+      assert.strictEqual(await c.page.locator(".support-mail-row.is-unread .support-unread").count(), 1, "the unanswered email reads Unread");
+      await c.click('[data-support-ticket="h1"]', "the Hello email");
+      await c.visible("#support-reply");
+      assert.strictEqual(await c.page.locator(SUPPORT_ONLY).count(), 0, "no triage control on the Hello thread");
+      await c.page.fill("#support-reply", "Thanks Hattie, I will call you.");
+      await c.click('[data-support-act="send"]', "Reply");
+      await until(() => c.supportCalls.some((x) => x.path === "tickets/h1/reply"), "the reply call");
+      assert.deepStrictEqual(c.supportCalls.find((x) => x.path === "tickets/h1/reply").body, { text: "Thanks Hattie, I will call you.", resolve: false, draft: "manual" });
+      await c.click('[data-support-act="back"]', "Back");
+      await until(() => new URL(c.page.url()).hash === "#support/hello", "back in Hello");
+      assert.strictEqual(await c.page.locator(".support-mail-row.is-unread").count(), 0, "an opened email is no longer unread");
       await c.click('[data-support-tab="aidan"]', "the Aidan tab");
       await until(async () => (await selected())[0] === "Aidan", "Aidan selected");
       assert.deepStrictEqual(await subjects(), ["To support, Cc aidan", "To aidan"], "an email to support@ with aidan@ in Cc is in both");
+      assert.strictEqual(await c.page.locator(SUPPORT_ONLY).count(), 0, "no queue strip or triage control in Aidan");
+      assert.deepStrictEqual(await c.page.locator(".support-aidan-badge").allTextContents(), ["Aidan: no action", "Aidan: no action"], "every Aidan thread says what Aidan did");
       c.at("a reload stays in the inbox");
       await c.page.reload({ waitUntil: "domcontentloaded" });
       await c.visible("#support-page .support-row");
@@ -3642,6 +3659,8 @@ const scenarios = [
       await until(async () => (await c.page.locator(".support-row").count()) === 3, "all three Aidan tickets");
       const badges = await c.page.locator(".support-aidan-badge").allTextContents();
       assert.deepStrictEqual(badges.sort(), ["Aidan replied", "Aidan: no action", "Ingested"]);
+      assert.strictEqual(await c.page.locator(".support-queue").count(), 0, "the Aidan tab has no queue strip");
+      assert.ok((await c.page.locator('[data-support-ticket="x1"] .support-row-snippet').textContent()).includes("The sender is not allowed to instruct Aidan."), "no action says why");
       c.at("the reply Aidan sent is on the thread, to everyone on the email");
       await c.click('[data-support-ticket="r1"]', "the Kestrel ticket");
       await c.visible(".support-msg-aidan");
@@ -3650,6 +3669,7 @@ const scenarios = [
       const sent = await c.page.evaluate(() => document.querySelector(".support-msg-aidan").textContent.replace(/\s+/g, " "));
       for (const want of ["Sent by Aidan · AWS onboarding pack", "To owner@example.com", "Cc client@shop.example, colleague@shop.example", "aws-onboarding-pack-kestrel.md"]) assert.ok(sent.includes(want), `the sent reply shows "${want}"`);
       assert.strictEqual(new URL(c.page.url()).hash, "#support/aidan/ticket/r1", "it opens inside the Aidan tab");
+      assert.strictEqual(await c.page.locator('.support-draft, .support-conf, #support-assign, [data-support-act="escalate"], [data-support-status="resolved"]').count(), 0, "no triage control on an Aidan thread");
     },
   },
   {

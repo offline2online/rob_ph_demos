@@ -243,55 +243,126 @@ try {
   const inboxDocs = { ...docs, supportTickets: {
     s1: ticket(1, { subject: "Written to support", needsHuman: true, inboxes: ["support"] }),
     s2: ticket(2, { subject: "From before the tabs", needsHuman: true }),
-    h1: ticket(3, { subject: "Written to hello", needsHuman: true, inboxes: ["hello"] }),
-    h2: ticket(4, { subject: "Hello, resolved", status: "resolved", resolvedBy: "editor@ph.example", humanInvolved: true, inboxes: ["hello"] }),
-    a1: ticket(5, { subject: "Written to aidan", aiDraft: DRAFT, inboxes: ["aidan"] }),
+    h1: ticket(3, { subject: "Written to hello", customerName: "Hattie Shaw", customerEmail: "hattie@shop.example", needsHuman: true, aiDraft: DRAFT, highValue: true, account: { kind: "prospect", id: "p1", name: "Big Retail", reason: "Prospects (TAM) company" }, kanbanKey: "PH-9", summary: "Wants a partnership.", lastInboundAt: t(T0 + 3 * 60000), inboxes: ["hello"] }),
+    h2: ticket(4, { subject: "Hello, resolved", status: "resolved", resolvedBy: "ai", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 4 * 60000), inboxes: ["hello"] }),
+    h3: ticket(9, { subject: "Hello, junk", status: "spam", inboxes: ["hello"] }),
+    a1: ticket(5, { subject: "Written to aidan", status: "resolved", resolvedBy: "aidan", lastInboundAt: t(T0 + 60000), lastReplyAt: t(T0 + 5 * 60000), aidan: { status: "replied", kind: "generate", skillName: "AWS onboarding pack", document: { name: "pack.md" }, recipients: 2 }, inboxes: ["aidan"] }),
+    a2: ticket(7, { subject: "Refused by Aidan", aiDraft: DRAFT, aidan: { status: "ignored", reason: "The sender is not allowed to instruct Aidan." }, inboxes: ["aidan"] }),
+    a3: ticket(8, { subject: "Queued for Aidan", aidan: { status: "queued", kind: "generate", instruction: "send the pack" }, inboxes: ["aidan"] }),
     sa: ticket(6, { subject: "Support with aidan in Cc", needsHuman: true, inboxes: ["support", "aidan"] }),
-  }, "supportTickets/sa/messages": { m1: { direction: "in", from: "c6@shop.example", fromName: "Customer 6", text: "For you both.", at: t(T0) } } };
-  for (const width of [390, 820, 1280]) await run(`three inboxes by alias @${width}px`, { seed: { ...seedFor("editor"), docs: inboxDocs }, width, height: 900, hash: "#support" }, async (page) => {
+  }, "supportTickets/sa/messages": { m1: { direction: "in", from: "c6@shop.example", fromName: "Customer 6", text: "For you both.", at: t(T0) } },
+  "supportTickets/h1/messages": {
+    m1: { direction: "in", from: "hattie@shop.example", fromName: "Hattie Shaw", text: "Could we talk about a partnership?", at: t(T0) },
+    e1: { direction: "event", text: "Raised on the Staff Kanban as PH-9.", by: "system", at: t(T0 + 1000) },
+    n1: { direction: "note", text: "Met at the show.", by: "editor@ph.example", at: t(T0 + 2000) },
+  },
+  "supportTickets/a1/messages": {
+    m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", text: "@Aidan, send the pack.", at: t(T0) },
+    m2: { direction: "out", source: "aidan", sentBy: "aidan", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Here is the pack.", attachments: [{ name: "pack.md" }], skillName: "AWS onboarding pack", at: t(T0 + 60000) },
+  } };
+  // What only the Support Inbox has: the queue strip, triage, the suggested reply and its confidence, Staff Kanban, assignment.
+  const SUPPORT_ONLY = '.support-queue, .support-conf, .support-draft, .support-badge-hv, .support-account, .support-row-key, .support-event, #support-assign, #support-faq-search, [data-support-act="use-draft"], [data-support-act="redraft"], [data-support-act="escalate"], [data-support-act="open-kanban"], [data-support-act="send-resolve"], [data-support-status="resolved"]';
+  for (const width of [390, 820, 1280]) await run(`three inboxes by alias: Support Inbox with queues, Hello and Aidan plain @${width}px`, { seed: { ...seedFor("editor"), docs: inboxDocs }, width, height: 900, hash: "#support" }, async (page, o) => {
     await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
     const tabs = () => page.evaluate(() => [...document.querySelectorAll("#support-page .support-tab")].filter((b) => b.getClientRects().length).map((b) => [b.textContent, b.getAttribute("aria-selected")]));
     assert.deepStrictEqual((await tabs()).slice(0, 3), [["Support Inbox", "true"], ["Hello", "false"], ["Aidan", "false"]], "the tab names, exactly, Support Inbox first");
     const subjects = () => page.locator(".support-row-subject").allTextContents();
     const counts = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-queue")].map((b) => [b.dataset.supportQueue, b.querySelector(".support-queue-count").textContent])));
-    // Support Inbox: mail to support@, mail from before the tabs, and the one that copied aidan@.
+    const hashNow = () => page.evaluate(() => location.hash);
+    const none = async (what) => assert.strictEqual(await page.locator(SUPPORT_ONLY).count(), 0, `${what}: a Support Inbox control is showing`);
+    const fits = async (what) => {
+      const a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on ${what} (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], `touch targets under 44px on ${what}`);
+    };
+    // Support Inbox: mail to support@, mail from before the tabs, and the one that copied aidan@. Queues and triage as before.
     assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc", "From before the tabs", "Written to support"]);
+    assert.strictEqual(await page.locator(".support-queue").count(), 7, "the Support Inbox keeps its seven queues");
     assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).all], ["3", "3"]);
     assert.ok((await page.textContent("#support-count")).startsWith("3 need a person · 0 AI drafts"));
-    // Hello: its own list and counts.
+
+    // Hello: a plain email list. Sender, subject, date and unread; nothing from the Support Inbox.
     await page.click('[data-support-tab="hello"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/hello", "the Hello route");
+    await until(async () => (await hashNow()) === "#support/hello", "the Hello route");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
-    assert.deepStrictEqual(await subjects(), ["Written to hello"]);
-    assert.deepStrictEqual([(await counts())["needs-person"], (await counts()).resolved, (await counts()).all], ["1", "1", "2"]);
-    assert.ok((await page.textContent("#support-count")).startsWith("1 need a person"));
-    await page.click('[data-support-queue="resolved"]');
-    assert.strictEqual(await page.evaluate(() => location.hash), "#support/hello?queue=resolved", "a queue stays in its inbox");
-    assert.deepStrictEqual(await subjects(), ["Hello, resolved"]);
-    let a = await audit(page, "#support-page");
-    assert.ok(a.overflow <= 0, `no sideways scroll on Hello (${a.overflow}px)`);
-    assert.deepStrictEqual(a.small, [], "touch targets under 44px on Hello");
+    assert.deepStrictEqual(await subjects(), ["Hello, resolved", "Written to hello"], "every Hello email whatever its support status, newest first; spam apart");
+    await none("the Hello list");
+    assert.deepStrictEqual(await page.locator(".support-mail-row .support-row-from").allTextContents(), ["Customer 4", "Hattie Shaw"], "the sender");
+    assert.strictEqual(await page.locator('[data-support-ticket="h1"] .support-row-when').count(), 1, "the date");
+    assert.deepStrictEqual(await page.evaluate(() => [...document.querySelectorAll(".support-mail-row")].map((r) => [r.dataset.supportTicket, r.classList.contains("is-unread"), !!r.querySelector(".support-unread")])), [["h2", false, false], ["h1", true, true]], "unread is bold and says so; an answered email is read");
+    assert.ok((await page.textContent("#support-count")).startsWith("1 unread ·"), "the header counts unread email");
+    await fits("Hello");
     const strip = await page.evaluate(() => { const n = document.querySelector(".support-tabs"); return n.scrollWidth - n.clientWidth; });
     assert.ok(strip <= 0, `the tabs are not in a sideways-scrolling strip (${strip}px)`);
     await shot(page, `hello-${width}`);
-    // Aidan: the AI draft written to aidan@, and (needing a person) the support@ email that copied aidan@.
+    // An old link to one of its queues opens the emails; spam is one tap away and comes back.
+    await page.evaluate(() => { location.hash = "#support/hello?queue=resolved"; });
+    await page.waitForTimeout(150);
+    assert.deepStrictEqual(await subjects(), ["Hello, resolved", "Written to hello"]);
+    await page.click('[data-support-queue="spam"]');
+    await until(async () => (await hashNow()) === "#support/hello?queue=spam", "Hello's spam");
+    assert.deepStrictEqual(await subjects(), ["Hello, junk"]);
+    await none("Hello's spam");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/hello", "back in Hello");
+    // The thread: the emails and notes, Reply, an internal note and Mark as spam. No draft, confidence, Kanban, resolve or history.
+    await page.click('[data-support-ticket="h1"]');
+    await until(() => page.locator(".support-msg-in").count(), "the Hello conversation");
+    assert.strictEqual(await hashNow(), "#support/hello/ticket/h1");
+    await none("the Hello thread");
+    const head = await page.textContent(".support-ticket-head");
+    assert.ok(head.includes("Written to hello") && head.includes("Hattie Shaw <hattie@shop.example>"), "the subject and who wrote");
+    assert.ok(!/SUP-3|PH-9|Wants a partnership|High value|Answered by AI/i.test(await page.textContent("#support-view")), "no ticket key, Kanban link, AI summary or support badge");
+    assert.strictEqual(await page.locator(".support-msg-note").count(), 1, "an internal note may stay");
+    assert.deepStrictEqual(await page.locator(".support-actions button").allTextContents().then((x) => x.map((s) => s.replace("report", "").trim())), ["Mark as spam"]);
+    assert.deepStrictEqual(await page.locator(".support-send button").allTextContents(), ["Reply", "Save as internal note"]);
+    await fits("the Hello thread");
+    await shot(page, `hello-thread-${width}`);
+    await page.fill("#support-reply", "Thanks Hattie, I will call you tomorrow.");
+    await page.click('[data-support-act="send"]');
+    await until(() => o.supportCalls.some((c) => c.path === "tickets/h1/reply"), "the reply");
+    assert.deepStrictEqual(o.supportCalls.find((c) => c.path === "tickets/h1/reply").body, { text: "Thanks Hattie, I will call you tomorrow.", resolve: false, draft: "manual" });
+    await until(async () => (await page.inputValue("#support-reply")) === "", "the box to clear");
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/hello", "back in Hello again");
+    assert.strictEqual(await page.locator(".support-mail-row.is-unread").count(), 0, "an opened email is no longer unread");
+
+    // Aidan: a plain email list where every thread says what Aidan did.
     await page.click('[data-support-tab="aidan"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "the Aidan route");
-    assert.deepStrictEqual(await subjects(), ["Support with aidan in Cc"]);
-    assert.deepStrictEqual([(await counts())["needs-person"], (await counts())["ai-drafts"], (await counts()).all], ["1", "1", "2"]);
-    // Its thread opens inside Aidan, says it is in both, and Back returns to Aidan.
+    await until(async () => (await hashNow()) === "#support/aidan", "the Aidan route");
+    assert.deepStrictEqual(await subjects(), ["Queued for Aidan", "Refused by Aidan", "Support with aidan in Cc", "Written to aidan"]);
+    await none("the Aidan list");
+    assert.deepStrictEqual(await page.locator(".support-aidan-badge").allTextContents(), ["Aidan: queued", "Aidan: no action", "Aidan: no action", "Aidan replied"], "each thread carries Aidan's state");
+    assert.ok((await page.textContent('[data-support-ticket="a2"] .support-row-snippet')).includes("The sender is not allowed to instruct Aidan."), "no action says why");
+    assert.ok((await page.textContent('[data-support-ticket="sa"] .support-row-snippet')).includes("no @Aidan request"), "an email Aidan was never asked about says so");
+    await fits("Aidan");
+    await shot(page, `aidan-${width}`);
+    // A replied thread shows his reply.
+    await page.click('[data-support-ticket="a1"]');
+    await until(() => page.locator(".support-msg-aidan").count(), "Aidan's reply on the thread");
+    assert.strictEqual(await hashNow(), "#support/aidan/ticket/a1");
+    await none("the Aidan thread");
+    assert.ok((await page.textContent(".support-aidan-line")).includes("Aidan wrote pack.md with the AWS onboarding pack skill"));
+    assert.ok((await page.textContent(".support-msg-aidan")).includes("Here is the pack."));
+    await fits("the Aidan thread");
+    await shot(page, `aidan-thread-${width}`);
+    await page.click('[data-support-act="back"]');
+    await until(async () => (await hashNow()) === "#support/aidan", "back in Aidan from the reply");
+    // An email in two inboxes opens inside Aidan, says it is in both, and Back returns to Aidan.
     await page.click('[data-support-ticket="sa"]');
     await until(() => page.locator(".support-msg-in").count(), "the conversation");
-    assert.strictEqual(await page.evaluate(() => location.hash), "#support/aidan/ticket/sa");
+    assert.strictEqual(await hashNow(), "#support/aidan/ticket/sa");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "false", "true"]);
     assert.ok((await page.textContent(".support-ticket-meta")).includes("In Support Inbox, Aidan"));
     assert.strictEqual((await page.textContent(".support-back")).replace("arrow_back", "").trim(), "Aidan");
+    await none("a shared email opened in Aidan");
     await page.click('[data-support-act="back"]');
-    await until(async () => (await page.evaluate(() => location.hash)) === "#support/aidan", "back in Aidan");
+    await until(async () => (await hashNow()) === "#support/aidan", "back in Aidan");
     // The same ticket by its old address opens under Support Inbox; a Hello ticket by that address opens under Hello.
     await page.evaluate(() => { location.hash = "#support/ticket/sa"; });
     await until(() => page.locator(".support-msg-in").count(), "the conversation again");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["true", "false", "false"]);
+    assert.ok(await page.locator('[data-support-act="escalate"]').count() && await page.locator('[data-support-status="resolved"]').count() && await page.locator("#support-assign").count(), "in the Support Inbox the same email keeps its triage controls");
     await page.evaluate(() => { location.hash = "#support/ticket/h1"; });
     await until(async () => (await page.textContent(".support-ticket-head h3")).includes("Written to hello"), "the Hello ticket");
     assert.deepStrictEqual((await tabs()).slice(0, 3).map((x) => x[1]), ["false", "true", "false"]);
@@ -299,6 +370,7 @@ try {
     await page.click('[data-support-tab="inbox"]');
     await until(async () => (await page.evaluate(() => location.hash)) === "#support", "the Support Inbox route");
     assert.strictEqual((await subjects()).length, 3);
+    assert.strictEqual(await page.locator(".support-queue").count(), 7, "the Support Inbox still has its queues");
   });
 
   await run("settings as an editor: read-only", { seed: seedFor("editor"), width: 1280, hash: "#settings/support" }, async (page) => {

@@ -1,6 +1,9 @@
 // Support › Support Inbox (#support) and Settings › Support inbox.
 // Three inboxes, one tab each (Support Inbox, Hello, Aidan): the address an
 // email was written to decides which it is filed under (support-core.js).
+// Only the Support Inbox has queues, triage and suggested replies. Hello and
+// Aidan are plain inboxes: an email list and the thread, with Reply (and, in
+// Aidan, what Aidan did with each thread).
 // The email icon in the header writes a new email from the mailbox (#support/compose).
 // Tickets are read straight from Firestore (supportTickets + messages); every
 // change goes through the supportMail function (/supportMail/v1/**), which
@@ -11,7 +14,7 @@ import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView,
+  aidanView, aidanThreadState, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -23,9 +26,15 @@ const confidenceHtml = (c, { short } = {}) => { const b = confidenceBand(c); ret
 const confidenceChangeHtml = (steps) => { const t = confidenceChange(steps); return t ? `<p class="support-conf-change">${icon("trending_up")}Confidence ${esc(t)}.</p>` : ""; };
 const fullDate = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 // Aidan, the agent mailbox (aidan@): its state on a ticket, and the reply it sent to everyone on the email.
-const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting" };
+const AIDAN_TONE = { done: "badge-feature", working: "badge-status-draft", attention: "badge-wp-waiting", none: "badge-status-draft" };
 // The state badge, then what was asked for: Answer, Write or Store.
 const aidanBadge = (t) => { const v = aidanView(t.aidan); return v ? `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}` : ""; };
+// The Aidan tab: every thread carries a state, "no action" included, then what was asked for.
+const aidanStateBadge = (t) => { const v = aidanThreadState(t.aidan); return `<span class="badge ${AIDAN_TONE[v.tone]} support-aidan-badge">${esc(v.badge)}</span>${v.kind ? `<span class="badge badge-status-draft support-aidan-kind" title="What Aidan was asked to do">${esc(v.kind)}</span>` : ""}`; };
+// Which threads this browser has opened, and when (the unread state of Hello and Aidan). Per browser, best effort.
+const OPENED_KEY = "bt-support-opened";
+function readOpened() { try { const v = JSON.parse(localStorage.getItem(OPENED_KEY) || "{}"); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; } catch { return {}; } }
+function writeOpened(map) { try { localStorage.setItem(OPENED_KEY, JSON.stringify(Object.fromEntries(Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 600)))); } catch { /* private window: unread falls back to "not yet answered" */ } }
 const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>` : ""; };
 function aidanMessageHtml(m, at) {
   const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
@@ -66,6 +75,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   let members = null, articles = null;
   let composer = { ticketId: "", text: "", usedDraft: false, faq: "" };
   let busy = false, syncTimer = null, visible = false, stale = false;
+  const opened = readOpened();
 
   function start() {
     if (unsubTickets) return;
@@ -120,9 +130,10 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (statusError) { el.textContent = `The mailbox status didn't load: ${statusError}`; return; }
     if (!status) { el.textContent = ""; return; }
     if (!status.connected) { el.textContent = "No mailbox is connected."; return; }
-    const c = queueCounts(tickets, inboxKey());
+    const plain = isPlainInbox(inboxKey());
+    const c = plain ? plainInboxCounts(tickets, inboxKey(), opened) : queueCounts(tickets, inboxKey());
     const problem = status.connectionError || (!status.lastSyncOk && status.lastSyncError ? `Last sync failed: ${status.lastSyncError}` : "");
-    el.innerHTML = `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve · ${esc(status.connectedEmail)}`
+    el.innerHTML = (plain ? `<b>${c.unread}</b> unread` : `<b>${c["needs-person"]}</b> need a person · <b>${c["ai-drafts"]}</b> AI drafts to approve`) + ` · ${esc(status.connectedEmail)}`
       + (status.lastSyncAt ? ` · synced ${esc(fmtWhen(Date.parse(status.lastSyncAt)))}` : " · not synced yet")
       + (problem ? ` · <span class="support-problem">${esc(problem)}</span>` : "");
   }
@@ -151,7 +162,8 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     if (listError) { view.innerHTML = `<p class="support-problem" role="alert">Tickets didn't load: ${esc(listError)}</p>`; return; }
     if (!loaded) { view.innerHTML = `<p class="interface-row-empty">Loading…</p>`; return; }
     if (route.view === "compose") renderCompose();
-    else if (route.view === "ticket") renderTicket();
+    else if (route.view === "ticket") (isPlainInbox(inboxKey()) ? renderPlainTicket : renderTicket)();
+    else if (isPlainInbox(route.inbox)) renderPlainInbox();
     else renderInbox();
   }
 
@@ -185,6 +197,12 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
   function renderList() {
     const box = $("support-list");
     if (!box) return;
+    if (isPlainInbox(route.inbox)) {
+      const mail = plainInboxRows(tickets, route.inbox, search, route.queue === "spam");
+      box.innerHTML = mail.length ? mail.map(plainRowHtml).join("")
+        : `<li class="support-empty-row">${search ? "Nothing matches that search." : route.queue === "spam" ? "Nothing in spam." : "No emails yet."}</li>`;
+      return;
+    }
     const rows = filterTickets(tickets, route.queue, search, route.inbox);
     box.innerHTML = rows.length ? rows.map((t) => `<li><button type="button" class="support-row" data-support-ticket="${esc(t.id)}">
         <span class="support-row-main"><span class="support-row-subject">${esc(t.subject)}</span>
@@ -195,14 +213,76 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
       : `<li class="support-empty-row">${search ? "Nothing matches that search." : "Nothing in this queue."}</li>`;
   }
 
+  // ── Hello and Aidan: a plain inbox (an email list, no queues or triage) ──
+  function renderPlainInbox() {
+    const box = inboxOf(route.inbox);
+    const spam = route.queue === "spam";
+    const counts = plainInboxCounts(tickets, box.key, opened);
+    view.innerHTML = `<div class="support-plain">
+        ${spam ? `<button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button><h3 class="support-plain-h">Spam</h3>` : ""}
+        <label class="um-search support-search"><span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input type="search" id="support-search" placeholder="Search emails" aria-label="Search emails" value="${esc(search)}"></label>
+        <ul class="support-list" id="support-list" aria-label="${esc(spam ? `${box.label} spam` : `${box.label} emails`)}"></ul>
+        ${tickets.length >= LIST_LIMIT ? `<p class="field-hint">Showing the ${LIST_LIMIT} most recently active emails.</p>` : ""}
+        ${!spam && counts.spam ? `<div class="support-plain-foot"><button type="button" class="btn-ghost" data-support-queue="spam">${icon("report")} Spam (${counts.spam})</button></div>` : ""}
+      </div>`;
+    renderList();
+  }
+  function plainRowHtml(t) {
+    const box = inboxOf(route.inbox);
+    const unread = isUnread(t, opened[t.id]);
+    const state = box.agent ? aidanThreadState(t.aidan) : null;
+    return `<li><button type="button" class="support-row support-mail-row${unread ? " is-unread" : ""}" data-support-ticket="${esc(t.id)}">
+        <span class="support-row-main"><span class="support-row-from">${esc(t.customerName || t.customerEmail || "Unknown sender")}</span>
+          <span class="support-row-subject">${esc(t.subject)}</span>
+          ${state ? `<span class="support-row-snippet">${esc(state.line)}</span>` : ""}</span>
+        <span class="support-row-side"><span class="support-row-when" title="${esc(fullDate(t.lastMessageAt))}">${esc(fmtWhen(t.lastMessageAt))}</span>
+          <span class="support-row-badges">${unread ? `<span class="badge support-unread">Unread</span>` : ""}${state ? aidanStateBadge(t) : ""}</span></span></button></li>`;
+  }
+  function renderPlainTicket() {
+    const t = tickets.find((x) => x.id === route.ticketId);
+    const box = inboxOf(inboxKey());
+    if (!t) { view.innerHTML = `<p class="interface-row-empty">That email isn't in the ${LIST_LIMIT} most recent.</p><button type="button" class="btn-ghost" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>`; return; }
+    watchMessages(t.id);
+    if (composer.ticketId !== t.id) composer = { ticketId: t.id, text: "", usedDraft: false, faq: "" };
+    // Opening the thread reads it (in this browser).
+    const seen = Math.max(Date.now(), t.lastInboundAt || 0);
+    if ((opened[t.id] || 0) < (t.lastInboundAt || 1)) { opened[t.id] = seen; writeOpened(opened); headerLine(); }
+    const edit = canEdit();
+    const spam = t.status === "spam";
+    const state = box.agent ? aidanThreadState(t.aidan) : null;
+    view.innerHTML = `<div class="support-ticket support-plain-ticket">
+      <button type="button" class="btn-ghost support-back" data-support-act="back">${icon("arrow_back")} ${esc(box.label)}</button>
+      <div class="support-ticket-head">
+        <h3>${esc(t.subject)}</h3>
+        <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : ""}${state ? aidanStateBadge(t) : ""}
+          ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
+          <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
+        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>` : ""}
+      </div>
+      ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
+        ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`
+        : `<button type="button" class="btn-ghost" data-support-status="spam">${icon("report")} Mark as spam</button>`}</div>` : ""}
+      <ol class="support-thread" id="support-thread" aria-label="Conversation"></ol>
+      ${!edit || spam ? "" : `<div class="support-composer">
+        <label class="field-label" for="support-reply">Reply to ${esc(t.customerEmail)}</label>
+        <textarea id="support-reply" rows="7" placeholder="Write a reply">${esc(composer.text)}</textarea>
+        <div class="support-send"><button type="button" class="btn-primary" data-support-act="send">Reply</button>
+          <button type="button" class="btn-ghost" data-support-act="note">Save as internal note</button></div></div>`}</div>`;
+    renderThread();
+  }
+
   function messageHtml(m) {
     const at = toMs(m.at);
+    // A plain inbox shows the emails and notes only: no ticket history, no draft or confidence tags.
+    const plain = isPlainInbox(inboxKey());
+    if (plain && m.direction === "event") return "";
     if (m.direction === "event") return `<li class="support-event">${icon("history")}<span>${esc(m.text)} <small>${esc(m.by === "ai" ? "AI" : m.by || "")} · ${esc(fullDate(at))}</small></span></li>`;
     if (m.direction === "note") return `<li class="support-msg support-msg-note"><div class="support-msg-head"><b>Internal note</b> · ${esc(m.by || "")}<small>${esc(fullDate(at))}</small></div><div class="support-msg-body">${esc(m.text)}</div></li>`;
     if (m.direction === "out" && m.source === "aidan") return aidanMessageHtml(m, at);
     const out = m.direction === "out";
     const who = out ? (m.auto ? "AI reply" : m.sentBy === "gmail" ? "Sent from Gmail" : `${m.sentBy || "Support"}`) : (m.fromName || m.from);
-    const tag = out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
+    const tag = plain ? "" : out && m.auto ? `<span class="badge badge-feature">Sent automatically${m.confidence ? ` · ${Math.round(m.confidence * 100)}%` : ""}</span>` : out && m.source === "ai-draft" ? `<span class="badge badge-status-draft">AI draft, approved</span>` : out && m.source === "ai-draft-edited" ? `<span class="badge badge-status-draft">AI draft, edited</span>` : "";
     const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
     return `<li class="support-msg ${out ? "support-msg-out" : "support-msg-in"}"><div class="support-msg-head"><b>${esc(who)}</b>${out ? "" : ` <span class="support-msg-addr">${esc(m.from || "")}</span>`}${tag}<small>${esc(fullDate(at))}</small></div>
       <div class="support-msg-body">${esc(m.text)}</div>${files}</li>`;
@@ -371,8 +451,9 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
     }
     if (b.dataset.supportStatus && t) {
       const to = b.dataset.supportStatus;
-      if (to === "spam" && !(await confirm(`Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
-      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, "The ticket wasn't changed");
+      const plain = isPlainInbox(inboxKey());
+      if (to === "spam" && !(await confirm(plain ? "Mark this email as spam? It moves to Spam here and in the mailbox." : `Mark ${t.key} as spam? It moves to Spam here and in the mailbox, and is left out of the Dashboard's figures.`, { title: "Mark as spam", okLabel: "Mark as spam", danger: true }))) return;
+      return act(async () => { await api(apiHeaders, `tickets/${encodeURIComponent(t.id)}/status`, { body: { status: to } }); if (to === "spam") go(supportHash({ inbox: inboxKey(), queue: route.queue })); }, plain ? "The email wasn't changed" : "The ticket wasn't changed");
     }
     const a = b.dataset.supportAct;
     if (a === "open-settings") return openSettings();

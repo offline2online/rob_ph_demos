@@ -38,6 +38,16 @@ p.support-problem { margin: 6px 0; font-size: 13px; }
 .support-status-resolved { background: rgba(82, 196, 26, .12); color: var(--success); }
 .support-status-spam { background: var(--danger-tint); color: var(--danger); }
 
+/* Hello and Aidan: a plain email list (no queue rail), sender first, unread in bold with a word. */
+.support-plain { max-width: 900px; }
+.support-plain-h { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+.support-plain-foot { display: flex; margin-top: 12px; }
+.support-plain-foot .material-symbols-outlined { font-size: 18px; vertical-align: -4px; }
+.support-mail-row .support-row-from { font-size: 14.5px; color: var(--text); }
+.support-mail-row .support-row-subject { font-size: 14px; font-weight: 400; }
+.support-mail-row.is-unread .support-row-from, .support-mail-row.is-unread .support-row-subject { font-weight: 700; }
+.support-unread { background: var(--primary-tint); color: var(--primary-text); }
+
 /* One ticket */
 .support-ticket { max-width: 900px; }
 .support-back { margin-bottom: 12px; }
