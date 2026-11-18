@@ -137,7 +137,7 @@ heading (KB-MCP-1; `backlog-tracker/MCP.md` → Staff Kanban).
   Board) the ticket moves to Ready for Testing by itself. Server: `backlog-tracker/functions/kanban-agent.js`.
   REQUIREMENTS.md → KB-AGENT-1.
 - **Rich descriptions and comments**. The description uses the same editor as Help Centre articles. The
-  comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments). Paste,
+  comment box uses a compact version. Type `@` to mention someone, and they get a notification when you save or comment (the bell in the console topbar; Watch a ticket to follow its comments; rest the mouse on a mention in the bell to read the comment that tagged you without opening the ticket). Paste,
   drop or upload screenshots; they're downscaled and stored with the ticket. The record button captures your screen as a
   playable video (prototype only: a recording lasts for the browser session, and the real console would upload it to Storage).
 - **Task modal layout**. The details column runs the full height of the modal, with its panel button at the top of the column (or the "Details" tab when folded) and the Flag button on the same line as Priority. It folds the details column away to
