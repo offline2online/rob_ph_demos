@@ -799,7 +799,10 @@ The mark is `public/img/ph-mark.svg` — the four bars from
 square viewBox, with PNGs rendered from it for clients that won't draw SVG.
 Its centre is transparent rather than white, so it reads on a dark UI as well
 as a light one. The same files are the console's favicon and the consent
-page's, which is what a client falls back to if it ignores `icons`.
+page's, which is what a client falls back to if it ignores `icons`. The mark is
+also served at the site root as `/favicon.ico` and `/apple-touch-icon.png`
+(`public/`), for a client that looks an icon up from the domain without
+reading the page.
 
 **A client reads `serverInfo` once, at connect.** After this ships, an
 already-connected client keeps showing whatever it cached — reconnect it (or
