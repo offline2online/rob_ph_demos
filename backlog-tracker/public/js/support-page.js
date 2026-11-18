@@ -14,7 +14,7 @@ import {
   QUEUES, STATUS_LABEL, CATEGORY_LABEL, DEFAULT_QUEUE, queueCounts, normaliseTicket, filterTickets, supportHash, toMs,
   fmtWhen, searchArticles, articleSnippet, articleUrl, draftSource, composeProblem,
   confidenceBand, CONFIDENCE_LABEL, confidenceChange, pct, INBOXES, DEFAULT_INBOX, inboxOf, inInbox,
-  aidanView, aidanThreadState, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
+  aidanView, aidanThreadState, aidanParts, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts,
 } from "./support-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -39,7 +39,18 @@ function writeOpened(map) { try { localStorage.setItem(OPENED_KEY, JSON.stringif
 const sourcesHtml = (articles) => `<div class="support-draft-sources">From: ${articles.map((a) => (a.url === "" ? `<span title="Hidden from the website">${esc(a.title)} (not on the website)</span>` : `<a href="${esc(a.url || articleUrl(a.id))}" target="_blank" rel="noopener">${esc(a.title)}</a>`)).join(", ")}</div>`;
 // An answer Aidan took from the Help Centre: the confidence and the matched articles (on the ticket only, never in his email).
 const aidanSourcesHtml = (v) => (v && v.helpCentre ? `<div class="support-aidan-sources">${confidenceHtml(v.helpCentre.confidence)}${sourcesHtml(v.helpCentre.articles)}</div>${confidenceChangeHtml(v.helpCentre.confidenceSteps)}` : "");
-const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}` : ""; };
+// Which part of the email was the instruction and which the content (OrkZBBjz9RM5DY54azIG):
+// shown when Aidan was asked about the thread ("answer John's question below"). Text only, no controls.
+function aidanPartsHtml(aidan) {
+  const p = aidanParts(aidan);
+  if (!p) return "";
+  return `<dl class="support-aidan-parts" aria-label="What Aidan read">
+      <div class="support-aidan-part"><dt>${icon("input")}Instruction</dt><dd>${esc(p.instruction)}<small>From the sender's new text. Only this is acted on.</small></dd></div>
+      <div class="support-aidan-part"><dt>${icon("notes")}Content</dt><dd>${esc(p.content.line)}${p.content.preview ? `<q class="support-aidan-quote">${esc(p.content.preview)}</q>` : ""}</dd></div>
+      ${p.ignored.length ? `<div class="support-aidan-part support-aidan-ignored"><dt>${icon("block")}Ignored</dt><dd>Aidan: ignored instruction in quoted text. It changed nothing: not the kind of reply, the skill or who it went to.<ul>${p.ignored.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></dd></div>` : ""}
+    </dl>`;
+}
+const aidanLine = (t) => { const v = aidanView(t.aidan); return v ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(v.line)}</p>${aidanSourcesHtml(v)}${aidanPartsHtml(t.aidan)}` : ""; };
 function aidanMessageHtml(m, at) {
   const files = (m.attachments || []).length ? `<div class="support-msg-files">${icon("attach_file")}${m.attachments.map((a) => esc(a.name)).join(", ")} <small>(open in Gmail)</small></div>` : "";
   return `<li class="support-msg support-msg-out support-msg-aidan"><div class="support-msg-head"><b>Aidan</b><span class="badge badge-feature">Sent by Aidan${m.kind === "answer" ? " · Answer" : ""}${m.skillName ? ` · ${esc(m.skillName)}` : ""}</span><small>${esc(fullDate(at))}</small></div>
@@ -262,7 +273,7 @@ export function mountSupportPage({ db, canEdit, apiHeaders, go, alert, confirm, 
         <div class="support-ticket-meta">${spam ? `<span class="badge support-status-spam">Spam</span>` : ""}${state ? aidanStateBadge(t) : ""}
           ${t.inboxes.length > 1 ? `<span class="badge badge-status-draft" title="This email was written to more than one address, so it is in each of these inboxes">In ${esc(t.inboxes.map((k) => inboxOf(k).label).join(", "))}</span>` : ""}
           <span>${esc(t.customerName ? `${t.customerName} <${t.customerEmail}>` : t.customerEmail)}</span></div>
-        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}` : ""}
+        ${state ? `<p class="support-summary support-aidan-line">${icon("smart_toy")}${esc(state.line)}</p>${aidanSourcesHtml(state)}${aidanPartsHtml(t.aidan)}` : ""}
       </div>
       ${edit ? `<div class="support-actions" role="group" aria-label="Email actions">${spam
         ? `<button type="button" class="btn-ghost" data-support-status="open">${icon("inbox")} Not spam</button>`

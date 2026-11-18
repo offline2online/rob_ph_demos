@@ -137,6 +137,17 @@ check("the eval fixtures (test/fixtures/support-eval.json) pass through both pat
   for (const c of fixtures) assert.strictEqual(calls.filter((x) => x.id === c.id).length % 2, 0, `${c.id}: the same number of model calls through each path`);
 });
 
+check("questionFromEmail with thread content (OrkZBBjz9RM5DY54azIG): the quoted question is read first and as it is, then the asker's new text", () => {
+  const content = "The quoted or forwarded part of the email:\nOn Mon, 16 Nov 2026 at 10:00, John Client wrote:\nHow many stores can one campaign target?";
+  const q = answerCore.questionFromEmail({ fromName: "Owner Person", fromEmail: "owner@example.com", subject: "Stores", text: "@Aidan, please answer John's question below.", content });
+  assert.deepStrictEqual(q.messages.map((m) => [m.direction, Boolean(m.verbatim)]), [["in", true], ["in", false]]);
+  const block = answerCore.emailBlock(q.ticket, q.messages);
+  assert.ok(block.includes("How many stores can one campaign target?"), "the attribution line doesn't cut the question away");
+  assert.ok(block.indexOf("How many stores") < block.indexOf("@Aidan, please answer"), "the question first, the new text last");
+  // Without content: one email, exactly as before.
+  assert.strictEqual(answerCore.questionFromEmail({ text: "How?" }).messages.length, 1);
+});
+
 (async () => {
   let failed = 0;
   for (const [name, fn] of checks) {
