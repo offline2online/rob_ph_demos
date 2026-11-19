@@ -124,7 +124,7 @@ check("the eval fixtures (test/fixtures/support-eval.json) pass through both pat
       answered += 1;
       // An equivalent draft: the same body under each path's own opening.
       assert.ok(viaSupport.draft.includes(`Answer for ${c.id}.`) && viaAidan.draft.includes(`Answer for ${c.id}.`), c.id);
-      assert.ok(/Thanks for your email\./.test(viaSupport.draft) && !/Thanks for your email\./.test(viaAidan.draft) && /Assistant to Rob/.test(viaAidan.draft), c.id);
+      assert.ok(/Thanks for your email\./.test(viaSupport.draft) && !/Thanks for your email\./.test(viaAidan.draft) && /\n\nAidan, Personalisation Hub$/.test(viaAidan.draft), c.id);
       const named = viaAidan.cited.filter((a) => a.url);
       assert.ok(named.every((a) => viaAidan.draft.includes(a.title)), `${c.id}: Aidan's reply cites the article titles`);
       assert.ok(!/\b\d{1,3}%|confidence/i.test(viaAidan.draft.replace(/https?:\S+/g, "")) || named.some((a) => /%|confidence/i.test(a.title)), `${c.id}: no confidence in the email`);
