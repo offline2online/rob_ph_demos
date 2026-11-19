@@ -68,6 +68,13 @@ t("settings: an unset current release is the earliest unreleased by version (TC-
   assert.equal(k.currentReleaseId({ currentRelease: "a" }, rels), "a");
   assert.equal(k.currentReleaseId({}, []), "");
 });
+t("settings: Attachments are always on the create and edit forms, even if saved hidden", () => {
+  assert.equal(k.defaultFields().attachments.show, true);
+  assert.equal(k.normaliseSettings({ fields: { attachments: { show: false, required: true } } }).fields.attachments.show, true);
+  assert.equal(k.normaliseSettings({ fields: { attachments: { show: false, required: true } } }).fields.attachments.required, false, "never required");
+  assert.ok(k.OPTIONAL_FIELDS.find((f) => f.key === "attachments").lockShow);
+  assert.equal(k.normaliseSettings({ fields: { sprint: { show: false, required: false } } }).fields.sprint.show, false, "other optional fields can still be hidden");
+});
 t("settings: core fields always shown, title and status always required", () => {
   const s = k.normaliseSettings({ fields: { title: { show: false, required: false }, sprint: { show: false, required: true } }, firstNames: { "h@x": "Huy" } });
   assert.deepEqual(s.fields.title, { show: true, required: true });

@@ -9,6 +9,7 @@ import { createStore } from "./kanban-store.js";
 import { KBEditor } from "./kanban-editor.js";
 import { colourFor, photoSrcFor, setAvatarMember, getAvatarMember, initialOf, splitName } from "../avatar.js";
 import { createResultReader, useContinuousMode, isAndroidDevice } from "../dictation-results.js";
+import { ATTACHMENT_ACCEPT, MAX_ATTACHMENT_BYTES, attachmentContentType, isAllowedAttachmentType, attachmentKind } from "../item-attachments.js";
 import {
   STATUSES, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL,
   res, statusLabel, statusShort, typeOf, prioOf, remaining, fmtH, parseDur, fmtDate, daysBetween, workingDaysUntil,
@@ -244,14 +245,53 @@ export function mountStaffKanban(ctx) {
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.full)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
-  let toastTimer;
-  function toast(html) {
+  // A toast shows for 3.6 seconds. One that names a ticket the person just created
+  // (`opts.open`) is a button that opens that ticket, so a forgotten assignee or due date
+  // is one click away, and it stays for 8 seconds, longer while the pointer or keyboard
+  // focus rests on it.
+  let toastTimer, toastMs = 3600;
+  const TOAST_OPEN_MS = 8000;
+  function toast(html, opts) {
     const el = $("#kb-toast");
     if (!el) return;
-    el.innerHTML = html;
+    const key = opts && opts.open;
+    el.innerHTML = key
+      ? `<button type="button" class="kb-toast-open" data-toast-key="${esc(key)}" aria-label="Open ${esc(key)}"><span class="kb-toast-msg">${html}</span><span class="kb-toast-cta">Open<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></span></button>`
+      : html;
+    el.classList.toggle("kb-toast-action", !!key);
     el.hidden = false;
+    toastMs = key ? TOAST_OPEN_MS : 3600;
+    if (!el._bound) {
+      el._bound = true;
+      const hold = () => clearTimeout(toastTimer);
+      const resume = () => { if (!el.hidden && !el.matches(":hover") && !el.contains(document.activeElement)) armToast(); };
+      el.addEventListener("mouseenter", hold);
+      el.addEventListener("focusin", hold);
+      el.addEventListener("mouseleave", resume);
+      el.addEventListener("focusout", () => setTimeout(resume, 0));
+      el.addEventListener("click", (e) => { const b = e.target.closest(".kb-toast-open"); if (b) openFromToast(b.dataset.toastKey); });
+    }
+    if (el.matches(":hover") || el.contains(document.activeElement)) clearTimeout(toastTimer);
+    else armToast();
+  }
+  function armToast() {
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 3600);
+    toastTimer = setTimeout(() => { const el = $("#kb-toast"); if (el) el.hidden = true; }, toastMs);
+  }
+  // The ticket a toast names, opened over the board. A ticket dialog with unsaved changes
+  // is never closed for it: the toast says so and stays.
+  function openFromToast(key) {
+    const el = $("#kb-toast");
+    const open = !$("#task-backdrop").hidden;
+    if (open && draft && draft.key === key) { clearTimeout(toastTimer); if (el) el.hidden = true; return; }
+    if (open && changeBase != null && formState() !== changeBase) {
+      toast(`Save or close the open ticket first, then open <b>${esc(key)}</b>.`, { open: key });
+      return;
+    }
+    clearTimeout(toastTimer);
+    if (el) el.hidden = true;
+    if (open) { returnTo = null; closeTask({ keepAddress: true }); }
+    openTask(key);
   }
   const fail = (err) => {
     console.warn("staff kanban: save failed", err);
@@ -1573,7 +1613,7 @@ export function mountStaffKanban(ctx) {
         ${canWrite() ? `<div class="kb-add-row kb-ac-add"><input type="text" id="f-ac-input" class="kb-input" maxlength="${AC_MAX_TEXT}" placeholder="Add a criterion and press Enter" autocomplete="off"><button type="button" class="btn-ghost" id="f-ac-add">Add</button></div>` : ""}
         <p class="kb-inline-note" id="f-ac-note" hidden></p></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
-        <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" multiple hidden></label></div>`;
+        <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" accept="${esc(ATTACHMENT_ACCEPT)}" multiple hidden></label>${tip("Attach videos, PDFs, Excel, Word and PowerPoint files, images, text files and zips, up to 100 MB each. Pick several at once.")}</div>`;
       case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
         <div class="desc-wrap kb-ed-wrap"><div class="kb-editor kb-editor-compact" id="f-comment"></div>${micBtn("f-comment-mic", "Dictate a comment")}</div>
         <p class="mic-error" id="f-comment-mic-error"></p>
@@ -1846,7 +1886,17 @@ export function mountStaffKanban(ctx) {
   }
   const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
-  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li><span class="material-symbols-outlined" aria-hidden="true">${/\.(png|jpe?g|gif|webp)$/i.test(a.name) ? "image" : /\.(mov|mp4|webm)$/i.test(a.name) ? "movie" : "description"}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
+  // The icon for an attachment, from its stored content type (else its name).
+  const attachmentIcon = (a) => {
+    const t = attachmentContentType({ type: a.contentType || "", name: a.name || "" });
+    const kind = attachmentKind(t);
+    if (kind === "image") return "image";
+    if (kind === "video") return "movie";
+    if (t === "application/pdf") return "picture_as_pdf";
+    if (/spreadsheet|ms-excel|text\/csv/.test(t)) return "table_chart";
+    return "description";
+  };
+  const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li data-att-kind="${esc(attachmentIcon(a))}"><span class="material-symbols-outlined" aria-hidden="true">${attachmentIcon(a)}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
   // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
   let editingComment = "", editQ = null;
   const commentMenuHTML = (c) => {
@@ -2004,11 +2054,18 @@ export function mountStaffKanban(ctx) {
       const files = Array.from(ff.files);
       ff.value = "";
       for (const f of files) {
-        if (f.size > 100 * 1024 * 1024) { toast(`<b>${esc(f.name)}</b> is over 100 MB`); continue; }
-        const a = { name: f.name, size: f.size, contentType: f.type || "", uploading: true };
+        // The browser leaves the type empty for some files (.mov on Windows,
+        // .xlsx on some machines); read it off the extension so Storage
+        // accepts it, and refuse what Storage would refuse before uploading.
+        let contentType = attachmentContentType(f);
+        if (contentType === "application/x-zip-compressed") contentType = "application/zip";
+        if (f.size > MAX_ATTACHMENT_BYTES) { toast(`<b>${esc(f.name)}</b> is over 100 MB`); continue; }
+        if (!f.size) { toast(`<b>${esc(f.name)}</b> is empty`); continue; }
+        if (!isAllowedAttachmentType(contentType)) { toast(`<b>${esc(f.name)}</b> can't be attached. Attach a video, PDF, Office document, image, text file or zip.`); continue; }
+        const a = { name: f.name, size: f.size, contentType, uploading: true };
         draft.attachments.push(a);
         const d = draft;
-        store.upload(d.key || "new", f, f.name).then((r) => { Object.assign(a, r); delete a.uploading; })
+        store.upload(d.key || "new", f, f.name, contentType).then((r) => { Object.assign(a, r); delete a.uploading; })
           .catch(() => { d.attachments = d.attachments.filter((x) => x !== a); toast(`<b>${esc(f.name)}</b> couldn't be uploaded`); })
           .finally(() => { const el = $("#f-attachments"); if (el && draft === d) el.innerHTML = attachmentsHTML(); });
       }
@@ -2655,8 +2712,8 @@ export function mountStaffKanban(ctx) {
           closeTask(); renderCurrent();
           toast("Creating the ticket…");
           store.createTask(fields).then((key) => {
-            toast(`<b>${esc(key)}</b> created in Backlog`);
-            if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(key)}</b>`), 1800);
+            toast(`<b>${esc(key)}</b> created in Backlog`, { open: key });
+            if (notify.length) setTimeout(() => toast(`<b>${esc(key)}</b> created in Backlog · ${esc(notify.map(fullName).join(", "))} notified`, { open: key }), 1800);
             renderCurrent();
           }).catch((e) => {
             console.warn("staff kanban: create failed", e);
@@ -2671,9 +2728,9 @@ export function mountStaffKanban(ctx) {
         }
         const key = await store.createTask(fields);
         next.key = key;
-        toast(`<b>${esc(key)}</b> created in Backlog`);
+        toast(`<b>${esc(key)}</b> created in Backlog`, { open: key });
       }
-      if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
+      if (notify.length) setTimeout(() => (existing ? toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`) : toast(`<b>${esc(next.key)}</b> created in Backlog · ${esc(notify.map(fullName).join(", "))} notified`, { open: next.key })), 1800);
     } catch (e) {
       saving = false;
       if (saveBtn) saveBtn.disabled = false;
@@ -2684,7 +2741,7 @@ export function mountStaffKanban(ctx) {
     }
     saving = false;
     if (opts.then) { const back = returnTo; returnTo = null; closeTask(); returnTo = back; renderCurrent(); opts.then(next.key); return; }
-    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`);
+    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`, { open: next.key });
     closeTask(); renderCurrent();
   }
   function initModal() {
@@ -2908,8 +2965,8 @@ export function mountStaffKanban(ctx) {
     const row = (f, core) => {
       const c = S.fields[f.key];
       return `<div class="kb-set-row${core ? " kb-set-core" : ""}">
-        <span class="kb-set-name">${esc(f.label)}${core && f.lockRequired ? '<span class="kb-set-tag">Always required</span>' : ""}</span>
-        <label class="kb-set-toggle"><span class="kb-set-col">Show</span><input type="checkbox" data-show="${f.key}" ${c.show ? "checked" : ""} ${core || !admin ? "disabled" : ""} aria-label="Show ${esc(f.label)} on the form"></label>
+        <span class="kb-set-name">${esc(f.label)}${core && f.lockRequired ? '<span class="kb-set-tag">Always required</span>' : ""}${f.lockShow ? '<span class="kb-set-tag">Always shown</span>' : ""}</span>
+        <label class="kb-set-toggle"><span class="kb-set-col">Show</span><input type="checkbox" data-show="${f.key}" ${c.show ? "checked" : ""} ${core || f.lockShow || !admin ? "disabled" : ""} aria-label="Show ${esc(f.label)} on the form"></label>
         <label class="kb-set-toggle"><span class="kb-set-col">Required</span><input type="checkbox" data-req="${f.key}" ${c.required ? "checked" : ""} ${f.lockRequired || !c.show || !admin || ["comments", "attachments", "flag", "release"].includes(f.key) ? "disabled" : ""} aria-label="${esc(f.label)} required"></label>
       </div>`;
     };
