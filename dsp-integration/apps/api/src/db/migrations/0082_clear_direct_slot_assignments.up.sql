@@ -1,4 +1,5 @@
 -- Direct advertisers leave slots (ticket mpbRDjAPS4uIagi2IVsz, 22 Oct 2026): a direct advertiser gets a slot only through a Direct advertiser deal (0081), never by being named in the slot's Assigned to. This removes every direct advertiser still named on a slot (a name in direct_advertisers that no DSP seat carries, the same test validateAssigned applies). A slot left with no named advertiser becomes real time (rtb) again. A slot with a live booking (a won or reserved, non-test window starting in the last 60 days, a safe over-estimate of "not finished playing") keeps its advertiser and is locked against new sales instead, the existing sold-slot rule; the lock releases when its bookings have played and the sweep then removes the direct advertiser (domain/slotLock.ts). Nothing is converted into a draft deal: a deal needs flight dates and a price the old assignment never held, so the removed names are kept only in the SSP change history (one agent entry per field, 'migration-0082').
+-- 18 Nov 2026 (ticket FPuL5N2HIGBNto992Dj8): the final UPDATE wraps its subquery in json(), as 0086 does. A scalar subquery hands json_set plain text, not JSON, on SQLite 3.54 (Node 22.23), so without the wrap the whole slot list was saved as one quoted string. Same result as before on older SQLite.
 CREATE TABLE _m0082_fix (dt_id TEXT NOT NULL, dt_name TEXT NOT NULL, idx INTEGER NOT NULL, old_adv TEXT NOT NULL, kept_adv TEXT NOT NULL, old_mode TEXT, live INTEGER NOT NULL);
 
 INSERT INTO _m0082_fix (dt_id, dt_name, idx, old_adv, kept_adv, old_mode, live)
@@ -31,7 +32,7 @@ SELECT 'aud_' || lower(hex(randomblob(6))), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'
 FROM _m0082_fix WHERE live;
 
 -- The slots themselves, one rewrite of each affected display type's slot list.
-UPDATE display_types SET ph_extensions = json_set(ph_extensions, '$.slots', (
+UPDATE display_types SET ph_extensions = json_set(ph_extensions, '$.slots', json((
   SELECT json_group_array(json(CASE
     WHEN f.idx IS NULL THEN s.value
     WHEN f.live THEN json_set(s.value, '$.salesLocked', json('true'))
@@ -40,7 +41,7 @@ UPDATE display_types SET ph_extensions = json_set(ph_extensions, '$.slots', (
   END))
   FROM (SELECT key, value FROM json_each(display_types.ph_extensions, '$.slots') ORDER BY CAST(key AS INTEGER)) s
   LEFT JOIN _m0082_fix f ON f.dt_id = display_types.id AND f.idx = CAST(s.key AS INTEGER)
-)), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+))), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id IN (SELECT dt_id FROM _m0082_fix);
 
 DROP TABLE _m0082_fix;
