@@ -380,6 +380,17 @@ Comments). The heading and primary button follow the type: **Create task**,
 Type, Parent epic, Assignee, Reporter, Release, Estimate, Time logged (then
 any other shown optional fields; Status last when editing).
 
+**Open the new ticket from its confirmation (19 Nov 2026).** The "PH-n created
+in Backlog" toast (also its "· added to <epic>" and "· <names> notified" forms)
+is a button with **Open**: a click or tap opens the new ticket, so a forgotten
+assignee, date or label is one click away without searching. It shows for 8
+seconds (other toasts 3.6) and does not go while the pointer or keyboard focus
+rests on it. While a ticket dialog is open the toast hides **Open** and lets
+taps through to the form beneath it; a ticket with unsaved changes is never
+closed by it. Every other toast is plain text.
+AC: create a ticket; the toast is still there after 4.5 s; click it and the
+ticket opens. Case KB-C30.
+
 **KB-MOD-2 Voice first.** One **Record task** button captures speech (live
 transcript, timer, red stop state, keeps listening through pauses until
 stopped). On stop, an agent writes the title and description and sets

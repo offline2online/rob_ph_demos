@@ -1986,6 +1986,37 @@ T("KB-C16", "a ticket address opens that ticket; editing the key opens another; 
   await p.done();
 });
 
+// The "created in Backlog" toast opens the new ticket (to add a forgotten assignee or date)
+// and stays longer than other toasts: 8 seconds, not 3.6.
+T("KB-C30", "the created toast stays 8 seconds and a click on it opens the new ticket", async (prof) => {
+  const p = await open(prof);
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Opened from the toast");
+  await press(p, "#f-save");
+  await until(async () => /PH-\d+ created in Backlog/.test(await toastText(p)), "the created toast");
+  const key = /PH-\d+/.exec(await toastText(p))[0];
+  assert.equal(await p.getAttribute("#kb-toast .kb-toast-open", "aria-label"), `Open ${key}`, "the toast is a button naming the ticket");
+  assert.match(await p.textContent("#kb-toast .kb-toast-cta"), /Open/);
+  await sleep(4500);
+  assert.ok(await p.isVisible("#kb-toast .kb-toast-open"), "still showing after 4.5 seconds (other toasts go at 3.6)");
+  await press(p, "#kb-toast .kb-toast-open");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await until(async () => (await modalKey(p)) === key, "the new ticket open");
+  assert.equal(await p.isVisible("#kb-toast"), false, "the toast goes when the ticket opens");
+  // Over an open ticket a toast never takes a tap meant for the form beneath it.
+  await p.evaluate((k) => { const el = document.querySelector("#kb-toast"); el.innerHTML = `<button type="button" class="kb-toast-open" data-toast-key="${k}">x</button>`; el.hidden = false; }, key);
+  assert.equal(await p.$eval("#kb-toast", (e) => getComputedStyle(e).pointerEvents), "none", "taps go through the toast while a ticket is open");
+  await p.evaluate(() => { document.querySelector("#kb-toast").hidden = true; });
+  // Any other toast is plain text, not a button.
+  await press(p, "#task-close");
+  await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => {} } }); });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await press(p, "#task-share");
+  await until(async () => /Link copied/.test(await toastText(p)), "the Link copied toast");
+  assert.equal(await p.$("#kb-toast .kb-toast-open"), null, "a plain toast opens nothing");
+  await p.done();
+});
 T("KB-C17", "Share link copies the ticket's address and says Link copied; the copied link opens the ticket", async (prof) => {
   const p = await open(prof, "#staff-kanban");
   await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied = t; } } }); });

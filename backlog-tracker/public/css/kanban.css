@@ -258,6 +258,16 @@ body.kb-drag-active, body.kb-drag-active * { cursor: grabbing !important; user-s
 /* Toast + bar tooltip */
 .kb-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 60; max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: var(--ap-radius-sm); background: #2c2c2e; color: #f5f5f7; font-size: 13.5px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); animation: ap-tip-in var(--ap-fast) ease-out; }
 .kb-toast[hidden] { display: none; }
+/* A toast that opens the ticket it names (a new ticket): the whole toast is the button. */
+.kb-toast.kb-toast-action { padding: 0; }
+.kb-toast-open { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px 10px 16px; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.kb-toast-open:hover .kb-toast-cta, .kb-toast-open:focus-visible .kb-toast-cta { background: rgba(56, 176, 207, .18); }
+.kb-toast-open:focus-visible { outline: 2px solid #38b0cf; outline-offset: 2px; }
+.kb-toast-cta { display: inline-flex; align-items: center; gap: 4px; flex: none; padding: 2px 8px; border-radius: var(--ap-radius-sm); color: #38b0cf; font-weight: 500; white-space: nowrap; }
+.kb-toast-cta .material-symbols-outlined { font-size: 16px; width: 1em; height: 1em; overflow: hidden; }
+/* Over an open ticket the toast is information only: taps go through to the form beneath it. */
+body.kb-modal-open .kb-toast { pointer-events: none; }
+body.kb-modal-open .kb-toast-cta { display: none; }
 .kb-bar-tip { position: fixed; z-index: 60; pointer-events: none; padding: 8px 12px; border-radius: var(--ap-radius-sm); background: #2c2c2e; color: #f5f5f7; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0, 0, 0, .25); white-space: nowrap; }
 .kb-bar-tip[hidden] { display: none; }
 

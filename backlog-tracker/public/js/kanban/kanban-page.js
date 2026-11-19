@@ -244,14 +244,53 @@ export function mountStaffKanban(ctx) {
     return `<span class="kb-avatar ${size}" style="background:${u.color}" title="${esc(u.full)}">${esc(u.initials || u.first.charAt(0).toUpperCase())}</span>`;
   }
 
-  let toastTimer;
-  function toast(html) {
+  // A toast shows for 3.6 seconds. One that names a ticket the person just created
+  // (`opts.open`) is a button that opens that ticket, so a forgotten assignee or due date
+  // is one click away, and it stays for 8 seconds, longer while the pointer or keyboard
+  // focus rests on it.
+  let toastTimer, toastMs = 3600;
+  const TOAST_OPEN_MS = 8000;
+  function toast(html, opts) {
     const el = $("#kb-toast");
     if (!el) return;
-    el.innerHTML = html;
+    const key = opts && opts.open;
+    el.innerHTML = key
+      ? `<button type="button" class="kb-toast-open" data-toast-key="${esc(key)}" aria-label="Open ${esc(key)}"><span class="kb-toast-msg">${html}</span><span class="kb-toast-cta">Open<span class="material-symbols-outlined" aria-hidden="true">open_in_new</span></span></button>`
+      : html;
+    el.classList.toggle("kb-toast-action", !!key);
     el.hidden = false;
+    toastMs = key ? TOAST_OPEN_MS : 3600;
+    if (!el._bound) {
+      el._bound = true;
+      const hold = () => clearTimeout(toastTimer);
+      const resume = () => { if (!el.hidden && !el.matches(":hover") && !el.contains(document.activeElement)) armToast(); };
+      el.addEventListener("mouseenter", hold);
+      el.addEventListener("focusin", hold);
+      el.addEventListener("mouseleave", resume);
+      el.addEventListener("focusout", () => setTimeout(resume, 0));
+      el.addEventListener("click", (e) => { const b = e.target.closest(".kb-toast-open"); if (b) openFromToast(b.dataset.toastKey); });
+    }
+    if (el.matches(":hover") || el.contains(document.activeElement)) clearTimeout(toastTimer);
+    else armToast();
+  }
+  function armToast() {
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 3600);
+    toastTimer = setTimeout(() => { const el = $("#kb-toast"); if (el) el.hidden = true; }, toastMs);
+  }
+  // The ticket a toast names, opened over the board. A ticket dialog with unsaved changes
+  // is never closed for it: the toast says so and stays.
+  function openFromToast(key) {
+    const el = $("#kb-toast");
+    const open = !$("#task-backdrop").hidden;
+    if (open && draft && draft.key === key) { clearTimeout(toastTimer); if (el) el.hidden = true; return; }
+    if (open && changeBase != null && formState() !== changeBase) {
+      toast(`Save or close the open ticket first, then open <b>${esc(key)}</b>.`, { open: key });
+      return;
+    }
+    clearTimeout(toastTimer);
+    if (el) el.hidden = true;
+    if (open) { returnTo = null; closeTask({ keepAddress: true }); }
+    openTask(key);
   }
   const fail = (err) => {
     console.warn("staff kanban: save failed", err);
@@ -2631,8 +2670,8 @@ export function mountStaffKanban(ctx) {
           closeTask(); renderCurrent();
           toast("Creating the ticket…");
           store.createTask(fields).then((key) => {
-            toast(`<b>${esc(key)}</b> created in Backlog`);
-            if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(key)}</b>`), 1800);
+            toast(`<b>${esc(key)}</b> created in Backlog`, { open: key });
+            if (notify.length) setTimeout(() => toast(`<b>${esc(key)}</b> created in Backlog · ${esc(notify.map(fullName).join(", "))} notified`, { open: key }), 1800);
             renderCurrent();
           }).catch((e) => {
             console.warn("staff kanban: create failed", e);
@@ -2647,9 +2686,9 @@ export function mountStaffKanban(ctx) {
         }
         const key = await store.createTask(fields);
         next.key = key;
-        toast(`<b>${esc(key)}</b> created in Backlog`);
+        toast(`<b>${esc(key)}</b> created in Backlog`, { open: key });
       }
-      if (notify.length) setTimeout(() => toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`), 1800);
+      if (notify.length) setTimeout(() => (existing ? toast(`${esc(notify.map(fullName).join(", "))} notified about <b>${esc(next.key)}</b>`) : toast(`<b>${esc(next.key)}</b> created in Backlog · ${esc(notify.map(fullName).join(", "))} notified`, { open: next.key })), 1800);
     } catch (e) {
       saving = false;
       if (saveBtn) saveBtn.disabled = false;
@@ -2660,7 +2699,7 @@ export function mountStaffKanban(ctx) {
     }
     saving = false;
     if (opts.then) { const back = returnTo; returnTo = null; closeTask(); returnTo = back; renderCurrent(); opts.then(next.key); return; }
-    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`);
+    if (returnTo && !existing) toast(`<b>${esc(next.key)}</b> created in Backlog · added to ${esc(returnTo)}`, { open: next.key });
     closeTask(); renderCurrent();
   }
   function initModal() {
