@@ -3856,15 +3856,8 @@ for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
 Leads and Conversion funnel (website visitors). Support: exactly three
 figures for the support@ inbox as it stands now (never hello@ or aidan@
 mail): open and awaiting a reply, the age of the oldest unanswered email, and
-tickets replied to or resolved today. Dashboard v2 (19 Nov 2026): the tiles of all
-three sections flow through one grid, each section's heading above its first
-tile, four across on a wide desktop, three on a laptop,
-two on an iPad in portrait and one on a phone; each tile is a headline figure,
-a 7-day sparkline, a trend arrow against the day before and a green / amber /
-red status dot, with its explanation in an info tooltip. A tile never
-navigates: a click or tap pins its summary panel open, full width under its
-row, until it is closed or another tile is chosen; the panel's "Open section"
-goes to the section. Below the tiles sits **Needs attention**, which is on the
+tickets replied to or resolved today. Each tile's breakdown is a hover/focus tooltip and a click
+opens the section. Above the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
