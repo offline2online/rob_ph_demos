@@ -1,7 +1,7 @@
 // Promote section: routes, nav ids and how a page finds its mirrored documents.
 // Run with:  node test/promote-section.test.mjs
 import assert from "node:assert";
-import { PROMOTE_PAGES, promotePageFromHash, promoteHash, promoteNavId, mirrorBody, promoteDocsFor, teamFacingMd, brandHeaderHtml } from "../public/js/promote-section.js";
+import { PROMOTE_PAGES, promotePageFromHash, promoteHash, promoteNavId, mirrorBody, promoteDocsFor, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, parsePartnerDoc, partnersFrom, partnersListHtml, partnerLockupHtml, PARTNER_MIRROR_PREFIX } from "../public/js/promote-section.js";
 
 assert.strictEqual(promotePageFromHash("#promote"), "brand-guidelines");
 assert.strictEqual(promotePageFromHash("#promote/brand-guidelines"), "brand-guidelines");
@@ -57,4 +57,42 @@ for (const h of ["## Messaging rules", "## Front doors", "## Audiences", "## Fun
 for (const h of ["Logo usage", "## Colour", "The infinity loop", "## Typography", "Imagery and icons", "The two-surface system", "Founder tone of voice", "Message house"]) assert.ok(realTeam.includes(h), `the team view shows ${h}`);
 assert.ok(real.includes("Make every store visit worth more") && !/into revenue/i.test(real), "umbrella line updated in the guidelines");
 assert.ok(!/into revenue/i.test(readFileSync(new URL("../promote/brand-requirements.md", import.meta.url), "utf8")), "and in the requirements");
+
+// Partners (ZvkZpVZBXCDHb34MQegP): one page per partner, found by mirror key, no code per partner.
+assert.strictEqual(promotePageFromHash("#promote/brand-guidelines/partners/mipharmacy"), "brand-guidelines", "a partner page is part of Brand Guidelines");
+assert.strictEqual(promoteNavId("#promote/brand-guidelines/partners/mipharmacy"), "promote-brand-btn");
+assert.strictEqual(promotePartnerFromHash("#promote/brand-guidelines/partners/mipharmacy"), "mipharmacy");
+assert.strictEqual(promotePartnerFromHash("#promote/brand-guidelines"), null);
+assert.strictEqual(promotePartnerFromHash("#promote/brand-guidelines/partners/<x>"), null, "a slug is plain");
+assert.strictEqual(partnerHash("mipharmacy"), "#promote/brand-guidelines/partners/mipharmacy");
+const pd = parsePartnerDoc("<!-- partner\nname: Acme\nindustry: Grocery\nlogoLight: https://x.example/a.svg\nlogoDark:\n-->\n# Acme\n\nBody");
+assert.deepStrictEqual(pd.meta, { name: "Acme", industry: "Grocery", logoLight: "https://x.example/a.svg", logoDark: "" });
+assert.strictEqual(pd.body, "# Acme\n\nBody");
+assert.strictEqual(parsePartnerDoc("# Plain").body, "# Plain", "a file with no block is left alone");
+const prow = (key, md, extra = {}) => ({ id: key, mirrorKey: key, contentMd: "P\n\n" + md, sourcePrefix: "P\n\n", ...extra });
+const plist = partnersFrom([
+  prow("brand-guidelines", "# G"),
+  prow(`${PARTNER_MIRROR_PREFIX}zeta`, "<!-- partner\nname: Zeta Co\n-->\nZ"),
+  prow(`${PARTNER_MIRROR_PREFIX}mipharmacy`, "<!-- partner\nname: miPharmacy\nindustry: Pharmacy\n-->\n# miPharmacy"),
+  prow(`${PARTNER_MIRROR_PREFIX}gone`, "x", { status: "superseded" }),
+]);
+assert.deepStrictEqual(plist.map((p) => p.slug), ["mipharmacy", "zeta"], "every brand-partner-* mirror is listed, by name; a superseded one is not");
+assert.strictEqual(plist[0].body, "# miPharmacy");
+const lhtml = partnersListHtml(plist);
+assert.ok(lhtml.includes("Partners") && lhtml.includes('href="#promote/brand-guidelines/partners/zeta"') && lhtml.includes("Zeta Co"), "a second partner needs no code change");
+assert.strictEqual(partnersListHtml([]), "");
+const lock = partnerLockupHtml(plist[0]);
+assert.strictEqual((lock.match(/<figure/g) || []).length, 4);
+assert.ok(lock.includes("img/brand/ph-logo-full-color.svg") && lock.includes("img/brand/ph-logo-white.svg") && lock.includes("lockup-missing"));
+const withLogo = partnerLockupHtml({ ...plist[0], logoLight: "https://cdn.example/l.svg", logoDark: "javascript:alert(1)" });
+assert.ok(withLogo.includes('src="https://cdn.example/l.svg"') && !withLogo.includes("javascript:"), "only a safe logo URL is used");
+// The real miPharmacy file: every section, its block parses, and it is declared in board-docs.json.
+const mip = readFileSync(new URL("../promote/partners/mipharmacy.md", import.meta.url), "utf8");
+const mipTeam = teamFacingMd(parsePartnerDoc(mip).body);
+assert.strictEqual(parsePartnerDoc(mip).meta.name, "miPharmacy");
+for (const h of ["## Who leads, by audience", "## Co-brand logo lockups", "## Colour hierarchy", "## Naming, wording and tone", "## Approved claims and outcomes", "## Co-branded templates", "personalisationhub.com/industries/pharmacy/"]) assert.ok(mipTeam.includes(h), `the miPharmacy page shows ${h}`);
+assert.ok(mip.includes("## For agents") && !mipTeam.includes("## For agents"), "agent detail is kept for MCP and hidden on the page");
+assert.ok(!/[\u2013\u2014]/.test(mipTeam), "no long dashes in partner copy (ph-brand)");
+const manifest = JSON.parse(readFileSync(new URL("../board-docs.json", import.meta.url), "utf8"));
+assert.ok(manifest.mirrors.some((e) => e.key === "brand-partner-mipharmacy" && e.path === "backlog-tracker/promote/partners/mipharmacy.md"), "the miPharmacy page is mirrored to the board, so agents read it over MCP");
 console.log("promote-section: ok");

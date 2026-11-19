@@ -1963,6 +1963,37 @@ const scenarios = [
     },
   },
   {
+    // ZvkZpVZBXCDHb34MQegP: Brand Guidelines › Partners, one page per partner, listed from the brand-partner-* mirrors.
+    name: "Promote: Brand Guidelines lists Partners and opens the miPharmacy co-branding page",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
+      mp: { projectId: PID, name: "6 — Brand partner: miPharmacy (co-branding)", mirrorKey: "brand-partner-mipharmacy", sourcePath: "backlog-tracker/promote/partners/mipharmacy.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n<!-- partner\nslug: mipharmacy\nname: miPharmacy\nindustry: Pharmacy\nlogoLight:\nlogoDark:\n-->\n# miPharmacy\n\n## Who leads, by audience\n\nPharma brands: miPharmacy leads.\n\n## Co-brand logo lockups\n\nHairline divider.\n\n## Colour hierarchy\n\nTeal.\n\n## Naming, wording and tone\n\nPowered by Personalisation Hub.\n\n## Approved claims and outcomes\n\nSee [pharmacy](https://personalisationhub.com/industries/pharmacy/).\n\n## Co-branded templates\n\nOne-pager.\n\n<!-- agent-only:start -->\n\n## For agents\n\nAgent detail.\n\n<!-- agent-only:end -->", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-partners", "miPharmacy", "the Partners subsection lists miPharmacy");
+      assert.ok((await c.text("#promote-partners")).includes("Partners") && (await c.text("#promote-partners")).includes("Pharmacy"));
+      await c.page.locator('#promote-partners a.partner-card').first().click();
+      await c.waitText("#promote-title", "miPharmacy", "the partner page opens");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/partners/mipharmacy", "the partner page has its own URL");
+      const body = await c.text("#promote-guidelines");
+      for (const h of ["Who leads, by audience", "Co-brand logo lockups", "Colour hierarchy", "Naming, wording and tone", "Approved claims and outcomes", "Co-branded templates"]) assert.ok(body.includes(h), `the page shows ${h}`);
+      assert.ok(!body.includes("Agent detail") && !body.includes("slug:") && !body.includes("Copy of the file"), "agent-only detail, the partner block and the copy line are not shown");
+      assert.strictEqual(await c.page.locator('#promote-guidelines a[href="https://personalisationhub.com/industries/pharmacy/"]').count(), 1, "claims link to the pharmacy industry page");
+      assert.strictEqual(await c.page.locator("#promote-partner-lockups figure.lockup").count(), 4, "partner-led and PH-led lockups, light and dark");
+      assert.strictEqual(await c.page.locator('#promote-partner-lockups img[src="img/brand/ph-logo-white.svg"]').count(), 2, "the official white PH logo on dark");
+      assert.strictEqual(await c.page.locator("#promote-partner-lockups .lockup-missing").count(), 4, "the partner logo slot waits for its Brand assets file");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partners").isHidden(), "the guidelines header and list are not on a partner page");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
+      assert.ok(await c.page.locator("#promote-partner-lockups").isHidden() && await c.page.locator("#promote-back").isHidden());
+    },
+  },
+  {
     name: "Promote: Leads board - add a lead with contacts, drag it to Hot Lead, convert it",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },

@@ -23,12 +23,15 @@ export const PROMOTE_PAGES = [
 export const DEFAULT_PROMOTE_PAGE = PROMOTE_PAGES[0].key;
 
 // "#promote" and "#promote/<page>" -> the page key, or null when the hash is
-// not a Promote route. An unknown sub-page falls back to the first one.
+// not a Promote route. An unknown sub-page falls back to the first one. A
+// partner page ("#promote/brand-guidelines/partners/<slug>") is part of
+// Brand Guidelines.
 export function promotePageFromHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "#promote") return DEFAULT_PROMOTE_PAGE;
   if (!h.startsWith("#promote/")) return null;
   const key = h.slice("#promote/".length);
+  if (key.startsWith(PARTNER_ROUTE)) return "brand-guidelines";
   return PROMOTE_PAGES.some((p) => p.key === key) ? key : DEFAULT_PROMOTE_PAGE;
 }
 export function promoteHash(key) { return `#promote/${key}`; }
@@ -92,4 +95,83 @@ export function brandHeaderHtml() {
     + `<p class="brand-umbrella">${BRAND_UMBRELLA}</p>`
     + `<ul class="brand-palette" aria-label="Brand palette">${swatches}</ul>`
     + `<div class="brand-type"><span class="brand-type-name">Kantumruy Pro</span><span class="brand-type-sample">Aa Bb Cc 0123</span></div>`;
+}
+
+// ── Partners (co-branding) under Brand Guidelines ─────────────────────────
+// One page per partner, each a repo file backlog-tracker/promote/partners/
+// <slug>.md declared in board-docs.json with the mirror key
+// "brand-partner-<slug>". The page lists whatever partner mirrors exist, so a
+// second partner is a new file and a manifest entry, never a code change.
+// Agents read the same documents over MCP (get_project_document).
+export const PARTNER_MIRROR_PREFIX = "brand-partner-";
+const PARTNER_ROUTE = "brand-guidelines/partners/";
+export function partnerHash(slug) { return `#promote/${PARTNER_ROUTE}${encodeURIComponent(slug)}`; }
+// "#promote/brand-guidelines/partners/<slug>" -> slug, else null.
+export function promotePartnerFromHash(hash) {
+  const h = String(hash || "").split("?")[0];
+  const pre = `#promote/${PARTNER_ROUTE}`;
+  if (!h.startsWith(pre)) return null;
+  const slug = decodeURIComponent(h.slice(pre.length)).split("/")[0];
+  return /^[a-z0-9-]+$/.test(slug) ? slug : null;
+}
+
+// The "<!-- partner ... -->" block at the top of a partner file: one
+// "key: value" per line (name, industry, summary, industryUrl, logoLight,
+// logoDark). Returns { meta, body } with the block removed from the body.
+export function parsePartnerDoc(md) {
+  const text = String(md || "");
+  const m = text.match(/^\s*<!--\s*partner\s*\n([\s\S]*?)-->\s*\n?/);
+  const meta = {};
+  if (m) {
+    for (const line of m[1].split("\n")) {
+      const i = line.indexOf(":");
+      if (i > 0) meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+  }
+  return { meta, body: m ? text.slice(m[0].length) : text };
+}
+
+// projectDocs rows -> the partner pages, sorted by name.
+export function partnersFrom(projectDocs) {
+  return (projectDocs || [])
+    .filter((d) => d && typeof d.mirrorKey === "string" && d.mirrorKey.startsWith(PARTNER_MIRROR_PREFIX) && d.status !== "superseded")
+    .map((d) => {
+      const slug = d.mirrorKey.slice(PARTNER_MIRROR_PREFIX.length);
+      const { meta, body } = parsePartnerDoc(mirrorBody(d));
+      return { id: d.id, slug, name: meta.name || slug, industry: meta.industry || "", summary: meta.summary || "", industryUrl: meta.industryUrl || "", logoLight: meta.logoLight || "", logoDark: meta.logoDark || "", body };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const safeUrl = (u) => (/^(https:\/\/|\/|img\/)/.test(String(u || "")) ? String(u) : "");
+
+// The Partners list on the Brand Guidelines page.
+export function partnersListHtml(partners) {
+  if (!partners.length) return "";
+  const cards = partners.map((p) => `<li><a class="partner-card" href="${partnerHash(p.slug)}">`
+    + `<span class="partner-card-text"><span class="partner-card-name">${esc(p.name)}</span>`
+    + (p.industry ? `<span class="partner-card-meta">${esc(p.industry)}</span>` : "")
+    + `</span><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></a></li>`).join("");
+  return `<h2 class="partners-title">Partners</h2><ul class="partner-list" aria-label="Partners">${cards}</ul>`;
+}
+
+// The visual lockups at the top of a partner page: each lead brand, on a
+// light and a dark surface, from the official files. A partner whose logo
+// file isn't in Brand assets yet shows a labelled empty slot, never a
+// drawn or typed logo.
+export const PH_LOGO = { light: "img/brand/ph-logo-full-color.svg", dark: "img/brand/ph-logo-white.svg" };
+export function partnerLockupHtml(p) {
+  const partnerLogo = (surface) => {
+    const src = safeUrl(surface === "dark" ? p.logoDark : p.logoLight);
+    return src ? `<img class="lockup-logo" src="${esc(src)}" alt="${esc(p.name)} logo">`
+      : `<span class="lockup-missing" title="Logo file not yet in Brand assets">${esc(p.name)} logo</span>`;
+  };
+  const ph = (surface) => `<img class="lockup-logo" src="${PH_LOGO[surface]}" alt="Personalisation Hub logo">`;
+  const tile = (lead, surface) => {
+    const pair = lead === "partner" ? [partnerLogo(surface), ph(surface)] : [ph(surface), partnerLogo(surface)];
+    return `<figure class="lockup lockup-${surface}"><div class="lockup-row">${pair[0]}<span class="lockup-divider" aria-hidden="true"></span>${pair[1]}</div>`
+      + `<figcaption>${lead === "partner" ? esc(p.name) : "Personalisation Hub"} leads · ${surface}</figcaption></figure>`;
+  };
+  return `<div class="lockup-grid" aria-label="Co-brand lockups">${tile("partner", "light")}${tile("partner", "dark")}${tile("ph", "light")}${tile("ph", "dark")}</div>`;
 }

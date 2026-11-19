@@ -5413,6 +5413,38 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   scenario in `test/ui/console-click.test.mjs` and a page in
   `test/ui/mobile-shell.test.mjs`.
 
+## Brand Guidelines › Partners: one co-branding page per partner (19 Nov 2026)
+
+- Brand Guidelines has a **Partners** subsection: one page per retail network
+  or other partner, listed at the foot of the Brand Guidelines page and opened
+  at `#promote/brand-guidelines/partners/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first is **miPharmacy**.
+- Each partner page is a repo file, `backlog-tracker/promote/partners/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-partner-<slug>`.
+  The page lists whatever `brand-partner-*` mirrors exist
+  (`partnersFrom` in `public/js/promote-section.js`), so **adding a partner is
+  a new file and a manifest entry, never a code change**. A superseded mirror
+  is not listed.
+- The file starts with a `<!-- partner … -->` block (`name`, `industry`,
+  `summary`, `industryUrl`, `logoLight`, `logoDark`), which the page reads and
+  does not show. The page draws the co-brand lockups from it: partner leads
+  and Personalisation Hub leads, each on a light and a dark surface, using
+  the official PH logo files (`public/img/brand/`, copied from the `ph-brand`
+  skill) and the partner's files from Brand assets. Until a partner's logo
+  file is supplied (an empty `logoLight` / `logoDark`), its slot shows a
+  labelled empty box; a logo is never drawn or typed.
+- Sections every partner page carries: who leads, by audience; co-brand logo
+  lockups; colour hierarchy; naming, wording and tone; approved claims and
+  outcomes (linking to the partner's industry page on personalisationhub.com
+  as the single source of truth); co-branded templates, with finalised
+  shared pieces added to Brand templates as reference templates.
+- Agent-only detail sits between the agent-only markers and is hidden on the
+  page (as for the main guidelines). **Agents read a partner page over MCP**
+  with `list_project_documents` / `get_project_document` on this project
+  (the `ph-brand` skill and Aidan use the same documents); no new tool.
+- Tests: `test/promote-section.test.mjs` and a scenario in
+  `test/ui/console-click.test.mjs`.
+
 ## Promote section: Leads (5 Nov 2026)
 
 - **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,

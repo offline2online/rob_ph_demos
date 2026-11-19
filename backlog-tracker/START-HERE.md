@@ -59,6 +59,7 @@ Every copy, by the exact name the console lists it under:
 - 5 — Console security and performance review (3/3): not changed here, the 100-user envelope, how to verify · `backlog-tracker/SECURITY-PERFORMANCE.md`
 - 6 — Brand Guidelines (Promote): look, voice, messaging and AWS co-branding · `backlog-tracker/promote/brand-guidelines.md`
 - 6 — Brand Guidelines requirements (Promote) · `backlog-tracker/promote/brand-requirements.md`
+- 6 — Brand partner: miPharmacy · `backlog-tracker/promote/partners/mipharmacy.md`
 
 Where to begin, by role:
 
@@ -67,7 +68,7 @@ Where to begin, by role:
 - **Connecting an agent over MCP**: "2 — Console MCP guide (1/8)" to connect,
   then "(2/8)" to "(6/8)" for what the agent can and can't do.
 - **Writing or editing help-centre articles**: "3 — Help Centre (faq/)",
-  then "4 — Documentation standard (1/2)" before writing a word. Classify
+  then "4 — Documentation standard (1/2)" before writing. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
   performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (7/8)"

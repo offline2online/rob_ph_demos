@@ -2813,6 +2813,12 @@ every destination already existed.
   documents with `list_project_documents` / `get_project_document` on this
   project. Gated by the `promote` permission section. More pages go in
   `PROMOTE_PAGES` beneath Brand Guidelines.
+  **Partners** (19 Nov 2026): one co-branding page per partner under Brand
+  Guidelines (`#promote/brand-guidelines/partners/<slug>`), each a file in
+  `promote/partners/` declared in `board-docs.json` as mirror
+  `brand-partner-<slug>`; the page lists whatever partner mirrors exist, so
+  a new partner needs no code change. First page: miPharmacy. The official
+  PH logo files for its lockups are in `public/img/brand/`.
 - **Promote › Leads** (`#promote/leads`, 5 Nov 2026; `public/js/leads-page.js`,
   rules in `leads-core.js`, copied to `functions/leads-core.js` by
   `node test/leads-core-copy.mjs --write`): one card per company on a Kanban,
