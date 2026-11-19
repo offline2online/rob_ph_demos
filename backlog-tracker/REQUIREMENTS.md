@@ -5721,6 +5721,13 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
     `.ico`) is redone on the next run. The lead header, the board tile, the
     TAM record's header and the company profile use the full logo
     (`logos.light`) when there is one, and the icon only when there is not.
+    The Prospects (TAM) grid's Company column is the reverse (19 Nov 2026,
+    ticket 7WzEEYuL5VusytvpC6iO): a 20px icon left of the company name, the
+    icon (`logoUrl`) first and `logos.light` only when there is no icon,
+    since a full wordmark is unreadable at that size. A record with neither,
+    or whose image fails to load, shows the name alone, so the column shows
+    at a glance which companies enrichment found a logo for. The cell is
+    redrawn on every snapshot, so an icon appears as soon as a run saves it.
   - **A lead and its TAM record carry the same information (14 Nov 2026)**:
     Convert to lead copied six company fields and left the rest on the TAM
     record (contacts, research, logos, priority, insights, notes), and the new

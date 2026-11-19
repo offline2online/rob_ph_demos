@@ -2583,6 +2583,10 @@ body { overflow-x: clip; }
 .prospect-name-btn { all: unset; box-sizing: border-box; cursor: pointer; color: var(--primary-text); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; display: inline-flex; align-items: center; }
 .prospect-name-btn:hover { text-decoration: underline; }
 .prospect-name-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+/* Prospects (TAM) grid: the enriched company's icon, left of its name */
+.prospect-name-cell { display: flex; align-items: center; gap: 8px; }
+.prospect-name-cell .prospect-name-btn { min-width: 0; flex: 0 1 auto; }
+.prospect-logo { width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 4px; object-fit: contain; background: #fff; box-shadow: 0 0 0 .5px var(--ap-divider); }
 #prospects-page.is-detail > :not(#prospect-detail):not(#prospects-status) { display: none !important; }
 /* Companies | Contacts tabs (17 Nov 2026). The Contacts tab hides the company grid and its tools; the company
    detail view (a Companies sub-view) hides the tabs too. */

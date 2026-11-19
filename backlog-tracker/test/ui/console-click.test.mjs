@@ -2733,6 +2733,23 @@ const scenarios = [
       assert.ok((await c.page.getAttribute("#prospects-info", "title")).length > 20, "help is an info tooltip");
       // Same grid as User Management: theme, floating filter row, checkbox column, pagination, one pinned "..." menu per row.
       assert.ok(await c.page.locator("#prospects-grid.ag-theme-alpine.um-grid").count(), "uses the standard console grid");
+      // An enriched company's icon sits left of its name in the Company column; none before enrichment or without an icon.
+      {
+        assert.strictEqual(await c.page.locator("#prospects-grid .prospect-logo").count(), 0, "no icon before enrichment");
+        await c.page.evaluate(() => globalThis.__fbStub.commit([
+          { op: "update", ref: { type: "doc", id: "pa", path: "prospects/pa", parentPath: "prospects" }, data: { enrichment: { logoUrl: `${location.origin}/img/ph-mark-64.png` } } },
+          { op: "update", ref: { type: "doc", id: "pb", path: "prospects/pb", parentPath: "prospects" }, data: { enrichment: { summary: "Enriched, no icon found.", logoUrl: "" } } },
+        ]));
+        const icon = () => c.page.evaluate(() => {
+          const cell = (id) => document.querySelector(`#prospects-grid .ag-center-cols-container .ag-row[row-id='${id}'] .ag-cell[col-id='name']`);
+          const a = cell("pa"), im = a && a.querySelector("img.prospect-logo"), btn = a && a.querySelector(".prospect-name-btn");
+          if (!im || !im.complete || !im.naturalWidth) return null;
+          const r = im.getBoundingClientRect(), b = btn.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height), left: r.right <= b.left, mid: Math.abs((r.top + r.bottom) / 2 - (b.top + b.bottom) / 2) <= 2, name: btn.textContent, others: ["pb", "pc"].map((id) => cell(id).querySelectorAll("img.prospect-logo").length) };
+        });
+        await until(async () => { const r = await icon(); return r && r.others[0] === 0; }, "Alpha Grocer's icon to load", 8000);
+        assert.deepStrictEqual(await icon(), { w: 20, h: 20, left: true, mid: true, name: "Alpha Grocer", others: [0, 0] }, "a 20px icon left of the name, centred on it; none for the others");
+      }
       assert.strictEqual(await c.page.locator("#prospects-grid .ag-floating-filter").count(), 0, "no second (floating filter) row");
       assert.strictEqual(await c.page.locator("#prospects-grid .ag-header-menu-icon, #prospects-grid .ag-header-cell-menu-button").count(), 0, "no header menu, so no duplicate filters");
       assert.ok(await c.page.locator("#prospects-grid .pf-head input[aria-label='Company Filter Input'][placeholder='Company']").count() === 1, "the Company heading is the search box");
