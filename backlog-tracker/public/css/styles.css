@@ -2583,6 +2583,10 @@ body { overflow-x: clip; }
 .prospect-name-btn { all: unset; box-sizing: border-box; cursor: pointer; color: var(--primary-text); font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 32px; display: inline-flex; align-items: center; }
 .prospect-name-btn:hover { text-decoration: underline; }
 .prospect-name-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+/* Prospects (TAM) grid: the enriched company's icon, left of its name */
+.prospect-name-cell { display: flex; align-items: center; gap: 8px; }
+.prospect-name-cell .prospect-name-btn { min-width: 0; flex: 0 1 auto; }
+.prospect-logo { width: 20px; height: 20px; flex: none; box-sizing: border-box; border-radius: 4px; object-fit: contain; background: #fff; box-shadow: 0 0 0 .5px var(--ap-divider); }
 #prospects-page.is-detail > :not(#prospect-detail):not(#prospects-status) { display: none !important; }
 /* Companies | Contacts tabs (17 Nov 2026). The Contacts tab hides the company grid and its tools; the company
    detail view (a Companies sub-view) hides the tabs too. */
@@ -3167,10 +3171,23 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-flag { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-weight: 600; }
 /* Conversion Funnel: a source failed on the last ingest (funnel-page.js). */
 #funnel-status.funnel-status-flag { color: var(--danger); font-weight: 500; }
-.dash-trio { display: flex; gap: 12px; width: 100%; margin-top: auto; }
-/* Labels of different lengths wrap to different heights: the figures stay on one line. */
-.dash-trio-cell { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 0; flex: 1; }
-.dash-trio .dash-value { font-size: 22px; }
+/* Tile content (cMyA3FMlUUrSjGtPkLZC): Staff Kanban's columns, the Leads
+   pipeline and the mini funnel, a row of small cells under the headline.
+   The biggest drop-off in the funnel is amber. */
+.dash-mini { display: block; width: 100%; margin-top: 8px; }
+.dash-cols, .dash-pipe, .dash-mini-funnel { display: flex; gap: 4px; width: 100%; }
+.dash-col, .dash-pipe-step, .dash-mini-step { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 6px; border-radius: 6px; background: var(--surface-2); }
+.dash-col b, .dash-pipe-step b, .dash-mini-step b { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); }
+.dash-col > span, .dash-pipe-label { max-width: 100%; font-size: 10px; letter-spacing: .3px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-pipe-conv { min-height: 13px; font-size: 10px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.dash-mini-step.dash-drop-max { background: rgba(250, 173, 20, 0.14); box-shadow: inset 0 0 0 1px var(--warning); }
+.dash-mini-step.dash-drop-max .dash-pipe-conv, .dash-tip-list > li.dash-drop-max .dash-tip-meta { color: var(--warning); font-weight: 600; }
+.dash-sub b { color: var(--text); font-variant-numeric: tabular-nums; }
+.dash-sub .material-symbols-outlined { font-size: 14px; vertical-align: -2px; margin-right: 2px; }
+.dash-tip-change { font-weight: 500; color: var(--text-muted); }
+.dash-conf[data-band="high"] { color: var(--success); }
+.dash-conf[data-band="medium"] { color: var(--warning); }
+.dash-conf[data-band="low"] { color: var(--danger); }
 /* Info tooltip: an info icon at the tile's top right, beside (not inside) the tile button. */
 .dash-info {
   position: absolute; top: 14px; right: 10px; display: inline-flex; align-items: center; justify-content: center;

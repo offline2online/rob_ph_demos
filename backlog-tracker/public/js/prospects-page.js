@@ -35,6 +35,9 @@ const $ = (id) => document.getElementById(id);
 const SAVED_KEY = "bt-prospect-grid-filters";
 const LEGACY_KEY = "bt-prospect-filters";
 const safeUrl = (u) => { try { const x = new URL(String(u)); return x.protocol === "https:" || x.protocol === "http:" ? x.href : ""; } catch { return ""; } };
+// The company's icon found by enrichment (functions/lead-enrich.js): the site icon, else the
+// light-background logo. Empty when the record has not been enriched with one.
+export const prospectIconUrl = (e) => (e && typeof e === "object" ? safeUrl(e.logoUrl) || safeUrl(e.logos && e.logos.light) : "");
 const linkedinHref = (u) => (/^https:\/\/www\.linkedin\.com\/(company|showcase)\/[A-Za-z0-9_%.-]+\/$/.test(String(u || "")) ? String(u) : "");
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const textModel = (v) => ({ filterType: "text", type: "contains", filter: v });
@@ -750,9 +753,18 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       return span;
     };
     // The company name opens the company's detail view; its website is one click further in.
+    // An enriched company with an icon shows it to the left of its name; one without shows none.
     const company = (params) => {
       const span = document.createElement("span");
-      span.className = "prospect-trunc";
+      span.className = "prospect-trunc prospect-name-cell";
+      const icon = prospectIconUrl(params.data.enrichment);
+      if (icon) {
+        const im = document.createElement("img");
+        im.className = "prospect-logo"; im.src = icon; im.alt = ""; im.loading = "lazy"; im.referrerPolicy = "no-referrer";
+        im.width = 20; im.height = 20;
+        im.addEventListener("error", () => im.remove()); // a broken link shows the name alone
+        span.appendChild(im);
+      }
       const b = document.createElement("button");
       b.type = "button"; b.className = "prospect-name-btn"; b.dataset.prospectOpen = params.data.id; b.textContent = params.value;
       b.setAttribute("aria-label", `Open details for ${params.data.name} in ${params.data.country}`);
@@ -858,6 +870,8 @@ export function mountProspectsPage({ db, auth, canEdit, askName }) {
       detailUi.refresh();
       if (grid) {
         grid.api.setGridOption("rowData", rows);
+        // The Company cell also shows the enrichment icon, which can arrive without the name changing.
+        grid.api.refreshCells({ columns: ["name"], force: true });
         const key = distinct((p) => p.awsRegion).join("|");
         if (key !== regionKey) { regionKey = key; grid.api.refreshHeader(); }
       } else if (rows.length) ensureGrid();
