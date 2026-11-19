@@ -3326,6 +3326,64 @@ const scenarios = [
     },
   },
   {
+    // T6f4GeJZGg0OgntUpzPq: funnelDaily is filled by the ingest (functions/funnel-ingest.js).
+    // Unique visitors are GA4's day total, and a source that failed on the last run is
+    // flagged with when the data was last updated, on the Dashboard tile and the page.
+    name: "Conversion Funnel: ingest rows drive the Dashboard tile, a failed GA4 run is flagged with the last update",
+    hash: "",
+    seed: () => {
+      const yday = () => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0); return d; };
+      const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const y = dayStr(yday());
+      const s = only("b1");
+      s.docs.funnelDaily = {
+        t1: { date: y, source: "ga4-total", users: 321 },
+        s1: { date: y, source: "ga4-site", country: "United Kingdom", channel: "Organic", visits: 300, users: 250 },
+        s2: { date: y, source: "ga4-site", country: "Australia", channel: "Google Ads", visits: 150, users: 120 },
+        i1: { date: y, source: "ga4-industry", industry: "Telco", country: "United Kingdom", content: "Industry page", pageViews: 90, users: 60 },
+        i2: { date: y, source: "ga4-industry", industry: "Banking", country: "United Kingdom", content: "Industry page", pageViews: 30, users: 25 },
+        // 15 people saw both industries: GA4's de-duplicated total is 70, not 60 + 25.
+        it: { date: y, source: "ga4-industry-total", content: "Industry page", users: 70 },
+        iu1: { date: y, source: "ga4-industry-users", industry: "Telco", content: "Industry page", users: 60 },
+        iu2: { date: y, source: "ga4-industry-users", industry: "Banking", content: "Industry page", users: 25 },
+        e1: { date: y, source: "ga4-events", industry: "Telco", country: "United Kingdom", walkthroughs: 6, calculatorUses: 0, demoRequests: 1, downloads: 2, leadForms: 3 },
+        a1: { date: y, source: "google-ads", channel: "Google Ads", campaign: "Brand", impressions: 4000, clicks: 120 },
+      };
+      s.docs.consoleConfig = { funnelIngest: {
+        lastRunAt: new Date().toISOString(), ok: false, failed: ["ga4-site"],
+        sources: {
+          "ga4-total": { ok: false, error: "GA4 answered 401: Request had invalid authentication credentials.", lastSuccessAt: yday().toISOString() },
+          "ga4-site": { ok: false, error: "GA4 answered 401: Request had invalid authentication credentials.", lastSuccessAt: yday().toISOString() },
+          leads: { ok: true, lastSuccessAt: new Date().toISOString() },
+        },
+      } };
+      return s;
+    },
+    async run(c) {
+      await c.visible("#dashboard-page");
+      const tile = '.dash-tile-wrap[data-tile="funnel"]';
+      await until(async () => (await c.page.locator(`${tile} .dash-value`).first().innerText()) === "321", "unique visitors are GA4's total users for yesterday", 8000);
+      assert.ok((await c.text(`${tile} .dash-extra`)).includes("Data not updated"), "the tile flags the failed ingest");
+      assert.strictEqual(await c.page.$eval(`${tile} .dash-status`, (el) => el.dataset.level), "alert", "the tile's status is red while a source failed");
+      // The tile's summary panel says what failed and when the data was last updated.
+      await c.page.mouse.move(2, 2);
+      await c.click(`${tile} .dash-tile`, "pin the funnel tile");
+      await c.visible("#dash-panel");
+      const tipText = await c.text("#dash-panel");
+      assert.ok(tipText.includes("GA4 didn't update") && tipText.includes("401") && tipText.includes("Updated"), `the panel says what failed and when the data was last updated: ${tipText}`);
+      assert.ok(tipText.includes("Telco") && tipText.includes("Banking"), "industries come from the industry page users");
+      const industryStep = await c.page.locator("#dash-panel .dash-tip-row").filter({ hasText: "Industry page" }).locator("b").first().innerText();
+      assert.strictEqual(industryStep, "70", "the Industry page step is GA4's de-duplicated industry-page users, not the per-industry sum");
+      await c.click("#dash-panel .dash-panel-open", "Open section");
+      await c.visible("#funnel-page", "the panel opens the Conversion Funnel");
+      await c.visible("#funnel-status", "the ingest failure is flagged on the page");
+      const status = await c.text("#funnel-status");
+      assert.ok(status.includes("GA4 didn't update") && status.includes("last good update"), `the failure and the last good update: ${status}`);
+      assert.ok(await c.page.locator("#funnel-status.funnel-status-flag").count() === 1, "the line is styled as a failure");
+      assert.ok((await c.text("#funnel-count")).includes("Updated"), "the count line says when the data was last updated");
+    },
+  },
+  {
     name: "Promote: Prospects company detail - two country records share one org chart, AWS account ID, lead card compact view",
     seed: () => seed({
       prospects: {

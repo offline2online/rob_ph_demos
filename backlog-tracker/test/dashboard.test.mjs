@@ -122,6 +122,49 @@ assert.deepStrictEqual(fk.steps.map((s) => [s.label, s.count, s.dropOff, s.dropO
 assert.deepStrictEqual(fk.industries, [{ name: "Grocery", count: 210 }, { name: "QSR", count: 80 }], "industries ranked by visitors, peak first");
 assert.strictEqual(funnelKpi([{ date: "2026-11-16", visits: 10, users: 7 }], [], NOW).value, 7, "GA4's user count wins when the ingest sends one");
 assert.strictEqual(funnelKpi([], [], NOW).hasData, false);
+// Rows from the ingest (functions/funnel-ingest.js) carry a source: unique visitors are the
+// day's GA4 total (users are not additive across slices), industry page visitors come from
+// real /industries/* page views, and walkthrough or calculator from the GA4 key events.
+const ing = [
+  { date: "2026-11-16", source: "ga4-total", users: 300 },
+  { date: "2026-11-16", source: "ga4-site", country: "UK", visits: 250, users: 200 },
+  { date: "2026-11-16", source: "ga4-site", country: "AU", visits: 150, users: 130 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Telco", country: "UK", pageViews: 90, users: 60 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Grocery", country: "UK", pageViews: 140, users: 70 },
+  { date: "2026-11-16", source: "ga4-events", industry: "Telco", walkthroughs: 9, calculatorUses: 2, demoRequests: 1, downloads: 3, leadForms: 4 },
+  { date: "2026-11-16", source: "google-ads", impressions: 5000, clicks: 150 },
+  { date: "2026-11-16", source: "leads", industry: "Telco", leads: 3 },
+  { date: "2026-11-15", source: "ga4-total", users: 250 },
+];
+const ik = funnelKpi(ing, leads, NOW);
+assert.strictEqual(ik.value, 300, "unique visitors are GA4's total users for the day");
+assert.strictEqual(ik.prev, 250);
+assert.deepStrictEqual(ik.steps.map((s) => s.count), [300, 130, 15, 2]);
+assert.deepStrictEqual(ik.industries, [{ name: "Grocery", count: 70 }, { name: "Telco", count: 60 }]);
+assert.strictEqual(funnelKpi(ing.filter((r) => r.source !== "ga4-total"), [], NOW).value, 330, "no total row: the site slices' users");
+// Review of T6f4GeJZGg0OgntUpzPq: one visitor who viewed two industries is one Industry page
+// visitor. The step is GA4's de-duplicated ga4-industry-total, never a sum of per-industry users,
+// and never more than unique visitors; the list reads ga4-industry-users.
+const two = [
+  { date: "2026-11-16", source: "ga4-total", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Retail", country: "UK", pageViews: 1, users: 1 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Banking", country: "UK", pageViews: 1, users: 1 },
+];
+const twoOld = funnelKpi(two, [], NOW);
+assert.strictEqual(twoOld.steps[1].count, 1, "older rows without ga4-industry-total: capped at unique visitors");
+const twoNew = funnelKpi([...two,
+  { date: "2026-11-16", source: "ga4-industry-total", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Retail", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Banking", users: 1 },
+], [], NOW);
+assert.deepStrictEqual(twoNew.steps.slice(0, 2).map((s) => [s.count, s.dropOff]), [[1, null], [1, 0]]);
+assert.deepStrictEqual(twoNew.industries, [{ name: "Banking", count: 1 }, { name: "Retail", count: 1 }]);
+const ik2 = funnelKpi([...ing, { date: "2026-11-16", source: "ga4-industry-total", users: 110 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Telco", users: 60 }, { date: "2026-11-16", source: "ga4-industry-users", industry: "Grocery", users: 65 }], leads, NOW);
+assert.strictEqual(ik2.steps[1].count, 110, "the Industry page step is GA4's de-duplicated users, not 60 + 70");
+assert.deepStrictEqual(ik2.industries, [{ name: "Grocery", count: 65 }, { name: "Telco", count: 60 }], "the industry list reads ga4-industry-users");
+assert.deepStrictEqual(tileStatus("funnel", { hasData: true, dataNotUpdated: true }), { level: "alert", reason: "Data not updated" }, "a failed ingest turns the tile red");
+assert.strictEqual(tileStatus("funnel", { hasData: true }).level, "ok");
 
 // ── Support ───────────────────────────────────────────────────────────────
 // Exactly three figures, all of the Support Inbox (support@), as things stand now and today.
