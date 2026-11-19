@@ -106,6 +106,24 @@ service firebase.storage {
       allow delete: if isEditor();
     }
 
+    // Support › Documentation: images and attached files embedded in
+    // documentation articles (docArticles), mostly carried over from the
+    // Confluence space. docAssets/{folder}/{fileName}. Members with editor
+    // access read and write; articles embed the download URL.
+    match /docAssets/{folder}/{fileName} {
+      allow read: if isEditor();
+      allow write: if isEditor()
+        && request.resource.size < 50 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType.matches('video/.*')
+            || request.resource.contentType.matches('text/.*')
+            || request.resource.contentType in ['application/pdf', 'application/zip', 'application/x-zip-compressed', 'application/json', 'application/octet-stream',
+                 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation']);
+      allow delete: if isEditor();
+    }
+
     // AWS ACE opportunity documents (Promote > Leads, public/js/ace-docs.js):
     // ace/{opportunityId}/{timestamp}-{name}. Editors read and write, up to 50 MB.
     // They stay here: the Partner Central Selling API cannot attach files.

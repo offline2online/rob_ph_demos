@@ -599,6 +599,7 @@ function closeAllSubPages() {
   closeRolePage();
   closePromotePage();
   closeSupportPage();
+  closeDocumentationPage();
   closeFaqArticlesPage();
   closeFaqArticleEditorPage();
   closeFaqRevisionReviewPage();
@@ -10753,6 +10754,14 @@ const FAQ_PUBLIC_BASE_URL = "https://personalisationhub.com/support-centre/";
 
 let faqCategories = [];
 let faqArticles = [];
+// Support › Documentation (docCategories / docArticles, members only). The
+// article editor below edits both libraries: faLibrary says which one the
+// open article belongs to ("faq" = Help Centre, "docs" = Documentation).
+let docCategories = [];
+let docArticles = [];
+let faLibrary = "faq";
+function libArticles() { return faLibrary === "docs" ? docArticles : faqArticles; }
+function libArticlesCollection() { return faLibrary === "docs" ? "docArticles" : "faqArticles"; }
 let editingFaqArticleId = null; // null while adding, an id while editing
 let faqSlugManuallyEdited = false;
 
@@ -10944,12 +10953,14 @@ async function deleteFaqCategoryIfEmpty(id) {
 // submitFaqArticleFromEditor — knows which article it's now editing.
 async function saveFaqArticle(id, data) {
   if (!(await requireFaqEditor())) return null;
+  const colName = libArticlesCollection();
   if (id) {
-    await setDoc(doc(db, "faqArticles", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+    await setDoc(doc(db, colName, id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
     return id;
   }
-  const order = faqArticles.length ? Math.max(...faqArticles.map((a) => a.order || 0)) + 1 : 0;
-  const ref = await addDoc(faqArticlesRef, { ...data, order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  const siblings = faLibrary === "docs" ? docArticles.filter((a) => a.categoryId === data.categoryId) : faqArticles;
+  const order = siblings.length ? Math.max(...siblings.map((a) => a.order || 0)) + 1 : 0;
+  const ref = await addDoc(collection(db, colName), { ...data, order, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
   return ref.id;
 }
 
@@ -10972,6 +10983,8 @@ async function faqTombstone(collectionName, id, extra) {
 }
 async function deleteFaqArticle(id) {
   if (!(await requireFaqEditor())) return;
+  // Documentation has no export or seed to resurrect a document, so no tombstone.
+  if (faLibrary === "docs") { await deleteDoc(doc(db, "docArticles", id)); return; }
   const a = faqArticles.find((x) => x.id === id);
   await faqTombstone("faqDeletedArticles", id, { title: (a && a.title) || "", categoryId: (a && a.categoryId) || "" });
   await deleteDoc(doc(db, "faqArticles", id));
@@ -11009,6 +11022,21 @@ const startFaqArticlesListener = () => onSnapshot(query(faqArticlesRef, orderBy(
   renderReleaseAuditPage();
   resolvePendingFaqArticleRoute();
 }, onListenerError("faqArticles"));
+// Documentation's two collections: listeners only (no REST prime), so the
+// document bodies are downloaded once, when the page or a document opens.
+const startDocCategoriesListener = () => onSnapshot(query(collection(db, "docCategories"), orderBy("order", "asc")), (snap) => {
+  markLive("docCategories", snap);
+  docCategories = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  refreshDocumentationViews();
+}, onListenerError("docCategories"));
+const startDocArticlesListener = () => onSnapshot(query(collection(db, "docArticles"), orderBy("order", "asc")), (snap) => {
+  markLive("docArticles", snap);
+  docArticles = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+  refreshDocumentationViews();
+  resolvePendingDocRoute();
+}, onListenerError("docArticles"));
+lazyStarters.docCategories = startDocCategoriesListener;
+lazyStarters.docArticles = startDocArticlesListener;
 const _primeFaqCategories = lazyStarters.faqCategories, _primeFaqArticles = lazyStarters.faqArticles;
 lazyStarters.faqCategories = () => { _primeFaqCategories(); startFaqCategoriesListener(); };
 lazyStarters.faqArticles = () => { _primeFaqArticles(); startFaqArticlesListener(); };
@@ -11943,6 +11971,7 @@ const leadsPage = document.getElementById("leads-page");
 const prospectsPage = document.getElementById("prospects-page");
 const funnelPage = document.getElementById("funnel-page");
 const supportPage = document.getElementById("support-page");
+const documentationPage = document.getElementById("documentation-page");
 let promotePageKey = "";
 // Lazily loaded Promote pages (Leads, Prospects, Conversion Funnel). A page
 // whose code failed to load or draw used to stay blank, or the menu item
@@ -12149,6 +12178,78 @@ function closeDashboardPage() {
 {
   const btn = document.getElementById("dashboard-btn");
   if (btn) btn.addEventListener("click", () => { closeNavDrawer(); openDashboardPage(); });
+}
+
+// ── Support › Documentation (#documentation, documentation-page.js) ─────
+// The internal documentation library (docCategories / docArticles). The page
+// module draws the sections and lists; a document opens in the Help Centre's
+// article editor in "docs" mode (openFaqArticleEditorPage with library "docs").
+let docsUi = null;
+let docsUiLoading = null;
+function ensureDocsUi() {
+  if (docsUi) return Promise.resolve(docsUi);
+  if (!docsUiLoading) {
+    docsUiLoading = import(`./documentation-page.js${pageRetrySuffix("documentation")}`).then(({ mountDocumentationPage }) => {
+      docsUi = mountDocumentationPage({
+        db,
+        getCategories: () => docCategories,
+        getArticles: () => docArticles,
+        canEdit: () => currentConsoleRole() !== "viewer" && canEditSection("documentation"),
+        openDoc: (id, { mode } = {}) => openFaqArticleEditorPage(id, { library: "docs", mode }),
+        newDoc: (categoryId) => openFaqArticleEditorPage(null, { library: "docs", categoryId }),
+        alert: (m) => showAlert(m),
+        confirm: (m, opts) => showConfirmDialog(m, opts),
+        prompt: (m, v, opts) => showPromptDialog(m, v, opts),
+        fields: (opts) => showFieldDialog(opts),
+      });
+      return docsUi;
+    });
+  }
+  return docsUiLoading;
+}
+function refreshDocumentationViews() {
+  if (docsUi && documentationPage && !documentationPage.hidden) docsUi.render();
+}
+function openDocumentationPage({ categoryId = null } = {}) {
+  if (!documentationPage) return;
+  if (!pageAllowed("documentation")) return;
+  closeAllSubPages();
+  ensureLazy("docCategories", "docArticles");
+  document.getElementById("projects-root").hidden = true;
+  document.getElementById("board-page-header").hidden = true;
+  documentationPage.hidden = false;
+  clearPageLoadError(documentationPage);
+  setRouteHash("#documentation");
+  updateTopbarTitle();
+  ensureDocsUi().then((ui) => { if (!documentationPage.hidden) ui.show({ categoryId }); }).catch((err) => {
+    docsUiLoading = null;
+    pageRetries.documentation = (pageRetries.documentation || 0) + 1;
+    showPageLoadError(documentationPage, "Documentation", err, () => openDocumentationPage({ categoryId }));
+  });
+}
+function closeDocumentationPage() {
+  if (!documentationPage || documentationPage.hidden) return;
+  documentationPage.hidden = true;
+  document.getElementById("projects-root").hidden = false;
+  document.getElementById("board-page-header").hidden = false;
+}
+document.getElementById("documentation-btn")?.addEventListener("click", () => { closeNavDrawer(); openDocumentationPage(); });
+// "#doc/<id>" opens a document; a cold load waits for docArticles to arrive.
+let pendingDocRoute = null;
+function resolvePendingDocRoute() {
+  if (!pendingDocRoute || !docArticles.some((a) => a.id === pendingDocRoute)) return;
+  const id = pendingDocRoute;
+  pendingDocRoute = null;
+  openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
+}
+function openDocRouteFromHash(hash) {
+  ensureLazy("docCategories", "docArticles");
+  const id = decodeURIComponent(hash.slice("#doc/".length));
+  if (!id) return;
+  if (id === "new") { openFaqArticleEditorPage(null, { library: "docs" }); return; }
+  if (!faqArticleEditorPage.hidden && faLibrary === "docs" && editingFaqArticleId === id) return;
+  if (docArticles.some((a) => a.id === id)) openFaqArticleEditorPage(id, { library: "docs", mode: "view" });
+  else pendingDocRoute = id;
 }
 
 // ── Support › Support Inbox (#support, support-page.js) ──────────────────
@@ -13209,15 +13310,28 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-function renderFaqArticlesPage() {
-  // The editor's Category select offers both levels, sub-categories indented
-  // under their parent, so filing an article is one choice rather than two.
-  const catOptionsHTML = faqTopCategories().map((c) => {
-    const subs = faqSubCategories(c.id)
-      .map((s) => `<option value="${escapeHTML(s.id)}">\u00a0\u00a0\u00a0\u2014 ${escapeHTML(s.name)}</option>`).join("");
-    return `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>` + subs;
-  }).join("");
+// The editor's Category select for the open library: the Help Centre's two
+// levels, or Documentation's sections at any depth, each indented under its
+// parent, so filing an article is one choice rather than two.
+function populateFaCategorySelect() {
+  let catOptionsHTML;
+  if (faLibrary === "docs") {
+    const walk = (parentId, depth) => docCategories
+      .filter((c) => (c.parentId || null) === parentId).sort(byFaqOrder)
+      .map((c) => `<option value="${escapeHTML(c.id)}">${"\u00a0\u00a0\u00a0".repeat(depth)}${depth ? "\u2014 " : ""}${escapeHTML(c.name)}</option>` + walk(c.id, depth + 1)).join("");
+    catOptionsHTML = walk(null, 0);
+  } else {
+    catOptionsHTML = faqTopCategories().map((c) => {
+      const subs = faqSubCategories(c.id)
+        .map((s) => `<option value="${escapeHTML(s.id)}">\u00a0\u00a0\u00a0\u2014 ${escapeHTML(s.name)}</option>`).join("");
+      return `<option value="${escapeHTML(c.id)}">${escapeHTML(c.name)}</option>` + subs;
+    }).join("");
+  }
   faCategorySelect.innerHTML = catOptionsHTML || '<option value="">Add a category first</option>';
+}
+
+function renderFaqArticlesPage() {
+  if (faLibrary === "faq") populateFaCategorySelect();
 
   const prevProjVal = faProjectSelect.value;
   faProjectSelect.innerHTML = '<option value="">None — general article</option>' +
@@ -13524,6 +13638,7 @@ const ROUTE_TITLES = {
   "#settings/user-management/roles": "Settings: Roles",
   "#promote/brand-guidelines": "Promote: Brand Guidelines",
   "#support": "Support Inbox",
+  "#documentation": "Documentation",
   "#support/stats": "Support Inbox: Stats",
   "#support/try": "Support Inbox: Try an email",
   "#settings/support": "Settings: Support inbox",
@@ -13687,6 +13802,8 @@ function applyRouteFromHash() {
   }
   else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
   else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
+  else if (hash === "#documentation" || hash.startsWith("#documentation?")) { if (!documentationPage || documentationPage.hidden) openDocumentationPage(); }
+  else if (hash.startsWith("#doc/")) openDocRouteFromHash(hash);
   else if (hash === "#skills") openSkillsPage();
   else if (hash === "#releases") openReleasesPage();
   else if (/^#releases\/[^/]+\/audit$/.test(hash)) openReleaseAuditPage(decodeURIComponent(hash.split("/")[1]));
@@ -13701,7 +13818,7 @@ function applyRouteFromHash() {
 }
 function anySubPageOpen() {
   const dash = document.getElementById("dashboard-page");
-  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
+  return !faqArticlesPage.hidden || !faqSettingsPage.hidden || !rolePage.hidden || !promotePage.hidden || !leadsPage.hidden || !prospectsPage.hidden || !funnelPage.hidden || (supportPage && !supportPage.hidden) || (documentationPage && !documentationPage.hidden) || !faqArticleEditorPage.hidden || !skillsPage.hidden || !releasesPage.hidden || !conceptIncubatorPage.hidden || !staffKanbanPage.hidden || (dash && !dash.hidden);
 }
 // popstate (back/forward) and hashchange (a typed-in or pasted #hash) both
 // need to re-sync the visible page — pushState/replaceState above never
@@ -14443,17 +14560,31 @@ function openFaqArticleEditorPage(articleId, opts = {}) {
     showNiToast("The article editor couldn't load. Check your connection and try again.");
   });
 }
-function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}) {
-  if (!pageAllowed("faq")) return;
+function openFaqArticleEditorPageNow(articleId, { pendingRevision = false, library = "faq", mode = "edit", categoryId = null } = {}) {
+  if (!pageAllowed(library === "docs" ? "documentation" : "faq")) return;
   closeAllSubPages();
-  ensureLazy("faqCategories", "faqArticles");
+  faLibrary = library === "docs" ? "docs" : "faq";
+  if (faLibrary === "docs") ensureLazy("docCategories", "docArticles");
+  else ensureLazy("faqCategories", "faqArticles");
+  // Website-only fields (SEO, Hide from website, the live link) belong to the
+  // Help Centre; Documentation is internal, so they are hidden for a document.
+  faqArticleEditorPage.querySelectorAll("[data-faq-only]").forEach((el) => { el.hidden = faLibrary === "docs"; });
+  faqArticleEditorPage.querySelectorAll("[data-docs-only]").forEach((el) => { el.hidden = faLibrary !== "docs"; });
+  faqArticleEditorPage.classList.toggle("fa-library-docs", faLibrary === "docs");
   editingFaqArticleId = articleId || null;
   faqSlugManuallyEdited = !!articleId;
-  const article = articleId ? faqArticles.find((a) => a.id === articleId) : null;
-  faEditingPendingRevision = !!(pendingRevision && article && article.pendingRevision);
+  const article = articleId ? libArticles().find((a) => a.id === articleId) : null;
+  faEditingPendingRevision = faLibrary === "faq" && !!(pendingRevision && article && article.pendingRevision);
   const source = faEditingPendingRevision ? { ...article, ...article.pendingRevision, slug: article.slug } : article;
 
-  document.getElementById("fa-title").textContent = faEditingPendingRevision ? "Edit proposed update" : (article ? "Edit article" : "New article");
+  const noun = faLibrary === "docs" ? "document" : "article";
+  document.getElementById("fa-title").textContent = faEditingPendingRevision ? "Edit proposed update" : (article ? `Edit ${noun}` : `New ${noun}`);
+  const sourceEl = document.getElementById("fa-doc-source");
+  if (sourceEl) {
+    const src = faLibrary === "docs" && article && article.source;
+    sourceEl.hidden = !src;
+    sourceEl.textContent = src ? `Carried over from Confluence${src.path ? ` (${src.path})` : ""}${src.lastUpdated ? `, last updated there ${src.lastUpdated}` : ""}${src.archived ? ". Archived: kept for the record" : ""}.` : "";
+  }
   clearTimeout(faSaveStatusTimer);
   document.getElementById("fa-save-status").classList.remove("visible");
   document.getElementById("fa-save-draft").textContent = faEditingPendingRevision ? "Save proposal" : "Save draft";
@@ -14484,18 +14615,20 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   faLoadedStatus = article && article.status ? article.status : "draft";
   faLoadedHasPublishedAt = !!(article && article.publishedAt);
   renderFaStatusBadge();
-  setFaBodyMode("edit");
+  setFaBodyMode(mode === "view" && article ? "view" : "edit");
   resetFaGroups();
 
+  populateFaCategorySelect();
   if (faCategorySelect.options.length && faCategorySelect.options[0].value !== "") {
-    faCategorySelect.value = article ? article.categoryId : faCategorySelect.options[0].value;
+    faCategorySelect.value = article ? article.categoryId : (categoryId || faCategorySelect.options[0].value);
   }
   faProjectSelect.value = article && article.projectId ? article.projectId : "";
   populateProgramSelect(faProgramSelect, article && article.programId ? article.programId : "");
   populateReleaseSelect(faIntroducedReleaseSelect, article && article.introducedInReleaseId ? article.introducedInReleaseId : "", { emptyLabel: "Not set" });
   populateReleaseSelect(faRemovedReleaseSelect, article && article.removedInReleaseId ? article.removedInReleaseId : "", { emptyLabel: "Not set" });
 
-  renderFaqLiveHint(article);
+  if (faLibrary === "docs") document.getElementById("fa-live-link-hint").hidden = true;
+  else renderFaqLiveHint(article);
 
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
@@ -14508,7 +14641,8 @@ function openFaqArticleEditorPageNow(articleId, { pendingRevision = false } = {}
   // falling back to the board. A no-op when this call is itself the result
   // of applying that same hash on load/hashchange (setRouteHash already
   // skips re-pushing an unchanged hash).
-  setRouteHash(articleId ? `#faq-article/${encodeURIComponent(articleId)}${faEditingPendingRevision ? "/revision" : ""}` : "#faq-article/new");
+  if (faLibrary === "docs") setRouteHash(articleId ? `#doc/${encodeURIComponent(articleId)}` : "#doc/new");
+  else setRouteHash(articleId ? `#faq-article/${encodeURIComponent(articleId)}${faEditingPendingRevision ? "/revision" : ""}` : "#faq-article/new");
   document.title = `${document.getElementById("fa-title").textContent} — PH Agent Console`;
   maybeRestoreInitialScroll();
 
@@ -14523,7 +14657,10 @@ function closeFaqArticleEditorPage() {
   document.getElementById("projects-root").hidden = false;
   document.getElementById("board-page-header").hidden = false;
 }
-function backToFaqArticleList() { openFaqArticlesPage(); }
+function backToFaqArticleList() {
+  if (faLibrary === "docs") { const cat = faCategorySelect.value; openDocumentationPage({ categoryId: cat || null }); return; }
+  openFaqArticlesPage();
+}
 
 document.getElementById("fa-new-article-btn").addEventListener("click", async () => {
   if (faqCategories.length === 0) { await showAlert("Add a category first."); return; }
@@ -14575,7 +14712,7 @@ async function submitFaqArticleFromEditor(publish) {
   // faq/README.md "Article scoping" and backlog item
   // GiceSVMWdEiETinAVLVM, where every console-related article having no
   // programId is exactly what made that review silently review nothing.
-  if (!faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
+  if (faLibrary === "faq" && !faEditingPendingRevision && !(faProgramSelect.value && faProgramSelect.value !== "__new__")) {
     await showAlert("Add a program/product first — every article needs one so deploy's FAQ impact review and the help centre's product grouping can find it.");
     return;
   }
@@ -14637,6 +14774,11 @@ async function submitFaqArticleFromEditor(publish) {
     hiddenFromWebsite: faHiddenFromWebsiteToggle.checked,
     ...(publish && !faLoadedHasPublishedAt ? { publishedAt: serverTimestamp() } : {}),
   };
+  if (faLibrary === "docs") {
+    // Internal only: no website visibility or SEO fields on a document.
+    delete data.hiddenFromWebsite;
+    ["seoTitle", "metaDescription", "directAnswer", "questionVariants", "articleType"].forEach((k) => { delete data[k]; });
+  }
   const savedId = await saveFaqArticle(editingFaqArticleId, data);
   if (!savedId) return; // requireFaqEditor() declined the sign-in prompt
 
@@ -14656,10 +14798,16 @@ async function submitFaqArticleFromEditor(publish) {
   faLoadedStatus = status;
   faLoadedHasPublishedAt = faLoadedHasPublishedAt || !!publish;
   renderFaStatusBadge();
-  renderFaqLiveHint({ ...(faqArticles.find((x) => x.id === savedId) || {}), id: savedId, status, bodyMd: (faqArticles.find((x) => x.id === savedId) || {}).bodyMd });
-  document.getElementById("fa-title").textContent = "Edit article";
-  document.title = "Edit article — PH Agent Console";
-  setRouteHash(`#faq-article/${encodeURIComponent(savedId)}`);
+  if (faLibrary === "docs") {
+    document.getElementById("fa-title").textContent = "Edit document";
+    document.title = "Edit document — PH Agent Console";
+    setRouteHash(`#doc/${encodeURIComponent(savedId)}`);
+  } else {
+    renderFaqLiveHint({ ...(faqArticles.find((x) => x.id === savedId) || {}), id: savedId, status, bodyMd: (faqArticles.find((x) => x.id === savedId) || {}).bodyMd });
+    document.getElementById("fa-title").textContent = "Edit article";
+    document.title = "Edit article — PH Agent Console";
+    setRouteHash(`#faq-article/${encodeURIComponent(savedId)}`);
+  }
   faLoadedSnapshot = faSnapshotState();
   updateFaDirtyState();
   showFaSaveConfirmation(publish ? "Published." : "Saved as draft.");

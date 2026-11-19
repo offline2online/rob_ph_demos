@@ -3,7 +3,7 @@ import assert from "node:assert";
 import { readFileSync } from "node:fs";
 import { SECTION_KEYS, effectiveLevels, storedLevel, roleLevels, setLevel, canView, canEdit, canAdmin, sectionForHash, firstAllowedSection, permissionCss, isAdminRole, PERMISSION_GROUPS, sectionForSettingsPage, SECTIONS, discoverNavSections, SECTION_HASH } from "../public/js/permissions.js";
 
-assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "support-inbox", "faq", "settings", "user-management", "releases", "skills", "project-docs"]);
+assert.deepStrictEqual(SECTION_KEYS, ["agent-board", "staff-kanban", "concepts", "whiteboard", "promote", "promote-leads", "prospects", "conversion-funnel", "support-inbox", "faq", "documentation", "settings", "user-management", "releases", "skills", "project-docs"]);
 
 const engineer = { id: "e", name: "Engineer", permissions: { concepts: "none", faq: "view" } };
 const lv = effectiveLevels("editor", engineer);
@@ -48,6 +48,12 @@ assert.strictEqual(sectionForHash("#promote/brand-guidelines"), "promote");
 assert.strictEqual(sectionForHash("#promote/prospects"), "prospects", "Prospects (TAM) has its own permission section");
 assert.strictEqual(sectionForHash("#promote/conversion-funnel"), "conversion-funnel", "the funnel has its own permission section");
 assert.strictEqual(sectionForHash("#faq-article/x"), "faq");
+// Documentation (internal docs library): its own section, following the Help Centre's grant until set.
+assert.strictEqual(sectionForHash("#documentation"), "documentation");
+assert.strictEqual(sectionForHash("#doc/abc"), "documentation");
+assert.strictEqual(sectionForHash("#docs/abc"), "project-docs");
+assert.strictEqual(SECTION_HASH.documentation, "#documentation");
+assert.strictEqual(effectiveLevels("editor", engineer).documentation, "view", "Documentation inherits the Help Centre grant");
 {
   // Removing Prospects from a role hides its nav entry and blocks the route; Leads is untouched.
   const noTam = effectiveLevels("editor", { name: "Sales", permissions: { prospects: "none" } });

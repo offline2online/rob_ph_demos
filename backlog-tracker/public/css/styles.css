@@ -3146,3 +3146,35 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
   .dash-tiles { grid-template-columns: 1fr; }
   .dash-header { align-items: center; }
 }
+
+/* ── Support › Documentation (js/documentation-page.js) ─────────────────
+   Reuses the Help Centre's two-pane browser (.faq-browser, .faq-tree-row,
+   .faq-article-row). Only what differs is here: sections nest to any depth
+   (indent set inline per row), a document title is a real <button>, and a
+   section that holds folders lists them above its documents. */
+.doc-tree-node { display: flex; align-items: center; }
+.doc-tree-node .faq-tree-row { flex: 1; min-width: 0; }
+.doc-tree-node .faq-tree-add { opacity: .55; }
+.doc-tree-node:hover .faq-tree-add { opacity: 1; }
+.doc-row-title {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 0; margin: 2px 0;
+  background: none; border: none; font: inherit; font-size: 14px; font-weight: 600;
+  color: var(--text); text-align: left; cursor: pointer;
+}
+.doc-row-title .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+.doc-row-title:hover span:last-child { color: var(--primary); text-decoration: underline; }
+.doc-row-snippet { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.doc-subfolders { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.doc-subfolder {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  font: inherit; font-size: 13px; color: var(--text); cursor: pointer;
+}
+.doc-subfolder:hover { border-color: var(--primary); color: var(--primary); }
+.doc-subfolder .material-symbols-outlined { font-size: 18px; color: var(--text-muted); }
+.doc-breadcrumb { margin: 0 0 8px; }
+.fa-doc-source { margin: 0 0 8px; }
+/* A document is read in full: no scroll box around the body. */
+.fa-library-docs .fa-body-viewer { max-height: none; }
+.fa-library-docs #fa-body-editor .ql-editor { max-height: 70vh; }
+.fa-body-viewer blockquote { border-left: 3px solid var(--border); margin: 0 0 10px; padding: 2px 12px; color: var(--text-muted); }
