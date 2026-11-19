@@ -694,6 +694,21 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
 .kb-sticky { position: sticky; top: 0; z-index: 7; background: var(--ap-bg); margin: -8px -4px 8px; padding: 8px 4px 0; }
 .kb-sticky .kb-filters { margin: 0 0 8px; }
 .kb-sticky .kb-lanes-sticky { position: static; padding: 0 4px 8px; }
+/* + New task pinned at the right of the filter row once the page header's own
+   button has scrolled away (19 Nov 2026). Its place is always kept and only
+   its visibility changes, so the pinned bar never grows or shifts the board
+   when it appears. Between phone and 1240px the filters keep to one line and
+   scroll sideways (as on a phone) rather than wrap, so the button's place
+   never makes the bar taller. */
+.kb-sticky-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.kb-sticky-row > .kb-filters { flex: 1 1 auto; min-width: 0; }
+.kb-pinned-new { flex: none; min-height: 36px; height: 36px; padding: 0 14px; white-space: nowrap; visibility: hidden; }
+.kb-sticky-new-on .kb-pinned-new { visibility: visible; }
+@media (min-width: 641px) and (max-width: 1239px) {
+  .kb-sticky-row > .kb-filters { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 2px 0; margin-top: -2px; margin-bottom: 6px; }
+  .kb-sticky-row > .kb-filters::-webkit-scrollbar { display: none; }
+  .kb-sticky-row > .kb-filters > *:not(select) { flex: none; }
+}
 .kb-filter-toggle { display: inline-flex !important; }
 .kb-filter-count { min-width: 18px; padding: 0 5px; border-radius: 9999px; background: rgba(255, 255, 255, .35); font-size: 11px; font-weight: 700; text-align: center; }
 .kb-filter-toggle:not(.on) .kb-filter-count { background: var(--primary-tint); color: var(--primary-text); }
@@ -773,6 +788,11 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
   .kb-sticky .kb-filters .kb-mine, .kb-sticky .kb-filters .kb-filter-toggle { flex: none; }
   .kb-sticky .kb-filters .kb-release-select { flex: 1 1 0 !important; min-width: 0; max-width: none; }
   .kb-sticky .kb-clear { flex: none; }
+  /* The pinned + New task takes the right end of the staff row, which the
+     row gives up for it, so the second row and the bar's height are unchanged. */
+  .kb-sticky-row { position: relative; display: block; }
+  .kb-sticky-row .kb-people { margin-right: 114px; }
+  .kb-pinned-new { position: absolute; top: 2px; right: 0; width: 108px; min-height: 36px; height: 36px; padding: 0; }
 }
 
 /* ── Console build additions ───────────────────────────────────────────── */

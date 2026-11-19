@@ -177,7 +177,14 @@ columns.
 **KB-BOARD-7 Page scroll and pinned headers.** The board scrolls as one page
 (columns have no inner scrollbars). The console topbar scrolls away; the
 filter bar and column headers stay pinned at the top. Columns stretch to the
-tallest so a card can be dropped anywhere down a column.
+tallest so a card can be dropped anywhere down a column. Once the page header
+has scrolled away, **+ New task** is pinned at the right of the filter bar
+(the only header action that is), and it hides again when the header's own
+button is back on screen. Its place on the bar's row is always kept, so the
+pinned bar is no taller and the board does not move when it appears; between
+phone width and 1240 px the filters keep to one line and scroll sideways
+instead of wrapping, and on a phone it takes the right end of the staff row.
+KB-C30.
 
 **KB-BOARD-8 Phone.** One column per screen as a sideways carousel (swipe,
 snap); a pinned strip of column tabs shows and changes the current column.

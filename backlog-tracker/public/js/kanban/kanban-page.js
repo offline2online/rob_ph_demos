@@ -630,6 +630,7 @@ export function mountStaffKanban(ctx) {
         </div>
       </div>
       <div class="kb-sticky" id="kb-sticky">
+        <div class="kb-sticky-row">
         <div class="kb-filters" role="search">
           <div class="kb-people" role="group" aria-label="Filter by assignee">
             ${people().map((u) => `<button type="button" class="kb-person-chip${board.assignees.has(u.id) ? " on" : ""}" data-person="${esc(u.id)}" aria-pressed="${board.assignees.has(u.id)}" title="${esc(u.full)}">${avatar(u.id)}<span>${esc(u.full)}</span></button>`).join("")}
@@ -639,6 +640,8 @@ export function mountStaffKanban(ctx) {
           <select id="kb-release" class="kb-release-select" aria-label="Release">${relOpts}</select>
           <button type="button" class="kb-mine kb-filter-toggle${filtersOpen || moreCount ? " on" : ""}" id="kb-filter-toggle" aria-expanded="${filtersOpen}" aria-controls="kb-filter-panel"><span class="material-symbols-outlined" aria-hidden="true">tune</span>Filters${moreCount ? `<span class="kb-filter-count">${moreCount}</span>` : ""}</button>
           ${filtersActive ? '<button type="button" class="link-btn kb-clear" id="kb-clear">Clear filters</button>' : ""}
+        </div>
+        ${canWrite() ? '<button type="button" class="btn-primary kb-pinned-new" id="kb-pinned-new">+ New task</button>' : ""}
         </div>
         <div class="kb-filter-anchor">
           <div class="kb-filter-panel" id="kb-filter-panel" role="dialog" aria-label="More filters"${filtersOpen ? "" : " hidden"}>
@@ -682,6 +685,26 @@ export function mountStaffKanban(ctx) {
 
     const nb = $("#kb-new-btn");
     if (nb) nb.addEventListener("click", () => openTask(null));
+    // + New task stays at the right of the pinned bar once the page header's
+    // own button has scrolled away (the only header CTA that is pinned). Its
+    // place on the bar's row is always kept and only its visibility changes,
+    // so the bar never changes height or moves the board as it appears.
+    const pinnedNew = $("#kb-pinned-new");
+    if (pinnedObserver) { pinnedObserver.disconnect(); pinnedObserver = null; }
+    if (pinnedNew) {
+      pinnedNew.addEventListener("click", () => openTask(null));
+      if (nb && window.IntersectionObserver) {
+        const bar = $("#kb-sticky");
+        const obs = new IntersectionObserver(([e]) => {
+          // the board was redrawn or left (report, settings, a ticket): this view is gone
+          if (!nb.isConnected || !bar || !bar.isConnected) { obs.disconnect(); if (pinnedObserver === obs) pinnedObserver = null; return; }
+          const off = !e.isIntersecting && e.boundingClientRect.bottom <= (e.rootBounds ? e.rootBounds.top : 0) + 1;
+          bar.classList.toggle("kb-sticky-new-on", off);
+        });
+        pinnedObserver = obs;
+        pinnedObserver.observe(nb);
+      }
+    }
     $("#kb-report-btn").addEventListener("click", () => go("report", board.release ? { release: board.release } : null));
     let qTimer = 0;
     $("#kb-q").addEventListener("input", (e) => {
@@ -897,6 +920,7 @@ export function mountStaffKanban(ctx) {
     }
   }
   let headSig = "";
+  let pinnedObserver = null; // shows the pinned + New task while the header's is scrolled away
   function renderKanbanBoard() {
     const el = $("#kb-board");
     if (!el) return;
