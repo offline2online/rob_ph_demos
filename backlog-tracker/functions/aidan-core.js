@@ -1385,7 +1385,7 @@ const IMPROVEMENTS_PER_DAY = 5;   // new tickets a day at most; comments are not
 const LOW_CONFIDENCE = 0.6;       // a Help Centre answer below this ("Low") is improvable
 const IMPROVEMENT_LABELS = Object.freeze({
   "missing-data": "Missing data", "missing-tool": "Missing tool", "code-mode": "Code Mode limitation", "time-budget": "Time budget",
-  "skill-gap": "Skill gap", "low-confidence": "Low confidence", "failed": "Run failed", "other": "Could be done better",
+  "skill-gap": "Skill gap", "low-confidence": "Low confidence", "failed": "Run failed", "missing-market": "Missing market page", "other": "Could be done better",
 });
 const IMPROVEMENT_SUGGESTIONS = Object.freeze({
   "missing-data": "Give Aidan the data this request needs (a Code Mode tool or insight that reads it, or the document where it should live), so he can answer without a person.",
@@ -1395,13 +1395,16 @@ const IMPROVEMENT_SUGGESTIONS = Object.freeze({
   "skill-gap": "Add or extend a skill in the skills library that covers this request, so Aidan can do it without a person.",
   "low-confidence": "Add or improve the Help Centre article that answers this question, so the answer is drafted with high confidence.",
   "failed": "Find and fix why this run failed, so the request is answered instead of going to a person.",
+  "missing-market": "Add a market page for it under Brand Guidelines › Markets: a file in backlog-tracker/promote/markets/ with its market block and the five sections (communication style, cultural sensitivities, local conventions, business etiquette, regulatory notes), declared in board-docs.json as mirror brand-market-<slug>. No code change.",
   "other": "Change Aidan so requests like this are met in full.",
 });
 const firstSentence = (t, n) => clip((String(t || "").replace(/\s+/g, " ").trim().match(/^.*?[.!?](?=\s|$)/) || [String(t || "").replace(/\s+/g, " ").trim()])[0], n);
 // s: { final (the run's aidan map as finished), stale, noModel, codeMode
 // { ran, ok, kind, name, error, errorKind }, failedReads [{tool, error}],
 // consoleCut, helpCentre { confidence }, selfCheck { gap, kind, improvement },
-// scopedProjectIds } -> null | { category, gap, suggestion, projectId }
+// scopedProjectIds, missingMarket { country, format } } -> null | { category,
+// gap, suggestion, projectId, keyText? } (keyText: what the gap is keyed by
+// instead of the request, so one missing market is one ticket).
 function assessRun(s) {
   const x = s || {};
   const final = x.final || {};
@@ -1423,6 +1426,15 @@ function assessRun(s) {
     // The model's own words lead (they name the gap); the run's reason follows.
     if (self) return out(self.kind === "other" ? "missing-data" : self.kind, `${self.gap}${reason ? ` ${reason}` : ""}`, self.improvement);
     return out("missing-data", reason || "Aidan couldn't answer the request.");
+  }
+  // Collateral for a company whose country has no Brand Guidelines market page
+  // (mErc7MPAkrKjF9fWgqXb): it went out on the default guidelines; the gap is
+  // the missing page, one per country.
+  const mm = x.missingMarket || null;
+  if (mm && mm.country) {
+    const country = clip(String(mm.country).replace(/\s+/g, " ").trim(), 60);
+    return Object.assign(out("missing-market", `No Brand Guidelines market page for ${country}. The ${String(mm.format || "collateral").toLowerCase()} used the default brand guidelines instead of ${country}'s communication style and conventions.`),
+      { keyText: `market ${country.toLowerCase()}` });
   }
   const cm = x.codeMode || null;
   if (cm && cm.ran && !cm.ok) {
@@ -1458,6 +1470,9 @@ function jaccard(a, b) {
 function matchImprovement({ key, category, gap, title }, keyed, open) {
   if (Array.isArray(keyed) && keyed.length) return keyed[0];
   const rows = Array.isArray(open) ? open : [];
+  // One missing market differs from another only by the country's name, so it
+  // matches its own key alone: Vietnam never comments on Malaysia's ticket.
+  if (category === "missing-market") return rows.find((t) => t.aidanImprovementKey === key) || null;
   return rows.find((t) => t.aidanImprovementKey === key)
     || rows.find((t) => t.aidanImprovement && t.aidanImprovement.category === category && jaccard(gap, t.aidanImprovement.gap) >= 0.5)
     || rows.find((t) => jaccard(title, t.title) >= 0.6)
@@ -1484,6 +1499,7 @@ const IMPROVEMENT_OUTCOMES = Object.freeze({
   "skill-gap": "Aidan, the agent mailbox, has a skill that covers requests like the reported one below, so a person isn't needed.",
   "low-confidence": "Aidan, the agent mailbox, answers questions like the reported one below from the Help Centre with high confidence.",
   "failed": "Aidan, the agent mailbox, completes requests like the reported one below instead of failing.",
+  "missing-market": "Brand Guidelines has a Markets page for the market reported below, so Aidan, the agent mailbox, and the collateral and ph-brand skills tailor replies and documents to it instead of the default guidelines.",
   "other": "Aidan, the agent mailbox, fully and well meets requests like the reported one below.",
 });
 // The label on everything taken from a run: what the self-check reported is

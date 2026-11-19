@@ -121,6 +121,7 @@ const answerCore = require("./answer-core");
 const cc = require("./collateral-core");
 const cl = require("./collateral-layout");
 const av = require("./aidan-voice");
+const mc = require("./market-core");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -175,7 +176,10 @@ const tsMs = (v) => (!v ? 0 : typeof v.toMillis === "function" ? v.toMillis() : 
 // `improvements` (mcp-server.js → aidanImprovements): { projects(),
 // openTickets(projectId), byKey(key), filedOn(day), file({...}),
 // comment(itemId, text) }, for the self-improvement tickets; null files none.
-function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null, improvements = null }) {
+// `markets` (support-mail.js): async () => the Brand Guidelines market pages
+// (market-core.js → marketsFrom), for collateral tailored to the company's
+// country; null leaves collateral on the default guidelines and files nothing.
+function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null, improvements = null, markets = null }) {
   const data = (snap) => (snap && snap.exists ? snap.data() || {} : null);
   const configRef = () => secretsRef(CONFIG_DOC);
   const errText = (err) => core.clip(String(err && err.message ? err.message : err), 300);
@@ -738,6 +742,18 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     try { const a = (await accounts()) || {}; return cc.prospectFor({ instruction, client, prospects: a.prospects || [], leads: a.leads || [] }); }
     catch (err) { logger.warn("support: Aidan couldn't read Prospects and Leads", { error: errText(err) }); return cc.prospectFor({ instruction, client }); }
   }
+  // The Brand Guidelines market page for the company's country
+  // (mErc7MPAkrKjF9fWgqXb): { market, missing }. `missing` is the country when
+  // the company has one and no market page covers it, so the self-check files
+  // a ticket to add it; the default guidelines apply meanwhile.
+  async function marketOf(prospect) {
+    const country = prospect && prospect.country ? String(prospect.country).trim() : "";
+    if (!country || typeof markets !== "function") return { market: null, missing: "" };
+    try {
+      const market = mc.marketFor(country, (await markets()) || []);
+      return { market, missing: market ? "" : core.clip(country, 60) };
+    } catch (err) { logger.warn("support: Aidan couldn't read the market pages", { error: errText(err) }); return { market: null, missing: "" }; }
+  }
   async function helpCentreText(industry) {
     if (!helpCentre || typeof helpCentre.articles !== "function") return "";
     try { return cc.helpCentreBlock(await helpCentre.articles(), industry); }
@@ -749,12 +765,15 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   async function writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content = null }) {
     const [prospect, internalNames] = await Promise.all([prospectOf(instruction, client), projectNames()]);
     const industry = cc.industryFor(instruction, prospect);
+    const { market, missing } = await marketOf(prospect);
     const helpText = await helpCentreText(industry);
     const refs = await referencesFor(skill.id);
     const hasCollateralSkill = skill.id !== brand.id;
-    const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}`
+    const marketLine = mc.marketSystem(market, missing);
+    const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}${marketLine ? `\n${marketLine}` : ""}`
       + `\n\n<brand_skill name="${String(brand.name || brand.slug || "").replace(/"/g, "")}">\n${await skillFiles(cc.promptFiles(brand))}\n</brand_skill>`
       + (hasCollateralSkill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
+      + (market ? `\n\n${mc.marketBlock(market)}` : "")
       + (refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : "");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${prospect && prospect.name ? `\nFor: ${prospect.name}` : client ? `\nFor: ${client}` : ""}\nCollateral: ${format.label}`;
     const blocks = contentBlocks({ header, email, inputs, skipped });
@@ -763,7 +782,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const facts = cc.prospectBlock(prospect, industry);
     if (facts) blocks.push({ type: "text", text: facts });
     if (helpText) blocks.push({ type: "text", text: helpText });
-    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: { format: format.key, industry, prospect } })
+    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: Object.assign({ format: format.key, industry, prospect }, market ? { market: market.slug } : {}) })
       : await model({ system, schema: ac.DOC_SCHEMA, effort: "medium", maxTokens: format.maxTokens, content: blocks, timeout: DOC_TIMEOUT_MS });
     const written = ac.cleanDocument(raw);
     // Deterministic, whatever the model wrote: no Australian positioning, no internal names, no long dashes.
@@ -771,7 +790,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const docMd = cc.guardCollateral(written.documentMd, guard);
     const title = cc.guardCollateral(written.title, guard).text || format.label;
     const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
-    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill };
+    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill, market, missingMarket: missing };
   }
   // Print: the branded page, printed on the server. -> { printed, failure }:
   // `printed` is { pdf, pages } or null, and then `failure` says why.
@@ -809,12 +828,15 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   }
   // The whole run: write, print, send (reply-all with the PDF and the
   // Markdown), keep the example, file it on the ticket. No PDF, no email.
-  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null }) {
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null, signals = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
-    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
+    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill, market, missingMarket } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
     const removed = docMd.changes;
-    const collateralFacts = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
+    // Which market page it followed, or the country no page covers (the default guidelines were used).
+    const marketFact = market ? { market: { slug: market.slug, name: market.name } } : missingMarket ? { market: { missing: missingMarket } } : {};
+    if (signals && missingMarket) signals.missingMarket = { country: missingMarket, format: format.label };
+    const collateralFacts = Object.assign({ format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null }, marketFact);
     const mdSize = Buffer.byteLength(docMd.text, "utf8");
     // The branded PDF, printed on the server. Without it nothing is sent.
     const { printed, failure } = await printCollateral({ docMd, title, format, industry, prospect, brand });
@@ -846,7 +868,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}${market ? `, tailored to the ${market.name} market page` : missingMarket ? ` (no market page for ${missingMarket}, so the default brand guidelines)` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
   }
 
   // An "answer" run: reply to everyone on the email (the same recipients as a
@@ -1186,7 +1208,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const instruction = signals.instruction || job.instruction || "";
       const at = now();
       const ticketKey = ticket.key || ticketId;
-      const key = ac.improvementKey(found.category, instruction);
+      // A missing market page is one gap per country, whatever the request.
+      const key = ac.improvementKey(found.category, found.keyText || instruction);
       const label = ac.IMPROVEMENT_LABELS[found.category] || found.category;
       const projects = await improvements.projects();
       const home = ac.homeProject(projects);

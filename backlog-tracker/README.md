@@ -2819,6 +2819,14 @@ every destination already existed.
   `brand-partner-<slug>`; the page lists whatever partner mirrors exist, so
   a new partner needs no code change. First page: miPharmacy. The official
   PH logo files for its lockups are in `public/img/brand/`.
+  **Markets** (19 Nov 2026): one page per market under Brand Guidelines
+  (`#promote/brand-guidelines/markets/<slug>`): communication style, cultural
+  sensitivities, local conventions, business etiquette and regulatory notes.
+  Each is a file in `promote/markets/` declared in `board-docs.json` as mirror
+  `brand-market-<slug>`, listed by whatever mirrors exist, so a new market
+  needs no code change. First pages: Thailand, Singapore, United States.
+  Aidan's collateral picks one by the company's country
+  (`functions/market-core.js`) and files a ticket for a missing market.
 - **Promote › Leads** (`#promote/leads`, 5 Nov 2026; `public/js/leads-page.js`,
   rules in `leads-core.js`, copied to `functions/leads-core.js` by
   `node test/leads-core-copy.mjs --write`): one card per company on a Kanban,
@@ -3229,6 +3237,7 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/aidan-voice.js` | Aidan's voice, pure: the `aidan-voice` skill as first written (`DEFAULT_SKILL_MD`, the same text as `skill-sources/aidan-voice.md`), no quirk on anything sensitive (`sensitiveReason`), "are you a bot?" (`asksIfAi`, `ensureAiDisclosure`), the one aside made safe and added after the reply (`cleanQuirk`, `withQuirk`) (`test/aidan-voice.test.js`) |
 | `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
+| `functions/market-core.js` | Brand Guidelines › Markets for agents, pure: the `brand-market-*` mirrors as market pages (`marketsFrom`), the page for a company's country (`marketFor`), the `<market>` prompt block and its system line (`marketBlock`, `marketSystem`) (`test/market-core.test.js`) |
 | `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
 | `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); `aidanImprovements`, his self-improvement tickets (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
@@ -3517,7 +3526,13 @@ thread. A run:
   (`skillReferences`, `example: true`, the PDF in Storage beside it), so later
   runs of that skill read it. When the PDF can't be made in time, nothing is
   sent: the ticket goes to **Needs a person** with the Markdown kept as an
-  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34);
+  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34). Since 19 Nov
+  2026 it is also **tailored to the company's market**: the Brand Guidelines
+  market page whose `countries` names the company's country (Thailand,
+  Singapore, United States to start) goes into the prompt and sets tone,
+  spelling and conventions; with no page for that country the default
+  guidelines apply and Aidan's self-check files one "Missing market page"
+  ticket per country (`functions/market-core.js`, SUP-AID-49 and 50);
 - **answers a question on the thread: instruction vs content** (18 Nov 2026,
   ticket OrkZBBjz9RM5DY54azIG). Rob's main use: a customer emails Rob a
   question, and Rob replies or forwards with aidan@ in Cc, "@Aidan, please

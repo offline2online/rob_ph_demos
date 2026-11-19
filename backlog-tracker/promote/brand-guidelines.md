@@ -200,7 +200,7 @@ Official logo files and asset sheet: [brand assets](https://claude.ai/artifact/5
 
 ## Partners
 
-One co-branding page per partner: mirrors `brand-partner-<slug>` (`get_project_document`).
+One co-branding page per partner: mirrors `brand-partner-<slug>` (`get_project_document`). Markets: one page per market, mirrors `brand-market-<slug>`, picked by the company's country; none: these guidelines.
 
 ## Joint promotions with AWS (co-branding)
 

@@ -5445,6 +5445,55 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 - Tests: `test/promote-section.test.mjs` and a scenario in
   `test/ui/console-click.test.mjs`.
 
+## Brand Guidelines › Markets: cultural and communication guidelines per market (19 Nov 2026)
+
+- Brand Guidelines has a **Markets** subsection, built like Partners: one page
+  per market, listed at the foot of the Brand Guidelines page (under Partners)
+  and opened at `#promote/brand-guidelines/markets/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first are **Thailand**,
+  **Singapore** and the **United States**.
+- Each market page is a repo file, `backlog-tracker/promote/markets/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-market-<slug>`. The
+  page lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
+  `public/js/promote-section.js`), so **adding a market is a new file and a
+  manifest entry, never a code change**. A superseded mirror is not listed.
+- The file starts with a `<!-- market … -->` block (`slug`, `name`,
+  `countries`, `region`, `spelling`, `currency`, `summary`), which the page
+  reads and does not show. `countries` lists every way a lead's or TAM
+  company's country may be written (ISO codes and names, for example
+  `US, USA, United States, United States of America, America`).
+- Sections every market page carries: **Communication style** (directness,
+  formality, forms of address, deference to seniority); **Cultural
+  sensitivities** (topics, imagery, colours, symbols and gestures to avoid;
+  religious and royal sensitivities where relevant); **Local conventions**
+  (spelling, currency, date and number formats, units); **Business
+  etiquette** (follow-up pace, how hard to sell, relationship versus straight
+  to the point); **Regulatory notes** (what affects claims and data use in
+  advertising). Agent-only detail (`## For agents`) sits between the
+  agent-only markers and is hidden on the page, as for the main guidelines.
+- **Agents read a market page over MCP** with `list_project_documents` /
+  `get_project_document` on this project (the `ph-brand` and collateral
+  skills use the same documents); no new tool.
+- **Aidan picks the market by country** (SUP-AID-49): branded collateral
+  (SUP-AID-30) takes the company's country from Prospects (TAM) or Leads and
+  finds the market page whose `countries` names it (`marketFor` in
+  `functions/market-core.js`; case, dots and accents ignored). The whole page,
+  agent-only detail included, goes into the prompt as `<market>` beside the
+  brand skill, the industry and the prospect; it wins on tone and local
+  conventions, the brand skill and the industry page win on product facts and
+  claims, and "Personalisation Hub" keeps its spelling everywhere. The run
+  records `aidan.collateral.market` (`{slug, name}`, or `{missing: <country>}`)
+  and its timeline line says which page it followed.
+- **No page for that market**: the default brand guidelines apply (the prompt
+  says so) and the collateral is still sent. Aidan's self-check files a
+  **Missing market page** ticket on this project (SUP-AID-50), one per
+  country: a later request for the same country comments on it instead, and
+  another country never matches it.
+- Tests: `test/market-core.test.js`, `test/promote-section.test.mjs`, the
+  Markets scenario in `test/ui/console-click.test.mjs`, and two whole runs in
+  `test/support-mail.test.js` (Thai and US companies, and a Malaysian one with
+  no page).
+
 ## Promote section: Leads (5 Nov 2026)
 
 - **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
@@ -6553,6 +6602,9 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
 (SUP-AID-42 to 47). Since 19 Nov 2026 (ticket QVpqiMuwipZ4mKSXHplM) his
 sender name is a setting, "Aidan Hubbot" by default, used for both the From
 display name and the signature (SUP-AID-48).
+Since 19 Nov 2026 (ticket mErc7MPAkrKjF9fWgqXb) collateral follows the
+Brand Guidelines market page for the company's country, and a market with no
+page is filed as a ticket (SUP-AID-49 and 50).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -7253,6 +7305,25 @@ display name and the signature (SUP-AID-48).
   with this setting. The Gmail send-as display name is not changed: the
   mailbox is shared with the Support Inbox and connected with `gmail.modify`
   only (SUP-CON-1); the From header carries the name.
+- **SUP-AID-49** (19 Nov 2026, ticket mErc7MPAkrKjF9fWgqXb) **Collateral
+  follows the market.** A collateral run reads the Brand Guidelines market
+  pages (the `brand-market-*` mirrors, `functions/market-core.js`) and picks
+  the one whose `countries` names the company's country from Prospects (TAM)
+  or Leads. The whole page goes into the prompt as `<market>`: it decides tone,
+  forms of address, spelling, currency, date and number formats, units,
+  etiquette and regulatory caution; the brand skill and the industry decide
+  facts and claims. "@Aidan, send a one-pager to <Thai company>" follows the
+  Thailand page; the same request for a US company uses US spelling and a
+  more direct tone. Recorded as `aidan.collateral.market` (`{slug, name}`).
+- **SUP-AID-50** **A missing market is a ticket.** When the company has a
+  country and no page covers it, the collateral is written on the default
+  brand guidelines and sent as usual, `aidan.collateral.market` is
+  `{missing: <country>}`, and the self-check (SUP-AID-37) files a "Missing
+  market page" ticket on the console's project naming the country, with the
+  fixed Outcome "Brand Guidelines has a Markets page for the market reported
+  below …". It is keyed by the country, not the request, so a later request
+  for the same country comments on it, and another country's gap never
+  matches it (SUP-AID-39). A run that failed is filed as the failure instead.
 
 ### Connecting
 

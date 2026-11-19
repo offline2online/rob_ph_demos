@@ -9,6 +9,10 @@
 // which is what a page looks them up by. Agents read the same documents over
 // MCP with list_project_documents / get_project_document.
 //
+// Brand Guidelines also lists its Partners and Markets subsections: one page
+// per brand-partner-<slug> / brand-market-<slug> mirror, so a new one is a file
+// and a manifest entry, never a code change.
+//
 // Leads (leads-page.js) is the second entry: a board of its own, not a document page.
 // Prospects (TAM) (prospects-page.js) is the third, directly below Leads: an AG Grid.
 // Conversion Funnel (funnel-page.js) is the fourth, directly below Prospects.
@@ -24,14 +28,15 @@ export const DEFAULT_PROMOTE_PAGE = PROMOTE_PAGES[0].key;
 
 // "#promote" and "#promote/<page>" -> the page key, or null when the hash is
 // not a Promote route. An unknown sub-page falls back to the first one. A
-// partner page ("#promote/brand-guidelines/partners/<slug>") is part of
-// Brand Guidelines.
+// partner page ("#promote/brand-guidelines/partners/<slug>") and a market
+// page ("#promote/brand-guidelines/markets/<slug>") are part of Brand Guidelines.
 export function promotePageFromHash(hash) {
   const h = String(hash || "").split("?")[0];
   if (h === "#promote") return DEFAULT_PROMOTE_PAGE;
   if (!h.startsWith("#promote/")) return null;
   const key = h.slice("#promote/".length);
   if (key.startsWith(PARTNER_ROUTE)) return "brand-guidelines";
+  if (key.startsWith(MARKET_ROUTE)) return "brand-guidelines";
   return PROMOTE_PAGES.some((p) => p.key === key) ? key : DEFAULT_PROMOTE_PAGE;
 }
 export function promoteHash(key) { return `#promote/${key}`; }
@@ -174,4 +179,62 @@ export function partnerLockupHtml(p) {
       + `<figcaption>${lead === "partner" ? esc(p.name) : "Personalisation Hub"} leads · ${surface}</figcaption></figure>`;
   };
   return `<div class="lockup-grid" aria-label="Co-brand lockups">${tile("partner", "light")}${tile("partner", "dark")}${tile("ph", "light")}${tile("ph", "dark")}</div>`;
+}
+
+// ── Markets (cultural and communication guidelines) under Brand Guidelines ──
+// One page per market, each a repo file backlog-tracker/promote/markets/
+// <slug>.md declared in board-docs.json with the mirror key
+// "brand-market-<slug>". The page lists whatever market mirrors exist, so a
+// new market is a new file and a manifest entry, never a code change. Agents
+// read the same documents over MCP (get_project_document); Aidan picks one by
+// country (functions/market-core.js).
+export const MARKET_MIRROR_PREFIX = "brand-market-";
+const MARKET_ROUTE = "brand-guidelines/markets/";
+export function marketHash(slug) { return `#promote/${MARKET_ROUTE}${encodeURIComponent(slug)}`; }
+// "#promote/brand-guidelines/markets/<slug>" -> slug, else null.
+export function promoteMarketFromHash(hash) {
+  const h = String(hash || "").split("?")[0];
+  const pre = `#promote/${MARKET_ROUTE}`;
+  if (!h.startsWith(pre)) return null;
+  let slug = "";
+  try { slug = decodeURIComponent(h.slice(pre.length)).split("/")[0]; } catch (_) { return null; }
+  return /^[a-z0-9-]+$/.test(slug) ? slug : null;
+}
+
+// The "<!-- market ... -->" block at the top of a market file: one
+// "key: value" per line (name, countries, region, spelling, currency,
+// summary). Returns { meta, body } with the block removed from the body.
+export function parseMarketDoc(md) {
+  const text = String(md || "");
+  const m = text.match(/^\s*<!--\s*market\s*\n([\s\S]*?)-->\s*\n?/);
+  const meta = {};
+  if (m) {
+    for (const line of m[1].split("\n")) {
+      const i = line.indexOf(":");
+      if (i > 0) meta[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+    }
+  }
+  return { meta, body: m ? text.slice(m[0].length) : text };
+}
+
+// projectDocs rows -> the market pages, sorted by name.
+export function marketsFrom(projectDocs) {
+  return (projectDocs || [])
+    .filter((d) => d && typeof d.mirrorKey === "string" && d.mirrorKey.startsWith(MARKET_MIRROR_PREFIX) && d.status !== "superseded")
+    .map((d) => {
+      const slug = d.mirrorKey.slice(MARKET_MIRROR_PREFIX.length);
+      const { meta, body } = parseMarketDoc(mirrorBody(d));
+      return { id: d.id, slug, name: meta.name || slug, region: meta.region || "", spelling: meta.spelling || "", currency: meta.currency || "", summary: meta.summary || "", body };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// The Markets list on the Brand Guidelines page (the Partners list's cards).
+export function marketsListHtml(markets) {
+  if (!markets.length) return "";
+  const cards = markets.map((m) => `<li><a class="partner-card" href="${marketHash(m.slug)}">`
+    + `<span class="partner-card-text"><span class="partner-card-name">${esc(m.name)}</span>`
+    + (m.region ? `<span class="partner-card-meta">${esc(m.region)}</span>` : "")
+    + `</span><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></a></li>`).join("");
+  return `<h2 class="partners-title">Markets</h2><ul class="partner-list" aria-label="Markets">${cards}</ul>`;
 }

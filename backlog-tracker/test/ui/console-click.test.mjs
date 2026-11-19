@@ -1994,6 +1994,38 @@ const scenarios = [
     },
   },
   {
+    // mErc7MPAkrKjF9fWgqXb: Brand Guidelines › Markets, one page per market, listed from the brand-market-* mirrors.
+    name: "Promote: Brand Guidelines lists Markets and opens the Thailand page with every section",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
+      th: { projectId: PID, name: "6 — Brand market: Thailand", mirrorKey: "brand-market-thailand", sourcePath: "backlog-tracker/promote/markets/thailand.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n<!-- market\nslug: thailand\nname: Thailand\ncountries: TH, THA, Thailand\nregion: Southeast Asia\n-->\n# Thailand\n\n## Communication style\n\nIndirect and polite.\n\n## Cultural sensitivities\n\nThe monarchy.\n\n## Local conventions\n\nUK spelling.\n\n## Business etiquette\n\nRelationship first.\n\n## Regulatory notes\n\nPDPA.\n\n<!-- agent-only:start -->\n\n## For agents\n\nAgent market detail.\n\n<!-- agent-only:end -->", createdAt: t(T0), updatedAt: t(T0) },
+      us: { projectId: PID, name: "6 — Brand market: United States", mirrorKey: "brand-market-united-states", sourcePath: "backlog-tracker/promote/markets/united-states.md",
+        sourcePrefix: "", contentMd: "<!-- market\nname: United States\nregion: North America\n-->\n# United States\n\n## Communication style\n\nDirect.", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-markets", "Thailand", "the Markets subsection lists Thailand");
+      const list = await c.text("#promote-markets");
+      assert.ok(list.includes("Markets") && list.includes("United States") && list.includes("Southeast Asia"));
+      assert.ok(list.indexOf("Thailand") < list.indexOf("United States"), "sorted by name");
+      await c.page.locator('#promote-markets a.partner-card[href="#promote/brand-guidelines/markets/thailand"]').click();
+      await c.waitText("#promote-title", "Thailand", "the market page opens");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/thailand", "the market page has its own URL");
+      const body = await c.text("#promote-guidelines");
+      for (const h of ["Communication style", "Cultural sensitivities", "Local conventions", "Business etiquette", "Regulatory notes"]) assert.ok(body.includes(h), `the page shows ${h}`);
+      assert.ok(!body.includes("Agent market detail") && !body.includes("countries:") && !body.includes("Copy of the file"), "agent-only detail, the market block and the copy line are not shown");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-markets").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header, the list and lockups are not on a market page");
+      assert.ok((await c.page.title()).includes("Brand Guidelines — PH Agent Console"), "the tab title is Brand Guidelines");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
+      assert.ok(await c.page.locator("#promote-markets").isVisible() && await c.page.locator("#promote-back").isHidden());
+    },
+  },
+  {
     name: "Promote: Leads board - add a lead with contacts, drag it to Hot Lead, convert it",
     seed: () => seed({ leads: {
       lx: { company: { name: "Existing Co", website: "https://existing.example", industry: "", countries: ["UK"], storeCount: 40 }, contacts: [{ id: "k1", name: "Pat", jobTitle: "", buyingRole: "champion", email: "", linkedin: "" }], stage: "demo", source: "Website form", assignee: "", customerAccount: null, createdAt: t(T0), updatedAt: t(T0) },

@@ -60,6 +60,7 @@ const crypto = require("crypto");
 const core = require("./support-core");
 const { createAidan } = require("./aidan");
 const answerCore = require("./answer-core");
+const marketCore = require("./market-core");
 const { articleView } = answerCore;
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
 const { createSupportLab } = require("./support-lab");
@@ -243,6 +244,8 @@ function createSupportMail({
     const [rows, cats] = await Promise.all([rowsOf("faqArticles"), rowsOf("faqCategories")]);
     return answerCore.publishedArticles(rows, cats);
   });
+  // The Brand Guidelines market pages (market-core.js), for collateral tailored to the company's country.
+  const markets = () => cached("markets", async () => marketCore.marketsFrom(await rowsOf("projectDocs")));
   const accounts = () => cached("accounts", async () => {
     const [prospects, leads] = await Promise.all([rowsOf("prospects"), rowsOf("leads")]);
     return { prospects, leads: leads.filter((l) => !l.archived && !l.test) };
@@ -497,6 +500,8 @@ function createSupportMail({
     // cached Prospects (TAM) and Leads), and the server-side PDF printer
     // (collateral-pdf.js), loaded only when collateral is printed.
     accounts,
+    // The market pages: a one-pager for a Thai company follows the Thailand page (mErc7MPAkrKjF9fWgqXb).
+    markets,
     renderPdf: renderPdf || ((html, opts) => require("./collateral-pdf").renderPdf(html, opts)),
     // Self-improvement tickets (mcp-server.js → aidanImprovements): a run that
     // didn't fully meet its request files a Backlog ticket, or comments on a

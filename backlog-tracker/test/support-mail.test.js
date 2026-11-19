@@ -1868,11 +1868,11 @@ function attachmentsOf(mail) {
   }
   return out;
 }
-function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = { s1: SKILLS.s1, b1: BRAND_SKILL }, prospects = {}, leads = {}, voice = null } = {}) {
+function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = { s1: SKILLS.s1, b1: BRAND_SKILL }, prospects = {}, leads = {}, voice = null, projectDocs = null, improvements = null } = {}) {
   const seen = { write: [], render: [], select: [] };
   const stored = [];
   const t = make({
-    mail, prospects,
+    mail, prospects, improvements,
     aidan: {
       select: async (input) => { seen.select.push(input.instruction); return { skillId: "", client: "", reason: "the brand skill alone" }; },
       write: async (input) => { seen.write.push(input); return write(input); },
@@ -1884,6 +1884,7 @@ function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = {
   });
   t.db.state.skills = JSON.parse(JSON.stringify(skills));
   t.db.state.leads = leads;
+  if (projectDocs) t.db.state.projectDocs = projectDocs;
   t.db.state.projects = { p1: { name: "Display Types & DSP Integration" }, p2: { name: "Retail Media Insights & Analytics Dashboards" } };
   return Object.assign(t, { seen, stored });
 }
@@ -1988,6 +1989,62 @@ check("Aidan collateral: the gates hold: a stranger's request for a one-pager do
   assert.strictEqual(t.seen.render.length, 0, "no PDF for anything but collateral");
   const x2 = ticketOf(t, "t-x2");
   assert.deepStrictEqual([x2.aidan.status, x2.aidan.collateral, Object.keys(attachmentsOf(t.google.calls.sent[0].mail))], ["replied", undefined, ["aws-onboarding-pack-kestrel.md"]]);
+});
+
+// ── Brand Guidelines › Markets (mErc7MPAkrKjF9fWgqXb) ──
+// The market pages as the post-merge sync writes them (the real repo files).
+const marketDoc = (slug) => ({ projectId: BT, name: `6 — Brand market: ${slug}`, mirrorKey: `brand-market-${slug}`, sourcePath: `backlog-tracker/promote/markets/${slug}.md`,
+  sourcePrefix: "> Copy of the file.\n\n", contentMd: `> Copy of the file.\n\n${require("fs").readFileSync(require("path").join(__dirname, "..", "promote", "markets", `${slug}.md`), "utf8")}` });
+const MARKET_DOCS = { mth: marketDoc("thailand"), msg: marketDoc("singapore"), mus: marketDoc("united-states"), bg: { projectId: BT, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", contentMd: "# Brand Guidelines" } };
+
+check("Aidan collateral, markets: a one-pager for a Thai prospect follows the Thailand page; the same request for a US lead follows the US page", async () => {
+  const t = makeCollateral([
+    aidanMail({ id: "m1", subject: "CP Group", text: "@Aidan, send me a one-pager for CP Group, retail grocery." }),
+    aidanMail({ id: "m2", subject: "Kroger", date: 1759990005000, text: "@Aidan, send me a one-pager for Kroger, retail grocery." }),
+  ], {
+    projectDocs: MARKET_DOCS, improvements: stubImprovements(),
+    prospects: { cp: { name: "CP Group", country: "Thailand", industry: "Grocery & Supermarkets" } },
+    leads: { k: { company: { name: "Kroger", industry: "Grocery & Supermarkets", countries: ["USA"] } } },
+  });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const [th, us] = t.seen.write;
+  assert.ok(th && us, "both written");
+  assert.strictEqual(th.collateral.market, "thailand");
+  assert.ok(th.system.includes('<market name="Thailand">') && th.system.includes("Khun") && /Lèse-majesté/.test(th.system), "the whole Thailand page, agent-only detail included");
+  assert.ok(/Tailor tone, forms of address, spelling/.test(th.system) && /\(Thailand\)/.test(th.system));
+  assert.ok(!th.system.includes("<market name=\"United States\">"), "only the one market");
+  assert.strictEqual(us.collateral.market, "united-states");
+  assert.ok(us.system.includes('<market name="United States">') && us.system.includes("personalize, color, center") && us.system.includes("Direct and concise"));
+  const tk = ticketOf(t, "t-m1");
+  assert.deepStrictEqual(tk.aidan.collateral.market, { slug: "thailand", name: "Thailand" });
+  assert.deepStrictEqual(ticketOf(t, "t-m2").aidan.collateral.market, { slug: "united-states", name: "United States" });
+  assert.ok(messagesOf(t, "t-m1").some((m) => m.direction === "event" && /tailored to the Thailand market page/.test(m.text)));
+  assert.strictEqual(tk.aidan.improvement, undefined, "a market with a page files nothing");
+});
+
+check("Aidan collateral, markets: a company in a market with no page gets the default guidelines, and Aidan files one missing-market ticket for that country", async () => {
+  const imp = stubImprovements();
+  const t = makeCollateral([
+    aidanMail({ id: "n1", subject: "Mydin", text: "@Aidan, send me a one-pager for Mydin, retail grocery." }),
+    aidanMail({ id: "n2", subject: "Mydin deck", date: 1759990005000, text: "@Aidan, prepare a sales deck for Mydin." }),
+  ], { projectDocs: MARKET_DOCS, improvements: imp, prospects: { my: { name: "Mydin", country: "Malaysia", industry: "Grocery & Supermarkets" } } });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const w = t.seen.write[0];
+  assert.ok(!w.system.includes("<market") && /no market page for Malaysia: follow the brand skill's default guidelines/.test(w.system), "the default guidelines");
+  assert.strictEqual(w.collateral.market, undefined);
+  assert.strictEqual(t.google.calls.sent.length, 2, "the collateral still goes out");
+  const tk = ticketOf(t, "t-n1");
+  assert.deepStrictEqual(tk.aidan.collateral.market, { missing: "Malaysia" });
+  assert.strictEqual(imp.items.length, 1, "one ticket for the missing market");
+  const filed = imp.items[0];
+  assert.deepStrictEqual([filed.projectId, filed.title, filed.aidanImprovement.category], [BT, "Aidan missing market page: No Brand Guidelines market page for Malaysia", "missing-market"]);
+  assert.ok(filed.desc.startsWith("## Outcome\nBrand Guidelines has a Markets page") && /promote\/markets\//.test(filed.desc));
+  assert.deepStrictEqual([tk.aidan.improvement.action, tk.aidan.improvement.category], ["filed", "missing-market"]);
+  assert.deepStrictEqual([imp.comments.length, imp.comments[0].itemId, ticketOf(t, "t-n2").aidan.improvement.action], [1, filed.id, "commented"], "the next request for the same country comments instead of filing again");
 });
 
 // ── Instruction and content (OrkZBBjz9RM5DY54azIG) ──
