@@ -26,7 +26,9 @@ const routineMd = read(path.join(BT, "ROUTINE_INSTRUCTIONS.md"));
 // Staff Kanban's tools are registered from functions/kanban.js.
 const mcpSource = read(path.join(BT, "functions", "mcp-server.js")) + "\n" + read(path.join(BT, "functions", "kanban.js")) + "\n" + read(path.join(BT, "functions", "leads.js")) + "\n" + read(path.join(BT, "functions", "prospects.js"))
   // Code Mode's tools and insight names (functions/code-mode).
-  + "\n" + read(path.join(BT, "functions", "code-mode", "index.js"));
+  + "\n" + read(path.join(BT, "functions", "code-mode", "index.js"))
+  // PH Agent Context's tools (functions/context).
+  + "\n" + read(path.join(BT, "functions", "context", "tools.js"));
 const indexSource = read(path.join(BT, "functions", "index.js"));
 
 let passed = 0;

@@ -1203,6 +1203,38 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // PH Agent Context (functions/context): the search index, the cached
+    // topic packs and the audit log of every search and context call.
+    //   searchIndex       one entry per source record: its text in chunks,
+    //                     with email addresses removed. Everything in it is
+    //                     copied from a collection every board reader can
+    //                     already read above.
+    //   searchIndexState  when the backfill last finished.
+    //   topicContext      the warm tier: one cached pack per topic and role.
+    //   searchRuns        who searched, a hash of the query (never the
+    //                     query), the sources hit, the time taken and the
+    //                     cache tier.
+    // Written only by the server (Admin SDK: the index triggers and the MCP
+    // server); every client is read-only.
+    match /searchIndex/{entryId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    match /searchIndexState/{docId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    match /topicContext/{packId} {
+      allow read: if isBoardReader();
+      allow write: if false;
+    }
+    match /searchRuns/{entryId} {
+      allow read: if isMember();
+      allow write: if false;
+    }
+    // The key the audit hashes queries with. No client reads or writes it.
+    match /contextSecrets/{docId} { allow read, write: if false; }
+
     // ── FAQ / Help Center content ─────────────────────────────────────────
     // These two collections feed the PUBLIC help centre (repo-root faq/,
     // iframed into personalisationhub.com). Reads stay public — the site

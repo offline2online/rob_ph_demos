@@ -178,7 +178,8 @@ function seed() {
     for (const w of WRITE_TOOLS) assert.ok(!r.text.includes(`  ${w}(`), `${w} is not described`);
     assert.match(r.text, /50 tool calls/);
     assert.match(r.text, /20 KB returned value/);
-    assert.ok(r.text.length < 12000, `the description is compact (${r.text.length} chars)`);
+    // 31 tools since PH Agent Context added documents, critiques, search, topic context, Support threads and run history (21 before, under 12,000).
+    assert.ok(r.text.length < 18500, `the description is compact (${r.text.length} chars)`);
   });
 
   // ── run_script ─────────────────────────────────────────────────────────
@@ -475,7 +476,7 @@ function seed() {
   // ── Insight library ────────────────────────────────────────────────────
   await test("list_insights: every insight with a one-line description and its parameters", async () => {
     const r = await tool(kit, "list_insights");
-    assert.deepStrictEqual(r.json.insights.map((i) => i.name), ["pipeline_status", "what_changed", "project_status", "concept_status", "leads_summary", "release_status"]);
+    assert.deepStrictEqual(r.json.insights.map((i) => i.name), ["pipeline_status", "what_changed", "project_status", "concept_status", "leads_summary", "release_status", "topic_context"]);
     for (const i of r.json.insights) {
       assert.ok(i.description && !i.description.includes("\n") && i.version >= 1);
       for (const p of i.params) assert.ok(p.name && p.type && p.description && typeof p.required === "boolean");

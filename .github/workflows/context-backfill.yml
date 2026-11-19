@@ -1,0 +1,70 @@
+# PH Agent Context: (re)build the console's search index from existing data.
+#
+# The index (Firestore `searchIndex`) is kept current by Cloud Function
+# triggers, one record at a time. This run indexes what already existed when
+# those triggers first deployed, and repairs anything a failed trigger left
+# behind. It is safe to run at any time: an unchanged record is one read and
+# no write. See backlog-tracker/MCP.md → "PH Agent Context".
+#
+# Runs by hand (dry run unless apply is ticked), and by itself after every
+# successful "Deploy backlog-tracker" run, so a release that changes what is
+# indexed is followed by a pass over the data with the new code.
+#
+# It prints counts only, never a record's text.
+name: PH Agent Context backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Write the index (unticked: a dry run that only counts)"
+        type: boolean
+        default: false
+      sources:
+        description: "Only these sources, comma-separated (ticket,kanban,project,concept,critique,faq,lead,prospect,support,document,skill). Empty: all"
+        type: string
+        default: ""
+      reembed:
+        description: "Also add semantic vectors to records indexed without one"
+        type: boolean
+        default: false
+  workflow_run:
+    workflows: ["Deploy backlog-tracker"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: context-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+        working-directory: backlog-tracker/scripts
+      - name: Write the service account key
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_BACKLOG_TRACKER }}' > "$RUNNER_TEMP/firebase-sa.json"
+      - name: Backfill the search index
+        working-directory: backlog-tracker/scripts
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/firebase-sa.json
+          GCLOUD_PROJECT: backlog-tracker-e4ed2
+          CONTEXT_EMBEDDINGS: vertex
+          APPLY: ${{ github.event_name == 'workflow_run' || inputs.apply }}
+          SOURCES: ${{ inputs.sources }}
+          REEMBED: ${{ inputs.reembed }}
+        run: |
+          args=()
+          if [ "$APPLY" = "true" ]; then args+=(--apply); fi
+          if [ -n "$SOURCES" ]; then args+=(--sources "$SOURCES"); fi
+          if [ "$REEMBED" = "true" ]; then args+=(--reembed); fi
+          node context-backfill.js "${args[@]}"
