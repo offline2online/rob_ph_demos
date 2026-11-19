@@ -1377,7 +1377,8 @@ const scenarios = [
       // Needs attention: the stale testing card, the blocked card and the red train, oldest first.
       await c.visible("#needs-attention .needs-attention-row", "Needs attention lists rows");
       await c.visible("#dash-groups .dash-group", "the KPI tiles are drawn");
-      assert.ok(await c.page.evaluate(() => { const na = document.getElementById("needs-attention"), g = document.getElementById("dash-groups"); return !!(na && g && na.parentElement === document.getElementById("dashboard-page") && (na.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_FOLLOWING)); }), "the strip is on the Dashboard, above the KPI tiles");
+      assert.ok(await c.page.evaluate(() => { const na = document.getElementById("needs-attention"), g = document.getElementById("dash-groups"); return !!(na && g && na.parentElement === document.getElementById("dashboard-page") && (na.compareDocumentPosition(g) & Node.DOCUMENT_POSITION_PRECEDING)); }), "the strip is on the Dashboard, below the KPI tiles (GUI9xPe3CJY3LyMws88m)");
+      assert.ok(await c.page.evaluate(() => { const na = document.getElementById("needs-attention").getBoundingClientRect(); return [...document.querySelectorAll(".dash-tile")].every((t) => t.getBoundingClientRect().bottom <= na.top + 1); }), "Needs attention never covers a tile");
       const rows = await c.page.evaluate(() => [...document.querySelectorAll("#needs-attention .needs-attention-row")].map((r) => `${r.dataset.kind}:${r.dataset.id}`));
       assert.ok(rows.indexOf("ticket:r1") >= 0 && rows.indexOf("ticket:b1") > rows.indexOf("ticket:r1"), `oldest first: ${rows}`);
       assert.ok(rows.includes("train:p2"), `the red train is listed: ${rows}`);
@@ -1960,6 +1961,69 @@ const scenarios = [
       assert.strictEqual(await c.page.locator("#promote-brand-header .brand-bar").count(), 4, "four brand bars");
       assert.ok(await c.page.locator("#promote-requirements-wrap").isHidden(), "no Requirements section on the team view");
       assert.ok(new URL(c.page.url()).hash === "#promote/brand-guidelines", "the page has its own URL");
+    },
+  },
+  {
+    // ZvkZpVZBXCDHb34MQegP: Brand Guidelines › Partners, one page per partner, listed from the brand-partner-* mirrors.
+    name: "Promote: Brand Guidelines lists Partners and opens the miPharmacy co-branding page",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
+      mp: { projectId: PID, name: "6 — Brand partner: miPharmacy (co-branding)", mirrorKey: "brand-partner-mipharmacy", sourcePath: "backlog-tracker/promote/partners/mipharmacy.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n<!-- partner\nslug: mipharmacy\nname: miPharmacy\nindustry: Pharmacy\nlogoLight:\nlogoDark:\n-->\n# miPharmacy\n\n## Who leads, by audience\n\nPharma brands: miPharmacy leads.\n\n## Co-brand logo lockups\n\nHairline divider.\n\n## Colour hierarchy\n\nTeal.\n\n## Naming, wording and tone\n\nPowered by Personalisation Hub.\n\n## Approved claims and outcomes\n\nSee [pharmacy](https://personalisationhub.com/industries/pharmacy/).\n\n## Co-branded templates\n\nOne-pager.\n\n<!-- agent-only:start -->\n\n## For agents\n\nAgent detail.\n\n<!-- agent-only:end -->", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-partners", "miPharmacy", "the Partners subsection lists miPharmacy");
+      assert.ok((await c.text("#promote-partners")).includes("Partners") && (await c.text("#promote-partners")).includes("Pharmacy"));
+      await c.page.locator('#promote-partners a.partner-card').first().click();
+      await c.waitText("#promote-title", "miPharmacy", "the partner page opens");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/partners/mipharmacy", "the partner page has its own URL");
+      const body = await c.text("#promote-guidelines");
+      for (const h of ["Who leads, by audience", "Co-brand logo lockups", "Colour hierarchy", "Naming, wording and tone", "Approved claims and outcomes", "Co-branded templates"]) assert.ok(body.includes(h), `the page shows ${h}`);
+      assert.ok(!body.includes("Agent detail") && !body.includes("slug:") && !body.includes("Copy of the file"), "agent-only detail, the partner block and the copy line are not shown");
+      assert.strictEqual(await c.page.locator('#promote-guidelines a[href="https://personalisationhub.com/industries/pharmacy/"]').count(), 1, "claims link to the pharmacy industry page");
+      assert.strictEqual(await c.page.locator("#promote-partner-lockups figure.lockup").count(), 4, "partner-led and PH-led lockups, light and dark");
+      assert.strictEqual(await c.page.locator('#promote-partner-lockups img[src="img/brand/ph-logo-white.svg"]').count(), 2, "the official white PH logo on dark");
+      assert.strictEqual(await c.page.locator("#promote-partner-lockups .lockup-missing").count(), 4, "the partner logo slot waits for its Brand assets file");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-partners").isHidden(), "the guidelines header and list are not on a partner page");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
+      assert.ok(await c.page.locator("#promote-partner-lockups").isHidden() && await c.page.locator("#promote-back").isHidden());
+    },
+  },
+  {
+    // mErc7MPAkrKjF9fWgqXb: Brand Guidelines › Markets, one page per market, listed from the brand-market-* mirrors.
+    name: "Promote: Brand Guidelines lists Markets and opens the Thailand page with every section",
+    seed: () => seed({ projectDocs: {
+      bg: { projectId: PID, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", sourcePath: "backlog-tracker/promote/brand-guidelines.md",
+        sourcePrefix: "", contentMd: "# Brand Guidelines\n\n## Logo usage\n\nUse the real files.", createdAt: t(T0), updatedAt: t(T0) },
+      th: { projectId: PID, name: "6 — Brand market: Thailand", mirrorKey: "brand-market-thailand", sourcePath: "backlog-tracker/promote/markets/thailand.md",
+        sourcePrefix: "> Copy of the file.\n\n", contentMd: "> Copy of the file.\n\n<!-- market\nslug: thailand\nname: Thailand\ncountries: TH, THA, Thailand\nregion: Southeast Asia\n-->\n# Thailand\n\n## Communication style\n\nIndirect and polite.\n\n## Cultural sensitivities\n\nThe monarchy.\n\n## Local conventions\n\nUK spelling.\n\n## Business etiquette\n\nRelationship first.\n\n## Regulatory notes\n\nPDPA.\n\n<!-- agent-only:start -->\n\n## For agents\n\nAgent market detail.\n\n<!-- agent-only:end -->", createdAt: t(T0), updatedAt: t(T0) },
+      us: { projectId: PID, name: "6 — Brand market: United States", mirrorKey: "brand-market-united-states", sourcePath: "backlog-tracker/promote/markets/united-states.md",
+        sourcePrefix: "", contentMd: "<!-- market\nname: United States\nregion: North America\n-->\n# United States\n\n## Communication style\n\nDirect.", createdAt: t(T0), updatedAt: t(T0) },
+    } }),
+    async run(c) {
+      await c.boardReady();
+      await openFromNav(c, "promote", "promote-brand-btn", "promote-page");
+      await c.waitText("#promote-markets", "Thailand", "the Markets subsection lists Thailand");
+      const list = await c.text("#promote-markets");
+      assert.ok(list.includes("Markets") && list.includes("United States") && list.includes("Southeast Asia"));
+      assert.ok(list.indexOf("Thailand") < list.indexOf("United States"), "sorted by name");
+      await c.page.locator('#promote-markets a.partner-card[href="#promote/brand-guidelines/markets/thailand"]').click();
+      await c.waitText("#promote-title", "Thailand", "the market page opens");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines/markets/thailand", "the market page has its own URL");
+      const body = await c.text("#promote-guidelines");
+      for (const h of ["Communication style", "Cultural sensitivities", "Local conventions", "Business etiquette", "Regulatory notes"]) assert.ok(body.includes(h), `the page shows ${h}`);
+      assert.ok(!body.includes("Agent market detail") && !body.includes("countries:") && !body.includes("Copy of the file"), "agent-only detail, the market block and the copy line are not shown");
+      assert.ok(await c.page.locator("#promote-brand-header").isHidden() && await c.page.locator("#promote-markets").isHidden() && await c.page.locator("#promote-partner-lockups").isHidden(), "the guidelines header, the list and lockups are not on a market page");
+      assert.ok((await c.page.title()).includes("Brand Guidelines — PH Agent Console"), "the tab title is Brand Guidelines");
+      await c.page.locator("#promote-back").click();
+      await c.waitText("#promote-title", "Brand Guidelines", "back to the guidelines");
+      assert.strictEqual(new URL(c.page.url()).hash, "#promote/brand-guidelines");
+      assert.ok(await c.page.locator("#promote-markets").isVisible() && await c.page.locator("#promote-back").isHidden());
     },
   },
   {
@@ -3262,6 +3326,64 @@ const scenarios = [
     },
   },
   {
+    // T6f4GeJZGg0OgntUpzPq: funnelDaily is filled by the ingest (functions/funnel-ingest.js).
+    // Unique visitors are GA4's day total, and a source that failed on the last run is
+    // flagged with when the data was last updated, on the Dashboard tile and the page.
+    name: "Conversion Funnel: ingest rows drive the Dashboard tile, a failed GA4 run is flagged with the last update",
+    hash: "",
+    seed: () => {
+      const yday = () => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(12, 0, 0, 0); return d; };
+      const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const y = dayStr(yday());
+      const s = only("b1");
+      s.docs.funnelDaily = {
+        t1: { date: y, source: "ga4-total", users: 321 },
+        s1: { date: y, source: "ga4-site", country: "United Kingdom", channel: "Organic", visits: 300, users: 250 },
+        s2: { date: y, source: "ga4-site", country: "Australia", channel: "Google Ads", visits: 150, users: 120 },
+        i1: { date: y, source: "ga4-industry", industry: "Telco", country: "United Kingdom", content: "Industry page", pageViews: 90, users: 60 },
+        i2: { date: y, source: "ga4-industry", industry: "Banking", country: "United Kingdom", content: "Industry page", pageViews: 30, users: 25 },
+        // 15 people saw both industries: GA4's de-duplicated total is 70, not 60 + 25.
+        it: { date: y, source: "ga4-industry-total", content: "Industry page", users: 70 },
+        iu1: { date: y, source: "ga4-industry-users", industry: "Telco", content: "Industry page", users: 60 },
+        iu2: { date: y, source: "ga4-industry-users", industry: "Banking", content: "Industry page", users: 25 },
+        e1: { date: y, source: "ga4-events", industry: "Telco", country: "United Kingdom", walkthroughs: 6, calculatorUses: 0, demoRequests: 1, downloads: 2, leadForms: 3 },
+        a1: { date: y, source: "google-ads", channel: "Google Ads", campaign: "Brand", impressions: 4000, clicks: 120 },
+      };
+      s.docs.consoleConfig = { funnelIngest: {
+        lastRunAt: new Date().toISOString(), ok: false, failed: ["ga4-site"],
+        sources: {
+          "ga4-total": { ok: false, error: "GA4 answered 401: Request had invalid authentication credentials.", lastSuccessAt: yday().toISOString() },
+          "ga4-site": { ok: false, error: "GA4 answered 401: Request had invalid authentication credentials.", lastSuccessAt: yday().toISOString() },
+          leads: { ok: true, lastSuccessAt: new Date().toISOString() },
+        },
+      } };
+      return s;
+    },
+    async run(c) {
+      await c.visible("#dashboard-page");
+      const tile = '.dash-tile-wrap[data-tile="funnel"]';
+      await until(async () => (await c.page.locator(`${tile} .dash-value`).first().innerText()) === "321", "unique visitors are GA4's total users for yesterday", 8000);
+      assert.ok((await c.text(`${tile} .dash-extra`)).includes("Data not updated"), "the tile flags the failed ingest");
+      assert.strictEqual(await c.page.$eval(`${tile} .dash-status`, (el) => el.dataset.level), "alert", "the tile's status is red while a source failed");
+      // The tile's summary panel says what failed and when the data was last updated.
+      await c.page.mouse.move(2, 2);
+      await c.click(`${tile} .dash-tile`, "pin the funnel tile");
+      await c.visible("#dash-panel");
+      const tipText = await c.text("#dash-panel");
+      assert.ok(tipText.includes("GA4 didn't update") && tipText.includes("401") && tipText.includes("Updated"), `the panel says what failed and when the data was last updated: ${tipText}`);
+      assert.ok(tipText.includes("Telco") && tipText.includes("Banking"), "industries come from the industry page users");
+      const industryStep = await c.page.locator("#dash-panel .dash-tip-row").filter({ hasText: "Industry page" }).locator("b").first().innerText();
+      assert.strictEqual(industryStep, "70", "the Industry page step is GA4's de-duplicated industry-page users, not the per-industry sum");
+      await c.click("#dash-panel .dash-panel-open", "Open section");
+      await c.visible("#funnel-page", "the panel opens the Conversion Funnel");
+      await c.visible("#funnel-status", "the ingest failure is flagged on the page");
+      const status = await c.text("#funnel-status");
+      assert.ok(status.includes("GA4 didn't update") && status.includes("last good update"), `the failure and the last good update: ${status}`);
+      assert.ok(await c.page.locator("#funnel-status.funnel-status-flag").count() === 1, "the line is styled as a failure");
+      assert.ok((await c.text("#funnel-count")).includes("Updated"), "the count line says when the data was last updated");
+    },
+  },
+  {
     name: "Promote: Prospects company detail - two country records share one org chart, AWS account ID, lead card compact view",
     seed: () => seed({
       prospects: {
@@ -3389,9 +3511,11 @@ const scenarios = [
   },
   {
     // The console opens on the Dashboard (yYzYdxqAdI5KTdqZXs3C): five KPI
-    // tiles for yesterday in three sections, the breakdown on hover/focus,
-    // and a click through to each section. "#board" keeps the Agent Board.
-    name: "Dashboard: the landing page, five tiles for yesterday, breakdowns on hover, click through",
+    // tiles for yesterday in three sections. Dashboard v2 (GUI9xPe3CJY3LyMws88m):
+    // a responsive grid (4 / 3 / 2 / 1 across), a tile pins its summary panel
+    // under its row and never navigates, Needs attention below the tiles, and
+    // the panel's "Open section" goes to the section. "#board" keeps the Agent Board.
+    name: "Dashboard: the landing page, five tiles for yesterday, a responsive grid, click to pin a summary panel",
     hash: "",
     seed: () => {
       const yday = (h, m = 0) => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.getTime(); };
@@ -3460,47 +3584,137 @@ const scenarios = [
       // Priya wrote at 08:00 yesterday (16 to 40 hours ago); Hattie's older email to hello@ is not the oldest.
       assert.ok(/^(\d+h|1d( \d+h)?)$/.test(sVals[1]), `the age of the oldest unanswered support@ email: ${sVals[1]}`);
       assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles");
-      const tip = (k) => `.dash-tile-wrap[data-tile="${k}"] .dash-tip`;
-      const showTip = async (k) => {
-        c.at(`the ${k} breakdown`, tip(k));
-        if (c.width >= 1024) {
-          // Off the last tooltip first: a hover card stays open while the pointer is on it.
-          await c.page.mouse.move(2, 2);
-          await c.page.hover(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
-        } else {
-          // :focus-visible: reach the tile from the keyboard, as a keyboard user would.
-          await c.page.evaluate((sel) => { const all = [document.getElementById("dash-refresh"), ...document.querySelectorAll(".dash-tile")]; all[all.indexOf(document.querySelector(sel)) - 1].focus(); }, `.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
-          await c.page.keyboard.press("Tab");
-        }
-        await until(async () => c.page.locator(tip(k)).isVisible(), `the ${k} tooltip`, 3000);
-        return c.text(tip(k));
-      };
-      const kTip = await showTip("kanban");
-      assert.ok(kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)"), `remaining effort by assignee: ${kTip}`);
+      assert.strictEqual(await c.page.locator(".dash-tile-wrap .dash-info[aria-describedby]").count(), 5, "every tile has an info tooltip");
+      assert.ok(!(await c.text("#dash-groups")).includes("support@ only"), "the Support tile's explanation is in its info tooltip, not on the tile");
+
+      c.at("compact tiles: a sparkline, a trend arrow and a status colour");
+      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.filter((e) => e.querySelector(".dash-spark polyline")).map((e) => e.dataset.tile)), ["agent", "leads", "funnel"], "a 7-day sparkline where the figure has a daily history");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="leads"] .dash-trend-up').count(), 1, "leads went up against the day before");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="support"] .dash-trend').count(), 1, "support: replied or resolved today against yesterday");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="kanban"] .dash-trend').count(), 0, "Staff Kanban keeps no history: no trend (said in its info tooltip)");
+      const level = (k) => c.page.$eval(`.dash-tile-wrap[data-tile="${k}"] .dash-status`, (e) => e.dataset.level);
+      assert.strictEqual(await level("agent"), "warn", "amber: a ticket is blocked");
+      assert.strictEqual(await level("kanban"), "warn", "amber: a task has no estimate");
+      assert.strictEqual(await level("leads"), "ok");
+      assert.strictEqual(await level("funnel"), "ok");
+      assert.ok(["warn", "alert"].includes(await level("support")), "support: something awaits a reply");
+
+      c.at(`the grid at ${c.width}px`);
+      const columns = await c.page.evaluate(() => new Set([...document.querySelectorAll(".dash-tile-wrap")].map((w) => Math.round(w.getBoundingClientRect().left))).size);
+      const expected = c.width >= 1440 ? 4 : c.width >= 1024 ? 3 : c.width > 640 ? 2 : 1;
+      assert.strictEqual(columns, expected, `${expected} tile(s) across at ${c.width}px`);
+      if (expected === 4) assert.strictEqual(await c.page.evaluate(() => new Set([...document.querySelectorAll('.dash-tile-wrap[data-tile="agent"], .dash-tile-wrap[data-tile="kanban"], .dash-tile-wrap[data-tile="leads"], .dash-tile-wrap[data-tile="funnel"]')].map((w) => Math.round(w.getBoundingClientRect().top))).size), 1, "Internal and External share the first row");
+      // Tiles flow across sections: every row is full while tiles remain (the
+      // review of 19 Nov 2026 found row 1 at 1180px holding two tiles and an empty column).
+      const rows = await c.page.evaluate(() => {
+        const byTop = new Map();
+        for (const w of document.querySelectorAll(".dash-tile-wrap")) { const top = Math.round(w.getBoundingClientRect().top); byTop.set(top, [...(byTop.get(top) || []), w.dataset.tile]); }
+        return [...byTop.entries()].sort((x, y) => x[0] - y[0]).map((e) => e[1]);
+      });
+      const want = [];
+      const order = ["agent", "kanban", "leads", "funnel", "support"];
+      for (let i = 0; i < order.length; i += expected) want.push(order.slice(i, i + expected));
+      assert.deepStrictEqual(rows, want, `rows at ${c.width}px: no empty column while tiles remain`);
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll(".dash-group-title")].map((h) => h.closest(".dash-tile-wrap")?.dataset.tile)), ["agent", "leads", "support"], "each section's heading sits above its first tile");
+      const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+      assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+
+      // A click pins the tile's summary panel under its row; nothing navigates.
+      const panel = "#dash-panel";
+      const underRow = (k) => c.page.evaluate((key) => {
+        const p = document.getElementById("dash-panel"), w = document.querySelector(`.dash-tile-wrap[data-tile="${key}"]`);
+        if (!p || p.hidden || !w) return "panel hidden";
+        const pr = p.getBoundingClientRect(), wr = w.getBoundingClientRect(), host = document.getElementById("dash-groups").getBoundingClientRect();
+        const below = [...document.querySelectorAll(".dash-tile-wrap")].filter((x) => x.getBoundingClientRect().top > wr.top + 1);
+        if (pr.top < wr.bottom) return `panel top ${pr.top} above the tile bottom ${wr.bottom}`;
+        if (below.some((x) => x.getBoundingClientRect().top < pr.top)) return "a later row sits between the tile and its panel";
+        if (Math.abs(pr.width - host.width) > 2) return `panel ${pr.width}px wide, the grid ${host.width}px`;
+        return "ok";
+      }, k);
+      const pinTile = async (k) => { await c.click(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`, `pin the ${k} tile`); await c.visible(panel); };
+      await c.page.mouse.move(2, 2);
+      await pinTile("kanban");
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "a tile never navigates");
+      assert.strictEqual(await underRow("kanban"), "ok", "the panel is full width, directly under the tile's row");
+      assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "true");
+      const kTip = await c.text(panel);
+      assert.ok(kTip.includes("Staff Kanban") && kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)"), `remaining effort by assignee: ${kTip}`);
       assert.ok(kTip.includes("No estimate: PH-3"), `missing estimates named: ${kTip}`);
-      const aTip = await showTip("agent");
-      assert.ok(aTip.includes("Demo Project") && /Blocked\s*1/.test(aTip), `per project, with blocked: ${aTip}`);
-      const lTip = await showTip("leads");
+      await c.page.mouse.move(2, 2);
+      await c.page.waitForTimeout(150);
+      assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned when the pointer leaves");
+      await pinTile("agent");
+      const aTip = await c.text(panel);
+      assert.ok(aTip.includes("Demo Project") && /Blocked\s*1/.test(aTip), `another tile switches the panel: ${aTip}`);
+      assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "false", "only one tile is pinned");
+      await pinTile("leads");
+      assert.strictEqual(await underRow("leads"), "ok", "the leads panel sits under its own row");
+      const lTip = await c.text(panel);
       assert.ok(lTip.includes("Burger Co") && lTip.includes("Sam Jones") && !lTip.includes("Old Grocer"), `companies and operators by name: ${lTip}`);
-      const fTip = await showTip("funnel");
+      await pinTile("funnel");
+      const fTip = await c.text(panel);
       assert.ok(/Grocery[\s\S]*QSR/.test(fTip), `industries ranked, peak first: ${fTip}`);
       assert.ok(fTip.includes("Drop-off"), `drop-off at each step: ${fTip}`);
-      const sTip = await showTip("support");
+      await pinTile("support");
+      assert.strictEqual(await underRow("support"), "ok", "the support panel sits under its own row");
+      const sTip = await c.text(panel);
       assert.ok(sTip.includes("Priya") && sTip.includes("Tom") && !sTip.includes("Hattie"), `waiting support@ tickets with customers: ${sTip}`);
-      const box = await c.page.locator(tip("support")).boundingBox();
-      const vw = await c.page.evaluate(() => window.innerWidth);
-      assert.ok(box && box.x >= 0 && box.x + box.width <= vw + 1, `the tooltip stays inside the viewport: ${JSON.stringify(box)}`);
+      c.at("close the panel");
+      await c.click("#dash-panel .dash-panel-close", "Close");
+      await c.hidden(panel);
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.closest(".dash-tile-wrap")?.dataset.tile), "support", "focus returns to the tile");
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "pin leads again");
+      await c.visible(panel);
+      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the pinned tile again closes it");
+      await c.hidden(panel);
+      assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "still on the Dashboard");
 
-      // 7Pq6sqazzDyqvzWmh3Sg: every backlogItems snapshot re-renders the
-      // Dashboard; the tile a keyboard user is on keeps its focus and tooltip.
-      c.at("a board update keeps the focused tile and its open tooltip", tip("agent"));
+      // Review of 19 Nov 2026 (bounce 2): with a panel pinned, widening the
+      // grid (an iPad turned to landscape, a window made wider) left row 1
+      // short and put the next panel under a later row, because the panel's
+      // row was measured with the panel itself in the grid. Turn the iPad
+      // with Staff Kanban pinned, then pin another tile, and check each time.
+      if (c.width === 820) {
+        const rowsNow = () => c.page.evaluate(() => {
+          const byTop = new Map();
+          for (const w of document.querySelectorAll(".dash-tile-wrap")) { const top = Math.round(w.getBoundingClientRect().top); byTop.set(top, [...(byTop.get(top) || []), w.dataset.tile]); }
+          return [...byTop.entries()].sort((x, y) => x[0] - y[0]).map((e) => e[1]);
+        });
+        const wantAt = (n) => { const r = []; for (let i = 0; i < order.length; i += n) r.push(order.slice(i, i + n)); return r; };
+        const settle = async (w, cols, k) => {
+          await until(async () => JSON.stringify(await rowsNow()) === JSON.stringify(wantAt(cols)) && (await underRow(k)) === "ok", `full rows of ${cols} and the ${k} panel under its row at ${w}px`, 3000).catch(() => {});
+          assert.deepStrictEqual(await rowsNow(), wantAt(cols), `rows at ${w}px with the ${k} panel pinned: no empty column while tiles remain`);
+          assert.strictEqual(await underRow(k), "ok", `the ${k} panel sits under its own row at ${w}px`);
+        };
+        c.at("turn the iPad with a panel pinned", panel);
+        await pinTile("kanban");
+        await settle(820, 2, "kanban");
+        for (const [w, cols] of [[1180, 3], [1440, 4]]) {
+          await c.page.setViewportSize({ width: w, height: 900 });
+          await settle(w, cols, "kanban");
+        }
+        await pinTile("leads");
+        await settle(1440, 4, "leads");
+        await c.page.setViewportSize({ width: 1180, height: 900 });
+        await settle(1180, 3, "leads");
+        await c.page.setViewportSize({ width: 820, height: 900 });
+        await settle(820, 2, "leads");
+        await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "close the leads panel");
+        await c.hidden(panel);
+      }
+
+      // 7Pq6sqazzDyqvzWmh3Sg / GUI9xPe3CJY3LyMws88m: every backlogItems
+      // snapshot re-renders the Dashboard; the tile a keyboard user is on
+      // keeps its focus, and its pinned panel stays open with the new figures.
+      c.at("a board update keeps the focused tile and its pinned panel", panel);
       await c.page.mouse.move(2, 2);
       await c.page.evaluate(() => document.getElementById("dash-refresh").focus());
       await c.page.keyboard.press("Tab");
       const onAgent = () => c.page.evaluate(() => { const a = document.activeElement; return !!a && a.matches('.dash-tile-wrap[data-tile="agent"] .dash-tile') && a.__sameTile === true; });
       await c.page.evaluate(() => { const a = document.activeElement; if (a) a.__sameTile = true; });
       assert.ok(await onAgent(), "Tab from Refresh reaches the Agent board tile");
-      await until(async () => c.page.locator(tip("agent")).isVisible(), "the agent tooltip on focus", 3000);
+      await c.page.keyboard.press("Enter");
+      await c.visible(panel, "Enter pins the agent panel");
       await c.page.evaluate(() => {
         const b = globalThis.__fbStub; const col = b.col("backlogItems"); const l1 = col.get("l1");
         col.set("b1", { ...col.get("b1"), status: l1.status, mergedAt: l1.mergedAt, statusEnteredAt: l1.statusEnteredAt, blocked: null });
@@ -3508,18 +3722,23 @@ const scenarios = [
       });
       await until(async () => (await value("agent")) === "2", "the Agent board figure to update after the write", 5000);
       assert.ok(await onAgent(), `focus stays on the same Agent board tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
-      assert.ok(await c.page.locator(tip("agent")).isVisible(), "its tooltip stays open");
-      assert.ok(/Blocked\s*0/.test(await c.text(tip("agent"))), "the open tooltip shows the new figures");
+      assert.ok(await c.page.locator(panel).isVisible(), "its pinned panel stays open");
+      await until(async () => /Blocked\s*0/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
+      assert.strictEqual(await level("agent"), "ok", "green once nothing is blocked");
+      await c.page.keyboard.press("Escape");
+      await c.hidden(panel, "Escape closes the panel");
       await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
 
-      c.at("a tile opens its section");
+      c.at("the panel's Open section goes to the section");
       await c.page.mouse.move(2, 2);
-      await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the Leads tile");
+      await pinTile("leads");
+      await c.click("#dash-panel .dash-panel-open", "Open section");
       await c.visible("#leads-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/leads");
       await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
-      await c.click('.dash-tile-wrap[data-tile="agent"] .dash-tile', "the Agent board tile");
+      await pinTile("agent");
+      await c.click("#dash-panel .dash-panel-open", "Open section for the Agent board");
       await c.boardReady();
       assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
@@ -3907,7 +4126,7 @@ const scenarios = [
       };
       s.docs["supportTickets/a1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, please confirm you received this email.", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Got it, Owner, all good.\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },
@@ -3931,6 +4150,69 @@ const scenarios = [
     },
   },
   {
+    // SYkk20srKT7pIKM1HS8Z: Aidan signs "Aidan, Personalisation Hub"; an
+    // optional signature line is a setting, off by default, saved with Save Aidan.
+    name: "Settings › Support inbox › Aidan: the signature line is off by default, and Save Aidan sends it",
+    hash: "#settings/support",
+    seed: () => {
+      const s = only("b1");
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
+        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 },
+        aidan: { enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan", signatureLineOn: false, signatureLine: "", sendersMasked: ["o***@example.com"] } };
+      s.supportAnswer = { ok: true };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the Aidan block");
+      await c.visible("#support-aidan-sigline-on", "the signature line switch");
+      assert.strictEqual(await c.page.isChecked("#support-aidan-sigline-on"), false, "off by default");
+      assert.strictEqual(await c.page.inputValue("#support-aidan-sigline"), "");
+      assert.strictEqual(await c.page.getAttribute("#support-aidan-sigline", "placeholder"), "PH's digital assistant");
+      assert.ok((await c.text("#support-aidan-settings")).includes('Add a signature line under "Aidan, Personalisation Hub"'));
+      assert.strictEqual(await c.page.textContent('label[for="support-aidan-sigline"]'), "Signature line");
+      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), true, "nothing changed: Save Aidan is disabled");
+      await c.click("#support-aidan-sigline-on", "the signature line switch");
+      await c.page.fill("#support-aidan-sigline", "PH's digital assistant");
+      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), false, "changed: Save Aidan enables");
+      await c.click('[data-ss-act="save-aidan"]', "Save Aidan");
+      await c.waitText("#support-aidan-status", "Saved.", "the save finishes");
+      const saved = c.supportCalls.find((x) => x.path === "aidan").body;
+      assert.deepStrictEqual([saved.signatureLineOn, saved.signatureLine, saved.enabled], [true, "PH's digital assistant", true]);
+    },
+  },
+  {
+    // QVpqiMuwipZ4mKSXHplM: Aidan's sender name ("Aidan Hubbot" by default) is
+    // a first and a last name in Settings, used for the From name and the signature.
+    name: "Settings › Support inbox › Aidan: the sender name reads Aidan Hubbot, and Save Aidan sends a new one",
+    hash: "#settings/support",
+    seed: () => {
+      const s = only("b1");
+      s.user = { email: "admin@ph.example", role: "admin" };
+      s.docs.consoleUsers = { "admin@ph.example": { email: "admin@ph.example", role: "admin", displayName: "Ada Admin" } };
+      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true,
+        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 },
+        aidan: { enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan Hubbot", fromFirstName: "Aidan", fromLastName: "Hubbot", signatureLineOn: false, signatureLine: "", sendersMasked: ["o***@example.com"] } };
+      s.supportAnswer = { ok: true };
+      return s;
+    },
+    run: async (c) => {
+      c.at("the Aidan block");
+      await c.visible("#support-aidan-first", "the sender first name");
+      assert.deepStrictEqual([await c.page.inputValue("#support-aidan-first"), await c.page.inputValue("#support-aidan-last")], ["Aidan", "Hubbot"]);
+      assert.ok((await c.text("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan Hubbot"));
+      assert.ok((await c.text("#support-aidan-settings")).includes('Add a signature line under "Aidan Hubbot, Personalisation Hub"'), "the signature names the same sender name");
+      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), true, "nothing changed: Save Aidan is disabled");
+      await c.page.fill("#support-aidan-last", "Bot");
+      assert.strictEqual(await c.page.isDisabled('[data-ss-act="save-aidan"]'), false, "changed: Save Aidan enables");
+      await c.click('[data-ss-act="save-aidan"]', "Save Aidan");
+      await c.waitText("#support-aidan-status", "Saved.", "the save finishes");
+      const saved = c.supportCalls.find((x) => x.path === "aidan").body;
+      assert.deepStrictEqual([saved.fromFirstName, saved.fromLastName, saved.enabled], ["Aidan", "Bot", true]);
+    },
+  },
+  {
     // rVv1x2N8xlKAZs0gpkRx: one answering engine. A platform question tagged
     // for Aidan is answered from the Help Centre by the Support Inbox's own
     // pipeline; the ticket shows the matched articles and the confidence,
@@ -3948,7 +4230,7 @@ const scenarios = [
       };
       s.docs["supportTickets/h1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["client@shop.example"], text: "@Aidan, how do I set up targeting?", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", helpCentre: true, from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Hi Owner,\n\nOpen the campaign, then Targeting.\n\nHelp Centre article:\nSet up campaign targeting: https://personalisationhub.com/support-centre/article.html?id=art-1\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", helpCentre: true, from: "support@ph.example", to: ["owner@example.com"], cc: ["client@shop.example"], text: "Hi Owner,\n\nOpen the campaign, then Targeting.\n\nHelp Centre article:\nSet up campaign targeting: https://personalisationhub.com/support-centre/article.html?id=art-1\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },
@@ -4002,7 +4284,7 @@ const scenarios = [
       };
       s.docs["supportTickets/c1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["aidan@ph.example"], cc: ["partner@aws.example"], text: "@Aidan, send me a one-pager for CP Group, retail grocery.", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "generate", collateral: true, skillName: "PH Brand", from: "support@ph.example", to: ["owner@example.com"], cc: ["partner@aws.example"], text: "Hi Owner,\n\nAttached is the one-pager for CP Group as a branded PDF, with its Markdown source.\n\nAidan\nAssistant to Rob, Personalisation Hub",
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "generate", collateral: true, skillName: "PH Brand", from: "support@ph.example", to: ["owner@example.com"], cc: ["partner@aws.example"], text: "Hi Owner,\n\nAttached is the one-pager for CP Group as a branded PDF, with its Markdown source.\n\nAidan, Personalisation Hub",
           attachments: [{ name: "cp-group-one-pager.pdf", type: "application/pdf", size: 48000 }, { name: "cp-group-one-pager.md", type: "text/markdown", size: 2100 }], at: t(T0 + 60000) },
       };
       return s;
@@ -4054,7 +4336,7 @@ const scenarios = [
       };
       s.docs["supportTickets/q1/messages"] = {
         m1: { direction: "in", from: "owner@example.com", fromName: "Owner Person", to: ["john@shop.example"], cc: ["aidan@ph.example"], text: "@Aidan, please answer John's question below.\n\nOn Mon, John Client wrote:\n> Hi Rob, how many stores can one campaign target?", at: t(T0) },
-        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com", "john@shop.example"], cc: [], text: "One campaign can target every store on the account.\n\nAidan\nAssistant to Rob, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
+        m2: { direction: "out", source: "aidan", sentBy: "aidan", kind: "answer", from: "support@ph.example", to: ["owner@example.com", "john@shop.example"], cc: [], text: "One campaign can target every store on the account.\n\nAidan, Personalisation Hub", attachments: [], at: t(T0 + 60000) },
       };
       return s;
     },

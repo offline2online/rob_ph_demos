@@ -37,7 +37,7 @@ import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mir
 import { initNavShell } from "./nav-shell.js";
 import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
-import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml } from "./promote-section.js";
+import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, partnersListHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom, marketsListHtml } from "./promote-section.js";
 import { supportRoute, supportHash } from "./support-core.js";
 import { createDocsList } from "./docs-grid.js";
 import { classifyAudit, auditCounts, sortedLog, reviewLogEntry, AUDIT_KIND_LABELS, AUDIT_LOG_LABELS } from "./release-audit.js";
@@ -11973,6 +11973,8 @@ const funnelPage = document.getElementById("funnel-page");
 const supportPage = document.getElementById("support-page");
 const documentationPage = document.getElementById("documentation-page");
 let promotePageKey = "";
+let promotePartnerSlug = ""; // a partner page under Brand Guidelines, or ""
+let promoteMarketSlug = ""; // a market page under Brand Guidelines, or ""
 // Lazily loaded Promote pages (Leads, Prospects, Conversion Funnel). A page
 // whose code failed to load or draw used to stay blank, or the menu item
 // seemed to do nothing, with no word why: Leads and Prospects on Rob's iPad
@@ -12080,33 +12082,81 @@ function renderPromotePage() {
   if (promotePage.hidden) return;
   const page = PROMOTE_PAGES.find((p) => p.key === promotePageKey);
   if (!page) return;
-  document.getElementById("promote-title").textContent = page.label;
   const docs = promoteDocsFor(page.key, projectDocs);
   const g = document.getElementById("promote-guidelines");
   const r = document.getElementById("promote-requirements");
+  const partners = partnersFrom(projectDocs);
+  const partnersBox = document.getElementById("promote-partners");
+  const lockups = document.getElementById("promote-partner-lockups");
+  const header = document.getElementById("promote-brand-header");
+  const marketsBox = document.getElementById("promote-markets");
+  document.getElementById("promote-back").hidden = !promotePartnerSlug && !promoteMarketSlug;
+  if (promoteMarketSlug) {
+    // A market page: its team-facing text (agent-only detail stays for MCP).
+    const market = marketsFrom(projectDocs).find((m) => m.slug === promoteMarketSlug);
+    document.getElementById("promote-title").textContent = market ? market.name : "Market";
+    header.hidden = true;
+    partnersBox.hidden = true;
+    marketsBox.hidden = true;
+    lockups.hidden = true;
+    g.innerHTML = market ? renderMarkdown(teamFacingMd(market.body)) : "";
+    r.innerHTML = "";
+    const empty = document.getElementById("promote-empty");
+    empty.hidden = !!market;
+    empty.textContent = "This market page is copied here from the repository after each merge to main, and hasn't arrived yet. Check back in a few minutes.";
+    document.getElementById("promote-requirements-wrap").hidden = true;
+    return;
+  }
+  if (promotePartnerSlug) {
+    // A partner page: its lockups, then its team-facing text.
+    const partner = partners.find((p) => p.slug === promotePartnerSlug);
+    document.getElementById("promote-title").textContent = partner ? partner.name : "Partner";
+    header.hidden = true;
+    partnersBox.hidden = true;
+    marketsBox.hidden = true;
+    lockups.innerHTML = partner ? partnerLockupHtml(partner) : "";
+    lockups.hidden = !partner;
+    g.innerHTML = partner ? renderMarkdown(teamFacingMd(partner.body)) : "";
+    r.innerHTML = "";
+    const empty = document.getElementById("promote-empty");
+    empty.hidden = !!partner;
+    empty.textContent = "This partner page is copied here from the repository after each merge to main, and hasn't arrived yet. Check back in a few minutes.";
+    document.getElementById("promote-requirements-wrap").hidden = true;
+    return;
+  }
+  lockups.hidden = true;
+  partnersBox.innerHTML = partnersListHtml(partners);
+  partnersBox.hidden = !partners.length;
+  const markets = marketsFrom(projectDocs);
+  marketsBox.innerHTML = marketsListHtml(markets);
+  marketsBox.hidden = !markets.length;
+  document.getElementById("promote-empty").textContent = "The brand guidelines are copied here from the repository after each merge to main, and haven't arrived yet. Check back in a few minutes.";
+  document.getElementById("promote-title").textContent = page.label;
   // Team view: look and feel only. Agent-only sections stay in the document
   // for MCP but are stripped here; the Requirements section is not shown.
   g.innerHTML = docs.guidelines ? renderMarkdown(teamFacingMd(docs.guidelines.body)) : "";
   r.innerHTML = "";
-  const header = document.getElementById("promote-brand-header");
   header.innerHTML = brandHeaderHtml();
   header.hidden = false;
   document.getElementById("promote-empty").hidden = !!docs.guidelines;
   document.getElementById("promote-requirements-wrap").hidden = true;
 }
-function openPromotePage(key = PROMOTE_PAGES[0].key) {
+function openPromotePage(key = PROMOTE_PAGES[0].key, partnerSlug = "", marketSlug = "") {
   if (!pageAllowed(key === "prospects" || key === "conversion-funnel" ? key : "promote")) return;
   closeAllSubPages();
   ensureLazy("projectDocs");
   document.getElementById("projects-root").hidden = true;
   document.getElementById("board-page-header").hidden = true;
   promotePageKey = key;
+  promotePartnerSlug = key === "brand-guidelines" ? (partnerSlug || "") : "";
+  promoteMarketSlug = key === "brand-guidelines" && !promotePartnerSlug ? (marketSlug || "") : "";
   if (LAZY_PROMOTE[key]) {
     openLazyPromotePage(key);
   } else {
     promotePage.hidden = false;
   }
-  setRouteHash(promoteHash(key));
+  setRouteHash(promotePartnerSlug ? partnerHash(promotePartnerSlug) : promoteMarketSlug ? marketHash(promoteMarketSlug) : promoteHash(key));
+  if (promotePartnerSlug || promoteMarketSlug) window.scrollTo(0, 0);
   updateTopbarTitle();
   renderPromotePage();
 }
@@ -13756,7 +13806,8 @@ function maybeRestoreInitialScroll() {
 function updateTopbarTitle() {
   // "#faq-management?filter=needs-review" is still the FAQ Management
   // route — strip the query before the ROUTE_TITLES lookup.
-  const label = ROUTE_TITLES[window.location.hash.split("?")[0]];
+  const route = window.location.hash.split("?")[0];
+  const label = ROUTE_TITLES[route] || (promotePartnerFromHash(route) || promoteMarketFromHash(route) ? ROUTE_TITLES["#promote/brand-guidelines"] : undefined);
   document.title = label ? `${label} — PH Agent Console` : "PH Agent Console";
   if (navShell) navShell.syncActive();
 }
@@ -13800,7 +13851,7 @@ function applyRouteFromHash() {
     if (faqSettingsPage.hidden) openFaqSettingsPage(k, um && um.tab);
     else if (k !== settingsPage || (um && um.tab !== umTab)) showSettingsPage(k, um && um.tab);
   }
-  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); if (promotePageKey !== k || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k); }
+  else if (promotePageFromHash(hash)) { const k = promotePageFromHash(hash); const ps = promotePartnerFromHash(hash) || ""; const ms = promoteMarketFromHash(hash) || ""; if (promotePageKey !== k || promotePartnerSlug !== ps || promoteMarketSlug !== ms || (k === "leads" ? leadsPage.hidden : k === "prospects" ? prospectsPage.hidden : k === "conversion-funnel" ? funnelPage.hidden : promotePage.hidden)) openPromotePage(k, ps, ms); }
   else if (supportRoute(hash)) openSupportPage(supportRoute(hash));
   else if (hash === "#documentation" || hash.startsWith("#documentation?")) { if (!documentationPage || documentationPage.hidden) openDocumentationPage(); }
   else if (hash.startsWith("#doc/")) openDocRouteFromHash(hash);

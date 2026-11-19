@@ -5413,6 +5413,87 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
   scenario in `test/ui/console-click.test.mjs` and a page in
   `test/ui/mobile-shell.test.mjs`.
 
+## Brand Guidelines › Partners: one co-branding page per partner (19 Nov 2026)
+
+- Brand Guidelines has a **Partners** subsection: one page per retail network
+  or other partner, listed at the foot of the Brand Guidelines page and opened
+  at `#promote/brand-guidelines/partners/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first is **miPharmacy**.
+- Each partner page is a repo file, `backlog-tracker/promote/partners/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-partner-<slug>`.
+  The page lists whatever `brand-partner-*` mirrors exist
+  (`partnersFrom` in `public/js/promote-section.js`), so **adding a partner is
+  a new file and a manifest entry, never a code change**. A superseded mirror
+  is not listed.
+- The file starts with a `<!-- partner … -->` block (`name`, `industry`,
+  `summary`, `industryUrl`, `logoLight`, `logoDark`), which the page reads and
+  does not show. The page draws the co-brand lockups from it: partner leads
+  and Personalisation Hub leads, each on a light and a dark surface, using
+  the official PH logo files (`public/img/brand/`, copied from the `ph-brand`
+  skill) and the partner's files from Brand assets. Until a partner's logo
+  file is supplied (an empty `logoLight` / `logoDark`), its slot shows a
+  labelled empty box; a logo is never drawn or typed.
+- Sections every partner page carries: who leads, by audience; co-brand logo
+  lockups; colour hierarchy; naming, wording and tone; approved claims and
+  outcomes (linking to the partner's industry page on personalisationhub.com
+  as the single source of truth); co-branded templates, with finalised
+  shared pieces added to Brand templates as reference templates.
+- Agent-only detail sits between the agent-only markers and is hidden on the
+  page (as for the main guidelines). **Agents read a partner page over MCP**
+  with `list_project_documents` / `get_project_document` on this project
+  (the `ph-brand` skill and Aidan use the same documents); no new tool.
+- Tests: `test/promote-section.test.mjs` and a scenario in
+  `test/ui/console-click.test.mjs`.
+
+## Brand Guidelines › Markets: cultural and communication guidelines per market (19 Nov 2026)
+
+- Brand Guidelines has a **Markets** subsection, built like Partners: one page
+  per market, listed at the foot of the Brand Guidelines page (under Partners)
+  and opened at `#promote/brand-guidelines/markets/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first are **Thailand**,
+  **Singapore** and the **United States**.
+- Each market page is a repo file, `backlog-tracker/promote/markets/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-market-<slug>`. The
+  page lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
+  `public/js/promote-section.js`), so **adding a market is a new file and a
+  manifest entry, never a code change**. A superseded mirror is not listed.
+- The file starts with a `<!-- market … -->` block (`slug`, `name`,
+  `countries`, `region`, `spelling`, `currency`, `summary`), which the page
+  reads and does not show. `countries` lists every way a lead's or TAM
+  company's country may be written (ISO codes and names, for example
+  `US, USA, United States, United States of America, America`).
+- Sections every market page carries: **Communication style** (directness,
+  formality, forms of address, deference to seniority); **Cultural
+  sensitivities** (topics, imagery, colours, symbols and gestures to avoid;
+  religious and royal sensitivities where relevant); **Local conventions**
+  (spelling, currency, date and number formats, units); **Business
+  etiquette** (follow-up pace, how hard to sell, relationship versus straight
+  to the point); **Regulatory notes** (what affects claims and data use in
+  advertising). Agent-only detail (`## For agents`) sits between the
+  agent-only markers and is hidden on the page, as for the main guidelines.
+- **Agents read a market page over MCP** with `list_project_documents` /
+  `get_project_document` on this project (the `ph-brand` and collateral
+  skills use the same documents); no new tool.
+- **Aidan picks the market by country** (SUP-AID-49): branded collateral
+  (SUP-AID-30) takes the company's country from Prospects (TAM) or Leads and
+  finds the market page whose `countries` names it (`marketFor` in
+  `functions/market-core.js`; case, dots and accents ignored). The whole page,
+  agent-only detail included, goes into the prompt as `<market>` beside the
+  brand skill, the industry and the prospect; it wins on tone and local
+  conventions, the brand skill and the industry page win on product facts and
+  claims, and "Personalisation Hub" keeps its spelling everywhere. The run
+  records `aidan.collateral.market` (`{slug, name}`, or `{missing: <country>}`)
+  and its timeline line says which page it followed.
+- **No page for that market**: the default brand guidelines apply (the prompt
+  says so) and the collateral is still sent. Aidan's self-check files a
+  **Missing market page** ticket on this project (SUP-AID-50), one per
+  country: a later request for the same country comments on it instead, and
+  another country never matches it.
+- Tests: `test/market-core.test.js`, `test/promote-section.test.mjs`, the
+  Markets scenario in `test/ui/console-click.test.mjs`, and two whole runs in
+  `test/support-mail.test.js` (Thai and US companies, and a Malaysian one with
+  no page).
+
 ## Promote section: Leads (5 Nov 2026)
 
 - **Promote › Leads** (`#promote/leads`, nav item beneath Brand Guidelines,
@@ -6323,14 +6404,67 @@ overlay. Presentation only: every field, action and datum is still there.
   content touched. An ad group / creative filter only exists in the ad data, so
   it empties the ACE stages. No match shows an empty state, not an error.
 - **Data:** stages 1-5 are daily rows in the **`funnelDaily`** collection
-  (`{date "YYYY-MM-DD", channel, campaign, adGroup, creative, industry, country,
-  content, company, impressions, clicks, visits, demoRequests, downloads}`),
-  readable by members, **writable only by the server** (rules deny clients).
-  **The ingest that fills it from the Google Ads API and the GA4 BigQuery export
-  (ph-analytics) is not built yet** and needs those credentials; until it runs
-  stages 1-5 show 0. Stages 6-9 use the console's ACE opportunities
-  (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
-  and Prospects (TAM) (industry, country, campaigns).
+  (`{date "YYYY-MM-DD", source, channel, campaign, adGroup, creative, industry,
+  country, content, company}` plus the source's numbers), readable by members,
+  **writable only by the server** (rules deny clients). Stages 6-9 use the
+  console's ACE opportunities (`/partnerCentral/v1/ace`) joined by company name
+  to Leads (channel, content) and Prospects (TAM) (industry, country, campaigns).
+  "Calculator / model downloads" counts file downloads plus benefits calculator uses.
+- **The daily ingest (19 Nov 2026, ticket T6f4GeJZGg0OgntUpzPq;
+  `functions/funnel-ingest.js`, HTTP function `funnelIngest`)** fills
+  `funnelDaily`. Each row names its `source`:
+  - `ga4-total`: one row a day, GA4 `users` for the whole site. Unique visitors
+    are this figure, never a sum of slices (users are not additive).
+  - `ga4-site`: day × country × channel × campaign: `visits` (GA4 sessions) and
+    `users`.
+  - `ga4-industry`: day × industry × country: real page views of
+    `/industries/<slug>/` pages (`pageViews`) and their `users`; the industry is
+    read from the page path, not inferred from a dimension. Page views add up
+    across rows; users do not (a person who views two industries is a user on
+    both rows).
+  - `ga4-industry-total`: one row a day, GA4 `users` over every `/industries/*`
+    page together (GA4 de-duplicates them): the people who saw an industry page.
+  - `ga4-industry-users`: day × industry, no country: GA4 `users` per industry.
+    GA4 cannot group pages by industry, so a person who views several pages of
+    one industry may still count once per page here.
+  - `ga4-events`: day × country × industry (the event's `industry` parameter):
+    `walkthroughs` (product_tour_start), `calculatorUses` (calculator_use),
+    `demoRequests` (demo_request), `downloads` (file_download), `leadForms`
+    (lead_created).
+  - `google-ads`: day × campaign × ad group: `impressions`, `clicks`, read
+    through the Google Ads account linked to the GA4 property (no country:
+    Google Ads metrics have none in GA4).
+  - `leads`: day × industry × country × channel: `leads` from the console's
+    `leads`; test and archived leads are never counted.
+  - `ace`: day × industry: `aceCreated`, while Partner Central answers.
+- **Days** are calendar days in the configured zone (`timeZone`, default
+  Australia/Sydney, set to match the GA4 property's zone, which is the zone GA4
+  reports its dates in); the console's own records are bucketed in that zone
+  too. Never UTC.
+- **Runs:** no Cloud Scheduler job and no new workflow: the hourly `aceToGa4`
+  call (`.github/workflows/ace-ga4.yml`) runs the ingest when one is due. The
+  first run backfills 90 days; after that a run every 6 hours or more replaces
+  the last 3 days (GA4 keeps settling for about 48 hours). A run from the
+  hourly call has a 150-second budget, so the workflow's request (320 s) never
+  times out: sources it had no time for are listed in `deferred` and run on the
+  next hourly call, and the backfill counts as done only once every GA4 source
+  has succeeded. A run by hand has no budget. By hand: POST
+  `funnelIngest` with `X-Board-Key` and `{"mode": "backfill"}` (90 days) or
+  `{"mode": "daily"}`. A run replaces a source's rows for its days, so re-running
+  never double counts.
+- **Credentials:** GA4 is read with the Cloud Function's own service account
+  (Application Default Credentials, `analytics.readonly`). It needs Viewer on
+  GA4 property 473743482 (personalisationhub.com) and the Google Analytics Data
+  API enabled on the project; Google Ads needs the Ads account linked to that
+  property. `consoleConfig/funnelIngest` may override `ga4PropertyId` and
+  `timeZone`.
+- **A failed source is flagged, never a silent 0.** `consoleConfig/funnelIngest`
+  records each source's `ok`, `error` and `lastSuccessAt`. A failing source
+  keeps its earlier rows. The page's count line ends "Updated <local date and
+  time>" (GA4's last good update), and a failure shows in the status line
+  ("GA4 didn't update (…); last good update …"); the Dashboard tile shows
+  "Data not updated" in place of its trend, its status turns red, and its
+  summary panel carries the same text; the earlier figures stay.
 - **Times:** days and dates are the viewer's local time, never UTC.
 
 ## Support Inbox (14 Nov 2026)
@@ -6515,6 +6649,15 @@ Since 18 Nov 2026 (ticket IJhIIzTxOJyZVCzzYggZ) Aidan reads the console with
 one Code Mode run by default, and files a Backlog ticket (or comments on a
 matching open one) when a run did not fully or well meet its request
 (SUP-AID-36 to 41).
+Since 18 Nov 2026 (ticket SYkk20srKT7pIKM1HS8Z) the body of every reply is
+in Aidan's voice, a slightly quirky tech-marketing character kept in the
+`aidan-voice` skill, and he signs "Aidan, Personalisation Hub"
+(SUP-AID-42 to 47). Since 19 Nov 2026 (ticket QVpqiMuwipZ4mKSXHplM) his
+sender name is a setting, "Aidan Hubbot" by default, used for both the From
+display name and the signature (SUP-AID-48).
+Since 19 Nov 2026 (ticket mErc7MPAkrKjF9fWgqXb) collateral follows the
+Brand Guidelines market page for the company's country, and a market with no
+page is filed as a ticket (SUP-AID-49 and 50).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6618,7 +6761,7 @@ matching open one) when a run did not fully or well meet its request
   in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
-  "Aidan", signed as Rob's assistant, with the document attached as a
+  "Aidan Hubbot", signed "Aidan Hubbot, Personalisation Hub" (SUP-AID-47, SUP-AID-48), with the document attached as a
   Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
   add, update, edit, fix, turn, convert, include, attach or compile
   something is a write too. "This email", "your reply" and "by email" name
@@ -6693,7 +6836,7 @@ matching open one) when a run did not fully or well meet its request
   does (SUP-AID-1 to 4, 10 to 13) and replies to the same people
   (SUP-AID-6: From and the rest of To in To, the original Cc in Cc, never
   Reply-To, never our own addresses), on the same thread, at once, from the
-  mailbox as "Aidan", marked `Auto-Submitted: auto-generated`. The reply is
+  mailbox as "Aidan Hubbot" (the sender name, SUP-AID-48), marked `Auto-Submitted: auto-generated`. The reply is
   a short plain-text email written in the body ("Got it, Rob, all good."),
   signed as Rob's assistant, with **no attachment**. It needs no skill and
   the model is never asked to choose one; a skill the instruction names is
@@ -6827,7 +6970,7 @@ matching open one) when a run did not fully or well meet its request
   when the Help Centre answers. The Support Inbox's own gates are unchanged.
 - **SUP-AID-23** The Help Centre reply is sent in the email itself with no
   attachment, to everyone on the email (the Help Centre is public, so nobody
-  is left off, unlike SUP-AID-18), from the mailbox as "Aidan". It opens
+  is left off, unlike SUP-AID-18), from the mailbox as "Aidan Hubbot" (SUP-AID-48). It opens
   "Hi <first name>," (no "Thanks for your email."), carries the engine's
   reply body with any greeting or sign-off the model wrote removed
   (SUP-AI-9), and names each cited article by its title: a line "Help Centre
@@ -7106,6 +7249,134 @@ matching open one) when a run did not fully or well meet its request
   past that the timeline says none was filed. Comments are not capped. A
   failure to file never changes the run's own result: it is logged and
   noted on the timeline.
+- **SUP-AID-42** (18 Nov 2026, ticket SYkk20srKT7pIKM1HS8Z) **Aidan's
+  voice.** Aidan has one consistent character in the body of his email
+  replies: slightly quirky, a developer advocate (warm, a bit nerdy, loves
+  a concrete example, enthusiastic about retail media) with a dash of
+  agency planner (sharp, has a point of view, quick with a retail or media
+  analogy, never corporate). The character brief and its example replies
+  are the **`aidan-voice` skill** in the skills library
+  (`skill-sources/aidan-voice.md` is the repo copy), so they are tuned from
+  Settings › Skills without a deploy. The first run that finds no skill
+  with that slug adds it as first written (insert-only, document id
+  `aidan-voice`, `createdVia: "aidan"`). The voice skill is never a skill a
+  document is written with: it is left out of the list a run chooses from
+  and is not "a skill named in the instruction".
+- **SUP-AID-43** **A layer, never a rewrite.** The voice changes delivery
+  only, never the facts. Whatever produced the reply (the Help Centre
+  engine, the console, a skill, the email) writes it first, substance
+  first, in short plain sentences with "personalisation" spelled with an S.
+  One further model call (`inVoice` in `functions/aidan.js`, the rules in
+  `functions/aidan-voice.js`; 20 seconds, never retried) is shown the
+  finished body and may return **one short sentence**, which is added as
+  the last paragraph, after the substance and any article links and before
+  the sign-off. So there is at most one quirk per email and it is never in
+  the middle of the facts. The sentence is dropped when it has a figure, a
+  link, an address or an emoji in it, is longer than 220 characters or two
+  sentences, mentions that Aidan is an AI, or touches a sensitive subject
+  (`cleanQuirk`). When the voice fails, times out or has nothing natural to
+  add, the reply is sent plain: a reply is never held up by its voice. It
+  applies to every recipient, internal or external. The fixed "I can only
+  read the console" reply (SUP-AID-19) is not passed to it. The ticket
+  records the outcome in `aidan.voice` (`{quirk: true}`, or `{quirk:
+  false, reason}`).
+- **SUP-AID-44** **Email body only.** The voice is given only the body of
+  the email. An attached document, one-pager, deck or other collateral
+  (SUP-AID-6, SUP-AID-17, SUP-AID-30 to 34) is never passed to it and
+  follows its skill and the PH brand voice with no quirk; the write prompt
+  says so too. On a write run only the cover note gets the aside.
+- **SUP-AID-45** **No quirk on anything sensitive.** A complaint, an
+  outage, a fault, or anything commercial such as pricing or a contract
+  gets a plain reply. It is decided from the words of the instruction, the
+  subject, the email's new text, the thread content the run read
+  (SUP-AID-26) and the reply itself (`sensitiveReason`),
+  before any model is asked, and the voice call is then not made. The
+  voice call can also judge an email sensitive itself, with the same
+  result. The word lists are broad on purpose: a false match costs one
+  aside.
+- **SUP-AID-46** **Asked whether he is an AI, he says yes.** Aidan does not
+  volunteer that he is an AI (the prompts say so, and an aside that
+  mentions it is dropped). When the instruction asks whether he is a bot,
+  an AI or a real person (`asksIfAi`), it is his own to answer and is not
+  put to the Help Centre. Only a question to Aidan about himself counts:
+  one whose subject is Aidan or his email ("are you a bot?", "are you an
+  AI assistant?", "are you ChatGPT?", "is this an automated reply?", "is
+  this reply written by AI?", "am I talking to a real person?", "did a bot
+  write this?"), or a sentence that is nothing but "bot or human?". A
+  platform question that only says "real", "automated", "automation",
+  "program" or "person", or weighs AI against people ("is this real data
+  or the demo?", "is that automated or does someone run it?", "should it
+  be one person or not?", "which is better, AI or human curation?", "do
+  you use AI or a human to approve content?", "is it AI or rules?", "is
+  this an AI feature?") is answered as usual, from the Help Centre, and
+  never gets the AI line; the reply must say yes plainly, in character
+  (for example "Guilty. I'm PH's AI assistant, which is why I reply this
+  fast and never need coffee."). This holds for every kind of reply,
+  including the cover note of a write or of collateral (the attached
+  document is untouched), and whether or not the voice call runs. In code
+  (`ensureAiDisclosure`, from `inVoice`): a reply that already says yes is
+  sent as written; one that dodges gets that line put first; a sentence
+  that denies it is taken out, the rest of the reply (the substance) is
+  kept and the line is put first. A denial is only Aidan's own, in the
+  first person ("I'm not a bot", "I am a real person") with the word
+  ending the clause, or a sentence that is nothing but the denial
+  ("Definitely not an AI."). Only the denying clause goes: "I am human,
+  but here is the answer." keeps "Here is the answer." A sentence that only
+  starts like one ("I am not an AI expert, but…", "I'm not a bot-builder",
+  "I am a person who loves retail media") or is about something else ("It
+  is not a bot feature, it is rules-based.", "No AI needed: open
+  Campaigns.") is substance, is never taken out, and is not a yes either,
+  so the line is put first; and when the model has nothing to say to
+  a short instruction (80 characters) that asks only that, the line is the
+  answer. That yes is the email's one touch of character, so no aside is
+  added. On an email that gets no quirk (SUP-AID-45) the yes is the plain
+  "Yes, I'm Personalisation Hub's AI assistant." instead. The ticket
+  records `aidan.voice.aiAsked: true`.
+- **SUP-AID-47** **Signature.** Every Aidan email is signed with the sender
+  name, then the company: "Aidan Hubbot, Personalisation Hub" by default
+  (SUP-AID-48; "Aidan, Personalisation Hub" before 19 Nov 2026). **Settings ›
+  Support inbox › Aidan** has an optional **signature line** (for example
+  "PH's digital assistant"): a switch, off by default, and the line's text
+  (one line, 80 characters). Switched on, the line is added under the
+  signature; switched off, the text is kept and not used. It is saved by an
+  admin with **Save Aidan** (`signatureLineOn`, `signatureLine` in
+  `supportSecrets/aidan`, returned by `/v1/status`), cannot be switched on
+  empty, and needs no deploy.
+- **SUP-AID-48** **Sender name** (19 Nov 2026, ticket QVpqiMuwipZ4mKSXHplM).
+  Every email Aidan sends sets its From display name from a first and a last
+  name in his configuration (`fromFirstName`, `fromLastName` in
+  `supportSecrets/aidan`, returned by `/v1/status`), "Aidan Hubbot" by
+  default (a play on "Hub Bot"), and the signature (SUP-AID-47) starts with
+  the same name, so the two always match. An admin edits both in
+  **Settings › Support inbox › Aidan** (Sender first name, Sender last name;
+  **Save Aidan**); members see them read-only, and the signature line's label
+  names the current sign-off. The configuration is read on every run, so the
+  next email uses a new name with no deploy. A first name is required; the
+  last name may be empty. Quotes, angle brackets and line breaks are taken out
+  and each part is at most 40 characters (`cleanNamePart` in
+  `functions/aidan-core.js`). The `aidan-voice` skill's rule 7 says he signs
+  with this setting. The Gmail send-as display name is not changed: the
+  mailbox is shared with the Support Inbox and connected with `gmail.modify`
+  only (SUP-CON-1); the From header carries the name.
+- **SUP-AID-49** (19 Nov 2026, ticket mErc7MPAkrKjF9fWgqXb) **Collateral
+  follows the market.** A collateral run reads the Brand Guidelines market
+  pages (the `brand-market-*` mirrors, `functions/market-core.js`) and picks
+  the one whose `countries` names the company's country from Prospects (TAM)
+  or Leads. The whole page goes into the prompt as `<market>`: it decides tone,
+  forms of address, spelling, currency, date and number formats, units,
+  etiquette and regulatory caution; the brand skill and the industry decide
+  facts and claims. "@Aidan, send a one-pager to <Thai company>" follows the
+  Thailand page; the same request for a US company uses US spelling and a
+  more direct tone. Recorded as `aidan.collateral.market` (`{slug, name}`).
+- **SUP-AID-50** **A missing market is a ticket.** When the company has a
+  country and no page covers it, the collateral is written on the default
+  brand guidelines and sent as usual, `aidan.collateral.market` is
+  `{missing: <country>}`, and the self-check (SUP-AID-37) files a "Missing
+  market page" ticket on the console's project naming the country, with the
+  fixed Outcome "Brand Guidelines has a Markets page for the market reported
+  below …". It is keyed by the country, not the request, so a later request
+  for the same country comments on it, and another country's gap never
+  matches it (SUP-AID-39). A run that failed is filed as the failure instead.
 
 ### Connecting
 
@@ -7422,17 +7693,20 @@ Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
 address, `#board`, so a reload on the board stays on the board; Agent Board in
 the sidebar and the Dashboard's Agent board tile both go there.
 
-First on the page, above the tiles, is **Needs attention** (see "Needs
-attention" above): it is shown here and on no other page.
+Last on the page, below the tiles, is **Needs attention** (see "Needs
+attention" above): it is shown here and on no other page. It sits in normal
+flow after the tile sections, so it never covers or holds back the tiles
+(Dashboard v2, GUI9xPe3CJY3LyMws88m; it used to be first on the page).
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local
 day before it (the Support tile is the exception: it shows the inbox as it
 stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
-is a tooltip shown on hover or keyboard focus, with no explanatory copy under
-the tiles. Clicking a tile opens its section.
+is its **summary panel** (below), and what the tile means is in its info
+tooltip, with no explanatory copy under the tiles. A tile never opens its
+section (see "Dashboard v2").
 
-| Section | Tile | Headline | Breakdown (tooltip) | Opens |
+| Section | Tile | Headline | Breakdown (summary panel) | Open section |
 |---|---|---|---|---|
 | Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
 | Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
@@ -7454,10 +7728,20 @@ Rules:
 - **Remaining effort** is a task's estimate minus time logged, for outstanding
   tasks of that release; epics and done tasks are left out (the same as the
   release report).
-- **Funnel steps from `funnelDaily`**: unique visitors are GA4's `users` when
-  the ingest sends that field, else its `visits`; "industry page" is the
-  visitors on rows with an industry; "walkthrough or calculator" is demo
-  requests plus calculator or model downloads; "lead" is leads created
+- **Funnel steps from `funnelDaily`**: unique visitors are the day's
+  `ga4-total` users (GA4's own unique count); "industry page" is the day's
+  `ga4-industry-total` users (GA4's de-duplicated count over every
+  `/industries/*` page, so a person who views two industries counts once), and
+  never more than unique visitors. The summary panel's industry list is
+  `ga4-industry-users` (users per industry, no country split); one industry
+  with several pages may still count a person twice there. Industry page
+  views are the `pageViews` on `ga4-industry` rows. Older ingest rows without
+  those two sources fall back to the `ga4-industry` users, capped at unique
+  visitors. "walkthrough or
+  calculator" is product tour starts, calculator uses, demo requests and
+  downloads on `ga4-events` rows. Rows written before the ingest (no
+  `source`) keep the older reading: users else visits, rows with an industry,
+  demo requests plus downloads; "lead" is leads created
   yesterday that came from the website (source "Website…", a source page or
   website activity).
 - **Who sees which tile**: the Dashboard is open to every member and is not a
@@ -7466,14 +7750,62 @@ Rules:
   `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
   left with no tiles.
 - **Reads**: the Agent board tile uses the tickets the console already holds
-  and redraws with the board. The other four read their collections once when
+  and redraws with the board. Conversion funnel reads `funnelDaily` for the
+  last 7 local days (one query a day). The other four read their collections once when
   the page opens, again on Refresh, or when reopened after five minutes. The
   page keeps no listeners.
 - **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
   tiles already on the page rather than replacing them, so a tile reached with
-  Tab keeps its keyboard focus and its open tooltip when tickets change (the
+  Tab keeps its keyboard focus and its pinned summary panel when tickets change (the
   automation writes cards every few minutes), and only the figures that moved
   change. The tiles are rebuilt only when the set the viewer may see changes.
+
+### Dashboard v2: responsive grid, pinned summary panels (19 Nov 2026)
+
+Ticket GUI9xPe3CJY3LyMws88m. Layout, interaction and look; what each tile
+shows is unchanged here.
+
+- **Responsive grid.** Internal, External and Support each have a slim
+  section heading, and the tiles of all three flow through one grid in order
+  (Agent board, Staff Kanban, Leads, Conversion funnel, Support), so a row is
+  always full while tiles remain and a section may wrap across rows. Each
+  section's heading sits in the label slot above its first tile (every tile
+  has the slot, so a row's tiles line up; on a phone only the headings show).
+  Tiles are four across from 1440 px, three from 1024 px (a laptop at about
+  1180 px, an iPad in landscape), two from 641 px (an iPad in portrait) and
+  one on a phone. So on a wide desktop Internal and External share the first
+  row and Support starts the second; on a laptop the first row is Agent board,
+  Staff Kanban and Leads, and the second Conversion funnel and Support.
+- **Compact tiles.** An icon, the title and a status dot; the metric label;
+  a large headline figure with a trend arrow and the change against the day
+  before (the full sentence for screen readers and on hover); a 7-day
+  sparkline of the headline figure, the last 7 local days ending yesterday,
+  where it has a daily history (Agent board, Leads, Conversion funnel; Staff
+  Kanban's remaining effort and Support's inbox figures have no history, so
+  they have none). Support's "Replied or resolved today" has a trend against
+  yesterday, counted by the same rule; Staff Kanban keeps no history of
+  remaining effort, so its tile has no trend and its info tooltip says so. An info icon on each tile holds its explanation as a
+  tooltip (hover or focus on a PC, a tap on an iPad).
+- **Status colour** (`tileStatus` in `dashboard-core.js`): green when nothing
+  needs attention; Agent board amber when a ticket is blocked, red at three
+  or more; Staff Kanban amber when an outstanding task has no estimate or no
+  release is selected; Conversion funnel amber when yesterday has no website
+  data yet; Support amber when anything awaits a reply, red when the oldest
+  has waited a day or more; Leads always green; red on any tile that couldn't
+  load.
+- **No click-through; click or tap pins the summary panel.** Clicking (PC) or
+  tapping (iPad) a tile opens its summary panel inline, full width, directly
+  under that tile's row (after the last tile on that row, whichever section
+  it belongs to), and keeps it open until it is closed (×,
+  Escape, or the same tile again) or another tile is chosen. One panel is
+  open at a time; the tile shows it is pinned (`aria-expanded`). The panel
+  has an **Open section** link to the tile's section; the tile itself never
+  navigates (people use the sidebar for that). Hover does not preview the
+  panel.
+- **Redraws keep the panel.** A backlogItems snapshot updates the figures
+  in place: a focused tile keeps its focus, and a pinned panel stays open and
+  shows the new figures. Only the panel moves when the row breaks change (a
+  resize or rotation), never a tile.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
@@ -7483,8 +7815,9 @@ the console on `#board` by default; a case that wants the landing page passes
 `hash: ""`.
 
 Known gaps: trends compare with the day before only; Staff Kanban's remaining
-effort has no history, so it shows no trend. Unique visitors are GA4 sessions
-until the ingest writes a `users` figure.
+effort has no history, so it shows no trend. Google Ads figures have no
+country, and calculator uses stay 0 until the website sends a `calculator_use`
+GA4 event (its calculator pushes `ph_ind_calculator` to the dataLayer only).
 
 ## Documentation (19 Nov 2026)
 

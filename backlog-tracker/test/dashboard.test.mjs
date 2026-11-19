@@ -2,7 +2,7 @@
 // Days are the viewer's local days, so every instant here is built with the
 // local Date constructor, never a UTC string.
 import assert from "node:assert";
-import { localDayRange, fmtEffort, trend, fmtWait, agentBoardKpi, kanbanKpi, dashboardRelease, leadsKpi, funnelKpi, supportKpi, isBuilding, isWebsiteLead } from "../public/js/dashboard-core.js";
+import { localDayRange, fmtEffort, trend, fmtWait, agentBoardKpi, kanbanKpi, dashboardRelease, leadsKpi, funnelKpi, supportKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus, rowEnd } from "../public/js/dashboard-core.js";
 import { normaliseTicket } from "../public/js/support-core.js";
 import { currentReleaseId } from "../public/js/kanban/kanban-core.js";
 
@@ -122,6 +122,49 @@ assert.deepStrictEqual(fk.steps.map((s) => [s.label, s.count, s.dropOff, s.dropO
 assert.deepStrictEqual(fk.industries, [{ name: "Grocery", count: 210 }, { name: "QSR", count: 80 }], "industries ranked by visitors, peak first");
 assert.strictEqual(funnelKpi([{ date: "2026-11-16", visits: 10, users: 7 }], [], NOW).value, 7, "GA4's user count wins when the ingest sends one");
 assert.strictEqual(funnelKpi([], [], NOW).hasData, false);
+// Rows from the ingest (functions/funnel-ingest.js) carry a source: unique visitors are the
+// day's GA4 total (users are not additive across slices), industry page visitors come from
+// real /industries/* page views, and walkthrough or calculator from the GA4 key events.
+const ing = [
+  { date: "2026-11-16", source: "ga4-total", users: 300 },
+  { date: "2026-11-16", source: "ga4-site", country: "UK", visits: 250, users: 200 },
+  { date: "2026-11-16", source: "ga4-site", country: "AU", visits: 150, users: 130 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Telco", country: "UK", pageViews: 90, users: 60 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Grocery", country: "UK", pageViews: 140, users: 70 },
+  { date: "2026-11-16", source: "ga4-events", industry: "Telco", walkthroughs: 9, calculatorUses: 2, demoRequests: 1, downloads: 3, leadForms: 4 },
+  { date: "2026-11-16", source: "google-ads", impressions: 5000, clicks: 150 },
+  { date: "2026-11-16", source: "leads", industry: "Telco", leads: 3 },
+  { date: "2026-11-15", source: "ga4-total", users: 250 },
+];
+const ik = funnelKpi(ing, leads, NOW);
+assert.strictEqual(ik.value, 300, "unique visitors are GA4's total users for the day");
+assert.strictEqual(ik.prev, 250);
+assert.deepStrictEqual(ik.steps.map((s) => s.count), [300, 130, 15, 2]);
+assert.deepStrictEqual(ik.industries, [{ name: "Grocery", count: 70 }, { name: "Telco", count: 60 }]);
+assert.strictEqual(funnelKpi(ing.filter((r) => r.source !== "ga4-total"), [], NOW).value, 330, "no total row: the site slices' users");
+// Review of T6f4GeJZGg0OgntUpzPq: one visitor who viewed two industries is one Industry page
+// visitor. The step is GA4's de-duplicated ga4-industry-total, never a sum of per-industry users,
+// and never more than unique visitors; the list reads ga4-industry-users.
+const two = [
+  { date: "2026-11-16", source: "ga4-total", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Retail", country: "UK", pageViews: 1, users: 1 },
+  { date: "2026-11-16", source: "ga4-industry", industry: "Banking", country: "UK", pageViews: 1, users: 1 },
+];
+const twoOld = funnelKpi(two, [], NOW);
+assert.strictEqual(twoOld.steps[1].count, 1, "older rows without ga4-industry-total: capped at unique visitors");
+const twoNew = funnelKpi([...two,
+  { date: "2026-11-16", source: "ga4-industry-total", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Retail", users: 1 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Banking", users: 1 },
+], [], NOW);
+assert.deepStrictEqual(twoNew.steps.slice(0, 2).map((s) => [s.count, s.dropOff]), [[1, null], [1, 0]]);
+assert.deepStrictEqual(twoNew.industries, [{ name: "Banking", count: 1 }, { name: "Retail", count: 1 }]);
+const ik2 = funnelKpi([...ing, { date: "2026-11-16", source: "ga4-industry-total", users: 110 },
+  { date: "2026-11-16", source: "ga4-industry-users", industry: "Telco", users: 60 }, { date: "2026-11-16", source: "ga4-industry-users", industry: "Grocery", users: 65 }], leads, NOW);
+assert.strictEqual(ik2.steps[1].count, 110, "the Industry page step is GA4's de-duplicated users, not 60 + 70");
+assert.deepStrictEqual(ik2.industries, [{ name: "Grocery", count: 65 }, { name: "Telco", count: 60 }], "the industry list reads ga4-industry-users");
+assert.deepStrictEqual(tileStatus("funnel", { hasData: true, dataNotUpdated: true }), { level: "alert", reason: "Data not updated" }, "a failed ingest turns the tile red");
+assert.strictEqual(tileStatus("funnel", { hasData: true }).level, "ok");
 
 // ── Support ───────────────────────────────────────────────────────────────
 // Exactly three figures, all of the Support Inbox (support@), as things stand now and today.
@@ -151,13 +194,16 @@ const tickets = [
   t("14", { status: "open", inboxes: ["support", "hello"], lastInboundAt: at(17, 9) }),
 ];
 const sk = supportKpi(tickets, NOW);
-assert.deepStrictEqual(Object.keys(sk).sort(), ["doneToday", "oldestMs", "open", "waiting"], "three figures and the list behind them, nothing else");
+assert.deepStrictEqual(Object.keys(sk).sort(), ["doneToday", "doneTrend", "doneYesterday", "oldestMs", "open", "waiting"], "three figures, yesterday's replied or resolved for its trend, and the list behind them");
 assert.strictEqual(sk.open, 5, "open and awaiting a reply, support@ only");
 assert.deepStrictEqual(sk.waiting.map((w) => w.id), ["2", "3", "7", "1", "14"], "longest-waiting first");
 assert.strictEqual(sk.waiting[0].customer, "Customer 2");
 assert.strictEqual(sk.oldestMs, NOW - at(16, 9, 30), "the oldest unanswered email, measured from when the customer wrote");
 assert.strictEqual(fmtWait(sk.oldestMs), fmtWait(NOW - at(16, 9, 30)));
 assert.strictEqual(sk.doneToday, 4, "resolved or replied since local midnight: 4, 6, 11 and 12");
+// Dashboard v2 (GUI9xPe3CJY3LyMws88m): the same count for yesterday gives the tile its trend.
+assert.strictEqual(sk.doneYesterday, 2, "resolved or replied yesterday: 5 and 10 (12 was replied to again today)");
+assert.deepStrictEqual([sk.doneTrend.dir, sk.doneTrend.delta], ["up", 2]);
 // An email written only to hello@ or aidan@ changes none of the three.
 const more = supportKpi([...tickets, t("20", { status: "open", inboxes: ["hello"], lastInboundAt: at(10, 9) }), t("21", { status: "resolved", inboxes: ["aidan"], resolvedAt: at(17, 9), lastReplyAt: at(17, 9) }), t("22", { status: "pending", inboxes: ["hello", "aidan"], lastReplyAt: at(17, 9) })], NOW);
 assert.deepStrictEqual([more.open, more.oldestMs, more.doneToday], [sk.open, sk.oldestMs, sk.doneToday], "hello@ and aidan@ mail is never counted");
@@ -165,4 +211,40 @@ assert.deepStrictEqual([more.open, more.oldestMs, more.doneToday], [sk.open, sk.
 const quiet = supportKpi([t("1", { status: "resolved", resolvedAt: at(16, 9) })], NOW);
 assert.deepStrictEqual([quiet.open, quiet.oldestMs, quiet.doneToday, quiet.waiting], [0, null, 0, []]);
 
+// ── Dashboard v2 (GUI9xPe3CJY3LyMws88m): 7-day series, sparkline, trend, status ──
+{
+  const days = lastDays(7, NOW);
+  assert.strictEqual(days.length, 7);
+  assert.strictEqual(days[0].day, "2026-11-10", "the series starts 7 local days back");
+  assert.strictEqual(days[6].day, "2026-11-16", "and ends yesterday, never today");
+  assert.deepStrictEqual(dailyCounts([at(10, 1), at(16, 23, 59), at(16, 0, 1), at(17, 8), at(9, 12)], 7, NOW), [1, 0, 0, 0, 0, 0, 2], "counts per local day; today and older days are left out");
+  assert.deepStrictEqual(agentBoardKpi(items, projects, NOW).series, [0, 0, 0, 0, 0, 1, 3], "deployed per day, the last point is the headline");
+  assert.strictEqual(sparklinePoints([1]), "", "one point draws nothing");
+  const pts = sparklinePoints([0, 5, 10], 96, 28, 2).split(" ").map((p) => p.split(",").map(Number));
+  assert.deepStrictEqual(pts, [[2, 26], [48, 14], [94, 2]], "the lowest value at the bottom, the highest at the top, inside the padding");
+  assert.ok(sparklinePoints([3, 3, 3]).split(" ").every((p) => p.endsWith(",14")), "a flat series runs along the middle");
+  assert.strictEqual(trendShort(trend(5, 3)), "+2");
+  assert.strictEqual(trendShort(trend(1, 4)), "−3");
+  assert.strictEqual(trendShort(trend(2, 2)), "0");
+  // rowEnd: the last tile on a tile's row, from the count, never measured.
+  assert.deepStrictEqual([0, 1, 2, 3, 4].map((i) => rowEnd(i, 3, 5)), [2, 2, 2, 4, 4], "three across: Agent, Kanban, Leads / Funnel, Support");
+  assert.deepStrictEqual([0, 3, 4].map((i) => rowEnd(i, 4, 5)), [3, 3, 4], "four across, Support alone on row 2");
+  assert.deepStrictEqual([0, 1, 2, 4].map((i) => rowEnd(i, 2, 5)), [1, 1, 3, 4], "two across on an iPad in portrait");
+  assert.deepStrictEqual([0, 4].map((i) => rowEnd(i, 1, 5)), [0, 4], "one across on a phone");
+  assert.strictEqual(rowEnd(1, 0, 5), 1, "an unreadable column count is one across");
+  assert.strictEqual(rowEnd(0, 3, 0), -1, "no tiles, no row");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 0 }] }).level, "ok");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 1 }, { blocked: 1 }] }).level, "warn");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 2 }, { blocked: 1 }] }).level, "alert", "red at three blocked");
+  assert.strictEqual(tileStatus("kanban", { release: null }).level, "warn");
+  assert.strictEqual(tileStatus("kanban", { release: { id: "r" }, unestimated: 2 }).reason, "2 tasks unestimated");
+  assert.strictEqual(tileStatus("kanban", { release: { id: "r" }, unestimated: 0 }).level, "ok");
+  assert.strictEqual(tileStatus("leads", { value: 0 }).level, "ok", "a quiet day is not a fault");
+  assert.strictEqual(tileStatus("funnel", { hasData: false }).level, "warn");
+  assert.strictEqual(tileStatus("support", { open: 0, oldestMs: null }).level, "ok");
+  assert.strictEqual(tileStatus("support", { open: 2, oldestMs: 3600000 }).level, "warn");
+  assert.strictEqual(tileStatus("support", { open: 1, oldestMs: 25 * 3600000 }).level, "alert", "red when the oldest has waited a day");
+  const fs = funnelKpi([{ date: "2026-11-10", visits: 5 }, { date: "2026-11-15", visits: 7 }, { date: "2026-11-16", visits: 9, users: 8 }], [], NOW).series;
+  assert.deepStrictEqual(fs, [5, 0, 0, 0, 0, 7, 8], "funnel visitors per day for the sparkline");
+}
 console.log("dashboard.test.mjs: ok");

@@ -1952,6 +1952,32 @@ T("KB-C29", "the board shows its cards without waiting for the server's counts",
   await p.done();
 });
 
+T("KB-C30", "scrolled down, + New task stays pinned at the right of the filter bar, which keeps its height; it opens New task", { timeout: 60000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", TALL);
+  const shown = () => p.$eval("#kb-pinned-new", (e) => getComputedStyle(e).visibility === "visible");
+  assert.equal(await shown(), false, "hidden while the header's own + New task is on screen");
+  const h0 = await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().height));
+  await p.evaluate(() => scrollTo(0, 900));
+  await eventually(async () => assert.equal(await shown(), true, "shown once the header has scrolled away"));
+  await eventually(async () => assert.equal(await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().top)), 0, "the bar is pinned"));
+  const m = await p.evaluate(() => {
+    const bar = document.getElementById("kb-sticky").getBoundingClientRect(), b = document.getElementById("kb-pinned-new").getBoundingClientRect();
+    return { barH: Math.round(bar.height), barR: bar.right, barT: bar.top, top: b.top, bottom: b.bottom, right: b.right, w: document.documentElement.scrollWidth, text: document.getElementById("kb-pinned-new").textContent.trim() };
+  });
+  assert.equal(m.text, "+ New task");
+  assert.ok(m.barH <= h0, `the pinned bar is no taller (${m.barH} against ${h0})`);
+  assert.ok(m.top >= m.barT && m.bottom <= m.barT + m.barH, "the button sits inside the bar");
+  assert.ok(m.barR - m.right <= 16 && m.right <= m.barR + 0.5, `at the bar's right edge (${m.right} of ${m.barR})`);
+  assert.equal(m.w, prof.width, "no sideways page scroll");
+  assert.equal(await p.$$eval("#kb-sticky .btn-primary", (e) => e.filter((x) => x.getClientRects().length && getComputedStyle(x).visibility === "visible").length), 1, "the only CTA pinned");
+  await press(p, "#kb-pinned-new");
+  await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the New task form");
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => scrollTo(0, 0));
+  await eventually(async () => assert.equal(await shown(), false, "hidden again back at the top"));
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");

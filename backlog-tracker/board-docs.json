@@ -257,6 +257,30 @@
       "path": "backlog-tracker/promote/brand-requirements.md",
       "name": "6 — Brand Guidelines requirements (Promote)",
       "prefix": "> Copy of `backlog-tracker/promote/brand-requirements.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "brand-market-singapore",
+      "path": "backlog-tracker/promote/markets/singapore.md",
+      "name": "6 — Brand market: Singapore",
+      "prefix": "> Copy of `backlog-tracker/promote/markets/singapore.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "brand-market-thailand",
+      "path": "backlog-tracker/promote/markets/thailand.md",
+      "name": "6 — Brand market: Thailand",
+      "prefix": "> Copy of `backlog-tracker/promote/markets/thailand.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "brand-market-united-states",
+      "path": "backlog-tracker/promote/markets/united-states.md",
+      "name": "6 — Brand market: United States",
+      "prefix": "> Copy of `backlog-tracker/promote/markets/united-states.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
+    },
+    {
+      "key": "brand-partner-mipharmacy",
+      "path": "backlog-tracker/promote/partners/mipharmacy.md",
+      "name": "6 — Brand partner: miPharmacy",
+      "prefix": "> Copy of `backlog-tracker/promote/partners/mipharmacy.md` from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n"
     }
   ],
   "boardDocs": []

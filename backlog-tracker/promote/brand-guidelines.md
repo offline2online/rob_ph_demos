@@ -198,6 +198,10 @@ Official logo files and asset sheet: [brand assets](https://claude.ai/artifact/5
 | "Available in AWS Marketplace" logo, white PNG | Joint AWS promotions on **dark** surfaces | `4d9c26cb5013b179f6da5d832c16d1ae` |
 | "Available in AWS Marketplace" logo, dark PNG | Joint AWS promotions on **light** surfaces | `19e70d44e5f78972d97803e4c09ec4f6` |
 
+## Partners
+
+One co-branding page per partner: mirrors `brand-partner-<slug>` (`get_project_document`). Markets: one page per market, mirrors `brand-market-<slug>`, picked by the company's country; none: these guidelines.
+
 ## Joint promotions with AWS (co-branding)
 
 Applies to **every** joint PH + AWS promotion: AWS-track one-pagers, better-together sheets, decks, LinkedIn posts, landing pages and anything co-marketed with AWS.

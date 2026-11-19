@@ -124,6 +124,19 @@ check("configuration: nobody can start a run without an allowed sender; switched
   assert.ok(!JSON.stringify(adm).includes(ALLOWED));
 });
 
+check("the sender name: \"Aidan Hubbot\" by default, a saved first and last name otherwise, safe for a From header", () => {
+  const d = ac.normaliseConfig({});
+  assert.deepStrictEqual([d.fromFirstName, d.fromLastName, d.fromName], ["Aidan", "Hubbot", "Aidan Hubbot"]);
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "Botsworth" }).fromName, "Ada Botsworth");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "" }).fromName, "Ada", "a last name may be left empty");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "", fromLastName: "Bot" }).fromName, "Aidan Hubbot", "no first name: the default");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: 'A"d<a>\r\nX', fromLastName: "B" }).fromName, "A d a X B");
+  assert.strictEqual(ac.cleanNamePart("x".repeat(60)).length, ac.NAME_PART_MAX);
+  const pub = ac.publicConfig({});
+  assert.deepStrictEqual([pub.fromName, pub.fromFirstName, pub.fromLastName], ["Aidan Hubbot", "Aidan", "Hubbot"]);
+  assert.ok(ac.composeAidanAnswer({ replyText: "Done.", fromName: "Ada Botsworth" }).endsWith("\n\nAda Botsworth, Personalisation Hub"), "the sign-off is the display name");
+});
+
 check("the sender must be verified by Gmail's own (topmost) header: DMARC, DKIM or SPF passing for the From domain", () => {
   const h = (v) => [{ name: "Authentication-Results", value: v }];
   assert.deepStrictEqual(ac.senderAuthenticated(h("mx.google.com; dkim=pass header.i=@example.com header.s=s1; spf=pass smtp.mailfrom=owner@example.com; dmarc=pass (p=NONE) header.from=example.com"), ALLOWED).ok, true);
@@ -473,7 +486,7 @@ check("the answer: a plain-text email with no attachment, signed by Aidan; an em
   assert.strictEqual(ac.cleanAnswer(null).canAnswer, false);
   assert.ok(ac.cleanAnswer({ canAnswer: true, replyText: "x".repeat(20000) }).replyText.length <= ac.ANSWER_MAX);
   const text = ac.composeAidanAnswer({ replyText: "Got it, Owner, all good.", fromName: "Aidan" });
-  assert.strictEqual(text, "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub");
+  assert.strictEqual(text, "Got it, Owner, all good.\n\nAidan, Personalisation Hub");
   const raw = ac.buildMultipartRaw({ fromName: "Aidan", fromEmail: "support@ph.example", to: [ALLOWED, "client@shop.example"], cc: ["colleague@shop.example"], subject: "Onboarding", text,
     inReplyTo: "<m1@mail.example>", references: "<m0@mail.example>", attachments: [] });
   const mail = Buffer.from(raw.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
@@ -501,7 +514,7 @@ check("console: a request to create or change something on the console is recogn
   assert.deepStrictEqual([ac.mayReadConsole("please confirm you received this email"), ac.mayReadConsole("summarise the Customer Support concept")], [false, true]);
   assert.deepStrictEqual([ac.asksForIds("list the backlog tickets with their ids"), ac.asksForIds("what tickets are in the backlog?"), ac.asksForIds("I'd like the list")], [true, false, false]);
   const reply = ac.composeReadOnlyReply({ firstName: "Owner", fromName: "Aidan" });
-  assert.ok(/^Hi Owner,/.test(reply) && /can only read the agent console/.test(reply) && /haven't created or changed anything/.test(reply) && /\nAidan\nAssistant to Rob, Personalisation Hub$/.test(reply), reply);
+  assert.ok(/^Hi Owner,/.test(reply) && /can only read the agent console/.test(reply) && /haven't created or changed anything/.test(reply) && /\nAidan, Personalisation Hub$/.test(reply), reply);
 });
 
 check("console: the read-only refusal needs a console thing as the head of the object; documents, reads and other objects pass through (review kick-back 1)", () => {
