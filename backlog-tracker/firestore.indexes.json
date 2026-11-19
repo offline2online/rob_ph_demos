@@ -66,5 +66,10 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    { "collectionGroup": "searchIndex", "fieldPath": "chunks", "indexes": [] },
+    { "collectionGroup": "searchIndex", "fieldPath": "meta", "indexes": [] },
+    { "collectionGroup": "topicContext", "fieldPath": "pack", "indexes": [] },
+    { "collectionGroup": "topicContext", "fieldPath": "citedJson", "indexes": [] }
+  ]
 }

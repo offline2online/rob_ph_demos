@@ -103,6 +103,7 @@ function query(store, collection, filters = [], limit = null, order = null, curs
         const v = d[f.field];
         if (f.op === "==") return v === f.value;
         if (f.op === "<") return v != null && v < f.value;
+        if (f.op === ">") return v != null && v > f.value;
         if (f.op === "array-contains") return Array.isArray(v) && v.includes(f.value);
         throw new Error(`stub: unsupported operator ${f.op}`);
       });

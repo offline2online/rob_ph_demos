@@ -22,7 +22,7 @@ The documents on the console, in the order they list:
 
 - **0 — Start here: reading order, ticket flow and deploy map** — this file.
 - **1 — Project rules, CLAUDE.md** — *copy, 5 parts* · `CLAUDE.md`
-- **2 — Console MCP guide** — *copy, 8 parts* · `backlog-tracker/MCP.md`
+- **2 — Console MCP guide** — *copy, 9 parts* · `backlog-tracker/MCP.md`
 - **3 — Help Centre (faq/): how it works and how it is edited** — *copy* ·
   `faq/README.md`
 - **4 — Documentation standard** — *copy, 2 parts* · `docs/CONTRIBUTING-docs.md`
@@ -43,14 +43,15 @@ Every copy, by the exact name the console lists it under:
 - 1 — Project rules, CLAUDE.md (5/7): MCP server, Support Inbox, project header · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (6/7): iPad rules, Docs page, archive, categories · `CLAUDE.md`
 - 1 — Project rules, CLAUDE.md (7/7): iframed prototypes, ph-designer, docs in step, secrets · `CLAUDE.md`
-- 2 — Console MCP guide (1/8): connect an agent, add a member · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (2/8): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (3/8): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (4/8): ticket history, agent instructions, test and link state, MCP Apps · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (5/8): write tools, build order, your own Notify Claude Routine · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (6/8): skills library, help centre, copied documents, what the agent can't do · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (7/8): client view, authentication, files, deploy, tests · `backlog-tracker/MCP.md`
-- 2 — Console MCP guide (8/8): blocked flag, freeze, snapshots, help articles, leads, Routine setup on connect · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (1/9): connect an agent, add a member · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (2/9): what the agent can and can't do (read tools, Staff Kanban basics) · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (3/9): Staff Kanban criteria, attachments, bulk upload, API contracts · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (4/9): ticket history, agent instructions, test and link state, MCP Apps · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (5/9): write tools, build order, your own Notify Claude Routine · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (6/9): skills library, help centre, copied documents, what the agent can't do · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (7/9): client view, auth, files, deploy, tests, freeze, help articles · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (8/9): leads, Routine setup, Code Mode · `backlog-tracker/MCP.md`
+- 2 — Console MCP guide (9/9): PH Agent Context · `backlog-tracker/MCP.md`
 - 3 — Help Centre (faq/): how it works and how it is edited · `faq/README.md`
 - 4 — Documentation standard (1/2): principles, types, repository rules, FAQ standard · `docs/CONTRIBUTING-docs.md`
 - 4 — Documentation standard (2/2): user guides, accessibility, templates, checklist · `docs/CONTRIBUTING-docs.md`
@@ -68,13 +69,13 @@ Where to begin, by role:
 
 - **Anyone new**: this file, then the Requirements block for what the
   console is for, then the README's "Deployment" section.
-- **Connecting an agent over MCP**: "2 — Console MCP guide (1/8)" to connect,
+- **Connecting an agent over MCP**: "2 — Console MCP guide (1/9)" to connect,
   then "(2/8)" to "(6/8)" for what the agent can and can't do.
 - **Writing or editing help-centre articles**: "3 — Help Centre (faq/)",
   then "4 — Documentation standard (1/2)" before writing. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
-  performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (7/8)"
+  performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (7/9)"
   for how authentication works. Read them before touching
   `backlog-tracker/public/js/auth-gate.js`, `backlog-tracker/firestore.rules`
   or `backlog-tracker/functions/mcp-server.js`.
@@ -141,7 +142,7 @@ Also in the flow: `.github/workflows/e2e-quick.yml` (a required check on every
 pull request to main, a passing no-op unless the change is for the Display
 Types project), `.github/workflows/e2e-nightly.yml` (02:00 Sydney on main,
 files tickets for failures) and the MCP tool `demote_project`, which turns a
-project back into a concept (see "2 — Console MCP guide (2/8)").
+project back into a concept (see "2 — Console MCP guide (2/9)").
 
 ### When a copy refreshes
 

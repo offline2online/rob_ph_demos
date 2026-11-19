@@ -21,6 +21,7 @@ const { TOOLS } = mcp.__test;
 const checks = [];
 const check = (name, fn) => checks.push([name, fn]);
 const snapshot = () => JSON.stringify([...env.store.data].map(([k, v]) => [k, [...v]]));
+const snapshotWithout = (names) => JSON.stringify([...env.store.data].filter(([k]) => !names.includes(k)).map(([k, v]) => [k, [...v]]));
 
 const BT = "oTcLAbnhUUO2S7NkbsuV";
 const CONCEPT = "Cu5t0merSupp0rtC0ncp";
@@ -164,6 +165,59 @@ check("improvements: a ticket filed through the intake into Backlog, found again
   env.store.col("backlogItems").set(filed.itemId, Object.assign({}, env.store.col("backlogItems").get(filed.itemId), { status: "published-live" }));
   assert.deepStrictEqual(await imp.byKey("k-123"), [], "a shipped ticket is not open: the next gap files again");
   assert.strictEqual((await imp.file({ projectId: "NoSuchProject", desc, improvement })).ok, false);
+});
+
+// ── PH Agent Context: context first, from the cache ──
+check("PH Agent Context: Aidan's script tools now reach documents, critiques, the search, topic context, Support threads and run history", () => {
+  const names = reader.scriptTools();
+  for (const n of ["list_project_documents", "get_project_document", "list_concept_critiques", "search_console", "get_topic_context", "list_support_threads", "get_support_thread", "list_aidan_runs", "list_script_runs"]) assert.ok(names.includes(n), `${n} is one of Aidan's script tools`);
+  assert.ok(ac.SCRIPT_COVERED_READS.every((n) => n === "get_project_docs" || names.includes(n)), "what is no longer a single read is reachable from the script");
+  assert.ok(reader.insights().some((i) => i.name === "topic_context") && ac.AIDAN_INSIGHTS.includes("topic_context"));
+});
+
+check("PH Agent Context: a repeat question on a topic is served from the cache, with no read of any source collection", async () => {
+  await mcp.context.backfill();
+  mcp.context._hot.clear();
+  const ask = async () => { const r = await reader.read("get_topic_context", { topic: "Display Types" }); assert.strictEqual(r.ok, true, r.error); return JSON.parse(r.text); };
+  const first = await ask();
+  assert.deepStrictEqual([first.kind, first.entity.id, first.cache.tier, first.cache.hit], ["project", DSP, "cold", false], "the first question builds the pack");
+  assert.ok(first.records.ticket.shown.some((x) => x.title === "Partner API rate limits") && first.blockers.shown.length === 1);
+  env.store.reads.clear();
+  const again = await ask();
+  assert.deepStrictEqual([again.cache.tier, again.cache.hit], ["hot", true], "the repeat is a cache hit");
+  assert.deepStrictEqual(again.records, first.records, "with the same records");
+  for (const c of ["backlogItems", "projects", "concepts", "projectDocs", "interfaces", "leads", "prospects", "supportTickets", "faqArticles", "searchIndex", "topicContext"]) assert.ok(!env.store.reads.get(c), `${c} was not read (${env.store.reads.get(c)})`);
+  // Another mail-function instance (its own memory): the pack comes from the warm tier.
+  mcp.context._hot.clear();
+  env.store.reads.clear();
+  const warm = await ask();
+  assert.deepStrictEqual([warm.cache.tier, warm.cache.hit], ["warm", true]);
+  assert.ok(!env.store.reads.get("backlogItems"), "still no ticket read");
+  // The pack is the viewer stand-in's own (the role is in the key), and each call is audited as Aidan's.
+  const packs = [...env.store.col("topicContext").values()].filter((d) => d.ref === `project:${DSP}`);
+  assert.deepStrictEqual(packs.map((d) => [d.role, d.usedBy.includes("aidan-email"), d.hits >= 1, d.misses]), [["viewer", true, true, 1]]);
+  const audits = [...env.store.col("searchRuns").values()].filter((r) => r.email === "aidan");
+  assert.deepStrictEqual(audits.slice(-3).map((r) => [r.kind, r.via, r.cacheTier]), [["topic", "aidan-email", "cold"], ["topic", "aidan-email", "hot"], ["topic", "aidan-email", "warm"]]);
+  // No gap in a run like this one.
+  assert.strictEqual(ac.contextGap([{ tool: "get_topic_context", args: { topic: "Display Types" }, ok: true, text: JSON.stringify(again) }]), null);
+});
+
+check("PH Agent Context: the topics of a thread are written back to the cache, and search_console answers inside Aidan's one Code Mode run", async () => {
+  const before = env.store.col("topicContext").size;
+  assert.strictEqual(await reader.rememberTopics(["Backlog Tracker & FAQs", "favicon", "favicon", "", null]), 2, "each topic once");
+  const added = [...env.store.col("topicContext").values()].slice(before);
+  assert.deepStrictEqual(added.map((d) => [d.ref, d.role, d.stale, d.pack, d.usedBy]).sort(), [[`project:${BT}`, "viewer", true, null, ["aidan-email"]], ["text:favicon", "viewer", true, null, ["aidan-email"]]].sort(), "kept as stubs for the prewarm to build");
+  const stub = added.find((d) => d.ref === "text:favicon");
+  assert.deepStrictEqual(await mcp.context.triggers.find((t) => t.name === "contextPrewarmTopic").run({ id: stub.key }, null, stub), { built: true, tier: "cold" });
+  mcp.context._hot.clear();
+  const pack = JSON.parse((await reader.read("get_topic_context", { topic: "favicon" })).text);
+  assert.deepStrictEqual([pack.cache.tier, pack.records.ticket.shown[0].title], ["warm", "Fix the console favicon"], "ready before the next question");
+  assert.strictEqual(await mcp.consoleReader(["list_projects"]).rememberTopics(["favicon"]), 0, "a reader without the context tools remembers nothing");
+  const run = await reader.script("const r = await tools.search_console({ query: 'rate limits', sources: ['ticket'] }); return r.hits.map((h) => h.title);", { timeoutMs: ac.CONSOLE_SCRIPT_TIMEOUT_MS });
+  assert.deepStrictEqual([run.ok, JSON.parse(run.text)], [true, ["Partner API rate limits"]]);
+  const before2 = snapshotWithout(["searchRuns", "topicContext", "scriptRuns", "searchIndex", "searchIndexState"]);
+  await reader.read("search_console", { query: "favicon" });
+  assert.strictEqual(snapshotWithout(["searchRuns", "topicContext", "scriptRuns", "searchIndex", "searchIndexState"]), before2, "a search writes nothing but its audit row and the topic cache");
 });
 
 (async () => {

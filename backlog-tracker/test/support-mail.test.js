@@ -1690,6 +1690,81 @@ check("Aidan, self-improvement: every gate still applies; refused, unverified an
   assert.strictEqual(ticketOf(t, "t-ok").aidan.improvement.action, "filed");
 });
 
+// ── PH Agent Context: context first (get_topic_context / search_console), topics written back ──
+function contextConsole({ pack } = {}) {
+  const c = codeModeConsole();
+  const read = c.reader.read;
+  const remembered = [];
+  const tools = c.reader.tools;
+  c.reader.tools = () => tools().concat(["get_topic_context", "search_console", "list_project_documents", "get_project_document"].map((name) => ({ name, description: `${name} (stub)`, inputSchema: { type: "object", properties: {} } })));
+  let asked = 0;
+  c.reader.read = async (name, args) => {
+    if (name === "get_topic_context") {
+      c.calls.push({ name, args });
+      asked += 1;
+      const p = pack ? pack(args, asked) : { topic: args.topic, kind: "project", entity: { id: DSPP, name: "Display Types & DSP Integration" }, summary: "9 records across 2 sources.", counts: { ticket: 6, document: 3 },
+        records: { ticket: { label: "Agent board tickets", shown: [{ id: "Dsp7woT1cketAbcdeFgh", title: "Partner API rate limits", line: "Blocked on the partner.", url: "https://console.example/#item-Dsp7woT1cketAbcdeFgh" }], more: 5 } },
+        cache: asked === 1 ? { tier: "cold", hit: false } : { tier: "hot", hit: true } };
+      return { ok: true, text: JSON.stringify(p) };
+    }
+    if (name === "list_project_documents" || name === "get_project_document") { c.calls.push({ name, args }); return { ok: true, text: "{\"matches\":[]}" }; }
+    return read(name, args);
+  };
+  c.reader.rememberTopics = async (topics) => { remembered.push(topics); return topics.length; };
+  return Object.assign(c, { remembered });
+}
+
+check("Aidan, PH Agent Context: the topic pack is read first, a repeat question is served from the cache, documents are left to the script, and the topics go back to the cache", async () => {
+  const reader = contextConsole();
+  const imp = stubImprovements();
+  const question = "@Aidan, where are we with Display Types?";
+  const t = makeConsoleAidan([aidanMail({ id: "ctx1", text: question }), aidanMail({ id: "ctx2", threadId: "t-ctx2", text: question, date: 1759990005000 })], {
+    reader, improvements: imp,
+    plan: (input) => (input.round === 0 ? { changeRequested: false, reason: "the topic", script: "", insight: "", insightParams: "{}", reads: [
+      { tool: "list_project_documents", args: JSON.stringify({ projectId: DSPP, query: "rate limits" }) },
+      { tool: "list_backlog_items", args: JSON.stringify({ projectId: DSPP, status: "backlog" }) },
+      { tool: "get_topic_context", args: JSON.stringify({ topic: "Display Types" }) },
+    ] } : { changeRequested: false, reads: [], reason: "", script: "", insight: "", insightParams: "{}" }),
+    answer: () => ({ canAnswer: true, replyText: "Display Types has six tickets; the partner rate limits one is blocked.", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const reads = t.consoleCalls.map((c) => c.name).filter((n) => !["list_projects", "list_concepts"].includes(n));
+  assert.deepStrictEqual(reads, ["get_topic_context", "list_backlog_items", "get_topic_context", "list_backlog_items"], "the pack is read first on each run; the document search is not a single read while Code Mode is there");
+  const packs = t.seen.answer.map((a) => JSON.parse(a.console.text.match(/<read tool="get_topic_context"[^>]*>\n([\s\S]*?)\n<\/read>/)[1]).cache);
+  assert.deepStrictEqual(packs, [{ tier: "cold", hit: false }, { tier: "hot", hit: true }], "the second, identical question got the cached pack");
+  assert.ok(t.seen.answer[0].console.text.indexOf("get_topic_context") < t.seen.answer[0].console.text.indexOf("list_backlog_items"), "and the answer sees it first");
+  assert.deepStrictEqual(reader.remembered, [["Display Types", "Display Types & DSP Integration"], ["Display Types", "Display Types & DSP Integration"]], "the thread's topics are written back after each run");
+  assert.deepStrictEqual([ticketOf(t, "t-ctx1").aidan.status, ticketOf(t, "t-ctx2").aidan.status, ticketOf(t, "t-ctx2").aidan.console.tools.includes("get_topic_context")], ["replied", "replied", true]);
+  assert.strictEqual(imp.items.length, 0, "a pack that answers is no gap: nothing is filed");
+});
+
+check("Aidan, PH Agent Context: a pack from an empty index, or one the prewarm missed, files a \"Context stale or missing\" ticket; a topic with nothing on it files nothing; failing to write topics back never fails the run", async () => {
+  const reader = contextConsole({ pack: (args, n) => (n === 3 ? { topic: args.topic, kind: "text", entity: null, summary: "Nothing in the console matches.", counts: {}, records: {}, cache: { tier: "cold", hit: false } }
+    : n === 1 ? { topic: args.topic, kind: "text", entity: null, summary: "Nothing in the console matches.", counts: {}, records: {}, cache: { tier: "cold", hit: false, indexEmpty: true } }
+    : { topic: args.topic, kind: "text", entity: null, summary: "2 records.", counts: { ticket: 2 }, records: {}, cache: { tier: "rebuilt", hit: false, prewarmMissed: true } }) });
+  reader.reader.rememberTopics = async () => { throw new Error("the cache is down"); };
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "gap1", text: "@Aidan, what do we know about the Kestrel rollout?" }), aidanMail({ id: "gap2", threadId: "t-gap2", text: "@Aidan, any news on the Osprey pilot?", date: 1759990005000 }),
+    aidanMail({ id: "gap3", threadId: "t-gap3", text: "@Aidan, is there anything on the Heron trial?", date: 1759990009000 })], {
+    reader, improvements: imp,
+    plan: (input) => (input.round === 0 ? { changeRequested: false, reason: "", script: "", insight: "", insightParams: "{}", reads: [{ tool: "get_topic_context", args: JSON.stringify({ topic: /Kestrel/.test(input.instruction) ? "Kestrel rollout" : /Osprey/.test(input.instruction) ? "Osprey pilot" : "Heron trial" }) }] }
+      : { changeRequested: false, reads: [], reason: "", script: "", insight: "", insightParams: "{}" }),
+    answer: () => ({ canAnswer: true, replyText: "Here is what the console has on it.", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  await cron(t);
+  assert.deepStrictEqual([ticketOf(t, "t-gap1").aidan.status, ticketOf(t, "t-gap2").aidan.status, ticketOf(t, "t-gap3").aidan.status], ["replied", "replied", "replied"], "all three were still answered");
+  assert.ok(!ticketOf(t, "t-gap3").aidan.improvement, "a topic the console simply has nothing on is an answer, not a gap");
+  assert.deepStrictEqual(imp.items.map((i) => [i.projectId, i.aidanImprovement.category]), [[BT, "context-gap"], [BT, "context-gap"]], "filed on Aidan's own project");
+  assert.ok(/^Context missing \(get_topic_context\): The console's search index has nothing in it yet/.test(imp.items[0].aidanImprovement.gap), imp.items[0].aidanImprovement.gap);
+  assert.ok(/^Context stale \(get_topic_context\)/.test(imp.items[1].aidanImprovement.gap) && /Context stale or missing/.test(JSON.stringify(ticketOf(t, "t-gap2").messages || t.db.state)), imp.items[1].aidanImprovement.gap);
+  assert.strictEqual(ticketOf(t, "t-gap1").aidan.improvement.category, "context-gap", "linked on the run");
+});
+
 check("Aidan, self-improvement: at most five new tickets a day; a failure to file never fails the run", async () => {
   const ac = require("../functions/aidan-core");
   const imp = stubImprovements();

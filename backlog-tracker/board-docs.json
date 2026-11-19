@@ -93,8 +93,8 @@
     {
       "key": "mcp-md-1",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (1/8): connect an agent, add a member",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 1 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (1/9): connect an agent, add a member",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 1 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "end": "## What the agent can and can't do"
@@ -104,8 +104,8 @@
     {
       "key": "mcp-md-2",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (2/8): what the agent can and can't do (read tools, Staff Kanban basics)",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 2 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (2/9): what the agent can and can't do (read tools, Staff Kanban basics)",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 2 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "## What the agent can and can't do",
@@ -116,8 +116,8 @@
     {
       "key": "mcp-md-2k",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (3/8): Staff Kanban criteria, attachments, bulk upload, API contracts",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 3 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (3/9): Staff Kanban criteria, attachments, bulk upload, API contracts",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 3 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Staff Kanban: criteria, attachments, bulk upload, API contracts",
@@ -128,8 +128,8 @@
     {
       "key": "mcp-md-2h",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (4/8): ticket history, agent instructions, test and link state, MCP Apps",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 4 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (4/9): ticket history, agent instructions, test and link state, MCP Apps",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 4 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Ticket history, agent instructions, test and link state",
@@ -140,8 +140,8 @@
     {
       "key": "mcp-md-2b",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (5/8): write tools, build order, your own Notify Claude Routine",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 5 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (5/9): write tools, build order, your own Notify Claude Routine",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 5 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Write tools",
@@ -152,8 +152,8 @@
     {
       "key": "mcp-md-2c",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (6/8): skills library, help centre, copied documents, what the agent can't do",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 6 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (6/9): skills library, help centre, copied documents, what the agent can't do",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 6 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "### Write tools: skills library, help centre, copied documents and limits",
@@ -164,23 +164,35 @@
     {
       "key": "mcp-md-3",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (7/8): client view, authentication, files, deploy, tests",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 7 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (7/9): client view, auth, files, deploy, tests, freeze, help articles",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 7 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
           "start": "## How it appears in a client",
-          "end": "## Blocked flag and phase skill bindings"
+          "end": "## Leads over MCP"
         }
       ]
     },
     {
       "key": "mcp-md-4",
       "path": "backlog-tracker/MCP.md",
-      "name": "2 — Console MCP guide (8/8): blocked flag, freeze, snapshots, help articles, leads, Routine setup on connect",
-      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 8 of 8) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "name": "2 — Console MCP guide (8/9): leads, Routine setup, Code Mode",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 8 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
       "slices": [
         {
-          "start": "## Blocked flag and phase skill bindings"
+          "start": "## Leads over MCP",
+          "end": "## PH Agent Context: one search, and a topic in one call"
+        }
+      ]
+    },
+    {
+      "key": "mcp-md-5",
+      "path": "backlog-tracker/MCP.md",
+      "name": "2 — Console MCP guide (9/9): PH Agent Context",
+      "prefix": "> Copy of `backlog-tracker/MCP.md` (part 9 of 9) from the rob_ph_demos repo, which wins. Rewritten from the file after each merge to main; edit the file, not this copy.\n\n",
+      "slices": [
+        {
+          "start": "## PH Agent Context: one search, and a topic in one call"
         }
       ]
     },

@@ -57,7 +57,7 @@ const releaseGroups = require("./release-groups");
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 // The workspace for a key made for the whole organisation ("unset" otherwise); see lead-enrich.js workspaceHeaders.
 const ANTHROPIC_WORKSPACE_ID = defineSecret("ANTHROPIC_WORKSPACE_ID");
-const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getFirestore, FieldValue, FieldPath } = require("firebase-admin/firestore");
 const { getAuth } = require("firebase-admin/auth");
 // The MCP Apps views behind the two "board" tools (see that file's header).
 const { inFlightItemIds } = require("./notify-routine");
@@ -68,6 +68,8 @@ const buildOrder = require("./build-order");
 const cardState = require("./card-state");
 const { MCP_APP_MIME, UI_META, BOARD_VIEWS, viewByUri, boardViewHTML } = require("./mcp-app-views.js");
 const codeMode = require("./code-mode");
+const contextLib = require("./context");
+const { contextTools } = require("./context/tools");
 
 // initializeApp() runs in index.js before this module is required; resolve
 // the SDK singletons lazily so require order can never bite.
@@ -5639,6 +5641,11 @@ TOOLS.push(...kanban.kanbanTools({ textResult, toolError, audit, checkInterface,
 TOOLS.push(...leads.leadsTools({ textResult, toolError, audit }));
 // Promote › Prospects (TAM): read the database, add and enrich companies (functions/prospects.js).
 TOOLS.push(...prospects.prospectsTools({ textResult, toolError, audit }));
+// PH Agent Context (functions/context): search_console / get_topic_context
+// over one index of everything above, the Support Inbox and run history as
+// read tools. Read-only; each caller gets the sources their role may read.
+const context = contextLib.create({ db, FieldValue, FieldPath, logger, origin: PUBLIC_ORIGIN, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) });
+TOOLS.push(...contextTools({ ctx: context, db, textResult, toolError }));
 // Code Mode (functions/code-mode): run_script / describe_script_tools /
 // get_insight / list_insights. A script calls the read tools above through
 // getTool, each with the caller's own session; nothing above is changed.
@@ -6200,6 +6207,19 @@ function consoleReader(names) {
       const refs = projectRefCollector();
       return codeModeOutcome(await aidanScripts.insight(AIDAN_READ_SESSION, name, params, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
     },
+    // PH Agent Context: the topics a thread was about are written back to the
+    // topic cache after each run (functions/context → touchTopic), so the pack
+    // for each is built before the next question on it. At most five; never
+    // fails the run.
+    async rememberTopics(topics) {
+      if (!allowed.has("get_topic_context")) return 0;
+      let n = 0;
+      for (const t of [...new Set((topics || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, 300)))].slice(0, 5)) {
+        await context.touchTopic(AIDAN_READ_SESSION, t);
+        n += 1;
+      }
+      return n;
+    },
   };
 }
 const aidanScripts = codeMode.scriptRunner({ db, FieldValue, logger, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) });
@@ -6224,6 +6244,8 @@ function codeModeOutcome(o, projectRefs = []) {
   return { ok: false, error: String(e.message || "the script failed"), errorKind: String(e.kind || "error"), toolCalls, projectRefs, durationMs: (o && o.durationMs) || 0 };
 }
 exports.consoleReader = consoleReader;
+// PH Agent Context, for functions/index.js (the index triggers) and the tests.
+exports.context = context;
 
 // Aidan's self-improvement tickets (IJhIIzTxOJyZVCzzYggZ): when a run did
 // not fully or well meet a request, functions/aidan.js files a Backlog ticket
@@ -6242,8 +6264,13 @@ function aidanImprovements() {
     async projects() {
       return rowsOf(await db().collection("projects").get()).map((p) => ({ id: p.id, name: String(p.name || ""), archived: p.archived === true }));
     },
-    // Open tickets in one project (Backlog, Ready for Testing, Approved).
+    // Open tickets in one project (Backlog, Ready for Testing, Approved): an
+    // indexed query on the search index (functions/context → openTickets),
+    // not a read of every ticket the project ever had. Until the index has
+    // been backfilled it answers null, and the old read is used.
     async openTickets(projectId) {
+      const indexed = await context.openTickets(projectId).catch((err) => { logger.warn("aidan: open tickets from the index failed", { error: String(err && err.message ? err.message : err) }); return null; });
+      if (indexed) return indexed.map((x) => Object.assign({ desc: "" }, x));
       return rowsOf(await items().where("projectId", "==", String(projectId)).get()).filter(open)
         .map((x) => ({ id: x.id, title: String(x.title || ""), desc: String(x.desc || ""), status: x.status || "backlog", projectId: x.projectId, aidanImprovementKey: x.aidanImprovementKey || "", aidanImprovement: x.aidanImprovement || null }));
     },

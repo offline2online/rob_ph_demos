@@ -3026,6 +3026,46 @@ exports.kanbanNotifyTask = mcp.kanbanNotifyTask;
 exports.kanbanNotifyComment = mcp.kanbanNotifyComment;
 exports.kanbanAgentRollup = mcp.kanbanAgentRollup;
 
+// ── PH Agent Context: the search index and the topic cache ────────────────
+// (functions/context, MCP.md → "PH Agent Context".) One trigger per source
+// collection: when a record is written, its ONE entry in `searchIndex` is
+// rewritten (and the cached topic packs that cite it are marked stale), so a
+// search never reads a source collection. contextPrewarmTopic rebuilds a
+// topic pack that has just gone stale when the topic was used recently.
+// A failure is logged with the record's path only (never its text: support
+// threads are customers' email) and is not retried; the backfill
+// (scripts/context-backfill.js) repairs whatever a missed event left behind.
+function contextTrigger(name, opts) {
+  const t = mcp.context.triggers.find((x) => x.name === name);
+  if (!t) throw new Error(`functions/context has no trigger called ${name}`);
+  return onDocumentWritten(Object.assign({ document: t.document, timeoutSeconds: 120, memory: "512MiB", maxInstances: 5 }, opts || {}), async (event) => {
+    const before = event.data && event.data.before && event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data && event.data.after && event.data.after.exists ? event.data.after.data() : null;
+    try {
+      await t.run(event.params || {}, before, after);
+    } catch (err) {
+      logger.error("context trigger failed", { trigger: name, params: event.params || {}, error: String(err && err.message ? err.message : err) });
+    }
+  });
+}
+exports.contextIndexTicket = contextTrigger("contextIndexTicket");
+exports.contextIndexKanbanTask = contextTrigger("contextIndexKanbanTask");
+exports.contextIndexKanbanComment = contextTrigger("contextIndexKanbanComment");
+exports.contextIndexProject = contextTrigger("contextIndexProject");
+exports.contextIndexProjectMd = contextTrigger("contextIndexProjectMd");
+exports.contextIndexProjectDoc = contextTrigger("contextIndexProjectDoc");
+exports.contextIndexInterface = contextTrigger("contextIndexInterface");
+exports.contextIndexConcept = contextTrigger("contextIndexConcept");
+exports.contextIndexCritique = contextTrigger("contextIndexCritique");
+exports.contextIndexFaqArticle = contextTrigger("contextIndexFaqArticle");
+exports.contextIndexLead = contextTrigger("contextIndexLead");
+exports.contextIndexProspect = contextTrigger("contextIndexProspect");
+exports.contextIndexSkill = contextTrigger("contextIndexSkill");
+exports.contextIndexSupportThread = contextTrigger("contextIndexSupportThread");
+exports.contextIndexSupportMessage = contextTrigger("contextIndexSupportMessage");
+// The prewarm builds a pack, so it holds the whole index in memory like the MCP server does.
+exports.contextPrewarmTopic = contextTrigger("contextPrewarmTopic", { memory: "1GiB", maxInstances: 3 });
+
 // Test-only hook, same pattern as mcp-server.js's own `mcp.__test` — lets
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking

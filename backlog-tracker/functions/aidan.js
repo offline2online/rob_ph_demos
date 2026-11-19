@@ -544,7 +544,10 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail, codeMode: cmPrompt })
         : await model({ system: content ? `${ac.CONSOLE_PLAN_SYSTEM}\n${ac.CONTENT_LINE}` : ac.CONSOLE_PLAN_SYSTEM, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: CONSOLE_PLAN_TIMEOUT_MS,
           content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results, codeMode: cmPrompt }) });
-      const plan = ac.cleanConsolePlan(raw, { done: results, codeModeDone: !canScript || Boolean(codeMode) });
+      // Documents and critiques are read inside the Code Mode run.
+      // Only while the one Code Mode run is still to come: once it has run
+      // (or failed), a document section or critiques are single reads again.
+      const plan = ac.cleanConsolePlan(raw, { done: results, codeModeDone: !canScript || Boolean(codeMode), scriptCovers: canScript && !codeMode });
       if (plan.changeRequested && !content) { changeRequested = true; break; }
       if (!plan.codeMode && !plan.reads.length) break;
       if (plan.codeMode) await runCodeMode(plan.codeMode);
@@ -555,7 +558,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     // Code Mode run's tool calls named, by id or by name against the index
     // (an insight takes a project's name as readily as its id).
     const scopedProjectIds = ac.projectsReadAbout(results, index.projects);
+    // PH Agent Context: the topics this thread was about go back to the topic
+    // cache, so the pack for each is ready before the next question on it.
+    const topics = ac.topicsOf(results, index.projects, scopedProjectIds);
+    if (topics.length && typeof consoleReader.rememberTopics === "function") {
+      try { await consoleReader.rememberTopics(topics); } catch (err) { logger.warn("support: Aidan couldn't write topics back to the context cache", { error: errText(err) }); }
+    }
     return {
+      context: ac.contextGap(results), topics,
       changeRequested, results, used: results.some((r) => r.ok), text: ac.consoleBlock(results),
       names: ac.namesById([projects.text, concepts.text, ...results.map((r) => r.text)]),
       tools: [...new Set(results.filter((r) => r.ok).map((r) => r.tool))],
@@ -1128,7 +1138,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const readTheConsole = async () => {
         try { consoleData = await readConsole({ instruction: d.instruction, email, content }); }
         catch (err) { logger.error("support: Aidan console read failed", { ticketId, error: errText(err) }); }
-        if (consoleData) Object.assign(signals, { codeMode: consoleData.codeMode, failedReads: consoleData.failedReads, consoleCut: consoleData.cut, scopedProjectIds: consoleData.scopedProjectIds });
+        if (consoleData) Object.assign(signals, { codeMode: consoleData.codeMode, failedReads: consoleData.failedReads, consoleCut: consoleData.cut, scopedProjectIds: consoleData.scopedProjectIds, context: consoleData.context });
         return Boolean(consoleData && consoleData.changeRequested);
       };
       // An answer needs no skill: one named in the instruction is read, and

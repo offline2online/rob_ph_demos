@@ -478,6 +478,38 @@ makes handing documentation write access to an agent safe — an agent that
 truncates a 95 KB requirements document has not destroyed it — and it is the
 reason the `delete_` tools exist at all.
 
+### `searchIndex/{source:id}`, `searchIndexState/main`, `topicContext/{key}`, `searchRuns/{id}`
+
+PH Agent Context (`functions/context`, requirements CTX-1 to CTX-24). Server
+only: members read all four, no client writes any of them.
+
+- `searchIndex/{source:id}`: one entry per source record. `source`
+  (`ticket`, `kanban`, `project`, `concept`, `critique`, `faq`, `lead`,
+  `prospect`, `support`, `document`, `skill`), `recordId`, `title`,
+  `projectId`, `projectIds` (an interface's projects), `conceptId`, `status`,
+  `type`, `owner`, `open`, `archived`, `updatedAt` and `createdAt`
+  (milliseconds), `url` (the deep link), `access` (the read tool that guards
+  it), `meta` (small extras: a blocker, decisions, a Kanban key), `chunks`
+  (`[{h, t, v?}]`: heading, text, optional semantic vector), `hash` (of the
+  indexed content), `embedder`, `truncated`, `indexedAt` (milliseconds) and
+  `deleted` (a tombstone).
+- `searchIndexState/main`: `backfilledAt`, `lastRunAt`, `report`, `removed`.
+- `topicContext/{key}`: the warm cache. `key` (a hash of the caller's role,
+  the sources that role may read, and the topic), `topic`, `ref`
+  (`project:<id>`, `concept:<id>`, `lead:<id>` or `text:<words>`), `kind`,
+  `entityKeys`, `role`, `visibility`, `pack` (the pack as JSON), `cited` (the
+  keys of the records it is made from), `citedJson` (each with its version
+  and score), `stale`, `staleSources`, `staleAt`, `builtAt`, `indexSeen`,
+  `lastUsedAt`, `hits`, `misses`, `builds`, `lastBuildMs`, `lastTier`,
+  `usedBy`.
+- `searchRuns/{id}`: one row per `search_console` or `get_topic_context`
+  call. `at`, `atMs`, `email`, `clientId`, `role`, `via`, `kind` (`search`
+  or `topic`), `queryHash` (a keyed hash, never the query), `queryLength`,
+  `filters`, `sourcesHit`, `results`, `durationMs`, `cacheTier`, `cacheHit`,
+  `indexSize`.
+- `contextSecrets/audit`: the key of that hash. No client reads or writes
+  it.
+
 ### `mcpClients/{clientId}`, `mcpAuthCodes/{sha256}`, `mcpTokens/{sha256}`, `mcpAuditLog/{id}`
 
 MCP server state — registered OAuth clients, and the hashed authorization
@@ -6474,6 +6506,151 @@ overlay. Presentation only: every field, action and datum is still there.
   summary panel carries the same text; the earlier figures stay.
 - **Times:** days and dates are the viewer's local time, never UTC.
 
+## PH Agent Context (19 Nov 2026)
+
+A unified search and topic-context layer over the console
+(`functions/context`, walkthrough in [`MCP.md`](./MCP.md) → "PH Agent
+Context"). Aidan and any member's agent can pull everything relevant to a
+topic in one call, and a topic used recently is recalled from a cache. It
+extends Code Mode and the per-source searches; it replaces none of them.
+
+### What Code Mode can reach
+
+- **CTX-1** A Code Mode script can call, read-only and scoped to the
+  caller's role like every script tool: `list_project_documents` (with
+  `query`), `get_project_document`, `list_concept_critiques`,
+  `list_support_threads`, `get_support_thread`, `list_aidan_runs`,
+  `list_script_runs`, `list_search_runs`, `search_console` and
+  `get_topic_context`. Every argument a signature names is checked against
+  the real tool's schema (`test/code-mode.test.js`).
+- **CTX-2** The Support Inbox tools return no email address (each is
+  replaced by `[address]`), the customer's name but not their address, and
+  never a thread marked spam. `list_script_runs` returns a script's source
+  only when asked, cut at 2,000 characters.
+
+### The index
+
+- **CTX-3** One index, `searchIndex`, covers: agent board tickets in every
+  project including archived ones, with descriptions and comments; Staff
+  Kanban tasks with their comments; projects; concepts (description,
+  README, Requirements, documents, discussion) and their critiques; help
+  centre articles; leads; prospects (TAM); Support threads; project
+  documents (Requirements, README, mirrors, board documents, interface
+  contracts); and skills.
+- **CTX-4** Ranking is hybrid: BM25 over the text (a title word counting
+  three times) plus a vector similarity, combined 65 to 35, then a recency
+  boost of at most 30% that fades over about 45 days. Every record has a
+  local vector computed with no network. When the semantic embedder
+  answers, each chunk also stores a semantic vector; a search uses them
+  only when at least 90% of the chunks it ranks have one, and local vectors
+  throughout otherwise. An unchanged chunk keeps its vector. A record is
+  indexed, and search works, whether or not the embedder is reachable. A
+  document is indexed up to 200,000 characters in at most 130 chunks.
+- **CTX-5** Filters: source, project, concept, status, type, owner, a date
+  range on the last change, open or closed, and archived. With no query the
+  result is what the filters match, newest first. A filter that is not
+  understood is refused with a message that says what is accepted.
+- **CTX-6** The index is written on write. A Firestore trigger per source
+  collection re-indexes the one record that changed; a write that changes
+  nothing the index holds is dropped before any read; a deleted record
+  leaves a tombstone. Trigger events may arrive late, twice or out of
+  order: the trigger reads the record as it is now, every entry carries the
+  time its source was read, and an entry is never replaced by one made from
+  an earlier read. A query never reads a source collection: a server
+  instance reads the index once, then only entries indexed since, at most
+  every 10 seconds.
+- **CTX-7** `scripts/context-backfill.js` indexes existing data and removes
+  entries whose record has gone. It is safe to run again (an unchanged
+  record is not written), is a dry run unless `--apply` is given, and
+  prints counts only. It runs after every successful console deploy.
+- **CTX-8** Aidan's lookup of a project's open tickets is an indexed query
+  on `searchIndex` (source, project, open), not a read of every ticket the
+  project ever had. Until the first full backfill has finished it uses the
+  old read. A ticket filed seconds ago may not be in the index yet; the
+  lookup by the gap's own key (SUP-AID-39) reads tickets directly and still
+  finds it.
+- **CTX-9** **Role scoping.** Each source is guarded by an existing read
+  tool. A caller's search, pack or script includes a source only when
+  `tools/call` would let that caller call the tool: the `board.read` scope
+  and the tool's role, the same test, re-evaluated on every call. A caller
+  never receives a record they could not read one call at a time.
+- **CTX-10** **Personal fields.** A lead and a prospect are indexed by
+  company-level fields only: never contacts, decision makers, the org chart
+  or profile links. Every email address in any indexed text is removed. A
+  help article's pending revision, a test lead and a spam thread are never
+  indexed.
+- **CTX-11** `search_console` (an MCP read tool and a script tool) takes a
+  query, filters and a limit (default 10, max 50) and returns ranked hits,
+  each with `source`, `id`, `title`, `snippet`, `score`, a deep link `url`
+  and `updatedAt`, plus how many matched and how many were left out.
+
+### Topic context
+
+- **CTX-12** `get_topic_context` (an MCP read tool, a script tool and the
+  `topic_context` insight) takes a topic as free text, or a project, concept
+  or lead by id or name. Names resolve the way `resolveProjectRef` resolves
+  them: the id, then the name exactly, then starting with it, then
+  containing it as whole words; two candidates at a tier is no match and
+  the topic is treated as free text. A name found inside a longer topic must
+  be at least two words or eight letters, and a lead is matched only by its
+  whole name or the start of it.
+- **CTX-13** It returns a compact, ranked, deduplicated pack of at most
+  20 KB: a summary; the key records per source with deep links; open items;
+  blockers; recent decisions; what is new, updated or removed since the pack
+  was last built; and related topics. Every list is capped and says how many
+  items were left out (`more`, and `omitted` in total). The pack is built
+  from the index alone, with no model call.
+
+### Caching
+
+- **CTX-14** **Hot tier.** Each server instance keeps the last 200 packs
+  and searches in memory: a pack for 60 seconds, a search for 30, and only
+  while no record it is made from has changed in the index.
+- **CTX-15** **Warm tier.** `topicContext` holds, per topic and role: the
+  topic key, the pack, the ids of the source records it cites with their
+  versions, `lastUsedAt`, and hit and miss counts.
+- **CTX-16** **Invalidation.** When a source record is re-indexed, the
+  trigger marks stale every pack that cites it, and every pack about the
+  project, concept or lead it belongs to. A stale pack is rebuilt on its
+  next read, and only the sources that changed are gathered again; the rest
+  of the pack is kept. The read also checks the cited versions itself, so a
+  lost mark does not serve an out-of-date pack. A pack older than 6 hours is
+  rebuilt whole.
+- **CTX-17** **Recency.** Topics used in the last 7 days are pre-warmed: a
+  pack that goes stale is rebuilt at once by `contextPrewarmTopic`, for the
+  role it was built for, and is dropped from pre-warming when that role's
+  reach has changed. A plain `search_console` query (an MCP session or a
+  Code Mode run) and the topics of each Aidan thread are remembered as
+  topics.
+- **CTX-18** **The role is in the key.** A cache key is made from the
+  caller's role, the sources that role may read, and the topic or query. A
+  cached pack or search is never served to another role or another reach.
+
+### Performance
+
+- **CTX-19** Asserted by `test/context.test.js` over 3,000 records: a cached
+  `get_topic_context` under 300 ms at the 95th percentile; `search_console`
+  over a warm index under 800 ms at the 95th percentile; a cold topic pack
+  under 5 s.
+- **CTX-20** Timings and cache tiers are recorded in `searchRuns` and
+  summarised (p50, p95, hit rate) by `list_search_runs`.
+
+### Security and audit
+
+- **CTX-21** Indexed and cached text is data, not instructions. Results say
+  so. No build or deploy session is given a pack as its specification, and
+  nothing in the Routine flows reads the index.
+- **CTX-22** Every search and context call writes one audit row: caller,
+  role, a keyed hash of the query (never the query; the key is readable by
+  no client), the sources hit, the duration and the cache tier. The topic
+  cache does hold each topic's words, readable by members, without who
+  asked.
+- **CTX-23** `firestore.rules`: members read `searchIndex`,
+  `searchIndexState`, `topicContext` and `searchRuns`; only the server
+  writes them. `contextSecrets` is closed to every client.
+- **CTX-24** No function log line holds a record's text or a query. A
+  trigger failure is logged with the record's path only.
+
 ## Support Inbox (14 Nov 2026)
 
 Requested by Rob, 14 Nov 2026: connect the console to the support mailbox,
@@ -6867,8 +7044,11 @@ page is filed as a ticket (SUP-AID-49 and 50).
   and their Requirements, README, additional documents and interface
   contracts; tickets (a list, one in full) and pipeline health; concepts in
   the Concept Incubator (a list, one in full, its critiques); Help Centre
-  articles; Leads and Prospects (TAM) (since IJhIIzTxOJyZVCzzYggZ). Most of
-  it is read with one Code Mode run (SUP-AID-36). The reads are the MCP server's own read tools, the ones named in
+  articles; Leads and Prospects (TAM) (since IJhIIzTxOJyZVCzzYggZ); and,
+  since PH Agent Context (19 Nov 2026), one search and one topic pack across
+  all of it, Support threads and run history (SUP-AID-51). Most of
+  it is read with a context read first and then one Code Mode run
+  (SUP-AID-36, SUP-AID-51). The reads are the MCP server's own read tools, the ones named in
   `CONSOLE_READ_TOOLS` (`functions/aidan-core.js`), run through
   `consoleReader` (`functions/mcp-server.js`), which offers only `board.read`
   tools with no role, so no write tool is reachable from an email whatever
@@ -7189,9 +7369,10 @@ page is filed as a ticket (SUP-AID-49 and 50).
   off that list is refused inside the run ("not available"). Every run is
   audited in `scriptRuns` (`email: "aidan"`, kind `aidan_script` or
   `aidan_insight`). One run per request, 10 seconds at most
-  (`CONSOLE_SCRIPT_TIMEOUT_MS`), never repeated. Single reads remain for what
-  Code Mode can't reach (project documents, Requirements, README, interface
-  contracts, concept critiques) and as the fallback when the run failed. The
+  (`CONSOLE_SCRIPT_TIMEOUT_MS`), never repeated. Since 19 Nov 2026 project
+  documents and concept critiques are script tools, read inside the run
+  (SUP-AID-52); other single reads remain for one record and as the fallback
+  when the run failed. The
   result goes into `<console_data>` like any read (addresses removed, ids to
   titles, the same budgets), and the ticket records it
   (`aidan.console.codeMode`: kind, insight name, ok, tool calls, duration,
@@ -7384,6 +7565,43 @@ page is filed as a ticket (SUP-AID-49 and 50).
   below …". It is keyed by the country, not the request, so a later request
   for the same country comments on it, and another country's gap never
   matches it (SUP-AID-39). A run that failed is filed as the failure instead.
+- **SUP-AID-51** (19 Nov 2026, PH Agent Context) **Context first.** When a
+  run reads the console (SUP-AID-16), the plan's first read for a question
+  about a topic is `get_topic_context`, and for a question that asks to
+  find something `search_console` (`CONTEXT_READS`; `cleanConsolePlan` puts
+  them ahead of every other read). The one Code Mode run (SUP-AID-36) is for
+  what those two don't cover: counting, grouping and joining across records,
+  or reading one document section or one record in full. Aidan may also
+  read `list_support_threads`, `get_support_thread`, `list_aidan_runs` and
+  `list_script_runs`, and run the `topic_context` insight. A repeat question
+  on a topic is served from the cache (CTX-14). After the reads, the topics
+  the thread was about (what the context reads asked for, and the projects
+  the reads were scoped to, five at most: `topicsOf`) are written back to the
+  topic cache (`consoleReader.rememberTopics`), so each pack is built before
+  the next question; a failure to write them never fails the run. Every
+  gate (SUP-AID-1 to 4, 10 to 13), the two rounds of six reads, the 25
+  second plan, the 10 second Code Mode run, the budgets of SUP-AID-16 and
+  the 540 second function are unchanged. A reply with console data still
+  goes to the allowed senders only (SUP-AID-18).
+- **SUP-AID-52** **Documents and critiques are read in the Code Mode run.**
+  `list_project_documents`, `get_project_document` and
+  `list_concept_critiques` (`SCRIPT_COVERED_READS`) are dropped from the
+  plan's single reads while the one Code Mode run is still to come, so they
+  are read inside it. Once the run has been used (or failed), or when the
+  reader has no Code Mode, they are single reads as before, so a section the
+  answer turns out to need can still be read in the second round.
+- **SUP-AID-53** **Context stale or missing is a gap.** The self-check
+  (SUP-AID-37) files the category `context-gap` ("Context stale or missing")
+  on the console's project when a context read failed, when the search
+  index had nothing in it at all (`indexEmpty`: the backfill has not run),
+  or when a pack for a topic used in the last 7 days had been stale for over
+  a minute and was only rebuilt when Aidan read it (`cache.prewarmMissed`,
+  CTX-17). A pack or a search that found nothing is an answer, not a gap,
+  and neither is a first, cold build or a pack rebuilt just after a change.
+  A failed Code Mode run is reported first, and a low-confidence answer,
+  another failed read and the model's own self-check all come before a
+  stale pack or an empty index. The no-duplicate rule (SUP-AID-39) and
+  the daily cap (SUP-AID-41) apply as to every category.
 
 ### Connecting
 

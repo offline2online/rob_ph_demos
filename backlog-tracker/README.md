@@ -1109,6 +1109,14 @@ typed fallback, the denied-microphone error and the pinned action bar.
   `get_insight`, `list_insights`): the sandbox's limits with stub tools, then
   the four tools, the role checks and each insight through the real server.
   See `MCP.md` → "Code Mode".
+- **`context-core.test.js`** and **`context.test.js`** cover PH Agent
+  Context (`functions/context/`: `search_console`, `get_topic_context`, the
+  Support Inbox and run-history read tools): scoring, filters, cache keys
+  with the role in them and what each source gives the index; then, through
+  the real server and the real sandbox, the index kept current by its
+  triggers, role scoping, the packs, both cache tiers, invalidation, the
+  prewarm, the audit log and the response times. See `MCP.md` → "PH Agent
+  Context".
 - **`claude-plugin.test.js`** checks the Claude plugin that packages the MCP
   server (`claude-plugin/`, offered by the repository's
   `.claude-plugin/marketplace.json`). See `MCP.md` → "Install it as a plugin".
@@ -3221,6 +3229,69 @@ management" scenario in `test/ui/console-click.test.mjs`.
 - **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection, filled by the daily ingest (`functions/funnel-ingest.js`, below); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). The page and the Dashboard tile show when the data was last updated and flag a source that failed (`consoleConfig/funnelIngest`). See REQUIREMENTS.md → Promote section: Conversion Funnel.
 - `functions/funnel-ingest.js` — the Conversion Funnel's daily ingest (HTTP function `funnelIngest`, 19 Nov 2026): GA4 (unique users, sessions, `/industries/*` page views, unique industry-page users per day and per industry, product tour starts, calculator uses, demo requests, downloads, lead forms), Google Ads impressions and clicks (through the Ads account linked to GA4), the console's leads (test and archived ones left out) and ACE opportunities, written per calendar day in the configured zone (default Australia/Sydney, set to match the GA4 property; never UTC) with industry and country. No new schedule or secret: the hourly `aceToGa4` call runs it when due (the first run backfills 90 days, then every 6 hours or more it refreshes the last 3 days; a 150 s budget per hourly call, with any sources left over run on the next call), or POST `funnelIngest` with `X-Board-Key` and `{"mode":"backfill"}`. GA4 is read with the function's own service account, which needs Viewer on GA4 property 473743482 (and the Analytics Data API enabled); `consoleConfig/funnelIngest` may override `ga4PropertyId` / `timeZone` and holds each source's status. Test: `node test/funnel-ingest.test.js`.
 
+## PH Agent Context (19 Nov 2026)
+
+One search index over everything in the console, and a topic-context layer
+on top of it, so Aidan or any member's agent gets everything relevant to a
+topic in one fast call. The full description is in `MCP.md` → "PH Agent
+Context"; the requirements are CTX-1 to CTX-24 in `REQUIREMENTS.md`.
+
+**What it adds.**
+
+- `search_console`: ranked hits across tickets (every project, archived
+  ones, comments), Staff Kanban, projects, concepts and critiques, the help
+  centre, leads, prospects, Support threads, project documents and skills.
+- `get_topic_context`: a compact pack on one topic (a summary, the key
+  records per source with links, open items, blockers, decisions, what
+  changed, related topics), cached.
+- Read tools for what Code Mode could not reach: `list_support_threads`,
+  `get_support_thread`, `list_aidan_runs`, `list_script_runs`,
+  `list_search_runs`. Project documents and concept critiques became script
+  tools too.
+- The `topic_context` insight.
+
+The per-source searches (`list_backlog_items` with `search`,
+`kanban_search_tickets`, `search_faq`, `list_project_documents` with a
+`query`) are unchanged.
+
+**The files.**
+
+| File | What |
+| --- | --- |
+| `functions/context/core.js` | The pure rules: tokens, BM25, the local vector, the hybrid score and recency boost, filters, chunks, snippets, cache keys (role included), name resolution |
+| `functions/context/sources.js` | One extractor per source: a stored document in, one index entry out. What is left out (contacts, addresses, pending revisions) is decided here |
+| `functions/context/embedder.js` | The semantic vector from Vertex AI, best effort; off outside Cloud Functions |
+| `functions/context/index.js` | The index in memory and in `searchIndex`, the search, the packs, the hot and warm caches, invalidation, the prewarm, the backfill, the trigger handlers |
+| `functions/context/tools.js` | The seven MCP tools |
+| `functions/code-mode/insights/topic_context.js` | The insight |
+| `functions/index.js` → `contextIndex…`, `contextPrewarmTopic` | The sixteen Firestore triggers |
+| `scripts/context-backfill.js`, `.github/workflows/context-backfill.yml` | Index existing data; re-run safely |
+| `firestore.rules`, `firestore.indexes.json` | Members read `searchIndex`, `searchIndexState`, `topicContext`, `searchRuns`; only the server writes. The large fields are exempt from indexing |
+
+**Collections.** `searchIndex/{source:id}` (one entry per record: title,
+filter fields, text in chunks, content hash, optional vectors),
+`searchIndexState/main` (when the backfill last finished),
+`topicContext/{key}` (the warm cache: one pack per topic and role),
+`searchRuns/{id}` (one audit row per call) and `contextSecrets/audit` (the
+key of the audit's query hash, closed to every client).
+
+**Deploying it.** It ships with the console: `deploy-backlog-tracker.yml`
+deploys the functions, rules and indexes, and "PH Agent Context backfill"
+then runs by itself and indexes existing data. Until that first backfill
+finishes, searches return only records written since the deploy, and
+Aidan's open-ticket lookup keeps using its old read. Semantic vectors need
+the Vertex AI API enabled on `backlog-tracker-e4ed2` and the functions'
+service account allowed to call it (`roles/aiplatform.user`); without that
+the index runs on keywords and local vectors, and the function log says so
+once every ten minutes at most. After enabling it, run the backfill with
+`reembed` ticked.
+
+**Privacy and safety.** The index copies only what every board reader can
+already read, and less for people: no lead or prospect contacts, and every
+email address replaced by `[address]`. Support threads are customers'
+email: nothing here logs their text. Everything returned is data, never
+instructions, and a pack is never a build specification.
+
 ## Support Inbox (14 Nov 2026)
 
 **Support › Support Inbox** (`#support`, the menu item above Help Centre)
@@ -3240,7 +3311,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
 | `functions/market-core.js` | Brand Guidelines › Markets for agents, pure: the `brand-market-*` mirrors as market pages (`marketsFrom`), the page for a company's country (`marketFor`), the `<market>` prompt block and its system line (`marketBlock`, `marketSystem`) (`test/market-core.test.js`) |
 | `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
-| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); `aidanImprovements`, his self-improvement tickets (`test/aidan-console.test.js`) |
+| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); the topics of a thread written back to the context cache (`rememberTopics`); `aidanImprovements`, his self-improvement tickets, whose open-ticket lookup is an indexed query on `searchIndex` (`test/aidan-console.test.js`) |
+| `functions/context/` | PH Agent Context: the search index, `search_console`, `get_topic_context`, both cache tiers and the index triggers (next section but one, and `MCP.md` → "PH Agent Context") |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
 | `functions/support-lab.js`, `functions/support-lab-core.js` | The Test lab's routes (`/supportMail/v1/lab/**`: Ask, cases, Add to test lab, runs and their steps) and its pure rules: a case checked (`cleanCaseInput`), what passes (`judgeCase`, shared with `scripts/support-eval.js`), claiming the next cases of a run (`claimNext`), a ticket's question and final answer (`caseFromTicket`) (`test/support-lab.test.js`) |
@@ -3454,9 +3526,24 @@ thread. A run:
   session and only the tools on both his list and Code Mode's, 10 seconds,
   audited in `scriptRuns` as `aidan_script` / `aidan_insight`. Its compact
   result feeds the answer, the document or the review like any read, and is
-  recorded on the ticket (`aidan.console.codeMode`). Single reads are kept
-  for project documents and critiques, and as the fallback when the run
-  failed (REQUIREMENTS SUP-AID-36);
+  recorded on the ticket (`aidan.console.codeMode`). Single reads are the
+  fallback when the run failed (REQUIREMENTS SUP-AID-36);
+- **context first** (19 Nov 2026, PH Agent Context): for a question about
+  a topic the plan's first read is `get_topic_context` (one cached pack
+  with the key records from every source, open items, blockers, decisions
+  and what changed), and for "find it" questions `search_console`; the one
+  Code Mode run is kept for counting and joining and for reading a document
+  section. Project documents and concept critiques are read inside that
+  run (they are script tools now); they are single reads again only once
+  the run has been used, or when there is none. A repeat question on a topic is
+  served from the cache. After each run the topics the thread was about are
+  written back to the topic cache (`rememberTopics`), so the pack is built
+  before the next question. A failed context read, an index with nothing in
+  it yet, or a stale pack the prewarm missed is filed by the self-check as
+  **Context stale or missing** (`context-gap`); a topic the console simply
+  has nothing on is an answer, not a gap. Every gate, the 10 second
+  Code Mode run, the two rounds of six reads and the 540 second function
+  are unchanged (REQUIREMENTS SUP-AID-51 to 53);
 - **checks itself and files what it couldn't do** (ticket
   IJhIIzTxOJyZVCzzYggZ): at the end of every run that passed the gates,
   Aidan checks whether the request was fully and well met (`assessRun`:
@@ -3637,7 +3724,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 47.
+SUP-AID-1 to 53.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal

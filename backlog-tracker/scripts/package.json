@@ -8,6 +8,7 @@
     "faq-export": "node faq-export.js"
   },
   "dependencies": {
-    "firebase-admin": "^12.6.0"
+    "firebase-admin": "^12.6.0",
+    "google-auth-library": "^9.15.0"
   }
 }
