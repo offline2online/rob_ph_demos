@@ -3787,3 +3787,41 @@ Dashboard only (not the Agent Board or any other page). The Agent Board's own ad
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
 `node test/dashboard.test.mjs` and the Dashboard scenario in
 `test/ui/console-click.test.mjs`.
+
+## Documentation — the internal docs library (19 Nov 2026)
+
+**Support › Documentation** (`#documentation`, `#doc/<id>`) is the team's
+internal product and technical documentation. It replaced the Confluence space
+(`offline2online.atlassian.net/wiki`, spaces OPTUS/"Personalisation Hub", PH
+and PROC), which is no longer needed: every page was carried over on
+19 Nov 2026, either into a current section or into **Archive**.
+
+- **Data**: Firestore `docCategories` (sections and folders, nested to any
+  depth through `parentId`) and `docArticles` (the documents). **Members only**
+  (`firestore.rules`): nothing here is public, exported or on the website,
+  unlike `faqCategories`/`faqArticles`. Embedded images and attached files are
+  in Storage under `docAssets/<docId>/` (`storage.rules`).
+- **Editing**: a document opens in the Help Centre's own article editor
+  (`openFaqArticleEditorPage(id, { library: "docs" })` in `app.js`), so the
+  formatting (headings, lists, code blocks, callouts, tables, images, video)
+  and the properties (category, document type, linked project, program,
+  releases, needs review, slug, keywords, status) are the same. The
+  website-only fields (SEO & agents, Hide from website, the live link) carry
+  `data-faq-only` in `index.html` and are hidden for a document. Clicking a
+  title opens it read-only (View live); the pencil opens it for editing.
+- **Page**: `public/js/documentation-page.js` (tree, list, search across every
+  document's text, status filter, drag to re-order, new section/folder/
+  document); pure helpers in `documentation-core.js`
+  (`test/documentation-page.test.mjs`). UI test: `test/ui/documentation.test.mjs`.
+- **Permissions**: its own section, `documentation`, in the Support group; it
+  follows a role's Help Centre grant until the role sets its own.
+- **Migrated documents** carry `source` (`system: "confluence"`, the page id,
+  space, original path, last-updated date, `archived`). Documents id is
+  `cf-<Confluence page id>`, sections `sec-<path slug>`, so links between
+  documents (`#doc/cf-…`) still work. Current documents last updated in
+  Confluence before 2025 are flagged **Needs review**.
+- **Sections**: Product & Roadmap, Architecture & Solution Design, Feature
+  Specifications, Installation & Deployment, Infrastructure & Operations,
+  Engineering Process, Archive (AEM Screens, Optus delivery, Kafka/ELK,
+  2018–2022 release plans and QA scripts, the old Knowledgebase and
+  Offline2Online wikis).
