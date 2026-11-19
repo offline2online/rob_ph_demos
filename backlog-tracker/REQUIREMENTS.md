@@ -6355,14 +6355,54 @@ overlay. Presentation only: every field, action and datum is still there.
   content touched. An ad group / creative filter only exists in the ad data, so
   it empties the ACE stages. No match shows an empty state, not an error.
 - **Data:** stages 1-5 are daily rows in the **`funnelDaily`** collection
-  (`{date "YYYY-MM-DD", channel, campaign, adGroup, creative, industry, country,
-  content, company, impressions, clicks, visits, demoRequests, downloads}`),
-  readable by members, **writable only by the server** (rules deny clients).
-  **The ingest that fills it from the Google Ads API and the GA4 BigQuery export
-  (ph-analytics) is not built yet** and needs those credentials; until it runs
-  stages 1-5 show 0. Stages 6-9 use the console's ACE opportunities
-  (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
-  and Prospects (TAM) (industry, country, campaigns).
+  (`{date "YYYY-MM-DD", source, channel, campaign, adGroup, creative, industry,
+  country, content, company}` plus the source's numbers), readable by members,
+  **writable only by the server** (rules deny clients). Stages 6-9 use the
+  console's ACE opportunities (`/partnerCentral/v1/ace`) joined by company name
+  to Leads (channel, content) and Prospects (TAM) (industry, country, campaigns).
+  "Calculator / model downloads" counts file downloads plus benefits calculator uses.
+- **The daily ingest (19 Nov 2026, ticket T6f4GeJZGg0OgntUpzPq;
+  `functions/funnel-ingest.js`, HTTP function `funnelIngest`)** fills
+  `funnelDaily`. Each row names its `source`:
+  - `ga4-total`: one row a day, GA4 `users` for the whole site. Unique visitors
+    are this figure, never a sum of slices (users are not additive).
+  - `ga4-site`: day × country × channel × campaign: `visits` (GA4 sessions) and
+    `users`.
+  - `ga4-industry`: day × industry × country: real page views of
+    `/industries/<slug>/` pages (`pageViews`) and their `users`; the industry is
+    read from the page path, not inferred from a dimension.
+  - `ga4-events`: day × country × industry (the event's `industry` parameter):
+    `walkthroughs` (product_tour_start), `calculatorUses` (calculator_use),
+    `demoRequests` (demo_request), `downloads` (file_download), `leadForms`
+    (lead_created).
+  - `google-ads`: day × campaign × ad group: `impressions`, `clicks`, read
+    through the Google Ads account linked to the GA4 property (no country:
+    Google Ads metrics have none in GA4).
+  - `leads`: day × industry × country × channel: `leads` from the console's
+    `leads`; test and archived leads are never counted.
+  - `ace`: day × industry: `aceCreated`, while Partner Central answers.
+- **Days** are calendar days in the GA4 property's time zone, and the
+  console's own records are bucketed in the same zone (`timeZone`, default
+  Australia/Sydney); never UTC.
+- **Runs:** no Cloud Scheduler job and no new workflow: the hourly `aceToGa4`
+  call (`.github/workflows/ace-ga4.yml`) runs the ingest when one is due. The
+  first run backfills 90 days; after that a run every 6 hours or more replaces
+  the last 3 days (GA4 keeps settling for about 48 hours). By hand: POST
+  `funnelIngest` with `X-Board-Key` and `{"mode": "backfill"}` (90 days) or
+  `{"mode": "daily"}`. A run replaces a source's rows for its days, so re-running
+  never double counts.
+- **Credentials:** GA4 is read with the Cloud Function's own service account
+  (Application Default Credentials, `analytics.readonly`). It needs Viewer on
+  GA4 property 473743482 (personalisationhub.com) and the Google Analytics Data
+  API enabled on the project; Google Ads needs the Ads account linked to that
+  property. `consoleConfig/funnelIngest` may override `ga4PropertyId` and
+  `timeZone`.
+- **A failed source is flagged, never a silent 0.** `consoleConfig/funnelIngest`
+  records each source's `ok`, `error` and `lastSuccessAt`. A failing source
+  keeps its earlier rows. The page's count line ends "Updated <local date and
+  time>" (GA4's last good update), and a failure shows in the status line
+  ("GA4 didn't update (…); last good update …"); the Dashboard tile shows
+  "Data not updated" in place of its trend, with the same text in its tooltip.
 - **Times:** days and dates are the viewer's local time, never UTC.
 
 ## Support Inbox (14 Nov 2026)
@@ -7582,10 +7622,13 @@ Rules:
 - **Remaining effort** is a task's estimate minus time logged, for outstanding
   tasks of that release; epics and done tasks are left out (the same as the
   release report).
-- **Funnel steps from `funnelDaily`**: unique visitors are GA4's `users` when
-  the ingest sends that field, else its `visits`; "industry page" is the
-  visitors on rows with an industry; "walkthrough or calculator" is demo
-  requests plus calculator or model downloads; "lead" is leads created
+- **Funnel steps from `funnelDaily`**: unique visitors are the day's
+  `ga4-total` users (GA4's own unique count); "industry page" is the users on
+  `ga4-industry` rows (real `/industries/*` page views); "walkthrough or
+  calculator" is product tour starts, calculator uses, demo requests and
+  downloads on `ga4-events` rows. Rows written before the ingest (no
+  `source`) keep the older reading: users else visits, rows with an industry,
+  demo requests plus downloads; "lead" is leads created
   yesterday that came from the website (source "Website…", a source page or
   website activity).
 - **Who sees which tile**: the Dashboard is open to every member and is not a
@@ -7611,5 +7654,6 @@ the console on `#board` by default; a case that wants the landing page passes
 `hash: ""`.
 
 Known gaps: trends compare with the day before only; Staff Kanban's remaining
-effort has no history, so it shows no trend. Unique visitors are GA4 sessions
-until the ingest writes a `users` figure.
+effort has no history, so it shows no trend. Google Ads figures have no
+country, and calculator uses stay 0 until the website sends a `calculator_use`
+GA4 event (its calculator pushes `ph_ind_calculator` to the dataLayer only).

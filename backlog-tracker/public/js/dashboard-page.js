@@ -13,6 +13,7 @@
 
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { agentBoardKpi, kanbanKpi, leadsKpi, funnelKpi, supportKpi, dashboardRelease, localDayRange, fmtCount, fmtEffort, fmtWait, fmtDayLabel } from "./dashboard-core.js";
+import { ingestStatusView, ingestFailureText, fmtUpdated } from "./funnel-core.js";
 import { normaliseTicket } from "./support-core.js";
 
 const STALE_MS = 5 * 60 * 1000;
@@ -106,9 +107,11 @@ export function mountDashboard(ctx) {
       const days = [localDayRange(1, t).day, localDayRange(2, t).day];
       const snaps = await Promise.all(days.map((day) => getDocs(query(collection(ctx.db, "funnelDaily"), where("date", "==", day)))));
       const rows = snaps.flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })));
+      // When the ingest last updated the data, and which source failed (funnel-ingest.js).
+      const ingest = await getDoc(doc(ctx.db, "consoleConfig", "funnelIngest")).then((s) => (s.exists() ? s.data() : null)).catch(() => null);
       // The funnel's last step is the website's leads; the Leads tile may not be visible.
       const leads = src.leads.status === "ok" ? src.leads.data : await readers.leads().catch(() => []);
-      return { rows, leads };
+      return { rows, leads, ingest };
     },
     async support() {
       const snap = await getDocs(query(collection(ctx.db, "supportTickets"), orderBy("lastMessageAt", "desc"), limit(SUPPORT_LIMIT)));
@@ -190,9 +193,13 @@ export function mountDashboard(ctx) {
       const steps = k.steps.map((st) => `<li><span class="dash-tip-row"><span>${esc(st.label)}</span><b>${fmtCount(st.count)}</b></span>`
         + (st.dropOff == null ? "" : `<span class="dash-tip-meta">Drop-off ${fmtCount(st.dropOff)}${st.dropOffPct == null ? "" : ` (${st.dropOffPct}%)`}</span>`) + `</li>`);
       const inds = k.industries.map((x, i) => `<li><span class="dash-tip-row"><span>${i + 1}. ${esc(x.name)}</span><b>${fmtCount(x.count)}</b></span></li>`);
+      const iv = ingestStatusView(s.data.ingest);
       return {
-        metric: "Unique visitors", value: fmtCount(k.value), extra: trendHtml(k.trend),
-        tip: (k.hasData ? "" : `<p class="dash-tip-empty">No website data for yesterday yet.</p>`)
+        metric: "Unique visitors", value: fmtCount(k.value),
+        extra: iv.flagged ? `<span class="dash-flag">${icon("error")}Data not updated</span>` : trendHtml(k.trend),
+        tip: (iv.flagged ? `<p class="dash-tip-empty">${esc(ingestFailureText(iv))}</p>` : "")
+          + (iv.known ? `<p class="dash-tip-empty">Updated ${esc(fmtUpdated(iv.updatedAt))}</p>` : "")
+          + (k.hasData ? "" : `<p class="dash-tip-empty">No website data for yesterday yet.</p>`)
           + `<p class="dash-tip-title">Funnel</p><ol class="dash-tip-list">${steps.join("")}</ol>`
           + `<p class="dash-tip-title">Industries by visitors</p>${tipList(inds, "No industry page visits.")}`,
       };

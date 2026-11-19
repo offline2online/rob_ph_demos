@@ -3142,6 +3142,8 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .dash-trend-up { color: var(--success); }
 .dash-trend-down { color: var(--danger); }
 .dash-flag { display: inline-flex; align-items: center; gap: 4px; color: var(--warning); font-weight: 600; }
+/* Conversion Funnel: a source failed on the last ingest (funnel-page.js). */
+#funnel-status.funnel-status-flag { color: var(--danger); font-weight: 500; }
 .dash-trio { display: flex; gap: 16px; width: 100%; }
 /* Labels of different lengths wrap to different heights: the figures stay on one line. */
 .dash-trio-cell { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; min-width: 0; flex: 1; }
