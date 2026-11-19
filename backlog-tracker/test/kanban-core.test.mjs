@@ -259,4 +259,73 @@ t("hierarchy: four levels (Epic > Task > Subtask > Sub-subtask), loops refused, 
   assert.deepEqual(k.parentsToAdvance(get("PH-7"), get, kids), []);
   assert.equal(k.isFinished(get("PH-3"), kids), false, "a parent still in Backlog isn't done");
 });
+t("history: the log read back into moves, hand-offs and time in each column (KB-HIST-1)", () => {
+  assert.deepEqual(k.parseActivity("Backlog → In Progress"), { kind: "move", from: "backlog", to: "in-progress", fromLabel: "Backlog", toLabel: "In Progress", note: "" });
+  assert.equal(k.parseActivity("In Progress → Ready for Testing · reassigned to Rob for testing").handoffTo, "Rob");
+  assert.equal(k.parseActivity("Approved for Deployment → Withdrawn").to, "done");
+  assert.deepEqual(k.parseActivity("reassigned Huy → Linh"), { kind: "assign", from: "Huy", to: "Linh" });
+  assert.deepEqual(k.parseActivity("reassigned Unassigned → Linh"), { kind: "assign", from: "", to: "Linh" });
+  assert.deepEqual(k.parseActivity("assigned to Thảo"), { kind: "assign", from: null, to: "Thảo" });
+  assert.deepEqual(k.parseActivity("unassigned (was Thảo)"), { kind: "assign", from: "Thảo", to: "" });
+  assert.equal(k.parseActivity("edited a comment").kind, "comment");
+  assert.equal(k.parseActivity("changed Priority from Medium to High").kind, "edit");
+  // A title with an arrow in it is not a move.
+  assert.equal(k.parseActivity("changed Title from A → B to C").kind, "edit");
+  const at = (d, h) => `2026-11-0${d}T${String(h).padStart(2, "0")}:00:00Z`;
+  const task = { created: at(1, 10), createdBy: "a@x", status: "in-progress", assignee: "c@x" };
+  const log = [
+    { id: "5", who: "a@x", at: at(3, 13), text: "Ready for Testing → In Progress · returned to Cee" },
+    { id: "1", who: "a@x", at: at(2, 10), text: "Backlog → In Progress" },
+    { id: "2", who: "a@x", at: at(2, 11), text: "assigned to Bee" },
+    { id: "3", who: "b@x", at: at(3, 11), text: "reassigned Bee → Cee" },
+    { id: "4", who: "c@x", at: at(3, 12), text: "In Progress → Ready for Testing · reassigned to Dee for testing" },
+    { id: "6", who: "c@x", at: at(3, 14), text: "edited a comment" },
+  ];
+  const h = k.ticketHistory(task, log, { now: new Date(at(4, 10)).getTime(), person: (e) => e.split("@")[0] });
+  assert.deepEqual(h.events.map((e) => e.id), ["6", "5", "4", "3", "2", "1", "created"], "newest first, ending where it was opened");
+  assert.equal(h.events.at(-1).who, "a@x"); assert.equal(h.events.at(-1).text, "opened this ticket");
+  assert.equal(h.events.find((e) => e.id === "2").from, null, "nobody held it before the first assignment");
+  assert.equal(h.events.find((e) => e.id === "4").handoffFrom, "Cee"); assert.equal(h.events.find((e) => e.id === "5").handoffFrom, "Dee");
+  const H = 3600000;
+  assert.equal(h.stats.openMs, 72 * H); assert.equal(h.stats.closed, false);
+  assert.equal(h.stats.handoffs, 4); assert.equal(h.stats.moves, 3); assert.equal(h.stats.edits, 1);
+  const col = Object.fromEntries(h.stats.columns.map((c) => [c.status, c.ms / H]));
+  assert.deepEqual(col, { backlog: 24, "ready-for-dev": 0, "in-progress": 26 + 21, "ready-for-testing": 1, approved: 0 });
+  assert.equal(h.stats.columns.reduce((a, c) => a + c.ms, 0), h.stats.openMs, "the columns add up to the time open");
+  // A closed ticket's clock stops when it was closed; a ticket with no moves has spent all its time where it is.
+  const done = k.ticketHistory({ created: at(1, 10), status: "done", closedAt: at(2, 10) }, [{ who: "a@x", at: at(2, 10), text: "Backlog → Completed" }], { now: new Date(at(9, 10)).getTime() });
+  assert.equal(done.stats.openMs, 24 * H); assert.equal(done.stats.closed, true);
+  const still = k.ticketHistory({ created: at(1, 10), status: "ready-for-dev" }, [], { now: new Date(at(1, 12)).getTime() });
+  assert.equal(still.stats.columns.find((c) => c.status === "ready-for-dev").ms, 2 * H); assert.equal(still.stats.handoffs, 0);
+  assert.equal(k.fmtAge(72 * H), "3d"); assert.equal(k.fmtAge(73 * H), "3d 1h"); assert.equal(k.fmtAge(1.5 * H), "1h 30m"); assert.equal(k.fmtAge(5 * 60000), "5m"); assert.equal(k.fmtAge(20000), "under a minute");
+});
+t("spoken names: a name or its pronunciation becomes a tag only when it is certain (KB-VOICE-1)", () => {
+  assert.deepEqual(k.soundAlikes('Said "Zuong" (northern Vietnamese)'), ["zuong"]);
+  assert.deepEqual(k.soundAlikes('Said close to "Took"'), ["took"]);
+  assert.deepEqual(k.soundAlikes("Hong"), ["hong"]); assert.deepEqual(k.soundAlikes("Rhymes with song, more or less"), []); assert.deepEqual(k.soundAlikes(null), []);
+  const ppl = [
+    { id: "duong@x", name: "Nguyễn Dương", first: "Dương", said: ["zuong"] },
+    { id: "thuc@x", name: "Trần Thức", first: "Thức", said: ["took"] },
+    { id: "rob@x", name: "Rob Smith", first: "Rob", said: ["rob"] },
+    { id: "m1@x", name: "Minh Anh", first: "Minh" }, { id: "m2@x", name: "Minh Châu", first: "Minh" },
+  ];
+  const shape = (text) => k.matchSpokenNames(text, ppl).map((x) => (x.t === "mention" ? `@${x.id}` : x.t === "unsure" ? `?${x.text}:${x.candidates.map((c) => c.id).join("/")}` : x.text)).join("|");
+  // A pronunciation that is no ordinary word is the person; one that is ("took") needs the sentence to say so.
+  assert.equal(shape("Can you ask Zuong to check this and tell Took as well"), "Can you ask |@duong@x| to check this and tell |@thuc@x| as well");
+  assert.equal(shape("I took the bus. Rob please review"), "I took the bus. |@rob@x| please review");
+  assert.equal(shape("they rob the bank"), "they rob the bank", "an everyday word with nothing pointing at a person is left alone, not even offered");
+  // The spelling without its accents, a full name, "at Rob" and "@ Rob" said for a tag.
+  assert.equal(shape("Rob Smith's fix works, ask Duong"), "@rob@x|'s fix works, ask |@duong@x");
+  assert.equal(shape("At rob this is ready"), "@rob@x| this is ready");
+  assert.equal(shape("@ Rob have a look"), "@rob@x| have a look");
+  // Two people with the name, or a near miss where a name is expected: offered, never tagged.
+  assert.equal(shape("please tag Minh"), "please tag |?Minh:m1@x/m2@x");
+  assert.equal(shape("Thanks Zoung looks good"), "Thanks |?Zoung:duong@x| looks good");
+  assert.equal(shape("the zoning is wrong"), "the zoning is wrong");
+  // The segments always spell the transcript back exactly.
+  for (const text of ["Can you ask Zuong to check this and tell Took as well", "please tag Minh", "At rob this is ready", "nothing here", ""]) {
+    assert.equal(k.matchSpokenNames(text, ppl).map((x) => (x.t === "mention" ? x.said : x.text)).join(""), text);
+  }
+  assert.deepEqual(k.matchSpokenNames("hello Rob", []), [{ t: "text", text: "hello Rob" }]);
+});
 console.log(`\n${n} passed`);

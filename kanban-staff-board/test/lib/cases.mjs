@@ -32,7 +32,8 @@ export function defineNewCases(E) {
   async function openTask(p, key) {
     await p.$eval(card(key), (e) => e.scrollIntoView({ block: "center" }));
     await press(p, card(key));
-    await p.waitForSelector("#f-title");
+    // In the page, not necessarily on show: the console opens a ticket for reading, and a viewer's stays that way.
+    await p.waitForSelector("#f-title", { state: "attached" });
     await sleep(80);
   }
   async function closeTask(p) { await press(p, "#f-cancel"); await p.waitForFunction(() => document.getElementById("task-backdrop").hidden); }

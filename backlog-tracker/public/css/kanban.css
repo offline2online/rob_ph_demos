@@ -843,3 +843,80 @@ html[data-page="staff-kanban"] #dialog-backdrop { z-index: 60; }
 .kb-page .material-symbols-outlined, #task-backdrop .material-symbols-outlined { display: inline-block; width: 1em; height: 1em; overflow: hidden; white-space: nowrap; flex: none; }
 .kb-record-dot { flex: 0 0 44px; min-width: 44px; min-height: 44px; padding: 0; box-sizing: border-box; aspect-ratio: 1 / 1; overflow: hidden; }
 .kb-record-btn { flex: none; max-width: 100%; box-sizing: border-box; }
+
+/* ── Ticket view: read first, edit on request (KB-VIEW-1) ─────────────────
+   An existing ticket's title, description, acceptance criteria, linked tickets
+   and details column read as text until their edit icon is pressed. The form
+   controls are in the page from the start (Save compares them with what was
+   loaded) and are simply not shown while a field is locked. */
+.kb-lockable.kb-locked > .kb-edit-body { display: none; }
+.kb-lockable:not(.kb-locked) > .kb-ro { display: none; }
+.kb-lockable:not(.kb-locked) .kb-ro-edit { display: none; }
+.kb-ro-head { display: flex; align-items: center; gap: 6px; }
+.kb-ro-head > .field-label { flex: 1 1 auto; min-width: 0; }
+.kb-ro-row { display: flex; align-items: flex-start; gap: 6px; }
+.kb-ro-edit { flex: none; width: 32px; height: 32px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.kb-ro-edit .material-symbols-outlined { font-size: 18px; }
+.kb-ro-edit:focus-visible, .kb-ro-more:focus-visible, .kb-voice-pick:focus-visible, .kb-thread-tabs [role="tab"]:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.kb-ro-title { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 20px; font-weight: 600; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; }
+.kb-ro-desc { font-size: 14px; overflow-wrap: anywhere; }
+.kb-ro-clamp { max-height: 168px; overflow: hidden; }
+.kb-ro-more { margin: 4px 0 0; padding: 4px 0; min-height: 32px; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 500; color: var(--primary-text); cursor: pointer; }
+.kb-ro-more[hidden] { display: none; }
+.kb-task-side.kb-lockable > .kb-ro > .kb-ro-head > .field-label { margin-top: 0; }
+.kb-task-side .kb-edit-body > .kb-field:first-child .field-label { margin-top: 0; }
+.kb-ro-details { margin: 4px 0 0; display: grid; gap: 8px; }
+.kb-ro-item { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; align-items: center; }
+.kb-ro-item dt { font-size: 12px; color: var(--text-muted); }
+.kb-ro-item dd { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
+.kb-ro-item dd .material-symbols-outlined { font-size: 18px; }
+.kb-label-ro { padding: 2px 8px; }
+/* Locked criteria can still be ticked; their wording, order and the add row wait for the edit icon. */
+.kb-lockable.kb-locked .kb-ac-add, .kb-lockable.kb-locked[data-field="links"] .kb-add-row { display: none; }
+/* A checklist is ticked with boxes, not the console's switches (which do not fit an 18px box). */
+.kb-ac-item input[type="checkbox"].no-switch { appearance: auto; -webkit-appearance: checkbox; border-radius: 3px; background: none; }
+.kb-ac-item .kb-ac-ro-text { display: block; min-height: 0; padding: 4px 6px; font-size: 13.5px; overflow-wrap: anywhere; }
+
+/* Comments | History (KB-VIEW-2) */
+.kb-thread { margin-top: 16px; }
+.kb-thread-tabs { margin: 0 0 10px; }
+.kb-thread-tabs [role="tab"] { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13.5px; font-weight: 500; color: var(--text); cursor: pointer; }
+.kb-tab-count { min-width: 20px; padding: 0 6px; border-radius: 9999px; background: var(--surface-2); color: var(--text-muted); font-size: 11.5px; font-weight: 600; line-height: 18px; text-align: center; }
+.kb-comment-voice { display: inline-flex; align-items: center; }
+.kb-comment-voice .material-symbols-outlined { font-size: 15px; }
+.kb-comment-menu-wrap { display: inline-flex; align-items: center; }
+.kb-comment-fix { width: 28px; height: 28px; padding: 0; }
+.kb-comment-fix .material-symbols-outlined { font-size: 17px; }
+/* After dictation: the transcript stays in the box to be checked; names that were not certain are offered here. */
+.kb-voice-review { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 6px 0 0; padding: 6px 10px; border-radius: 6px; background: var(--primary-tint); font-size: 12.5px; color: var(--text); }
+.kb-voice-review[hidden] { display: none; }
+.kb-voice-review > .material-symbols-outlined { font-size: 17px; color: var(--primary-text); }
+.kb-voice-unsure { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kb-voice-heard { font-weight: 600; }
+.kb-voice-pick { min-height: 28px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 9999px; background: var(--bg); font: inherit; font-size: 12.5px; font-weight: 500; color: var(--primary-text); cursor: pointer; }
+.kb-voice-pick:hover { border-color: var(--primary); }
+.kb-voice-skip { width: 28px; height: 28px; padding: 0; }
+
+/* History (KB-HIST-1): the figures, time per column, then the audit trail, newest first. */
+.kb-hist-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 8px; }
+.kb-hist-stat { background: var(--surface); border-radius: 8px; padding: 8px 10px; box-shadow: 0 0 0 .5px var(--ap-divider, rgba(0, 0, 0, .12)); min-width: 0; }
+.kb-hist-stat dt { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+.kb-hist-stat dd { margin: 2px 0 0; font-size: 18px; font-weight: 600; color: var(--text); }
+.kb-hist-cols { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.kb-hist-col { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 9999px; background: var(--surface-2); font-size: 12px; color: var(--text-muted); }
+.kb-hist-col b { color: var(--text); font-weight: 600; }
+.kb-history { gap: 8px; }
+.kb-history .kb-activity { align-items: flex-start; font-size: 12.5px; }
+.kb-hist-text { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+.kb-hist-at { flex: none; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+@media (max-width: 640px) {
+  .kb-hist-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kb-history .kb-activity { flex-wrap: wrap; }
+  .kb-hist-text { flex-basis: calc(100% - 40px); }
+  .kb-hist-at { flex-basis: 100%; padding-left: 32px; }
+  .kb-ro-title { font-size: 18px; }
+}
+@media (pointer: coarse) {
+  .kb-ro-edit, .kb-comment-fix, .kb-voice-skip { width: 44px; height: 44px; }
+  .kb-voice-pick, .kb-ro-more { min-height: 44px; }
+}

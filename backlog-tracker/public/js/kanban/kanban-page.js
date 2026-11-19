@@ -17,6 +17,7 @@ import {
   canonicalEmail, isAliasEmail, newCriterionId, AC_MAX_ITEMS, AC_MAX_TEXT, editActivity, ticketHash, ticketFromSub,
   MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, rollup, parentsToAdvance,
   AGENT_MAX_TICKETS, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit,
+  ticketHistory, fmtAge, matchSpokenNames,
 } from "./kanban-core.js";
 
 export function mountStaffKanban(ctx) {
@@ -1309,6 +1310,40 @@ export function mountStaffKanban(ctx) {
 
   // returnTo: the epic to reopen when a child ticket opened from it closes.
   let returnTo = null;
+  // An existing ticket opens for reading (KB-VIEW-1): its title, description, acceptance criteria, linked
+  // tickets and details column are read-only until their edit icon is pressed. `unlocked` holds what has
+  // been opened for editing on the ticket that is open; drawing the same ticket again keeps it, and
+  // closing the ticket clears it. A new ticket is a form from the start.
+  let unlocked = new Set(), lockKey = "", threadTab = "comments";
+  const lockable = () => !draftIsNew;
+  const isLocked = (k) => lockable() && !unlocked.has(k);
+  const editBtn = (k, what) => (canWrite() ? `<button type="button" class="icon-btn kb-ro-edit" data-kb-edit="${k}" title="Edit ${what}" aria-label="Edit ${what}"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>` : "");
+  // A field with a reading view and its form: the form is there from the start (Save compares it with what
+  // was loaded) and shows once the field is opened for editing.
+  const lockWrap = (k, ro, body) => (lockable()
+    ? `<div class="kb-field kb-lockable${isLocked(k) ? " kb-locked" : ""}" data-field="${k}"><div class="kb-ro">${ro}</div><div class="kb-edit-body">${body}</div></div>`
+    : `<div class="kb-field" data-field="${k}">${body}</div>`);
+  function unlockField(k, focus) {
+    if (!draft || !lockable() || !canWrite()) return;
+    unlocked.add(k);
+    const form = $("#task-form");
+    const el = k === "details" ? $("#kb-task-side") : $(`[data-field="${k}"]`, form);
+    if (el) el.classList.remove("kb-locked");
+    if (k === "criteria") redrawCriteria();
+    if (k === "links") { const l = $("#f-links"); if (l) l.innerHTML = linksHTML(); }
+    if (!focus) return;
+    if (k === "title") { const t = $("#f-title"); if (t) { t.focus(); t.select(); } }
+    else if (k === "description") { if (descQ) descQ.focus(); }
+    else if (k === "criteria") { const i = $("#f-ac-input"); if (i) i.focus(); }
+    else if (el) { const first = $("select, input, .kb-picker-input", $(".kb-edit-body", el) || el); if (first) first.focus(); }
+  }
+  // A long description is cut short with "Show more" until it is asked for.
+  function syncRoClamp() {
+    const box = $("#f-description-ro"), more = $('[data-ro-more="f-description-ro"]');
+    if (!box || !more) return;
+    const open = more.getAttribute("aria-expanded") === "true";
+    more.hidden = !open && box.scrollHeight <= box.clientHeight + 4;
+  }
   // The open ticket's comments and activity arrive from their own listeners.
   let threadUnsubs = [];
   function unwatchThread() { threadUnsubs.splice(0).forEach((u) => u()); editingComment = ""; editQ = null; agentItems = new Map(); agentSplit = null; }
@@ -1391,6 +1426,7 @@ export function mountStaffKanban(ctx) {
     if (key && !t) { openTaskByKey(key, preset); return; }
     if (!t && !canWrite()) return;
     draftIsNew = !t;
+    if (!t || t.key !== lockKey) { unlocked = new Set(); lockKey = t ? t.key : ""; threadTab = "comments"; voice = null; }
     returnTo = preset && preset.returnTo ? preset.returnTo : null;
     draft = t ? { ...clone(t), comments: [], activity: [], _acSeen: t.updated } : Object.assign({
       key: "", type: "task", title: "", description: "", status: "backlog",
@@ -1415,6 +1451,7 @@ export function mountStaffKanban(ctx) {
     syncCreateCta();
     $("#task-backdrop").hidden = false;
     document.body.classList.add("kb-modal-open");
+    syncRoClamp(); // measured once the dialog is on show
     setTimeout(() => { const f = $("#f-title"); if (f && draftIsNew) f.focus(); }, 30);
   }
   // A new ticket's heading and primary button follow its type.
@@ -1520,6 +1557,7 @@ export function mountStaffKanban(ctx) {
     opening++;
     clearInterval(changeTimer); changeBase = null; editBase = null;
     stopRecorder(true); unwatchThread(); $("#task-backdrop").hidden = true; document.body.classList.remove("kb-modal-open"); draft = null;
+    unlocked = new Set(); lockKey = ""; threadTab = "comments"; voice = null;
     if (!(opts && opts.keepAddress)) restoreAddress();
     const back = returnTo; returnTo = null;
     if (back && taskByKey(back)) openTask(back);
@@ -1553,9 +1591,14 @@ export function mountStaffKanban(ctx) {
         <div class="kb-voice-live" id="f-voice-live" hidden></div>
         <p class="mic-error" id="f-voice-error"></p>
       </div>`;
-      case "title": return `<div class="kb-field" data-field="title">${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?"></div>`;
-      case "description": return `<div class="kb-field" data-field="description">${label("description")}<div class="desc-wrap kb-ed-wrap"><div class="kb-editor" id="f-description"></div>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
-        ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}</div>`;
+      case "title": return lockWrap("title", `<div class="kb-ro-row"><h3 class="kb-ro-title" id="f-title-ro">${esc(d.title)}</h3>${editBtn("title", "title")}</div>`,
+        `${label("title")}<input type="text" id="f-title" class="kb-input kb-title-input" maxlength="200" value="${esc(d.title)}" placeholder="What needs doing?">`);
+      case "description": return lockWrap("description",
+        `<div class="kb-ro-head"><span class="field-label">${esc(FIELD_LABEL.description)}</span>${editBtn("description", "description")}</div>
+        <div class="kb-rich kb-ro-desc kb-ro-clamp" id="f-description-ro">${d.description ? KBEditor.sanitize(d.description) : '<span class="kb-none">No description</span>'}</div>
+        <button type="button" class="kb-ro-more" data-ro-more="f-description-ro" aria-expanded="false" hidden>Show more</button>`,
+        `${label("description")}<div class="desc-wrap kb-ed-wrap"><div class="kb-editor" id="f-description"></div>${draftIsNew ? "" : micBtn("f-desc-mic", "Dictate into the description")}</div>
+        ${draftIsNew ? '<button type="button" class="kb-agent-link" id="f-agent-fill"><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span><span>Fill in the ticket from this description</span></button>' : '<p class="mic-error" id="f-desc-mic-error"></p>'}`);
       case "status": return `<div class="kb-field" data-field="status">${label("status")}<select id="f-status" class="kb-input">${STATUSES.filter((s) => s.key !== "done").map((s) => opt(s.key, s.label, d.status)).join("")}${RESOLUTIONS.map((r) => opt("done:" + r.key, r.label, d.status === "done" ? "done:" + res(d) : "")).join("")}</select><p class="kb-inline-note" id="f-status-note" hidden></p></div>`;
       case "assignee": return `<div class="kb-field" data-field="assignee">${label("assignee")}<select id="f-assignee" class="kb-input">${opt("", "Unassigned", d.assignee)}${peopleWith(d.assignee).map((u) => opt(u.id, u.full, d.assignee)).join("")}</select></div>`;
       case "reporter": return `<div class="kb-field" data-field="reporter">${label("reporter")}<select id="f-reporter" class="kb-input">${opt("", "—", d.reporter)}${peopleWith(d.reporter).map((u) => opt(u.id, u.full, d.reporter)).join("")}</select></div>`;
@@ -1604,20 +1647,32 @@ export function mountStaffKanban(ctx) {
       }
       case "interface": return interfaceHTML();
       case "agents": return agentsHTML();
-      case "links": return `<div class="kb-field" data-field="links">${label("links", "f-link-key")}
+      case "links": return `<div class="kb-field${lockable() ? ` kb-lockable${isLocked("links") ? " kb-locked" : ""}` : ""}" data-field="links"><div class="kb-ro-head">${label("links", "f-link-key")}${lockable() ? editBtn("links", "linked tickets") : ""}</div>
         <ul class="kb-sublist" id="f-links">${linksHTML()}</ul>
         <div class="kb-add-row"><select id="f-link-type" class="kb-input" aria-label="Link type">${LINK_TYPES.map((x) => opt(x, x, "relates to")).join("")}</select>
           ${pickerHTML("f-link-key", "Search tickets by number, title or description")}</div></div>`;
-      case "criteria": return `<div class="kb-field" data-field="criteria"><label class="field-label" for="f-ac-input">Acceptance criteria <span class="kb-none" id="f-ac-count">${criteriaCountText()}</span></label>
+      case "criteria": return `<div class="kb-field${lockable() ? ` kb-lockable${isLocked("criteria") ? " kb-locked" : ""}` : ""}" data-field="criteria"><div class="kb-ro-head"><label class="field-label" for="f-ac-input">Acceptance criteria <span class="kb-none" id="f-ac-count">${criteriaCountText()}</span></label>${lockable() ? editBtn("criteria", "acceptance criteria") : ""}</div>
         <ul class="kb-sublist kb-ac" id="f-ac">${criteriaHTML()}</ul>
         ${canWrite() ? `<div class="kb-add-row kb-ac-add"><input type="text" id="f-ac-input" class="kb-input" maxlength="${AC_MAX_TEXT}" placeholder="Add a criterion and press Enter" autocomplete="off"><button type="button" class="btn-ghost" id="f-ac-add">Add</button></div>` : ""}
         <p class="kb-inline-note" id="f-ac-note" hidden></p></div>`;
       case "attachments": return `<div class="kb-field" data-field="attachments">${label("attachments", "f-file")}<ul class="kb-sublist" id="f-attachments">${attachmentsHTML()}</ul>
         <label class="btn-attach kb-attach-btn"><span class="material-symbols-outlined" aria-hidden="true">attach_file</span>Attach file<input type="file" id="f-file" accept="${esc(ATTACHMENT_ACCEPT)}" multiple hidden></label>${tip("Attach videos, PDFs, Excel, Word and PowerPoint files, images, text files and zips, up to 100 MB each. Pick several at once.")}</div>`;
-      case "comments": return `<div class="kb-field" data-field="comments">${label("comments", "f-comment")}<ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
-        <div class="desc-wrap kb-ed-wrap"><div class="kb-editor kb-editor-compact" id="f-comment"></div>${micBtn("f-comment-mic", "Dictate a comment")}</div>
-        <p class="mic-error" id="f-comment-mic-error"></p>
-        <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div></div>`;
+      // Comments and History share one place under the details (KB-VIEW-2): Comments first, with the box to add one.
+      case "comments": return `<div class="kb-field kb-thread" data-field="comments">
+        <div class="tabs kb-thread-tabs" role="tablist" aria-label="Comments and history">
+          <button type="button" role="tab" id="f-tab-comments" data-thread-tab="comments" aria-controls="f-panel-comments" aria-selected="${threadTab === "comments"}" tabindex="${threadTab === "comments" ? 0 : -1}">Comments <span class="kb-tab-count" id="f-comment-count">${(d.comments || []).length || d.commentCount || 0}</span></button>
+          <button type="button" role="tab" id="f-tab-history" data-thread-tab="history" aria-controls="f-panel-history" aria-selected="${threadTab === "history"}" tabindex="${threadTab === "history" ? 0 : -1}">History</button>
+        </div>
+        <div role="tabpanel" id="f-panel-comments" aria-labelledby="f-tab-comments"${threadTab === "comments" ? "" : " hidden"}>
+          <ul class="kb-comments" id="f-comments">${commentsHTML()}</ul>
+          <div class="desc-wrap kb-ed-wrap"><div class="kb-editor kb-editor-compact" id="f-comment"></div>${micBtn("f-comment-mic", "Dictate a comment")}</div>
+          <p class="mic-error" id="f-comment-mic-error"></p>
+          <div class="kb-voice-review" id="f-comment-review" role="status" hidden></div>
+          <div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" id="f-comment-add">Add comment</button></div>
+        </div>
+        <div role="tabpanel" id="f-panel-history" aria-labelledby="f-tab-history"${threadTab === "history" ? "" : " hidden"}>
+          <div id="f-history-wrap">${historyHTML()}</div>
+        </div></div>`;
     }
     return "";
   }
@@ -1629,7 +1684,9 @@ export function mountStaffKanban(ctx) {
   const criteriaCountText = () => { const l = acList(); return l.length ? `${l.filter((c) => c.done).length} of ${l.length} done` : "None yet"; };
   const criteriaHTML = () => {
     const l = acList(), w = canWrite();
-    return l.map((c, i) => `<li class="kb-ac-item${c.done ? " done" : ""}" data-ac="${esc(c.id)}"><input type="checkbox" data-ac-tick ${c.done ? "checked" : ""} ${w ? "" : "disabled"} aria-label="Done: ${esc(c.text)}"><input type="text" class="kb-input kb-ac-text" data-ac-text value="${esc(c.text)}" maxlength="${AC_MAX_TEXT}" ${w ? "" : "disabled"} aria-label="Criterion ${i + 1}">${w ? `<button type="button" class="icon-btn" data-ac-up ${i ? "" : "disabled"} aria-label="Move criterion ${i + 1} up"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button><button type="button" class="icon-btn" data-ac-down ${i < l.length - 1 ? "" : "disabled"} aria-label="Move criterion ${i + 1} down"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button><button type="button" class="icon-btn" data-ac-rm aria-label="Remove criterion ${i + 1}">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No acceptance criteria</li>';
+    // Read-only: the criteria can be ticked (a tester's job) but not reworded, moved or removed.
+    if (isLocked("criteria")) return l.map((c) => `<li class="kb-ac-item kb-ac-ro${c.done ? " done" : ""}" data-ac="${esc(c.id)}"><input type="checkbox" class="no-switch" data-ac-tick ${c.done ? "checked" : ""} ${w ? "" : "disabled"} aria-label="Done: ${esc(c.text)}"><span class="kb-ac-text kb-ac-ro-text">${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No acceptance criteria</li>';
+    return l.map((c, i) => `<li class="kb-ac-item${c.done ? " done" : ""}" data-ac="${esc(c.id)}"><input type="checkbox" class="no-switch" data-ac-tick ${c.done ? "checked" : ""} ${w ? "" : "disabled"} aria-label="Done: ${esc(c.text)}"><input type="text" class="kb-input kb-ac-text" data-ac-text value="${esc(c.text)}" maxlength="${AC_MAX_TEXT}" ${w ? "" : "disabled"} aria-label="Criterion ${i + 1}">${w ? `<button type="button" class="icon-btn" data-ac-up ${i ? "" : "disabled"} aria-label="Move criterion ${i + 1} up"><span class="material-symbols-outlined" aria-hidden="true">arrow_upward</span></button><button type="button" class="icon-btn" data-ac-down ${i < l.length - 1 ? "" : "disabled"} aria-label="Move criterion ${i + 1} down"><span class="material-symbols-outlined" aria-hidden="true">arrow_downward</span></button><button type="button" class="icon-btn" data-ac-rm aria-label="Remove criterion ${i + 1}">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No acceptance criteria</li>';
   };
   function redrawCriteria() {
     const el = $("#f-ac");
@@ -1884,7 +1941,7 @@ export function mountStaffKanban(ctx) {
     // Enter in a title must not submit the ticket's own form.
     form.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-agent-title]")) e.preventDefault(); });
   }
-  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button></li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
+  const linksHTML = () => (draft.links || []).map((l, i) => { const t = taskByKey(l.key); return `<li><span class="kb-link-type">${esc(l.type)}</span><span class="kb-link-key">${esc(l.key)}</span><span class="kb-link-title">${esc(t ? t.title : "")}</span>${t ? statusPill(t) : ""}${isLocked("links") ? "" : `<button type="button" class="icon-btn" data-rm-link="${i}" aria-label="Remove link">&times;</button>`}</li>`; }).join("") || '<li class="kb-none">No linked tickets</li>';
   const fmtSize = (n) => (typeof n === "number" ? (n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB") : String(n || ""));
   // The icon for an attachment, from its stored content type (else its name).
   const attachmentIcon = (a) => {
@@ -1899,11 +1956,15 @@ export function mountStaffKanban(ctx) {
   const attachmentsHTML = () => (draft.attachments || []).map((a, i) => `<li data-att-kind="${esc(attachmentIcon(a))}"><span class="material-symbols-outlined" aria-hidden="true">${attachmentIcon(a)}</span>${/^https:\/\//i.test(a.url || "") ? `<a class="kb-link-title" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">${esc(a.name)}</a>` : `<span class="kb-link-title">${esc(a.name)}</span>`}<span class="kb-none">${esc(a.uploading ? "Uploading…" : fmtSize(a.size))}</span>${canWrite() ? `<button type="button" class="icon-btn" data-rm-att="${i}" aria-label="Remove attachment">&times;</button>` : ""}</li>`).join("") || '<li class="kb-none">No attachments</li>';
   // Edit and Delete in a ⋮ menu: the author edits and deletes their own; an admin deletes anyone's (KB-MOD-3).
   let editingComment = "", editQ = null;
+  // A comment is its author's whichever of their addresses wrote it (KB-PPL-3): one their agent added over MCP is
+  // stored under the canonical address, and they may be signed in here with their second one.
+  const ownComment = (c) => !!c.author && canonicalEmail(c.author) === canonicalEmail(state.me);
   const commentMenuHTML = (c) => {
     if (!c.id || !canWrite() || c.id === editingComment) return "";
-    const own = c.author === state.me;
+    const own = ownComment(c);
     if (!own && !isAdmin()) return "";
-    return `<span class="kb-comment-menu-wrap"><button type="button" class="icon-btn kb-comment-menu-btn" data-comment-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Comment actions"><span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>
+    // The author's Edit is also a button of its own beside the menu, so a dictated comment is one press from being corrected.
+    return `<span class="kb-comment-menu-wrap">${own ? `<button type="button" class="icon-btn kb-comment-fix" data-comment-fix="${esc(c.id)}" title="Edit comment" aria-label="Edit comment"><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>` : ""}<button type="button" class="icon-btn kb-comment-menu-btn" data-comment-menu="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="Comment actions"><span class="material-symbols-outlined" aria-hidden="true">more_vert</span></button>
       <span class="kb-comment-menu" role="menu" hidden>${own ? `<button type="button" role="menuitem" data-comment-edit="${esc(c.id)}">Edit</button>` : ""}<button type="button" role="menuitem" data-comment-delete="${esc(c.id)}">Delete</button></span></span>`;
   };
   function redrawComments() {
@@ -1911,6 +1972,8 @@ export function mountStaffKanban(ctx) {
     const keep = editQ && editingComment ? KBEditor.getHtml(editQ) : null;
     editQ = null;
     el.innerHTML = commentsHTML();
+    const n = $("#f-comment-count"); if (n) n.textContent = String((draft.comments || []).length);
+    const hw = $("#f-history-wrap"); if (hw) hw.innerHTML = historyHTML();
     if (editingComment) mountCommentEditor(keep);
   }
   let editBase = null;
@@ -1947,14 +2010,79 @@ export function mountStaffKanban(ctx) {
     store.deleteComment(draft.key, id).then(() => toast("Comment deleted")).catch(fail);
   }
   const commentsHTML = () => {
-    const items = [...(draft.comments || []).map((c) => ({ ...c, kind: "c" })), ...(draft.activity || []).map((a) => ({ ...a, kind: "a" }))].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
-    return items.map((c) => c.kind === "c"
-      ? `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(fullName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
+    const items = [...(draft.comments || [])].sort((a, b) => String(a.at || "9").localeCompare(String(b.at || "9")));
+    return items.map((c) => `<li class="kb-comment" data-comment="${esc(c.id || "")}">${avatar(c.author)}<div class="kb-comment-body"><div class="kb-comment-meta"><b>${esc(fullName(c.author))}</b> · ${fmtDate(c.at, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${c.voice ? ' · <span class="kb-comment-voice" title="Added by voice"><span class="material-symbols-outlined" aria-hidden="true">mic</span><span class="visually-hidden">Added by voice</span></span>' : ""}${c.edited ? ' · <span class="kb-comment-edited">edited</span>' : ""}${commentMenuHTML(c)}</div>${c.id && c.id === editingComment
         ? `<div class="kb-editor kb-editor-compact" id="f-comment-edit"></div><div class="kb-add-row kb-add-row-end"><button type="button" class="btn-ghost" data-comment-cancel>Cancel</button><button type="button" class="btn-ghost" data-comment-save disabled>Save</button></div>`
-        : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`
-      : `<li class="kb-activity"><span class="material-symbols-outlined" aria-hidden="true">history</span><span><b>${esc(fullName(c.who))}</b> ${esc(c.text)}</span></li>`).join("") || '<li class="kb-none">No comments yet</li>';
+        : `<div class="kb-comment-text${c.html ? " kb-rich" : ""}">${c.html ? KBEditor.sanitize(c.html) : esc(c.text)}</div>`}</div></li>`).join("") || '<li class="kb-none">No comments yet</li>';
   };
+  // ── History (KB-HIST-1) ──────────────────────────────────────────────────
+  // The ticket's audit trail, newest first, in the reader's own time zone, under the figures read from it:
+  // how long it has been open, how long it spent in each column, and how often it changed hands.
+  const HIST_ICON = { created: "add", move: "swap_horiz", assign: "person", comment: "comment", edit: "edit" };
+  const histWhen = (iso) => (iso ? `<time class="kb-hist-at" datetime="${esc(iso)}">${esc(fmtDate(iso, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }))}</time>` : "");
+  function historyHTML() {
+    if (!draft || draftIsNew) return "";
+    const { events, stats } = ticketHistory(draft, draft.activity || [], { now: Date.now(), person: fullName });
+    const cols = stats.columns.filter((c) => c.ms > 0);
+    const stat = (id, label, value, help) => `<div class="kb-hist-stat" data-hist-stat="${id}"><dt>${esc(label)}${help ? tip(help) : ""}</dt><dd>${value}</dd></div>`;
+    const line = (e) => {
+      // A hand-off reads from → to; a line that only names who took it says who had it before.
+      const text = e.kind === "assign" && e.from && /^assigned to /.test(e.text) ? `${e.text} (from ${e.from})` : e.text;
+      return `<li class="kb-activity kb-hist-${e.kind}${e.handoff ? " kb-hist-handoff" : ""}" data-hist="${esc(e.kind)}"><span class="material-symbols-outlined" aria-hidden="true">${HIST_ICON[e.kind] || "history"}</span><span class="kb-hist-text"><b>${esc(fullName(e.who))}</b> ${esc(text)}</span>${histWhen(e.at)}</li>`;
+    };
+    return `<dl class="kb-hist-stats" id="f-history-stats">
+        ${stat("open", stats.closed ? "Time open (closed)" : "Time open", stats.openMs == null ? "—" : esc(fmtAge(stats.openMs)), "From when the ticket was opened until now, or until it was completed or withdrawn.")}
+        ${stat("handoffs", "Handoffs", String(stats.handoffs), "How many times the ticket changed hands: each reassignment, each hand-over to a tester and each return to the developer.")}
+        ${stat("moves", "Column moves", String(stats.moves))}
+        ${stat("edits", "Edits", String(stats.edits), "Field changes, criteria ticked or edited, links, flags, and comments edited or deleted.")}
+      </dl>
+      <div class="kb-hist-cols" id="f-history-cols" aria-label="Time in each column">${cols.length ? cols.map((c) => `<span class="kb-hist-col kb-sp-${c.status}" data-hist-col="${c.status}"><span class="kb-hist-col-name">${esc(c.label)}</span><b>${esc(fmtAge(c.ms))}</b></span>`).join("") : '<span class="kb-none">No time recorded in a column yet</span>'}</div>
+      <ul class="kb-comments kb-history" id="f-history">${events.map(line).join("") || '<li class="kb-none">No history yet</li>'}</ul>`;
+  }
+  function setThreadTab(name, focus) {
+    threadTab = name === "history" ? "history" : "comments";
+    for (const k of ["comments", "history"]) {
+      const tab = $("#f-tab-" + k), panel = $("#f-panel-" + k);
+      if (!tab || !panel) continue;
+      const on = k === threadTab;
+      tab.setAttribute("aria-selected", String(on)); tab.tabIndex = on ? 0 : -1;
+      panel.hidden = !on;
+      if (on && focus) tab.focus();
+    }
+    // The figures run to "now": opening History reads the clock again.
+    if (threadTab === "history") { const hw = $("#f-history-wrap"); if (hw) hw.innerHTML = historyHTML(); }
+  }
 
+  // The details column as it reads before it is opened for editing: one line per field.
+  function roDetail(k) {
+    const d = draft, none = (t) => `<span class="kb-none">${esc(t)}</span>`;
+    const who = (id) => (id ? `${avatar(id)}<span>${esc(fullName(id))}</span>` : none(k === "assignee" ? "Unassigned" : "—"));
+    let v = "";
+    switch (k) {
+      case "priority": v = d.priority ? esc(prioOf(d.priority).label) : none("—"); break;
+      case "type": v = `<span class="material-symbols-outlined kb-type-${typeOf(d.type).key}" aria-hidden="true">${typeOf(d.type).icon}</span><span>${esc(typeOf(d.type).label)}</span>`; break;
+      case "epic": { if (d.type === "epic") return ""; const e = d.epic && taskByKey(d.epic); v = d.epic ? `<span>${esc(d.epic)}${e ? " · " + esc(e.title) : ""}</span>` : none("No parent"); break; }
+      case "assignee": v = who(d.assignee); break;
+      case "reporter": v = who(d.reporter); break;
+      case "release": v = d.release ? esc(releaseName(d.release)) : none("No release"); break;
+      case "estimate": v = d.estimate === "" || d.estimate == null ? none("—") : esc(fmtH(d.estimate)); break;
+      case "logged": { const est = +d.estimate || 0, log = +d.logged || 0; v = log ? esc(est ? `${fmtH(log)} of ${fmtH(est)}` : fmtH(log)) : none("—"); break; }
+      case "sprint": { const sp = sprints().find((x) => x.id === d.sprint); v = sp ? esc(sp.name) : none("No sprint"); break; }
+      case "project": v = d.project ? esc(projectName(d.project) || d.project) : none("No project"); break;
+      case "due": v = d.due ? esc(fmtDate(d.due, { day: "numeric", month: "short", year: "numeric" })) : none("—"); break;
+      case "labels": v = (d.labels || []).length ? d.labels.map((l) => `<span class="kb-label-chip kb-label-ro">${esc(l)}</span>`).join("") : none("No labels"); break;
+      case "status": v = statusPill(d); break;
+      default: return "";
+    }
+    return `<div class="kb-ro-item" data-ro="${k}"><dt>${esc(FIELD_LABEL[k])}</dt><dd>${v}</dd></div>`;
+  }
+  function sideHTML(fields) {
+    const inner = fields.map(fieldHTML).join("");
+    if (!lockable()) return `<div class="kb-task-side" id="kb-task-side">${inner}</div>`;
+    return `<div class="kb-task-side kb-lockable${isLocked("details") ? " kb-locked" : ""}" id="kb-task-side">
+      <div class="kb-ro"><div class="kb-ro-head"><span class="field-label">Details</span>${editBtn("details", "details")}</div><dl class="kb-ro-details" id="f-details-ro">${fields.map(roDetail).join("")}</dl></div>
+      <div class="kb-edit-body">${inner}</div></div>`;
+  }
   function renderForm() {
     const form = $("#task-form");
     // A new task always starts in Backlog and has nothing to comment on yet.
@@ -1966,7 +2094,7 @@ export function mountStaffKanban(ctx) {
     form.innerHTML = `
       <div class="kb-task-grid${sideCollapsed ? " kb-side-collapsed" : ""}">
         <div class="kb-task-main">${main.filter(visible).map(fieldHTML).join("")}</div>
-        <div class="kb-task-side" id="kb-task-side">${side.filter(visible).map(fieldHTML).join("")}</div>
+        ${sideHTML(side.filter(visible))}
         <button type="button" class="kb-side-tab" id="kb-side-tab" aria-controls="kb-task-side" aria-expanded="false" title="Show details"><span class="material-symbols-outlined" aria-hidden="true">left_panel_open</span><span>Details</span></button>
       </div>
       ${!draftIsNew && hidden.length ? `<details class="kb-more"><summary>${hidden.length} more field${hidden.length > 1 ? "s" : ""}<span class="kb-more-names">${hidden.map((k) => esc(FIELD_LABEL[k])).join(", ")}</span></summary><div class="kb-more-body">${hidden.map(fieldHTML).join("")}</div></details>` : ""}
@@ -1977,10 +2105,13 @@ export function mountStaffKanban(ctx) {
         <div class="form-actions"><button type="button" class="btn-outline" id="f-cancel">${canWrite() ? "Cancel" : "Close"}</button>${canWrite() ? `<button type="submit" class="btn-primary" id="f-save"${draftIsNew ? "" : " disabled"}>${draftIsNew ? CREATE_CTA[draft.type] || CREATE_CTA.task : "Save"}</button>` : ""}</div>
       </div>`;
     bindForm();
+    syncRoClamp();
+    drawVoiceReview();
   }
   function bindForm() {
     const form = $("#task-form");
     bindAgents(form);
+    bindView(form);
     $$(".kb-type-toggle .type-opt", form).forEach((b) => b.addEventListener("click", () => {
       draft.type = b.dataset.type;
       syncCreateCta();
@@ -2028,8 +2159,8 @@ export function mountStaffKanban(ctx) {
         return;
       }
       if (e.target.closest("[data-comment-edit], [data-comment-delete]")) $$(".kb-comment-menu", form).forEach((m) => { m.hidden = true; });
-      const ce = e.target.closest("[data-comment-edit]");
-      if (ce) { editingComment = ce.dataset.commentEdit; redrawComments(); return; }
+      const ce = e.target.closest("[data-comment-edit], [data-comment-fix]");
+      if (ce) { editingComment = ce.dataset.commentEdit || ce.dataset.commentFix; redrawComments(); return; }
       const cd = e.target.closest("[data-comment-delete]");
       if (cd) { deleteCommentFlow(cd.dataset.commentDelete); return; }
       if (e.target.closest("[data-comment-cancel]")) { editingComment = ""; redrawComments(); return; }
@@ -2072,7 +2203,7 @@ export function mountStaffKanban(ctx) {
       $("#f-attachments").innerHTML = attachmentsHTML();
     });
     const ca = $("#f-comment-add");
-    if (ca) ca.addEventListener("click", () => { addCommentFromEditor(); });
+    if (ca) ca.addEventListener("click", () => { addCommentPressed(); });
     const loaded = draft, asDrawn = formState();
     bindEditors().finally(() => watchChanges(draft === loaded ? asDrawn : ""));
     bindVoice();
@@ -2308,13 +2439,155 @@ export function mountStaffKanban(ctx) {
     if (!html) return false;
     const mentioned = KBEditor.mentionsIn(html).filter((id) => id !== state.me);
     const who = mentioned.map(fullName);
-    const pending = { author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html) };
+    const spoken = !!(voice && voice.dictated);
+    const pending = { author: state.me, at: new Date().toISOString(), html, text: KBEditor.toText(html), voice: spoken };
     draft.comments = [...(draft.comments || []), pending];
+    voice = null; drawVoiceReview();
     redrawComments();
     commentQ.setContents([]);
-    store.addComment(draft.key, { html, text: pending.text }).catch(fail);
+    store.addComment(draft.key, { html, text: pending.text, via: spoken ? "voice" : "" }).catch(fail);
     toast(who.length ? `Comment added · ${esc(who.join(", "))} notified` : "Comment added");
     return true;
+  }
+  // Add comment pressed: while the box is still being dictated into, the names said are tagged first
+  // (a moment, never more than the request's own limit), so the people named are notified by this comment.
+  async function addCommentPressed() {
+    const q = commentQ, d = draft;
+    if (activeMic && activeMic.id === "f-comment-mic" && (rec || recStarting)) haltMic();
+    if (voiceRange) { const r = voiceRange; voiceRange = null; await tagDictation(r.q, r.start).catch(() => {}); }
+    else if (voice && voice.busy && voice.done) await voice.done.catch(() => {});
+    if (draft !== d || commentQ !== q) return;
+    addCommentFromEditor();
+  }
+  // ── Voice comments: spoken names become @mentions (KB-VOICE-1) ───────────
+  // When dictation into the comment box stops, the words heard go to the server, which matches them against
+  // the staff list and the staff pronunciation list (only the server holds that one) and says which names
+  // are certain. Those become @mention chips, exactly as if typed; a name it is not sure of stays as the
+  // words heard, with the closest people offered beside the box. If the server doesn't answer, the page
+  // matches against the names it shows (no pronunciations). Nothing is posted: the text stays in the box
+  // to be checked and corrected, and the posted comment can be edited by its author.
+  let voice = null;       // { dictated, busy, done, tagged: [name], unsure: [{ text, candidates: [{ id, name }] }] }
+  let voiceRange = null;  // where the current dictation began in the comment box
+  const VOICE_TIMEOUT_MS = 5000;
+  async function serverSegments(text) {
+    const user = ctx.auth && ctx.auth.currentUser;
+    if (!user) return null;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), VOICE_TIMEOUT_MS);
+    try {
+      const res = await fetch("/mcp/kanban/voice-mentions", { method: "POST", signal: ctl.signal, headers: { "Content-Type": "application/json", "X-Firebase-ID-Token": await user.getIdToken() }, body: JSON.stringify({ text }) });
+      if (!res.ok) return null;
+      const out = await res.json();
+      return out && Array.isArray(out.segments) ? out.segments : null;
+    } catch { return null; } finally { clearTimeout(timer); }
+  }
+  // Only people the board lists are tagged, by the name it shows, and never the speaker.
+  function cleanSegments(segs, heard) {
+    const known = (id) => { const u = id && id !== "none" ? peopleById.get(canonicalEmail(id)) : null; return u && canonicalEmail(u.id) !== canonicalEmail(me) ? u : null; };
+    const out = [];
+    for (const sg of segs || []) {
+      if (!sg || typeof sg !== "object") continue;
+      if (sg.t === "mention") { const u = known(sg.id); out.push(u ? { t: "mention", id: u.id, name: u.full || u.first, said: String(sg.said || "") } : { t: "text", text: String(sg.said || "") }); }
+      else if (sg.t === "unsure") { const c = (sg.candidates || []).map((x) => known(x && x.id)).filter(Boolean).slice(0, 3).map((u) => ({ id: u.id, name: u.full || u.first })); out.push(c.length ? { t: "unsure", text: String(sg.text || ""), candidates: c } : { t: "text", text: String(sg.text || "") }); }
+      else out.push({ t: "text", text: String(sg.text || "") });
+    }
+    // The segments must spell what was heard, or nothing is changed.
+    return out.map((x) => (x.t === "mention" ? x.said : x.text)).join("") === heard ? out : null;
+  }
+  async function tagDictation(q, start) {
+    if (!q || q !== commentQ) return;
+    const heard = q.getText(start, Math.max(0, q.getLength() - 1 - start));
+    if (!heard.trim()) return;
+    people();
+    const state0 = voice = { dictated: true, busy: true, tagged: (voice && voice.tagged) || [], unsure: (voice && voice.unsure) || [] };
+    drawVoiceReview();
+    state0.done = (async () => {
+      const local = () => matchSpokenNames(heard, people().filter((u) => canonicalEmail(u.id) !== canonicalEmail(me)).map((u) => ({ id: u.id, name: u.full, first: u.first })));
+      const segs = cleanSegments(await serverSegments(heard), heard) || cleanSegments(local(), heard) || [];
+      state0.busy = false;
+      if (voice !== state0) return;
+      // Typed over while the names were being matched: the text is the person's now, and is left as it is.
+      if (q !== commentQ || q.getText(start, heard.length) !== heard) { drawVoiceReview(); return; }
+      if (segs.some((x) => x.t === "mention")) {
+        q.deleteText(start, heard.length, "user");
+        let at = start;
+        for (const x of segs) {
+          if (x.t === "mention") { q.insertEmbed(at, "mention", { id: x.id, name: x.name }, "user"); at += 1; if (!state0.tagged.includes(x.name)) state0.tagged.push(x.name); }
+          else { q.insertText(at, x.text, "user"); at += x.text.length; }
+        }
+        q.setSelection(q.getLength() - 1, 0, "silent");
+      }
+      for (const x of segs) if (x.t === "unsure" && !state0.unsure.some((u) => u.text === x.text)) state0.unsure.push({ text: x.text, candidates: x.candidates });
+      edStale();
+      drawVoiceReview();
+    })();
+    return state0.done;
+  }
+  // Where `needle` sits in an editor's document (a chip counts as one place, which getText() leaves out).
+  function findInEditor(q, needle) {
+    let at = 0;
+    for (const op of q.getContents().ops || []) {
+      if (typeof op.insert !== "string") { at += 1; continue; }
+      const i = op.insert.indexOf(needle);
+      if (i >= 0) return at + i;
+      at += op.insert.length;
+    }
+    return -1;
+  }
+  function drawVoiceReview() {
+    const el = $("#f-comment-review");
+    if (!el) return;
+    if (!voice || !voice.dictated) { el.hidden = true; el.innerHTML = ""; return; }
+    const unsure = voice.unsure.map((u, i) => `<span class="kb-voice-unsure" data-voice-unsure="${i}"><span class="kb-voice-heard">“${esc(u.text)}”</span>${u.candidates.map((c) => `<button type="button" class="kb-voice-pick" data-voice-pick="${i}" data-voice-id="${esc(c.id)}">Tag ${esc(c.name)}</button>`).join("")}<button type="button" class="icon-btn kb-voice-skip" data-voice-skip="${i}" title="Leave as written" aria-label="Leave ${esc(u.text)} as written">&times;</button></span>`).join("");
+    el.innerHTML = `<span class="material-symbols-outlined" aria-hidden="true">mic</span><span class="kb-voice-review-text" id="f-comment-review-text">${voice.busy ? "Checking the names you said…" : `Added by voice. Check the words before you add the comment${voice.tagged.length ? ` · tagged ${esc(voice.tagged.join(", "))}` : ""}.`}</span>${unsure}`;
+    el.hidden = false;
+  }
+  function pickVoiceName(i, id) {
+    const u = voice && voice.unsure[i];
+    if (!u || !commentQ) return;
+    const person = id ? peopleById.get(canonicalEmail(id)) : null;
+    if (person) {
+      const at = findInEditor(commentQ, u.text);
+      if (at >= 0) {
+        commentQ.deleteText(at, u.text.length, "user");
+        commentQ.insertEmbed(at, "mention", { id: person.id, name: person.full || person.first }, "user");
+        if (!voice.tagged.includes(person.full || person.first)) voice.tagged.push(person.full || person.first);
+        toast(`<b>${esc(person.full || person.first)}</b> will be notified when you add the comment`);
+      }
+    }
+    voice.unsure.splice(i, 1);
+    edStale();
+    drawVoiceReview();
+  }
+  // The reading view's own controls: edit icons, "Show more", the Comments / History tabs, the names offered after dictation.
+  function bindView(form) {
+    if (form._viewBound) return;
+    form._viewBound = true;
+    form.addEventListener("click", (e) => {
+      const ed = e.target.closest("[data-kb-edit]");
+      if (ed) { e.preventDefault(); unlockField(ed.dataset.kbEdit, true); return; }
+      const more = e.target.closest("[data-ro-more]");
+      if (more) {
+        const box = $("#" + more.dataset.roMore), open = more.getAttribute("aria-expanded") !== "true";
+        if (box) box.classList.toggle("kb-ro-clamp", !open);
+        more.setAttribute("aria-expanded", String(open)); more.textContent = open ? "Show less" : "Show more";
+        return;
+      }
+      const tab = e.target.closest("[data-thread-tab]");
+      if (tab) { setThreadTab(tab.dataset.threadTab); return; }
+      const pick = e.target.closest("[data-voice-pick]");
+      if (pick) { pickVoiceName(+pick.dataset.voicePick, pick.dataset.voiceId); return; }
+      const skip = e.target.closest("[data-voice-skip]");
+      if (skip) pickVoiceName(+skip.dataset.voiceSkip, "");
+    });
+    form.addEventListener("keydown", (e) => {
+      const tab = e.target.closest && e.target.closest("[data-thread-tab]");
+      if (!tab || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+      e.preventDefault();
+      setThreadTab(e.key === "Home" ? "comments" : e.key === "End" ? "history" : tab.dataset.threadTab === "comments" ? "history" : "comments", true);
+    });
+    // A picture that arrives late makes a description taller: look again whether it needs "Show more".
+    form.addEventListener("load", (e) => { if (e.target.closest && e.target.closest("#f-description-ro")) syncRoClamp(); }, true);
   }
   // A text box the mic dictates into: a Quill editor or a plain field.
   function dictationTarget(id) {
@@ -2322,7 +2595,7 @@ export function mountStaffKanban(ctx) {
     if (q) {
       let start = 0;
       return {
-        begin() { start = Math.max(0, q.getLength() - 1); if (start && !/\s$/.test(q.getText(start - 1, 1))) { q.insertText(start, " ", "user"); start++; } },
+        begin() { start = Math.max(0, q.getLength() - 1); if (start && !/\s$/.test(q.getText(start - 1, 1))) { q.insertText(start, " ", "user"); start++; } return start; },
         live(t) {
           const said = start ? t : t.charAt(0).toUpperCase() + t.slice(1);
           // A caret the person put at the end stays at the end: rewriting the
@@ -2358,7 +2631,12 @@ export function mountStaffKanban(ctx) {
     const box = $("#" + taId);
     const typed = (e) => {
       if (e.type === "keydown" && (e.ctrlKey || e.metaKey || e.altKey || !e.key || !(e.key.length === 1 || e.key === "Backspace" || e.key === "Delete" || e.key === "Enter"))) return;
-      if (activeMic === mic && (rec || recStarting)) haltMic();
+      if (activeMic === mic && (rec || recStarting)) {
+        haltMic();
+        // The comment was begun by voice and finished by hand: it is still shown for checking, and the
+        // typed text is left exactly as typed (no names are tagged in it afterwards).
+        if (btnId === "f-comment-mic") { voiceRange = null; if (!voice) voice = { dictated: true, busy: false, tagged: [], unsure: [] }; drawVoiceReview(); }
+      }
       else if (!rec && !recStarting) micRun++; // a late result from a run already stopped writes nothing over the edit
     };
     if (box) ["beforeinput", "keydown", "paste", "drop"].forEach((t) => box.addEventListener(t, typed, true));
@@ -2371,14 +2649,17 @@ export function mountStaffKanban(ctx) {
         if (wasMe) return;
       }
       if (err) err.classList.remove("on");
-      target.begin();
+      const began = target.begin();
+      // The comment box remembers where this dictation began: the names said in it are tagged when it stops.
+      const tags = btnId === "f-comment-mic" && commentQ && typeof began === "number" ? { q: commentQ, start: began } : null;
+      voiceRange = tags;
       activeMic = mic;
       const run = ++micRun;
       startRecorder({
         onLive: (t) => { if (run === micRun) target.live(t); },
         onState: (st) => { const on = st === "recording"; show(on); if (on) activeMic = mic; else if (activeMic === mic) activeMic = null; },
         onError: (m) => { if (err) { err.textContent = m; err.classList.add("on"); } show(false); },
-        onDone: () => {},
+        onDone: () => { if (tags && run === micRun && voiceRange === tags) { voiceRange = null; tagDictation(tags.q, tags.start).catch(() => {}); } },
       });
     });
   }
@@ -2649,7 +2930,7 @@ export function mountStaffKanban(ctx) {
     $$(".kb-field-error", form).forEach((x) => x.classList.remove("kb-field-error"));
     const err = $("#f-error");
     if (errors.length) {
-      errors.forEach(([k]) => { const f = $(`[data-field="${k}"]`, form); if (f) f.classList.add("kb-field-error"); });
+      errors.forEach(([k]) => { const f = $(`[data-field="${k}"]`, form); if (f) f.classList.add("kb-field-error"); unlockField(f && f.closest("#kb-task-side") ? "details" : k); });
       if (sideCollapsed && errors.some(([k]) => $(`#kb-task-side [data-field="${k}"]`))) setSideCollapsed(false);
       err.hidden = false; err.textContent = errors.map((x) => x[1]).join(" · ");
       return;
@@ -2662,6 +2943,7 @@ export function mountStaffKanban(ctx) {
       const why = parentProblem(next, next.epic, taskByKey, childrenOf);
       if (why) {
         const f = $('[data-field="epic"]', form); if (f) f.classList.add("kb-field-error");
+        unlockField("details");
         if (sideCollapsed) setSideCollapsed(false);
         err.hidden = false; err.textContent = why;
         return;

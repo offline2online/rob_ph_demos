@@ -78,6 +78,7 @@ export async function startHarness() {
     const enrichCalls = [];
     const supportCalls = [];
     const agentSendCalls = [];
+    const voiceMentionCalls = [];
     // Settings → My Claude Routine (/mcp/me/routine-binding): seed.routineBinding
     // is { hasRoutineBinding }; a POST is recorded in routineWrites and flips it.
     const routineWrites = [];
@@ -119,6 +120,15 @@ export async function startHarness() {
             ? (seed.agentSplit || { proposal: [{ title: "The whole ticket", description: "", acceptanceCriteria: [] }], source: "ticket", projectId: "" })
             : { created: (body.tickets || []).map((x, i) => ({ id: `agent-${i + 1}`, title: x.title, projectId: body.projectId })), agentTotal: (body.tickets || []).length, agentDone: 0 };
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer) });
+        }
+        // Spoken names in a dictated comment (functions/kanban.js handleVoiceMentions): seed.voiceMentions(text) stands in
+        // for the server's match (it alone holds the pronunciations); without it the answer is "no segments" and the
+        // page matches against the names it shows. Every text asked about is returned as voiceMentionCalls.
+        if (url.pathname === "/mcp/kanban/voice-mentions") {
+          const body = JSON.parse(route.request().postData() || "{}");
+          voiceMentionCalls.push(body.text);
+          const hit = (seed.voiceMentions || []).find((x) => x.text === body.text);
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(hit ? { segments: hit.segments, source: "server" } : { segments: null, reason: "error" }) });
         }
         if (url.pathname === "/mcp/kanban/agent-fill") {
           return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.agentDraft ? { draft: seed.agentDraft, source: "claude" } : { draft: null, reason: "not-configured" }) });
@@ -224,7 +234,7 @@ export async function startHarness() {
     // a case's own 8 s wait, and the case failed on a page that was still
     // starting (Modals @820px, Promote Leads, mobile-shell; 24 Oct-14 Nov 2026).
     if (waitForApp) await appRendered(page).catch(() => {});
-    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, routineWrites, origin, close: () => context.close() };
+    return { page, context, problems, refused, mediaKeyWrites, aceWrites, enrichCalls, supportCalls, agentSendCalls, voiceMentionCalls, routineWrites, origin, close: () => context.close() };
   }
 
   return {

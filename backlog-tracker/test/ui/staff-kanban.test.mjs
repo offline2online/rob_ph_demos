@@ -112,10 +112,30 @@ async function open(prof, hash = "#staff-kanban", o = {}) {
   const p = op.page;
   await until(() => p.locator(hash.includes("report") || hash.includes("settings") ? "#kb-view .page-header" : ".kb-card").count(), "the Staff Kanban page", 20000);
   await p.waitForTimeout(150);
-  p.profile = prof; p.engine = prof.engine; p.ctx = op.context; p.agentCalls = op.agentSendCalls;
+  p.profile = prof; p.engine = prof.engine; p.ctx = op.context; p.agentCalls = op.agentSendCalls; p.voiceCalls = op.voiceMentionCalls;
   // A card opens its ticket in a new tab (KB-LINK-1). The cases written before that drive the ticket in this page, which is
   // what the board does when the browser refuses a new tab; KB-C15 (o.newTab) covers the new tab itself.
   if (!o.newTab) { const block = () => { window.open = () => null; }; await p.addInitScript(block); await p.evaluate(block); }
+  // An existing ticket opens for reading (KB-VIEW-1): its title, description, criteria, links and details are read-only
+  // until their edit icon is pressed. The cases written before that drive the ticket's form, so here every edit icon is
+  // pressed as soon as a ticket is drawn; KB-C35 to KB-C38 (o.review) cover the reading view itself.
+  if (!o.review) {
+    const openForEditing = () => {
+      // (pressing an edit icon puts the cursor in its field; the case's own focus is put back)
+      const press = () => {
+        for (const b of document.querySelectorAll("#task-form .kb-locked [data-kb-edit]")) {
+          const was = document.activeElement;
+          b.click();
+          const now = document.activeElement;
+          if (now === was || !now || !document.querySelector("#task-form").contains(now)) continue;
+          if (was && was !== document.body && was.focus) was.focus(); else now.blur();
+        }
+      };
+      const start = () => { const form = document.querySelector("#task-form"); if (!form) return false; new MutationObserver(press).observe(form, { childList: true, subtree: true }); press(); return true; };
+      if (!start()) document.addEventListener("DOMContentLoaded", start);
+    };
+    await p.addInitScript(openForEditing); await p.evaluate(openForEditing);
+  }
   // Every case also ends comparing each ticket with its board card: a write path that changes a ticket without its card fails here.
   p.done = async (o = {}) => { const bad = o.allow ? op.problems.filter((x) => !o.allow.test(x)) : op.problems; assert.deepEqual(bad, [], "no page errors, console errors or stray requests"); assert.deepEqual(await cardDrift(p), [], "every ticket's card matches the ticket"); await op.close(); };
   return p;
@@ -2209,6 +2229,251 @@ const E = {
   },
 };
 defineNewCases(E);
+
+// ── Ticket view: read first, comment, history, voice (19 Nov 2026) ───────────
+// These open a ticket as a person finds it (o.review: no edit icon is pressed for the case).
+const REVIEW = { review: true };
+const lockedFields = (p) => p.$$eval("#task-form .kb-lockable", (els) => els.map((e) => `${e.id === "kb-task-side" ? "details" : e.dataset.field}:${e.classList.contains("kb-locked") ? "locked" : "open"}`).join(" "));
+const shown = (p, sel) => p.$eval(sel, (e) => !!e.getClientRects().length && getComputedStyle(e).visibility !== "hidden").catch(() => false);
+const commentWrites = async (p, key) => (await writes(p, new RegExp(`^kanbanTasks/${key}/comments/`))).filter((w) => w.data);
+
+T("KB-C35", "an existing ticket opens for reading: details read-only with an edit icon each, Comments first with the box to add one; a new task is the form it always was", { timeout: 120000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed: kanbanSeed({ extra: { kanbanTasks: { "PH-20": { ...KB.kanbanTasks["PH-20"], acceptanceCriteria: ["aaaaaaaa\t0\tPreview shows the offer price", "bbbbbbbb\t1\tLive board unchanged"], acTotal: 2, acDone: 1 } } } }) });
+  // New task: a form from the start, nothing to unlock.
+  await openNewTask(p);
+  assert.equal(await p.$$eval("#task-form .kb-lockable, #task-form [data-kb-edit], #task-form [role=tab]", (e) => e.length), 0, "a new task has no reading view and no tabs");
+  assert.ok(await shown(p, "#f-title") && await shown(p, "#f-record"), "the creation form is unchanged");
+  await press(p, "#f-cancel");
+  // An existing ticket.
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#f-title-ro");
+  assert.equal((await lockedFields(p)).split(" ").sort().join(" "), "criteria:locked description:locked details:locked links:locked title:locked");
+  assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows RRP instead of local offer price");
+  assert.match(await p.textContent("#f-description-ro"), /products with an active local offer still show HQ RRP/);
+  for (const sel of ["#f-title", "#f-description", "#f-status", "#f-assignee", "#f-ac-input", "#f-link-type"]) assert.equal(await shown(p, sel), false, `${sel} is not on show while the ticket is read`);
+  assert.match(await p.textContent('#f-details-ro [data-ro="assignee"] dd'), new RegExp(`${FULL.huy}$`)); assert.match(await p.textContent('#f-details-ro [data-ro="status"]'), /In Progress/i); assert.match(await p.textContent('#f-details-ro [data-ro="priority"]'), /Highest/);
+  assert.deepEqual((await p.$$eval("#task-form .kb-locked [data-kb-edit]", (b) => b.map((x) => x.getAttribute("aria-label")))).sort(), ["Edit acceptance criteria", "Edit description", "Edit details", "Edit linked tickets", "Edit title"]);
+  // Comments is the tab that is open, with the box and its mic ready; History is one press away.
+  assert.equal(await p.getAttribute("#f-tab-comments", "aria-selected"), "true"); assert.equal(await p.getAttribute("#f-tab-history", "aria-selected"), "false");
+  await p.waitForSelector('[data-field="comments"] .ql-editor');
+  assert.ok(await shown(p, "#f-comment-add") && await shown(p, "#f-comment-mic") && await shown(p, '[data-field="comments"] .ql-editor'), "the add-comment box is on show");
+  assert.equal(await shown(p, "#f-history"), false);
+  assert.equal(await p.$eval("#f-save", (e) => e.disabled), true, "nothing to save yet");
+  // Read-only criteria can still be ticked (a tester's job) but not reworded.
+  assert.equal(await p.$$eval("#f-ac .kb-ac-ro-text", (e) => e.map((x) => x.textContent).join("|")), "Preview shows the offer price|Live board unchanged");
+  assert.equal(await p.$$eval("#f-ac input[type=text], #f-ac [data-ac-rm]", (e) => e.length), 0);
+  await p.check('#f-ac [data-ac="aaaaaaaa"] [data-ac-tick]');
+  await eventually(async () => assert.match((await stored(p, "PH-20")).acceptanceCriteria[0], /^aaaaaaaa\t1\t/, "the tick is saved at once"));
+  // A comment, typed: the primary thing to do here.
+  await p.click('[data-field="comments"] .ql-editor'); await p.keyboard.type("Looks right to me");
+  await press(p, "#f-comment-add");
+  await eventually(async () => assert.equal((await commentWrites(p, "PH-20")).at(-1).data.text, "Looks right to me"));
+  assert.equal((await commentWrites(p, "PH-20")).at(-1).data.via, undefined, "a typed comment is not marked as dictated");
+  // The edit icon on the title opens it; Save writes it.
+  await press(p, '[data-kb-edit="title"]');
+  assert.ok(await shown(p, "#f-title"), "the title field shows once its edit icon is pressed");
+  assert.match(await lockedFields(p), /^title:open description:locked/);
+  await p.fill("#f-title", "Menu board preview shows the offer price");
+  // …and the one on the description expands it into the editor.
+  await press(p, '[data-kb-edit="description"]');
+  await p.waitForSelector('[data-field="description"] .ql-editor');
+  assert.ok(await shown(p, '[data-field="description"] .ql-editor'));
+  await p.click('[data-field="description"] .ql-editor'); await p.keyboard.press("Control+End"); await p.keyboard.type(" Checked on staging.");
+  await press(p, '[data-kb-edit="criteria"]');
+  assert.ok(await shown(p, "#f-ac-input"), "criteria can be added and reworded once opened");
+  await press(p, '[data-kb-edit="details"]');
+  assert.ok(await shown(p, "#f-status") && await shown(p, "#f-assignee"), "the details column becomes its form");
+  await eventually(async () => assert.equal(await p.$eval("#f-save", (e) => e.disabled), false));
+  await press(p, "#f-save");
+  await eventually(async () => { const t = await stored(p, "PH-20"); assert.equal(t.title, "Menu board preview shows the offer price"); assert.match(t.description, /Checked on staging\./); });
+  // Opened again it is back to reading, with what was saved.
+  await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#f-title-ro");
+  assert.equal(await p.textContent("#f-title-ro"), "Menu board preview shows the offer price");
+  assert.match(await lockedFields(p), /^title:locked description:locked criteria:locked/);
+  await p.done();
+});
+
+T("KB-C35", "a viewer reads the same view with no edit icons, and a long description is cut short behind Show more", { timeout: 60000 }, async (prof) => {
+  const long = "<p>" + Array.from({ length: 40 }, (_, i) => `Line ${i + 1} of a long description.`).join("</p><p>") + "</p>";
+  const seed = kanbanSeed({ user: { email: emailOf("Thảo"), role: "viewer" }, extra: { kanbanTasks: { "PH-20": { ...KB.kanbanTasks["PH-20"], description: long } } } });
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#f-title-ro");
+  assert.equal(await p.$$eval("#task-form [data-kb-edit]", (e) => e.length), 0, "a viewer has nothing to open for editing");
+  assert.equal(await p.$("#f-save"), null);
+  const h = () => p.$eval("#f-description-ro", (e) => e.clientHeight);
+  const cut = await h();
+  assert.ok(cut <= 180, `the description is cut short (${cut}px)`);
+  assert.equal(await p.textContent('[data-ro-more="f-description-ro"]'), "Show more");
+  await press(p, '[data-ro-more="f-description-ro"]');
+  assert.ok(await h() > cut * 2, "Show more opens it in full");
+  assert.equal(await p.getAttribute('[data-ro-more="f-description-ro"]', "aria-expanded"), "true");
+  await p.done();
+});
+
+T("KB-C36", "History: who opened it, every move and hand-off newest first with local times, and the time open, time per column and handoff count", { timeout: 120000 }, async (prof) => {
+  const day = 86400000, t0 = Date.now() - 10 * day;
+  const at = (d) => ({ $ts: t0 + d * day });
+  const seed = kanbanSeed({ extra: {
+    kanbanTasks: { "PH-20": { ...KB.kanbanTasks["PH-20"], createdAt: at(0), createdBy: ROB, status: "in-progress", assignee: HUY } },
+    "kanbanTasks/PH-20/activity": {
+      a1: { who: ROB, at: at(2), text: "Backlog → Ready for Dev" },
+      a2: { who: ROB, at: at(3), text: `assigned to ${FULL.huy}` },
+      a3: { who: HUY, at: at(4), text: "Ready for Dev → In Progress" },
+      a4: { who: HUY, at: at(5), text: "changed Priority from Medium to Highest" },
+    },
+  } });
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#f-tab-history");
+  await press(p, "#f-tab-history");
+  assert.equal(await p.getAttribute("#f-tab-history", "aria-selected"), "true");
+  assert.ok(await shown(p, "#f-history")); assert.equal(await shown(p, "#f-comment-add"), false, "the comment box belongs to the Comments tab");
+  const lines = () => p.$$eval("#f-history .kb-activity", (li) => li.map((x) => ({ kind: x.dataset.hist, text: x.querySelector(".kb-hist-text").textContent, at: (x.querySelector("time") || {}).textContent || "", iso: x.querySelector("time") ? x.querySelector("time").getAttribute("datetime") : "" })));
+  let ls = await eventually(async () => { const l = await lines(); assert.equal(l.length, 5); return l; });
+  assert.deepEqual(ls.map((l) => l.kind), ["edit", "move", "assign", "move", "created"], "newest first, down to when it was opened");
+  assert.equal(ls[4].text, "Rob opened this ticket"); assert.equal(ls[1].text, `${FULL.huy} Ready for Dev → In Progress`);
+  // The time shown is the reader's own: the stored instant, written out in this browser's zone.
+  const local = await p.evaluate((iso) => new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }), ls[4].iso);
+  assert.equal(ls[4].at, local); assert.equal(new Date(ls[4].iso).getTime(), t0);
+  const stat = (id) => p.textContent(`#f-history-stats [data-hist-stat="${id}"] dd`);
+  assert.equal(await stat("open"), "10d"); assert.equal(await stat("handoffs"), "1"); assert.equal(await stat("moves"), "2"); assert.equal(await stat("edits"), "1");
+  assert.deepEqual(await p.$$eval("#f-history-cols [data-hist-col]", (e) => e.map((x) => `${x.dataset.histCol}=${x.querySelector("b").textContent}`)), ["backlog=2d", "ready-for-dev=2d", "in-progress=6d"]);
+  // Reassign it and move it, from the details column.
+  await press(p, '[data-kb-edit="details"]');
+  await p.selectOption("#f-assignee", LINH); await p.selectOption("#f-status", "approved");
+  await press(p, "#f-save");
+  await p.waitForFunction(() => document.getElementById("task-backdrop").hidden);
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#f-tab-history");
+  assert.equal(await p.getAttribute("#f-tab-comments", "aria-selected"), "true", "a ticket always opens on Comments");
+  // The tabs work from the keyboard too.
+  await p.focus("#f-tab-comments"); await p.keyboard.press("ArrowRight");
+  assert.equal(await p.getAttribute("#f-tab-history", "aria-selected"), "true");
+  ls = await eventually(async () => { const l = await lines(); assert.equal(l.length, 7); return l; });
+  const top = ls.slice(0, 2).map((l) => l.text).sort();
+  assert.deepEqual(top, [`Rob In Progress → Approved for Deployment`, `Rob assigned to ${FULL.linh} (from ${FULL.huy})`].sort(), "the hand-off reads from → to, with who did it");
+  assert.ok(ls[0].at && ls[1].at, "each with when");
+  assert.equal(await stat("handoffs"), "2"); assert.equal(await stat("moves"), "3");
+  assert.ok((await p.$$eval("#f-history-cols [data-hist-col]", (e) => e.map((x) => x.dataset.histCol))).includes("in-progress"));
+  await p.done();
+});
+
+// One dictation: the recogniser says `said`, as a final, and ends when stopped.
+const saidOnce = (said) => speechStub(said);
+T("KB-C37", "a voice comment: the name said with its pronunciation becomes an @mention of the right person, an uncertain name is offered not tagged, and the transcript waits in the box to be checked", { timeout: 120000 }, async (prof) => {
+  const said = "ask Zuong to check the preview and thanks Lin";
+  const seed = kanbanSeed();
+  // The server's answer (it alone holds the pronunciations): "Zuong" is Đức here; "Lin" is one letter from Linh.
+  const DUC = emailOf("Đức");
+  seed.voiceMentions = [{ text: "Ask Zuong to check the preview and thanks Lin", segments: [
+    { t: "text", text: "Ask " }, { t: "mention", id: DUC, name: FULL.duc, said: "Zuong" }, { t: "text", text: " to check the preview and thanks " },
+    { t: "unsure", text: "Lin", candidates: [{ id: LINH, name: FULL.linh }] },
+  ] }];
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed, init: saidOnce(said) });
+  const box = '[data-field="comments"] .ql-editor';
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => /Zuong/.test(await p.textContent(box)), "the words to arrive in the box");
+  await press(p, "#f-comment-mic");
+  // The name becomes a chip; the transcript is in the box, not posted, with a line saying to check it.
+  await until(async () => (await p.$$eval(`${box} .kb-mention`, (m) => m.map((x) => `${x.dataset.user}|${x.textContent.replace(/\uFEFF/g, "")}`).join())) === `${DUC}|@${FULL.duc}`, "Zuong to become an @mention");
+  assert.deepEqual(p.voiceCalls, ["Ask Zuong to check the preview and thanks Lin"], "the words heard were sent to be matched, once");
+  const boxText = async () => (await p.textContent(box)).replace(/\uFEFF/g, "");
+  assert.equal(await boxText(), `Ask @${FULL.duc} to check the preview and thanks Lin`);
+  assert.equal((await commentWrites(p, "PH-20")).length, 0, "nothing is posted until Add comment");
+  assert.match(await p.textContent("#f-comment-review-text"), new RegExp(`Added by voice\\. Check the words before you add the comment · tagged ${FULL.duc}\\.`));
+  // "Lin" was not certain: left as said, with the closest person offered.
+  assert.equal(await p.$$eval(`${box} .kb-mention`, (m) => m.length), 1);
+  assert.equal(await p.textContent("#f-comment-review .kb-voice-heard"), "“Lin”");
+  assert.equal(await p.textContent("#f-comment-review [data-voice-pick]"), `Tag ${FULL.linh}`);
+  await press(p, "#f-comment-review [data-voice-pick]");
+  assert.equal(await boxText(), `Ask @${FULL.duc} to check the preview and thanks @${FULL.linh}`);
+  assert.equal(await p.$("#f-comment-review [data-voice-pick]"), null);
+  // It can be corrected by typing before it is added.
+  // (focused, not clicked: on a narrow tablet the "will be notified" toast lies over the box for a moment)
+  await p.focus(box); await p.keyboard.press("Control+End"); await p.keyboard.type(" please");
+  await press(p, "#f-comment-add");
+  const w = await eventually(async () => { const c = await commentWrites(p, "PH-20"); assert.equal(c.length, 1); return c[0].data; });
+  assert.deepEqual([...w.mentions].sort(), [DUC, LINH].sort(), "both are on the comment's mentions, which is what notifies them");
+  assert.equal(w.via, "voice"); assert.match(w.text, /please$/);
+  assert.match(await toastText(p), new RegExp(`Comment added · .*${FULL.duc}.* notified`));
+  assert.equal(await shown(p, "#f-comment-review"), false, "the check line goes once it is added");
+  // Posted: marked as added by voice, with its author's Edit beside it.
+  await eventually(async () => assert.equal(await p.$$eval("#f-comments .kb-comment:last-child .kb-comment-voice, #f-comments .kb-comment:last-child [data-comment-fix]", (e) => e.length), 2));
+  await p.done();
+});
+
+T("KB-C37", "a voice comment when the server can't match: names the board shows are still tagged, an everyday word is not, and Add comment while still dictating tags first", { timeout: 120000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, init: saidOnce("thanks Linh I took a look") });
+  const box = '[data-field="comments"] .ql-editor';
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector(box);
+  await press(p, "#f-comment-mic");
+  await until(async () => /took a look/.test(await p.textContent(box)), "the words to arrive in the box");
+  // Add comment pressed with the mic still on.
+  await press(p, "#f-comment-add");
+  const w = await eventually(async () => { const c = await commentWrites(p, "PH-20"); assert.equal(c.length, 1); return c[0].data; });
+  assert.deepEqual(w.mentions, [LINH]); assert.equal(w.via, "voice");
+  assert.equal(w.text.replace(/\uFEFF/g, ""), `Thanks @${FULL.linh} I took a look`);
+  assert.equal(await p.textContent("#f-comment-mic"), "mic", "the mic stopped");
+  await p.done();
+});
+
+T("KB-C38", "the author edits a voice comment and a typed one: the text is saved, marked edited, and the edit is in History", { timeout: 120000 }, async (prof) => {
+  const seed = kanbanSeed({ extra: { "kanbanTasks/PH-20/comments": {
+    v1: { author: ROB, html: "<p>Menu bored preview is fixed</p>", text: "Menu bored preview is fixed", mentions: [], via: "voice", at: { $ts: Date.now() - 60000 } },
+    t1: { author: ROB, html: "<p>Typed note</p>", text: "Typed note", mentions: [], at: { $ts: Date.now() - 50000 } },
+    o1: { author: HUY, html: "<p>Someone else's</p>", text: "Someone else's", mentions: [], at: { $ts: Date.now() - 40000 } },
+  } } });
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector('#f-comments [data-comment="v1"]');
+  const row = (id) => `#f-comments [data-comment="${id}"]`;
+  assert.equal(await p.$$eval(`${row("v1")} .kb-comment-voice`, (e) => e.length), 1, "the voice comment says how it was added");
+  assert.equal(await p.$$eval(`${row("t1")} .kb-comment-voice`, (e) => e.length), 0);
+  assert.equal(await p.$$eval(`${row("o1")} [data-comment-fix], ${row("o1")} [data-comment-edit]`, (e) => e.length), 0, "nobody edits someone else's");
+  for (const [id, fixed] of [["v1", "Menu board preview is fixed"], ["t1", "Typed note, corrected"]]) {
+    await press(p, `${row(id)} [data-comment-fix]`);
+    await p.waitForSelector("#f-comment-edit .ql-editor");
+    assert.equal(await p.$eval(`${row(id)} [data-comment-save]`, (e) => e.disabled), true, "Save waits for a change");
+    await p.click("#f-comment-edit .ql-editor"); await p.keyboard.press("Control+A"); await p.keyboard.type(fixed);
+    await eventually(async () => assert.equal(await p.$eval(`${row(id)} [data-comment-save]`, (e) => e.disabled), false));
+    await press(p, `${row(id)} [data-comment-save]`);
+    await eventually(async () => { assert.equal(await p.textContent(`${row(id)} .kb-comment-text`), fixed); assert.equal(await p.$$eval(`${row(id)} .kb-comment-edited`, (e) => e.map((x) => x.textContent).join()), "edited"); });
+    const saved = (await writes(p, new RegExp(`^kanbanTasks/PH-20/comments/${id}$`))).at(-1).data;
+    assert.equal(saved.text, fixed); assert.ok(saved.editedAt, "stamped as edited");
+  }
+  assert.equal(await p.$$eval(`${row("v1")} .kb-comment-voice`, (e) => e.length), 1, "still marked as added by voice");
+  await press(p, "#f-tab-history");
+  await eventually(async () => assert.equal((await p.$$eval('#f-history [data-hist="comment"] .kb-hist-text', (e) => e.map((x) => x.textContent))).filter((t) => t === "Rob edited a comment").length, 2, "each edit is in History"));
+  await p.done();
+});
+
+T("KB-C38", "a comment the owner's agent added under his first address can be edited signed in with his second (the reported bug)", { timeout: 60000 }, async (prof) => {
+  const seed = kanbanSeed({ user: { email: "owner.alias@example.com", role: "admin" }, extra: { "kanbanTasks/PH-20/comments": {
+    v1: { author: ROB, html: "<p>Said to my agent</p>", text: "Said to my agent", mentions: [], at: { $ts: Date.now() - 60000 } },
+    o1: { author: HUY, html: "<p>Someone else's</p>", text: "Someone else's", mentions: [], at: { $ts: Date.now() - 40000 } },
+  } } });
+  const p = await open(prof, "#staff-kanban", { ...REVIEW, seed });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  const row = (id) => `#f-comments [data-comment="${id}"]`;
+  await p.waitForSelector(`${row("v1")} [data-comment-fix]`);
+  await press(p, `${row("v1")} [data-comment-menu]`);
+  assert.equal(await p.$$eval(`${row("v1")} .kb-comment-menu:not([hidden]) button`, (b) => b.map((x) => x.textContent.trim()).join()), "Edit,Delete");
+  await press(p, `${row("v1")} [data-comment-edit]`);
+  await p.waitForSelector("#f-comment-edit .ql-editor");
+  await p.click("#f-comment-edit .ql-editor"); await p.keyboard.press("Control+End"); await p.keyboard.type(", corrected");
+  await eventually(async () => assert.equal(await p.$eval(`${row("v1")} [data-comment-save]`, (e) => e.disabled), false));
+  await press(p, `${row("v1")} [data-comment-save]`);
+  await eventually(async () => assert.equal((await writes(p, /^kanbanTasks\/PH-20\/comments\/v1$/)).at(-1).data.text, "Said to my agent, corrected"));
+  // As an admin he may delete Huy's, but still not edit it.
+  assert.equal(await p.$$eval(`${row("o1")} [data-comment-fix], ${row("o1")} [data-comment-edit]`, (e) => e.length), 0);
+  await p.done();
+});
 
 // ── run ──────────────────────────────────────────────────────────────────────
 for (const [name, fn] of queue) await test(name, fn);

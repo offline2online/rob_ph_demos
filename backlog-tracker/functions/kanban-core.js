@@ -269,6 +269,195 @@ function statusChange(task, status, { resolution, tester: chosen, firstName = (x
   return { patch, note, activity, resolution: toRes };
 }
 
+// ── History (KB-HIST-1): the audit trail and its figures ─────────────────
+// The activity log is lines of text (who, when, text). This reads the lines
+// the board and the MCP tools write back into what happened, so the History
+// tab can show hand-offs as from → to and work out how long a ticket spent in
+// each column, without a second, structured copy of the log to keep in step.
+const LABEL_STATUS = Object.fromEntries(STATUSES.map((s) => [s.label, s.key]).concat([["Completed", "done"], ["Withdrawn", "done"]]));
+function parseActivity(text) {
+  const t = String(text == null ? "" : text).trim();
+  let m = /^reassigned (.+?) → (.+)$/.exec(t);
+  if (m) return { kind: "assign", from: m[1] === "Unassigned" ? "" : m[1], to: m[2] === "Unassigned" ? "" : m[2] };
+  m = /^assigned to (.+)$/.exec(t);
+  if (m) return { kind: "assign", from: null, to: m[1] };
+  m = /^unassigned \(was (.+)\)$/.exec(t);
+  if (m) return { kind: "assign", from: m[1] === "Unassigned" ? "" : m[1], to: "" };
+  m = /^(.+?) → (.+?)(?: · (.+))?$/.exec(t);
+  if (m && LABEL_STATUS[m[1]] && LABEL_STATUS[m[2]]) {
+    const out = { kind: "move", from: LABEL_STATUS[m[1]], to: LABEL_STATUS[m[2]], fromLabel: m[1], toLabel: m[2], note: m[3] || "" };
+    const h = /^reassigned to (.+) for testing$/.exec(out.note) || /^returned to (.+)$/.exec(out.note);
+    if (h) out.handoffTo = h[1];
+    return out;
+  }
+  if (/^(edited|deleted) a comment$/.test(t)) return { kind: "comment" };
+  return { kind: "edit" };
+}
+// "3d 4h", "5h 12m", "12m", "under a minute": elapsed time, two units at most.
+function fmtAge(ms) {
+  const mins = Math.floor(Math.max(0, +ms || 0) / 60000);
+  if (mins < 1) return "under a minute";
+  const d = Math.floor(mins / 1440), h = Math.floor((mins % 1440) / 60), m = mins % 60;
+  if (d) return h ? `${d}d ${h}h` : `${d}d`;
+  if (h) return m ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+// task: { created, createdBy, reporter, status, closedAt?, assignee }; activity: [{ id, who, at, text }].
+// person(email) names the ticket's current assignee the way the log names people.
+// Returns { events (newest first), stats: { openMs, closed, columns: [{ status, label, ms }], handoffs, moves, edits } }.
+function ticketHistory(task, activity, { now = Date.now(), person = (e) => e || "" } = {}) {
+  const time = (v) => { const n = v ? new Date(v).getTime() : NaN; return Number.isNaN(n) ? null : n; };
+  const nowMs = typeof now === "number" ? now : new Date(now).getTime();
+  const asc = (activity || []).map((a, i) => ({ id: a.id || `a${i}`, who: a.who || "", at: a.at || "", text: a.text || "", ms: time(a.at), ...parseActivity(a.text) }))
+    .sort((a, b) => (a.ms == null ? Infinity : a.ms) - (b.ms == null ? Infinity : b.ms));
+  const created = time(task && task.created);
+  // Who held the ticket before each hand-off: the line says so, else whoever the line before it left it with.
+  let holder = null;
+  for (const e of asc) {
+    if (e.kind === "assign") { if (e.from == null) e.from = holder; holder = e.to; e.handoff = true; }
+    else if (e.kind === "move" && e.handoffTo) { e.handoffFrom = holder; holder = e.handoffTo; e.handoff = true; }
+  }
+  // Time in each column: from when it was opened, move by move, to now (or to when it was closed).
+  const moves = asc.filter((e) => e.kind === "move" && e.ms != null);
+  const spent = Object.fromEntries(STATUSES.map((s) => [s.key, 0]));
+  const closed = !!task && task.status === "done";
+  const lastClose = [...moves].reverse().find((e) => e.to === "done");
+  const end = closed ? time(task.closedAt) || (lastClose && lastClose.ms) || nowMs : nowMs;
+  if (created != null) {
+    let at = created, status = moves.length ? moves[0].from : (task && task.status) || "backlog";
+    for (const e of moves) {
+      if (e.ms > at) { spent[e.from in spent ? e.from : status] += e.ms - at; at = e.ms; }
+      status = e.to;
+    }
+    if (end > at && status in spent) spent[status] += end - at;
+  }
+  const events = asc.slice().reverse();
+  if (task && (task.created || task.createdBy || task.reporter)) events.push({ id: "created", kind: "created", who: task.createdBy || task.reporter || "", at: task.created || "", ms: created, text: "opened this ticket" });
+  return {
+    events,
+    stats: {
+      openMs: created == null ? null : Math.max(0, end - created), closed,
+      columns: STATUSES.filter((s) => s.key !== "done").map((s) => ({ status: s.key, label: s.label, ms: spent[s.key] })),
+      handoffs: asc.filter((e) => e.handoff).length, moves: moves.length,
+      edits: asc.filter((e) => e.kind === "edit" || e.kind === "comment").length,
+      assignee: task && task.assignee ? person(task.assignee) : "",
+    },
+  };
+}
+
+// ── Spoken names → @mentions (KB-VOICE-1) ────────────────────────────────
+// A dictated comment names people the way they are said. This finds those
+// names in the transcript and says which are certain enough to tag.
+//   people: [{ id, name (full), first (short name), said: [sound-alikes] }]
+// `said` comes from the staff pronunciation list, which only the server holds
+// (functions/kanban.js handleVoiceMentions); the page's own fallback passes none.
+// Returns segments in order: { t: "text", text } | { t: "mention", id, name, said }
+// | { t: "unsure", text, candidates: [{ id, name }] }. Only a "mention" is
+// tagged; an "unsure" stays as the words that were heard, with the closest
+// people offered, so nobody is tagged by a guess.
+// (one string, split: the icon-font test reads any quoted word that is also an icon name, such as the first of these, as an icon in use)
+const NAME_CUES = new Set("tag tagging mention mentioning ask asking tell telling ping pinging cc copy copying notify notifying at hi hey hello thanks thank cheers sorry".split(" "));
+// Words a recogniser writes for ordinary speech that are also a name or a sound-alike ("I took the bus", "they will"):
+// one of these is tagged only when the sentence says a person is meant.
+const EVERYDAY_WORDS = new Set("rob took will mark may bill pat sue art hope joy grace dawn long son an my do ha le van can tin tan to hung dung lan bao hai kim sun ray guy don dean frank jack nick rich rose penny bob drew chase miles rusty sky lee may june april august summer faith chance bay zoom two too tea see sea sue hue who".split(" "));
+const NAME_CUES_AFTER = new Set("please can could would should needs said says mentioned asked has is was".split(" "));
+// Edit distance with a swap of two neighbouring letters counted once ("Zoung" for "Zuong").
+const editDistance = (a, b) => {
+  if (a === b) return 0;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i].concat(new Array(b.length).fill(0)));
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+    if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+  }
+  return d[a.length][b.length];
+};
+function soundAlikes(pronunciation) {
+  const text = String(pronunciation || "");
+  const quoted = [...text.matchAll(/["“”']([^"“”']{2,40})["“”']/g)].map((m) => m[1].trim());
+  const list = quoted.length ? quoted : (/^[\p{L}\p{M}' -]{2,40}$/u.test(text.trim()) ? [text.trim()] : []);
+  return [...new Set(list.map((x) => fold(x).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean))];
+}
+function matchSpokenNames(transcript, people = []) {
+  const text = String(transcript == null ? "" : transcript);
+  const words = [...text.matchAll(/[\p{L}\p{M}\p{N}]+/gu)].map((m) => ({ raw: m[0], f: fold(m[0]), start: m.index, end: m.index + m[0].length }));
+  if (!words.length || !people.length) return [{ t: "text", text }].filter((x) => x.text);
+  const key = (s) => fold(s).replace(/[^\p{L}\p{N} ]+/gu, " ").replace(/\s+/g, " ").trim();
+  // phrase → [{ person, how }]: how is "full", "name" (short or first name) or "said" (a sound-alike).
+  const phrases = new Map();
+  const put = (phrase, person, how) => { const k = key(phrase); if (k.length < 2) return; if (!phrases.has(k)) phrases.set(k, []); if (!phrases.get(k).some((x) => x.person.id === person.id)) phrases.get(k).push({ person, how }); };
+  for (const p of people) {
+    if (!p || !p.id) continue;
+    const full = String(p.name || p.full || "").trim(), first = String(p.first || "").trim() || full.split(/\s+/)[0] || "";
+    if (full && key(full).includes(" ")) put(full, p, "full");
+    if (first) put(first, p, "name");
+    for (const s of p.said || []) put(s, p, "said");
+  }
+  const maxWords = Math.max(1, ...[...phrases.keys()].map((k) => k.split(" ").length));
+  // A transcript with no capital after its first letter tells nothing about which words are names.
+  const cased = /[\p{Lu}]/u.test(text.slice(words[0].start + 1));
+  const sentenceStart = (i) => i === 0 || /[.!?\n]\s*$/.test(text.slice(words[i - 1].end, words[i].start));
+  const capital = (i) => /^\p{Lu}/u.test(words[i].raw);
+  const cueBefore = (i, prevWasName) => prevWasName || (i > 0 && NAME_CUES.has(words[i - 1].f)) || /@\s*$/.test(text.slice(i ? words[i - 1].end : 0, words[i].start));
+  const nameOf = (p) => String(p.name || p.full || p.first || p.id);
+  const out = [];
+  let pos = 0, prevName = false;
+  const push = (seg, from, to) => { if (from > pos) out.push({ t: "text", text: text.slice(pos, from) }); out.push(seg); pos = to; };
+  for (let i = 0; i < words.length; i++) {
+    let hit = null;
+    for (let n = Math.min(maxWords, words.length - i); n >= 1 && !hit; n--) {
+      const k = words.slice(i, i + n).map((w) => w.f).join(" ");
+      if (phrases.has(k)) hit = { n, list: phrases.get(k) };
+    }
+    const from = words[i].start;
+    if (hit) {
+      const to = words[i + hit.n - 1].end, heard = text.slice(from, to);
+      const k = words.slice(i, i + hit.n).map((w) => w.f).join(" ");
+      const next = words[i + hit.n];
+      // What says a person is meant: a word before it (ask, tag, @, another name), a capital the recogniser
+      // gave it in the middle of a sentence, or, opening a sentence, what follows ("Rob please…", "Took can you…").
+      const evidence = cueBefore(i, prevName) || (cased && capital(i) && !sentenceStart(i)) || (!!next && NAME_CUES_AFTER.has(next.f) && (sentenceStart(i) || next.f === "please"));
+      const one = hit.list.length === 1 ? hit.list[0] : null;
+      const everyday = EVERYDAY_WORDS.has(k);
+      const sure = !!one && (one.how === "full" || evidence || (!everyday && (one.how === "said" || !cased || capital(i))));
+      if (sure) {
+        // "@ Rob" as a recogniser writes it, or "At Rob, …" said aloud for it: the "at" is the tag, not a word of the comment.
+        let start = from;
+        const at = /@\s*$/.exec(text.slice(pos, from));
+        if (at) start = from - at[0].length;
+        else if (i > 0 && words[i - 1].f === "at" && sentenceStart(i - 1) && words[i - 1].start >= pos) start = words[i - 1].start;
+        // `said` is everything the tag stands for, so the segments always spell the transcript back.
+        push({ t: "mention", id: one.person.id, name: nameOf(one.person), said: text.slice(start, to) }, start, to);
+        prevName = true;
+      } else if (everyday && !evidence) {
+        // An ordinary word with nothing to say a person is meant ("I took the bus"): left alone, not even offered.
+        prevName = false;
+      } else {
+        push({ t: "unsure", text: heard, candidates: hit.list.slice(0, 3).map((x) => ({ id: x.person.id, name: nameOf(x.person) })) }, from, to);
+        prevName = false;
+      }
+      i += hit.n - 1;
+      continue;
+    }
+    // Not a name as written. A word said where a name is expected (after ask, tag, @…, or a capital the
+    // recogniser gave it mid-sentence) that is one slip away from a name is offered, never tagged.
+    const w = words[i];
+    if (w.f.length >= 4 && (cueBefore(i, false) || (cased && capital(i) && !sentenceStart(i)))) {
+      const near = [];
+      for (const [k, list] of phrases) {
+        if (k.includes(" ")) continue;
+        const d = editDistance(w.f, k);
+        if (d <= (Math.max(w.f.length, k.length) >= 7 ? 2 : 1)) for (const x of list) if (!near.some((y) => y.id === x.person.id)) near.push({ id: x.person.id, name: nameOf(x.person), d });
+      }
+      if (near.length) { near.sort((a, b) => a.d - b.d); push({ t: "unsure", text: w.raw, candidates: near.slice(0, 3).map(({ id, name }) => ({ id, name })) }, w.start, w.end); }
+    }
+    prevName = false;
+  }
+  if (pos < text.length) out.push({ t: "text", text: text.slice(pos) });
+  return out;
+}
+
 // ── Ticket hierarchy (KB-TASK-14) ─────────────────────────────────────────
 // Tickets nest up to four levels: Epic > Task > Subtask > Sub-subtask. The
 // parent is the `epic` field (the key of the ticket above; the name is kept
@@ -925,4 +1114,4 @@ function dataUriParts(uri) {
   return m ? { contentType: m[1], base64: m[2].replace(/\s+/g, "") } : null;
 }
 
-module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, statusChange, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };
+module.exports = { STATUSES, STATUS_KEYS, STATUS_LABEL, RESOLUTIONS, TYPES, PRIORITIES, LINK_TYPES, INVERSE_LINK, linkChanges, inverseOf, CORE_FIELDS, OPTIONAL_FIELDS, FIELD_LABEL, FIELD_KEYS, defaultFields, currentReleaseId, normaliseSettings, res, statusLabel, statusShort, typeOf, prioOf, remaining, keyNumber, keyOf, ticketSub, ticketHash, ticketFromSub, fmtH, parseDur, isoDay, fmtDate, daysBetween, workingDaysUntil, rankBetween, PERSON_ALIASES, setPersonAliases, canonicalEmail, isAliasEmail, statusChange, parseActivity, fmtAge, ticketHistory, soundAlikes, matchSpokenNames, MAX_LEVELS, LEVEL_NAMES, levelName, ancestorsOf, levelOf, heightOf, parentProblem, canHaveChildren, isFinished, rollup, parentsToAdvance, fold, MAX_TOKENS, searchTokens, queryToken, searchTickets, PICK_LIMIT, matchesQuery, filterTasks, CAPACITY_HOURS_PER_DAY, releaseReport, AGENT_LABELS, agentDraft, htmlToText, mentionsIn, AC_MAX_ITEMS, AC_MAX_TEXT, newCriterionId, encodeCriteria, decodeCriteria, acCounts, cleanCriteria, diffCriteria, cleanTaskFields, editActivity, CARD_FIELDS, cardOf, AGENT_MAX_TICKETS, AGENT_DESC_MAX, AGENT_BUILT, AGENT_STATUS_LABEL, agentBuilt, agentRollup, canSendToAgent, cleanAgentSplit, agentTicketDesc, cardPatchOf, hasInlineImages, externaliseInlineImages, dataUriParts };

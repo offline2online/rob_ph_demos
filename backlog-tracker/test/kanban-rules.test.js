@@ -45,6 +45,10 @@ async function reset() {
     await setDoc(doc(db, "kanbanCards/PH-7"), { key: "PH-7", type: "task", title: "A task", status: "backlog", resolution: null, open: true, rank: 10, assignee: "", previousAssignee: "", release: "", sprint: "", priority: "medium", flagged: false, estimate: null, logged: 0, due: "", labels: [], epic: "", commentCount: 0, attachmentCount: 0, updatedAt: new Date(0), updatedBy: SAM });
     await setDoc(doc(db, "kanbanTasks/PH-7/comments/c1"), { author: SAM, html: "<p>x</p>", text: "x", at: new Date(0) });
     for (const [id, author] of [["c4", SAM], ["c5", SAM], ["c6", "ada@ph.example"]]) await setDoc(doc(db, "kanbanTasks/PH-7/comments/" + id), { author, html: "<p>x</p>", text: "x", at: new Date(0) });
+    // Comments of one person under each of their two addresses (KB-PPL-3), and the map that pairs them.
+    await setDoc(doc(db, "kanbanTasks/PH-7/comments/c7"), { author: "owner@example.com", html: "<p>x</p>", text: "x", via: "voice", at: new Date(0) });
+    await setDoc(doc(db, "kanbanTasks/PH-7/comments/c8"), { author: "owner.alias@example.com", html: "<p>x</p>", text: "x", at: new Date(0) });
+    await setDoc(doc(db, "consoleConfig/identity"), { personAliases: { "owner.alias@example.com": "owner@example.com" } });
     await setDoc(doc(db, "kanbanTasks/PH-7/activity/a1"), { who: SAM, text: "Backlog → In Progress", at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/n1"), { to: SAM, from: "ada@ph.example", taskKey: "PH-7", taskTitle: "A task", kind: "description", read: false, at: new Date(0) });
     await setDoc(doc(db, "kanbanNotifications/o1"), { to: "owner@example.com", from: "ada@ph.example", taskKey: "PH-7", taskTitle: "A task", kind: "assigned", read: false, at: new Date(0) });
@@ -306,6 +310,17 @@ async function main() {
     getDocs(query(collection(as(ALIAS), "kanbanNotifications"), where("to", "==", SAM), limit(100))));
   await check("A member can't read the owner's notifications", "deny", () =>
     getDocs(query(collection(as(MEMBER), "kanbanNotifications"), where("to", "==", "owner@example.com"), limit(100))));
+
+  // …and a comment is his whichever of the two addresses wrote it: one his agent added over MCP (stored
+  // under the first address) can be corrected from the board signed in with the second, and the reverse.
+  const edit = (who, id) => updateDoc(doc(as(who), "kanbanTasks/PH-7/comments/" + id), { html: "<p>fixed</p>", text: "fixed", mentions: [], editedAt: serverTimestamp() });
+  await check("Signed in with his second address, the owner edits a comment stored under his first", "allow", () => edit(ALIAS, "c7"));
+  await check("Signed in with his first address, the owner edits a comment stored under his second", "allow", () => edit(OWNER, "c8"));
+  await check("A member still can't edit either of them", "deny", () => edit(MEMBER, "c7"));
+  await check("…nor the other", "deny", () => edit(MEMBER, "c8"));
+  await check("A dictated comment is created with its `via` marker", "allow", () =>
+    setDoc(doc(as(MEMBER), "kanbanTasks/PH-7/comments/c9"), { author: SAM, html: "<p>hi</p>", text: "hi", mentions: [], via: "voice", at: serverTimestamp() }));
+  await check("Signed in with his second address, the owner deletes a comment stored under his first", "allow", () => deleteDoc(doc(as(ALIAS), "kanbanTasks/PH-7/comments/c7")));
 
   // ── Member directory (written by functions only) ────────────────────────
   await check("A member reads the member directory", "allow", () => getDocs(collection(as(MEMBER), "memberDirectory")));
