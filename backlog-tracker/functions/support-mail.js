@@ -50,6 +50,7 @@
 //   POST /v1/tickets/{id}/assign       editor  {assignee}
 //   POST /v1/tickets/{id}/escalate     editor  raise a Staff Kanban ticket
 //   POST /v1/tickets/bulk              editor  {ids, action, …}: one action on many threads (the lists' checkboxes)
+//   POST /v1/lab/**                    editor  the Test lab (functions/support-lab.js): ask, keep cases, run them
 //
 // Pure module: index.js injects Firestore, ID-token verification, the secrets
 // and the Staff Kanban writer, so test/support-mail.test.js runs it with no
@@ -61,6 +62,7 @@ const { createAidan } = require("./aidan");
 const answerCore = require("./answer-core");
 const { articleView } = answerCore;
 const { encrypt, decrypt, keyBytes } = require("./media-keys");
+const { createSupportLab } = require("./support-lab");
 
 const TICKETS = "supportTickets";
 const SETTINGS = "supportSettings";
@@ -123,7 +125,7 @@ function createSupportMail({
   db, verifyIdToken, resolveConsoleUser, encKey, anthropicKey = () => "", anthropicWorkspace = () => "", Anthropic = null,
   fetch: fetchImpl = globalThis.fetch, logger = console, now = () => new Date(), baseUrl = "https://backlog-tracker-e4ed2.web.app",
   createKanbanTask = null, commentKanbanTask = null, triage: triageImpl = null, freeDomains = [], boardKey = () => "",
-  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null,
+  aidan: aidanImpl = null, bucket = null, consoleReader = null, renderPdf = null, improvements = null,
 }) {
   const cronMisses = new Map(); // ip -> {n, first}: brute-force brake on the cron route
   const composeCalls = new Map(); // member -> when they last sent new emails
@@ -496,7 +498,15 @@ function createSupportMail({
     // (collateral-pdf.js), loaded only when collateral is printed.
     accounts,
     renderPdf: renderPdf || ((html, opts) => require("./collateral-pdf").renderPdf(html, opts)),
+    // Self-improvement tickets (mcp-server.js → aidanImprovements): a run that
+    // didn't fully meet its request files a Backlog ticket, or comments on a
+    // matching open one.
+    improvements,
   });
+
+  // ── The Test lab (functions/support-lab.js): the same engine and catalogue,
+  // nothing sent and nothing filed.
+  const lab = createSupportLab({ db, requireRole, articles, readSettings, modelCall, anthropicKey, triageImpl, tickets, threadMessages, now, logger });
 
   // ── Sync ──
   let syncing = null;
@@ -807,6 +817,7 @@ function createSupportMail({
     }
 
     if (path === "/v1/tickets/bulk") return handleBulk(req, res);
+    if (path.startsWith("/v1/lab/")) return lab.handle(req, res, path);
     const t = /^\/v1\/tickets\/([A-Za-z0-9_-]{1,80})\/(reply|draft|status|note|assign|escalate)$/.exec(path);
     if (t) return handleTicket(req, res, t[1], t[2]);
 
@@ -908,7 +919,7 @@ function createSupportMail({
     return send(res, 200, { ok: true, settings: value });
   }
 
-  return { handle, sync, status, triageTicket, ingest, aidan };
+  return { handle, sync, status, triageTicket, ingest, aidan, lab };
 }
 
 module.exports = { createSupportMail, runTriage, callJson, articleView, TICKETS, SETTINGS, SECRETS, COUNTERS, SCOPE, DRAFT_MODEL, DRAFT_TIMEOUT_MS, BULK_MAX, BULK_ACTIONS };

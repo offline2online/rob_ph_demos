@@ -1365,7 +1365,7 @@
          rules in js/support-core.js, server in functions/support-mail.js). Help lives in the info tooltips. -->
     <section class="faq-admin-page support-page" id="support-page" hidden>
       <div class="page-header">
-        <h2>Support Inbox<button type="button" class="info-tip" data-tip="Every email sent to the support mailbox is a ticket here, filed under the address it was written to: support@ in Support Inbox, hello@ in Hello, aidan@ (To or Cc) in Aidan. An email written to more than one is in each, and one that names none is in Support Inbox. In Support Inbox each one is drafted an answer from the published Help Centre articles. A confident answer can be sent by itself (Settings › Support inbox); anything else waits for a person, and a high-value sender is raised on the Staff Kanban. Hello and Aidan are plain inboxes: a list of emails and the thread, with Reply, and in Aidan what Aidan did with each one. Replies go out from the support mailbox on the same email thread. The email icon writes a new email from the support mailbox. Today's figures for support@ are on the Dashboard." aria-label="About the Support Inbox">i</button></h2>
+        <h2>Support Inbox<button type="button" class="info-tip" data-tip="Every email sent to the support mailbox is a ticket here, filed under the address it was written to: support@ in Support Inbox, hello@ in Hello, aidan@ (To or Cc) in Aidan. An email written to more than one is in each, and one that names none is in Support Inbox. In Support Inbox each one is drafted an answer from the published Help Centre articles. A confident answer can be sent by itself (Settings › Support inbox); anything else waits for a person, and a high-value sender is raised on the Staff Kanban. Hello and Aidan are plain inboxes: a list of emails and the thread, with Reply, and in Aidan what Aidan did with each one. Replies go out from the support mailbox on the same email thread. The email icon writes a new email from the support mailbox. The Test lab tab asks the answering engine a question without sending anything, keeps rated questions as a test set and tracks how many it answers right. Today's figures for support@ are on the Dashboard." aria-label="About the Support Inbox">i</button></h2>
         <div class="page-header-action support-header-actions" data-editor-only>
           <button type="button" class="btn-ghost support-compose-btn" id="support-compose-btn" aria-label="Write an email" title="Write an email" hidden><span class="material-symbols-outlined" aria-hidden="true">mail</span></button>
           <button type="button" class="btn-ghost" id="support-sync-btn">Sync now</button>
@@ -1376,6 +1376,7 @@
         <button type="button" class="support-tab" role="tab" data-support-tab="inbox">Support Inbox</button>
         <button type="button" class="support-tab" role="tab" data-support-tab="hello">Hello</button>
         <button type="button" class="support-tab" role="tab" data-support-tab="aidan">Aidan</button>
+        <button type="button" class="support-tab" role="tab" data-support-tab="lab">Test lab</button>
       </nav>
       <div id="support-view"></div>
     </section>

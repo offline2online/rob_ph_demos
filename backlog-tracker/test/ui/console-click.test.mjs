@@ -3602,7 +3602,7 @@ const scenarios = [
     run: async (c) => {
       c.at("the old Stats address opens the inbox");
       await c.visible("#support-page .support-row");
-      assert.deepStrictEqual(await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"], "no Stats tab and no Try an email tab");
+      assert.deepStrictEqual(await c.page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan", "Test lab"], "no Stats tab and no Try an email tab");
       assert.strictEqual(await c.page.locator("#support-page").getByText(/Try an email|Stats/).count(), 0);
       await c.visible("#support-compose-btn", "the email icon");
       assert.strictEqual(await c.page.getAttribute("#support-compose-btn", "aria-label"), "Write an email");
@@ -3631,6 +3631,148 @@ const scenarios = [
       assert.deepStrictEqual(sent.map((x) => x.body), [{ to: "buyer@retailer.example", subject: "Your demo", text: "Here is the link." }]);
       await c.click('[data-support-act="back"]', "back to the inbox");
       await c.visible("#support-page .support-row");
+    },
+  },
+  {
+    // x3MqwdJxQ0tJMGlcDi1Y: the Test lab. Ask a question (nothing sent), rate
+    // the answer Wrong with the article that should have matched, save it, run
+    // all cases, see accuracy and the failing case; then Add to test lab from a
+    // Support Inbox ticket and an Aidan ticket, and say what should happen.
+    name: "Support Inbox: Test lab asks, rates and saves a question, runs the set, and takes a ticket's question",
+    hash: "#support/lab",
+    seed: () => {
+      const s = only("b1");
+      s.supportStatus = { encryptionReady: true, aiReady: true, clientSet: true, clientId: "123-abc.apps.googleusercontent.com", connected: true, connectedEmail: "support@ph.example", connectionError: "", lastSyncAt: new Date().toISOString(), lastSyncOk: true, lastSyncError: "", redirectUri: "https://console.example/supportMail/v1/oauth/callback",
+        settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "PH Support", fromName: "PH Support", vipDomains: [], importDays: 7 } };
+      s.docs.faqArticles = {
+        a1: { status: "published", title: "Add a display to a store", directAnswer: "Open Displays and Devices.", keywords: ["display"] },
+        a2: { status: "published", title: "Pair a screen with a store", directAnswer: "Use the pairing code.", keywords: ["pair", "screen"] },
+      };
+      s.docs.supportTickets = {
+        t1: { key: "SUP-4", subject: "Adding a display", customerEmail: "c1@shop.example", status: "open", needsHuman: true, inboxes: ["support"], createdAt: t(T0), lastMessageAt: t(T0) },
+        ta: { key: "SUP-9", subject: "Pairing question", customerEmail: "c2@shop.example", status: "resolved", inboxes: ["aidan"], aidan: { status: "replied", kind: "answer" }, createdAt: t(T0), lastMessageAt: t(T0 + 1000) },
+      };
+      s.docs["supportTickets/t1/messages"] = { m1: { direction: "in", from: "c1@shop.example", text: "How do I add a display?", at: t(T0) } };
+      s.docs["supportTickets/ta/messages"] = { m1: { direction: "in", from: "c2@shop.example", text: "@Aidan, how do I pair a screen?", at: t(T0) } };
+      s.supportAnswers = {
+        "lab/ask": { ok: true, relevant: true, category: "how-to", summary: "Wants to add a display.", spamLikely: false, answerable: true, confidence: 0.82,
+          confidenceSteps: [{ articles: 1, confidence: 0.55 }, { articles: 2, confidence: 0.82 }],
+          matched: [{ id: "a1", title: "Add a display to a store", url: "" }, { id: "a2", title: "Pair a screen with a store", url: "" }],
+          articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }],
+          draft: "Hi there,\n\nThanks for your email.\n\nOpen Displays and Devices, then Add display.",
+          decision: { action: "review", label: "Draft to approve", reason: "Sending by itself is switched off." } },
+        "lab/cases": { ok: true, id: "c-new" },
+        "lab/runs": { ok: true, id: "r-1", total: 1 },
+        "lab/runs/r-1/step": { ok: true, status: "done", total: 1, done: 1, passed: 0, failed: 1, accuracy: 0, remaining: 0, running: 0 },
+        "lab/from-ticket": (call) => ({ ok: true, id: `t-${call.body.ticketId}`, needsReview: true }),
+      };
+      return s;
+    },
+    run: async (c) => {
+      // What the supportMail function would write, put straight into the stubbed Firestore.
+      const serverWrite = (path, id, data) => c.page.evaluate(([p, i, d]) => { const b = globalThis.__fbStub; b.col(p).set(i, d); b.notify(); }, [path, id, data]);
+      // textContent, not innerText: badges are drawn in capitals.
+      const tc = (sel) => c.page.locator(sel).first().evaluate((el) => el.textContent);
+      const waitTc = async (sel, needle) => { c.at(`${sel} contains "${needle}"`, sel); await until(async () => (await tc(sel).catch(() => "")).includes(needle), `${sel} to contain "${needle}"`); };
+      const noSideScroll = async (where) => assert.ok(await c.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 0, `no sideways scroll on ${where}`);
+      c.at("the Test lab tab is the fourth tab, with Ask a question and Test set");
+      await c.visible("#lab-text", "the question box");
+      assert.deepStrictEqual(await c.page.$$eval("#support-page .support-tab[aria-selected=true]", (els) => els.map((b) => b.textContent)), ["Test lab"]);
+      assert.deepStrictEqual(await c.page.$$eval(".support-lab h3", (els) => els.map((h) => h.firstChild.textContent.trim())), ["Ask a question", "Test set"]);
+      await waitTc(".support-lab-block:nth-of-type(2)", "No cases yet");
+      c.at("Ask: the draft, the matched articles as editor links, the confidence steps and what the Support Inbox would do");
+      await c.page.fill("#lab-text", "How do I add a display to my store?");
+      await c.click('[data-lab-act="ask"]', "Ask");
+      await c.visible("#lab-result", "the answer");
+      const ask = c.supportCalls.filter((x) => x.path === "lab/ask");
+      assert.deepStrictEqual(ask.map((x) => x.body), [{ subject: "", text: "How do I add a display to my store?" }]);
+      const result = await tc("#lab-result");
+      assert.ok(result.includes("Open Displays and Devices, then Add display."), result);
+      assert.ok(result.includes("Confidence 55% from 1 article, 82% with 2 combined"), result);
+      assert.ok(result.includes("Draft to approve") && result.includes("Sending by itself is switched off."), result);
+      assert.deepStrictEqual(await c.page.$$eval("#lab-result a.support-lab-article", (els) => els.map((a) => a.getAttribute("href"))), ["#faq-article/a1", "#faq-article/a2"]);
+      assert.deepStrictEqual(c.supportCalls.filter((x) => /reply|compose|sync/.test(x.path)).map((x) => x.path).filter((p) => p !== "sync"), [], "no email sent");
+      await noSideScroll("the answer");
+      c.at("Rate it Wrong, swap in the article that should have matched, add a note and save");
+      await c.click('[data-lab-rate="wrong"]', "Wrong");
+      assert.strictEqual(await c.page.getAttribute('[data-lab-rate="wrong"]', "aria-pressed"), "true");
+      assert.strictEqual(await c.page.getAttribute('[data-lab-expect="articles"]', "aria-pressed"), "true", "proposed from what the engine cited");
+      await c.click('[data-lab-unpick="a1"]', "remove the cited article");
+      await c.page.fill("#lab-rate-pick", "pair");
+      await c.visible('[data-lab-pick="a2"]', "the search result");
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement.id), "lab-rate-pick", "typing keeps the caret in the search box");
+      await c.click('[data-lab-pick="a2"]', "pick the right article");
+      await c.page.fill("#lab-rate-note", "Pairing is the answer.");
+      await c.click('[data-lab-act="save-ask"]', "Save to test set");
+      await waitTc(".support-lab-rate", "Saved to the test set");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "lab/cases").map((x) => x.body), [{ subject: "", text: "How do I add a display to my store?", expect: "articles", articleIds: ["a2"], rating: "wrong", note: "Pairing is the answer.", answered: { articleIds: ["a1", "a2"], confidence: 0.82 } }]);
+      await serverWrite("supportEvalCases", "c-new", { subject: "", text: "How do I add a display to my store?", expect: "articles", articleIds: ["a2"], rating: "wrong", note: "Pairing is the answer.", source: "lab", createdAt: T0, updatedAt: T0 });
+      await waitTc(".support-lab-cases", "Not run");
+      assert.ok((await tc(".support-lab-cases")).includes("Rated wrong"));
+      c.at("Run all cases: progress, then accuracy over time and the failing case with expected and matched titles");
+      await c.click('[data-lab-act="run"]', "Run all cases");
+      await until(() => c.supportCalls.some((x) => x.path === "lab/runs/r-1/step"), "a step of the run");
+      await serverWrite("supportEvalRuns", "r-1", { status: "running", startedAt: T0 + 5000, total: 1, done: 0, passed: 0, failed: 0, results: {} });
+      await waitTc("#lab-progress", "Running: 0 of 1 case done");
+      await serverWrite("supportEvalRuns", "r-1", { status: "done", startedAt: T0 + 5000, finishedAt: T0 + 9000, total: 1, done: 1, passed: 0, failed: 1, accuracy: 0, results: { "c-new": { passed: false, problems: ["no right article chosen"], chosen: ["a1"] } } });
+      await serverWrite("supportEvalCases", "c-new", { subject: "", text: "How do I add a display to my store?", expect: "articles", articleIds: ["a2"], rating: "wrong", source: "lab", createdAt: T0, updatedAt: T0, lastResult: { runId: "r-1", passed: false, problems: ["no right article chosen"], chosen: ["a1"] } });
+      await c.visible(".support-lab-run", "a row under Accuracy over time");
+      assert.ok((await tc(".support-lab-run")).includes("0 passed · 1 failed"));
+      const failing = await tc(".support-lab-failing");
+      assert.ok(failing.includes("Pair a screen with a store") && failing.includes("Add a display to a store") && failing.includes("no right article chosen"), failing);
+      assert.ok((await tc(".support-lab-cases")).includes("Failed"));
+      await noSideScroll("the test set");
+      c.at("a failing case opens its own page");
+      await c.click(".support-lab-fail-title", "the failing case");
+      await until(() => new URL(c.page.url()).hash === "#support/lab/case/c-new", "the case address");
+      await c.visible("#lab-case-text");
+      await c.click('[data-lab-act="back"]', "back to the lab");
+      await c.visible("#lab-text");
+      c.at("Add to test lab on a Support Inbox ticket opens its case to say what should happen");
+      await c.click('[data-support-tab="inbox"]', "the Support Inbox tab");
+      await c.click('[data-support-ticket="t1"]', "the ticket");
+      await c.click('[data-support-act="to-lab"]', "Add to test lab");
+      await until(() => new URL(c.page.url()).hash === "#support/lab/case/t-t1", "the new case");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "lab/from-ticket").map((x) => x.body), [{ ticketId: "t1", source: "support" }]);
+      await serverWrite("supportEvalCases", "t-t1", { subject: "Adding a display", text: "How do I add a display?", finalAnswer: "Hi, open Displays and Devices.", answeredBy: "person", expect: "", articleIds: [], needsReview: true, source: "support", ticketId: "t1", ticketKey: "SUP-4", createdAt: T0 + 1, updatedAt: T0 + 1 });
+      await waitTc(".support-lab-case-page", "The answer that was sent");
+      assert.ok((await tc(".support-lab-case-page")).includes("Needs review"));
+      await c.click('[data-lab-expect="none"]', "No answer yet");
+      await c.click('[data-lab-act="save-case"]', "Save");
+      await until(() => c.supportCalls.some((x) => x.path === "lab/cases" && x.body.id === "t-t1"), "the case saved");
+      assert.deepStrictEqual(c.supportCalls.find((x) => x.body.id === "t-t1").body, { id: "t-t1", subject: "Adding a display", text: "How do I add a display?", expect: "none", articleIds: [], rating: "", note: "" });
+      await noSideScroll("a case");
+      c.at("Add to test lab on an Aidan ticket");
+      await c.click('[data-support-tab="aidan"]', "the Aidan tab");
+      await c.click('[data-support-ticket="ta"]', "the Aidan email");
+      await c.click('[data-support-act="to-lab"]', "Add to test lab");
+      await until(() => new URL(c.page.url()).hash === "#support/lab/case/t-ta", "the Aidan case");
+      assert.deepStrictEqual(c.supportCalls.filter((x) => x.path === "lab/from-ticket").map((x) => x.body)[1], { ticketId: "ta", source: "aidan" });
+    },
+  },
+  {
+    // x3MqwdJxQ0tJMGlcDi1Y: a view-only member reads the set, the runs and a case, with no Ask, Save, Delete or Run.
+    name: "Support Inbox: Test lab for a view-only member is read only",
+    hash: "#support/lab",
+    seed: () => {
+      const s = only("b1");
+      s.user = { email: "viewer@ph.example", role: "viewer" };
+      s.docs.faqArticles = { a1: { status: "published", title: "Add a display to a store" } };
+      s.docs.supportEvalCases = { c1: { subject: "Displays", text: "How do I add a display?", expect: "articles", articleIds: ["a1"], rating: "correct", source: "lab", createdAt: T0, updatedAt: T0, lastResult: { runId: "r1", passed: true, problems: [], chosen: ["a1"] } } };
+      s.docs.supportEvalRuns = { r1: { status: "done", startedAt: T0, finishedAt: T0 + 1000, total: 1, done: 1, passed: 1, failed: 0, accuracy: 1, results: { c1: { passed: true, problems: [], chosen: ["a1"] } } } };
+      return s;
+    },
+    run: async (c) => {
+      const tc = (sel) => c.page.locator(sel).first().evaluate((el) => el.textContent);
+      await c.visible(".support-lab-cases", "the cases");
+      assert.ok((await tc(".support-lab-run")).includes("100%"));
+      assert.ok((await tc(".support-lab")).includes("Every case passed in the latest run."));
+      const writeControls = '#lab-text, [data-lab-act="ask"], [data-lab-act="run"], [data-lab-act="save-case"], [data-lab-act="delete-case"], [data-lab-act="save-ask"]';
+      assert.strictEqual(await c.page.locator(writeControls).count(), 0, "no Ask or Run");
+      await c.click('[data-lab-case="c1"]', "the case");
+      await until(async () => (await tc(".support-lab-case-page").catch(() => "")).includes("How do I add a display?"), "the case page");
+      assert.ok((await tc(".support-lab-case-page")).includes("Rated correct"));
+      assert.strictEqual(await c.page.locator(writeControls).count(), 0, "no Save or Delete");
     },
   },
   {

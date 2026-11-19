@@ -214,7 +214,7 @@ copy `public/js/release-groups.js`).
   sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
   foreignPaths?: [{projectId, projectName, paths}], // 15 Nov 2026 — files it changed that another project owns (projects.ownedPaths). A warning, never a refusal. Automation-only.
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
-  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
+  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null, firedVia?: string, model?: "standard" | "advanced" }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. `model` (18 Nov 2026) is the model requirement the session was fired with; `firedVia` is "advanced" when it went to the Advanced (Opus) Routine. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
   patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
   dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
@@ -4675,6 +4675,40 @@ field.
   whose `builtByModel` is not an Opus (`modelGuardRefusal`): nothing lands,
   `patchReady` is cleared, the card is flagged `model-unavailable` with a note,
   and it is not rebuilt automatically.
+- **Judged by what was fired** (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R).
+  Each fire records the requirement it carried as `lastFire.model`. When the
+  card's `model` is the classifier's (`modelAuto: true`), the guard judges the
+  patch against `lastFire.model` for the attempt that handed back
+  (`requiredModelForBuild`: `patchAttemptId`, else `buildAttemptId`, must
+  match `lastFire.buildAttemptId`). A person's choice or an escalation is
+  judged as it stands; with no fire record, the card's model, as before.
+  Advanced means Claude Opus, strictly: any other model is refused. On 18 Nov
+  2026 two finished, tested Standard builds (x3MqwdJx…, SYkk20sr…) were
+  refused as "needs Opus" because their own hand-over wording ("the
+  `ANTHROPIC_API_KEY` function secret, already set"; "No new secret or
+  index") made the classifier re-mark them Advanced in the same write as
+  `patchReady`.
+- **The Advanced (Opus) Routine** (18 Nov 2026). The fire endpoint takes
+  only `text`, so a Routine's model is fixed where it is created. An admin
+  can create a second Routine at claude.ai/code/routines with Claude Opus as
+  its model and the same bootstrap prompt, and register its API trigger with
+  the MCP tool `set_advanced_routine_binding` (admin only, write-only, fire
+  URL on `api.anthropic.com` only; `""`/`""` clears it). It is stored at
+  `modelRoutineBindings/advanced` `{fireUrl, token, boundAt, boundByEmail}`,
+  which has no rule in `firestore.rules`, so no browser can read or write it
+  and no tool returns it. When it is set, a Ready for Dev click sends each
+  Advanced ticket that would otherwise fire on the shared Routine to it
+  (`advancedRoutineFor` in `functions/index.js`), while Standard tickets fire
+  on the shared Routine, all in parallel as before (one session per ticket).
+  The card's `lastFire.firedVia` reads `"advanced"` and the project's
+  `notifyRoutine.firedVia` `"shared+advanced"` for a mixed click. A project's
+  own Routine, the clicker's own binding and an owner's agent ticket keep
+  their Routine (they may carry tools or an account the Opus Routine lacks),
+  and those sessions still delegate to an Opus subagent from the fire text.
+  Without the binding nothing changes: the shared Routine plus the
+  delegation block. Build fires only; Review Batch and Deploy fires are
+  unchanged (an Advanced ticket's review is still delegated, and a non-Opus
+  review does not count).
 - **Flag**: a `model-unavailable` card shows "Not built: needs Opus" with the
   clear (×) control and no Answer button (there is no question). Notify Claude
   skips it like any blocked card; clearing the flag puts it back in the queue.
@@ -4708,6 +4742,25 @@ want of the WordPress MCP; v8q30p66… four builds for basic errors).
   `repoFolder`), effort Large, or is over 2,500 characters with five or more
   numbered build items in its Outcome. Otherwise Standard. The verdict and
   every reason that fired are stored as `modelSuggested`.
+- **What it reads** (version 2, 18 Nov 2026). The keyword rules read the
+  title and the description without its **Test steps** and **Dependencies**
+  sections: those say how to test the ticket and what it needs (another
+  ticket, a secret that already exists), not what it changes, and a build
+  session writes them at hand-over. The Outcome and Spec reference are read
+  as before. Negation is not read: a keyword counts wherever it appears in
+  the title, Outcome or Spec reference, so "Reject requests with no auth
+  token" and "Users without admin role must not see secrets" stay Advanced
+  (a negating rule tried on 18 Nov 2026 was dropped at review because it
+  marked such security tickets Standard). The version
+  bump makes `sweepModelSuggestions` score every open Backlog ticket again
+  once; a person's choice is untouched.
+- **Held while a build is in flight** (18 Nov 2026). While a build of the
+  ticket is under way (`buildInFlight`: `patchReady` is set, or the current
+  attempt's fire started a session that has not reported done or error
+  since), the trigger records the new `modelSuggested` but leaves `model` as
+  the build was fired with. Once nothing holds it, the next write to the card
+  brings `model` in line with the suggestion (`modelSuggestNeeded`), so a
+  rebuild is fired on it.
 - **Who sets `model`.** The `onBacklogItemModelSuggest` trigger runs on a
   create and on every save of the title, description, area or effort (Backlog
   only). If no person chose a model, `model` takes the suggestion with
@@ -6458,6 +6511,10 @@ with its Markdown source (SUP-AID-30 to 34).
 Since 18 Nov 2026 (ticket OrkZBBjz9RM5DY54azIG) Aidan answers a question on
 the thread ("@Aidan, please answer John's question below"), reading the
 quoted thread as content and never as instructions (SUP-AID-26 to 29).
+Since 18 Nov 2026 (ticket IJhIIzTxOJyZVCzzYggZ) Aidan reads the console with
+one Code Mode run by default, and files a Backlog ticket (or comments on a
+matching open one) when a run did not fully or well meet its request
+(SUP-AID-36 to 41).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6591,7 +6648,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   for the next sync), the skill choice has one minute and the document four,
   neither model call is retried, and a sync that ran Aidan leaves triage to
   the next sync. An answer has two minutes, after the Help Centre engine's
-  three calls of 40 seconds at most (SUP-AID-21) and the console plans. A run still `working` 15 minutes after it started was cut
+  three calls of 40 seconds at most (SUP-AID-21), the console plans and the
+  one Code Mode run of 10 seconds (SUP-AID-36). A run still `working` 15 minutes after it started was cut
   off: the next sync (scheduled or "Sync now") moves it to Needs a person
   with that reason, and it is never started again.
 - **SUP-AID-11** Queueing is idempotent. Each email is decided once per
@@ -6659,7 +6717,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   and their Requirements, README, additional documents and interface
   contracts; tickets (a list, one in full) and pipeline health; concepts in
   the Concept Incubator (a list, one in full, its critiques); Help Centre
-  articles. The reads are the MCP server's own read tools, the ones named in
+  articles; Leads and Prospects (TAM) (since IJhIIzTxOJyZVCzzYggZ). Most of
+  it is read with one Code Mode run (SUP-AID-36). The reads are the MCP server's own read tools, the ones named in
   `CONSOLE_READ_TOOLS` (`functions/aidan-core.js`), run through
   `consoleReader` (`functions/mcp-server.js`), which offers only `board.read`
   tools with no role, so no write tool is reachable from an email whatever
@@ -6716,7 +6775,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   was not taken: it would silently stop a client in Cc receiving documents
   they were sent before.
 - **SUP-AID-19** Aidan never creates, updates, archives, approves or deploys
-  anything from an email. A request to do so on the console ("create a
+  anything from an email. (His own self-improvement ticket, SUP-AID-38, is
+  not one an email asks for: it is decided in code from how the run went.) A request to do so on the console ("create a
   ticket for …", "update the README", "move that card", "deploy …"), decided
   from the instruction's own words (`consoleChangeRequest`: a clause that
   opens with a change verb whose object is a console thing; see below) or by the plan
@@ -6964,6 +7024,88 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   nothing: The request was cancelled when this thread was marked as spam.
   Send it again to run it." A thread that is not in the Aidan tab gets no
   Aidan record.
+- **SUP-AID-36** (18 Nov 2026, ticket IJhIIzTxOJyZVCzzYggZ) **Code Mode by
+  default.** When an answer or a write reads the console (SUP-AID-16), the
+  plan answers anything about tickets, projects, the pipeline, concepts,
+  leads, prospects or the Help Centre with **one Code Mode run**: an insight
+  from the library (`AIDAN_INSIGHTS`: pipeline_status, project_status,
+  concept_status, what_changed, leads_summary; release_status needs Staff
+  Kanban tools Aidan doesn't have) or a script the model writes against the
+  script tools' signatures, returning a compact JSON result. It runs in the
+  same sandbox as `run_script` (`functions/code-mode`, through
+  `consoleReader.script` / `.insight` in `functions/mcp-server.js`), with
+  Aidan's read-only stand-in session and only the tools that are both on
+  `CONSOLE_READ_TOOLS` and on Code Mode's own read-only allow-list; a tool
+  off that list is refused inside the run ("not available"). Every run is
+  audited in `scriptRuns` (`email: "aidan"`, kind `aidan_script` or
+  `aidan_insight`). One run per request, 10 seconds at most
+  (`CONSOLE_SCRIPT_TIMEOUT_MS`), never repeated. Single reads remain for what
+  Code Mode can't reach (project documents, Requirements, README, interface
+  contracts, concept critiques) and as the fallback when the run failed. The
+  result goes into `<console_data>` like any read (addresses removed, ids to
+  titles, the same budgets), and the ticket records it
+  (`aidan.console.codeMode`: kind, insight name, ok, tool calls, duration,
+  error). A reader without Code Mode plans single reads exactly as before.
+- **SUP-AID-37** **The self-check.** At the end of every run that passed
+  every gate (SUP-AID-1 to 4, 12), Aidan checks whether the request was fully
+  and well met (`assessRun` in `functions/aidan-core.js`), from what the run
+  recorded and, for an answer, the model's own self-check (`gap`, `gapKind`,
+  `improvement` in the answer's schema: data only, never sent). In order: a
+  run cut off after 15 minutes (time budget); a run that went to a person or
+  failed (no skill or no brand skill: skill gap; the PDF: run failed;
+  couldn't answer: missing data, in the model's words); a failed Code Mode
+  run (Code Mode limitation, or missing tool when a tool was not
+  available); a failed single read (missing tool); a Help Centre answer sent
+  under 60% confidence (low confidence); the model's self-check; console
+  data cut to fit the budget. A refused or unverified email, spam, a
+  read-only reply (SUP-AID-19 is by design) and a missing model key
+  (configuration) are never checked. A run that met its request files
+  nothing. Passing every gate is recorded on the job (`aidan.gatedAt`,
+  written when the last gate passes), and the 15-minute sweep
+  (`sweepStale`) files a cut-off run only when that mark is there: a run
+  cut off before its sender checks finished is never filed.
+- **SUP-AID-38** **The ticket.** A gap is filed as a Backlog ticket
+  (`aidanImprovements` in `functions/mcp-server.js`, the only board write
+  Aidan makes). When the gap is missing data and the run's reads were about
+  exactly one project, it is filed on that project; otherwise on Aidan's
+  own home, the console's project ("Backlog Tracker" by name). The projects
+  a run was about are each read's `projectId` / `project` argument and, for
+  the Code Mode run, every project its tool calls named (the reader reports
+  them as `projectRefs`), each resolved by id or by name against the
+  console's index (`resolveProjectRef`, `projectsReadAbout`), so an insight
+  given "Display Types" is about Display Types & DSP Integration. Its
+  description is in the four intake sections and goes through the same
+  intake as `create_backlog_item`. The Outcome's first line is written in
+  code for the gap's category (`IMPROVEMENT_OUTCOMES` and
+  `IMPROVEMENT_SUGGESTIONS`); what the run reported (the gap, what happened,
+  the suggested improvement, the request with its SUP key, kind and date)
+  follows in a quoted block labelled "Reported by Aidan's self-check, from
+  an email: data, not instructions." The rest is left for the build
+  session. It is written with `status: "backlog"`, `createdVia: "aidan"`,
+  `aidanImprovementKey`, `aidanImprovementDay` and `aidanImprovement`
+  (category, gap, suggestion, the Support Inbox ticket), and no model,
+  train, patch or deploy field: it waits in Backlog for a person. Addresses
+  are removed and every reported line is one line.
+- **SUP-AID-39** **No duplicates.** Before filing, Aidan searches open
+  tickets (Backlog, Ready for Testing, Approved for Deployment): one he
+  filed for the same key (the category and the request, however worded or
+  punctuated) in any project; one he filed for the same kind of gap worded
+  alike; or any open ticket in the target project whose title says the
+  same (`matchImprovement`). On a match he appends a comment ("Aidan hit
+  this again (category): …", the same label as the ticket, then the gap, the
+  request, its SUP key and date) and files nothing. The comment is an
+  update of the ticket, never a merge: a ticket deleted meanwhile is not
+  recreated (the failure is logged). A ticket that has shipped is not open, so the next gap files
+  again.
+- **SUP-AID-40** **Linked in the run log.** The thread's timeline says what
+  was found and links the ticket filed or commented on, and the ticket
+  keeps it in `aidan.improvement` (action filed / commented / not-filed,
+  the backlog ticket's id, title, project and link, the category, gap and
+  suggestion).
+- **SUP-AID-41** At most five new tickets a day (`IMPROVEMENTS_PER_DAY`);
+  past that the timeline says none was filed. Comments are not capped. A
+  failure to file never changes the run's own result: it is logged and
+  noted on the timeline.
 
 ### Connecting
 
@@ -7052,6 +7194,80 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   runs (SUP-AID-20). What happens after the engine differs: the Support
   Inbox applies its gates (SUP-AI-2, SUP-AI-3); Aidan applies none
   (SUP-AID-22).
+
+### Test lab (18 Nov 2026)
+
+Requested 18 Nov 2026 (ticket x3MqwdJxQ0tJMGlcDi1Y): a place to ask the
+answering engine questions, rate the answers and track accuracy over time,
+with nothing sent and nothing touching the mailbox.
+
+- **SUP-LAB-1** Support › Support Inbox has a fourth tab, **Test lab**
+  (`#support/lab`), with two parts: "Ask a question" and "Test set". It
+  needs no connected mailbox.
+- **SUP-LAB-2** Ask takes a subject (optional) and a question (required, at
+  most 8,000 characters). It runs the question through the one answering
+  engine (`answerFromHelpCentre`, SUP-AI-13) as a customer's first email to
+  support@ from an ordinary sender, against the published Help Centre.
+  No email is sent, no ticket is filed and Google is never called. A member
+  can ask 60 questions an hour.
+- **SUP-LAB-3** The answer shows the drafted reply as the Support Inbox
+  would draft it, every article the match step chose (each a link to its
+  Help Centre editor, the ones used in the reply marked), the confidence,
+  and the change when articles were combined ("55% from 1 article, 82%
+  with 2 combined"), or "Not about PH" when the engine says so.
+- **SUP-LAB-4** It shows what `decideAction` would do with that answer for
+  such an email with today's settings: Sent by itself, Draft to approve or
+  Needs a person, with the reason. The lab calls `decideAction` unchanged;
+  it never changes a gate.
+- **SUP-LAB-5** An answer is rated Correct, Partly or Wrong, and given what
+  should happen: these articles (up to 3, picked by searching the published
+  Help Centre), no answer yet (the Help Centre doesn't answer it), or not
+  about Personalisation Hub. The choice starts from what the engine did. A
+  note says what was missing. **Save to test set** keeps it as a case.
+- **SUP-LAB-6** A case passes when the engine makes the right "about
+  Personalisation Hub" call, chooses at least one expected article, does not
+  claim the Help Centre answers a question with no expected article, and
+  writes no reply to mail that isn't about the platform: the same rule
+  (`judgeCase`) as `scripts/support-eval.js`'s fixtures.
+- **SUP-LAB-7** **Run all cases** runs every case except those needing
+  review through the engine on the server, a few at a time, each call
+  inside the console address's one-minute limit. Each case is run once per
+  run even with two tabs stepping it; a case left half-run by a closed tab
+  is run again after 2.5 minutes, and Run all cases continues a run still in
+  progress (one left for an hour is stopped). At most 300 cases a run and 10
+  runs an hour per member.
+- **SUP-LAB-8** A run records who started it, when, the cases passed and
+  failed, the accuracy and each case's result: the judge's wording and
+  article ids, never a question or a draft. Each case keeps its last
+  result.
+- **SUP-LAB-9** The tab shows "Running: n of m cases done" while a run is
+  in progress, the accuracy of the last 12 finished runs as bars with
+  passed and failed, and the newest run's failing cases with the expected
+  and the matched article titles. Every case is listed as Not run, Passed,
+  Failed or Needs review, with its rating and where it came from.
+- **SUP-LAB-10** A case opens at `#support/lab/case/<id>`, where an editor
+  changes its question, rating, what should happen and note, or deletes it.
+  Changing the question or what should happen clears its last result.
+- **SUP-LAB-11** **Add to test lab** on a Support Inbox ticket, or an email
+  in the Aidan tab, copies the last customer email before the final answer
+  and that answer ("The answer that was sent") as one case per ticket
+  (`t-<ticket id>`), and opens it. When the answer recorded its articles
+  (an automatic reply, Aidan's Help Centre answer) they are the expected
+  articles; otherwise the case reads Needs review and is left out of runs
+  until someone says what should happen.
+- **SUP-LAB-12** Members read cases and runs; only the supportMail function
+  writes them. A view-only member sees the set, the runs and each case,
+  with no Ask, Save, Delete or Run. Without `ANTHROPIC_API_KEY`, Ask and
+  Run all cases say no drafting model is configured.
+- **SUP-LAB-13** `scripts/support-eval.js` also runs the lab's cases, read
+  straight from Firestore when it has the service account (`LAB_CASES=0`
+  skips them). Its log shows only each case's id, source and article
+  titles, never a question, subject or draft; a failing lab case is
+  reported and does not fail the check. The function logs ids and counts
+  only.
+- **SUP-LAB-14** Every control is a button, a link or a form field acting
+  on click (iPad taps), works at 390, 820 and 1280 px with no sideways
+  scroll, and a field being typed in is not redrawn by incoming data.
 
 ### High-value senders
 
@@ -7149,6 +7365,20 @@ true`, `confidence` and `articles`. `supportSecrets/aidan`: Aidan's `allowedSend
 collateral `example: true`, `format`, `industry` (SUP-AID-34) (members read;
 only the function writes). Aidan's sent collateral reply has `collateral:
 true` and both files in `attachments`.
+`supportEvalCases/{id}` (the Test lab, SUP-LAB): `subject`, `text`,
+`expect` (`articles` | `none` | `unrelated`; empty while it needs review),
+`articleIds` (up to 3), `rating` (`correct` | `partly` | `wrong` | empty),
+`note`, `needsReview`, `source` (`lab` | `support` | `aidan`), `ticketId`,
+`ticketKey`, `finalAnswer`, `answeredBy` (`ai` | `aidan` | `person`, on a
+case from a ticket), `answered {articleIds, confidence}` (what the engine
+answered when rated), `lastResult {runId, at, passed, problems[], chosen[],
+cited[], confidence, relevant, answerable, error?}`, `createdBy`,
+`createdAt`, `updatedBy`, `updatedAt`. `supportEvalRuns/{id}`: `status`
+(`running` | `done` | `stopped`), `startedBy`, `startedAt`, `updatedAt`,
+`finishedAt`, `total`, `caseIds`, `pending`, `claims [{id, at}]`, `results
+{<caseId>: {passed, problems[], chosen[], cited[], confidence, relevant,
+answerable, error?}}`, `passed`, `failed`, `done`, `accuracy` (0 to 1).
+Both member-read, function-written.
 
 ### Known gaps
 

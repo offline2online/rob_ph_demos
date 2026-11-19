@@ -2451,6 +2451,40 @@ const TOOLS = [
     },
   },
   {
+    // The Advanced (Opus) Routine (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R):
+    // a second Routine, set to run on Claude Opus at claude.ai/code/routines,
+    // that functions/index.js fires for an Advanced ticket instead of the
+    // shared Routine (advancedRoutineFor). modelRoutineBindings/advanced has no
+    // rule in firestore.rules, so only the server reads or writes it, and no
+    // tool returns it.
+    name: "set_advanced_routine_binding",
+    role: "admin",
+    description: "ADMIN ONLY. Register (or clear) the Advanced (Opus) Routine: a Routine you created at claude.ai/code/routines with Claude Opus as its model and the same bootstrap prompt as the shared one (get_routine_setup_instructions has it). Once set, a build click sends each Advanced ticket that would otherwise run on the shared Routine to this one, so it is built on Opus from the start, while Standard tickets keep the shared Routine and run alongside. A project's own Routine, a member's own Routine and an owner's agent tickets are unchanged. Without it, Advanced tickets run on the shared Routine and hand the build to an Opus subagent. Write-only: the values are never returned by this or any other tool. Pass both as \"\" to clear it. Logged to mcpAuditLog.",
+    scope: "board.write",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fireUrl: { type: "string", description: "The Opus Routine's API trigger URL (ends in /fire), from claude.ai/code/routines. Pass \"\" together with token: \"\" to clear it." },
+        token: { type: "string", description: "The bearer token shown when you added the API trigger. Pass \"\" together with fireUrl: \"\" to clear it." },
+      },
+      required: ["fireUrl", "token"], additionalProperties: false,
+    },
+    async run(args, session) {
+      const fireUrl = String(args.fireUrl || "").trim();
+      const token = String(args.token || "").trim();
+      const error = routineBindingError(fireUrl, token);
+      if (error) return toolError(error.replace("your binding", "the Advanced Routine"));
+      const clearing = !fireUrl && !token;
+      const ref = db().collection("modelRoutineBindings").doc("advanced");
+      if (clearing) await ref.delete();
+      else await ref.set({ fireUrl, token, boundAt: FieldValue.serverTimestamp(), boundByEmail: session.email });
+      await audit(session, "set_advanced_routine_binding", { cleared: clearing });
+      return textResult(clearing
+        ? { cleared: true, note: "Advanced tickets go back to the shared Routine, which hands the build to an Opus subagent." }
+        : { registered: true, note: "Stored, and never returned by any tool. The next build click sends Advanced tickets to this Routine; the card's lastFire.firedVia reads \"advanced\" when it did." });
+    },
+  },
+  {
     name: "list_projects",
     description: "Every project/program on the board, with a short description of what it covers and how many tickets sit in each pipeline column. Use this to find the projectId other tools need, and to map a loose reference (\"the FAQ backlog\", \"the DSP project\") to the right project. startHereDocId is the document to read first when taking a project over (read it with get_project_document); null when the project declares none.",
     scope: "board.read",
@@ -5725,7 +5759,7 @@ const SERVER_INSTRUCTIONS = [
   "Staff Kanban: kanban_* (writes: kanban_create_task, kanban_create_tasks, kanban_create_contract_ticket, kanban_update_task, kanban_move_task, kanban_assign_task, kanban_flag_task, kanban_comment, kanban_edit_comment, kanban_delete_comment, kanban_attach_file, kanban_create_upload_url, kanban_attach_uploaded, kanban_remove_attachment, kanban_capture_screenshots, kanban_check_criteria, kanban_list_notifications, kanban_mark_notifications_read, kanban_set_staff_pronunciation). Staff Kanban is for staff tasks only; agent work goes via create_backlog_item, and agents can still create and assign staff tasks.",
   "Leads: list_leads, get_lead; writes create_lead, create_leads, update_lead, update_lead_stage, add_lead_contact, update_lead_contact, remove_lead_contact, add_lead_note, link_lead_customer_account, unlink_lead_customer_account, link_lead_prospect, unlink_lead_prospect, archive_lead, restore_lead; delete_lead is admin only. Prospects: list_prospects, upsert_prospects.",
   "Skills: list_skills, get_skill; upload_skill, update_skill, delete_skill, mark_skill_reviewed, report_skill_miss.",
-  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding only chooses whose Routine your own clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills that build and deploy runs load); finalise_project / unfreeze_project.",
+  "Release: other card moves, Notify Claude clicks and campaigns stay on the board; set_my_routine_binding picks whose Routine your clicks fire. Admin only, each the board button's own action, tickets named by id: send_to_build (Ready for Dev), approve_for_deployment (Ready for Testing to Approved; tests not green need acknowledgeTests, tell the person first), fail_testing (Failed testing, with a reason), approve_deploy_to_main (Deploy to Main, only when the whole train is approved); set_phase_skill_bindings (skills build/deploy runs load); set_advanced_routine_binding; finalise_project / unfreeze_project.",
 ].join(" ");
 
 function rpcError(id, code, message, data) {
@@ -6147,9 +6181,113 @@ function consoleReader(names) {
       const text = ((out && out.content) || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n");
       return out && out.isError ? { ok: false, error: text } : { ok: true, text };
     },
+    // Code Mode (IJhIIzTxOJyZVCzzYggZ): ONE sandboxed run that reads across
+    // sources and returns a compact result, instead of many reads. A script
+    // (or an insight from the library) calls only the tools that are both on
+    // Aidan's list and on Code Mode's own read-only allow-list, with the same
+    // read-only stand-in session; each run is audited in scriptRuns.
+    scriptTools: () => aidanScripts.toolNames(AIDAN_READ_SESSION, [...allowed]),
+    describeScriptTools: () => aidanScripts.describe(AIDAN_READ_SESSION, [...allowed]),
+    insights: () => aidanScripts.insights(),
+    // Each result also reports `projectRefs`: the project ids or names the
+    // run's tool calls were given (an insight's own resolved id among them),
+    // so Aidan files a gap on the project the run was about.
+    async script(code, { timeoutMs } = {}) {
+      const refs = projectRefCollector();
+      return codeModeOutcome(await aidanScripts.run(AIDAN_READ_SESSION, code, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
+    },
+    async insight(name, params, { timeoutMs } = {}) {
+      const refs = projectRefCollector();
+      return codeModeOutcome(await aidanScripts.insight(AIDAN_READ_SESSION, name, params, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
+    },
   };
 }
+const aidanScripts = codeMode.scriptRunner({ db, FieldValue, logger, atLeast, getTool: (name) => TOOLS_BY_NAME.get(name) });
+// The projectId / project arguments of a Code Mode run's tool calls, at most 50.
+function projectRefCollector() {
+  const refs = new Set();
+  return {
+    onCall(_name, args) {
+      for (const k of ["projectId", "project"]) {
+        const v = args && args[k];
+        if (typeof v === "string" && v.trim() && refs.size < 50) refs.add(v.trim().slice(0, 200));
+      }
+    },
+    list: () => [...refs],
+  };
+}
+// The sandbox's outcome as Aidan reads it: the result as JSON text, or why not.
+function codeModeOutcome(o, projectRefs = []) {
+  const toolCalls = ((o && o.toolCalls) || []).map((c) => c.name);
+  if (o && o.ok) return { ok: true, text: JSON.stringify(o.result === undefined ? null : o.result), toolCalls, projectRefs, durationMs: o.durationMs || 0 };
+  const e = (o && o.error) || {};
+  return { ok: false, error: String(e.message || "the script failed"), errorKind: String(e.kind || "error"), toolCalls, projectRefs, durationMs: (o && o.durationMs) || 0 };
+}
 exports.consoleReader = consoleReader;
+
+// Aidan's self-improvement tickets (IJhIIzTxOJyZVCzzYggZ): when a run did
+// not fully or well meet a request, functions/aidan.js files a Backlog ticket
+// describing the gap, or comments on a matching open one. This is the only
+// write Aidan makes on the board, it is never one an email asks for (the
+// gap is decided in code, aidan-core.js → assessRun), and it only ever adds a
+// ticket to a project's Backlog or appends a note: no status, train, deploy
+// or project field is touched. The intake shapes the description exactly as
+// create_backlog_item does, so the ticket goes through the same pipeline.
+function aidanImprovements() {
+  const items = () => db().collection("backlogItems");
+  const rowsOf = (snap) => { const out = []; snap.forEach((d) => out.push(Object.assign({ id: d.id }, d.data() || {}))); return out; };
+  const open = (x) => buildOrder.OPEN_STATUSES.includes(x.status || "backlog");
+  return {
+    boardLink: (id) => `${PUBLIC_ORIGIN}/#item-${id}`,
+    async projects() {
+      return rowsOf(await db().collection("projects").get()).map((p) => ({ id: p.id, name: String(p.name || ""), archived: p.archived === true }));
+    },
+    // Open tickets in one project (Backlog, Ready for Testing, Approved).
+    async openTickets(projectId) {
+      return rowsOf(await items().where("projectId", "==", String(projectId)).get()).filter(open)
+        .map((x) => ({ id: x.id, title: String(x.title || ""), desc: String(x.desc || ""), status: x.status || "backlog", projectId: x.projectId, aidanImprovementKey: x.aidanImprovementKey || "", aidanImprovement: x.aidanImprovement || null }));
+    },
+    // Open tickets Aidan filed for this exact gap, in any project.
+    async byKey(key) {
+      return rowsOf(await items().where("aidanImprovementKey", "==", String(key)).get()).filter(open)
+        .map((x) => ({ id: x.id, title: String(x.title || ""), status: x.status || "backlog", projectId: x.projectId }));
+    },
+    // How many Aidan filed on this UTC day (a cap, aidan-core.js → IMPROVEMENTS_PER_DAY).
+    async filedOn(day) { return (await items().where("aidanImprovementDay", "==", String(day)).get()).size || 0; },
+    async file({ projectId, desc, title, improvement }) {
+      const projectSnap = await db().collection("projects").doc(String(projectId)).get();
+      if (!projectSnap.exists) return { ok: false, error: `No project with id ${projectId}.` };
+      const frozen = finalisedRefusal(projectSnap.data(), "no new backlog items can be filed against it");
+      if (frozen) return { ok: false, error: frozen };
+      const intake = applyIntake(String(desc || ""));
+      const cleanTitle = String(title || "").trim().slice(0, 200) || generateTitle(intake.sections.outcome || desc);
+      const blocked = intake.blocked ? { ...intake.blocked, setBy: INTAKE_SETTER, setAt: new Date() } : null;
+      const ref = await items().add({
+        projectId: String(projectId),
+        title: cleanTitle, desc: intake.desc, type: "feature", category: suggestCategory(String(desc || "")),
+        ...(blocked ? { blocked } : {}),
+        status: "backlog",
+        // Provenance: filed by Aidan's own self-check, not by a person or an email.
+        createdVia: "aidan",
+        aidanImprovementKey: String(improvement.key),
+        aidanImprovementDay: String(improvement.day),
+        aidanImprovement: improvement,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        notes: [{ author: "aidan", text: "Filed by Aidan's self-check after a run that didn't fully or well meet a request.", at: new Date() }],
+      });
+      return { ok: true, itemId: ref.id, title: cleanTitle, projectId: String(projectId), board: `${PUBLIC_ORIGIN}/#item-${ref.id}` };
+    },
+    // A comment on an open ticket: appended, never a rewrite of the notes.
+    // update(), not a merge: a ticket deleted meanwhile is not recreated (the
+    // call fails, and reflect logs it).
+    async comment(itemId, text) {
+      await items().doc(String(itemId)).update({ notes: FieldValue.arrayUnion({ author: "aidan", text: String(text || "").slice(0, 4000), at: new Date() }), updatedAt: FieldValue.serverTimestamp() });
+      return { ok: true, itemId: String(itemId), board: `${PUBLIC_ORIGIN}/#item-${itemId}` };
+    },
+  };
+}
+exports.aidanImprovements = aidanImprovements;
 
 // The same member lookup the console endpoints use, for functions/index.js's
 // mediaKeys endpoint (media-keys.js), so both answer "who is this, and what

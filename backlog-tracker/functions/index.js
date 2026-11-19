@@ -22,7 +22,7 @@ const { auditLogEntry, buildAuditRequestText, zeroResultQueries } = require("./r
 const { createHelpApi } = require("./help-search");
 const { offloadPatchFiles, hasPatchFiles } = require("./patch-offload");
 const { advancePackageQueue } = require("./package-queue");
-const { modelRequirementBlock, reviewModelTag } = require("./model-requirement");
+const { modelRequirementBlock, reviewModelTag, requiresAdvancedModel, normaliseModelRequirement } = require("./model-requirement");
 const modelSuggest = require("./model-suggest");
 const skillBindings = require("./skill-bindings");
 // Contract-change review flags (ZmEWDC40NYOiojehfPjk): a flagged ticket's
@@ -289,6 +289,40 @@ async function resolveProjectRoutineCredentials(db, projectId, triggeredByEmail,
   return (await projectRoutineCredentials(db, projectId)) || resolveRoutineCredentials(db, triggeredByEmail, sharedFireUrl, sharedToken);
 }
 
+// The Advanced (Opus) Routine (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R):
+// modelRoutineBindings/advanced = {fireUrl, token, boundAt, boundByEmail}, a
+// second Routine set up at claude.ai/code/routines to run on Claude Opus and
+// registered by an admin with the MCP tool set_advanced_routine_binding.
+// Server-only: firestore.rules has no rule for the collection, so no browser
+// can read or write it, and no tool returns it. A build click sends each
+// Advanced ticket that would otherwise fire on the shared Routine to this one
+// (advancedRoutineFor), in parallel with the Standard tickets on the shared
+// Routine; a project's own Routine, the clicker's own binding and an owner's
+// agent ticket keep theirs. Without it, the shared Routine and the
+// fire text's delegation block, as before. null when unset or refused.
+const ADVANCED_ROUTINE_DOC = "advanced";
+async function advancedRoutineCredentials(db) {
+  try {
+    const snap = await db.collection("modelRoutineBindings").doc(ADVANCED_ROUTINE_DOC).get();
+    const b = snap.exists ? snap.data() : null;
+    if (!b || !b.fireUrl || !b.token) return null;
+    if (!routineFireHostAllowed(b.fireUrl)) {
+      logger.warn("Advanced (Opus) Routine binding refused — fire URL host not allowed; using the usual Routine");
+      return null;
+    }
+    return { fireUrl: b.fireUrl, token: b.token, via: "advanced" };
+  } catch (err) {
+    logger.error("Failed to read the Advanced (Opus) Routine binding — using the usual Routine", { error: err instanceof Error ? err.message : String(err) });
+    return null;
+  }
+}
+// Pure: the credentials one build ticket fires with. `usual` is what it would
+// fire with today (or null); `advanced` the Advanced Routine (or null).
+function advancedRoutineFor(item, usual, advanced) {
+  if (advanced && usual && usual.via === "shared" && requiresAdvancedModel(item)) return advanced;
+  return usual;
+}
+
 // The repo backlog-automation.yml lives in, and the event_type its
 // repository_dispatch trigger listens for. Hard-coded rather than
 // configurable: this function exists to start one specific workflow in one
@@ -415,6 +449,10 @@ function lastFireRecord({ result, prior, requestedAt, requestedByEmail, now = Da
       // The skills the session was sent (Flow 8/9), for "skills: …" on the card.
       ...(Array.isArray(result.skills) ? { skills: result.skills } : {}),
       ...(result.firedVia ? { firedVia: result.firedVia } : {}),
+      // The model requirement this attempt was fired with: the guard judges
+      // the patch against it when the card's model is the classifier's
+      // (model-requirement.js → requiredModelForBuild).
+      ...(result.model ? { model: result.model } : {}),
     };
   }
   const deferred = !!result.deferred;
@@ -455,7 +493,7 @@ async function fireBuildSessionsPerItem({ items, fireUrl, token, credentialsFor 
         const r = await fireRoutine(creds.fireUrl, creds.token, text, fetchImpl);
         if (r.error) logger.error("Routine fire failed for one ticket", { projectId, itemId: item.id, error: r.error, body: r.body });
         if (r.status === 429) throttled = true;
-        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId, skills: skills.map((x) => x.slug), firedVia: creds.via || null } : {}) };
+        results[idx] = { itemId: item.id, sessionId: r.sessionId || null, sessionUrl: r.sessionUrl || null, error: r.error || null, status: r.status ?? null, ...(r.sessionId ? { buildAttemptId, skills: skills.map((x) => x.slug), firedVia: creds.via || null, model: normaliseModelRequirement(item.model) } : {}) };
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err);
         logger.error("Routine fire threw for one ticket", { projectId, itemId: item.id, error });
@@ -664,10 +702,14 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       db, event.params.projectId, after.notifyRequestedByEmail, CLAUDE_ROUTINE_FIRE_URL.value(), CLAUDE_ROUTINE_TOKEN.value()
     );
     // Owner-tagged tickets use their owner's binding (looked up above), never
-    // fireUrl/token; a ticket with no usable credentials is not sent.
+    // fireUrl/token; a ticket with no usable credentials is not sent. An
+    // Advanced ticket bound for the shared Routine goes to the Advanced (Opus)
+    // Routine when one is set (advancedRoutineFor).
+    const advancedCreds = items.some((i) => requiresAdvancedModel(i)) ? await advancedRoutineCredentials(db) : null;
     const credentialsFor = (item) => {
       const owner = ownerFiring.ticketOwner(item);
-      return owner ? credsByOwner[owner] : (fireUrl && token ? { fireUrl, token, via: sharedCredVia } : null);
+      if (owner) return credsByOwner[owner];
+      return advancedRoutineFor(item, fireUrl && token ? { fireUrl, token, via: sharedCredVia } : null, advancedCreds);
     };
     const withoutCreds = items.filter((i) => !credentialsFor(i));
     if (withoutCreds.length && withoutCreds.length < items.length) {
@@ -676,7 +718,9 @@ exports.notifyOnProjectReadyForReview = onDocumentUpdated(
       sentItemIds = [...new Set([...inFlight, ...items.map((i) => i.id)])];
     }
     const ownedCount = items.filter((i) => ownerFiring.ticketOwner(i)).length;
-    const routineCredVia = ownedCount ? (ownedCount === items.length ? "owner" : `${sharedCredVia}+owner`) : sharedCredVia;
+    const advancedCount = items.filter((i) => { const c = credentialsFor(i); return c && c.via === "advanced"; }).length;
+    const baseVia = advancedCount ? (advancedCount === items.length ? "advanced" : `${sharedCredVia}+advanced`) : sharedCredVia;
+    const routineCredVia = ownedCount ? (ownedCount === items.length ? "owner" : `${baseVia}+owner`) : baseVia;
     let sessionId = null;
     let sessionUrl = null;
     let fireError = null;
@@ -2166,7 +2210,10 @@ function modelSuggestNeeded(before, after) {
   if (!before) return true;
   if (MODEL_INPUT_FIELDS.some((k) => JSON.stringify(before[k] ?? null) !== JSON.stringify(after[k] ?? null))) return true;
   const s = after.modelSuggested;
-  return !s || (Number(s.version) || 0) < modelSuggest.MODEL_SUGGEST_VERSION;
+  if (!s || (Number(s.version) || 0) < modelSuggest.MODEL_SUGGEST_VERSION) return true;
+  // A suggestion recorded while a build was in flight left `model` as the
+  // build was fired with (buildInFlight); once nothing holds it, it follows.
+  return !modelSuggest.explicitModel(after) && !modelSuggest.buildInFlight(after) && after.model !== s.model;
 }
 async function runModelSuggest(event, db = getFirestore()) {
   const before = event.data?.before?.data();
@@ -2797,6 +2844,10 @@ exports.supportMail = onRequest({ secrets: [MEDIA_KEYS_ENC_KEY, BOARD_API_KEY, S
       // read tools, only those named in aidan-core.js and only board.read
       // ones (mcp-server.js → consoleReader): nothing it can reach writes.
       consoleReader: mcp.consoleReader(require("./aidan-core").CONSOLE_READ_TOOLS),
+      // Aidan's self-check files a Backlog ticket (or comments on a matching
+      // open one) when a run didn't fully meet its request; the only board
+      // write Aidan makes, never one an email asks for.
+      improvements: mcp.aidanImprovements(),
       logger,
     });
   }
@@ -2943,4 +2994,4 @@ exports.kanbanAgentRollup = mcp.kanbanAgentRollup;
 // test/routine-binding-trigger.test.js exercise resolveRoutineCredentials
 // directly instead of standing up a full onDocumentUpdated + fetch-mocking
 // harness for something that's pure db-read-then-fallback logic.
-exports.__test = { runModelSuggest, modelSuggestNeeded, requiredToolsBlock, normaliseConnectors, projectRoutineCredentials, resolveProjectRoutineCredentials, loadPhaseSkillBindings, phaseSkillsBlock, ownerSessionGroups, ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt, stampStatusEnteredAt, postTrainStuck, trainStuckMessage };
+exports.__test = { runModelSuggest, modelSuggestNeeded, requiredToolsBlock, normaliseConnectors, projectRoutineCredentials, resolveProjectRoutineCredentials, advancedRoutineCredentials, advancedRoutineFor, loadPhaseSkillBindings, phaseSkillsBlock, ownerSessionGroups, ownerRoutineCredentials, runDependencyIntake, newBuildAttemptId, heartbeatHint, buildDeployFireText, runTicketIntake, resolveRoutineCredentials, stampMs, itemNotesBlock, perItemFireText, fireBuildSessionsPerItem, fireRetryPlan, lastFireRecord, stampBuildReportedAt, stampStatusEnteredAt, postTrainStuck, trainStuckMessage };
