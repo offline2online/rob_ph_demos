@@ -1,9 +1,10 @@
-// Dashboard (#dashboard): the page the console opens on. Five KPI tiles in
-// three sections (Internal, External, Support), each a headline figure for
-// yesterday in the viewer's local time with a 7-day sparkline, a trend arrow
-// against the day before and a status colour. The Support tile is the
-// exception: three figures for the support@ inbox as it stands now and today.
-// The rules live in dashboard-core.js; this file reads the data and draws the tiles.
+// Dashboard (#dashboard): the page the console opens on. Eight KPI tiles in
+// three sections (cMyA3FMlUUrSjGtPkLZC): Internal (Delivery, Flow & blockers,
+// Staff Kanban), External (Leads, Conversion funnel) and Support (Needs a
+// person, AI drafts to approve, Resolved & automation). Each is a headline
+// figure in the viewer's local time, with a sparkline where it has a daily
+// history, a trend arrow and a status colour. The rules live in
+// dashboard-core.js; this file reads the data and draws the tiles.
 //
 // Dashboard v2 (GUI9xPe3CJY3LyMws88m): a tile never navigates. Clicking or
 // tapping it pins its summary panel open, inline and full width directly
@@ -14,36 +15,44 @@
 // is always full while tiles remain; each section's heading sits above its
 // first tile. Needs attention sits below the tiles.
 //
-// The Agent board tile uses the tickets app.js already holds. The other four
-// read their collections once when the page opens (and again on Refresh, or
-// when the page is reopened after five minutes): no listeners, so a page
-// nobody is looking at costs nothing. A tile the viewer's role cannot open is
-// not shown; a section with no tile left is not shown either.
+// Delivery and Flow & blockers use the tickets app.js already holds. The
+// other sources (Staff Kanban, leads, funnelDaily, the Support Inbox) are read
+// once when the page opens (and again on Refresh, or when the page is reopened
+// after five minutes): no listeners, so a page nobody is looking at costs
+// nothing. A tile the viewer's role cannot open is not shown; a section with
+// no tile left is not shown either.
 
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { agentBoardKpi, kanbanKpi, leadsKpi, funnelKpi, supportKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtDayLabel } from "./dashboard-core.js";
+import { deliveryKpi, flowKpi, kanbanKpi, leadsKpi, funnelKpi, needsPersonKpi, draftsKpi, resolvedKpi, dashboardRelease, localDayRange, lastDays, sparklinePoints, trendShort, tileStatus, rowEnd, SERIES_DAYS, fmtCount, fmtEffort, fmtWait, fmtSpan, fmtDayLabel } from "./dashboard-core.js";
 import { ingestStatusView, ingestFailureText, fmtUpdated } from "./funnel-core.js";
-import { normaliseTicket } from "./support-core.js";
+import { normaliseTicket, confidenceBand, pct as confPct } from "./support-core.js";
 
 const STALE_MS = 5 * 60 * 1000;
 const SUPPORT_LIMIT = 300;
 const SUPPORT_TIP_ROWS = 10;
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-// key: tile id; section: permission section (permissions.js); target: where
+// key: tile id; src: the source it reads ("items" are the tickets app.js
+// already holds); section: permission section (permissions.js); target: where
 // the panel's "Open section" goes (the tile itself never navigates); info: the
 // tile's info tooltip, which is all the explanation a tile carries.
 export const TILES = [
-  { key: "agent", group: "internal", section: "agent-board", title: "Agent board", icon: "smart_toy", target: "#board",
-    info: "Tickets deployed yesterday (your local day), against the day before. The line shows the last 7 days. Amber when a ticket is blocked, red at three or more." },
-  { key: "kanban", group: "internal", section: "staff-kanban", title: "Staff Kanban", icon: "view_kanban", target: "#staff-kanban",
-    info: "Remaining effort (estimate minus time logged) on the release Staff Kanban is working towards, in hours with working days at 8 hours a day. Staff Kanban keeps no daily history of it, so there is no trend or 7-day line. Amber when an outstanding task has no estimate." },
-  { key: "leads", group: "external", section: "promote-leads", title: "Leads", icon: "group", target: "#promote/leads",
-    info: "New leads created yesterday, test and archived leads left out, against the day before. The line shows the last 7 days." },
-  { key: "funnel", group: "external", section: "conversion-funnel", title: "Conversion funnel", icon: "filter_alt", target: "#promote/conversion-funnel",
-    info: "Unique visitors to the website yesterday, against the day before. The line shows the last 7 days. Amber when yesterday's website figures have not arrived yet." },
-  { key: "support", group: "support", section: "support-inbox", title: "Support", icon: "support_agent", target: "#support",
-    info: "The support@ inbox as it stands now: tickets awaiting a reply, how long the oldest has waited, and tickets replied to or resolved today, against yesterday. Mail written only to other addresses is not counted. Amber when anything awaits a reply, red when the oldest has waited over a day." },
+  { key: "delivery", group: "internal", src: "items", section: "agent-board", title: "Delivery", icon: "rocket_launch", target: "#board",
+    info: "Tickets deployed yesterday (your local day), against the day before; the line shows the last 7 days. Lead time is the average from Backlog to Live, and first-time pass the share that passed testing without being sent back, both over the tickets deployed in the last 7 days." },
+  { key: "flow", group: "internal", src: "items", section: "agent-board", title: "Flow & blockers", icon: "pending_actions", target: "#board",
+    info: "Tickets stuck now: blocked, sent back with Failed testing and not rebuilding yet, or waiting in Ready for Testing for more than 24 hours. Amber when one is stuck, red at three or more." },
+  { key: "kanban", group: "internal", src: "kanban", section: "staff-kanban", title: "Staff Kanban", icon: "view_kanban", target: "#staff-kanban",
+    info: "Open tasks in the current release (the one picked in Kanban settings, else the earliest release not yet live), by column, with the release's progress. With no release, or none of its tasks open, it counts all open work. Amber when a task is overdue, unassigned, unestimated or waiting on you in Testing." },
+  { key: "leads", group: "external", src: "leads", section: "promote-leads", title: "Leads", icon: "group", target: "#promote/leads",
+    info: "New leads in the last 7 days, test and archived leads left out, against the 7 days before, with yesterday's count. The pipeline shows companies at each stage now and the share that got there from the stage before. Amber when a lead has had no activity for 7 days or has not been contacted." },
+  { key: "funnel", group: "external", src: "funnel", section: "conversion-funnel", title: "Conversion funnel", icon: "filter_alt", target: "#promote/conversion-funnel",
+    info: "Unique website visitors over the last 7 days, against the 7 days before, and the share who became a lead. The mini funnel marks the biggest drop-off in amber. Top movers are the industry and market whose interest grew most on the week before. Amber when yesterday's website figures have not arrived yet." },
+  { key: "person", group: "support", src: "support", section: "support-inbox", title: "Needs a person", icon: "support_agent", target: "#support",
+    info: "Support Inbox tickets in the Needs a person queue now, and how long the oldest has waited. Mail written only to other addresses is not counted. Amber when one waits, red when the oldest has waited over a day." },
+  { key: "drafts", group: "support", src: "support", section: "support-inbox", title: "AI drafts to approve", icon: "auto_awesome", target: "#support?queue=ai-drafts",
+    info: "Support Inbox replies the AI has drafted that wait for a person to approve them, and how many are high confidence (80% or more)." },
+  { key: "resolved", group: "support", src: "support", section: "support-inbox", title: "Resolved & automation", icon: "task_alt", target: "#support?queue=resolved",
+    info: "Support Inbox tickets resolved yesterday (your local day), against the day before, and the share the AI resolved with no person involved. The panel lists FAQ gaps: questions from the last 30 days the Help Centre couldn't answer." },
 ];
 export const GROUPS = [
   { key: "internal", label: "Internal" },
@@ -51,7 +60,8 @@ export const GROUPS = [
   { key: "support", label: "Support" },
 ];
 
-// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), now?(), attention? }
+// ctx: { root, db, items(), projects(), releases(), canView(section), go(hash), me?(), now?(), attention? }
+// me(): the viewer's email, so Staff Kanban can flag Testing tasks waiting on them.
 // attention: the Needs attention strip (app.js draws and wires it). It is kept
 // as the same element, placed below the tile sections, in normal flow, so it
 // never covers or holds back the tiles.
@@ -139,20 +149,25 @@ export function mountDashboard(ctx) {
     async kanban() {
       const settings = await getDoc(doc(ctx.db, "kanbanSettings", "main")).then((s) => (s.exists() ? s.data() : null)).catch(() => null);
       const release = dashboardRelease(settings, ctx.releases());
-      if (!release) return { release: null, tasks: [], names: new Map() };
-      const byRelease = (name) => getDocs(query(collection(ctx.db, name), where("release", "==", release.id)));
-      let snap = await byRelease("kanbanCards");
-      // The light cards can lag the tickets until the server's backfill runs.
-      if (!snap.docs.length) snap = await byRelease("kanbanTasks");
-      return { release, tasks: snap.docs.map((d) => ({ key: d.id, ...d.data() })), names: await nameMap() };
+      const read = (q) => getDocs(q).then((snap) => snap.docs.map((d) => ({ key: d.id, ...d.data() })));
+      // Every open task (Staff Kanban's own "open" query), and the release's
+      // tasks, done ones included, for its progress. The light cards can lag
+      // the tickets until the server's backfill runs: then read the tickets.
+      const both = (name) => Promise.all([
+        read(query(collection(ctx.db, name), where("open", "==", true))),
+        release ? read(query(collection(ctx.db, name), where("release", "==", release.id))) : Promise.resolve([]),
+      ]);
+      let [open, releaseTasks] = await both("kanbanCards");
+      if (!open.length && !releaseTasks.length) [open, releaseTasks] = await both("kanbanTasks");
+      return { release, open, releaseTasks, names: await nameMap() };
     },
     async leads() {
       const snap = await getDocs(collection(ctx.db, "leads"));
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     },
     async funnel() {
-      // The last 7 days for the sparkline; yesterday and the day before are among them.
-      const days = lastDays(SERIES_DAYS, now()).map((r) => r.day);
+      // The last 14 days: this week and the week before, for the change.
+      const days = lastDays(SERIES_DAYS * 2, now()).map((r) => r.day);
       const snaps = await Promise.all(days.map((day) => getDocs(query(collection(ctx.db, "funnelDaily"), where("date", "==", day)))));
       const rows = snaps.flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })));
       // When the ingest last updated the data, and which source failed (funnel-ingest.js).
@@ -171,7 +186,7 @@ export function mountDashboard(ctx) {
   function refresh(force = false) {
     if (!force && loadedAt && now() - loadedAt < STALE_MS) { render(); return; }
     loadedAt = now();
-    const visible = new Set(TILES.filter(allowed).map((t) => t.key));
+    const visible = new Set(TILES.filter(allowed).map((t) => t.src));
     const jobs = [];
     if (visible.has("leads") || visible.has("funnel")) jobs.push(load("leads", readers.leads));
     if (visible.has("kanban")) jobs.push(load("kanban", readers.kanban));
@@ -205,88 +220,146 @@ export function mountDashboard(ctx) {
 
   function tileBody(t) {
     const n = now();
-    if (t.key === "agent") {
-      const k = agentBoardKpi(ctx.items(), ctx.projects(), n);
+    const count = (x, one, many = `${one}s`) => `${fmtCount(x)} ${x === 1 ? one : many}`;
+    const pct = (p) => (p == null ? "—" : `${p}%`);
+    if (t.key === "delivery") {
+      const k = deliveryKpi(ctx.items(), ctx.projects(), n);
       const rows = k.projects.map((p) => `<li><strong>${esc(p.name)}</strong><span class="dash-tip-grid">`
-        + `<span>Deployed</span><b>${p.deployed}</b><span>Left Backlog</span><b>${p.leftBacklog}</b>`
-        + `<span>In build</span><b>${p.building}</b><span>Ready for Testing</span><b>${p.testing}</b>`
-        + `<span>Blocked</span><b>${p.blocked}</b></span></li>`);
+        + `<span>Yesterday</span><b>${p.yesterday}</b><span>Last 7 days</span><b>${p.week}</b>`
+        + `<span>Lead time</span><b>${esc(fmtSpan(p.leadTimeMs))}</b><span>First-time pass</span><b>${pct(p.firstPassPct)}</b></span></li>`);
       return {
-        metric: "Tickets deployed", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("agent", k),
-        tip: `<p class="dash-tip-title">Tickets by project</p>${tipList(rows, "No ticket moved yesterday and none is in build, testing or blocked.")}`,
+        metric: "Deployed yesterday", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("delivery", k),
+        extra: `<span class="dash-sub">Lead time <b>${esc(fmtSpan(k.leadTimeMs))}</b></span><span class="dash-sub">First-time pass <b>${pct(k.firstPassPct)}</b></span>`,
+        tip: `<p class="dash-tip-title">By project · ${count(k.shipped, "ticket")} deployed in the last 7 days</p>${tipList(rows, "Nothing deployed in the last 7 days.")}`,
+      };
+    }
+    if (t.key === "flow") {
+      const k = flowKpi(ctx.items(), ctx.projects(), n);
+      const parts = [[k.blocked, "blocked"], [k.failed, "failed testing"], [k.testing, "waiting to test"]].filter(([x]) => x).map(([x, l]) => `<span class="dash-sub">${x} ${l}</span>`).join("");
+      const rows = k.stuck.map((s) => `<li><span class="dash-tip-row"><strong>${esc(s.title)}</strong><b>${esc(s.waitedMs == null ? "—" : fmtWait(s.waitedMs))}</b></span>`
+        + `<span class="dash-tip-meta">${esc(s.project)} · ${esc(s.reason)}</span></li>`);
+      return {
+        metric: "Tickets stuck", value: fmtCount(k.value), status: tileStatus("flow", k), extra: parts || `<span class="dash-sub">Nothing stuck</span>`,
+        tip: `<p class="dash-tip-title">Stuck now, longest wait first</p>${tipList(rows, "Nothing is blocked, failed or waiting over a day to be tested.")}`,
       };
     }
     if (t.key === "kanban") {
       const s = src.kanban;
-      if (pending(s)) return loadingBody("Remaining effort");
-      if (s.status === "error") return errorBody("Remaining effort", s.error);
+      if (pending(s)) return loadingBody("Open tasks");
+      if (s.status === "error") return errorBody("Open tasks", s.error);
       const nameOf = (e) => (s.data.names && s.data.names.get(String(e).toLowerCase())) || String(e).split("@")[0];
-      const k = kanbanKpi(s.data.release, s.data.tasks, nameOf);
-      if (!k.release) return { metric: "Remaining effort", value: "—", extra: `<span class="dash-sub">No release selected</span>`, status: tileStatus("kanban", k), tip: `<p class="dash-tip-empty">No release is selected for deployment in Staff Kanban.</p>` };
+      const k = kanbanKpi({ release: s.data.release, open: s.data.open, releaseTasks: s.data.releaseTasks, projects: ctx.projects(), me: ctx.me ? ctx.me() : "", now: n }, nameOf);
+      const f = k.flags;
+      const flags = [[f.overdue, "overdue"], [f.unassigned, "unassigned"], [f.unestimated, "unestimated"], [f.waitingOnMe, "waiting on you"]]
+        .filter(([x]) => x).map(([x, l]) => `<span class="dash-flag">${icon("warning")}${x} ${l}</span>`).join("");
       const rows = k.people.map((p) => `<li><span class="dash-tip-row"><strong>${esc(p.name)}</strong><b>${esc(fmtEffort(p.hours))}</b></span>`
-        + `<span class="dash-tip-meta">${p.tasks} task${p.tasks === 1 ? "" : "s"} outstanding</span>`
+        + `<span class="dash-tip-meta">${count(p.tasks, "task")} open${p.overdue ? ` · ${p.overdue} overdue` : ""}</span>`
         + (p.unestimated.length ? `<span class="dash-tip-warn">No estimate: ${p.unestimated.map((u) => esc(`${u.key}${u.title ? ` ${u.title}` : ""}`)).join(", ")}</span>` : "")
         + `</li>`);
       return {
-        metric: "Remaining effort", value: esc(k.effort), status: tileStatus("kanban", k),
-        extra: `<span class="dash-sub">${esc(k.release.name)}</span>`
-          + (k.unestimated ? `<span class="dash-flag">${icon("warning")}${k.unestimated} task${k.unestimated === 1 ? "" : "s"} unestimated</span>` : ""),
-        tip: `<p class="dash-tip-title">Outstanding by assignee · ${esc(k.release.name)}</p>${tipList(rows, "No outstanding tasks in this release.")}`,
+        metric: "Open tasks", value: fmtCount(k.value), status: tileStatus("kanban", k),
+        mini: `<span class="dash-cols">${k.columns.map((c) => `<span class="dash-col"><b>${fmtCount(c.count)}</b><span>${esc(c.label)}</span></span>`).join("")}</span>`,
+        extra: `<span class="dash-sub">${esc(k.scopeLabel)}${k.progress ? ` · <b>${k.progress.pct}%</b> done` : ""}</span>${flags}`,
+        tip: `<p class="dash-tip-title">Workload by person · ${esc(k.scopeLabel)}${k.progress ? ` · ${k.progress.done} of ${k.progress.total} done (${k.progress.pct}%)` : ""} · ${esc(k.effort)} left</p>${tipList(rows, "No open tasks.")}`,
       };
     }
     if (t.key === "leads") {
       const s = src.leads;
-      if (pending(s)) return loadingBody("New leads");
-      if (s.status === "error") return errorBody("New leads", s.error);
+      if (pending(s)) return loadingBody("New leads, 7 days");
+      if (s.status === "error") return errorBody("New leads, 7 days", s.error);
       const k = leadsKpi(s.data, n);
+      const a = k.needsAction;
       const names = (list) => (list.length ? `<ul class="dash-tip-names">${list.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="dash-tip-empty">None</p>`);
+      const group = (title, list) => `<div class="dash-tip-col"><p class="dash-tip-title">${esc(title)}</p>${tipList(list.map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.name)}</strong><b>${g.count}</b></span><span class="dash-tip-meta">${esc(g.leads.join(", "))}</span></li>`), "No new leads.")}</div>`;
+      const flags = [[a.stale.length, "stale"], [a.notContacted.length, "not contacted"]].filter(([x]) => x).map(([x, l]) => `<span class="dash-flag">${icon("warning")}${x} ${l}</span>`).join("");
       return {
-        metric: "New leads", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("leads", k),
-        tip: `<div class="dash-tip-col"><p class="dash-tip-title">Companies (${k.companies.length})</p>${names(k.companies)}</div>`
-          + `<div class="dash-tip-col"><p class="dash-tip-title">Network operators (${k.operators.length})</p>${names(k.operators)}</div>`,
+        metric: "New leads, 7 days", value: fmtCount(k.value), trend: k.trend, series: k.series, status: tileStatus("leads", k),
+        mini: pipelineHtml(k.pipeline),
+        extra: `<span class="dash-sub">Yesterday <b>${fmtCount(k.yesterday)}</b></span>${flags}`,
+        tip: group("By source", k.bySource) + group("By industry", k.byIndustry) + group("By market", k.byMarket)
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Pipeline</p><ol class="dash-tip-list">${k.pipeline.map((p) => `<li><span class="dash-tip-row"><span>${esc(p.label)}</span><b>${fmtCount(p.count)}</b></span>${p.conversionPct == null ? "" : `<span class="dash-tip-meta">${p.conversionPct}% reached it from ${esc(k.pipeline[k.pipeline.indexOf(p) - 1].label)}</span>`}</li>`).join("")}</ol></div>`
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Stale: no activity for 7 days (${a.stale.length})</p>${names(a.stale)}`
+          + `<p class="dash-tip-title">Not contacted (${a.notContacted.length})</p>${names(a.notContacted)}</div>`,
       };
     }
     if (t.key === "funnel") {
       const s = src.funnel;
-      if (pending(s)) return loadingBody("Unique visitors");
-      if (s.status === "error") return errorBody("Unique visitors", s.error);
+      if (pending(s)) return loadingBody("Visitors, 7 days");
+      if (s.status === "error") return errorBody("Visitors, 7 days", s.error);
       const k = funnelKpi(s.data.rows, s.data.leads, n);
-      const steps = k.steps.map((st) => `<li><span class="dash-tip-row"><span>${esc(st.label)}</span><b>${fmtCount(st.count)}</b></span>`
-        + (st.dropOff == null ? "" : `<span class="dash-tip-meta">Drop-off ${fmtCount(st.dropOff)}${st.dropOffPct == null ? "" : ` (${st.dropOffPct}%)`}</span>`) + `</li>`);
-      const inds = k.industries.map((x, i) => `<li><span class="dash-tip-row"><span>${i + 1}. ${esc(x.name)}</span><b>${fmtCount(x.count)}</b></span></li>`);
+      const steps = k.steps.map((st) => `<li${st.biggest ? ' class="dash-drop-max"' : ""}><span class="dash-tip-row"><span>${esc(st.label)}</span><b>${fmtCount(st.count)}</b></span>`
+        + (st.dropOff == null ? "" : `<span class="dash-tip-meta">Drop-off ${fmtCount(st.dropOff)}${st.dropOffPct == null ? "" : ` (${st.dropOffPct}%)`}${st.biggest ? " · biggest" : ""}</span>`) + `</li>`);
+      const change = (x) => (x.change ? ` <span class="dash-tip-change">${x.change > 0 ? "+" : "−"}${fmtCount(Math.abs(x.change))}</span>` : "");
+      const rankRows = (list) => list.map((x, i) => `<li><span class="dash-tip-row"><span>${i + 1}. ${esc(x.name)}</span><b>${fmtCount(x.count)}${change(x)}</b></span></li>`);
+      const movers = [k.topIndustry && `Industry: <b>${esc(k.topIndustry.name)}</b> +${fmtCount(k.topIndustry.change)}`, k.topMarket && `Market: <b>${esc(k.topMarket.name)}</b> +${fmtCount(k.topMarket.change)}`].filter(Boolean);
       const iv = ingestStatusView(s.data.ingest);
       return {
         // A source failed on the last ingest: "Data not updated" in place of the
         // trend, a red status, and the panel says what failed and when the data
         // was last updated. The earlier figures stay.
-        metric: "Unique visitors", value: fmtCount(k.value), trend: iv.flagged ? null : k.trend, series: k.series,
-        extra: iv.flagged ? `<span class="dash-flag">${icon("error")}Data not updated</span>` : "",
+        metric: "Visitors, 7 days", value: fmtCount(k.value), trend: iv.flagged ? null : k.trend, series: k.series,
         status: tileStatus("funnel", { ...k, dataNotUpdated: iv.flagged }),
+        mini: miniFunnelHtml(k.steps),
+        extra: (iv.flagged ? `<span class="dash-flag">${icon("error")}Data not updated</span>` : "")
+          + `<span class="dash-sub">Visitor to lead <b>${k.conversionPct == null ? "—" : `${k.conversionPct}%`}</b></span>`
+          + (movers.length ? `<span class="dash-sub">${icon("trending_up")}${movers.join(" · ")}</span>` : ""),
         tip: (iv.flagged ? `<p class="dash-tip-empty dash-tip-wide">${esc(ingestFailureText(iv))}</p>` : "")
           + (iv.known ? `<p class="dash-tip-empty dash-tip-wide">Updated ${esc(fmtUpdated(iv.updatedAt))}</p>` : "")
           + (k.hasData ? "" : `<p class="dash-tip-empty dash-tip-wide">No website data for yesterday yet.</p>`)
-          + `<div class="dash-tip-col"><p class="dash-tip-title">Funnel</p><ol class="dash-tip-list">${steps.join("")}</ol></div>`
-          + `<div class="dash-tip-col"><p class="dash-tip-title">Industries by visitors</p>${tipList(inds, "No industry page visits.")}</div>`,
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Funnel, last 7 days</p><ol class="dash-tip-list">${steps.join("")}</ol>`
+          + `<p class="dash-tip-meta">${k.oppsFrom === "ace" ? "Opportunities: ACE opportunities created." : "Opportunities: website leads now at Demo or beyond."}</p></div>`
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Industries by visitors, change on the week before</p>${tipList(rankRows(k.industries), "No industry page visits.")}</div>`
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Markets by visitors, change on the week before</p>${tipList(rankRows(k.markets), "No market data.")}</div>`
+          + `<div class="dash-tip-col"><p class="dash-tip-title">Traffic sources</p>${tipList(k.channels.map((c) => `<li><span class="dash-tip-row"><span>${esc(c.name)}</span><b>${fmtCount(c.count)}</b></span></li>`), "No traffic source data.")}</div>`,
       };
     }
-    // support
+    // The three Support tiles share one read of the Support Inbox.
     const s = src.support;
-    if (pending(s)) return loadingBody("Awaiting a reply");
-    if (s.status === "error") return errorBody("Awaiting a reply", s.error);
-    const k = supportKpi(s.data, n);
-    const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${esc(w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
-    const shown = k.waiting.slice(0, SUPPORT_TIP_ROWS);
+    const metric = t.key === "person" ? "Waiting" : t.key === "drafts" ? "Pending approval" : "Resolved yesterday";
+    if (pending(s)) return loadingBody(metric);
+    if (s.status === "error") return errorBody(metric, s.error);
+    if (t.key === "person") {
+      const k = needsPersonKpi(s.data, n);
+      const shown = k.tickets.slice(0, SUPPORT_TIP_ROWS);
+      return {
+        metric, value: fmtCount(k.count), status: tileStatus("person", k),
+        extra: `<span class="dash-sub">Oldest <b>${k.oldestMs == null ? "None" : esc(fmtWait(k.oldestMs))}</b></span>`,
+        tip: `<p class="dash-tip-title">Waiting for a person (${k.count}), longest first</p>${tipList(shown.map(waitRow), "Nobody is waiting.")}`
+          + (k.tickets.length > shown.length ? `<p class="dash-tip-empty">And ${k.tickets.length - shown.length} more in the Support Inbox.</p>` : ""),
+      };
+    }
+    if (t.key === "drafts") {
+      const k = draftsKpi(s.data, n);
+      const shown = k.drafts.slice(0, SUPPORT_TIP_ROWS);
+      const row = (d) => `<li><span class="dash-tip-row"><strong>${esc(d.customer)}</strong><b class="dash-conf" data-band="${confidenceBand(d.confidence)}">${esc(confPct(d.confidence))}</b></span>`
+        + `<span class="dash-tip-meta">${esc(d.subject)}${d.subject ? " · " : ""}waiting ${esc(fmtWait(d.waitedMs))}</span></li>`;
+      return {
+        metric, value: fmtCount(k.count), status: tileStatus("drafts", k),
+        extra: `<span class="dash-sub">High confidence <b>${fmtCount(k.high)}</b></span>`,
+        tip: `<p class="dash-tip-title">Drafts to approve (${k.count}), most confident first</p>${tipList(shown.map(row), "No drafts waiting.")}`
+          + (k.drafts.length > shown.length ? `<p class="dash-tip-empty">And ${k.drafts.length - shown.length} more in the Support Inbox.</p>` : ""),
+      };
+    }
+    const k = resolvedKpi(s.data, n);
+    const gaps = k.gaps.slice(0, SUPPORT_TIP_ROWS).map((g) => `<li><span class="dash-tip-row"><strong>${esc(g.subject || "(no subject)")}</strong><b>${esc(fmtDayLabel(g.at))}</b></span><span class="dash-tip-meta">${esc(g.customer)}</span></li>`);
     return {
-      metric: "", value: "", status: tileStatus("support", k),
-      // Exactly three figures, all of the support@ inbox (never Hello's or Aidan's).
-      trio: [
-        { label: "Awaiting a reply", value: fmtCount(k.open) },
-        { label: "Oldest waiting", value: k.oldestMs == null ? "None" : esc(fmtWait(k.oldestMs)) },
-        { label: "Replied or resolved today", value: fmtCount(k.doneToday), trend: k.doneTrend },
-      ],
-      tip: `<p class="dash-tip-title">Open and awaiting a reply (${k.open}) · waiting</p>${tipList(shown.map(waitRow), "None waiting.")}`
-        + (k.waiting.length > shown.length ? `<p class="dash-tip-empty">And ${k.waiting.length - shown.length} more in the Support Inbox.</p>` : ""),
+      metric, value: fmtCount(k.value), trend: k.trend, status: tileStatus("resolved", k),
+      extra: `<span class="dash-sub">By AI alone <b>${k.aiPct == null ? "—" : `${k.aiPct}%`}</b></span>`,
+      tip: `<p class="dash-tip-wide dash-tip-empty">${fmtCount(k.value)} resolved yesterday, ${fmtCount(k.aiCount)} by the AI with no person involved.</p>`
+        + `<p class="dash-tip-title">FAQ gaps: questions the Help Centre couldn't answer, last 30 days (${k.gaps.length})</p>${tipList(gaps, "No gaps in the last 30 days.")}`
+        + (k.gaps.length > gaps.length ? `<p class="dash-tip-empty">And ${k.gaps.length - gaps.length} more.</p>` : ""),
     };
+  }
+  const waitRow = (w) => `<li><span class="dash-tip-row"><strong>${esc(w.customer)}</strong><b>${esc(fmtWait(w.waitedMs))}</b></span>${w.subject ? `<span class="dash-tip-meta">${esc(w.subject)}</span>` : ""}</li>`;
+  // Lead → Closed Won: companies at each stage now, the conversion from the stage before under it.
+  function pipelineHtml(pipeline) {
+    return `<span class="dash-pipe" aria-label="Pipeline">${pipeline.map((p) => `<span class="dash-pipe-step"><span class="dash-pipe-label">${esc(p.label)}</span><b>${fmtCount(p.count)}</b>`
+      + `<span class="dash-pipe-conv">${p.conversionPct == null ? "" : `${p.conversionPct}%`}</span></span>`).join("")}</span>`;
+  }
+  // Visitors → Industry → Engaged → Leads → Opps, the biggest drop-off in amber.
+  function miniFunnelHtml(steps) {
+    return `<span class="dash-mini-funnel">${steps.map((st) => `<span class="dash-mini-step${st.biggest ? " dash-drop-max" : ""}"><span class="dash-pipe-label">${esc(st.short)}</span><b>${fmtCount(st.count)}</b>`
+      + `<span class="dash-pipe-conv">${st.dropOffPct == null ? "" : `−${st.dropOffPct}%`}</span></span>`).join("")}</span>`;
   }
   function loadingBody(metric) { return { metric, value: "…", extra: "", tip: `<p class="dash-tip-empty">Loading…</p>`, loading: true }; }
   function errorBody(metric, message) { return { metric, value: "—", extra: `<span class="dash-flag">${icon("error")}Couldn't load</span>`, status: { level: "alert", reason: "Couldn't load" }, tip: `<p class="dash-tip-empty">Couldn't load: ${esc(message)}</p>` }; }
@@ -297,12 +370,11 @@ export function mountDashboard(ctx) {
     const b = tileBody(t);
     const st = b.status || null;
     const dot = st ? `<span class="dash-status" data-level="${st.level}" title="${esc(st.reason)}"></span><span class="visually-hidden">${esc(st.reason)}.</span>` : "";
-    const main = b.trio
-      ? `<span class="dash-trio">${b.trio.map((x) => `<span class="dash-trio-cell"><span class="dash-metric">${esc(x.label)}</span><span class="dash-figure"><span class="dash-value">${x.value}</span>${x.trend ? trendHtml(x.trend) : ""}</span></span>`).join("")}</span>`
-      : `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${b.value}</span>${b.trend ? trendHtml(b.trend) : ""}</span>`;
+    const main = `<span class="dash-metric">${esc(b.metric)}</span><span class="dash-figure"><span class="dash-value">${b.value}</span>${b.trend ? trendHtml(b.trend) : ""}</span>`;
     const spark = b.series ? sparkHtml(b.series) : "";
     const inner = `<span class="dash-tile-head"><span class="dash-tile-icon">${icon(t.icon)}</span><span class="dash-tile-title">${esc(t.title)}</span>${dot}</span>`
       + main
+      + (b.mini ? `<span class="dash-mini">${b.mini}</span>` : "")
       + (spark ? `<span class="dash-spark-wrap">${spark}<span class="visually-hidden">${esc(seriesText(b.series))}</span></span>` : "")
       + (b.extra ? `<span class="dash-extra">${b.extra}</span>` : "");
     return { inner, busy: !!b.loading, tip: b.tip };

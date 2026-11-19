@@ -3510,114 +3510,136 @@ const scenarios = [
     },
   },
   {
-    // The console opens on the Dashboard (yYzYdxqAdI5KTdqZXs3C): five KPI
-    // tiles for yesterday in three sections. Dashboard v2 (GUI9xPe3CJY3LyMws88m):
-    // a responsive grid (4 / 3 / 2 / 1 across), a tile pins its summary panel
-    // under its row and never navigates, Needs attention below the tiles, and
-    // the panel's "Open section" goes to the section. "#board" keeps the Agent Board.
-    name: "Dashboard: the landing page, five tiles for yesterday, a responsive grid, click to pin a summary panel",
+    // The console opens on the Dashboard (yYzYdxqAdI5KTdqZXs3C). Dashboard v2
+    // (GUI9xPe3CJY3LyMws88m): a responsive grid (4 / 3 / 2 / 1 across), a tile
+    // pins its summary panel under its row and never navigates, Needs attention
+    // below the tiles, and the panel's "Open section" goes to the section.
+    // cMyA3FMlUUrSjGtPkLZC: eight tiles in three sections (Internal: Delivery,
+    // Flow & blockers, Staff Kanban; External: Leads, Conversion funnel;
+    // Support: Needs a person, AI drafts to approve, Resolved & automation).
+    // Staff Kanban once showed nothing: it took the release already live
+    // (status "live") with no open task. "#board" keeps the Agent Board.
+    name: "Dashboard: the landing page, eight tiles in three sections, a responsive grid, click to pin a summary panel",
     hash: "",
     seed: () => {
       const yday = (h, m = 0) => { const d = new Date(); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.getTime(); };
-      const before = (h) => { const d = new Date(yday(h)); d.setDate(d.getDate() - 1); return d.getTime(); };
+      const daysAgo = (n, h = 12) => { const d = new Date(); d.setDate(d.getDate() - n); d.setHours(h, 0, 0, 0); return d.getTime(); };
       const dayStr = (ms) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-      const s = only("b1", "l1");
+      const s = only("b1", "l1", "r1");
+      s.docs.backlogItems.l1.createdAt = t(daysAgo(4));
       s.docs.backlogItems.l1.mergedAt = t(yday(15));
       s.docs.backlogItems.l1.statusEnteredAt = t(yday(15));
-      s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Needs a logo" };
-      s.docs.releases = { r2: { name: "Release 1.6", version: "1.6.0", order: 1, status: "draft", createdAt: t(T0) } };
-      s.docs.kanbanSettings = { main: { currentRelease: "r2" } };
+      s.docs.backlogItems.l1.testRound = 1;
+      s.docs.backlogItems.b1.blocked = { reason: "waiting-on-input", note: "Needs a logo", setAt: t(yday(10)) };
+      s.docs.backlogItems.r1.statusEnteredAt = t(daysAgo(3));
+      // "September" is live (status "live", as the Releases page writes it): the tile must not pick it.
+      s.docs.releases = {
+        r1: { name: "September 2026", version: "1.5.0", order: 1, status: "live", createdAt: t(T0) },
+        r2: { name: "Release 1.6", version: "1.6.0", order: 2, status: "draft", createdAt: t(T0) },
+      };
+      s.docs.kanbanSettings = { main: {} };
       s.docs.kanbanCards = {
-        "PH-1": { key: "PH-1", title: "Menu import", release: "r2", status: "todo", open: true, assignee: "ana@ph.example", estimate: 16, logged: 4 },
+        "PH-1": { key: "PH-1", title: "Menu import", release: "r2", status: "backlog", open: true, assignee: "ana@ph.example", estimate: 16, logged: 4 },
         "PH-2": { key: "PH-2", title: "Price rules", release: "r2", status: "in-progress", open: true, assignee: "ana@ph.example", estimate: 8 },
-        "PH-3": { key: "PH-3", title: "Help text", release: "r2", status: "todo", open: true, assignee: "ben@ph.example" },
-        "PH-4": { key: "PH-4", title: "Done already", release: "r2", status: "done", open: false, assignee: "ben@ph.example", estimate: 40 },
+        "PH-3": { key: "PH-3", title: "Help text", release: "r2", status: "ready-for-dev", open: true, assignee: "ben@ph.example" },
+        "PH-4": { key: "PH-4", title: "Check the export", release: "r2", status: "ready-for-testing", open: true, assignee: "editor@ph.example", estimate: 2 },
+        "PH-5": { key: "PH-5", title: "Done already", release: "r2", status: "done", resolution: "completed", open: false, assignee: "ben@ph.example", estimate: 40 },
       };
       s.docs.memberDirectory = { "ana@ph.example": { email: "ana@ph.example", displayName: "Ana Lopes" }, "ben@ph.example": { email: "ben@ph.example", displayName: "Ben Okafor" } };
       s.docs.leads = {
-        L1: { leadType: "company", company: { name: "Burger Co" }, source: "Website form", stage: "lead", createdAt: t(yday(9)), updatedAt: t(yday(9)) },
+        L1: { leadType: "company", company: { name: "Burger Co", industry: "QSR", countries: ["Australia"] }, source: "Website form", stage: "lead", createdAt: t(yday(9)), updatedAt: t(yday(9)) },
         L2: { leadType: "operator", contacts: [{ id: "c1", name: "Sam Jones" }], sourcePage: "/run-your-own-rmn/", stage: "applied", createdAt: t(yday(18)), updatedAt: t(yday(18)) },
-        L3: { leadType: "company", company: { name: "Old Grocer" }, stage: "lead", createdAt: t(before(10)), updatedAt: t(before(10)) },
+        L3: { leadType: "company", company: { name: "Old Grocer" }, stage: "hot-lead", createdAt: t(daysAgo(10)), updatedAt: t(daysAgo(10)) },
+        L4: { leadType: "company", company: { name: "Test Lead Co" }, test: true, stage: "lead", createdAt: t(yday(10)), updatedAt: t(yday(10)) },
       };
       s.docs.funnelDaily = {
         f1: { date: dayStr(yday(12)), channel: "Organic", industry: "", visits: 400 },
         f2: { date: dayStr(yday(12)), channel: "Organic", industry: "Grocery", visits: 120, demoRequests: 3, downloads: 2 },
         f3: { date: dayStr(yday(12)), channel: "Google Ads", industry: "QSR", visits: 80, demoRequests: 1, downloads: 4 },
-        f4: { date: dayStr(before(12)), channel: "Organic", industry: "", visits: 500 },
+        f4: { date: dayStr(daysAgo(8)), channel: "Organic", industry: "", visits: 500 },
       };
-      // ypgNiZ0c1PrIHgyGdXoR: the Support tile is three figures of the support@ inbox, as things stand now and today.
       const today0 = new Date(); today0.setHours(0, 0, 0, 0);
       const today = t(today0.getTime());
       s.docs.supportTickets = {
         s1: { subject: "Can't log in", customerName: "Priya", customerEmail: "priya@shop.example", status: "open", needsHuman: true, createdAt: t(yday(8)), lastMessageAt: t(yday(8)), lastInboundAt: t(yday(8)) },
-        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9 }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)), lastInboundAt: t(yday(9)) },
-        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedAt: today, lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
-        s4: { subject: "Sent a link", customerName: "Mo", status: "pending", lastReplyAt: today, createdAt: t(yday(7)), lastMessageAt: today },
-        s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
-        // Written only to hello@ or aidan@: in none of the three figures.
-        h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(before(8)), lastMessageAt: t(before(8)), lastInboundAt: t(before(8)) },
-        a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedAt: today, lastReplyAt: today, inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: today },
+        s2: { subject: "Where is the menu editor?", customerName: "Tom", status: "open", aiDraft: { text: "Hi Tom", confidence: 0.9, answerable: true }, createdAt: t(yday(9)), lastMessageAt: t(yday(9)), lastInboundAt: t(yday(9)) },
+        s3: { subject: "Thanks", customerName: "Lee", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(11)), lastReplyAt: t(yday(11)), createdAt: t(yday(7)), lastMessageAt: t(yday(11)) },
+        s5: { subject: "Resolved yesterday", customerName: "Ola", status: "resolved", resolvedBy: "editor@ph.example", resolvedAt: t(yday(16)), lastReplyAt: t(yday(16)), createdAt: t(yday(7)), lastMessageAt: t(yday(16)) },
+        s6: { subject: "Custom fonts?", customerName: "Ivy", status: "pending", triageReason: "The help centre doesn't answer this.", lastReplyAt: today, createdAt: t(yday(6)), lastMessageAt: today },
+        // Written only to hello@ or aidan@: in none of the figures.
+        h1: { subject: "Partnership", customerName: "Hattie", status: "open", needsHuman: true, inboxes: ["hello"], createdAt: t(daysAgo(2, 8)), lastMessageAt: t(daysAgo(2, 8)), lastInboundAt: t(daysAgo(2, 8)) },
+        a1: { subject: "For Aidan", customerName: "Abe", status: "resolved", resolvedBy: "ai", resolvedAt: t(yday(9)), lastReplyAt: t(yday(9)), inboxes: ["aidan"], createdAt: t(yday(7)), lastMessageAt: t(yday(9)) },
       };
       return s;
     },
     async run(c) {
+      const order = ["delivery", "flow", "kanban", "leads", "funnel", "person", "drafts", "resolved"];
       c.at("a load with no hash lands on the Dashboard");
       await c.visible("#dashboard-page");
-      // Needs attention is in the page from the start; wait for the tiles themselves.
       await c.visible(".dash-group-title", "the tile sections are drawn");
       assert.ok(await c.page.locator("#dashboard-page #needs-attention").isVisible(), "Needs attention is on the Dashboard");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "the Dashboard has its own URL");
       assert.ok(await c.page.locator("#projects-root").isHidden(), "the board is not drawn under it");
       assert.deepStrictEqual(await c.page.$$eval(".dash-group-title", (els) => els.map((e) => e.textContent)), ["Internal", "External", "Support"]);
-      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.map((e) => e.dataset.tile)), ["agent", "kanban", "leads", "funnel", "support"]);
+      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.map((e) => e.dataset.tile)), order, "eight tiles, in order");
       const value = (k) => c.page.locator(`.dash-tile-wrap[data-tile="${k}"] .dash-value`).first().innerText();
-      await until(async () => (await value("support")) !== "…" && (await value("funnel")) !== "…" && (await value("kanban")) !== "…" && (await value("leads")) !== "…", "every tile to load", 8000);
-      assert.strictEqual(await value("agent"), "1", "one ticket deployed yesterday");
-      assert.strictEqual(await value("kanban"), "20h (2.5d)", "remaining effort (12h + 8h) in hours with days at 8h a day");
-      const kanbanText = await c.text('.dash-tile-wrap[data-tile="kanban"] .dash-tile');
-      assert.ok(kanbanText.includes("1 task unestimated") && kanbanText.includes("Release 1.6"), `the unestimated flag and the release: ${kanbanText}`);
-      assert.strictEqual(await value("leads"), "2", "two leads yesterday");
-      assert.strictEqual(await value("funnel"), "600", "website visitors yesterday");
-      assert.deepStrictEqual(await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-metric', (els) => els.map((e) => e.textContent)), ["Awaiting a reply", "Oldest waiting", "Replied or resolved today"], "exactly three figures");
-      const sVals = await c.page.$$eval('.dash-tile-wrap[data-tile="support"] .dash-value', (els) => els.map((e) => e.textContent));
-      assert.deepStrictEqual([sVals[0], sVals[2]], ["2", "2"], `two support@ tickets await a reply and two were replied to or resolved today; hello@ and aidan@ mail is not counted: ${sVals}`);
-      // Priya wrote at 08:00 yesterday (16 to 40 hours ago); Hattie's older email to hello@ is not the oldest.
-      assert.ok(/^(\d+h|1d( \d+h)?)$/.test(sVals[1]), `the age of the oldest unanswered support@ email: ${sVals[1]}`);
-      assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles");
-      assert.strictEqual(await c.page.locator(".dash-tile-wrap .dash-info[aria-describedby]").count(), 5, "every tile has an info tooltip");
-      assert.ok(!(await c.text("#dash-groups")).includes("support@ only"), "the Support tile's explanation is in its info tooltip, not on the tile");
+      const tileText = (k) => c.text(`.dash-tile-wrap[data-tile="${k}"] .dash-tile`);
+      await until(async () => { for (const k of order) if ((await value(k)) === "…") return false; return true; }, "every tile to load", 8000);
+      assert.strictEqual(await value("delivery"), "1", "one ticket deployed yesterday");
+      const dText = await tileText("delivery");
+      assert.ok(dText.includes("Lead time") && dText.includes("First-time pass") && dText.includes("100%"), `lead time and first-time pass: ${dText}`);
+      assert.strictEqual(await value("flow"), "2", "stuck: one blocked, one in Ready for Testing for over a day");
+      assert.strictEqual(await value("kanban"), "4", "the open tasks of Release 1.6, not the live September release (which has none): never blank");
+      const kText = await tileText("kanban");
+      assert.ok(/2\s*To do/.test(kText) && /1\s*In progress/.test(kText) && /1\s*Testing/.test(kText), `split by column: ${kText}`);
+      assert.ok(kText.includes("Release 1.6") && kText.includes("20%") && kText.includes("1 unestimated") && kText.includes("1 waiting on you"), `the release, its progress and the flags: ${kText}`);
+      assert.strictEqual(await value("leads"), "2", "two leads in the last 7 days; the test lead is not counted");
+      const lText = await tileText("leads");
+      assert.ok(/Yesterday\s*2/.test(lText) && lText.includes("Closed Won") && lText.includes("not contacted") && lText.includes("1 stale"), `yesterday, the pipeline and the needs-action flags: ${lText}`);
+      assert.strictEqual(await value("funnel"), "600", "website visitors over the last 7 days");
+      const fText = await tileText("funnel");
+      assert.ok(fText.includes("Visitor to lead") && fText.includes("Opps"), `visitor-to-lead and the mini funnel: ${fText}`);
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="funnel"] .dash-mini-step.dash-drop-max').count(), 1, "the biggest drop-off is marked");
+      assert.strictEqual(await value("person"), "1", "one support@ ticket needs a person; hello@ is not counted");
+      assert.ok(/^(\d+h|1d( \d+h)?)$/.test((await tileText("person")).match(/Oldest\s*(\S+( \d+h)?)/)?.[1] || ""), `the age of the oldest: ${await tileText("person")}`);
+      assert.strictEqual(await value("drafts"), "1", "one AI draft to approve");
+      assert.strictEqual(await value("resolved"), "2", "two support@ tickets resolved yesterday; aidan@ is not counted");
+      assert.ok((await tileText("resolved")).includes("50%"), "half by the AI alone");
+      assert.strictEqual(await c.page.locator(".dash-tile p, .dash-tile div, .dash-tile-wrap > p").count(), 0, "no explanatory copy under the tiles, and nothing but phrasing content in a tile button");
+      assert.strictEqual(await c.page.locator(".dash-tile-wrap .dash-info[aria-describedby]").count(), 8, "every tile has an info tooltip");
 
       c.at("compact tiles: a sparkline, a trend arrow and a status colour");
-      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.filter((e) => e.querySelector(".dash-spark polyline")).map((e) => e.dataset.tile)), ["agent", "leads", "funnel"], "a 7-day sparkline where the figure has a daily history");
-      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="leads"] .dash-trend-up').count(), 1, "leads went up against the day before");
-      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="support"] .dash-trend').count(), 1, "support: replied or resolved today against yesterday");
-      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="kanban"] .dash-trend').count(), 0, "Staff Kanban keeps no history: no trend (said in its info tooltip)");
+      assert.deepStrictEqual(await c.page.$$eval(".dash-tile-wrap", (els) => els.filter((e) => e.querySelector(".dash-spark polyline")).map((e) => e.dataset.tile)), ["delivery", "leads", "funnel"], "a 7-day sparkline where the figure has a daily history");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="leads"] .dash-trend-up').count(), 1, "leads went up against the 7 days before");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="funnel"] .dash-trend-up').count(), 1, "visitors went up against the 7 days before");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="resolved"] .dash-trend').count(), 1, "resolved yesterday against the day before");
+      assert.strictEqual(await c.page.locator('.dash-tile-wrap[data-tile="kanban"] .dash-trend').count(), 0, "Staff Kanban keeps no history: no trend");
       const level = (k) => c.page.$eval(`.dash-tile-wrap[data-tile="${k}"] .dash-status`, (e) => e.dataset.level);
-      assert.strictEqual(await level("agent"), "warn", "amber: a ticket is blocked");
+      assert.strictEqual(await level("delivery"), "ok");
+      assert.strictEqual(await level("flow"), "warn", "amber: two tickets stuck");
       assert.strictEqual(await level("kanban"), "warn", "amber: a task has no estimate");
-      assert.strictEqual(await level("leads"), "ok");
+      assert.strictEqual(await level("leads"), "warn", "amber: leads need action");
       assert.strictEqual(await level("funnel"), "ok");
-      assert.ok(["warn", "alert"].includes(await level("support")), "support: something awaits a reply");
+      assert.ok(["warn", "alert"].includes(await level("person")), "support: someone waits for a person");
+      assert.strictEqual(await level("drafts"), "warn");
+      assert.strictEqual(await level("resolved"), "ok");
 
       c.at(`the grid at ${c.width}px`);
       const columns = await c.page.evaluate(() => new Set([...document.querySelectorAll(".dash-tile-wrap")].map((w) => Math.round(w.getBoundingClientRect().left))).size);
       const expected = c.width >= 1440 ? 4 : c.width >= 1024 ? 3 : c.width > 640 ? 2 : 1;
       assert.strictEqual(columns, expected, `${expected} tile(s) across at ${c.width}px`);
-      if (expected === 4) assert.strictEqual(await c.page.evaluate(() => new Set([...document.querySelectorAll('.dash-tile-wrap[data-tile="agent"], .dash-tile-wrap[data-tile="kanban"], .dash-tile-wrap[data-tile="leads"], .dash-tile-wrap[data-tile="funnel"]')].map((w) => Math.round(w.getBoundingClientRect().top))).size), 1, "Internal and External share the first row");
-      // Tiles flow across sections: every row is full while tiles remain (the
-      // review of 19 Nov 2026 found row 1 at 1180px holding two tiles and an empty column).
-      const rows = await c.page.evaluate(() => {
+      const rowsNow = () => c.page.evaluate(() => {
         const byTop = new Map();
         for (const w of document.querySelectorAll(".dash-tile-wrap")) { const top = Math.round(w.getBoundingClientRect().top); byTop.set(top, [...(byTop.get(top) || []), w.dataset.tile]); }
         return [...byTop.entries()].sort((x, y) => x[0] - y[0]).map((e) => e[1]);
       });
-      const want = [];
-      const order = ["agent", "kanban", "leads", "funnel", "support"];
-      for (let i = 0; i < order.length; i += expected) want.push(order.slice(i, i + expected));
-      assert.deepStrictEqual(rows, want, `rows at ${c.width}px: no empty column while tiles remain`);
-      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll(".dash-group-title")].map((h) => h.closest(".dash-tile-wrap")?.dataset.tile)), ["agent", "leads", "support"], "each section's heading sits above its first tile");
+      const wantAt = (n) => { const r = []; for (let i = 0; i < order.length; i += n) r.push(order.slice(i, i + n)); return r; };
+      assert.deepStrictEqual(await rowsNow(), wantAt(expected), `rows at ${c.width}px: no empty column while tiles remain`);
+      assert.deepStrictEqual(await c.page.evaluate(() => [...document.querySelectorAll(".dash-group-title")].map((h) => h.closest(".dash-tile-wrap")?.dataset.tile)), ["delivery", "leads", "person"], "each section's heading sits above its first tile");
       const wide = await c.page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
       assert.ok(wide <= 0, `no horizontal page overflow (${wide}px)`);
+      const clipped = await c.page.evaluate(() => [...document.querySelectorAll(".dash-tile")].filter((b) => b.scrollWidth > b.clientWidth + 1).map((b) => b.closest(".dash-tile-wrap").dataset.tile));
+      assert.deepStrictEqual(clipped, [], `no tile's content overflows it at ${c.width}px`);
 
       // A click pins the tile's summary panel under its row; nothing navigates.
       const panel = "#dash-panel";
@@ -3638,49 +3660,50 @@ const scenarios = [
       assert.strictEqual(await underRow("kanban"), "ok", "the panel is full width, directly under the tile's row");
       assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "true");
       const kTip = await c.text(panel);
-      assert.ok(kTip.includes("Staff Kanban") && kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)"), `remaining effort by assignee: ${kTip}`);
+      assert.ok(kTip.includes("Staff Kanban") && kTip.includes("Ana Lopes") && kTip.includes("20h (2.5d)") && kTip.includes("Release 1.6"), `workload by person in hours (days): ${kTip}`);
       assert.ok(kTip.includes("No estimate: PH-3"), `missing estimates named: ${kTip}`);
       await c.page.mouse.move(2, 2);
       await c.page.waitForTimeout(150);
       assert.ok(await c.page.locator(panel).isVisible(), "the panel stays pinned when the pointer leaves");
-      await pinTile("agent");
-      const aTip = await c.text(panel);
-      assert.ok(aTip.includes("Demo Project") && /Blocked\s*1/.test(aTip), `another tile switches the panel: ${aTip}`);
+      await pinTile("delivery");
+      const dTip = await c.text(panel);
+      assert.ok(dTip.includes("Demo Project") && /Yesterday\s*1/.test(dTip) && dTip.includes("Lead time") && dTip.includes("First-time pass"), `another tile switches the panel: ${dTip}`);
       assert.strictEqual(await c.page.$eval('.dash-tile-wrap[data-tile="kanban"] .dash-tile', (b) => b.getAttribute("aria-expanded")), "false", "only one tile is pinned");
+      await pinTile("flow");
+      const flTip = await c.text(panel);
+      assert.ok(/Fix the thing[\s\S]*Purple widget/.test(flTip) && flTip.includes("Needs a logo") && flTip.includes("Demo Project"), `stuck tickets with project and reason, longest first: ${flTip}`);
       await pinTile("leads");
       assert.strictEqual(await underRow("leads"), "ok", "the leads panel sits under its own row");
       const lTip = await c.text(panel);
-      assert.ok(lTip.includes("Burger Co") && lTip.includes("Sam Jones") && !lTip.includes("Old Grocer"), `companies and operators by name: ${lTip}`);
+      assert.ok(lTip.includes("Burger Co") && lTip.includes("Sam Jones") && lTip.includes("Website") && lTip.includes("Network operator") && lTip.includes("QSR") && lTip.includes("Australia"), `by source, industry and market with names: ${lTip}`);
+      assert.ok(/Stale[\s\S]*Old Grocer/.test(lTip) && lTip.includes("Not contacted") && !lTip.includes("Test Lead Co"), `needs action by name; test leads left out: ${lTip}`);
       await pinTile("funnel");
       const fTip = await c.text(panel);
       assert.ok(/Grocery[\s\S]*QSR/.test(fTip), `industries ranked, peak first: ${fTip}`);
-      assert.ok(fTip.includes("Drop-off"), `drop-off at each step: ${fTip}`);
-      await pinTile("support");
-      assert.strictEqual(await underRow("support"), "ok", "the support panel sits under its own row");
-      const sTip = await c.text(panel);
-      assert.ok(sTip.includes("Priya") && sTip.includes("Tom") && !sTip.includes("Hattie"), `waiting support@ tickets with customers: ${sTip}`);
+      assert.ok(fTip.includes("Drop-off") && fTip.includes("biggest") && fTip.includes("Traffic sources") && fTip.includes("Organic"), `drop-off and traffic sources: ${fTip}`);
+      await pinTile("person");
+      assert.strictEqual(await underRow("person"), "ok", "the panel sits under its own row");
+      const pTip = await c.text(panel);
+      assert.ok(pTip.includes("Priya") && !pTip.includes("Hattie"), `waiting support@ tickets with customers: ${pTip}`);
+      await pinTile("drafts");
+      const drTip = await c.text(panel);
+      assert.ok(drTip.includes("Tom") && drTip.includes("90%"), `each draft with its confidence: ${drTip}`);
+      await pinTile("resolved");
+      const rTip = await c.text(panel);
+      assert.ok(rTip.includes("FAQ gaps") && rTip.includes("Custom fonts?"), `FAQ gaps: ${rTip}`);
       c.at("close the panel");
       await c.click("#dash-panel .dash-panel-close", "Close");
       await c.hidden(panel);
-      assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.closest(".dash-tile-wrap")?.dataset.tile), "support", "focus returns to the tile");
+      assert.strictEqual(await c.page.evaluate(() => document.activeElement && document.activeElement.closest(".dash-tile-wrap")?.dataset.tile), "resolved", "focus returns to the tile");
       await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "pin leads again");
       await c.visible(panel);
       await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "the pinned tile again closes it");
       await c.hidden(panel);
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard", "still on the Dashboard");
 
-      // Review of 19 Nov 2026 (bounce 2): with a panel pinned, widening the
-      // grid (an iPad turned to landscape, a window made wider) left row 1
-      // short and put the next panel under a later row, because the panel's
-      // row was measured with the panel itself in the grid. Turn the iPad
-      // with Staff Kanban pinned, then pin another tile, and check each time.
+      // Turn the iPad with a panel pinned, then pin another tile, and check each
+      // time: the row the panel follows is worked out, never measured.
       if (c.width === 820) {
-        const rowsNow = () => c.page.evaluate(() => {
-          const byTop = new Map();
-          for (const w of document.querySelectorAll(".dash-tile-wrap")) { const top = Math.round(w.getBoundingClientRect().top); byTop.set(top, [...(byTop.get(top) || []), w.dataset.tile]); }
-          return [...byTop.entries()].sort((x, y) => x[0] - y[0]).map((e) => e[1]);
-        });
-        const wantAt = (n) => { const r = []; for (let i = 0; i < order.length; i += n) r.push(order.slice(i, i + n)); return r; };
         const settle = async (w, cols, k) => {
           await until(async () => JSON.stringify(await rowsNow()) === JSON.stringify(wantAt(cols)) && (await underRow(k)) === "ok", `full rows of ${cols} and the ${k} panel under its row at ${w}px`, 3000).catch(() => {});
           assert.deepStrictEqual(await rowsNow(), wantAt(cols), `rows at ${w}px with the ${k} panel pinned: no empty column while tiles remain`);
@@ -3693,13 +3716,13 @@ const scenarios = [
           await c.page.setViewportSize({ width: w, height: 900 });
           await settle(w, cols, "kanban");
         }
-        await pinTile("leads");
-        await settle(1440, 4, "leads");
+        await pinTile("funnel");
+        await settle(1440, 4, "funnel");
         await c.page.setViewportSize({ width: 1180, height: 900 });
-        await settle(1180, 3, "leads");
+        await settle(1180, 3, "funnel");
         await c.page.setViewportSize({ width: 820, height: 900 });
-        await settle(820, 2, "leads");
-        await c.click('.dash-tile-wrap[data-tile="leads"] .dash-tile', "close the leads panel");
+        await settle(820, 2, "funnel");
+        await c.click('.dash-tile-wrap[data-tile="funnel"] .dash-tile', "close the funnel panel");
         await c.hidden(panel);
       }
 
@@ -3710,35 +3733,40 @@ const scenarios = [
       await c.page.mouse.move(2, 2);
       await c.page.evaluate(() => document.getElementById("dash-refresh").focus());
       await c.page.keyboard.press("Tab");
-      const onAgent = () => c.page.evaluate(() => { const a = document.activeElement; return !!a && a.matches('.dash-tile-wrap[data-tile="agent"] .dash-tile') && a.__sameTile === true; });
+      const onDelivery = () => c.page.evaluate(() => { const a = document.activeElement; return !!a && a.matches('.dash-tile-wrap[data-tile="delivery"] .dash-tile') && a.__sameTile === true; });
       await c.page.evaluate(() => { const a = document.activeElement; if (a) a.__sameTile = true; });
-      assert.ok(await onAgent(), "Tab from Refresh reaches the Agent board tile");
+      assert.ok(await onDelivery(), "Tab from Refresh reaches the Delivery tile");
       await c.page.keyboard.press("Enter");
-      await c.visible(panel, "Enter pins the agent panel");
+      await c.visible(panel, "Enter pins the delivery panel");
       await c.page.evaluate(() => {
         const b = globalThis.__fbStub; const col = b.col("backlogItems"); const l1 = col.get("l1");
         col.set("b1", { ...col.get("b1"), status: l1.status, mergedAt: l1.mergedAt, statusEnteredAt: l1.statusEnteredAt, blocked: null });
         b.notify();
       });
-      await until(async () => (await value("agent")) === "2", "the Agent board figure to update after the write", 5000);
-      assert.ok(await onAgent(), `focus stays on the same Agent board tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
+      await until(async () => (await value("delivery")) === "2", "the Delivery figure to update after the write", 5000);
+      assert.ok(await onDelivery(), `focus stays on the same Delivery tile (active: ${await c.page.evaluate(() => document.activeElement && document.activeElement.outerHTML.slice(0, 80))})`);
       assert.ok(await c.page.locator(panel).isVisible(), "its pinned panel stays open");
-      await until(async () => /Blocked\s*0/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
-      assert.strictEqual(await level("agent"), "ok", "green once nothing is blocked");
+      await until(async () => /Yesterday\s*2/.test(await c.text(panel)), "the open panel shows the new figures", 3000);
+      assert.strictEqual(await value("flow"), "1", "the blocked ticket shipped: one still stuck");
       await c.page.keyboard.press("Escape");
       await c.hidden(panel, "Escape closes the panel");
       await c.page.evaluate(() => document.activeElement && document.activeElement.blur());
 
       c.at("the panel's Open section goes to the section");
       await c.page.mouse.move(2, 2);
+      await pinTile("drafts");
+      await c.click("#dash-panel .dash-panel-open", "Open section for AI drafts");
+      await c.visible("#support-page");
+      assert.strictEqual(new URL(c.page.url()).hash, "#support?queue=ai-drafts", "AI drafts opens that Support Inbox queue");
+      await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       await pinTile("leads");
       await c.click("#dash-panel .dash-panel-open", "Open section");
       await c.visible("#leads-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#promote/leads");
       await openFromNav(c, "build", "dashboard-btn", "dashboard-page");
       assert.strictEqual(new URL(c.page.url()).hash, "#dashboard");
-      await pinTile("agent");
-      await c.click("#dash-panel .dash-panel-open", "Open section for the Agent board");
+      await pinTile("delivery");
+      await c.click("#dash-panel .dash-panel-open", "Open section for Delivery");
       await c.boardReady();
       assert.strictEqual(new URL(c.page.url()).hash, "#board", "the Agent Board keeps an address of its own");
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "the Dashboard closed");
@@ -3746,6 +3774,34 @@ const scenarios = [
       await c.page.reload({ waitUntil: "domcontentloaded" });
       await c.boardReady();
       assert.ok(await c.page.locator("#dashboard-page").isHidden(), "still the board after a reload");
+    },
+  },
+  {
+    // cMyA3FMlUUrSjGtPkLZC: with no release open (every release live), the
+    // Staff Kanban tile counts all open work across active projects, so it is
+    // never blank; a task of an archived project is left out.
+    name: "Dashboard: Staff Kanban with no open release shows all open work",
+    hash: "",
+    seed: () => {
+      const s = only("l1");
+      s.docs.projects.p9 = { name: "Old project", archived: true, createdAt: t(T0) };
+      s.docs.releases = { r1: { name: "September 2026", version: "1.5.0", order: 1, status: "live", createdAt: t(T0) } };
+      s.docs.kanbanCards = {
+        "PH-1": { key: "PH-1", title: "Menu import", release: "r1", status: "in-progress", open: true, assignee: "ana@ph.example", estimate: 8 },
+        "PH-2": { key: "PH-2", title: "No release", status: "backlog", open: true, assignee: "ana@ph.example", estimate: 8 },
+        "PH-3": { key: "PH-3", title: "Archived project's task", project: "p9", status: "backlog", open: true, estimate: 8 },
+      };
+      return s;
+    },
+    async run(c) {
+      await c.visible("#dashboard-page");
+      const tile = '.dash-tile-wrap[data-tile="kanban"]';
+      await until(async () => (await c.page.locator(`${tile} .dash-value`).first().innerText()) === "2", "two open tasks across active projects", 8000);
+      const text = await c.text(`${tile} .dash-tile`);
+      assert.ok(text.includes("All open work") && /1\s*To do/.test(text) && /1\s*In progress/.test(text), `all open work, by column: ${text}`);
+      await c.click(`${tile} .dash-tile`, "pin the Staff Kanban tile");
+      await c.visible("#dash-panel");
+      assert.ok((await c.text("#dash-panel")).includes("16h (2d)"), "workload in hours with days at 8h a day");
     },
   },
   {
