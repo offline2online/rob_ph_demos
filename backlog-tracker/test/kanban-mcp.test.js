@@ -420,6 +420,51 @@ const activity = (key) => [...env.store.col(`kanbanTasks/${key}/activity`).value
     assert.ok(texts.includes("edited a comment") && texts.filter((t) => t === "deleted a comment").length === 2, texts.join("|"));
   });
 
+  // A comment belongs to the person, not the address it was written under (KB-PPL-3): one added from the board
+  // while signed in with the second address is stored under that address, and its owner's agent can correct it.
+  await test("kanban_edit_comment / kanban_delete_comment: a comment stored under the caller's second address is theirs", async () => {
+    await tool(sam, "kanban_create_task", { title: "Alias comment" });
+    const key = [...env.store.col("kanbanTasks").keys()].sort((a, b) => a.length - b.length || (a < b ? -1 : 1)).pop();
+    const rob = await connect(ROB);
+    env.store.col(`kanbanTasks/${key}/comments`).set("fromalias", { author: ROB_ALIAS, html: "<p>said by voice</p>", text: "said by voice", mentions: [], via: "voice", at: new Date() });
+    assert.ok((await tool(sam, "kanban_edit_comment", { key, commentId: "fromalias", text: "hijack" })).isError, "still nobody else's");
+    const e = await tool(rob, "kanban_edit_comment", { key, commentId: "fromalias", text: "said by voice, corrected" });
+    assert.ok(!e.isError, JSON.stringify(e));
+    const c = env.store.col(`kanbanTasks/${key}/comments`).get("fromalias");
+    assert.strictEqual(c.text, "said by voice, corrected"); assert.ok(c.editedAt); assert.strictEqual(c.via, "voice", "the edit keeps how it was added");
+    assert.ok((await tool(sam, "kanban_get_task", { key })).json.activity.some((a) => a.text === "edited a comment"), "the edit is in the history");
+  });
+
+  // ── voice comments: spoken names (KB-VOICE-1) ────────────────────────────
+  await test("/mcp/kanban/voice-mentions: names and pronunciations become tags, uncertain ones are offered, nothing of the list leaks", async () => {
+    member("duong@ph.example", "editor", "Dương Nguyễn");
+    member("thuc@ph.example", "editor", "Thuc Le");
+    kanban.clearCaches(); // the directory is kept for a minute in each instance
+    try {
+      const ask = (email, text) => call({ method: "POST", path: "/mcp/kanban/voice-mentions", headers: { "X-Firebase-ID-Token": signIn(email) }, body: { text } });
+      const r = await ask(SAM, "Can you ask Zuong to check this, and I took the bus so tell Took");
+      assert.strictEqual(r.statusCode, 200); assert.strictEqual(r.body.source, "server");
+      const segs = r.body.segments;
+      assert.deepStrictEqual(segs.filter((x) => x.t === "mention").map((x) => [x.id, x.said]), [["duong@ph.example", "Zuong"], ["thuc@ph.example", "Took"]]);
+      assert.strictEqual(segs.find((x) => x.t === "mention").name, "Dương Nguyễn", "tagged by the full name the board shows");
+      assert.strictEqual(segs.map((x) => (x.t === "mention" ? x.said : x.text)).join(""), "Can you ask Zuong to check this, and I took the bus so tell Took");
+      assert.deepStrictEqual(Object.keys(segs.find((x) => x.t === "mention")).sort(), ["id", "name", "said", "t"], "a tag carries who and the words heard, never the pronunciation on file");
+      assert.ok(!/northern|close to/i.test(JSON.stringify(r.body)), "the pronunciation list stays on the server");
+      // The spelling works too, and nobody tags themselves.
+      assert.deepStrictEqual((await ask(SAM, "thanks Huy")).body.segments.filter((x) => x.t === "mention").map((x) => x.id), [HUY]);
+      assert.deepStrictEqual((await ask(HUY, "thanks Huy")).body.segments, [{ t: "text", text: "thanks Huy" }]);
+      // A near miss where a name is expected is offered, not tagged.
+      const near = (await ask(SAM, "ask Zoung about it")).body.segments.find((x) => x.t !== "text");
+      assert.strictEqual(near.t, "unsure"); assert.deepStrictEqual(near.candidates.map((c) => c.id), ["duong@ph.example"]);
+      assert.strictEqual((await ask(KIT, "ask Zuong")).statusCode, 403, "a viewer can't comment, so can't ask");
+      assert.strictEqual((await ask(SAM, "  ")).statusCode, 400);
+      assert.strictEqual((await call({ method: "GET", path: "/mcp/kanban/voice-mentions", headers: { "X-Firebase-ID-Token": signIn(SAM) } })).statusCode, 405);
+    } finally {
+      for (const e of ["duong", "thuc"]) { env.store.col("consoleUsers").delete(`${e}@ph.example`); env.store.col("memberDirectory").delete(`${e}@ph.example`); }
+      kanban.clearCaches();
+    }
+  });
+
   // ── member directory ──────────────────────────────────────────────────
   await test("the directory follows consoleUsers: added, renamed, removed (no role copied)", async () => {
     const write = (before, after) => kanban.syncMemberDirectoryWrite({ params: { userEmail: "new@ph.example" }, data: { before: { exists: !!before, data: () => before }, after: { exists: !!after, data: () => after } } });

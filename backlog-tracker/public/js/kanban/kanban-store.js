@@ -335,7 +335,7 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
   }
   function watchComments(key, cb) {
     return onSnapshot(collection(db, "kanbanTasks", key, "comments"), (snap) => {
-      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at), edited: !!x.editedAt }; }));
+      cb(snap.docs.map((d) => { const x = d.data({ serverTimestamps: "estimate" }); return { id: d.id, author: x.author, html: x.html || "", text: x.text || "", at: isoOf(x.at), edited: !!x.editedAt, voice: x.via === "voice" }; }));
     }, onError);
   }
   function watchActivity(key, cb) {
@@ -555,9 +555,10 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     changed("tasks");
   }
 
-  async function addComment(key, { html, text }) {
+  // via: "voice" marks a comment that was dictated (KB-VOICE-1), so its author is shown it to check.
+  async function addComment(key, { html, text, via }) {
     const b = writeBatch(db);
-    b.set(doc(collection(db, "kanbanTasks", key, "comments")), { author: me, html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), at: serverTimestamp() });
+    b.set(doc(collection(db, "kanbanTasks", key, "comments")), { author: me, html, text: String(text || "").slice(0, 20000), mentions: mentionsIn(html), ...(via === "voice" ? { via } : {}), at: serverTimestamp() });
     b.update(doc(db, "kanbanTasks", key), { commentCount: increment(1), ...stamp() });
     // (the card counts it too; before the cards are filled the count is written whole)
     const cur = await ensure(key);

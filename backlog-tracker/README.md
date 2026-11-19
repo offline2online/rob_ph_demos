@@ -3077,7 +3077,16 @@ The profile menu has First name / Last name inputs (`#profile-name-form`, handle
 ## Staff Kanban (21 Oct 2026)
 
 The team's own task board, a Jira replacement, at `#staff-kanban` (sidebar →
-Build → Staff Kanban), separate from the Agent Board. Spec, test plan and the
+Build → Staff Kanban), separate from the Agent Board. **Ticket view (19 Nov
+2026):** an existing ticket opens for reading and commenting, not as a form: its
+details are text with an edit icon each, and under them are the **Comments** and
+**History** tabs (History is the `activity` log read back by `ticketHistory` in
+`kanban-core.js`: who, when, every move and hand-off, time open, time per column).
+A dictated comment's names become @mentions through `POST /mcp/kanban/voice-mentions`
+(`functions/kanban.js` `handleVoiceMentions`), the one place the server-only staff
+pronunciation list is matched for the page; a comment belongs to the person
+whichever of their addresses wrote it (`kanbanAuthorIsCaller` in `firestore.rules`).
+`kanban-staff-board/REQUIREMENTS.md` → KB-VIEW-1, KB-VIEW-2, KB-HIST-1, KB-VOICE-1. Spec, test plan and the
 signed-off prototype are in `kanban-staff-board/` (project "Staff Kanban" on
 the board). Every ticket has its own address, `#staff-kanban/ticket/PH-<n>`:
 a card opens it in place over the board with that address in the address bar

@@ -390,6 +390,93 @@ keeps them (any ticket above the lowest level can have children, KB-TASK-14).
 
 ## 7. Create / edit modal
 
+**KB-VIEW-1 An existing ticket opens for reading (console build, 19 Nov 2026).**
+Creating a ticket is unchanged (KB-MOD-1). Opening one that exists is for
+reviewing it and commenting, so its details are read-only until asked for:
+- The **title**, **description**, **acceptance criteria**, **linked tickets** and
+  the **details column** (priority, type, parent, people, release, estimate, time
+  logged, sprint, project, due date, labels, status) read as text. Each has an
+  **edit icon** (pencil; "Edit title", "Edit description", "Edit acceptance
+  criteria", "Edit linked tickets", "Edit details") that turns it into its form,
+  with the cursor in it. A field opened for editing stays open until the ticket is
+  closed; the next time the ticket opens it reads again. Save, Cancel and "Save
+  only when something changed" (KB-TASK-13) are as before, and a save that finds a
+  problem in a field opens that field.
+- A long description is cut short (about seven lines) with **Show more** /
+  **Show less**.
+- Read-only acceptance criteria can still be **ticked** (a tester's job, saved at
+  once as before); rewording, moving, removing and adding wait for the edit icon.
+- Child tickets, agent tickets and attachments are lists with their own actions
+  and are unchanged. Fields hidden by settings stay under "N more fields".
+- A viewer reads the same view with no edit icons.
+AC: + New task shows the creation form as before; open PH-20: the title and
+description are text, no field of the form is on show, the Comments tab is
+selected and the comment box is ready; press the edit icon on the description: the
+editor opens, and Save writes the change. KB-C35.
+
+**KB-VIEW-2 Comments and History tabs.** Under the details an existing ticket has
+two tabs, **Comments** (selected whenever a ticket opens, with the number of
+comments) and **History** (`role="tablist"`; Left / Right / Home / End move
+between them). Comments holds the thread, oldest first, and the box to add a
+comment with its mic; it no longer mixes activity lines into the thread.
+
+**KB-HIST-1 History.** The ticket's audit trail, newest first, each line with
+who did it and when **in the reader's own time zone**: when it was opened and by
+whom, every column move, every reassignment and hand-off (to a tester, back to the
+developer; a line that only names who took the ticket also says who had it
+before, "assigned to Linh (from Huy)"), every field change with its old and new
+value, criteria ticked or edited, links, flags, and comments edited or deleted.
+Above it, the figures read from the same trail: **Time open** (opened until now,
+or until it was completed or withdrawn), **Handoffs** (how many times it changed
+hands), **Column moves**, **Edits** (every other change), and the **time spent in
+each column** so far. The trail is the `activity` log the board and the MCP tools
+already write (§12); nothing new is stored. `parseActivity`, `ticketHistory` and
+`fmtAge` in `kanban-core.js` read it. A ticket moved before this shipped has the
+same lines, so its figures are complete; the time open of a ticket closed without
+a `closedAt` runs to its last move into Completed / Withdrawn.
+AC: reassign PH-20 and move it to another column, open History: both are at the
+top with who and when, Handoffs and Column moves are each one higher, and Time
+open reads the ticket's age. KB-C36, `kanban-core.test.mjs`.
+
+**KB-VOICE-1 Voice comments tag the people named.** The comment box's mic
+(KB-MOD-4) dictates a comment. When the dictation stops (or Add comment is
+pressed while it is still listening), the words heard are matched against the
+staff list and the **staff pronunciation list** (KB-NAME-1) and each name that is
+certain becomes a proper **@mention** of that person, the chip a typed @ makes, so
+they are notified when the comment is added exactly as for a typed mention.
+- **Where it is matched:** `POST /mcp/kanban/voice-mentions` (`functions/kanban.js`,
+  editors only, 120 calls per ten minutes from one address). Only the server holds the pronunciations;
+  the answer is the same text in segments (plain text, a tag with the person's
+  address and full name, or an uncertain name with up to three people offered) and
+  never carries a pronunciation. If the server doesn't answer within 5 seconds the
+  page matches against the names it shows (full name and short name, no
+  pronunciations). The shared matcher is `matchSpokenNames` in `kanban-core.js`.
+- **What counts as certain:** a full name; a short or first name, with or without
+  its accents ("Duong" for Dương), that belongs to one person; a pronunciation
+  sound-alike ("Zuong"). A name or sound-alike that is also an everyday word
+  ("Rob", "Took", "Will") is tagged only when the sentence says a person is meant:
+  a word before it (ask, tell, tag, mention, ping, cc, thanks, hi, "at"), another
+  name just before it, a capital the recogniser gave it mid-sentence, or opening
+  a sentence followed by "please", "can", "could"… Otherwise it is left as text and
+  not offered ("I took the bus" tags nobody). The speaker is never tagged by
+  their own name.
+- **When it is not certain:** two people share the name, or a word said where a
+  name is expected is one slip from a name ("Zoung"): the words stay as heard and
+  the closest people are offered beside the box (**Tag <full name>**, or × to
+  leave it as written). Nobody is tagged by a guess.
+- **Checked before it is posted:** nothing is posted by the mic. The transcript
+  stays in the box with a line under it ("Added by voice. Check the words before
+  you add the comment · tagged <names>.") and can be typed over (KB-MOD-4b) before
+  **Add comment**. Text typed over a dictation is left exactly as typed.
+- **And after:** a dictated comment is stored with `via: "voice"`, shows a small
+  mic beside its time, and like every comment has its author's **Edit** button
+  (KB-MOD-3) so a mis-heard word is corrected in place.
+AC: dictate "ask Zuong to check the preview" on PH-20 (Zuong being a member's
+recorded pronunciation): the box reads "Ask @<their full name> to check the
+preview", untouched until Add comment; adding it writes their address in the
+comment's `mentions` (the notification trigger's input). KB-C37,
+`kanban-mcp.test.js` ("/mcp/kanban/voice-mentions"), `kanban-core.test.mjs`.
+
 **KB-MOD-1 New task.** Always starts in Backlog (no Status field, no
 Comments). The heading and primary button follow the type: **Create task**,
 **Raise bug**, **Create epic**. Right-hand details column order: Priority,
@@ -432,7 +519,7 @@ Storage, the description carrying their download URL — never a `data:` URI, so
 a ticket doesn't fill its size limit and no listener downloads a picture), and
 **screen recording** (record button → playable video). Comments use a compact
 version of the same editor. Stored HTML is sanitised (DOMPurify) when shown.
-**Editing and deleting comments.** Each comment shows its author (and an admin) a **⋮** menu: **Edit** (author only) opens the same compact editor inline and the saved comment carries an "edited" label; **Delete** asks in the console's own confirm modal, removes the comment and takes one off `commentCount` (ticket and card). Nobody edits another person's comment; an admin deletes anyone's. People newly @mentioned by an edit are notified, those it already named are not. Both are written to the activity log ("edited a comment", "deleted a comment"). Rules: a comment is updated only by its author and only `html`, `text`, `mentions` and `editedAt`; deleted by its author or an admin. Over MCP: `kanban_edit_comment` and `kanban_delete_comment` (KB-MCP-1).
+**Editing and deleting comments.** Each comment shows its author an **Edit** button (pencil) and its author (and an admin) a **⋮** menu: **Edit** (author only, either route) opens the same compact editor inline and the saved comment carries an "edited" label, whether it was typed or added by voice (KB-VOICE-1); **Delete** asks in the console's own confirm modal, removes the comment and takes one off `commentCount` (ticket and card). Nobody edits another person's comment; an admin deletes anyone's. **A comment is its author's whichever of their addresses wrote it** (KB-PPL-3, fixed 19 Nov 2026): a comment a member's agent adds over MCP, by voice or otherwise, is stored under their canonical address, and signed in to the board with their second address they could not edit it (no Edit was offered, and the rules refused). The page, `kanban_edit_comment` / `kanban_delete_comment` and `firestore.rules` (`kanbanAuthorIsCaller`: the same address, the caller's `aliasOf` claim, or `consoleConfig/identity.personAliases`) now all compare the person. People newly @mentioned by an edit are notified, those it already named are not. Both are written to the activity log ("edited a comment", "deleted a comment"), which is the ticket's History (KB-HIST-1). Rules: a comment is updated only by its author and only `html`, `text`, `mentions` and `editedAt`; deleted by its author or an admin. Over MCP: `kanban_edit_comment` and `kanban_delete_comment` (KB-MCP-1).
 
 **KB-MOD-4 Dictation.** The description (when editing) and the comment box
 each have a round 36 px mic that turns into a red stop button while
@@ -572,7 +659,7 @@ returns it with `projectName`, and `kanban_list_people` lists the projects.
 **KB-NAME-1 Staff names and pronunciation (agents only).** Every member has a short name
 (the spelling agents use), the full name the board shows and a pronunciation hint (a plain-English sound-alike). The pronunciation is
 stored only in the server-only `staffPronunciations/{email}` collection and is **never shown in the
-UI**: not on the board, a profile (the member's own included) or settings, and it is not on
+UI** (the server also matches dictated comments against it, KB-VOICE-1, and answers with people, never with a pronunciation): not on the board, a profile (the member's own included) or settings, and it is not on
 `memberDirectory`. Agents read it over MCP (`kanban_list_people`, `kanban_get_staff_names`) and an
 admin sets it with `kanban_set_staff_pronunciation`; anyone else is refused. Current members are
 seeded by first name: Duong "Zuong" (northern Vietnamese), Duy "Zui", Thuc close to "Took" (the
@@ -653,8 +740,8 @@ stored by lowercased email; release ids are the console's `releases` ids.
 |---|---|
 | `kanbanCards/{PH-n}` | The light copy the board reads: `key`, `type`, `title`, `status`, `resolution`, `open`, `closedAt`, `rank`, `assignee`, `previousAssignee`, `release`, `sprint`, `project`, `priority`, `flagged`, `estimate`, `logged`, `due`, `labels[]`, `epic`, `commentCount`, `attachmentCount`, `acTotal`, `acDone` (the acceptance-criteria counts, KB-TASK-12), `agentTotal`, `agentDone` (agent tickets sent and built, KB-AGENT-1; only once there are any, written by the server), `updatedAt/By` (what `core.cardOf` names; the rules refuse any other key, so no description, links or search tokens). **Every writer writes a ticket's card in the same batch or transaction as the ticket**: the page (`kanban-store.js` createTask / updateTask / deleteTask / addComment, children and epics too) and every MCP write in `functions/kanban.js`. |
 | `kanbanTasks/{PH-n}` | The full ticket, read when its modal opens (and by search and `kanban_get_task`): `key`, `number`, `type` (task/bug/epic), `title`, `description` (HTML), `descriptionText`, `status`, `resolution` (completed/withdrawn when status = done, else null), `open` (status ≠ done), `closedAt` (when done), `rank`, `assignee`, `previousAssignee`, `reporter`, `release`, `sprint`, `project` (console project id or empty), `estimate` (hours or null), `logged` (hours), `priority`, `due` (YYYY-MM-DD), `labels[]`, `epic` (parent key), `links[] {type,key}` (on both tickets: "A blocks B" is `{blocks,B}` on A and `{is blocked by,A}` on B, written in one batch by the page and the MCP tools), `flagged`, `acceptanceCriteria[]` (at most 50 strings `<id>\t<0|1>\t<text>`, KB-TASK-12), `attachments[] {name,size,contentType,url,path}`, `commentCount`, `mentions[]`, `watchers[]` (people who asked to follow it), `agentTickets[] {id, projectId}`, `agentTotal`, `agentDone` (Send to Agent, KB-AGENT-1: the Agent Board tickets made from it and how many are built; server only), `searchTokens[]` (server search, KB-TASK-6), `createdAt/By`, `updatedAt/By` |
-| `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited) |
-| `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only |
+| `kanbanTasks/{PH-n}/comments/{id}` | `author`, `html`, `text`, `mentions[]`, `at`, `editedAt` (once edited), `via` (`"voice"` when it was dictated on the board, KB-VOICE-1; never changed by an edit) |
+| `kanbanTasks/{PH-n}/activity/{id}` | `who`, `at`, `text` (moves, field changes with old and new value, links, flags); append-only. The History tab reads these lines back (KB-HIST-1) |
 | `kanbanCounters/main` | `nextNumber`, advanced in the same transaction as the ticket it numbers |
 | `kanbanSettings/main` | `fields {key: {show, required}}`, `tester`, `currentRelease`, `releaseDates {releaseId: date}`, `labels[]`, `firstNames {email: name}`, `linksTwoSidedAt` (server-stamped), `updatedAt/By` |
 | `kanbanSprints/{id}` | `name`, `start`, `end` |

@@ -9,6 +9,10 @@
 //                         out, written by Claude. Answers { draft: null }
 //                         until ANTHROPIC_API_KEY is set, and the page then
 //                         fills the ticket with its local stand-in.
+//   /mcp/kanban/voice-mentions   KB-VOICE-1: a dictated comment in, the same
+//                         text out with the staff it names marked for an
+//                         @mention. Matched here because only the server
+//                         holds the staff pronunciation list.
 //   /mcp/kanban/directory-sync   fills memberDirectory from consoleUsers
 //                         when it is behind (the first time the board opens).
 //   /mcp/kanban/backfill  fills kanbanCards (the light copy of each ticket the
@@ -255,6 +259,35 @@ async function handleAgentFill(req, res, h) {
   } catch (err) {
     logger.warn("kanban agent fill failed", { email: who.user.email, error: String(err && err.message ? err.message : err) });
     res.status(200).json({ draft: null, reason: "error" });
+  }
+}
+// KB-VOICE-1: which staff a dictated comment names. The page sends the words it
+// heard; the answer is the same text cut into segments, each plain text, a
+// certain match (tagged as an @mention) or an uncertain one (left as heard,
+// with the closest people offered). The match uses the staff list and the
+// pronunciation list (staffPronunciations, server-only): the sound-alikes stay
+// here and the answer names people only by address and full name.
+let staffNamesTool = null;
+async function handleVoiceMentions(req, res, h) {
+  if (req.method !== "POST") { res.status(405).json({ error: "POST only" }); return; }
+  if (h.rateLimited(req, "kanban-voice-mentions", 120)) return h.tooMany(res);
+  const who = await h.requireConsoleUser(req, "editor");
+  if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const text = String(body.text || "").slice(0, 8000);
+  if (!text.trim()) { res.status(400).json({ error: "text is required" }); return; }
+  try {
+    if (!staffNamesTool) staffNamesTool = kanbanTools({ textResult: (value) => ({ ok: true, value }), toolError: (error) => ({ ok: false, error }), audit: async () => {} }).find((x) => x.name === "kanban_get_staff_names");
+    const out = await staffNamesTool.run({}, { email: who.user.email, displayName: who.user.displayName || "", role: who.user.role });
+    const staff = (out && out.ok && out.value && out.value.staff) || [];
+    const me = core.canonicalEmail(who.user.email);
+    // Nobody tags themselves by saying their own name.
+    const people = staff.filter((p) => core.canonicalEmail(p.email) !== me).map((p) => ({ id: p.email, name: p.fullName, first: p.name, said: core.soundAlikes(p.pronunciation) }));
+    res.status(200).json({ segments: core.matchSpokenNames(text, people), source: "server" });
+  } catch (err) {
+    logger.warn("kanban voice mentions failed", { email: who.user.email, error: String(err && err.message ? err.message : err) });
+    // 200 with no segments, not an error status: the page falls back to the names it holds.
+    res.status(200).json({ segments: null, reason: "error" });
   }
 }
 async function handleDirectorySync(req, res, h) {
@@ -1973,7 +2006,8 @@ function kanbanTools(h) {
         const ref = tasks().doc(key).collection("comments").doc(String(args.commentId || "-"));
         const c = await ref.get();
         if (!c.exists) return toolError(`No comment ${args.commentId} on ${key}; kanban_get_task lists the ids.`);
-        if (c.data().author !== session.email) return toolError("You can only edit your own comments.");
+        // A comment written while signed in with a second address of the same person is theirs too (KB-PPL-3).
+        if (core.canonicalEmail(c.data().author) !== session.email) return toolError("You can only edit your own comments.");
         const text = String(args.text || "").trim();
         if (!text) return toolError("text is required.");
         if (text.length > 4000) return toolError("A comment is limited to 4000 characters.");
@@ -1999,7 +2033,7 @@ function kanbanTools(h) {
         const ref = tasks().doc(key).collection("comments").doc(String(args.commentId || "-"));
         const c = await ref.get();
         if (!c.exists) return toolError(`No comment ${args.commentId} on ${key}; kanban_get_task lists the ids.`);
-        if (c.data().author !== session.email && session.role !== "admin") return toolError("You can only delete your own comments; an admin can delete anyone's.");
+        if (core.canonicalEmail(c.data().author) !== session.email && session.role !== "admin") return toolError("You can only delete your own comments; an admin can delete anyone's.");
         const n = Math.max(0, (cur.commentCount || 0) - 1);
         const b = db().batch();
         b.delete(ref);
@@ -2007,7 +2041,7 @@ function kanbanTools(h) {
         putCard(b, key, Object.assign({}, cur, { commentCount: n }), session.email);
         activity(b, key, session.email, ["deleted a comment"]);
         await b.commit();
-        await audit(session, "kanban_delete_comment", { key, commentId: ref.id, ownComment: c.data().author === session.email });
+        await audit(session, "kanban_delete_comment", { key, commentId: ref.id, ownComment: core.canonicalEmail(c.data().author) === session.email });
         return textResult({ deleted: true, key, commentId: ref.id, commentCount: n });
       },
     },
@@ -2113,4 +2147,4 @@ function kanbanTools(h) {
   }));
 }
 
-module.exports = { clearCaches, imageResizer, captureRenderer: capture.renderer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };
+module.exports = { clearCaches, imageResizer, captureRenderer: capture.renderer, ATTACH_MAX_BYTES, syncMemberDirectoryWrite, syncWholeDirectory, handleAgentFill, handleVoiceMentions, handleDirectorySync, handleBackfill, backfillSlice, handleBackfillLinks, backfillLinksSlice, boardCollection, kanbanTools, KANBAN_SCOPE, claudeDraft, draftFromClaude, cleanContext, AGENT_MODEL, DRAFT_SCHEMA };

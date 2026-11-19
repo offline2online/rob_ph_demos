@@ -6145,6 +6145,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
       case "/admin/provision": return await handleAdminProvision(req, res);
       // Staff Kanban's browser endpoints (functions/kanban.js).
       case "/kanban/agent-fill": return await kanban.handleAgentFill(req, res, kanbanHelpers);
+      case "/kanban/voice-mentions": return await kanban.handleVoiceMentions(req, res, kanbanHelpers);
       case "/kanban/directory-sync": return await kanban.handleDirectorySync(req, res, kanbanHelpers);
       case "/kanban/backfill": return await kanban.handleBackfill(req, res, kanbanHelpers);
       case "/kanban/backfill-links": return await kanban.handleBackfillLinks(req, res, kanbanHelpers);

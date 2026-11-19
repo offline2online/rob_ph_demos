@@ -1492,12 +1492,14 @@ service cloud.firestore {
           && incoming().text is string && incoming().text.size() <= 20000
           && incoming().at == request.time;
         // Edit your own (and only its text, mentions and edited-at); delete your own, or anyone's as an admin (KB-MOD-3).
-        allow update: if isEditor() && resource.data.author == callerEmail()
+        // "Your own" follows the person, not the address (KB-PPL-3): a comment their agent added over MCP is
+        // stored under their canonical address, and they may be signed in here with their second one.
+        allow update: if isEditor() && kanbanAuthorIsCaller(resource.data.author)
           && incoming().diff(resource.data).affectedKeys().hasOnly(["html", "text", "mentions", "editedAt"])
           && incoming().html is string && incoming().html.size() <= 200000
           && incoming().text is string && incoming().text.size() <= 20000
           && incoming().editedAt == request.time;
-        allow delete: if isEditor() && (resource.data.author == callerEmail() || isAdmin());
+        allow delete: if isEditor() && (kanbanAuthorIsCaller(resource.data.author) || isAdmin());
       }
       // Append-only: who moved, reassigned or flagged what, and when.
       match /activity/{entryId} {
@@ -1572,6 +1574,15 @@ service cloud.firestore {
     // is consoleConfig/identity.personAliases for kanban-core.js):
     // notifications are always addressed to the canonical one, so signed in
     // with the alias they read and clear those.
+    // A comment's author is the caller: the same address, the caller's `aliasOf`
+    // claim (signed in with the second address, the comment under the canonical
+    // one), or the other way round, read from consoleConfig/identity.personAliases
+    // (signed in with the canonical address, the comment under the second one).
+    function kanbanAuthorIsCaller(author) {
+      return kanbanNotifiedIs(author)
+        || (signedIn() && author is string
+            && get(/databases/$(database)/documents/consoleConfig/identity).data.get("personAliases", {}).get(author, "") == callerEmail());
+    }
     function kanbanNotifiedIs(to) {
       return to == callerEmail()
         || (signedIn() && request.auth.token.get("aliasOf", "") is string
