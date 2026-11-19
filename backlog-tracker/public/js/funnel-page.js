@@ -1,16 +1,14 @@
 // Promote › Conversion Funnel (#promote/conversion-funnel): ad impression to
 // deployed opportunity as one funnel graphic. Rules are in funnel-core.js.
-// Reads `funnelDaily` (GA4 + Google Ads, written by the server-side ingest,
-// functions/funnel-ingest.js), the ingest's status (consoleConfig/funnelIngest:
-// when the data was last updated, which source failed), `leads`, `prospects`
-// and the ACE opportunities (/partnerCentral/v1/ace).
+// Reads `funnelDaily` (Google Ads + GA4, written by the server-side ingest),
+// `leads`, `prospects` and the ACE opportunities (/partnerCentral/v1/ace).
 // No explanatory copy on the page: help is in the info tooltips.
-import { collection, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { normaliseLead } from "./leads-core.js";
 import { normaliseProspect } from "./prospects-core.js";
 import {
   EMPTY_FILTER, normaliseWebRow, joinOpportunities, buildFunnel, filterOptions, presetRange, previousRange,
-  fmtCount, fmtPct, fmtChange, fmtDay, ingestStatusView, ingestFailureText, fmtUpdated,
+  fmtCount, fmtPct, fmtChange, fmtDay,
 } from "./funnel-core.js";
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -27,7 +25,7 @@ const SELECTS = [
 ];
 
 export function mountFunnelPage({ db, apiHeaders }) {
-  let web = [], leads = [], prospects = [], opps = [], ingest = null;
+  let web = [], leads = [], prospects = [], opps = [];
   let aceError = "";
   let filter = { ...EMPTY_FILTER, ...presetRange("30d"), compare: false };
   let unsubs = [], started = false, built = false;
@@ -40,8 +38,6 @@ export function mountFunnelPage({ db, apiHeaders }) {
     watch("funnelDaily", (rows) => { web = rows.map((r) => normaliseWebRow(r.id, r.data)); });
     watch("leads", (rows) => { leads = rows.map((r) => normaliseLead(r.id, r.data)).filter((l) => !l.archived && !l.test); });
     watch("prospects", (rows) => { prospects = rows.map((r) => normaliseProspect(r.id, r.data)); });
-    unsubs.push(onSnapshot(doc(db, "consoleConfig", "funnelIngest"), (snap) => { ingest = snap.exists() ? snap.data() : null; render(); },
-      (err) => console.warn("backlog-tracker: funnel ingest status", err)));
     loadAce();
   }
   async function loadAce() {
@@ -106,16 +102,12 @@ export function mountFunnelPage({ db, apiHeaders }) {
     const f = buildFunnel(filter, data);
     const range = filter.from && filter.to ? `${fmtDay(filter.from)} – ${fmtDay(filter.to)}` : "All time";
     const prev = f.prevRange ? ` vs ${fmtDay(f.prevRange.from)} – ${fmtDay(f.prevRange.to)}` : filter.compare && !previousRange(filter.from, filter.to) ? " (set both dates to compare)" : "";
-    const iv = ingestStatusView(ingest);
-    const updated = iv.known ? ` · Updated ${fmtUpdated(iv.updatedAt)}` : "";
-    $("funnel-count").innerHTML = `<b>${fmtCount(f.stages[0].count)}</b> impressions · <b>${fmtCount(f.stages[f.stages.length - 1].count)}</b> deployed · ${esc(range)}${esc(prev)}${esc(updated)}`;
+    $("funnel-count").innerHTML = `<b>${fmtCount(f.stages[0].count)}</b> impressions · <b>${fmtCount(f.stages[f.stages.length - 1].count)}</b> deployed · ${esc(range)}${esc(prev)}`;
     const notes = [];
-    if (iv.flagged) notes.push(ingestFailureText(iv));
     if (aceError) notes.push(aceError);
     if (!f.hasWebData && !f.empty) notes.push("No Google Ads or GA4 rows match these filters, so the first five stages are 0.");
     $("funnel-status").textContent = notes.join(" ");
     $("funnel-status").hidden = notes.length === 0;
-    $("funnel-status").classList.toggle("funnel-status-flag", iv.flagged);
     $("funnel-empty").hidden = !f.empty;
     $("funnel-empty-text").textContent = !web.length && !opps.length ? "No funnel data yet." : "Nothing matches these filters.";
     const list = $("funnel-stages");

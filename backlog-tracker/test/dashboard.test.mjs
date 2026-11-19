@@ -122,26 +122,6 @@ assert.deepStrictEqual(fk.steps.map((s) => [s.label, s.count, s.dropOff, s.dropO
 assert.deepStrictEqual(fk.industries, [{ name: "Grocery", count: 210 }, { name: "QSR", count: 80 }], "industries ranked by visitors, peak first");
 assert.strictEqual(funnelKpi([{ date: "2026-11-16", visits: 10, users: 7 }], [], NOW).value, 7, "GA4's user count wins when the ingest sends one");
 assert.strictEqual(funnelKpi([], [], NOW).hasData, false);
-// Rows from the ingest (functions/funnel-ingest.js) carry a source: unique visitors are the
-// day's GA4 total (users are not additive across slices), industry page visitors come from
-// real /industries/* page views, and walkthrough or calculator from the GA4 key events.
-const ing = [
-  { date: "2026-11-16", source: "ga4-total", users: 300 },
-  { date: "2026-11-16", source: "ga4-site", country: "UK", visits: 250, users: 200 },
-  { date: "2026-11-16", source: "ga4-site", country: "AU", visits: 150, users: 130 },
-  { date: "2026-11-16", source: "ga4-industry", industry: "Telco", country: "UK", pageViews: 90, users: 60 },
-  { date: "2026-11-16", source: "ga4-industry", industry: "Grocery", country: "UK", pageViews: 140, users: 70 },
-  { date: "2026-11-16", source: "ga4-events", industry: "Telco", walkthroughs: 9, calculatorUses: 2, demoRequests: 1, downloads: 3, leadForms: 4 },
-  { date: "2026-11-16", source: "google-ads", impressions: 5000, clicks: 150 },
-  { date: "2026-11-16", source: "leads", industry: "Telco", leads: 3 },
-  { date: "2026-11-15", source: "ga4-total", users: 250 },
-];
-const ik = funnelKpi(ing, leads, NOW);
-assert.strictEqual(ik.value, 300, "unique visitors are GA4's total users for the day");
-assert.strictEqual(ik.prev, 250);
-assert.deepStrictEqual(ik.steps.map((s) => s.count), [300, 130, 15, 2]);
-assert.deepStrictEqual(ik.industries, [{ name: "Grocery", count: 70 }, { name: "Telco", count: 60 }]);
-assert.strictEqual(funnelKpi(ing.filter((r) => r.source !== "ga4-total"), [], NOW).value, 330, "no total row: the site slices' users");
 
 // ── Support ───────────────────────────────────────────────────────────────
 // Exactly three figures, all of the Support Inbox (support@), as things stand now and today.

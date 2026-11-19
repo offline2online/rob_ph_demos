@@ -175,32 +175,16 @@ export const isWebsiteLead = (l) => !!l && (/website/i.test(String(l.source || "
 // Visitors for a set of funnelDaily rows: GA4's user count when the ingest
 // sends one (`users`), else its visits.
 const visitorsOf = (rows) => rows.reduce((n, r) => n + (typeof r.users === "number" ? num(r.users) : num(r.visits)), 0);
-const sourceIs = (src) => (r) => String(r.source || "") === src;
-// rows: funnelDaily documents for the day. The ingest (functions/funnel-ingest.js)
-// tags each row with a `source`:
-//   ga4-total     the day's unique visitors (GA4 users, one row: users are not
-//                 additive across rows, so only this row is counted for them)
-//   ga4-industry  real page views of /industries/* pages and the users who viewed them
-//   ga4-events    walkthroughs (product tour starts), calculatorUses, demoRequests,
-//                 downloads, leadForms
-// Rows with no `source` (written before the ingest existed) keep the older
-// reading: visitors are every row's users (else visits), industry visitors the
-// rows carrying an industry. leads as for leadsKpi.
+// rows: funnelDaily documents ({date "YYYY-MM-DD", industry, visits, users?,
+// demoRequests, downloads}); leads as for leadsKpi.
 export function funnelKpi(rows, leads, now = Date.now()) {
   const y = localDayRange(1, now), p = localDayRange(2, now);
   const of = (day) => (rows || []).filter((r) => r && String(r.date || "").slice(0, 10) === day);
   const cur = of(y.day), before = of(p.day);
-  const tagged = (list) => list.some((r) => r.source);
-  const visitorsFor = (list) => {
-    if (!tagged(list)) return visitorsOf(list);
-    const totals = list.filter(sourceIs("ga4-total"));
-    return totals.length ? visitorsOf(totals) : visitorsOf(list.filter(sourceIs("ga4-site")));
-  };
-  const visitors = visitorsFor(cur);
-  const industryRows = tagged(cur) ? cur.filter(sourceIs("ga4-industry")) : cur.filter((r) => String(r.industry || "").trim());
+  const visitors = visitorsOf(cur);
+  const industryRows = cur.filter((r) => String(r.industry || "").trim());
   const industryPage = visitorsOf(industryRows);
-  const engagedRows = tagged(cur) ? cur.filter(sourceIs("ga4-events")) : cur;
-  const engaged = engagedRows.reduce((n, r) => n + num(r.walkthroughs) + num(r.calculatorUses) + num(r.demoRequests) + num(r.downloads), 0);
+  const engaged = cur.reduce((n, r) => n + num(r.demoRequests) + num(r.downloads), 0);
   const leadCount = (leads || []).filter((l) => realLead(l) && isWebsiteLead(l) && inRange(toMillis(l.createdAt), y)).length;
   const counts = [visitors, industryPage, engaged, leadCount];
   const labels = ["Unique visitors", "Industry page", "Walkthrough or calculator", "Lead"];
@@ -211,12 +195,11 @@ export function funnelKpi(rows, leads, now = Date.now()) {
   });
   const byIndustry = new Map();
   for (const r of industryRows) {
-    const k = String(r.industry || "").trim();
-    if (!k) continue;
+    const k = String(r.industry).trim();
     byIndustry.set(k, (byIndustry.get(k) || 0) + visitorsOf([r]));
   }
   const industries = [...byIndustry.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  const prev = visitorsFor(before);
+  const prev = visitorsOf(before);
   return { value: visitors, prev, trend: trend(visitors, prev), steps, industries, hasData: cur.length > 0 };
 }
 

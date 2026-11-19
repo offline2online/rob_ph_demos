@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions, ingestStatusView, ingestFailureText, fmtUpdated } from "../public/js/funnel-core.js";
+import { STAGES, buildFunnel, previousRange, addDays, daysBetween, joinOpportunities, dayOfInstant, normaliseWebRow, channelOf, fmtPct, fmtChange, EMPTY_FILTER, filterOptions } from "../public/js/funnel-core.js";
 
 assert.deepStrictEqual(STAGES.map((s) => s.key), ["impressions", "clicks", "visits", "demos", "downloads", "aceCreated", "aceOpen", "aceClosed", "deployed"], "nine stages in order");
 assert.strictEqual(addDays("2026-03-01", -1), "2026-02-28");
@@ -65,24 +65,4 @@ assert.strictEqual(fmtPct(12.34), "12%");
 assert.strictEqual(fmtPct(2.5), "2.5%");
 assert.strictEqual(fmtChange({ count: -5, countPct: -10 }), "−5 (−10%)");
 assert.ok(filterOptions(data, prospects).industry.includes("Grocery"));
-// Calculator uses count in the calculator / model downloads stage.
-const calc = buildFunnel({ ...EMPTY_FILTER }, { web: [normaliseWebRow("c", { date: "2026-11-01", downloads: 2, calculatorUses: 3 })], ace: [] });
-assert.strictEqual(calc.stages.find((x) => x.key === "downloads").count, 5);
-
-// The ingest's status (consoleConfig/funnelIngest): last updated, and failures flagged.
-assert.deepStrictEqual(ingestStatusView(null), { known: false, updatedAt: 0, failures: [], flagged: false });
-const okView = ingestStatusView({ lastRunAt: "2026-11-19T00:00:00Z", sources: { "ga4-site": { ok: true, lastSuccessAt: "2026-11-19T00:00:00Z" }, leads: { ok: true, lastSuccessAt: "2026-11-19T00:00:00Z" } } });
-assert.strictEqual(okView.flagged, false);
-assert.strictEqual(okView.updatedAt, Date.parse("2026-11-19T00:00:00Z"));
-const bad = ingestStatusView({ lastRunAt: "2026-11-19T06:00:00Z", sources: {
-  "ga4-total": { ok: false, error: "GA4 answered 401: bad credentials", lastSuccessAt: "2026-11-18T00:00:00Z" },
-  "ga4-site": { ok: false, error: "GA4 answered 401: bad credentials", lastSuccessAt: "2026-11-18T00:00:00Z" },
-  "google-ads": { ok: false, error: "GA4 answered 401: bad credentials", lastSuccessAt: "2026-11-18T00:00:00Z" },
-  leads: { ok: true, lastSuccessAt: "2026-11-19T06:00:00Z" },
-} });
-assert.strictEqual(bad.flagged, true);
-assert.deepStrictEqual(bad.failures.map((x) => x.name), ["GA4", "Google Ads"], "one entry per source, not per report");
-assert.strictEqual(bad.updatedAt, Date.parse("2026-11-18T00:00:00Z"), "last updated is GA4's last good update, not the leads'");
-assert.match(ingestFailureText(bad), /^GA4 didn't update \(GA4 answered 401: bad credentials\); last good update .+\. Google Ads didn't update/);
-assert.strictEqual(fmtUpdated(0), "never");
 console.log("funnel.test.mjs: ok");

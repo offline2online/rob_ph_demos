@@ -2,25 +2,22 @@
 // Pure functions, no DOM and no Firestore, so test/funnel.test.mjs drives them.
 //
 // Stages 1-5 (the marketing half) are daily rows in `funnelDaily`, written only
-// by the server-side ingest (functions/funnel-ingest.js) from GA4 and the Google
-// Ads account linked to it; the console reads them. Stages 6-9 come from what the console
+// by the server-side ingest from Google Ads and the GA4 BigQuery export
+// (ph-analytics); the console reads them. Stages 6-9 come from what the console
 // already holds: AWS ACE opportunities, joined to Leads and Prospects (TAM) on
 // company name. A row of `funnelDaily`:
 //   date "YYYY-MM-DD" (a calendar day in the reporting property's time zone),
 //   channel, campaign, adGroup, creative, industry, country, content, company,
 //   impressions, clicks, visits, demoRequests, downloads  (numbers)
-//   source ("ga4-total" | "ga4-site" | "ga4-industry" | "ga4-events" |
-//   "google-ads" | "leads" | "ace", functions/funnel-ingest.js), and per source
-//   users, pageViews, walkthroughs, calculatorUses, leadForms, leads, aceCreated
 // Dates are calendar days and the page works in the viewer's local days; nothing
 // here formats or compares a UTC instant.
 
 export const STAGES = [
-  { key: "impressions", label: "Ad impressions", source: "Google Ads", icon: "ads_click", info: "Times a Personalisation Hub ad was shown (Google Ads, through the account linked to GA4)." },
+  { key: "impressions", label: "Ad impressions", source: "Google Ads", icon: "ads_click", info: "Times a Personalisation Hub ad was shown (Google Ads)." },
   { key: "clicks", label: "Click-throughs", source: "Google Ads", icon: "touch_app", info: "Clicks on those ads (Google Ads)." },
-  { key: "visits", label: "Site visits", source: "GA4", icon: "language", info: "Sessions on personalisationhub.com (GA4, imported daily)." },
+  { key: "visits", label: "Site visits", source: "GA4", icon: "language", info: "Sessions on personalisationhub.com (GA4, daily BigQuery export in ph-analytics)." },
   { key: "demos", label: "Demo requests", source: "GA4", icon: "event_available", info: "Demo request form submissions (GA4)." },
-  { key: "downloads", label: "Calculator / model downloads", source: "GA4", icon: "download", info: "Benefits calculator uses and file downloads, such as the business model (GA4)." },
+  { key: "downloads", label: "Calculator / model downloads", source: "GA4", icon: "download", info: "Calculator or business model downloads (GA4)." },
   { key: "aceCreated", label: "ACE opportunities created", source: "Console", icon: "add_business", info: "AWS ACE opportunities created in the period (console, from Partner Central)." },
   { key: "aceOpen", label: "ACE opportunities open", source: "Console", icon: "pending_actions", info: "Of those created, the ones still open (not Launched and not Closed Lost)." },
   { key: "aceClosed", label: "ACE opportunities closed", source: "Console", icon: "task_alt", info: "Won (Launched) or lost (Closed Lost). Measured against the opportunities created, since an opportunity leaves 'open' when it closes.", from: "aceCreated" },
@@ -32,8 +29,7 @@ export const CHANNELS = ["Google Ads", "Organic", "Direct", "Referral", "AWS Mar
 
 export const EMPTY_FILTER = { from: "", to: "", industry: "", channel: "", campaign: "", adGroup: "", company: "", country: "", content: "", compare: false };
 
-// Stage -> the row field(s) summed for it.
-const WEB_METRICS = { impressions: ["impressions"], clicks: ["clicks"], visits: ["visits"], demos: ["demoRequests"], downloads: ["downloads", "calculatorUses"] };
+const WEB_METRICS = { impressions: "impressions", clicks: "clicks", visits: "visits", demos: "demoRequests", downloads: "downloads" };
 const eq = (a, b) => String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 const num = (v) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
 const normName = (s) => String(s || "").toLowerCase().replace(/\b(ltd|limited|plc|inc|llc|gmbh|corp|corporation|co|the)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim();
@@ -129,7 +125,7 @@ export function stageCounts(f, range, data) {
   for (const r of data.web || []) {
     if (!inRange(r.date, range.from, range.to) || !webMatches(r, f)) continue;
     webRows++;
-    for (const [stage, fields] of Object.entries(WEB_METRICS)) for (const field of fields) out[stage] += num(r[field]);
+    for (const [stage, field] of Object.entries(WEB_METRICS)) out[stage] += num(r[field]);
   }
   if (!aceCannotMatch(f)) {
     for (const o of data.ace || []) {
@@ -198,46 +194,7 @@ export function normaliseWebRow(id, d) {
     id, date: dayOfInstant(s(x.date)), channel: s(x.channel), campaign: s(x.campaign), adGroup: s(x.adGroup), creative: s(x.creative),
     industry: s(x.industry), country: s(x.country), content: s(x.content), company: s(x.company),
     impressions: num(x.impressions), clicks: num(x.clicks), visits: num(x.visits), demoRequests: num(x.demoRequests), downloads: num(x.downloads),
-    calculatorUses: num(x.calculatorUses),
   };
-}
-
-// ── Ingest status (consoleConfig/funnelIngest, written by functions/funnel-ingest.js) ──
-// What the pages show about the data behind the funnel: when it was last
-// updated and which sources failed on the last run, so a broken credential
-// reads as a flagged failure rather than a silent 0.
-const SOURCE_NAMES = { "ga4-total": "GA4", "ga4-site": "GA4", "ga4-industry": "GA4", "ga4-events": "GA4", "google-ads": "Google Ads", leads: "Leads", ace: "ACE" };
-const isoMs = (v) => {
-  if (!v) return 0;
-  if (typeof v.toMillis === "function") return v.toMillis();
-  const ms = Date.parse(v);
-  return Number.isFinite(ms) ? ms : 0;
-};
-export function ingestStatusView(status) {
-  const st = status && typeof status === "object" ? status : null;
-  if (!st || !st.lastRunAt) return { known: false, updatedAt: 0, failures: [], flagged: false };
-  const sources = st.sources && typeof st.sources === "object" ? st.sources : {};
-  // Last updated: the newest success of any GA4 source (the site's own data), else of anything.
-  const okAt = (keys) => Math.max(0, ...keys.map((k) => isoMs(sources[k] && sources[k].lastSuccessAt)));
-  const ga4Keys = Object.keys(sources).filter((k) => k.startsWith("ga4"));
-  const updatedAt = okAt(ga4Keys) || okAt(Object.keys(sources)) || isoMs(st.lastSuccessAt);
-  const byName = new Map();
-  for (const [key, v] of Object.entries(sources)) {
-    if (!v || v.ok !== false) continue;
-    const name = SOURCE_NAMES[key] || key;
-    if (!byName.has(name)) byName.set(name, { name, error: String(v.error || ""), lastSuccessAt: isoMs(v.lastSuccessAt) });
-  }
-  const failures = [...byName.values()];
-  return { known: true, updatedAt, failures, flagged: failures.length > 0 };
-}
-// "19 Nov 2026, 06:10" in the viewer's own locale and time zone; "never" for 0.
-export function fmtUpdated(ms) {
-  return ms ? new Date(ms).toLocaleString(undefined, { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "never";
-}
-// One plain sentence naming the failed sources, for the page's status line and the Dashboard tooltip.
-export function ingestFailureText(view) {
-  if (!view || !view.flagged) return "";
-  return view.failures.map((f) => `${f.name} didn't update${f.error ? ` (${f.error})` : ""}; last good update ${fmtUpdated(f.lastSuccessAt)}.`).join(" ");
 }
 
 // ── Formatting ─────────────────────────────────────────────────────────────

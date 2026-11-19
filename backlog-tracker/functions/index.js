@@ -2887,43 +2887,10 @@ exports.partnerCentral = onRequest({ cors: false, timeoutSeconds: 60, maxInstanc
 const GA4_MP_API_SECRET = defineSecret("GA4_MP_API_SECRET");
 const { createAceGa4Job } = require("./ace-ga4");
 let aceGa4Job = null;
-exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_API_KEY], timeoutSeconds: 540, maxInstances: 1, concurrency: 1 }, async (req, res) => {
+exports.aceToGa4 = onRequest({ cors: false, secrets: [GA4_MP_API_SECRET, BOARD_API_KEY], timeoutSeconds: 300, maxInstances: 1, concurrency: 1 }, (req, res) => {
   if (!aceGa4Job) aceGa4Job = createAceGa4Job({ db: getFirestore(), partnerCentral: getPartnerCentralApi(), apiSecret: () => GA4_MP_API_SECRET.value(), boardKey: () => BOARD_API_KEY.value(), logger });
-  // The same hourly call keeps the Conversion Funnel's funnelDaily filled
-  // (funnel-ingest.js): it runs only when an ingest is due (the first one a
-  // 90-day backfill, then at most every 6 hours), and a failure there never
-  // stops the ACE job; it is recorded on consoleConfig/funnelIngest instead.
-  if (req.method === "POST" && keyMatches(req.get("x-board-key"), BOARD_API_KEY.value())) {
-    try { await getFunnelIngestJob().runIfDue(); } catch (err) { logger.error("funnelIngest (due run) failed", { error: String((err && err.message) || err) }); }
-  }
   return aceGa4Job.handle(req, res);
 });
-
-// Promote › Conversion Funnel: the daily GA4 / Google Ads / leads / ACE ingest
-// that fills funnelDaily (funnel-ingest.js). Reads GA4 with this function's own
-// service account (Viewer on the GA4 property); no new secret. Started by the
-// hourly aceToGa4 call above when due, or by hand:
-//   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "backfill"}  (90 days)
-//   POST /funnelIngest  X-Board-Key: <BOARD_API_KEY>  {"mode": "daily"}     (last 3 days)
-const { createFunnelIngestJob } = require("./funnel-ingest");
-const { keyMatches } = require("./lead-ingest");
-let funnelIngestJob = null;
-function getFunnelIngestJob() {
-  if (!funnelIngestJob) {
-    const { GoogleAuth } = require("google-auth-library");
-    const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/analytics.readonly"] });
-    funnelIngestJob = createFunnelIngestJob({
-      db: getFirestore(),
-      ga4AccessToken: async () => { const client = await auth.getClient(); const t = await client.getAccessToken(); return (t && t.token) || t; },
-      partnerCentral: getPartnerCentralApi(),
-      boardKey: () => BOARD_API_KEY.value(),
-      serverTimestamp: () => FieldValue.serverTimestamp(),
-      logger,
-    });
-  }
-  return funnelIngestJob;
-}
-exports.funnelIngest = onRequest({ cors: false, secrets: [BOARD_API_KEY], timeoutSeconds: 540, maxInstances: 1, concurrency: 1 }, (req, res) => getFunnelIngestJob().handle(req, res));
 
 // Promote › Leads and Prospects (TAM): company enrichment (lead-enrich.js). An
 // agent (Claude with web search, under the same ANTHROPIC_API_KEY as Staff
