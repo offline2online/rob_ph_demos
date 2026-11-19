@@ -3392,7 +3392,7 @@ thread. A run:
   one that also says "keep" or "add"): writes the documentation with that
   skill from the email, its attachments (text, PDF and images are read; up
   to 8 files, 20 MB) and the skill's kept reference material, and replies to
-  everyone on the email from the mailbox as "Aidan", with the document
+  everyone on the email from the mailbox as "Aidan Hubbot" (the sender name), with the document
   attached as a Markdown file: **To** the sender's verified From address
   plus everyone else in the original To, **Cc** the original Cc. A Reply-To
   header is not verified, so it is ignored. Our own addresses (the mailbox,
@@ -3594,11 +3594,20 @@ thread. A run:
   curation?") is not "are you a bot?", and a sentence like "it is not a
   bot feature" or "I am not an AI expert, but…" is never taken out), in every kind of reply including a
   write's cover note, and plainly, with no joke, on a complaint, an outage
-  or anything commercial. The same for every recipient. He signs **"Aidan,
-  Personalisation Hub"**; Settings › Support inbox › Aidan has an optional
-  signature line (for example "PH's digital assistant"), off by default.
+  or anything commercial. The same for every recipient. He signs **"Aidan Hubbot,
+  Personalisation Hub"** (his sender name, below); Settings › Support inbox ›
+  Aidan has an optional signature line (for example "PH's digital
+  assistant"), off by default.
   The ticket records what the voice did (`aidan.voice`)
   (REQUIREMENTS SUP-AID-42 to 47);
+- **sends and signs as the sender name set in the console** (19 Nov 2026,
+  ticket QVpqiMuwipZ4mKSXHplM): every email's From display name and the name
+  in its signature are the first and last name in Settings › Support inbox ›
+  Aidan, "Aidan Hubbot" by default (a play on "Hub Bot"). An admin changes
+  them there and clicks Save Aidan; the next email uses the new name, with no
+  deploy, since the configuration is read on every run. The Gmail send-as
+  name is left alone: the mailbox is shared with the Support Inbox
+  (REQUIREMENTS SUP-AID-48);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries

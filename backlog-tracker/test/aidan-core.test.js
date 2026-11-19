@@ -124,6 +124,19 @@ check("configuration: nobody can start a run without an allowed sender; switched
   assert.ok(!JSON.stringify(adm).includes(ALLOWED));
 });
 
+check("the sender name: \"Aidan Hubbot\" by default, a saved first and last name otherwise, safe for a From header", () => {
+  const d = ac.normaliseConfig({});
+  assert.deepStrictEqual([d.fromFirstName, d.fromLastName, d.fromName], ["Aidan", "Hubbot", "Aidan Hubbot"]);
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "Botsworth" }).fromName, "Ada Botsworth");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "Ada", fromLastName: "" }).fromName, "Ada", "a last name may be left empty");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: "", fromLastName: "Bot" }).fromName, "Aidan Hubbot", "no first name: the default");
+  assert.strictEqual(ac.normaliseConfig({ fromFirstName: 'A"d<a>\r\nX', fromLastName: "B" }).fromName, "A d a X B");
+  assert.strictEqual(ac.cleanNamePart("x".repeat(60)).length, ac.NAME_PART_MAX);
+  const pub = ac.publicConfig({});
+  assert.deepStrictEqual([pub.fromName, pub.fromFirstName, pub.fromLastName], ["Aidan Hubbot", "Aidan", "Hubbot"]);
+  assert.ok(ac.composeAidanAnswer({ replyText: "Done.", fromName: "Ada Botsworth" }).endsWith("\n\nAda Botsworth, Personalisation Hub"), "the sign-off is the display name");
+});
+
 check("the sender must be verified by Gmail's own (topmost) header: DMARC, DKIM or SPF passing for the From domain", () => {
   const h = (v) => [{ name: "Authentication-Results", value: v }];
   assert.deepStrictEqual(ac.senderAuthenticated(h("mx.google.com; dkim=pass header.i=@example.com header.s=s1; spf=pass smtp.mailfrom=owner@example.com; dmarc=pass (p=NONE) header.from=example.com"), ALLOWED).ok, true);

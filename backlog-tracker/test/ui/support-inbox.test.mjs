@@ -382,7 +382,7 @@ try {
   });
   // Aidan (EeAljfWIiY8SOPsKXlXD): the allowed senders are set here by an admin, shown masked, never in full.
   const aidanStatus = (aidan) => ({ ...connected, aidan });
-  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
+  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan Hubbot", fromFirstName: "Aidan", fromLastName: "Hubbot", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
     await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
     const text = await page.textContent("#support-aidan-settings");
     assert.ok(text.includes("2 allowed senders: o***@example.com, o***@example.com"), text);
@@ -398,13 +398,18 @@ try {
     await page.check("#support-aidan-sigline-on");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the signature switch changed: Save Aidan enables");
     await page.fill("#support-aidan-sigline", "PH's digital assistant");
+    // The sender name (QVpqiMuwipZ4mKSXHplM): first and last name, editable here.
+    assert.deepStrictEqual([await page.inputValue("#support-aidan-first"), await page.inputValue("#support-aidan-last")], ["Aidan", "Hubbot"]);
+    assert.ok((await page.textContent("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan Hubbot"));
+    assert.ok((await page.textContent("#support-aidan-settings")).includes('under "Aidan Hubbot, Personalisation Hub"'), "the signature line names the sender name");
+    await page.fill("#support-aidan-last", "Botsworth");
     await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
     await page.click('[data-ss-act="save-aidan"]');
     await until(() => o.supportCalls.some((c) => c.path === "aidan"), "the Aidan call");
     await until(async () => (await page.textContent("#support-aidan-status")) === "Saved.", "the Aidan save to finish");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "saved: Save Aidan is disabled again");
     const saved = o.supportCalls.find((c) => c.path === "aidan").body;
-    assert.deepStrictEqual([saved.enabled, saved.allowedSenders, saved.signatureLineOn, saved.signatureLine], [true, "owner@example.com, owner.alias@example.com", true, "PH's digital assistant"]);
+    assert.deepStrictEqual([saved.enabled, saved.allowedSenders, saved.signatureLineOn, saved.signatureLine, saved.fromFirstName, saved.fromLastName], [true, "owner@example.com, owner.alias@example.com", true, "PH's digital assistant", "Aidan", "Botsworth"]);
     const a = await audit(page, "#support-settings");
     assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
     assert.deepStrictEqual(a.small, [], "touch targets under 44px");
@@ -416,6 +421,7 @@ try {
     assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
     assert.ok(await page.locator("#support-aidan-on").isDisabled());
     assert.ok(await page.locator("#support-aidan-sigline-on").isDisabled() && await page.locator("#support-aidan-sigline").isDisabled(), "an editor sees the signature line and can't change it");
+    assert.ok(await page.locator("#support-aidan-first").isDisabled() && await page.locator("#support-aidan-last").isDisabled(), "an editor sees the sender name, read-only");
   });
   await run("Aidan's settings: a saved signature line is shown switched on", { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan", signatureLineOn: true, signatureLine: "PH's digital assistant", sendersMasked: ["o***@example.com"] }) }), width: 390, hash: "#settings/support" }, async (page) => {
     await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);

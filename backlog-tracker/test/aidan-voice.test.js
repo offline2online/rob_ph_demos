@@ -19,7 +19,7 @@ check("the skill: the repo copy is what the library is given; it is never a docu
   assert.strictEqual(av.DEFAULT_SKILL_MD, md, "skill-sources/aidan-voice.md and DEFAULT_SKILL_MD are the same text");
   const doc = av.defaultSkillDoc();
   assert.deepStrictEqual([doc.slug, doc.name, doc.files.length, doc.files[0].path, doc.misses], ["aidan-voice", "Aidan voice", 1, "SKILL.md", []]);
-  for (const want of ["Email body only", "One quirk per email at most", "No quirk at all on a complaint", "does not volunteer that he is an AI", "Aidan, Personalisation Hub", "\"personalisation\" with an S", "Got it, Rob. Filed, sorted"]) assert.ok(md.includes(want), want);
+  for (const want of ["Email body only", "One quirk per email at most", "No quirk at all on a complaint", "does not volunteer that he is an AI", "Aidan Hubbot, Personalisation Hub", "\"personalisation\" with an S", "Got it, Rob. Filed, sorted"]) assert.ok(md.includes(want), want);
   assert.ok(!/personalization/i.test(md) && !/[—–]/.test(md), "spelled with an S, no long dashes");
   const skills = [{ id: "s1", slug: "poc-summary", name: "POC summary" }, { id: "v", slug: "Aidan-Voice", name: "Aidan voice" }];
   assert.strictEqual(av.voiceSkillIn(skills).id, "v");
@@ -137,7 +137,7 @@ check("the quirk: one short sentence, after the reply, never a fact", () => {
 
 check("the signature: \"Aidan, Personalisation Hub\"; the extra line only when it is switched on", () => {
   assert.strictEqual(ac.signOff({ fromName: "Aidan" }), "Aidan, Personalisation Hub");
-  assert.strictEqual(ac.signOff({}), "Aidan, Personalisation Hub");
+  assert.strictEqual(ac.signOff({}), "Aidan Hubbot, Personalisation Hub", "no name given: the default sender name (QVpqiMuwipZ4mKSXHplM)");
   assert.strictEqual(ac.signOff({ fromName: "Aidan", signatureLine: " PH's digital\r\nassistant <x> " }), "Aidan, Personalisation Hub\nPH's digital assistant x", "one clean line");
   const off = ac.normaliseConfig({ allowedSenders: ["owner@example.com"], signatureLine: "PH's digital assistant" });
   assert.deepStrictEqual([off.signatureLineOn, off.signatureLine, ac.signatureLineOf(off)], [false, "PH's digital assistant", ""], "off by default; the text is kept");

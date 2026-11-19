@@ -684,7 +684,7 @@ const CALLBACK_ERRORS = {
 function aidanSettingsHtml(aidan, admin) {
   const a = aidan || { enabled: false, switchedOn: true, senderCount: 0, sendersMasked: [] };
   const dis = admin ? "" : " disabled";
-  const name = a.fromName || "Aidan";
+  const name = a.fromName || "Aidan Hubbot";
   const state = a.senderCount
     ? `<div class="media-key-state${a.enabled ? " media-key-test-ok" : ""}">${icon(a.enabled ? "check_circle" : "block")} ${a.senderCount} allowed sender${a.senderCount === 1 ? "" : "s"}${(a.sendersMasked || []).length ? `: ${esc(a.sendersMasked.join(", "))}` : ""}${a.enabled ? "" : " · switched off"}</div>`
     : `<div class="media-key-state">${icon("block")} No allowed senders: Aidan acts on nothing</div>`;
@@ -693,6 +693,11 @@ function aidanSettingsHtml(aidan, admin) {
       ${state}
       <div class="support-set-grid">
         <label class="support-check"><input type="checkbox" id="support-aidan-on"${a.switchedOn !== false ? " checked" : ""}${dis}> Aidan acts on tagged requests</label>
+        <label class="field-label" for="support-aidan-first">Sender first name <span class="info-tip" tabindex="0" role="note" aria-label="About Aidan's sender name" data-tip="The name Aidan's emails come from and sign off with. A change applies to the next email he sends, with no deploy."><span class="material-symbols-outlined" aria-hidden="true">info</span></span></label>
+        <input type="text" id="support-aidan-first" maxlength="40" autocomplete="off" value="${esc(a.fromFirstName || "Aidan")}"${dis}>
+        <label class="field-label" for="support-aidan-last">Sender last name</label>
+        <input type="text" id="support-aidan-last" maxlength="40" autocomplete="off" value="${esc(a.fromLastName == null ? "Hubbot" : a.fromLastName)}"${dis}>
+        <p class="field-hint" id="support-aidan-name-hint">Emails from Aidan show as <b>${esc(name)}</b>.</p>
         ${admin ? `<label class="field-label" for="support-aidan-senders">Allowed senders</label>
         <textarea id="support-aidan-senders" rows="2" autocomplete="off" spellcheck="false" placeholder="${a.senderCount ? "Saved. Paste the full list to replace it" : "One or more addresses, separated by commas"}"></textarea>` : ""}
         <label class="support-check"><input type="checkbox" id="support-aidan-sigline-on"${a.signatureLineOn ? " checked" : ""}${dis}> Add a signature line under "${esc(name)}, Personalisation Hub"</label>
@@ -708,7 +713,7 @@ function aidanSettingsHtml(aidan, admin) {
 const SAVE_CONTROLS = {
   "save-client": ["support-client-id", "support-client-secret"],
   "save-settings": ["support-auto", "support-threshold", "support-from", "support-signature", "support-assignee", "support-vip"],
-  "save-aidan": ["support-aidan-on", "support-aidan-senders", "support-aidan-sigline-on", "support-aidan-sigline"],
+  "save-aidan": ["support-aidan-on", "support-aidan-senders", "support-aidan-sigline-on", "support-aidan-sigline", "support-aidan-first", "support-aidan-last"],
 };
 export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm, db }) {
   let status = null, members = [];
@@ -821,7 +826,8 @@ export function mountSupportSettings({ host, apiHeaders, isAdmin, alert, confirm
         host.querySelector("#support-settings-status").textContent = "Saved.";
       } else if (a === "save-aidan") {
         await api(apiHeaders, "aidan", { body: { enabled: host.querySelector("#support-aidan-on").checked, allowedSenders: val("support-aidan-senders"),
-          signatureLineOn: host.querySelector("#support-aidan-sigline-on").checked, signatureLine: val("support-aidan-sigline") } });
+          signatureLineOn: host.querySelector("#support-aidan-sigline-on").checked, signatureLine: val("support-aidan-sigline"),
+          fromFirstName: val("support-aidan-first").trim(), fromLastName: val("support-aidan-last").trim() } });
         await load();
         host.querySelector("#support-aidan-status").textContent = "Saved.";
       }

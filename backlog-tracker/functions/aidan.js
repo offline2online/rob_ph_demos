@@ -105,7 +105,7 @@
 //     attached document. No aside on a complaint, an outage, a fault or
 //     anything commercial, and none when the voice can't be reached: the
 //     reply is sent plain. Asked whether he is a bot or an AI, he says yes
-//     (`ensureAiDisclosure`). Signed "Aidan, Personalisation Hub", with the
+//     (`ensureAiDisclosure`). Signed "<sender name>, Personalisation Hub" ("Aidan Hubbot" by default), with the
 //     optional signature line from Settings when it is switched on.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
@@ -182,7 +182,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
 
   async function readConfig() { return ac.normaliseConfig(data(await configRef().get())); }
   async function status({ admin = false } = {}) { return ac.publicConfig(data(await configRef().get()), { admin }); }
-  // Admin: replace the allowed senders (only when a list is given) and switch Aidan on or off.
+  // Admin: replace the allowed senders (only when a list is given), switch Aidan on or off, and set his sender name and signature line.
   async function saveConfig(body, by) {
     const cur = data(await configRef().get()) || {};
     const patch = { updatedBy: by, updatedAt: now() };
@@ -194,8 +194,16 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (body.clearSenders === true) patch.allowedSenders = [];
     if ("enabled" in body) patch.enabled = body.enabled === true;
     if ("requireSenderAuth" in body) patch.requireSenderAuth = body.requireSenderAuth !== false;
-    // The optional signature line under "Aidan, Personalisation Hub": the text
+    // The optional signature line under "<sender name>, Personalisation Hub": the text
     // is kept when it is switched off, and it can't be switched on empty.
+    // The sender name (From display name and sign-off, QVpqiMuwipZ4mKSXHplM).
+    // Read on every run, so the next email uses it with no deploy. A first name is required.
+    if ("fromFirstName" in body || "fromLastName" in body) {
+      const first = ac.cleanNamePart("fromFirstName" in body ? body.fromFirstName : cur.fromFirstName);
+      if (!first) return { ok: false, error: "Aidan's first name can't be empty." };
+      patch.fromFirstName = first;
+      patch.fromLastName = ac.cleanNamePart("fromLastName" in body ? body.fromLastName : cur.fromLastName);
+    }
     if ("signatureLine" in body) patch.signatureLine = ac.cleanSignatureLine(body.signatureLine);
     if ("signatureLineOn" in body) patch.signatureLineOn = body.signatureLineOn === true;
     if (patch.signatureLineOn && !ac.cleanSignatureLine("signatureLine" in patch ? patch.signatureLine : cur.signatureLine)) {

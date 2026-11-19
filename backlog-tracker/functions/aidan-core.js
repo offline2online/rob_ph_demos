@@ -49,7 +49,13 @@ const MAX_ATTACHMENT_TOTAL = 20 * 1024 * 1024;
 const ATTACHMENT_TEXT_MAX = 100000;
 const MAX_RECIPIENTS = 50;
 const MAX_RUNS_PER_TICKET = 5;
-const DEFAULT_FROM_NAME = "Aidan";
+// The name Aidan's emails come from and sign with (QVpqiMuwipZ4mKSXHplM): a
+// first and a last name kept in his configuration, editable in Settings ›
+// Support inbox › Aidan and read on every run, so a change needs no deploy.
+const DEFAULT_FIRST_NAME = "Aidan";
+const DEFAULT_LAST_NAME = "Hubbot";
+const DEFAULT_FROM_NAME = `${DEFAULT_FIRST_NAME} ${DEFAULT_LAST_NAME}`;
+const NAME_PART_MAX = 40;
 // The sign-off: "<name>, Personalisation Hub", then the optional signature
 // line an admin can switch on (Settings › Support inbox › Aidan), e.g.
 // "PH's digital assistant". Off by default.
@@ -70,6 +76,16 @@ function cleanSenders(input) {
   }
   return { senders: senders.slice(0, MAX_SENDERS), bad };
 }
+// One part of the sender name, safe for a From header: no quotes, angle
+// brackets or line breaks, spaces collapsed, at most NAME_PART_MAX characters.
+const cleanNamePart = (v) => clip(String(v == null ? "" : v).replace(/["<>\r\n]/g, " ").replace(/\s+/g, " ").trim(), NAME_PART_MAX).trim();
+// The sender name from the stored configuration. A saved first name wins (its
+// last name may be empty); with none saved, the defaults, "Aidan Hubbot".
+function senderName(r) {
+  const first = cleanNamePart(r.fromFirstName);
+  if (first) { const last = cleanNamePart(r.fromLastName); return { fromFirstName: first, fromLastName: last, fromName: last ? `${first} ${last}` : first }; }
+  return { fromFirstName: DEFAULT_FIRST_NAME, fromLastName: DEFAULT_LAST_NAME, fromName: DEFAULT_FROM_NAME };
+}
 // The stored configuration with every gap filled. Aidan is on only when it is
 // switched on AND at least one allowed sender is set: with no list, nobody can
 // start a run.
@@ -81,7 +97,7 @@ function normaliseConfig(raw) {
     switchedOn: r.enabled !== false,
     allowedSenders: senders,
     requireSenderAuth: r.requireSenderAuth !== false,
-    fromName: clip(String(r.fromName || DEFAULT_FROM_NAME).replace(/["<>\r\n]/g, "").trim(), 80) || DEFAULT_FROM_NAME,
+    ...senderName(r),
     // The optional signature line: kept when switched off, added only when on.
     signatureLineOn: r.signatureLineOn === true && Boolean(cleanSignatureLine(r.signatureLine)),
     signatureLine: cleanSignatureLine(r.signatureLine),
@@ -93,7 +109,8 @@ function cleanSignatureLine(v) {
 }
 // The line a reply is signed with, "" when the setting is off.
 const signatureLineOf = (config) => { const c = config && typeof config === "object" ? config : {}; return c.signatureLineOn === true ? cleanSignatureLine(c.signatureLine) : ""; };
-// "Aidan, Personalisation Hub", and the signature line under it when one is set.
+// "Aidan Hubbot, Personalisation Hub" (the sender name, the same as the From
+// display name), and the signature line under it when one is set.
 function signOff({ fromName, signatureLine } = {}) {
   const line = cleanSignatureLine(signatureLine);
   return `${fromName || DEFAULT_FROM_NAME}, ${SIGN_OFF_COMPANY}${line ? `\n${line}` : ""}`;
@@ -107,7 +124,7 @@ function maskAddress(email) {
 // What members see of the configuration: never an address. Admins also get the masked list.
 function publicConfig(cfg, { admin = false } = {}) {
   const c = normaliseConfig(cfg);
-  return { enabled: c.enabled, switchedOn: c.switchedOn, senderCount: c.allowedSenders.length, requireSenderAuth: c.requireSenderAuth, fromName: c.fromName,
+  return { enabled: c.enabled, switchedOn: c.switchedOn, senderCount: c.allowedSenders.length, requireSenderAuth: c.requireSenderAuth, fromName: c.fromName, fromFirstName: c.fromFirstName, fromLastName: c.fromLastName,
     signatureLineOn: c.signatureLineOn, signatureLine: c.signatureLine,
     ...(admin ? { sendersMasked: c.allowedSenders.map(maskAddress) } : {}) };
 }
@@ -1597,7 +1614,7 @@ function greetingName(fromName) {
 }
 
 module.exports = {
-  AIDAN_INBOX, STATUSES, INSTRUCTION_MAX, MAX_SENDERS, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_TOTAL, MAX_RECIPIENTS, MAX_RUNS_PER_TICKET, DEFAULT_FROM_NAME,
+  AIDAN_INBOX, STATUSES, INSTRUCTION_MAX, MAX_SENDERS, MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENT_TOTAL, MAX_RECIPIENTS, MAX_RUNS_PER_TICKET, DEFAULT_FROM_NAME, DEFAULT_FIRST_NAME, DEFAULT_LAST_NAME, NAME_PART_MAX, cleanNamePart,
   cleanSenders, normaliseConfig, maskAddress, publicConfig, isAllowedSender,
   SIGN_OFF_COMPANY, SIGNATURE_LINE_MAX, cleanSignatureLine, signatureLineOf, signOff, VOICE_BODY_LINE, VOICE_IDENTITY_LINE, VOICE_DOCUMENT_LINE,
   TAG_RE, QUOTE_MARKERS, splitQuoted, stripQuotedStrict, splitQuotedHtml, bodiesOf, splitBodies, isInstruction, readTag, readTagIn, readTagAcross, findInstruction, kindOf, KINDS,

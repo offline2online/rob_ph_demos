@@ -6590,7 +6590,9 @@ matching open one) when a run did not fully or well meet its request
 Since 18 Nov 2026 (ticket SYkk20srKT7pIKM1HS8Z) the body of every reply is
 in Aidan's voice, a slightly quirky tech-marketing character kept in the
 `aidan-voice` skill, and he signs "Aidan, Personalisation Hub"
-(SUP-AID-42 to 47).
+(SUP-AID-42 to 47). Since 19 Nov 2026 (ticket QVpqiMuwipZ4mKSXHplM) his
+sender name is a setting, "Aidan Hubbot" by default, used for both the From
+display name and the signature (SUP-AID-48).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6694,7 +6696,7 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
   in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
-  "Aidan", signed "Aidan, Personalisation Hub" (SUP-AID-47), with the document attached as a
+  "Aidan Hubbot", signed "Aidan Hubbot, Personalisation Hub" (SUP-AID-47, SUP-AID-48), with the document attached as a
   Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
   add, update, edit, fix, turn, convert, include, attach or compile
   something is a write too. "This email", "your reply" and "by email" name
@@ -6769,7 +6771,7 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
   does (SUP-AID-1 to 4, 10 to 13) and replies to the same people
   (SUP-AID-6: From and the rest of To in To, the original Cc in Cc, never
   Reply-To, never our own addresses), on the same thread, at once, from the
-  mailbox as "Aidan", marked `Auto-Submitted: auto-generated`. The reply is
+  mailbox as "Aidan Hubbot" (the sender name, SUP-AID-48), marked `Auto-Submitted: auto-generated`. The reply is
   a short plain-text email written in the body ("Got it, Rob, all good."),
   signed as Rob's assistant, with **no attachment**. It needs no skill and
   the model is never asked to choose one; a skill the instruction names is
@@ -6903,7 +6905,7 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
   when the Help Centre answers. The Support Inbox's own gates are unchanged.
 - **SUP-AID-23** The Help Centre reply is sent in the email itself with no
   attachment, to everyone on the email (the Help Centre is public, so nobody
-  is left off, unlike SUP-AID-18), from the mailbox as "Aidan". It opens
+  is left off, unlike SUP-AID-18), from the mailbox as "Aidan Hubbot" (SUP-AID-48). It opens
   "Hi <first name>," (no "Thanks for your email."), carries the engine's
   reply body with any greeting or sign-off the model wrote removed
   (SUP-AI-9), and names each cited article by its title: a line "Help Centre
@@ -7265,8 +7267,9 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
   added. On an email that gets no quirk (SUP-AID-45) the yes is the plain
   "Yes, I'm Personalisation Hub's AI assistant." instead. The ticket
   records `aidan.voice.aiAsked: true`.
-- **SUP-AID-47** **Signature.** Every Aidan email is signed "Aidan,
-  Personalisation Hub" (the sender name, then the company). **Settings ›
+- **SUP-AID-47** **Signature.** Every Aidan email is signed with the sender
+  name, then the company: "Aidan Hubbot, Personalisation Hub" by default
+  (SUP-AID-48; "Aidan, Personalisation Hub" before 19 Nov 2026). **Settings ›
   Support inbox › Aidan** has an optional **signature line** (for example
   "PH's digital assistant"): a switch, off by default, and the line's text
   (one line, 80 characters). Switched on, the line is added under the
@@ -7274,6 +7277,22 @@ in Aidan's voice, a slightly quirky tech-marketing character kept in the
   admin with **Save Aidan** (`signatureLineOn`, `signatureLine` in
   `supportSecrets/aidan`, returned by `/v1/status`), cannot be switched on
   empty, and needs no deploy.
+- **SUP-AID-48** **Sender name** (19 Nov 2026, ticket QVpqiMuwipZ4mKSXHplM).
+  Every email Aidan sends sets its From display name from a first and a last
+  name in his configuration (`fromFirstName`, `fromLastName` in
+  `supportSecrets/aidan`, returned by `/v1/status`), "Aidan Hubbot" by
+  default (a play on "Hub Bot"), and the signature (SUP-AID-47) starts with
+  the same name, so the two always match. An admin edits both in
+  **Settings › Support inbox › Aidan** (Sender first name, Sender last name;
+  **Save Aidan**); members see them read-only, and the signature line's label
+  names the current sign-off. The configuration is read on every run, so the
+  next email uses a new name with no deploy. A first name is required; the
+  last name may be empty. Quotes, angle brackets and line breaks are taken out
+  and each part is at most 40 characters (`cleanNamePart` in
+  `functions/aidan-core.js`). The `aidan-voice` skill's rule 7 says he signs
+  with this setting. The Gmail send-as display name is not changed: the
+  mailbox is shared with the Support Inbox and connected with `gmail.modify`
+  only (SUP-CON-1); the From header carries the name.
 
 ### Connecting
 
