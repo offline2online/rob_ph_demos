@@ -68,7 +68,7 @@ check("routes round-trip and belong to the Support Inbox section", () => {
   assert.strictEqual(sectionForHash("#support"), "support-inbox");
   assert.strictEqual(sectionForHash("#support/ticket/x"), "support-inbox");
   assert.strictEqual(SECTION_HASH["support-inbox"], "#support");
-  assert.deepStrictEqual(PERMISSION_GROUPS.find((g) => g.label === "Support").keys, ["support-inbox", "faq"], "above Help Centre");
+  assert.deepStrictEqual(PERMISSION_GROUPS.find((g) => g.label === "Support").keys, ["support-inbox", "faq", "documentation"], "above Help Centre, Documentation after it");
   assert.strictEqual(storedLevel({ name: "Agent", permissions: { faq: "view" } }, "support-inbox"), "view", "follows the Help Centre grant until set");
   assert.strictEqual(settingsPageFromHash("#settings/support?connected=1"), "support");
   assert.ok(SETTINGS_PAGES.some((p) => p.key === "support"));

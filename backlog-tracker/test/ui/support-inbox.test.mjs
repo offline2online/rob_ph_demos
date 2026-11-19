@@ -72,7 +72,7 @@ try {
       await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
       // The menu: Support Inbox directly above Help Centre, marked as the current page.
       const nav = await page.evaluate(() => [...document.querySelectorAll('[data-nav-group="publish"] .nav-drawer-item')].map((b) => [b.id, b.getAttribute("aria-current")]));
-      assert.deepStrictEqual(nav, [["support-inbox-btn", "page"], ["faq-articles-btn", null]]);
+      assert.deepStrictEqual(nav, [["support-inbox-btn", "page"], ["faq-articles-btn", null], ["documentation-btn", null]]);
       // Queues and counts; the default queue shows who needs a person, high value first.
       const counts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-queue")].map((b) => [b.dataset.supportQueue, b.querySelector(".support-queue-count").textContent])));
       assert.deepStrictEqual(counts, { "needs-person": "2", "ai-drafts": "1", "to-sort": "1", pending: "1", resolved: "2", spam: "1", all: "7" });

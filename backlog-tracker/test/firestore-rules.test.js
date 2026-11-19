@@ -636,6 +636,23 @@ async function main() {
     getDoc(doc(as(null), "faqCategories/c1")));
   await check("A viewer can list faqArticles (FAQ Management)", "allow", () =>
     getDocs(collection(as(VIEWER), "faqArticles")));
+
+  // Support › Documentation (docCategories / docArticles): members only, never public.
+  const LIB_DOC = { categoryId: "sec-a", title: "EKS deployment", slug: "eks-deployment", bodyMd: "<p>x</p>", status: "published", order: 0, docType: "how-to", source: { system: "confluence", pageId: "1" } };
+  await check("A member can create a documentation section", "allow", () =>
+    setDoc(doc(as(MEMBER), "docCategories/sec-a"), { name: "Architecture", icon: "folder", order: 0, parentId: null }));
+  await check("A member can create a document", "allow", () =>
+    setDoc(doc(as(MEMBER), "docArticles/cf-1"), LIB_DOC));
+  await check("A document needs a status", "deny", () =>
+    setDoc(doc(as(MEMBER), "docArticles/cf-2"), { ...LIB_DOC, status: "live" }));
+  await check("A viewer can read documents", "allow", () =>
+    getDocs(collection(as(VIEWER), "docArticles")));
+  await check("A viewer CANNOT write a document", "deny", () =>
+    setDoc(doc(as(VIEWER), "docArticles/cf-3"), LIB_DOC));
+  await check("Anonymous CANNOT GET a document", "deny", () =>
+    getDoc(doc(as(null), "docArticles/cf-1")));
+  await check("Anonymous CANNOT list documentation sections", "deny", () =>
+    getDocs(collection(as(null), "docCategories")));
   await check("A member can GET a draft article", "allow", () =>
     getDoc(doc(as(MEMBER), "faqArticles/aDraft")));
 

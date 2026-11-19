@@ -229,6 +229,7 @@
         <div class="nav-drawer-section" id="nav-publish-label">Support</div>
         <button type="button" class="nav-drawer-item" id="support-inbox-btn"><span class="material-symbols-outlined" aria-hidden="true">inbox</span>Support Inbox</button>
         <button type="button" class="nav-drawer-item" id="faq-articles-btn"><span class="material-symbols-outlined" aria-hidden="true">help_center</span>Help Centre</button>
+        <button type="button" class="nav-drawer-item" id="documentation-btn"><span class="material-symbols-outlined" aria-hidden="true">menu_book</span>Documentation</button>
       </div>
       <div class="nav-group" data-nav-group="settings" role="group" aria-labelledby="nav-settings-label">
         <div class="nav-drawer-section" id="nav-settings-label">Settings</div>
@@ -1111,6 +1112,7 @@
            setFaGroupOpen/resetFaGroups in app.js). -->
       <div class="faq-editor-layout">
         <div class="faq-editor-main">
+          <p class="field-hint fa-doc-source" id="fa-doc-source" data-docs-only hidden></p>
           <label class="field-label" for="fa-title-input">Title</label>
           <input type="text" id="fa-title-input" maxlength="200" placeholder="e.g. How do I set up a targeted offer?">
           <label class="field-label" for="fa-summary-input">Summary (shown in lists and search)</label>
@@ -1153,10 +1155,10 @@
               <select id="fa-project-select">
                 <option value="">None — general article</option>
               </select>
-              <p class="field-hint">Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
+              <p class="field-hint" data-faq-only>Linking a project is what lets a future feature launch flag its own FAQs for review — see "Needs review" below.</p>
               <label class="field-label" for="fa-program-select">Product / Program</label>
               <select id="fa-program-select"></select>
-              <p class="field-hint">Which product/program this article belongs to — the same Programs/Products used to group projects on the board. Required: this is what a deploy's FAQ impact review uses to find articles a shipped change might affect, so an unscoped article is invisible to it. Picking a linked project above fills this in automatically if that project has its own program set.</p>
+              <p class="field-hint" data-faq-only>Which product/program this article belongs to — the same Programs/Products used to group projects on the board. Required: this is what a deploy's FAQ impact review uses to find articles a shipped change might affect, so an unscoped article is invisible to it. Picking a linked project above fills this in automatically if that project has its own program set.</p>
               <label class="field-label" for="fa-introduced-release-select">Introduced in release (optional)</label>
               <select id="fa-introduced-release-select"></select>
               <label class="field-label" for="fa-removed-release-select">Removed in release (optional)</label>
@@ -1181,7 +1183,7 @@
             </div>
           </div>
 
-          <div class="fa-group">
+          <div class="fa-group" data-faq-only>
             <button type="button" class="fa-group-header" id="fa-group-seo-toggle" aria-expanded="false" aria-controls="fa-group-seo">
               <span>SEO &amp; agents</span><span class="fa-group-caret" aria-hidden="true">&#9662;</span>
             </button>
@@ -1229,11 +1231,11 @@
               <span class="fa-status-badge" id="fa-status-badge">Draft</span>
               <p class="field-hint">Use <strong>Save draft</strong> or <strong>Publish</strong> at the top of the page to change this.</p>
               <p class="field-hint" id="fa-live-link-hint" hidden></p>
-              <label class="fa-needs-review-toggle">
+              <label class="fa-needs-review-toggle" data-faq-only>
                 <input type="checkbox" id="fa-hidden-from-website-toggle">
                 Hide from website
               </label>
-              <p class="field-hint">A hidden article isn't on the website or in public help search, even when published. The Support Inbox still answers emails from it. Untick it to launch. Hiding a category or folder hides every article in it.</p>
+              <p class="field-hint" data-faq-only>A hidden article isn't on the website or in public help search, even when published. The Support Inbox still answers emails from it. Untick it to launch. Hiding a category or folder hides every article in it.</p>
             </div>
           </div>
         </aside>
@@ -1890,6 +1892,52 @@
             </div>
           </div>
 
+        </div>
+      </div>
+    </section>
+
+    <!-- Support › Documentation (#documentation): the internal documentation
+         library (Firestore docCategories/docArticles, members only) that
+         replaced the Confluence space on 19 Nov 2026. Rendered by
+         js/documentation-page.js; documents open in the same article editor
+         as the Help Centre (same formatting and properties), with the
+         website-only fields hidden. -->
+    <section class="faq-admin-page documentation-page" id="documentation-page" hidden>
+      <div class="page-header">
+        <h2>Documentation<button type="button" class="info-tip" data-tip="The team's internal product and technical documentation, for members only. Nothing here is on the website. Documents use the same editor and properties as the Help Centre. Archive holds documents kept for the record that no longer describe the platform as it is today." aria-label="About Documentation">i</button></h2>
+        <span class="page-header-count" id="doc-count" role="status"></span>
+      </div>
+      <div class="docs-block faq-browser doc-browser">
+        <div class="faq-browser-pane faq-browser-tree">
+          <div class="faq-browser-pane-head">
+            <h3>Sections</h3>
+            <button type="button" class="btn-primary" id="doc-new-category-btn" data-editor-only>+ New section</button>
+          </div>
+          <div id="doc-tree" class="doc-tree"></div>
+        </div>
+        <div class="faq-browser-pane faq-browser-articles">
+          <div class="faq-browser-pane-head">
+            <div class="faq-cat-heading-group">
+              <span class="material-symbols-outlined faq-cat-heading-icon" id="doc-heading-icon" hidden>folder</span>
+              <h3 id="doc-heading">Documents</h3>
+              <button type="button" class="icon-btn" id="doc-cat-edit-btn" title="Edit this section" aria-label="Edit this section" data-editor-only hidden><span class="material-symbols-outlined" aria-hidden="true">edit</span></button>
+              <button type="button" class="icon-btn" id="doc-cat-delete-btn" title="Delete this section" aria-label="Delete this section" data-editor-only hidden><span class="material-symbols-outlined" aria-hidden="true">delete</span></button>
+            </div>
+            <button type="button" class="btn-primary" id="doc-new-article-btn" data-editor-only>+ New document</button>
+          </div>
+          <p class="faq-cat-heading-desc" id="doc-heading-desc" hidden></p>
+          <p class="field-hint doc-breadcrumb" id="doc-breadcrumb" hidden></p>
+          <div class="fa-filter-row">
+            <select id="doc-status-filter" aria-label="Filter documents">
+              <option value="all">All</option>
+              <option value="needs-review">Needs review</option>
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+            </select>
+            <input type="search" id="doc-search" placeholder="Search all documentation…" aria-label="Search all documentation">
+          </div>
+          <div id="doc-list"></div>
+          <p class="empty-hint" id="doc-empty" hidden>Nothing here yet.</p>
         </div>
       </div>
     </section>

@@ -1357,6 +1357,46 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Documentation (Support › Documentation, public/js/documentation-page.js) ──
+    // The internal technical/product documentation library that replaced the
+    // Confluence space (19 Nov 2026). Same shape as the help centre's
+    // faqCategories/faqArticles, and edited in the same article editor, but
+    // NEVER public: members read, editors write. Categories nest to any depth
+    // through parentId; "Archive" is an ordinary top-level category.
+    // `source` records where a migrated document came from (Confluence page
+    // id, space, original path and last-updated date).
+    match /docCategories/{categoryId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor()
+        && incoming().size() <= 12
+        && isNonEmptyBoundedString(incoming().name, 120)
+        && isNonEmptyBoundedString(incoming().icon, 40)
+        && incoming().order is number
+        && (!("description" in incoming()) || incoming().description is string && incoming().description.size() <= 500)
+        && (!("parentId" in incoming()) || incoming().parentId == null || isNonEmptyBoundedString(incoming().parentId, 100));
+      allow delete: if isEditor();
+    }
+    match /docArticles/{articleId} {
+      allow read: if isBoardReader();
+      allow create, update: if isEditor()
+        && incoming().size() <= 40
+        && isNonEmptyBoundedString(incoming().categoryId, 100)
+        && isNonEmptyBoundedString(incoming().title, 255)
+        && isNonEmptyBoundedString(incoming().slug, 255)
+        // Firestore's own 1 MiB document limit is the real ceiling; long
+        // migrated specifications (big tables) run to a few hundred KB.
+        && incoming().bodyMd is string && incoming().bodyMd.size() <= 900000
+        && (!("summary" in incoming()) || incoming().summary is string && incoming().summary.size() <= 400)
+        && (!("keywords" in incoming()) || incoming().keywords is list && incoming().keywords.size() <= 30)
+        && (!("docType" in incoming()) || incoming().docType in ["faq", "how-to", "reference", "explanation"])
+        && (!("source" in incoming()) || incoming().source == null || incoming().source is map)
+        && (!("introducedInReleaseId" in incoming()) || incoming().introducedInReleaseId == null || isNonEmptyBoundedString(incoming().introducedInReleaseId, 100))
+        && (!("removedInReleaseId" in incoming()) || incoming().removedInReleaseId == null || isNonEmptyBoundedString(incoming().removedInReleaseId, 100))
+        && incoming().status in ["draft", "published"]
+        && incoming().order is number;
+      allow delete: if isEditor();
+    }
+
     // ── Staff Kanban (kanban-staff-board/REQUIREMENTS.md §12–13) ───────────
     // The human task board (public/js/kanban/). Members read everything and
     // write tickets, comments and the activity log; a viewer reads only; an

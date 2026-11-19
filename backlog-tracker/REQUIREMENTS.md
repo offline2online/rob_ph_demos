@@ -7754,3 +7754,17 @@ the console on `#board` by default; a case that wants the landing page passes
 Known gaps: trends compare with the day before only; Staff Kanban's remaining
 effort has no history, so it shows no trend. Unique visitors are GA4 sessions
 until the ingest writes a `users` figure.
+
+## Documentation (19 Nov 2026)
+
+Support › Documentation is the internal documentation library that replaces
+Confluence (see `README.md` → "Documentation").
+
+- Members read; editors write; viewers get no write controls. Never public.
+- Sections nest to any depth; a section shows its folders, then its documents.
+- Search covers every document's title, summary, keywords and body text, and
+  shows where each hit sits.
+- A document uses the Help Centre's editor and properties; website-only
+  fields (SEO & agents, Hide from website, live link) are not offered, and no
+  product/program is required.
+- Outdated documents are kept in Archive, never deleted.
