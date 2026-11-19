@@ -598,11 +598,13 @@ export function createStore({ db, storage, me, backfill = null, onChange = () =>
     if (full.has(key)) full.set(key, { ...full.get(key), watchers: list });
   }
 
-  async function upload(key, blob, name) {
+  // contentType: what to store the file as when the caller knows better than
+  // blob.type (an attachment whose type the browser left empty).
+  async function upload(key, blob, name, contentType = "") {
     const safe = String(name || "file").replace(/[^\w.\-]+/g, "_").slice(-80);
     const path = `kanban/${key || "new"}/${Date.now()}-${safe}`;
     const r = storageRef(storage, path);
-    await uploadBytes(r, blob, { contentType: blob.type || "application/octet-stream" });
+    await uploadBytes(r, blob, { contentType: contentType || blob.type || "application/octet-stream" });
     return { url: await getDownloadURL(r), path };
   }
 

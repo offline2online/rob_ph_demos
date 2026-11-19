@@ -226,7 +226,16 @@ bug above the lowest level (KB-TASK-14).
 assignee, status, release (fix version), estimate. **Optional fields** (Jira
 equivalents): type, priority, sprint, project, due date, time logged, labels, comments,
 attachments, parent (an epic, task or subtask; KB-TASK-14), linked tickets, flag. All fields flow into filters
-and the release report. **Release is optional**: it is never a required field (settings
+and the release report. **Attachments** (always on the form, KB-SET-1): the
+**Attach file** picker takes several files at once — videos (MP4, MOV, WebM…),
+PDFs, Excel/CSV, Word and PowerPoint files, images, text files, JSON and zips,
+up to 100 MB each (`storage.rules` → `kanban/{key}`). The picker offers those
+types (`ATTACHMENT_ACCEPT`, `public/js/item-attachments.js`); a file the
+browser gives no type (often `.mov` or `.xlsx`) is typed from its extension,
+and anything Storage would refuse (a program, an empty file, over 100 MB) is
+refused with a toast before it uploads. Each attachment is listed with an icon
+for its kind (video, PDF, spreadsheet, image, document) and stored with its
+`contentType`. **Release is optional**: it is never a required field (settings
 can't make it so), a ticket created on the form or over MCP (`kanban_create_task`) may have
 none, and one can be added later; unreleased tickets still show on the board and in
 filters, and appear under "All releases" in the report.
@@ -481,6 +490,9 @@ rolled up from its non-withdrawn child tickets in any release). Explanations liv
 **KB-SET-1** Per optional field: show on the create/edit form, and required.
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
+**Attachments are always shown** (settings mark them "Always shown" and the
+Show box is locked on, whatever was saved; never required), so files can be
+attached when a ticket is created as well as when it is edited.
 
 **KB-SET-2** Current release (when none is
 stored the current release is the earliest unreleased one
