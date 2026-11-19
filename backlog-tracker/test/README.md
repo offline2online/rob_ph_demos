@@ -152,6 +152,12 @@ UI (Playwright) cases get **one retry inside the run**; nothing else retries.
   came after the case's own `scrollTo` and undid it. It then waits until the
   bar is pinned rather than for a fixed time (TC-09, "Expected values to be
   strictly equal").
+- A case that opens a ticket's form and closes it again waits for the form's
+  description editor (`#f-description .ql-editor`) before it closes it. Quill
+  loads when a modal first opens and `bindEditors` then fills the editor from
+  the ticket; closing the form before that left the loading editor reading the
+  closed form's ticket, a page error (KB-C30, "Cannot read properties of null
+  (reading 'description')").
 - To check a case you fixed, run it repeatedly with the retry off, e.g.
   `for i in $(seq 20); do KB_RETRIES=0 KB_ONLY=TC-55 node ui/staff-kanban.test.mjs || break; done`
   or `UI_RETRIES=0 SCENARIO="Modals" node ui/console-click.test.mjs`.

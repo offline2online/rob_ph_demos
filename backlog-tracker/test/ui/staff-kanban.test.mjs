@@ -1972,6 +1972,10 @@ T("KB-C30", "scrolled down, + New task stays pinned at the right of the filter b
   assert.equal(await p.$$eval("#kb-sticky .btn-primary", (e) => e.filter((x) => x.getClientRects().length && getComputedStyle(x).visibility === "visible").length), 1, "the only CTA pinned");
   await press(p, "#kb-pinned-new");
   await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the New task form");
+  // The form has finished opening once its description editor is in (Quill loads the first time a modal opens, and
+  // bindEditors fills the editor from the ticket in the same step). Escape before that closed the form under the
+  // loading editor, which then read the closed form's ticket: "Cannot read properties of null (reading 'description')".
+  await until(() => p.$("#task-backdrop:not([hidden]) #f-description .ql-editor"), "the New task form's description editor");
   await p.keyboard.press("Escape");
   await p.evaluate(() => scrollTo(0, 0));
   await eventually(async () => assert.equal(await shown(), false, "hidden again back at the top"));
