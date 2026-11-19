@@ -20,11 +20,19 @@
 //   long         a description over LONG_DESC_CHARS with MANY_BUILD_ITEMS or
 //                more numbered build items in its Outcome
 //
+// The keyword rules read the title, the Outcome and the Spec reference, not
+// the Test steps or Dependencies sections (scoredText). A keyword counts
+// wherever it appears in those parts, negated or not: "Reject requests with
+// no auth token" is a security change. See version 2 below.
+//
 // Otherwise Standard. The result is stored as `modelSuggested`
 // {model, reasons: [{key, text}], version}. If the person did not choose a
 // model, `model` takes the suggestion (`modelAuto: true`); a person's explicit
 // choice is never overridden (explicitModel). An escalation after failed rounds
-// (functions/model-requirement.js → modelEscalation) is explicit too.
+// (functions/model-requirement.js → modelEscalation) is explicit too. While a
+// build is in flight (buildInFlight) the suggestion is recorded but `model` is
+// left as the build was fired with; it follows the suggestion once the build
+// has handed back or reported.
 //
 // Also here, because the board and the server must agree on them:
 // modelChipText (the card chip), reviewNeedsOpus (the review guard),
@@ -35,7 +43,13 @@
 // is its generated CommonJS copy (scripts/gen-model-suggest-cjs.sh);
 // test/model-suggest.test.js fails if the two drift.
 
-export const MODEL_SUGGEST_VERSION = 1;
+// Version 2 (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R): Test steps and
+// Dependencies are no longer scored. Two Standard builds were refused that
+// day because the build session's own Dependencies line ("No new secret or
+// index"; "the ANTHROPIC_API_KEY function secret, already set") re-marked the
+// ticket Advanced at hand-over. Negation is deliberately not read: in the
+// Outcome "no"/"without" is usually the subject of a security change.
+export const MODEL_SUGGEST_VERSION = 2;
 export const LONG_DESC_CHARS = 2500;
 export const MANY_BUILD_ITEMS = 5;
 // Reasons that also make a ticket reviewed without a click.
@@ -103,6 +117,23 @@ function outcomePart(desc) {
   return m ? text.slice(0, m.index) : text;
 }
 
+// The text the keyword rules read: the title, and the description without
+// its Test steps and Dependencies sections. Those say how to test the ticket
+// and what it needs (another ticket, an existing secret), not what it changes,
+// and a build session fills them in at hand-over.
+const UNSCORED_SECTION_RE = /^(?:test steps?|dependencies)\b/i;
+function scoredText(item) {
+  const it = item || {};
+  const kept = [];
+  let skip = false;
+  for (const line of String(it.desc || "").split("\n")) {
+    const h = line.match(/^\s{0,3}#{1,6}\s*(.*)$/);
+    if (h) skip = UNSCORED_SECTION_RE.test(h[1].trim());
+    if (!skip) kept.push(line);
+  }
+  return `${it.title || ""}\n${kept.join("\n")}`;
+}
+
 export function numberedBuildItems(desc) {
   return (outcomePart(desc).match(/^\s{0,3}\d{1,2}[.)]\s+\S/gm) || []).length;
 }
@@ -112,7 +143,7 @@ export function numberedBuildItems(desc) {
 export function suggestModel(item, ctx = {}) {
   const it = item || {};
   const desc = String(it.desc || "");
-  const text = `${it.title || ""}\n${desc}`;
+  const text = scoredText(it);
   const reasons = [];
   for (const r of RULES) if (r.re.test(text)) reasons.push({ key: r.key, text: r.text });
   const touched = projectsTouched(text, ctx.projects);
@@ -136,13 +167,42 @@ function sameSuggestion(a, b) {
   return a.model === b.model && keys(a) === keys(b) && (a.version || 0) === (b.version || 0);
 }
 
+function timeMs(v) {
+  if (v == null) return NaN;
+  if (typeof v === "number") return v;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v.toMillis === "function") return v.toMillis();
+  if (typeof v.seconds === "number") return v.seconds * 1000;
+  if (typeof v._seconds === "number") return v._seconds * 1000;
+  return Date.parse(v);
+}
+
+// A build of this ticket is under way: its patch is handed back and waiting
+// to land (patchReady), or a session was started for its current build
+// attempt (lastFire) and has not reported done or error since
+// (buildSession.reportedAt / finishedAt after lastFire.at). While it is, the
+// classifier does not change `model`: the build was fired with a model, and
+// the build session's own hand-over (it writes the completed description in
+// the same PATCH as patchReady) must not move the goalposts under it.
+export function buildInFlight(item) {
+  if (!item) return false;
+  if (item.patchReady === true) return true;
+  const fire = item.lastFire;
+  const attempt = item.buildAttemptId;
+  if (!fire || fire.status !== "started" || !attempt || fire.buildAttemptId !== attempt) return false;
+  const firedAt = timeMs(fire.at);
+  const s = item.buildSession || {};
+  const reported = [s.reportedAt, s.finishedAt].some((t) => timeMs(t) >= firedAt);
+  return !reported;
+}
+
 // The fields to write for a fresh suggestion, or {} when nothing changes.
 export function autoModelFields(item, suggestion) {
   const out = {};
   if (!sameSuggestion(item && item.modelSuggested, suggestion)) {
     out.modelSuggested = { model: suggestion.model, reasons: suggestion.reasons.map((r) => ({ key: r.key, text: r.text })), version: suggestion.version || MODEL_SUGGEST_VERSION };
   }
-  if (!explicitModel(item) && (item.model !== suggestion.model || item.modelAuto !== true)) {
+  if (!explicitModel(item) && !buildInFlight(item) && (item.model !== suggestion.model || item.modelAuto !== true)) {
     out.model = suggestion.model;
     out.modelAuto = true;
   }

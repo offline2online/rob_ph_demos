@@ -165,8 +165,12 @@ export async function startHarness() {
         if (url.pathname.startsWith("/supportMail/")) {
           const req = route.request();
           if (url.pathname === "/supportMail/v1/status") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.supportStatus || { encryptionReady: true, aiReady: true, clientSet: false, clientId: "", connected: false, connectedEmail: "", connectionError: "", lastSyncAt: null, lastSyncOk: true, lastSyncError: "", redirectUri: `${origin}/supportMail/v1/oauth/callback`, settings: { autoReply: false, autoReplyThreshold: 0.8, escalationAssignee: "", signature: "Personalisation Hub Support", fromName: "Personalisation Hub Support", vipDomains: [], importDays: 7 } }) });
-          supportCalls.push({ method: req.method(), path: url.pathname.replace("/supportMail/v1/", ""), body: JSON.parse(req.postData() || "{}") });
-          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(seed.supportAnswer || { ok: true, newMessages: 0, newTickets: 0 }) });
+          const callPath = url.pathname.replace("/supportMail/v1/", "");
+          supportCalls.push({ method: req.method(), path: callPath, body: JSON.parse(req.postData() || "{}") });
+          // seed.supportAnswers: an answer per path (a function gets the call and the calls so far), for a page that makes several kinds of call.
+          const per = seed.supportAnswers && seed.supportAnswers[callPath];
+          const answer = typeof per === "function" ? per(supportCalls[supportCalls.length - 1], supportCalls) : per;
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(answer || seed.supportAnswer || { ok: true, newMessages: 0, newTickets: 0 }) });
         }
         if (url.pathname.startsWith("/mediaKeys/")) {
           const req = route.request();

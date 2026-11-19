@@ -9,6 +9,9 @@ import {
 import { aidanView, aidanThreadState, aidanCollateral, aidanParts, aidanRequestWaiting, spamConfirmText, isPlainInbox, isUnread, plainInboxRows, plainInboxCounts } from "../public/js/support-core.js";
 import { sectionForHash, SECTION_HASH, storedLevel, PERMISSION_GROUPS } from "../public/js/permissions.js";
 import { settingsPageFromHash, SETTINGS_PAGES } from "../public/js/settings-section.js";
+import * as labPage from "../public/js/support-lab-core.js";
+import { createRequire } from "node:module";
+const labServer = createRequire(import.meta.url)("../functions/support-lab-core.js");
 
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 10, 1, 9);
 const tk = (id, d) => normaliseTicket(id, { key: `SUP-${id}`, subject: `Subject ${id}`, customerEmail: `${id}@shop.example`, createdAt: new Date(T0), lastMessageAt: new Date(T0), ...d });
@@ -65,7 +68,7 @@ check("routes round-trip and belong to the Support Inbox section", () => {
   assert.strictEqual(sectionForHash("#support"), "support-inbox");
   assert.strictEqual(sectionForHash("#support/ticket/x"), "support-inbox");
   assert.strictEqual(SECTION_HASH["support-inbox"], "#support");
-  assert.deepStrictEqual(PERMISSION_GROUPS.find((g) => g.label === "Support").keys, ["support-inbox", "faq"], "above Help Centre");
+  assert.deepStrictEqual(PERMISSION_GROUPS.find((g) => g.label === "Support").keys, ["support-inbox", "faq", "documentation"], "above Help Centre, Documentation after it");
   assert.strictEqual(storedLevel({ name: "Agent", permissions: { faq: "view" } }, "support-inbox"), "view", "follows the Help Centre grant until set");
   assert.strictEqual(settingsPageFromHash("#settings/support?connected=1"), "support");
   assert.ok(SETTINGS_PAGES.some((p) => p.key === "support"));
@@ -344,6 +347,51 @@ check("bulk: marked unread stays unread until opened, in any inbox; archived ema
   assert.strictEqual(supportHash({ inbox: "aidan", queue: "archived" }), "#support/aidan?queue=archived");
   assert.strictEqual(supportRoute("#support?queue=archived").queue, "needs-person", "the Support Inbox has no Archived: it resolves");
   assert.strictEqual(filterTickets([tk("r", { archived: true, needsHuman: true })], "needs-person", "", "support").length, 1, "archiving doesn't touch the Support Inbox's queues");
+});
+
+// The Test lab (x3MqwdJxQ0tJMGlcDi1Y): its routes and the page's rules.
+check("Test lab routes: #support/lab and #support/lab/case/<id>, both ways", () => {
+  assert.deepStrictEqual(supportRoute("#support/lab"), { view: "lab", inbox: "support", queue: "", ticketId: "", caseId: "" });
+  assert.deepStrictEqual(supportRoute("#support/lab/case/t-abc%2F1"), { view: "lab", inbox: "support", queue: "", ticketId: "", caseId: "t-abc/1" });
+  assert.strictEqual(supportHash({ view: "lab" }), "#support/lab");
+  assert.strictEqual(supportHash({ view: "lab", caseId: "c-1" }), "#support/lab/case/c-1");
+  assert.strictEqual(sectionForHash("#support/lab"), "support-inbox", "the lab is part of the Support Inbox's permission");
+});
+check("Test lab: the page's choices match the server's", () => {
+  assert.deepStrictEqual(labPage.EXPECTS.map((e) => e.key), labServer.EXPECTS);
+  assert.deepStrictEqual(labPage.RATINGS.map((e) => e.key), labServer.RATINGS);
+  assert.strictEqual(labPage.MAX_EXPECTED, labServer.MAX_EXPECTED);
+});
+check("Test lab: a case reads Needs review, Not run, Passed or Failed, and says where it came from", () => {
+  const c = (d) => labPage.normaliseCase("c1", { text: "How do I add a display?", expect: "articles", articleIds: ["a1"], ...d });
+  assert.deepStrictEqual(labPage.caseState(c({})), { label: "Not run", tone: "none" });
+  assert.strictEqual(labPage.caseState(c({ needsReview: true, expect: "" })).label, "Needs review");
+  assert.strictEqual(labPage.caseState(c({ lastResult: { passed: true } })).label, "Passed");
+  assert.strictEqual(labPage.caseState(c({ lastResult: { passed: false, problems: ["no right article chosen"] } })).label, "Failed");
+  assert.strictEqual(labPage.sourceText(c({ source: "support", ticketKey: "SUP-4" })), "From SUP-4");
+  assert.strictEqual(labPage.sourceText(c({ source: "aidan", ticketKey: "SUP-9" })), "From Aidan · SUP-9");
+  assert.strictEqual(labPage.caseTitle(c({ subject: "" })), "How do I add a display?");
+});
+check("Test lab: accuracy over time is the finished runs, oldest first; failing cases name the expected and the matched articles", () => {
+  const run = (id, at, d) => labPage.normaliseRun(id, { status: "done", startedAt: at, finishedAt: at + 1, total: 2, done: 2, ...d });
+  const runs = [run("r2", 2000, { passed: 1, failed: 1, accuracy: 0.5, results: { c1: { passed: false, problems: ["no right article chosen"], chosen: ["a2"] }, c2: { passed: true } } }),
+    run("r1", 1000, { passed: 2, failed: 0, accuracy: 1 }), labPage.normaliseRun("r3", { status: "running", startedAt: 3000, total: 4, done: 1 })];
+  assert.deepStrictEqual(labPage.accuracyRows(runs).map((r) => [r.id, r.accuracy]), [["r1", 1], ["r2", 0.5]]);
+  assert.strictEqual(labPage.progressText(labPage.runningRun(runs)), "Running: 1 of 4 cases done");
+  const cases = [labPage.normaliseCase("c1", { subject: "Displays", text: "Q", expect: "articles", articleIds: ["a1"] })];
+  const titles = { a1: "Add a display", a2: "Pair a screen" };
+  const f = labPage.failingCases(runs, cases, (id) => titles[id]);
+  assert.deepStrictEqual(f.rows, [{ id: "c1", exists: true, title: "Displays", expected: "Add a display", matched: "Pair a screen", problem: "no right article chosen" }]);
+  assert.strictEqual(labPage.accuracyText(0.8), "80%");
+});
+check("Test lab: after Ask, what should happen is first proposed from what the engine did; a case needs a question and a choice", () => {
+  assert.deepStrictEqual(labPage.proposedExpect({ relevant: true, answerable: true, articles: [{ id: "a1" }] }), { expect: "articles", articleIds: ["a1"] });
+  assert.deepStrictEqual(labPage.proposedExpect({ relevant: true, answerable: false, articles: [] }), { expect: "none", articleIds: [] });
+  assert.deepStrictEqual(labPage.proposedExpect({ relevant: false }), { expect: "unrelated", articleIds: [] });
+  assert.ok(labPage.caseProblem({ text: "Q", expect: "articles", articleIds: [] }).includes("Pick"));
+  assert.strictEqual(labPage.caseProblem({ text: "Q", expect: "none" }), "");
+  assert.deepStrictEqual(labPage.caseBody({ subject: " S ", text: "Q", expect: "none", articleIds: ["a1"], rating: "wrong", note: " n " }),
+    { subject: "S", text: "Q", expect: "none", articleIds: [], rating: "wrong", note: "n" });
 });
 
 let failed = 0;

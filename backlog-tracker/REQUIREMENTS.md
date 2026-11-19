@@ -214,7 +214,7 @@ copy `public/js/release-groups.js`).
   sharedWith?: [{projectId, projectName, paths, conflictPaths, conflict}], // 15 Nov 2026 — files this landed ticket shares with another project's live train; conflict when the two tips do not merge cleanly (git merge-tree). Automation-only.
   foreignPaths?: [{projectId, projectName, paths}], // 15 Nov 2026 — files it changed that another project owns (projects.ownedPaths). A warning, never a refusal. Automation-only.
   rebuildAfterRevert?: boolean,        // queue a rebuild once this card's commits are off the train: automatic send-backs, the board's Failed testing (not "Blocking a release, not a rebuild") and the MCP fail_testing tool
-  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. Automation/function only
+  lastFire?: { status: "started" | "retrying" | "failed", at: timestamp, requestedAt, sessionId?, sessionUrl?, error?, attempts: number, deferrals: number, nextAttemptAt?: timestamp | null, firedVia?: string, model?: "standard" | "advanced" }, // 19 Oct 2026 — outcome of the latest Routine fire for this card, written by notifyOnProjectReadyForReview. `model` (18 Nov 2026) is the model requirement the session was fired with; `firedVia` is "advanced" when it went to the Advanced (Opus) Routine. Automation/function only
   buildAttemptId?: string,      // 14 Nov 2026 — the id of the build attempt this card is waiting on: notifyOnProjectReadyForReview writes a fresh one (16 hex chars, also on lastFire.buildAttemptId) each time a fire starts a session, and the fire text carries it. A failed fire leaves the earlier one current. Automation/function only — see "Heartbeats and build attempts"
   patchAttemptId?: string | null, // 14 Nov 2026 — the attempt id a build session hands its patch back under (same PATCH as patchFiles). processApplyPatch refuses the patch when it differs from buildAttemptId, and clears it when a patch lands. Automation only
   dependsOnItemIds?: string[],  // 14 Nov 2026 (build order) — the tickets (any project, at most 20) this one builds after. Filled from the Dependencies section at intake, by a build session that finds a real code dependency, by Edit item → Builds after, or over MCP. Browsers may write it (a list of at most 20 strings) — see "Build order"
@@ -4675,6 +4675,40 @@ field.
   whose `builtByModel` is not an Opus (`modelGuardRefusal`): nothing lands,
   `patchReady` is cleared, the card is flagged `model-unavailable` with a note,
   and it is not rebuilt automatically.
+- **Judged by what was fired** (18 Nov 2026, ticket 6Nia0yWu8yAL3STGh96R).
+  Each fire records the requirement it carried as `lastFire.model`. When the
+  card's `model` is the classifier's (`modelAuto: true`), the guard judges the
+  patch against `lastFire.model` for the attempt that handed back
+  (`requiredModelForBuild`: `patchAttemptId`, else `buildAttemptId`, must
+  match `lastFire.buildAttemptId`). A person's choice or an escalation is
+  judged as it stands; with no fire record, the card's model, as before.
+  Advanced means Claude Opus, strictly: any other model is refused. On 18 Nov
+  2026 two finished, tested Standard builds (x3MqwdJx…, SYkk20sr…) were
+  refused as "needs Opus" because their own hand-over wording ("the
+  `ANTHROPIC_API_KEY` function secret, already set"; "No new secret or
+  index") made the classifier re-mark them Advanced in the same write as
+  `patchReady`.
+- **The Advanced (Opus) Routine** (18 Nov 2026). The fire endpoint takes
+  only `text`, so a Routine's model is fixed where it is created. An admin
+  can create a second Routine at claude.ai/code/routines with Claude Opus as
+  its model and the same bootstrap prompt, and register its API trigger with
+  the MCP tool `set_advanced_routine_binding` (admin only, write-only, fire
+  URL on `api.anthropic.com` only; `""`/`""` clears it). It is stored at
+  `modelRoutineBindings/advanced` `{fireUrl, token, boundAt, boundByEmail}`,
+  which has no rule in `firestore.rules`, so no browser can read or write it
+  and no tool returns it. When it is set, a Ready for Dev click sends each
+  Advanced ticket that would otherwise fire on the shared Routine to it
+  (`advancedRoutineFor` in `functions/index.js`), while Standard tickets fire
+  on the shared Routine, all in parallel as before (one session per ticket).
+  The card's `lastFire.firedVia` reads `"advanced"` and the project's
+  `notifyRoutine.firedVia` `"shared+advanced"` for a mixed click. A project's
+  own Routine, the clicker's own binding and an owner's agent ticket keep
+  their Routine (they may carry tools or an account the Opus Routine lacks),
+  and those sessions still delegate to an Opus subagent from the fire text.
+  Without the binding nothing changes: the shared Routine plus the
+  delegation block. Build fires only; Review Batch and Deploy fires are
+  unchanged (an Advanced ticket's review is still delegated, and a non-Opus
+  review does not count).
 - **Flag**: a `model-unavailable` card shows "Not built: needs Opus" with the
   clear (×) control and no Answer button (there is no question). Notify Claude
   skips it like any blocked card; clearing the flag puts it back in the queue.
@@ -4708,6 +4742,25 @@ want of the WordPress MCP; v8q30p66… four builds for basic errors).
   `repoFolder`), effort Large, or is over 2,500 characters with five or more
   numbered build items in its Outcome. Otherwise Standard. The verdict and
   every reason that fired are stored as `modelSuggested`.
+- **What it reads** (version 2, 18 Nov 2026). The keyword rules read the
+  title and the description without its **Test steps** and **Dependencies**
+  sections: those say how to test the ticket and what it needs (another
+  ticket, a secret that already exists), not what it changes, and a build
+  session writes them at hand-over. The Outcome and Spec reference are read
+  as before. Negation is not read: a keyword counts wherever it appears in
+  the title, Outcome or Spec reference, so "Reject requests with no auth
+  token" and "Users without admin role must not see secrets" stay Advanced
+  (a negating rule tried on 18 Nov 2026 was dropped at review because it
+  marked such security tickets Standard). The version
+  bump makes `sweepModelSuggestions` score every open Backlog ticket again
+  once; a person's choice is untouched.
+- **Held while a build is in flight** (18 Nov 2026). While a build of the
+  ticket is under way (`buildInFlight`: `patchReady` is set, or the current
+  attempt's fire started a session that has not reported done or error
+  since), the trigger records the new `modelSuggested` but leaves `model` as
+  the build was fired with. Once nothing holds it, the next write to the card
+  brings `model` in line with the suggestion (`modelSuggestNeeded`), so a
+  rebuild is fired on it.
 - **Who sets `model`.** The `onBacklogItemModelSuggest` trigger runs on a
   create and on every save of the title, description, area or effort (Backlog
   only). If no person chose a model, `model` takes the suggestion with
@@ -5359,6 +5412,87 @@ dir `console-dist`) is correct and the gap was that nothing proved it.
 - Tests: `test/promote-section.test.mjs`, `test/permissions.test.mjs`, a
   scenario in `test/ui/console-click.test.mjs` and a page in
   `test/ui/mobile-shell.test.mjs`.
+
+## Brand Guidelines › Partners: one co-branding page per partner (19 Nov 2026)
+
+- Brand Guidelines has a **Partners** subsection: one page per retail network
+  or other partner, listed at the foot of the Brand Guidelines page and opened
+  at `#promote/brand-guidelines/partners/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first is **miPharmacy**.
+- Each partner page is a repo file, `backlog-tracker/promote/partners/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-partner-<slug>`.
+  The page lists whatever `brand-partner-*` mirrors exist
+  (`partnersFrom` in `public/js/promote-section.js`), so **adding a partner is
+  a new file and a manifest entry, never a code change**. A superseded mirror
+  is not listed.
+- The file starts with a `<!-- partner … -->` block (`name`, `industry`,
+  `summary`, `industryUrl`, `logoLight`, `logoDark`), which the page reads and
+  does not show. The page draws the co-brand lockups from it: partner leads
+  and Personalisation Hub leads, each on a light and a dark surface, using
+  the official PH logo files (`public/img/brand/`, copied from the `ph-brand`
+  skill) and the partner's files from Brand assets. Until a partner's logo
+  file is supplied (an empty `logoLight` / `logoDark`), its slot shows a
+  labelled empty box; a logo is never drawn or typed.
+- Sections every partner page carries: who leads, by audience; co-brand logo
+  lockups; colour hierarchy; naming, wording and tone; approved claims and
+  outcomes (linking to the partner's industry page on personalisationhub.com
+  as the single source of truth); co-branded templates, with finalised
+  shared pieces added to Brand templates as reference templates.
+- Agent-only detail sits between the agent-only markers and is hidden on the
+  page (as for the main guidelines). **Agents read a partner page over MCP**
+  with `list_project_documents` / `get_project_document` on this project
+  (the `ph-brand` skill and Aidan use the same documents); no new tool.
+- Tests: `test/promote-section.test.mjs` and a scenario in
+  `test/ui/console-click.test.mjs`.
+
+## Brand Guidelines › Markets: cultural and communication guidelines per market (19 Nov 2026)
+
+- Brand Guidelines has a **Markets** subsection, built like Partners: one page
+  per market, listed at the foot of the Brand Guidelines page (under Partners)
+  and opened at `#promote/brand-guidelines/markets/<slug>` (back link to Brand
+  Guidelines; same `promote` permission). The first are **Thailand**,
+  **Singapore** and the **United States**.
+- Each market page is a repo file, `backlog-tracker/promote/markets/<slug>.md`,
+  declared in `board-docs.json` with the mirror key `brand-market-<slug>`. The
+  page lists whatever `brand-market-*` mirrors exist (`marketsFrom` in
+  `public/js/promote-section.js`), so **adding a market is a new file and a
+  manifest entry, never a code change**. A superseded mirror is not listed.
+- The file starts with a `<!-- market … -->` block (`slug`, `name`,
+  `countries`, `region`, `spelling`, `currency`, `summary`), which the page
+  reads and does not show. `countries` lists every way a lead's or TAM
+  company's country may be written (ISO codes and names, for example
+  `US, USA, United States, United States of America, America`).
+- Sections every market page carries: **Communication style** (directness,
+  formality, forms of address, deference to seniority); **Cultural
+  sensitivities** (topics, imagery, colours, symbols and gestures to avoid;
+  religious and royal sensitivities where relevant); **Local conventions**
+  (spelling, currency, date and number formats, units); **Business
+  etiquette** (follow-up pace, how hard to sell, relationship versus straight
+  to the point); **Regulatory notes** (what affects claims and data use in
+  advertising). Agent-only detail (`## For agents`) sits between the
+  agent-only markers and is hidden on the page, as for the main guidelines.
+- **Agents read a market page over MCP** with `list_project_documents` /
+  `get_project_document` on this project (the `ph-brand` and collateral
+  skills use the same documents); no new tool.
+- **Aidan picks the market by country** (SUP-AID-49): branded collateral
+  (SUP-AID-30) takes the company's country from Prospects (TAM) or Leads and
+  finds the market page whose `countries` names it (`marketFor` in
+  `functions/market-core.js`; case, dots and accents ignored). The whole page,
+  agent-only detail included, goes into the prompt as `<market>` beside the
+  brand skill, the industry and the prospect; it wins on tone and local
+  conventions, the brand skill and the industry page win on product facts and
+  claims, and "Personalisation Hub" keeps its spelling everywhere. The run
+  records `aidan.collateral.market` (`{slug, name}`, or `{missing: <country>}`)
+  and its timeline line says which page it followed.
+- **No page for that market**: the default brand guidelines apply (the prompt
+  says so) and the collateral is still sent. Aidan's self-check files a
+  **Missing market page** ticket on this project (SUP-AID-50), one per
+  country: a later request for the same country comments on it instead, and
+  another country never matches it.
+- Tests: `test/market-core.test.js`, `test/promote-section.test.mjs`, the
+  Markets scenario in `test/ui/console-click.test.mjs`, and two whole runs in
+  `test/support-mail.test.js` (Thai and US companies, and a Malaysian one with
+  no page).
 
 ## Promote section: Leads (5 Nov 2026)
 
@@ -6270,14 +6404,67 @@ overlay. Presentation only: every field, action and datum is still there.
   content touched. An ad group / creative filter only exists in the ad data, so
   it empties the ACE stages. No match shows an empty state, not an error.
 - **Data:** stages 1-5 are daily rows in the **`funnelDaily`** collection
-  (`{date "YYYY-MM-DD", channel, campaign, adGroup, creative, industry, country,
-  content, company, impressions, clicks, visits, demoRequests, downloads}`),
-  readable by members, **writable only by the server** (rules deny clients).
-  **The ingest that fills it from the Google Ads API and the GA4 BigQuery export
-  (ph-analytics) is not built yet** and needs those credentials; until it runs
-  stages 1-5 show 0. Stages 6-9 use the console's ACE opportunities
-  (`/partnerCentral/v1/ace`) joined by company name to Leads (channel, content)
-  and Prospects (TAM) (industry, country, campaigns).
+  (`{date "YYYY-MM-DD", source, channel, campaign, adGroup, creative, industry,
+  country, content, company}` plus the source's numbers), readable by members,
+  **writable only by the server** (rules deny clients). Stages 6-9 use the
+  console's ACE opportunities (`/partnerCentral/v1/ace`) joined by company name
+  to Leads (channel, content) and Prospects (TAM) (industry, country, campaigns).
+  "Calculator / model downloads" counts file downloads plus benefits calculator uses.
+- **The daily ingest (19 Nov 2026, ticket T6f4GeJZGg0OgntUpzPq;
+  `functions/funnel-ingest.js`, HTTP function `funnelIngest`)** fills
+  `funnelDaily`. Each row names its `source`:
+  - `ga4-total`: one row a day, GA4 `users` for the whole site. Unique visitors
+    are this figure, never a sum of slices (users are not additive).
+  - `ga4-site`: day × country × channel × campaign: `visits` (GA4 sessions) and
+    `users`.
+  - `ga4-industry`: day × industry × country: real page views of
+    `/industries/<slug>/` pages (`pageViews`) and their `users`; the industry is
+    read from the page path, not inferred from a dimension. Page views add up
+    across rows; users do not (a person who views two industries is a user on
+    both rows).
+  - `ga4-industry-total`: one row a day, GA4 `users` over every `/industries/*`
+    page together (GA4 de-duplicates them): the people who saw an industry page.
+  - `ga4-industry-users`: day × industry, no country: GA4 `users` per industry.
+    GA4 cannot group pages by industry, so a person who views several pages of
+    one industry may still count once per page here.
+  - `ga4-events`: day × country × industry (the event's `industry` parameter):
+    `walkthroughs` (product_tour_start), `calculatorUses` (calculator_use),
+    `demoRequests` (demo_request), `downloads` (file_download), `leadForms`
+    (lead_created).
+  - `google-ads`: day × campaign × ad group: `impressions`, `clicks`, read
+    through the Google Ads account linked to the GA4 property (no country:
+    Google Ads metrics have none in GA4).
+  - `leads`: day × industry × country × channel: `leads` from the console's
+    `leads`; test and archived leads are never counted.
+  - `ace`: day × industry: `aceCreated`, while Partner Central answers.
+- **Days** are calendar days in the configured zone (`timeZone`, default
+  Australia/Sydney, set to match the GA4 property's zone, which is the zone GA4
+  reports its dates in); the console's own records are bucketed in that zone
+  too. Never UTC.
+- **Runs:** no Cloud Scheduler job and no new workflow: the hourly `aceToGa4`
+  call (`.github/workflows/ace-ga4.yml`) runs the ingest when one is due. The
+  first run backfills 90 days; after that a run every 6 hours or more replaces
+  the last 3 days (GA4 keeps settling for about 48 hours). A run from the
+  hourly call has a 150-second budget, so the workflow's request (320 s) never
+  times out: sources it had no time for are listed in `deferred` and run on the
+  next hourly call, and the backfill counts as done only once every GA4 source
+  has succeeded. A run by hand has no budget. By hand: POST
+  `funnelIngest` with `X-Board-Key` and `{"mode": "backfill"}` (90 days) or
+  `{"mode": "daily"}`. A run replaces a source's rows for its days, so re-running
+  never double counts.
+- **Credentials:** GA4 is read with the Cloud Function's own service account
+  (Application Default Credentials, `analytics.readonly`). It needs Viewer on
+  GA4 property 473743482 (personalisationhub.com) and the Google Analytics Data
+  API enabled on the project; Google Ads needs the Ads account linked to that
+  property. `consoleConfig/funnelIngest` may override `ga4PropertyId` and
+  `timeZone`.
+- **A failed source is flagged, never a silent 0.** `consoleConfig/funnelIngest`
+  records each source's `ok`, `error` and `lastSuccessAt`. A failing source
+  keeps its earlier rows. The page's count line ends "Updated <local date and
+  time>" (GA4's last good update), and a failure shows in the status line
+  ("GA4 didn't update (…); last good update …"); the Dashboard tile shows
+  "Data not updated" in place of its trend, its status turns red, and its
+  summary panel carries the same text; the earlier figures stay.
 - **Times:** days and dates are the viewer's local time, never UTC.
 
 ## Support Inbox (14 Nov 2026)
@@ -6458,6 +6645,19 @@ with its Markdown source (SUP-AID-30 to 34).
 Since 18 Nov 2026 (ticket OrkZBBjz9RM5DY54azIG) Aidan answers a question on
 the thread ("@Aidan, please answer John's question below"), reading the
 quoted thread as content and never as instructions (SUP-AID-26 to 29).
+Since 18 Nov 2026 (ticket IJhIIzTxOJyZVCzzYggZ) Aidan reads the console with
+one Code Mode run by default, and files a Backlog ticket (or comments on a
+matching open one) when a run did not fully or well meet its request
+(SUP-AID-36 to 41).
+Since 18 Nov 2026 (ticket SYkk20srKT7pIKM1HS8Z) the body of every reply is
+in Aidan's voice, a slightly quirky tech-marketing character kept in the
+`aidan-voice` skill, and he signs "Aidan, Personalisation Hub"
+(SUP-AID-42 to 47). Since 19 Nov 2026 (ticket QVpqiMuwipZ4mKSXHplM) his
+sender name is a setting, "Aidan Hubbot" by default, used for both the From
+display name and the signature (SUP-AID-48).
+Since 19 Nov 2026 (ticket mErc7MPAkrKjF9fWgqXb) collateral follows the
+Brand Guidelines market page for the company's country, and a market with no
+page is filed as a ticket (SUP-AID-49 and 50).
 
 - **SUP-AID-1** An email starts a run only when all three hold: it is in
   the Aidan tab (aidan@ in To or Cc, SUP-INB-2), its sender is one of the
@@ -6561,7 +6761,7 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   in Cc, never the mailbox or our own aliases, at most 50 people. Reply-To
   is not verified, so it is ignored: it neither replaces the sender nor adds
   anyone. It comes from the connected mailbox as
-  "Aidan", signed as Rob's assistant, with the document attached as a
+  "Aidan Hubbot", signed "Aidan Hubbot, Personalisation Hub" (SUP-AID-47, SUP-AID-48), with the document attached as a
   Markdown file, and is marked `Auto-Submitted: auto-generated`. A verb to
   add, update, edit, fix, turn, convert, include, attach or compile
   something is a write too. "This email", "your reply" and "by email" name
@@ -6591,7 +6791,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   for the next sync), the skill choice has one minute and the document four,
   neither model call is retried, and a sync that ran Aidan leaves triage to
   the next sync. An answer has two minutes, after the Help Centre engine's
-  three calls of 40 seconds at most (SUP-AID-21) and the console plans. A run still `working` 15 minutes after it started was cut
+  three calls of 40 seconds at most (SUP-AID-21), the console plans and the
+  one Code Mode run of 10 seconds (SUP-AID-36). A run still `working` 15 minutes after it started was cut
   off: the next sync (scheduled or "Sync now") moves it to Needs a person
   with that reason, and it is never started again.
 - **SUP-AID-11** Queueing is idempotent. Each email is decided once per
@@ -6635,7 +6836,7 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   does (SUP-AID-1 to 4, 10 to 13) and replies to the same people
   (SUP-AID-6: From and the rest of To in To, the original Cc in Cc, never
   Reply-To, never our own addresses), on the same thread, at once, from the
-  mailbox as "Aidan", marked `Auto-Submitted: auto-generated`. The reply is
+  mailbox as "Aidan Hubbot" (the sender name, SUP-AID-48), marked `Auto-Submitted: auto-generated`. The reply is
   a short plain-text email written in the body ("Got it, Rob, all good."),
   signed as Rob's assistant, with **no attachment**. It needs no skill and
   the model is never asked to choose one; a skill the instruction names is
@@ -6659,7 +6860,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   and their Requirements, README, additional documents and interface
   contracts; tickets (a list, one in full) and pipeline health; concepts in
   the Concept Incubator (a list, one in full, its critiques); Help Centre
-  articles. The reads are the MCP server's own read tools, the ones named in
+  articles; Leads and Prospects (TAM) (since IJhIIzTxOJyZVCzzYggZ). Most of
+  it is read with one Code Mode run (SUP-AID-36). The reads are the MCP server's own read tools, the ones named in
   `CONSOLE_READ_TOOLS` (`functions/aidan-core.js`), run through
   `consoleReader` (`functions/mcp-server.js`), which offers only `board.read`
   tools with no role, so no write tool is reachable from an email whatever
@@ -6716,7 +6918,8 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   was not taken: it would silently stop a client in Cc receiving documents
   they were sent before.
 - **SUP-AID-19** Aidan never creates, updates, archives, approves or deploys
-  anything from an email. A request to do so on the console ("create a
+  anything from an email. (His own self-improvement ticket, SUP-AID-38, is
+  not one an email asks for: it is decided in code from how the run went.) A request to do so on the console ("create a
   ticket for …", "update the README", "move that card", "deploy …"), decided
   from the instruction's own words (`consoleChangeRequest`: a clause that
   opens with a change verb whose object is a console thing; see below) or by the plan
@@ -6767,7 +6970,7 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   when the Help Centre answers. The Support Inbox's own gates are unchanged.
 - **SUP-AID-23** The Help Centre reply is sent in the email itself with no
   attachment, to everyone on the email (the Help Centre is public, so nobody
-  is left off, unlike SUP-AID-18), from the mailbox as "Aidan". It opens
+  is left off, unlike SUP-AID-18), from the mailbox as "Aidan Hubbot" (SUP-AID-48). It opens
   "Hi <first name>," (no "Thanks for your email."), carries the engine's
   reply body with any greeting or sign-off the model wrote removed
   (SUP-AI-9), and names each cited article by its title: a line "Help Centre
@@ -6964,6 +7167,216 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   nothing: The request was cancelled when this thread was marked as spam.
   Send it again to run it." A thread that is not in the Aidan tab gets no
   Aidan record.
+- **SUP-AID-36** (18 Nov 2026, ticket IJhIIzTxOJyZVCzzYggZ) **Code Mode by
+  default.** When an answer or a write reads the console (SUP-AID-16), the
+  plan answers anything about tickets, projects, the pipeline, concepts,
+  leads, prospects or the Help Centre with **one Code Mode run**: an insight
+  from the library (`AIDAN_INSIGHTS`: pipeline_status, project_status,
+  concept_status, what_changed, leads_summary; release_status needs Staff
+  Kanban tools Aidan doesn't have) or a script the model writes against the
+  script tools' signatures, returning a compact JSON result. It runs in the
+  same sandbox as `run_script` (`functions/code-mode`, through
+  `consoleReader.script` / `.insight` in `functions/mcp-server.js`), with
+  Aidan's read-only stand-in session and only the tools that are both on
+  `CONSOLE_READ_TOOLS` and on Code Mode's own read-only allow-list; a tool
+  off that list is refused inside the run ("not available"). Every run is
+  audited in `scriptRuns` (`email: "aidan"`, kind `aidan_script` or
+  `aidan_insight`). One run per request, 10 seconds at most
+  (`CONSOLE_SCRIPT_TIMEOUT_MS`), never repeated. Single reads remain for what
+  Code Mode can't reach (project documents, Requirements, README, interface
+  contracts, concept critiques) and as the fallback when the run failed. The
+  result goes into `<console_data>` like any read (addresses removed, ids to
+  titles, the same budgets), and the ticket records it
+  (`aidan.console.codeMode`: kind, insight name, ok, tool calls, duration,
+  error). A reader without Code Mode plans single reads exactly as before.
+- **SUP-AID-37** **The self-check.** At the end of every run that passed
+  every gate (SUP-AID-1 to 4, 12), Aidan checks whether the request was fully
+  and well met (`assessRun` in `functions/aidan-core.js`), from what the run
+  recorded and, for an answer, the model's own self-check (`gap`, `gapKind`,
+  `improvement` in the answer's schema: data only, never sent). In order: a
+  run cut off after 15 minutes (time budget); a run that went to a person or
+  failed (no skill or no brand skill: skill gap; the PDF: run failed;
+  couldn't answer: missing data, in the model's words); a failed Code Mode
+  run (Code Mode limitation, or missing tool when a tool was not
+  available); a failed single read (missing tool); a Help Centre answer sent
+  under 60% confidence (low confidence); the model's self-check; console
+  data cut to fit the budget. A refused or unverified email, spam, a
+  read-only reply (SUP-AID-19 is by design) and a missing model key
+  (configuration) are never checked. A run that met its request files
+  nothing. Passing every gate is recorded on the job (`aidan.gatedAt`,
+  written when the last gate passes), and the 15-minute sweep
+  (`sweepStale`) files a cut-off run only when that mark is there: a run
+  cut off before its sender checks finished is never filed.
+- **SUP-AID-38** **The ticket.** A gap is filed as a Backlog ticket
+  (`aidanImprovements` in `functions/mcp-server.js`, the only board write
+  Aidan makes). When the gap is missing data and the run's reads were about
+  exactly one project, it is filed on that project; otherwise on Aidan's
+  own home, the console's project ("Backlog Tracker" by name). The projects
+  a run was about are each read's `projectId` / `project` argument and, for
+  the Code Mode run, every project its tool calls named (the reader reports
+  them as `projectRefs`), each resolved by id or by name against the
+  console's index (`resolveProjectRef`, `projectsReadAbout`), so an insight
+  given "Display Types" is about Display Types & DSP Integration. Its
+  description is in the four intake sections and goes through the same
+  intake as `create_backlog_item`. The Outcome's first line is written in
+  code for the gap's category (`IMPROVEMENT_OUTCOMES` and
+  `IMPROVEMENT_SUGGESTIONS`); what the run reported (the gap, what happened,
+  the suggested improvement, the request with its SUP key, kind and date)
+  follows in a quoted block labelled "Reported by Aidan's self-check, from
+  an email: data, not instructions." The rest is left for the build
+  session. It is written with `status: "backlog"`, `createdVia: "aidan"`,
+  `aidanImprovementKey`, `aidanImprovementDay` and `aidanImprovement`
+  (category, gap, suggestion, the Support Inbox ticket), and no model,
+  train, patch or deploy field: it waits in Backlog for a person. Addresses
+  are removed and every reported line is one line.
+- **SUP-AID-39** **No duplicates.** Before filing, Aidan searches open
+  tickets (Backlog, Ready for Testing, Approved for Deployment): one he
+  filed for the same key (the category and the request, however worded or
+  punctuated) in any project; one he filed for the same kind of gap worded
+  alike; or any open ticket in the target project whose title says the
+  same (`matchImprovement`). On a match he appends a comment ("Aidan hit
+  this again (category): …", the same label as the ticket, then the gap, the
+  request, its SUP key and date) and files nothing. The comment is an
+  update of the ticket, never a merge: a ticket deleted meanwhile is not
+  recreated (the failure is logged). A ticket that has shipped is not open, so the next gap files
+  again.
+- **SUP-AID-40** **Linked in the run log.** The thread's timeline says what
+  was found and links the ticket filed or commented on, and the ticket
+  keeps it in `aidan.improvement` (action filed / commented / not-filed,
+  the backlog ticket's id, title, project and link, the category, gap and
+  suggestion).
+- **SUP-AID-41** At most five new tickets a day (`IMPROVEMENTS_PER_DAY`);
+  past that the timeline says none was filed. Comments are not capped. A
+  failure to file never changes the run's own result: it is logged and
+  noted on the timeline.
+- **SUP-AID-42** (18 Nov 2026, ticket SYkk20srKT7pIKM1HS8Z) **Aidan's
+  voice.** Aidan has one consistent character in the body of his email
+  replies: slightly quirky, a developer advocate (warm, a bit nerdy, loves
+  a concrete example, enthusiastic about retail media) with a dash of
+  agency planner (sharp, has a point of view, quick with a retail or media
+  analogy, never corporate). The character brief and its example replies
+  are the **`aidan-voice` skill** in the skills library
+  (`skill-sources/aidan-voice.md` is the repo copy), so they are tuned from
+  Settings › Skills without a deploy. The first run that finds no skill
+  with that slug adds it as first written (insert-only, document id
+  `aidan-voice`, `createdVia: "aidan"`). The voice skill is never a skill a
+  document is written with: it is left out of the list a run chooses from
+  and is not "a skill named in the instruction".
+- **SUP-AID-43** **A layer, never a rewrite.** The voice changes delivery
+  only, never the facts. Whatever produced the reply (the Help Centre
+  engine, the console, a skill, the email) writes it first, substance
+  first, in short plain sentences with "personalisation" spelled with an S.
+  One further model call (`inVoice` in `functions/aidan.js`, the rules in
+  `functions/aidan-voice.js`; 20 seconds, never retried) is shown the
+  finished body and may return **one short sentence**, which is added as
+  the last paragraph, after the substance and any article links and before
+  the sign-off. So there is at most one quirk per email and it is never in
+  the middle of the facts. The sentence is dropped when it has a figure, a
+  link, an address or an emoji in it, is longer than 220 characters or two
+  sentences, mentions that Aidan is an AI, or touches a sensitive subject
+  (`cleanQuirk`). When the voice fails, times out or has nothing natural to
+  add, the reply is sent plain: a reply is never held up by its voice. It
+  applies to every recipient, internal or external. The fixed "I can only
+  read the console" reply (SUP-AID-19) is not passed to it. The ticket
+  records the outcome in `aidan.voice` (`{quirk: true}`, or `{quirk:
+  false, reason}`).
+- **SUP-AID-44** **Email body only.** The voice is given only the body of
+  the email. An attached document, one-pager, deck or other collateral
+  (SUP-AID-6, SUP-AID-17, SUP-AID-30 to 34) is never passed to it and
+  follows its skill and the PH brand voice with no quirk; the write prompt
+  says so too. On a write run only the cover note gets the aside.
+- **SUP-AID-45** **No quirk on anything sensitive.** A complaint, an
+  outage, a fault, or anything commercial such as pricing or a contract
+  gets a plain reply. It is decided from the words of the instruction, the
+  subject, the email's new text, the thread content the run read
+  (SUP-AID-26) and the reply itself (`sensitiveReason`),
+  before any model is asked, and the voice call is then not made. The
+  voice call can also judge an email sensitive itself, with the same
+  result. The word lists are broad on purpose: a false match costs one
+  aside.
+- **SUP-AID-46** **Asked whether he is an AI, he says yes.** Aidan does not
+  volunteer that he is an AI (the prompts say so, and an aside that
+  mentions it is dropped). When the instruction asks whether he is a bot,
+  an AI or a real person (`asksIfAi`), it is his own to answer and is not
+  put to the Help Centre. Only a question to Aidan about himself counts:
+  one whose subject is Aidan or his email ("are you a bot?", "are you an
+  AI assistant?", "are you ChatGPT?", "is this an automated reply?", "is
+  this reply written by AI?", "am I talking to a real person?", "did a bot
+  write this?"), or a sentence that is nothing but "bot or human?". A
+  platform question that only says "real", "automated", "automation",
+  "program" or "person", or weighs AI against people ("is this real data
+  or the demo?", "is that automated or does someone run it?", "should it
+  be one person or not?", "which is better, AI or human curation?", "do
+  you use AI or a human to approve content?", "is it AI or rules?", "is
+  this an AI feature?") is answered as usual, from the Help Centre, and
+  never gets the AI line; the reply must say yes plainly, in character
+  (for example "Guilty. I'm PH's AI assistant, which is why I reply this
+  fast and never need coffee."). This holds for every kind of reply,
+  including the cover note of a write or of collateral (the attached
+  document is untouched), and whether or not the voice call runs. In code
+  (`ensureAiDisclosure`, from `inVoice`): a reply that already says yes is
+  sent as written; one that dodges gets that line put first; a sentence
+  that denies it is taken out, the rest of the reply (the substance) is
+  kept and the line is put first. A denial is only Aidan's own, in the
+  first person ("I'm not a bot", "I am a real person") with the word
+  ending the clause, or a sentence that is nothing but the denial
+  ("Definitely not an AI."). Only the denying clause goes: "I am human,
+  but here is the answer." keeps "Here is the answer." A sentence that only
+  starts like one ("I am not an AI expert, but…", "I'm not a bot-builder",
+  "I am a person who loves retail media") or is about something else ("It
+  is not a bot feature, it is rules-based.", "No AI needed: open
+  Campaigns.") is substance, is never taken out, and is not a yes either,
+  so the line is put first; and when the model has nothing to say to
+  a short instruction (80 characters) that asks only that, the line is the
+  answer. That yes is the email's one touch of character, so no aside is
+  added. On an email that gets no quirk (SUP-AID-45) the yes is the plain
+  "Yes, I'm Personalisation Hub's AI assistant." instead. The ticket
+  records `aidan.voice.aiAsked: true`.
+- **SUP-AID-47** **Signature.** Every Aidan email is signed with the sender
+  name, then the company: "Aidan Hubbot, Personalisation Hub" by default
+  (SUP-AID-48; "Aidan, Personalisation Hub" before 19 Nov 2026). **Settings ›
+  Support inbox › Aidan** has an optional **signature line** (for example
+  "PH's digital assistant"): a switch, off by default, and the line's text
+  (one line, 80 characters). Switched on, the line is added under the
+  signature; switched off, the text is kept and not used. It is saved by an
+  admin with **Save Aidan** (`signatureLineOn`, `signatureLine` in
+  `supportSecrets/aidan`, returned by `/v1/status`), cannot be switched on
+  empty, and needs no deploy.
+- **SUP-AID-48** **Sender name** (19 Nov 2026, ticket QVpqiMuwipZ4mKSXHplM).
+  Every email Aidan sends sets its From display name from a first and a last
+  name in his configuration (`fromFirstName`, `fromLastName` in
+  `supportSecrets/aidan`, returned by `/v1/status`), "Aidan Hubbot" by
+  default (a play on "Hub Bot"), and the signature (SUP-AID-47) starts with
+  the same name, so the two always match. An admin edits both in
+  **Settings › Support inbox › Aidan** (Sender first name, Sender last name;
+  **Save Aidan**); members see them read-only, and the signature line's label
+  names the current sign-off. The configuration is read on every run, so the
+  next email uses a new name with no deploy. A first name is required; the
+  last name may be empty. Quotes, angle brackets and line breaks are taken out
+  and each part is at most 40 characters (`cleanNamePart` in
+  `functions/aidan-core.js`). The `aidan-voice` skill's rule 7 says he signs
+  with this setting. The Gmail send-as display name is not changed: the
+  mailbox is shared with the Support Inbox and connected with `gmail.modify`
+  only (SUP-CON-1); the From header carries the name.
+- **SUP-AID-49** (19 Nov 2026, ticket mErc7MPAkrKjF9fWgqXb) **Collateral
+  follows the market.** A collateral run reads the Brand Guidelines market
+  pages (the `brand-market-*` mirrors, `functions/market-core.js`) and picks
+  the one whose `countries` names the company's country from Prospects (TAM)
+  or Leads. The whole page goes into the prompt as `<market>`: it decides tone,
+  forms of address, spelling, currency, date and number formats, units,
+  etiquette and regulatory caution; the brand skill and the industry decide
+  facts and claims. "@Aidan, send a one-pager to <Thai company>" follows the
+  Thailand page; the same request for a US company uses US spelling and a
+  more direct tone. Recorded as `aidan.collateral.market` (`{slug, name}`).
+- **SUP-AID-50** **A missing market is a ticket.** When the company has a
+  country and no page covers it, the collateral is written on the default
+  brand guidelines and sent as usual, `aidan.collateral.market` is
+  `{missing: <country>}`, and the self-check (SUP-AID-37) files a "Missing
+  market page" ticket on the console's project naming the country, with the
+  fixed Outcome "Brand Guidelines has a Markets page for the market reported
+  below …". It is keyed by the country, not the request, so a later request
+  for the same country comments on it, and another country's gap never
+  matches it (SUP-AID-39). A run that failed is filed as the failure instead.
 
 ### Connecting
 
@@ -7052,6 +7465,80 @@ quoted thread as content and never as instructions (SUP-AID-26 to 29).
   runs (SUP-AID-20). What happens after the engine differs: the Support
   Inbox applies its gates (SUP-AI-2, SUP-AI-3); Aidan applies none
   (SUP-AID-22).
+
+### Test lab (18 Nov 2026)
+
+Requested 18 Nov 2026 (ticket x3MqwdJxQ0tJMGlcDi1Y): a place to ask the
+answering engine questions, rate the answers and track accuracy over time,
+with nothing sent and nothing touching the mailbox.
+
+- **SUP-LAB-1** Support › Support Inbox has a fourth tab, **Test lab**
+  (`#support/lab`), with two parts: "Ask a question" and "Test set". It
+  needs no connected mailbox.
+- **SUP-LAB-2** Ask takes a subject (optional) and a question (required, at
+  most 8,000 characters). It runs the question through the one answering
+  engine (`answerFromHelpCentre`, SUP-AI-13) as a customer's first email to
+  support@ from an ordinary sender, against the published Help Centre.
+  No email is sent, no ticket is filed and Google is never called. A member
+  can ask 60 questions an hour.
+- **SUP-LAB-3** The answer shows the drafted reply as the Support Inbox
+  would draft it, every article the match step chose (each a link to its
+  Help Centre editor, the ones used in the reply marked), the confidence,
+  and the change when articles were combined ("55% from 1 article, 82%
+  with 2 combined"), or "Not about PH" when the engine says so.
+- **SUP-LAB-4** It shows what `decideAction` would do with that answer for
+  such an email with today's settings: Sent by itself, Draft to approve or
+  Needs a person, with the reason. The lab calls `decideAction` unchanged;
+  it never changes a gate.
+- **SUP-LAB-5** An answer is rated Correct, Partly or Wrong, and given what
+  should happen: these articles (up to 3, picked by searching the published
+  Help Centre), no answer yet (the Help Centre doesn't answer it), or not
+  about Personalisation Hub. The choice starts from what the engine did. A
+  note says what was missing. **Save to test set** keeps it as a case.
+- **SUP-LAB-6** A case passes when the engine makes the right "about
+  Personalisation Hub" call, chooses at least one expected article, does not
+  claim the Help Centre answers a question with no expected article, and
+  writes no reply to mail that isn't about the platform: the same rule
+  (`judgeCase`) as `scripts/support-eval.js`'s fixtures.
+- **SUP-LAB-7** **Run all cases** runs every case except those needing
+  review through the engine on the server, a few at a time, each call
+  inside the console address's one-minute limit. Each case is run once per
+  run even with two tabs stepping it; a case left half-run by a closed tab
+  is run again after 2.5 minutes, and Run all cases continues a run still in
+  progress (one left for an hour is stopped). At most 300 cases a run and 10
+  runs an hour per member.
+- **SUP-LAB-8** A run records who started it, when, the cases passed and
+  failed, the accuracy and each case's result: the judge's wording and
+  article ids, never a question or a draft. Each case keeps its last
+  result.
+- **SUP-LAB-9** The tab shows "Running: n of m cases done" while a run is
+  in progress, the accuracy of the last 12 finished runs as bars with
+  passed and failed, and the newest run's failing cases with the expected
+  and the matched article titles. Every case is listed as Not run, Passed,
+  Failed or Needs review, with its rating and where it came from.
+- **SUP-LAB-10** A case opens at `#support/lab/case/<id>`, where an editor
+  changes its question, rating, what should happen and note, or deletes it.
+  Changing the question or what should happen clears its last result.
+- **SUP-LAB-11** **Add to test lab** on a Support Inbox ticket, or an email
+  in the Aidan tab, copies the last customer email before the final answer
+  and that answer ("The answer that was sent") as one case per ticket
+  (`t-<ticket id>`), and opens it. When the answer recorded its articles
+  (an automatic reply, Aidan's Help Centre answer) they are the expected
+  articles; otherwise the case reads Needs review and is left out of runs
+  until someone says what should happen.
+- **SUP-LAB-12** Members read cases and runs; only the supportMail function
+  writes them. A view-only member sees the set, the runs and each case,
+  with no Ask, Save, Delete or Run. Without `ANTHROPIC_API_KEY`, Ask and
+  Run all cases say no drafting model is configured.
+- **SUP-LAB-13** `scripts/support-eval.js` also runs the lab's cases, read
+  straight from Firestore when it has the service account (`LAB_CASES=0`
+  skips them). Its log shows only each case's id, source and article
+  titles, never a question, subject or draft; a failing lab case is
+  reported and does not fail the check. The function logs ids and counts
+  only.
+- **SUP-LAB-14** Every control is a button, a link or a form field acting
+  on click (iPad taps), works at 390, 820 and 1280 px with no sideways
+  scroll, and a field being typed in is not redrawn by incoming data.
 
 ### High-value senders
 
@@ -7149,6 +7636,20 @@ true`, `confidence` and `articles`. `supportSecrets/aidan`: Aidan's `allowedSend
 collateral `example: true`, `format`, `industry` (SUP-AID-34) (members read;
 only the function writes). Aidan's sent collateral reply has `collateral:
 true` and both files in `attachments`.
+`supportEvalCases/{id}` (the Test lab, SUP-LAB): `subject`, `text`,
+`expect` (`articles` | `none` | `unrelated`; empty while it needs review),
+`articleIds` (up to 3), `rating` (`correct` | `partly` | `wrong` | empty),
+`note`, `needsReview`, `source` (`lab` | `support` | `aidan`), `ticketId`,
+`ticketKey`, `finalAnswer`, `answeredBy` (`ai` | `aidan` | `person`, on a
+case from a ticket), `answered {articleIds, confidence}` (what the engine
+answered when rated), `lastResult {runId, at, passed, problems[], chosen[],
+cited[], confidence, relevant, answerable, error?}`, `createdBy`,
+`createdAt`, `updatedBy`, `updatedAt`. `supportEvalRuns/{id}`: `status`
+(`running` | `done` | `stopped`), `startedBy`, `startedAt`, `updatedAt`,
+`finishedAt`, `total`, `caseIds`, `pending`, `claims [{id, at}]`, `results
+{<caseId>: {passed, problems[], chosen[], cited[], confidence, relevant,
+answerable, error?}}`, `passed`, `failed`, `done`, `accuracy` (0 to 1).
+Both member-read, function-written.
 
 ### Known gaps
 
@@ -7192,17 +7693,20 @@ Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
 address, `#board`, so a reload on the board stays on the board; Agent Board in
 the sidebar and the Dashboard's Agent board tile both go there.
 
-First on the page, above the tiles, is **Needs attention** (see "Needs
-attention" above): it is shown here and on no other page.
+Last on the page, below the tiles, is **Needs attention** (see "Needs
+attention" above): it is shown here and on no other page. It sits in normal
+flow after the tile sections, so it never covers or holds back the tiles
+(Dashboard v2, GUI9xPe3CJY3LyMws88m; it used to be first on the page).
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local
 day before it (the Support tile is the exception: it shows the inbox as it
 stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
-is a tooltip shown on hover or keyboard focus, with no explanatory copy under
-the tiles. Clicking a tile opens its section.
+is its **summary panel** (below), and what the tile means is in its info
+tooltip, with no explanatory copy under the tiles. A tile never opens its
+section (see "Dashboard v2").
 
-| Section | Tile | Headline | Breakdown (tooltip) | Opens |
+| Section | Tile | Headline | Breakdown (summary panel) | Open section |
 |---|---|---|---|---|
 | Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
 | Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
@@ -7224,10 +7728,20 @@ Rules:
 - **Remaining effort** is a task's estimate minus time logged, for outstanding
   tasks of that release; epics and done tasks are left out (the same as the
   release report).
-- **Funnel steps from `funnelDaily`**: unique visitors are GA4's `users` when
-  the ingest sends that field, else its `visits`; "industry page" is the
-  visitors on rows with an industry; "walkthrough or calculator" is demo
-  requests plus calculator or model downloads; "lead" is leads created
+- **Funnel steps from `funnelDaily`**: unique visitors are the day's
+  `ga4-total` users (GA4's own unique count); "industry page" is the day's
+  `ga4-industry-total` users (GA4's de-duplicated count over every
+  `/industries/*` page, so a person who views two industries counts once), and
+  never more than unique visitors. The summary panel's industry list is
+  `ga4-industry-users` (users per industry, no country split); one industry
+  with several pages may still count a person twice there. Industry page
+  views are the `pageViews` on `ga4-industry` rows. Older ingest rows without
+  those two sources fall back to the `ga4-industry` users, capped at unique
+  visitors. "walkthrough or
+  calculator" is product tour starts, calculator uses, demo requests and
+  downloads on `ga4-events` rows. Rows written before the ingest (no
+  `source`) keep the older reading: users else visits, rows with an industry,
+  demo requests plus downloads; "lead" is leads created
   yesterday that came from the website (source "Website…", a source page or
   website activity).
 - **Who sees which tile**: the Dashboard is open to every member and is not a
@@ -7236,14 +7750,62 @@ Rules:
   `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
   left with no tiles.
 - **Reads**: the Agent board tile uses the tickets the console already holds
-  and redraws with the board. The other four read their collections once when
+  and redraws with the board. Conversion funnel reads `funnelDaily` for the
+  last 7 local days (one query a day). The other four read their collections once when
   the page opens, again on Refresh, or when reopened after five minutes. The
   page keeps no listeners.
 - **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
   tiles already on the page rather than replacing them, so a tile reached with
-  Tab keeps its keyboard focus and its open tooltip when tickets change (the
+  Tab keeps its keyboard focus and its pinned summary panel when tickets change (the
   automation writes cards every few minutes), and only the figures that moved
   change. The tiles are rebuilt only when the set the viewer may see changes.
+
+### Dashboard v2: responsive grid, pinned summary panels (19 Nov 2026)
+
+Ticket GUI9xPe3CJY3LyMws88m. Layout, interaction and look; what each tile
+shows is unchanged here.
+
+- **Responsive grid.** Internal, External and Support each have a slim
+  section heading, and the tiles of all three flow through one grid in order
+  (Agent board, Staff Kanban, Leads, Conversion funnel, Support), so a row is
+  always full while tiles remain and a section may wrap across rows. Each
+  section's heading sits in the label slot above its first tile (every tile
+  has the slot, so a row's tiles line up; on a phone only the headings show).
+  Tiles are four across from 1440 px, three from 1024 px (a laptop at about
+  1180 px, an iPad in landscape), two from 641 px (an iPad in portrait) and
+  one on a phone. So on a wide desktop Internal and External share the first
+  row and Support starts the second; on a laptop the first row is Agent board,
+  Staff Kanban and Leads, and the second Conversion funnel and Support.
+- **Compact tiles.** An icon, the title and a status dot; the metric label;
+  a large headline figure with a trend arrow and the change against the day
+  before (the full sentence for screen readers and on hover); a 7-day
+  sparkline of the headline figure, the last 7 local days ending yesterday,
+  where it has a daily history (Agent board, Leads, Conversion funnel; Staff
+  Kanban's remaining effort and Support's inbox figures have no history, so
+  they have none). Support's "Replied or resolved today" has a trend against
+  yesterday, counted by the same rule; Staff Kanban keeps no history of
+  remaining effort, so its tile has no trend and its info tooltip says so. An info icon on each tile holds its explanation as a
+  tooltip (hover or focus on a PC, a tap on an iPad).
+- **Status colour** (`tileStatus` in `dashboard-core.js`): green when nothing
+  needs attention; Agent board amber when a ticket is blocked, red at three
+  or more; Staff Kanban amber when an outstanding task has no estimate or no
+  release is selected; Conversion funnel amber when yesterday has no website
+  data yet; Support amber when anything awaits a reply, red when the oldest
+  has waited a day or more; Leads always green; red on any tile that couldn't
+  load.
+- **No click-through; click or tap pins the summary panel.** Clicking (PC) or
+  tapping (iPad) a tile opens its summary panel inline, full width, directly
+  under that tile's row (after the last tile on that row, whichever section
+  it belongs to), and keeps it open until it is closed (×,
+  Escape, or the same tile again) or another tile is chosen. One panel is
+  open at a time; the tile shows it is pinned (`aria-expanded`). The panel
+  has an **Open section** link to the tile's section; the tile itself never
+  navigates (people use the sidebar for that). Hover does not preview the
+  panel.
+- **Redraws keep the panel.** A backlogItems snapshot updates the figures
+  in place: a focused tile keeps its focus, and a pinned panel stays open and
+  shows the new figures. Only the panel moves when the row breaks change (a
+  resize or rotation), never a tile.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
@@ -7253,5 +7815,20 @@ the console on `#board` by default; a case that wants the landing page passes
 `hash: ""`.
 
 Known gaps: trends compare with the day before only; Staff Kanban's remaining
-effort has no history, so it shows no trend. Unique visitors are GA4 sessions
-until the ingest writes a `users` figure.
+effort has no history, so it shows no trend. Google Ads figures have no
+country, and calculator uses stay 0 until the website sends a `calculator_use`
+GA4 event (its calculator pushes `ph_ind_calculator` to the dataLayer only).
+
+## Documentation (19 Nov 2026)
+
+Support › Documentation is the internal documentation library that replaces
+Confluence (see `README.md` → "Documentation").
+
+- Members read; editors write; viewers get no write controls. Never public.
+- Sections nest to any depth; a section shows its folders, then its documents.
+- Search covers every document's title, summary, keywords and body text, and
+  shows where each hit sits.
+- A document uses the Help Centre's editor and properties; website-only
+  fields (SEO & agents, Hide from website, live link) are not offered, and no
+  product/program is required.
+- Outdated documents are kept in Archive, never deleted.

@@ -72,7 +72,7 @@ try {
       await until(() => page.locator("#support-page .support-row").count(), "the ticket list", 15000);
       // The menu: Support Inbox directly above Help Centre, marked as the current page.
       const nav = await page.evaluate(() => [...document.querySelectorAll('[data-nav-group="publish"] .nav-drawer-item')].map((b) => [b.id, b.getAttribute("aria-current")]));
-      assert.deepStrictEqual(nav, [["support-inbox-btn", "page"], ["faq-articles-btn", null]]);
+      assert.deepStrictEqual(nav, [["support-inbox-btn", "page"], ["faq-articles-btn", null], ["documentation-btn", null]]);
       // Queues and counts; the default queue shows who needs a person, high value first.
       const counts = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".support-queue")].map((b) => [b.dataset.supportQueue, b.querySelector(".support-queue-count").textContent])));
       assert.deepStrictEqual(counts, { "needs-person": "2", "ai-drafts": "1", "to-sort": "1", pending: "1", resolved: "2", spam: "1", all: "7" });
@@ -125,8 +125,8 @@ try {
       await page.keyboard.press("Enter");
       await until(() => o.supportCalls.some((c) => c.path === "tickets/t1/status"), "the spam call");
       assert.strictEqual(o.supportCalls.find((c) => c.path === "tickets/t1/status").body.status, "spam");
-      // The Stats and Try an email tabs are gone: three inbox tabs, and an old link to either opens the inbox.
-      assert.deepStrictEqual(await page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan"]);
+      // The Stats and Try an email tabs are gone: three inbox tabs and the Test lab, and an old link to either opens the inbox.
+      assert.deepStrictEqual(await page.$$eval("#support-page .support-tab", (els) => els.map((b) => b.textContent)), ["Support Inbox", "Hello", "Aidan", "Test lab"]);
       for (const old of ["#support/stats", "#support/try"]) {
         await page.evaluate((hash) => { location.hash = hash; }, old);
         await until(() => page.locator("#support-page .support-row").count(), `the inbox at ${old}`);
@@ -382,7 +382,7 @@ try {
   });
   // Aidan (EeAljfWIiY8SOPsKXlXD): the allowed senders are set here by an admin, shown masked, never in full.
   const aidanStatus = (aidan) => ({ ...connected, aidan });
-  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
+  for (const width of [390, 1280]) await run(`Aidan's settings as an admin @${width}px`, { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 2, requireSenderAuth: true, fromName: "Aidan Hubbot", fromFirstName: "Aidan", fromLastName: "Hubbot", sendersMasked: ["o***@example.com", "o***@example.com"] }) }), width, hash: "#settings/support" }, async (page, o) => {
     await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
     const text = await page.textContent("#support-aidan-settings");
     assert.ok(text.includes("2 allowed senders: o***@example.com, o***@example.com"), text);
@@ -393,13 +393,23 @@ try {
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the switch changed: Save Aidan enables");
     await page.check("#support-aidan-on");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "switched back: disabled again");
+    // The signature line (SYkk20srKT7pIKM1HS8Z): off by default, and a change to it enables Save Aidan.
+    assert.deepStrictEqual([await page.isChecked("#support-aidan-sigline-on"), await page.inputValue("#support-aidan-sigline")], [false, ""], "off by default");
+    await page.check("#support-aidan-sigline-on");
+    assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), false, "the signature switch changed: Save Aidan enables");
+    await page.fill("#support-aidan-sigline", "PH's digital assistant");
+    // The sender name (QVpqiMuwipZ4mKSXHplM): first and last name, editable here.
+    assert.deepStrictEqual([await page.inputValue("#support-aidan-first"), await page.inputValue("#support-aidan-last")], ["Aidan", "Hubbot"]);
+    assert.ok((await page.textContent("#support-aidan-name-hint")).includes("Emails from Aidan show as Aidan Hubbot"));
+    assert.ok((await page.textContent("#support-aidan-settings")).includes('under "Aidan Hubbot, Personalisation Hub"'), "the signature line names the sender name");
+    await page.fill("#support-aidan-last", "Botsworth");
     await page.fill("#support-aidan-senders", "owner@example.com, owner.alias@example.com");
     await page.click('[data-ss-act="save-aidan"]');
     await until(() => o.supportCalls.some((c) => c.path === "aidan"), "the Aidan call");
     await until(async () => (await page.textContent("#support-aidan-status")) === "Saved.", "the Aidan save to finish");
     assert.strictEqual(await page.isDisabled('[data-ss-act="save-aidan"]'), true, "saved: Save Aidan is disabled again");
     const saved = o.supportCalls.find((c) => c.path === "aidan").body;
-    assert.deepStrictEqual([saved.enabled, saved.allowedSenders], [true, "owner@example.com, owner.alias@example.com"]);
+    assert.deepStrictEqual([saved.enabled, saved.allowedSenders, saved.signatureLineOn, saved.signatureLine, saved.fromFirstName, saved.fromLastName], [true, "owner@example.com, owner.alias@example.com", true, "PH's digital assistant", "Aidan", "Botsworth"]);
     const a = await audit(page, "#support-settings");
     assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
     assert.deepStrictEqual(a.small, [], "touch targets under 44px");
@@ -410,6 +420,16 @@ try {
     assert.ok((await page.textContent("#support-aidan-settings")).includes("2 allowed senders"));
     assert.strictEqual(await page.locator("#support-aidan-senders, [data-ss-act=save-aidan]").count(), 0);
     assert.ok(await page.locator("#support-aidan-on").isDisabled());
+    assert.ok(await page.locator("#support-aidan-sigline-on").isDisabled() && await page.locator("#support-aidan-sigline").isDisabled(), "an editor sees the signature line and can't change it");
+    assert.ok(await page.locator("#support-aidan-first").isDisabled() && await page.locator("#support-aidan-last").isDisabled(), "an editor sees the sender name, read-only");
+  });
+  await run("Aidan's settings: a saved signature line is shown switched on", { seed: seedFor("admin", { supportStatus: aidanStatus({ enabled: true, switchedOn: true, senderCount: 1, requireSenderAuth: true, fromName: "Aidan", signatureLineOn: true, signatureLine: "PH's digital assistant", sendersMasked: ["o***@example.com"] }) }), width: 390, hash: "#settings/support" }, async (page) => {
+    await until(() => page.locator("#support-aidan-settings").count(), "the Aidan block", 15000);
+    assert.deepStrictEqual([await page.isChecked("#support-aidan-sigline-on"), await page.inputValue("#support-aidan-sigline")], [true, "PH's digital assistant"]);
+    const a = await audit(page, "#support-settings");
+    assert.ok(a.overflow <= 0, `no sideways scroll (${a.overflow}px)`);
+    assert.deepStrictEqual(a.small, [], "touch targets under 44px");
+    await shot(page, "aidan-settings-signature-390");
   });
   // Selecting several threads (b3NmU4mdmiGOZgHLURgK): a checkbox on every row and one above the list, in all
   // three inboxes; the selection bar's actions go to the server in one call, with one result message.
@@ -583,5 +603,41 @@ try {
     await until(() => page.locator('[data-support-ticket="h1"]').count(), "the Hello emails", 15000);
     assert.strictEqual(await page.locator("[data-support-pick], #support-pick-all, #support-bulk").count(), 0);
   });
+  // The Test lab (x3MqwdJxQ0tJMGlcDi1Y): an answer, the rating controls, a run and a failing case fit
+  // at every width, light and dark, with 44px touch targets and no sideways scroll.
+  const labDocs = {
+    ...docs,
+    faqArticles: { ...docs.faqArticles, a3: { status: "published", title: "Pair a screen with a store", keywords: ["pair"] } },
+    supportEvalCases: {
+      c1: { subject: "A rather long subject line for a question about adding a display to a store, to see it wrap", text: "How?", expect: "articles", articleIds: ["a3"], rating: "wrong", source: "support", ticketKey: "SUP-1", createdAt: T0, updatedAt: T0, lastResult: { runId: "r1", passed: false, problems: ["no right article chosen"], chosen: ["a1"] } },
+      c2: { text: "Waiting for review", needsReview: true, expect: "", source: "aidan", ticketKey: "SUP-9", createdAt: T0, updatedAt: T0 },
+    },
+    supportEvalRuns: { r1: { status: "done", startedAt: t(T0), finishedAt: t(T0 + 9000), total: 1, done: 1, passed: 0, failed: 1, accuracy: 0, results: { c1: { passed: false, problems: ["no right article chosen"], chosen: ["a1"] } } } },
+  };
+  const labAnswer = { ok: true, relevant: true, answerable: true, confidence: 0.62, confidenceSteps: [{ articles: 1, confidence: 0.5 }, { articles: 2, confidence: 0.62 }],
+    matched: [{ id: "a1", title: "Add a display to a store" }], articles: [{ id: "a1", title: "Add a display to a store" }], draft: "Hi there,\n\nThanks for your email.\n\nOpen Displays.",
+    decision: { action: "review", label: "Draft to approve", reason: "Sending by itself is switched off." } };
+  for (const theme of ["light", "dark"]) for (const width of [390, 820, 1280]) {
+    await run(`Test lab ${theme} @${width}px`, { seed: seedFor("editor", { docs: labDocs, supportAnswers: { "lab/ask": labAnswer } }), width, height: 900, hash: "#support/lab" }, async (page) => {
+      if (theme === "dark") await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
+      await until(() => page.locator(".support-lab-run").count(), "the run", 15000);
+      await page.fill("#lab-text", "How do I add a display?");
+      await page.click('[data-lab-act="ask"]');
+      await until(() => page.locator("#lab-result").count(), "the answer");
+      await page.click('[data-lab-rate="partly"]');
+      await page.fill("#lab-rate-pick", "pair");
+      await until(() => page.locator('[data-lab-pick="a3"]').count(), "the article search");
+      await page.click('[data-lab-pick="a3"]');
+      let a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on the Test lab (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], "touch targets under 44px on the Test lab");
+      if (theme === "light") await shot(page, `lab-${width}`);
+      await page.click('[data-lab-case="c2"]');
+      await until(() => page.locator("#lab-case-text").count(), "the case page");
+      a = await audit(page, "#support-page");
+      assert.ok(a.overflow <= 0, `no sideways scroll on a case (${a.overflow}px)`);
+      assert.deepStrictEqual(a.small, [], "touch targets under 44px on a case");
+    });
+  }
 } finally { await h.close(); }
 process.exit(failed ? 1 : 0);

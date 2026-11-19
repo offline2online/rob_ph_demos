@@ -94,6 +94,9 @@ async function reset() {
     // Aidan (functions/aidan.js): its configuration and one kept reference.
     await setDoc(doc(db, "supportSecrets/aidan"), { allowedSenders: ["owner@example.com"], enabled: true });
     await setDoc(doc(db, "skillReferences/r1"), { skillId: "s1", subject: "Onboarding notes", text: "Notes", files: [] });
+    // The Support Inbox's Test lab (functions/support-lab.js): one case and one run.
+    await setDoc(doc(db, "supportEvalCases/c1"), { subject: "Displays", text: "How do I add a display?", expect: "articles", articleIds: ["a1"] });
+    await setDoc(doc(db, "supportEvalRuns/r1"), { status: "done", total: 1, passed: 1, failed: 0, accuracy: 1, results: {} });
     // A project doc as it really looks after a few weeks: every optional
     // field present. Rules evaluation has a hard 1,000-expression budget,
     // and the projects update rule sits closest to it for a non-admin.
@@ -609,6 +612,11 @@ async function main() {
   await check("A member may read Aidan's reference material", "allow", () => getDoc(doc(as(MEMBER), "skillReferences/r1")));
   await check("A stranger cannot read Aidan's reference material", "deny", () => getDoc(doc(as(STRANGER), "skillReferences/r1")));
   await check("An editor cannot write reference material from a client", "deny", () => setDoc(doc(as(MEMBER), "skillReferences/r2"), { skillId: "s1", text: "x" }));
+  // The Test lab: member-read, server-written (a case may hold a customer's email).
+  await check("A member may read the Test lab's cases and runs", "allow", () => Promise.all([getDoc(doc(as(MEMBER), "supportEvalCases/c1")), getDocs(collection(as(MEMBER), "supportEvalRuns"))]));
+  await check("A stranger cannot read a Test lab case", "deny", () => getDoc(doc(as(STRANGER), "supportEvalCases/c1")));
+  await check("An editor cannot write a Test lab case from a client", "deny", () => setDoc(doc(as(MEMBER), "supportEvalCases/c2"), { text: "x", expect: "none" }));
+  await check("A team admin cannot write a Test lab run from a client", "deny", () => updateDoc(doc(as(TEAM_ADMIN), "supportEvalRuns/r1"), { accuracy: 1 }));
   await check("The automation user cannot list the roster either", "deny", () =>
     getDocs(collection(as(BOT), "consoleUsers")));
 
@@ -628,6 +636,23 @@ async function main() {
     getDoc(doc(as(null), "faqCategories/c1")));
   await check("A viewer can list faqArticles (FAQ Management)", "allow", () =>
     getDocs(collection(as(VIEWER), "faqArticles")));
+
+  // Support › Documentation (docCategories / docArticles): members only, never public.
+  const LIB_DOC = { categoryId: "sec-a", title: "EKS deployment", slug: "eks-deployment", bodyMd: "<p>x</p>", status: "published", order: 0, docType: "how-to", source: { system: "confluence", pageId: "1" } };
+  await check("A member can create a documentation section", "allow", () =>
+    setDoc(doc(as(MEMBER), "docCategories/sec-a"), { name: "Architecture", icon: "folder", order: 0, parentId: null }));
+  await check("A member can create a document", "allow", () =>
+    setDoc(doc(as(MEMBER), "docArticles/cf-1"), LIB_DOC));
+  await check("A document needs a status", "deny", () =>
+    setDoc(doc(as(MEMBER), "docArticles/cf-2"), { ...LIB_DOC, status: "live" }));
+  await check("A viewer can read documents", "allow", () =>
+    getDocs(collection(as(VIEWER), "docArticles")));
+  await check("A viewer CANNOT write a document", "deny", () =>
+    setDoc(doc(as(VIEWER), "docArticles/cf-3"), LIB_DOC));
+  await check("Anonymous CANNOT GET a document", "deny", () =>
+    getDoc(doc(as(null), "docArticles/cf-1")));
+  await check("Anonymous CANNOT list documentation sections", "deny", () =>
+    getDocs(collection(as(null), "docCategories")));
   await check("A member can GET a draft article", "allow", () =>
     getDoc(doc(as(MEMBER), "faqArticles/aDraft")));
 

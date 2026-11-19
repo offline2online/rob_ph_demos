@@ -1307,7 +1307,9 @@ async function sweepModelSuggestions() {
   const open = await runQuery({
     from: [{ collectionId: "backlogItems" }],
     where: { fieldFilter: { field: { fieldPath: "status" }, op: "EQUAL", value: { stringValue: "backlog" } } },
-    select: selectFields(["title", "desc", "category", "effort", "model", "modelAuto", "modelSuggested", "status"]),
+    // patchReady, lastFire, buildAttemptId and buildSession: a ticket whose
+    // build is in flight keeps the model it was fired with (buildInFlight).
+    select: selectFields(["title", "desc", "category", "effort", "model", "modelAuto", "modelSuggested", "status", "patchReady", "lastFire", "buildAttemptId", "buildSession"]),
   });
   const stale = open.filter((i) => !i.modelSuggested || (Number(i.modelSuggested.version) || 0) < modelSuggest.MODEL_SUGGEST_VERSION);
   if (!stale.length) return 0;

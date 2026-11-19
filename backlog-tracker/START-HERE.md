@@ -59,6 +59,10 @@ Every copy, by the exact name the console lists it under:
 - 5 — Console security and performance review (3/3): not changed here, the 100-user envelope, how to verify · `backlog-tracker/SECURITY-PERFORMANCE.md`
 - 6 — Brand Guidelines (Promote): look, voice, messaging and AWS co-branding · `backlog-tracker/promote/brand-guidelines.md`
 - 6 — Brand Guidelines requirements (Promote) · `backlog-tracker/promote/brand-requirements.md`
+- 6 — Brand market: Singapore · `backlog-tracker/promote/markets/singapore.md`
+- 6 — Brand market: Thailand · `backlog-tracker/promote/markets/thailand.md`
+- 6 — Brand market: United States · `backlog-tracker/promote/markets/united-states.md`
+- 6 — Brand partner: miPharmacy · `backlog-tracker/promote/partners/mipharmacy.md`
 
 Where to begin, by role:
 
@@ -67,7 +71,7 @@ Where to begin, by role:
 - **Connecting an agent over MCP**: "2 — Console MCP guide (1/8)" to connect,
   then "(2/8)" to "(6/8)" for what the agent can and can't do.
 - **Writing or editing help-centre articles**: "3 — Help Centre (faq/)",
-  then "4 — Documentation standard (1/2)" before writing a word. Classify
+  then "4 — Documentation standard (1/2)" before writing. Classify
   every article's `docType` as that standard says.
 - **Changing sign-in, rules or the MCP server**: "5 — Console security and
   performance review (1/3)", "(2/3)" and "(3/3)", then "2 — Console MCP guide (7/8)"
@@ -141,13 +145,9 @@ project back into a concept (see "2 — Console MCP guide (2/8)").
 
 ### When a copy refreshes
 
-A copy is rewritten after a Backlog Tracker train merges (step 12), with the
-rewrite read back byte for byte; the result is `projects/<id>.docsSync`, and
-`error` is null when it worked. A change that reaches main another way (a
-person's direct merge or a hotfix) refreshes the copies at the next train
-merge. Once the ticket "Sync every project's docs and mirrors whenever main
-moves" is live, any merge to main refreshes them. Until then, check
-`docsSync.mergeCommit` before trusting a copy over the file.
+A copy is rewritten after a Backlog Tracker train merges (step 12) and
+whenever main moves (`syncDocsWhenMainMoves()`), read back byte for byte;
+the result is `projects/<id>.docsSync`, and `error` is null when it worked.
 
 ## The Routine flows
 

@@ -307,8 +307,14 @@ safe and moving:
   Opus", cleared with ×). Sessions record `builtByModel` / `reviewedByModel`
   (pipeline fields), shown on the card's "Advanced · Opus" chip and in Edit
   item; `run-backlog-automation.js` refuses an Advanced patch whose
-  `builtByModel` is not an Opus. See `REQUIREMENTS.md` → "Per-ticket model
-  requirement".
+  `builtByModel` is not an Opus. Since 18 Nov 2026 it judges the patch by
+  the requirement its build was fired with (`lastFire.model`) when the model
+  is the classifier's, and the classifier no longer changes `model` while a
+  build is in flight or scores the Test steps and Dependencies sections. An
+  admin can register an Advanced (Opus) Routine with the MCP tool
+  `set_advanced_routine_binding` (server-only `modelRoutineBindings/advanced`);
+  Advanced tickets bound for the shared Routine then fire on it. See
+  `REQUIREMENTS.md` → "Per-ticket model requirement".
 - **Model, skills and tools chosen per ticket** (16 Nov 2026, "Flow 8/9") —
   `public/js/model-suggest.js` (generated CommonJS copy
   `functions/model-suggest.js`, `scripts/gen-model-suggest-cjs.sh`) suggests
@@ -2591,6 +2597,19 @@ skills. Misses are tracked with
 `report_skill_miss`. Attach the real CP Group and Avolta Hudson documents as
 `references/` files on the two request skills.
 
+### Aidan voice skill (18 Nov 2026)
+
+`skill-sources/aidan-voice.md` is the repo copy of the `aidan-voice` skill:
+the character brief, the fixed rules and the example replies Aidan's email
+voice is written from ("Support Inbox" → "replies in his own voice"). The
+same text is `DEFAULT_SKILL_MD` in `functions/aidan-voice.js`
+(`test/aidan-voice.test.js` keeps the two equal), and Aidan's first run that
+finds no skill with that slug adds it to the live library. After that the
+library copy is the one read: tune it on the Skills page or with
+`update_skill`, and report a reply whose tone was wrong with
+`report_skill_miss`. The rules marked fixed in it are enforced in code, so
+editing them out of the skill does not switch them off.
+
 ### Docs stay in step with code (20 Oct 2026)
 
 `skill-sources/` holds the repo copies of the skill text for this rule:
@@ -2794,6 +2813,20 @@ every destination already existed.
   documents with `list_project_documents` / `get_project_document` on this
   project. Gated by the `promote` permission section. More pages go in
   `PROMOTE_PAGES` beneath Brand Guidelines.
+  **Partners** (19 Nov 2026): one co-branding page per partner under Brand
+  Guidelines (`#promote/brand-guidelines/partners/<slug>`), each a file in
+  `promote/partners/` declared in `board-docs.json` as mirror
+  `brand-partner-<slug>`; the page lists whatever partner mirrors exist, so
+  a new partner needs no code change. First page: miPharmacy. The official
+  PH logo files for its lockups are in `public/img/brand/`.
+  **Markets** (19 Nov 2026): one page per market under Brand Guidelines
+  (`#promote/brand-guidelines/markets/<slug>`): communication style, cultural
+  sensitivities, local conventions, business etiquette and regulatory notes.
+  Each is a file in `promote/markets/` declared in `board-docs.json` as mirror
+  `brand-market-<slug>`, listed by whatever mirrors exist, so a new market
+  needs no code change. First pages: Thailand, Singapore, United States.
+  Aidan's collateral picks one by the company's country
+  (`functions/market-core.js`) and files a ticket for a missing market.
 - **Promote › Leads** (`#promote/leads`, 5 Nov 2026; `public/js/leads-page.js`,
   rules in `leads-core.js`, copied to `functions/leads-core.js` by
   `node test/leads-core-copy.mjs --write`): one card per company on a Kanban,
@@ -3185,7 +3218,8 @@ management" scenario in `test/ui/console-click.test.mjs`.
 - `functions/help-search.js` — the public, read-only help search for AI agents (`helpSearch` function, `/help-api/**`: search, article, a stateless public read-only remote MCP server that proxies the site's eight WebMCP tools live from `/wp-json/ph-agent/v1/tools`, cached 5 min with `X-Cache`; presents as "Personalisation Hub" with agent `instructions`, serves the site's `llms.txt`/`llms-full.txt` as MCP resources, and an empty `prompts/list`). Published and in-range only, never drafts or `pendingRevision`; rate limited per address and endpoint (429 + `X-RateLimit-*`), cached (search and article, `X-Cache`), monitored with abuse/error alerts to `NOTIFY_WEBHOOK_URL` (test with the `helpApiTestAlert` function), logs queries to `helpSearchLog`. See REQUIREMENTS.md → "Public help search for AI agents".
 - `functions/faq-feed.js` — the published-content record builders shared with `scripts/faq-export.js`, the live feed `GET /help-api/data/{index,releases}.json` / `articles/<id>.json` (served by `help-search.js`), and the debounced Support Centre refresh ping (`pingSupportCentreOnArticleChange` / `…OnCategoryChange` in `index.js`). See REQUIREMENTS.md → "Live data feed and refresh ping".
 
-- **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection (Google Ads + GA4; the ingest is not built yet, so they show 0 until it is); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). See REQUIREMENTS.md → Promote section: Conversion Funnel.
+- **Promote › Conversion Funnel** (`#promote/conversion-funnel`, 9 Nov 2026; `public/js/funnel-page.js` and `funnel-core.js`): nine-stage funnel from ad impression to deployed opportunity, with combinable filters and compare-to-previous-period. Stages 1-5 read the server-written `funnelDaily` collection, filled by the daily ingest (`functions/funnel-ingest.js`, below); stages 6-9 come from the ACE opportunities joined to Leads and Prospects (TAM). The page and the Dashboard tile show when the data was last updated and flag a source that failed (`consoleConfig/funnelIngest`). See REQUIREMENTS.md → Promote section: Conversion Funnel.
+- `functions/funnel-ingest.js` — the Conversion Funnel's daily ingest (HTTP function `funnelIngest`, 19 Nov 2026): GA4 (unique users, sessions, `/industries/*` page views, unique industry-page users per day and per industry, product tour starts, calculator uses, demo requests, downloads, lead forms), Google Ads impressions and clicks (through the Ads account linked to GA4), the console's leads (test and archived ones left out) and ACE opportunities, written per calendar day in the configured zone (default Australia/Sydney, set to match the GA4 property; never UTC) with industry and country. No new schedule or secret: the hourly `aceToGa4` call runs it when due (the first run backfills 90 days, then every 6 hours or more it refreshes the last 3 days; a 150 s budget per hourly call, with any sources left over run on the next call), or POST `funnelIngest` with `X-Board-Key` and `{"mode":"backfill"}`. GA4 is read with the function's own service account, which needs Viewer on GA4 property 473743482 (and the Analytics Data API enabled); `consoleConfig/funnelIngest` may override `ga4PropertyId` / `timeZone` and holds each source's status. Test: `node test/funnel-ingest.test.js`.
 
 ## Support Inbox (14 Nov 2026)
 
@@ -3199,14 +3233,18 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-core.js` | The rules, pure: parsing a Gmail message, spotting machine-sent mail, matching a high-value sender, ranking Help Centre articles, `decideAction` (send / wait for approval / needs a person), writing a reply as an email |
 | `functions/answer-core.js` | **The one answering engine**, pure: the published Help Centre as a catalogue (`publishedArticles`), match → draft → confidence (`matchAndDraft`), the answer made safe with its articles (`answerFromHelpCentre`), whether the Help Centre answers it (`usableAnswer`), the cited titles under a reply (`withArticleTitles`). Called by triage and by Aidan's answer runs (`test/answer-core.test.js`) |
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
-| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan (`cleanConsolePlan`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`) |
-| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`) and the read-only reply (`readOnlyReply`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan with its one Code Mode run (`cleanConsolePlan`, `AIDAN_INSIGHTS`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`); the self-check (`assessRun`, `improvementKey`, `matchImprovement`, `improvementDesc`, the project a run was about by id or name: `resolveProjectRef`) |
+| `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`, one Code Mode run first) and the read-only reply (`readOnlyReply`); the self-check that files or comments on a Backlog ticket (`reflect`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-voice.js` | Aidan's voice, pure: the `aidan-voice` skill as first written (`DEFAULT_SKILL_MD`, the same text as `skill-sources/aidan-voice.md`), no quirk on anything sensitive (`sensitiveReason`), "are you a bot?" (`asksIfAi`, `ensureAiDisclosure`), the one aside made safe and added after the reply (`cleanQuirk`, `withQuirk`) (`test/aidan-voice.test.js`) |
 | `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
+| `functions/market-core.js` | Brand Guidelines › Markets for agents, pure: the `brand-market-*` mirrors as market pages (`marketsFrom`), the page for a company's country (`marketFor`), the `<market>` prompt block and its system line (`marketBlock`, `marketSystem`) (`test/market-core.test.js`) |
 | `functions/collateral-pdf.js` | Prints that page to PDF on the server: headless Chromium (puppeteer-core + @sparticuz/chromium, as Kanban capture), JavaScript off, nothing fetched but the brand font, 60 seconds at most; on the limit Chromium is killed before the run hears of it, so no browser is left running (`test/collateral-pdf.test.js`; `test/collateral-render.test.mjs` prints the same page in Chromium) |
-| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones (`test/aidan-console.test.js`) |
+| `functions/mcp-server.js` → `consoleReader` | The MCP server's read tools, as Aidan reads the console: only those named, only `board.read` ones, and his one Code Mode run over them (`script`, `insight`); `aidanImprovements`, his self-improvement tickets (`test/aidan-console.test.js`) |
 | `public/js/support-core.js` | The page's rules, pure: the three inboxes (which are plain), the Support Inbox's queues, a plain inbox's emails, unread and spam, Aidan's state on a thread, routes split by inbox, what a new email needs |
 | `public/js/support-page.js`, `public/css/support.css` | The page (the Support Inbox tab with its queues and ticket view, the Hello and Aidan tabs as plain email lists and threads, the new email form) and Settings › Support inbox |
+| `functions/support-lab.js`, `functions/support-lab-core.js` | The Test lab's routes (`/supportMail/v1/lab/**`: Ask, cases, Add to test lab, runs and their steps) and its pure rules: a case checked (`cleanCaseInput`), what passes (`judgeCase`, shared with `scripts/support-eval.js`), claiming the next cases of a run (`claimNext`), a ticket's question and final answer (`caseFromTicket`) (`test/support-lab.test.js`) |
+| `public/js/support-lab.js`, `public/js/support-lab-core.js` | The Test lab tab (`#support/lab`, `#support/lab/case/<id>`) and its pure rules: a case's state, accuracy over time, failing cases, what is proposed after Ask |
 | `.github/workflows/support-mail-sync.yml` | Calls the function's `/v1/cron` every five minutes with `BOARD_API_KEY` (on its own address, not through Hosting, which cuts a call off at 60 seconds; a sync started from the page drafts two tickets at most for the same reason) |
 
 **Three inboxes, one mailbox (17 Nov 2026).** Mail arrives through
@@ -3363,7 +3401,7 @@ thread. A run:
   one that also says "keep" or "add"): writes the documentation with that
   skill from the email, its attachments (text, PDF and images are read; up
   to 8 files, 20 MB) and the skill's kept reference material, and replies to
-  everyone on the email from the mailbox as "Aidan", with the document
+  everyone on the email from the mailbox as "Aidan Hubbot" (the sender name), with the document
   attached as a Markdown file: **To** the sender's verified From address
   plus everyone else in the original To, **Cc** the original Cc. A Reply-To
   header is not verified, so it is ignored. Our own addresses (the mailbox,
@@ -3380,9 +3418,11 @@ thread. A run:
   Backlog Tracker?". The model plans the reads (up to two rounds of six,
   25 seconds each) from an index of the projects and concepts, and they run
   through the MCP server's own read tools (`consoleReader` in
-  `functions/mcp-server.js`; the thirteen in `CONSOLE_READ_TOOLS`: projects,
+  `functions/mcp-server.js`; the sixteen in `CONSOLE_READ_TOOLS`: projects,
   their Requirements, README, documents and interface contracts, tickets,
-  pipeline health, concepts and their critiques, Help Centre articles). Only
+  pipeline health, concepts and their critiques, Help Centre articles,
+  Leads and Prospects (TAM)), with **one Code Mode run by default** (next
+  bullet). Only
   `board.read` tools can run, so nothing an email asks for can write.
   Addresses are taken out of what the model sees. The answer is written from
   that and the email: a short one in the body; a long one (over roughly a
@@ -3403,6 +3443,38 @@ thread. A run:
   are read one project at a time, and the model sees at most 40,000
   characters of one read and 120,000 of console data in all
   (REQUIREMENTS SUP-AID-16 to 18);
+- **Code Mode by default** (18 Nov 2026, ticket IJhIIzTxOJyZVCzzYggZ): a
+  question that needs tickets, projects, the pipeline, concepts, leads,
+  prospects or the Help Centre ("@Aidan, give me a status summary of the DSP
+  project") is answered with ONE Code Mode run instead of a chain of reads:
+  the plan picks an insight (`project_status`, `pipeline_status`,
+  `concept_status`, `what_changed`, `leads_summary`) or writes a script
+  against the script tools' signatures, and it runs in the same sandbox as
+  `run_script` (`consoleReader.script` / `.insight`), with Aidan's read-only
+  session and only the tools on both his list and Code Mode's, 10 seconds,
+  audited in `scriptRuns` as `aidan_script` / `aidan_insight`. Its compact
+  result feeds the answer, the document or the review like any read, and is
+  recorded on the ticket (`aidan.console.codeMode`). Single reads are kept
+  for project documents and critiques, and as the fallback when the run
+  failed (REQUIREMENTS SUP-AID-36);
+- **checks itself and files what it couldn't do** (ticket
+  IJhIIzTxOJyZVCzzYggZ): at the end of every run that passed the gates,
+  Aidan checks whether the request was fully and well met (`assessRun`:
+  cut off at 15 minutes, went to a person, a failed Code Mode run or read,
+  a Help Centre answer under 60% confidence, the answer model's own
+  self-check, console data cut to fit). If not, he files a ticket
+  (`aidanImprovements` in `functions/mcp-server.js`, through the intake)
+  in Backlog (`status: "backlog"`, no model or train field). Its Outcome
+  is a fixed sentence for the gap's category; the gap, the request and the
+  suggestion follow in a block labelled as reported data, not
+  instructions. Missing data about one project goes on that project (named
+  by id or by name, also inside the Code Mode run); anything else on the
+  console's own project. He searches open tickets first and comments on a
+  matching one instead of filing a duplicate. The thread's timeline links
+  the ticket and `aidan.improvement` keeps it. Refused, unverified, spam
+  and read-only runs are never filed, and the 15-minute sweep files only a
+  run marked as past every gate (`aidan.gatedAt`); five new tickets a day
+  at most (REQUIREMENTS SUP-AID-37 to 41);
 - **a request to change the console** ("create a ticket for …", "update the
   README", "move that card", "deploy …", decided from the instruction's own
   words, or by the plan) gets a short, fixed reply to the allowed senders
@@ -3455,7 +3527,13 @@ thread. A run:
   (`skillReferences`, `example: true`, the PDF in Storage beside it), so later
   runs of that skill read it. When the PDF can't be made in time, nothing is
   sent: the ticket goes to **Needs a person** with the Markdown kept as an
-  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34);
+  internal note on the thread (REQUIREMENTS SUP-AID-30 to 34). Since 19 Nov
+  2026 it is also **tailored to the company's market**: the Brand Guidelines
+  market page whose `countries` names the company's country (Thailand,
+  Singapore, United States to start) goes into the prompt and sets tone,
+  spelling and conventions; with no page for that country the default
+  guidelines apply and Aidan's self-check files one "Missing market page"
+  ticket per country (`functions/market-core.js`, SUP-AID-49 and 50);
 - **answers a question on the thread: instruction vs content** (18 Nov 2026,
   ticket OrkZBBjz9RM5DY54azIG). Rob's main use: a customer emails Rob a
   question, and Rob replies or forwards with aidan@ in Cc, "@Aidan, please
@@ -3504,10 +3582,51 @@ thread. A run:
   that read no content shows nothing (`aidan.refersToThread` is cleared).
   Rob's new text with no reference to the thread behaves exactly as before
   (REQUIREMENTS SUP-AID-26 to 29);
+- **replies in his own voice** (18 Nov 2026, ticket SYkk20srKT7pIKM1HS8Z):
+  slightly quirky, a developer advocate with a dash of agency planner. The
+  character brief and its examples are the **`aidan-voice` skill** in the
+  skills library (repo copy `skill-sources/aidan-voice.md`; the first run
+  that finds none adds it), so the tone is tuned from Settings › Skills
+  without a deploy. The voice is a layer, not a rewrite: the reply is
+  written first, substance first, by whatever produced the facts, and one
+  more short model call (`inVoice`, 20 seconds, never retried) may add
+  **one sentence after it**. So there is at most one quirk per email, after
+  the substance, and the facts are never touched; a sentence with a figure,
+  a link or an address in it is dropped. **Email body only**: an attached
+  document or collateral never passes through it and stays on brand voice.
+  **No quirk at all** on a complaint, an outage, a fault or anything
+  commercial such as pricing or contracts (decided from the words of the
+  email, the thread it was asked to answer and the reply, before the model
+  is asked, `sensitiveReason`), and none when the voice can't be
+  reached: the reply goes plain. He does not volunteer that he is an AI;
+  **asked whether he is a bot or an AI he says yes**, in character, and a
+  reply that dodges or denies it is corrected in code
+  (`ensureAiDisclosure`: a dodge gets the yes put first, a sentence where he
+  denies it himself has only that clause taken out and the rest kept; only
+  a question about Aidan or his email counts ("are you an AI assistant?",
+  "is this an automated reply?"), so a platform question that merely says
+  "real" or "automated" or weighs AI against people ("AI or human
+  curation?") is not "are you a bot?", and a sentence like "it is not a
+  bot feature" or "I am not an AI expert, but…" is never taken out), in every kind of reply including a
+  write's cover note, and plainly, with no joke, on a complaint, an outage
+  or anything commercial. The same for every recipient. He signs **"Aidan Hubbot,
+  Personalisation Hub"** (his sender name, below); Settings › Support inbox ›
+  Aidan has an optional signature line (for example "PH's digital
+  assistant"), off by default.
+  The ticket records what the voice did (`aidan.voice`)
+  (REQUIREMENTS SUP-AID-42 to 47);
+- **sends and signs as the sender name set in the console** (19 Nov 2026,
+  ticket QVpqiMuwipZ4mKSXHplM): every email's From display name and the name
+  in its signature are the first and last name in Settings › Support inbox ›
+  Aidan, "Aidan Hubbot" by default (a play on "Hub Bot"). An admin changes
+  them there and clicks Save Aidan; the next email uses the new name, with no
+  deploy, since the configuration is read on every run. The Gmail send-as
+  name is left alone: the mailbox is shared with the Support Inbox
+  (REQUIREMENTS SUP-AID-48);
 
 Runs happen in the scheduled sync, not in "Sync now": one per sync, before
 triage, and only in the sync's first two minutes, with no model retries
-(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute), so a whole run fits inside the
+(skill choice 1 minute, the Help Centre engine's three calls 40 seconds each, console plans 25 seconds each, document 4 minutes, an answer 2 minutes, printing collateral to PDF 1 minute, the voice 20 seconds), so a whole run fits inside the
 function's 540 seconds (the function has 1 GiB for the PDF printer); a sync that ran Aidan leaves triage to the next
 sync. A run still "working" 15 minutes after it started was cut off: the
 next sync moves it to **Needs a person** with that reason. Queueing is
@@ -3518,7 +3637,7 @@ not queued. **The allowed senders are configuration, never the repository**:
 an admin sets them in Settings › Support inbox › Aidan; they are stored in
 `supportSecrets/aidan` (closed to every client by `firestore.rules`) and are
 only ever shown masked. With none set, Aidan acts on nothing. Requirements:
-SUP-AID-1 to 35.
+SUP-AID-1 to 47.
 
 **How a ticket flows.** Every Gmail thread in the mailbox is one
 `supportTickets/{threadId}` document (key `SUP-n`) with its emails, internal
@@ -3559,7 +3678,9 @@ the engine, as a customer's email to support@ and as the same email tagged
 `EVAL_PATHS=support` or `aidan` runs one. `test/answer-core.test.js` runs
 the same fixtures through both paths with a stand-in model, on every
 train. Run it after changing the prompts or the
-Help Centre, and add a case whenever a real email is matched badly.
+Help Centre, and add a case whenever a real email is matched badly: the
+Test lab's "Add to test lab" does that from the ticket, and the script runs
+the lab's cases too (below).
 
 Then one rule (`decideAction`) decides, for the Support Inbox only (Aidan's
 answer runs use the engine above and none of these gates):
@@ -3601,6 +3722,54 @@ server (`composeProblem` in both `support-core.js` files); a member can send
 `supportStats`, the `/v1/preview` route and their styles. `#support/stats`
 and `#support/try` open the inbox. The support figures are the three on the
 Dashboard's Support tile (below).
+
+**Test lab (18 Nov 2026).** The fourth tab, **Test lab** (`#support/lab`),
+asks the answering engine questions and tracks how often it answers right.
+No email is sent and no ticket is filed; the mailbox needn't be connected.
+
+- **Ask a question** (editors): a subject (optional) and the question.
+  **Ask** posts to `/supportMail/v1/lab/ask`, which runs the question through
+  `answerFromHelpCentre` (`functions/answer-core.js`) exactly as a
+  customer's first email to support@ from an ordinary sender, and answers
+  with the draft, every article the match step chose (each a link to its
+  Help Centre editor, `#faq-article/<id>`), the confidence and its steps
+  ("55% from 1 article, 82% with 2 combined"), and what `decideAction`
+  would do with today's settings: Sent by itself, Draft to approve or Needs
+  a person, with the reason. 60 questions an hour per member.
+- **Rate and keep**: Correct, Partly or Wrong; what should happen (these
+  articles, picked by searching the published Help Centre; no answer yet;
+  not about Personalisation Hub), proposed from what the engine did; and a
+  note. **Save to test set** stores it in `supportEvalCases`.
+- **Run all cases** starts a run (`/v1/lab/runs`) and steps through it from
+  the tab (`/v1/lab/runs/{id}/step`), three cases a step, side by side, so
+  each call ends inside the console address's one-minute limit. Each step
+  claims its cases in a transaction, so two tabs never run one twice; a
+  claim nobody finished in 2.5 minutes is run again, and Run all cases
+  continues a run a closed tab left (a run left for an hour is stopped).
+  `supportEvalRuns` records who, when, passed, failed, accuracy and each
+  case's result (ids and the judge's wording, never a question or a draft).
+  The tab shows the progress, the accuracy of the last 12 runs as bars,
+  the newest run's failing cases with the expected and matched article
+  titles, and every case as Not run, Passed, Failed or Needs review.
+- **Add to test lab** on a Support Inbox ticket, or an email in the Aidan
+  tab, copies the last customer email before the final answer, and that
+  answer, as case `t-<ticket id>` (once per ticket), and opens it. When
+  the answer recorded its articles (an automatic reply, Aidan's Help Centre
+  answer) they become the expected articles; otherwise the case reads
+  Needs review and is left out of runs until someone says what should
+  happen and saves.
+- A case passes by the same rule as the fixtures (`judgeCase`): the right
+  "about Personalisation Hub" call, one of the expected articles among
+  those chosen, no claim that the Help Centre answers a question it
+  doesn't, no reply to mail that isn't about the platform.
+- `scripts/support-eval.js` also runs the lab's cases, read straight from
+  Firestore when the workflow has the service account (`LAB_CASES=0` skips
+  them), printing only each case's id, source and article titles. A failing
+  lab case is reported, not a failed check.
+- Members read cases and runs (a case from a ticket holds a customer's
+  email); only the function writes them (`firestore.rules`). A view-only
+  member sees the set, the runs and each case, with no Ask, Save, Delete or
+  Run. Requirements: SUP-LAB-1 to 14.
 
 ### Connecting the mailbox (once, by an admin)
 
@@ -3674,6 +3843,7 @@ holds it to them:
 - **Tests**: `node test/support-core.test.js`, `node test/support-mail.test.js`
   (connection, sync, every gate before an automatic send, replies, spam,
   escalation; Firestore, Google and the model stubbed),
+  `node test/support-lab.test.js` (the Test lab's routes and runs),
   `node test/support-page-core.test.mjs`, `node test/ui/support-inbox.test.mjs`
   (the page in Chromium at 390, 820 and 1280 px, light and dark) and
   `node test/ui/support-touch.test.mjs` (the iPad, above).
@@ -3687,10 +3857,55 @@ for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
 Leads and Conversion funnel (website visitors). Support: exactly three
 figures for the support@ inbox as it stands now (never hello@ or aidan@
 mail): open and awaiting a reply, the age of the oldest unanswered email, and
-tickets replied to or resolved today. Each tile's breakdown is a hover/focus tooltip and a click
-opens the section. Above the tiles sits **Needs attention**, which is on the
+tickets replied to or resolved today. Dashboard v2 (19 Nov 2026): the tiles of all
+three sections flow through one grid, each section's heading above its first
+tile, four across on a wide desktop, three on a laptop,
+two on an iPad in portrait and one on a phone; each tile is a headline figure,
+a 7-day sparkline, a trend arrow against the day before and a green / amber /
+red status dot, with its explanation in an info tooltip. A tile never
+navigates: a click or tap pins its summary panel open, full width under its
+row, until it is closed or another tile is chosen; the panel's "Open section"
+goes to the section. Below the tiles sits **Needs attention**, which is on the
 Dashboard only (not the Agent Board or any other page). The Agent Board's own address is now `#board`. Rules in
 `public/js/dashboard-core.js`, page in `public/js/dashboard-page.js`; full
 spec in `REQUIREMENTS.md` → "Dashboard — the console's landing page". Tests:
 `node test/dashboard.test.mjs` and the Dashboard scenario in
 `test/ui/console-click.test.mjs`.
+
+## Documentation — the internal docs library (19 Nov 2026)
+
+**Support › Documentation** (`#documentation`, `#doc/<id>`) is the team's
+internal product and technical documentation. It replaced the Confluence space
+(`offline2online.atlassian.net/wiki`, spaces OPTUS/"Personalisation Hub", PH
+and PROC), which is no longer needed: every page was carried over on
+19 Nov 2026, either into a current section or into **Archive**.
+
+- **Data**: Firestore `docCategories` (sections and folders, nested to any
+  depth through `parentId`) and `docArticles` (the documents). **Members only**
+  (`firestore.rules`): nothing here is public, exported or on the website,
+  unlike `faqCategories`/`faqArticles`. Embedded images and attached files are
+  in Storage under `docAssets/<docId>/` (`storage.rules`).
+- **Editing**: a document opens in the Help Centre's own article editor
+  (`openFaqArticleEditorPage(id, { library: "docs" })` in `app.js`), so the
+  formatting (headings, lists, code blocks, callouts, tables, images, video)
+  and the properties (category, document type, linked project, program,
+  releases, needs review, slug, keywords, status) are the same. The
+  website-only fields (SEO & agents, Hide from website, the live link) carry
+  `data-faq-only` in `index.html` and are hidden for a document. Clicking a
+  title opens it read-only (View live); the pencil opens it for editing.
+- **Page**: `public/js/documentation-page.js` (tree, list, search across every
+  document's text, status filter, drag to re-order, new section/folder/
+  document); pure helpers in `documentation-core.js`
+  (`test/documentation-page.test.mjs`). UI test: `test/ui/documentation.test.mjs`.
+- **Permissions**: its own section, `documentation`, in the Support group; it
+  follows a role's Help Centre grant until the role sets its own.
+- **Migrated documents** carry `source` (`system: "confluence"`, the page id,
+  space, original path, last-updated date, `archived`). Documents id is
+  `cf-<Confluence page id>`, sections `sec-<path slug>`, so links between
+  documents (`#doc/cf-…`) still work. Current documents last updated in
+  Confluence before 2025 are flagged **Needs review**.
+- **Sections**: Product & Roadmap, Architecture & Solution Design, Feature
+  Specifications, Installation & Deployment, Infrastructure & Operations,
+  Engineering Process, Archive (AEM Screens, Optus delivery, Kafka/ELK,
+  2018–2022 release plans and QA scripts, the old Knowledgebase and
+  Offline2Online wikis).

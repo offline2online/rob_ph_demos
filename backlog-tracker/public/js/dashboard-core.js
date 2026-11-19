@@ -77,6 +77,86 @@ export function fmtDayLabel(ms) {
   return new Date(ms).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 }
 
+// ── 7-day series, sparkline and status (Dashboard v2, GUI9xPe3CJY3LyMws88m) ──
+export const SERIES_DAYS = 7;
+// The last `days` local days ending yesterday, oldest first: [{ from, to, day }].
+export function lastDays(days = SERIES_DAYS, now = Date.now()) {
+  const out = [];
+  for (let i = days; i >= 1; i--) out.push(localDayRange(i, now));
+  return out;
+}
+// How many of `stamps` (ms) fall on each of those days, oldest first.
+export function dailyCounts(stamps, days = SERIES_DAYS, now = Date.now()) {
+  const range = lastDays(days, now);
+  const counts = range.map(() => 0);
+  for (const ms of stamps || []) {
+    const i = range.findIndex((r) => inRange(ms, r));
+    if (i >= 0) counts[i]++;
+  }
+  return counts;
+}
+// SVG polyline points for a sparkline of `values` in a w x h box, with `pad`
+// kept clear so the stroke is never clipped. A flat or empty series is drawn
+// along the middle; fewer than two values draw nothing ("").
+export function sparklinePoints(values, w = 96, h = 28, pad = 2) {
+  const v = (values || []).map((x) => (Number.isFinite(+x) ? +x : 0));
+  if (v.length < 2) return "";
+  const min = Math.min(...v), max = Math.max(...v);
+  const span = max - min;
+  const step = (w - pad * 2) / (v.length - 1);
+  const y = (x) => (span ? h - pad - ((x - min) / span) * (h - pad * 2) : h / 2);
+  return v.map((x, i) => `${Math.round((pad + i * step) * 10) / 10},${Math.round(y(x) * 10) / 10}`).join(" ");
+}
+// The short form of a trend for a compact tile: "+2", "−3", "0".
+export function trendShort(tr) {
+  if (!tr || tr.dir === "flat") return "0";
+  return `${tr.delta > 0 ? "+" : "−"}${fmtCount(Math.abs(tr.delta))}`;
+}
+// The index of the last tile on tile `i`'s row, in a grid of `cols` columns
+// holding `n` tiles that flow left to right with no gaps. Worked out from the
+// count, not measured, because the pinned summary panel (a full-width grid
+// item) itself breaks the row it sits in, so measuring with it in place reads
+// a stale row after the grid widens (an iPad rotation, a window resize).
+export function rowEnd(i, cols, n) {
+  const c = Math.max(1, Math.floor(Number(cols)) || 1);
+  if (!(n > 0)) return -1;
+  const at = Math.min(Math.max(0, Math.floor(i) || 0), n - 1);
+  return Math.min((Math.floor(at / c) + 1) * c, n) - 1;
+}
+// A tile's status colour: "ok" (green), "warn" (amber) or "alert" (red), with
+// the reason in words for the tile's accessible name. Only a tile with
+// something to act on is amber or red.
+//   agent    amber when a ticket is blocked; red at three or more
+//   kanban   amber when an outstanding task has no estimate; amber with no release
+//   leads    always green (a quiet day is not a fault)
+//   funnel   amber when yesterday has no website data (the daily ingest has not run)
+//   support  amber when anything awaits a reply; red when the oldest has waited a day
+export const SUPPORT_RED_MS = 24 * 3600000;
+export function tileStatus(key, k) {
+  const ok = { level: "ok", reason: "Nothing needs attention" };
+  if (!k) return ok;
+  if (key === "agent") {
+    const blocked = (k.projects || []).reduce((n, p) => n + (p.blocked || 0), 0);
+    if (!blocked) return ok;
+    return { level: blocked >= 3 ? "alert" : "warn", reason: `${blocked} ticket${blocked === 1 ? "" : "s"} blocked` };
+  }
+  if (key === "kanban") {
+    if (!k.release) return { level: "warn", reason: "No release selected" };
+    return k.unestimated ? { level: "warn", reason: `${k.unestimated} task${k.unestimated === 1 ? "" : "s"} unestimated` } : ok;
+  }
+  if (key === "funnel") {
+    // A source failed on the last ingest (consoleConfig/funnelIngest): the figures are stale.
+    if (k.dataNotUpdated) return { level: "alert", reason: "Data not updated" };
+    return k.hasData ? ok : { level: "warn", reason: "No website data for yesterday yet" };
+  }
+  if (key === "support") {
+    if (!k.open) return ok;
+    const late = k.oldestMs != null && k.oldestMs >= SUPPORT_RED_MS;
+    return { level: late ? "alert" : "warn", reason: `${k.open} awaiting a reply${late ? ", one for over a day" : ""}` };
+  }
+  return ok;
+}
+
 // ── Agent board ──────────────────────────────────────────────────────────
 const LIVE = "published-live";
 // When the card shipped: the train's merge, else when it entered Merged to Main.
@@ -116,7 +196,8 @@ export function agentBoardKpi(items, projects, now = Date.now()) {
   const projectsOut = [...rows.values()]
     .filter((r) => r.deployed || r.leftBacklog || r.building || r.testing || r.blocked)
     .sort((a, b) => b.deployed - a.deployed || a.name.localeCompare(b.name));
-  return { value: deployed, prev, trend: trend(deployed, prev), projects: projectsOut };
+  const series = dailyCounts((items || []).map(deployedMs), SERIES_DAYS, now);
+  return { value: deployed, prev, trend: trend(deployed, prev), projects: projectsOut, series };
 }
 
 // ── Staff Kanban ─────────────────────────────────────────────────────────
@@ -165,7 +246,8 @@ export function leadsKpi(leads, now = Date.now()) {
   const byTime = (a, b) => toMillis(a.createdAt) - toMillis(b.createdAt);
   const companies = fresh.filter((l) => l.leadType !== "operator").sort(byTime).map((l) => leadName(l));
   const operators = fresh.filter((l) => l.leadType === "operator").sort(byTime).map((l) => leadName(l));
-  return { value: fresh.length, prev, trend: trend(fresh.length, prev), companies, operators };
+  const series = dailyCounts((leads || []).filter(realLead).map((l) => toMillis(l.createdAt)), SERIES_DAYS, now);
+  return { value: fresh.length, prev, trend: trend(fresh.length, prev), companies, operators, series };
 }
 
 // ── Conversion funnel ────────────────────────────────────────────────────
@@ -175,16 +257,43 @@ export const isWebsiteLead = (l) => !!l && (/website/i.test(String(l.source || "
 // Visitors for a set of funnelDaily rows: GA4's user count when the ingest
 // sends one (`users`), else its visits.
 const visitorsOf = (rows) => rows.reduce((n, r) => n + (typeof r.users === "number" ? num(r.users) : num(r.visits)), 0);
-// rows: funnelDaily documents ({date "YYYY-MM-DD", industry, visits, users?,
-// demoRequests, downloads}); leads as for leadsKpi.
+const sourceIs = (src) => (r) => String(r.source || "") === src;
+// rows: funnelDaily documents for the day. The ingest (functions/funnel-ingest.js)
+// tags each row with a `source`:
+//   ga4-total     the day's unique visitors (GA4 users, one row: users are not
+//                 additive across rows, so only this row is counted for them)
+//   ga4-industry  real page views of /industries/* pages (by industry and country)
+//   ga4-industry-total  one row: GA4 users over every /industries/* page, de-duplicated
+//                 (the "Industry page" step; capped at unique visitors)
+//   ga4-industry-users  users per industry, no country (the industry list)
+//   ga4-events    walkthroughs (product tour starts), calculatorUses, demoRequests,
+//                 downloads, leadForms
+// Rows with no `source` (written before the ingest existed) keep the older
+// reading: visitors are every row's users (else visits), industry visitors the
+// rows carrying an industry. leads as for leadsKpi.
 export function funnelKpi(rows, leads, now = Date.now()) {
   const y = localDayRange(1, now), p = localDayRange(2, now);
   const of = (day) => (rows || []).filter((r) => r && String(r.date || "").slice(0, 10) === day);
   const cur = of(y.day), before = of(p.day);
-  const visitors = visitorsOf(cur);
-  const industryRows = cur.filter((r) => String(r.industry || "").trim());
-  const industryPage = visitorsOf(industryRows);
-  const engaged = cur.reduce((n, r) => n + num(r.demoRequests) + num(r.downloads), 0);
+  const tagged = (list) => list.some((r) => r.source);
+  const visitorsFor = (list) => {
+    if (!tagged(list)) return visitorsOf(list);
+    const totals = list.filter(sourceIs("ga4-total"));
+    return totals.length ? visitorsOf(totals) : visitorsOf(list.filter(sourceIs("ga4-site")));
+  };
+  const visitors = visitorsFor(cur);
+  // The industry list: users per industry (ga4-industry-users), else, on rows
+  // written before that source existed, the ga4-industry rows.
+  const pick = (...srcs) => { for (const src of srcs) { const l = cur.filter(sourceIs(src)); if (l.length) return l; } return []; };
+  const industryRows = tagged(cur) ? pick("ga4-industry-users", "ga4-industry") : cur.filter((r) => String(r.industry || "").trim());
+  // The "Industry page" step: GA4's de-duplicated users over every /industries/*
+  // page (ga4-industry-total), never a sum of per-industry users, and never more
+  // than the unique visitors it is a step of.
+  const industryTotal = tagged(cur) ? cur.filter(sourceIs("ga4-industry-total")) : [];
+  const industryRaw = industryTotal.length ? visitorsOf(industryTotal) : visitorsOf(industryRows);
+  const industryPage = tagged(cur) && visitors > 0 ? Math.min(industryRaw, visitors) : industryRaw;
+  const engagedRows = tagged(cur) ? cur.filter(sourceIs("ga4-events")) : cur;
+  const engaged = engagedRows.reduce((n, r) => n + num(r.walkthroughs) + num(r.calculatorUses) + num(r.demoRequests) + num(r.downloads), 0);
   const leadCount = (leads || []).filter((l) => realLead(l) && isWebsiteLead(l) && inRange(toMillis(l.createdAt), y)).length;
   const counts = [visitors, industryPage, engaged, leadCount];
   const labels = ["Unique visitors", "Industry page", "Walkthrough or calculator", "Lead"];
@@ -195,12 +304,14 @@ export function funnelKpi(rows, leads, now = Date.now()) {
   });
   const byIndustry = new Map();
   for (const r of industryRows) {
-    const k = String(r.industry).trim();
+    const k = String(r.industry || "").trim();
+    if (!k) continue;
     byIndustry.set(k, (byIndustry.get(k) || 0) + visitorsOf([r]));
   }
   const industries = [...byIndustry.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  const prev = visitorsOf(before);
-  return { value: visitors, prev, trend: trend(visitors, prev), steps, industries, hasData: cur.length > 0 };
+  const prev = visitorsFor(before);
+  const series = lastDays(SERIES_DAYS, now).map((r) => visitorsFor(of(r.day)));
+  return { value: visitors, prev, trend: trend(visitors, prev), steps, industries, hasData: cur.length > 0, series };
 }
 
 // ── Support ──────────────────────────────────────────────────────────────
@@ -218,7 +329,10 @@ export function supportKpi(tickets, now = Date.now()) {
     .map((t) => ({ id: t.id, customer: t.customerName || t.customerEmail || "Unknown sender", subject: t.subject || "", waitedMs: Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now)) }))
     .sort((a, b) => b.waitedMs - a.waitedMs);
   // A ticket filed before lastReplyAt was recorded has only its first reply's time.
-  const repliedToday = (t) => inRange(t.lastReplyAt || t.firstResponseAt, today);
-  const doneToday = list.filter((t) => t.status !== "spam" && ((t.status === "resolved" && inRange(t.resolvedAt, today)) || repliedToday(t))).length;
-  return { open: waiting.length, oldestMs: waiting.length ? waiting[0].waitedMs : null, doneToday, waiting };
+  const doneOn = (day) => list.filter((t) => t.status !== "spam" && ((t.status === "resolved" && inRange(t.resolvedAt, day)) || inRange(t.lastReplyAt || t.firstResponseAt, day))).length;
+  const doneToday = doneOn(today);
+  // Yesterday by the same rule (a ticket replied to yesterday and again today
+  // counts today only: its latest reply is the one recorded).
+  const doneYesterday = doneOn(localDayRange(1, now));
+  return { open: waiting.length, oldestMs: waiting.length ? waiting[0].waitedMs : null, doneToday, doneYesterday, doneTrend: trend(doneToday, doneYesterday), waiting };
 }

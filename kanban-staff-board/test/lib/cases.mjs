@@ -147,15 +147,19 @@ export function defineNewCases(E) {
 
   T("TC-33", "optional fields that are off are not on Create; on Edit they sit under \"N more fields\" and can still be set", async (prof) => {
     const p = await open(prof, E.hash("kanban"));
+    // The console always shows Attachments (KB-SET-1); the prototype still lets them be hidden.
+    const off = E.attachmentsAlwaysShown ? ["sprint", "due", "labels", "links"] : ["sprint", "due", "labels", "attachments", "links"];
     await press(p, "#kb-new-btn"); await p.waitForSelector("#f-title");
-    for (const f of ["sprint", "due", "labels", "attachments", "links"]) assert.equal(await p.$(`[data-field="${f}"]`), null, `${f} is not on Create`);
+    for (const f of off) assert.equal(await p.$(`[data-field="${f}"]`), null, `${f} is not on Create`);
+    if (E.attachmentsAlwaysShown) assert.ok(await p.$('[data-field="attachments"]'), "attachments are on Create");
     assert.equal(await p.$(".kb-more"), null, "no 'more fields' on Create");
     await closeTask(p);
     await openTask(p, "PH-20");
-    assert.match(await p.textContent(".kb-more summary"), /5 more fields/);
+    assert.match(await p.textContent(".kb-more summary"), new RegExp(`${off.length} more fields`));
     assert.equal(await p.$eval(".kb-more", (e) => e.open), false);
     await moreFields(p);
-    for (const f of ["sprint", "due", "labels", "attachments", "links"]) assert.ok(await p.$(`.kb-more [data-field="${f}"]`), `${f} under more fields`);
+    for (const f of off) assert.ok(await p.$(`.kb-more [data-field="${f}"]`), `${f} under more fields`);
+    if (E.attachmentsAlwaysShown) assert.equal(await p.$('.kb-more [data-field="attachments"]'), null, "attachments are not hidden under more fields");
     await p.fill("#f-due", "2026-11-09"); await p.fill("#f-label-input", "from-more"); await p.keyboard.press("Enter");
     await p.selectOption("#f-sprint", "s42");
     await saveTask(p);

@@ -81,6 +81,32 @@
 //     store never keeps it, and a console plan given it can't turn the run
 //     into a read-only reply. An instruction found in it is ignored and noted
 //     on the ticket (readThreadContent).
+//   • Code Mode by default (IJhIIzTxOJyZVCzzYggZ): the console plan answers a
+//     question about tickets, projects, the pipeline, concepts, leads,
+//     prospects or the Help Centre with ONE Code Mode run (a script the model
+//     writes, or an insight from the library, consoleReader.script /
+//     .insight: the same sandbox and audit as run_script), and single reads
+//     only for what Code Mode can't reach (project documents, critiques) or
+//     after the run failed.
+//   • Self-improvement (IJhIIzTxOJyZVCzzYggZ): at the end of every run that
+//     passed the gates, Aidan checks whether the request was fully and well
+//     met (aidan-core.js → assessRun: what the run recorded, and the model's
+//     own self-check on an answer). When it wasn't, he files a Backlog ticket
+//     on the right project with the gap, the request and the improvement
+//     suggested, or comments on a matching open one (`reflect`, through
+//     `improvements`, mcp-server.js → aidanImprovements). The ticket is
+//     linked on the thread's timeline and in `aidan.improvement`.
+//   • The voice (SYkk20srKT7pIKM1HS8Z, functions/aidan-voice.js): every reply
+//     Aidan writes (an answer, a Help Centre answer, the cover note of a
+//     write) is finished first, and then at most ONE light aside in his
+//     character is added after it (`inVoice`), from the "aidan-voice" skill in
+//     the skills library (added to the library, insert-only, the first time
+//     it is missing). The voice never rewrites the reply and never touches an
+//     attached document. No aside on a complaint, an outage, a fault or
+//     anything commercial, and none when the voice can't be reached: the
+//     reply is sent plain. Asked whether he is a bot or an AI, he says yes
+//     (`ensureAiDisclosure`). Signed "<sender name>, Personalisation Hub" ("Aidan Hubbot" by default), with the
+//     optional signature line from Settings when it is switched on.
 //   • The allowed senders are configuration: supportSecrets/aidan, closed to
 //     every client by firestore.rules, written only by an admin through
 //     POST /supportMail/v1/aidan, never returned unmasked.
@@ -94,6 +120,8 @@ const ac = require("./aidan-core");
 const answerCore = require("./answer-core");
 const cc = require("./collateral-core");
 const cl = require("./collateral-layout");
+const av = require("./aidan-voice");
+const mc = require("./market-core");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -108,12 +136,16 @@ const SKILL_PROMPT_BUDGET = 150000;      // characters of the skill's own files 
 // retried (worst case about 2 + 1 + 4 minutes, plus attachment reads and the
 // send; an answer gets ANSWER_TIMEOUT_MS, so 2 + 1 + 2 at most). Reading the
 // console adds at most CONSOLE_ROUNDS planning calls of CONSOLE_PLAN_TIMEOUT_MS
-// each (under a minute) and the reads themselves. A question put to the Help
+// each (under a minute), at most one Code Mode run of CONSOLE_SCRIPT_TIMEOUT_MS
+// (10 s; aidan-core.js) and the reads themselves. A question put to the Help
 // Centre first adds at most three calls of the engine's own 40 s (the match and
 // two drafts), so the worst answer is 2 + 2 + 1 + 2 minutes. Collateral reads no
 // console plan: it is start + choice + document + COLLATERAL_RENDER_TIMEOUT_MS
 // for the PDF (2 + 1 + 4 + 1 minutes, with the send and the filing after). A run that is cut off anyway is moved to a person by the next sync
-// (sweepStale) once it has been "working" for STALE_MS.
+// (sweepStale) once it has been "working" for STALE_MS. The voice adds one
+// short call of VOICE_TIMEOUT_MS after the reply is written (2 + 2 + 1 + 2
+// minutes and 20 seconds for the worst answer, 2 + 1 + 4 + 1 and 20 seconds
+// for collateral); when it fails or runs out of time the reply goes plain.
 const LATEST_START_MS = 120000;
 const SELECT_TIMEOUT_MS = 60000;
 const DOC_TIMEOUT_MS = 240000;
@@ -124,6 +156,8 @@ const ANSWER_EMAIL_MAX = 60000;          // characters of the email (with the th
 const CONSOLE_PLAN_TIMEOUT_MS = 25000;
 // Printing collateral to PDF: Chromium's start, the brand font and the print.
 const COLLATERAL_RENDER_TIMEOUT_MS = 60000;
+// The voice's one sentence: a small call, never retried.
+const VOICE_TIMEOUT_MS = 20000;
 const STALE_MS = 15 * 60 * 1000;
 const SEEN_KEEP = 50;                    // gmailIds remembered per ticket (aidanSeen), so a message is decided once
 const ACTIVE = ["queued", "working"];
@@ -139,14 +173,20 @@ const tsMs = (v) => (!v ? 0 : typeof v.toMillis === "function" ? v.toMillis() : 
 // and country only. `renderPdf` (collateral-pdf.js → renderPdf): html -> { pdf,
 // pages }; with Aidan's model stubbed (`run`) only `run.render` is used, so no
 // test starts a browser.
-function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null }) {
+// `improvements` (mcp-server.js → aidanImprovements): { projects(),
+// openTickets(projectId), byKey(key), filedOn(day), file({...}),
+// comment(itemId, text) }, for the self-improvement tickets; null files none.
+// `markets` (support-mail.js): async () => the Brand Guidelines market pages
+// (market-core.js → marketsFrom), for collateral tailored to the company's
+// country; null leaves collateral on the default guidelines and files nothing.
+function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, now, logger = console, callJson, apiKey = () => "", workspaceId = () => "", Anthropic = null, run: runImpl = null, bucket = null, consoleReader = null, helpCentre = null, accounts = null, renderPdf = null, improvements = null, markets = null }) {
   const data = (snap) => (snap && snap.exists ? snap.data() || {} : null);
   const configRef = () => secretsRef(CONFIG_DOC);
   const errText = (err) => core.clip(String(err && err.message ? err.message : err), 300);
 
   async function readConfig() { return ac.normaliseConfig(data(await configRef().get())); }
   async function status({ admin = false } = {}) { return ac.publicConfig(data(await configRef().get()), { admin }); }
-  // Admin: replace the allowed senders (only when a list is given) and switch Aidan on or off.
+  // Admin: replace the allowed senders (only when a list is given), switch Aidan on or off, and set his sender name and signature line.
   async function saveConfig(body, by) {
     const cur = data(await configRef().get()) || {};
     const patch = { updatedBy: by, updatedAt: now() };
@@ -158,6 +198,21 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (body.clearSenders === true) patch.allowedSenders = [];
     if ("enabled" in body) patch.enabled = body.enabled === true;
     if ("requireSenderAuth" in body) patch.requireSenderAuth = body.requireSenderAuth !== false;
+    // The optional signature line under "<sender name>, Personalisation Hub": the text
+    // is kept when it is switched off, and it can't be switched on empty.
+    // The sender name (From display name and sign-off, QVpqiMuwipZ4mKSXHplM).
+    // Read on every run, so the next email uses it with no deploy. A first name is required.
+    if ("fromFirstName" in body || "fromLastName" in body) {
+      const first = ac.cleanNamePart("fromFirstName" in body ? body.fromFirstName : cur.fromFirstName);
+      if (!first) return { ok: false, error: "Aidan's first name can't be empty." };
+      patch.fromFirstName = first;
+      patch.fromLastName = ac.cleanNamePart("fromLastName" in body ? body.fromLastName : cur.fromLastName);
+    }
+    if ("signatureLine" in body) patch.signatureLine = ac.cleanSignatureLine(body.signatureLine);
+    if ("signatureLineOn" in body) patch.signatureLineOn = body.signatureLineOn === true;
+    if (patch.signatureLineOn && !ac.cleanSignatureLine("signatureLine" in patch ? patch.signatureLine : cur.signatureLine)) {
+      return { ok: false, error: "Write the signature line, or switch it off." };
+    }
     await configRef().set(patch, { merge: true });
     return { ok: true, aidan: ac.publicConfig(Object.assign({}, cur, patch), { admin: true }) };
   }
@@ -454,24 +509,61 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const concepts = await read("list_concepts", {});
     const index = ac.consoleIndex(projects.text, concepts.text);
     const tools = (typeof consoleReader.tools === "function" ? consoleReader.tools() : []).filter((t) => ac.CONSOLE_READ_TOOLS.includes(t.name));
+    // Code Mode, when the reader offers it: the plan is shown the script
+    // tools (as signatures) and the insights Aidan may run, and asks for ONE run.
+    const canScript = typeof consoleReader.script === "function";
+    let scriptTools = "";
+    let insights = [];
+    if (canScript) {
+      try {
+        scriptTools = typeof consoleReader.describeScriptTools === "function" ? String(consoleReader.describeScriptTools() || "") : "";
+        insights = (typeof consoleReader.insights === "function" ? consoleReader.insights() : []).filter((i) => ac.AIDAN_INSIGHTS.includes(i.name));
+      } catch (err) { logger.warn("support: Aidan couldn't describe Code Mode", { error: errText(err) }); }
+    }
     const results = [];
     let changeRequested = false;
+    let codeMode = null;    // { ran, ok, kind, name, error, errorKind, toolCalls, durationMs }
+    const runCodeMode = async (cm) => {
+      let r;
+      try {
+        r = cm.kind === "insight" ? await consoleReader.insight(cm.name, cm.params, { timeoutMs: ac.CONSOLE_SCRIPT_TIMEOUT_MS })
+          : await consoleReader.script(cm.code, { timeoutMs: ac.CONSOLE_SCRIPT_TIMEOUT_MS });
+      } catch (err) { r = { ok: false, error: errText(err), errorKind: "error", toolCalls: [] }; }
+      r = r || { ok: false, error: "no result", errorKind: "error", toolCalls: [] };
+      codeMode = Object.assign({ ran: true, ok: Boolean(r.ok), kind: cm.kind, toolCalls: (r.toolCalls || []).length, durationMs: r.durationMs || 0 },
+        cm.kind === "insight" ? { name: cm.name } : {}, r.ok ? {} : { error: core.clip(String(r.error || ""), 300), errorKind: String(r.errorKind || "error") });
+      const tool = cm.kind === "insight" ? "get_insight" : "run_script";
+      const args = cm.kind === "insight" ? Object.assign({ insight: cm.name }, cm.params) : {};
+      // projectRefs: every project the run's tool calls named (the reader
+      // reports them), so a gap is filed on the project the run was about.
+      const projectRefs = Array.isArray(r.projectRefs) ? r.projectRefs.filter((x) => typeof x === "string").slice(0, 50) : [];
+      results.push({ tool, args, codeMode: true, projectRefs, ok: Boolean(r.ok), text: r.ok ? String(r.text || "") : `Not read: the Code Mode run failed (${codeMode.errorKind}): ${codeMode.error}` });
+    };
     for (let round = 0; round < ac.CONSOLE_ROUNDS; round += 1) {
-      const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail })
-        : await model({ system: content ? `${ac.CONSOLE_PLAN_SYSTEM}\n${ac.CONTENT_LINE}` : ac.CONSOLE_PLAN_SYSTEM, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 2000, timeout: CONSOLE_PLAN_TIMEOUT_MS,
-          content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results }) });
-      const plan = ac.cleanConsolePlan(raw, { done: results });
+      const cmPrompt = canScript ? { scriptTools, insights, done: Boolean(codeMode) } : null;
+      const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail, codeMode: cmPrompt })
+        : await model({ system: content ? `${ac.CONSOLE_PLAN_SYSTEM}\n${ac.CONTENT_LINE}` : ac.CONSOLE_PLAN_SYSTEM, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: CONSOLE_PLAN_TIMEOUT_MS,
+          content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results, codeMode: cmPrompt }) });
+      const plan = ac.cleanConsolePlan(raw, { done: results, codeModeDone: !canScript || Boolean(codeMode) });
       if (plan.changeRequested && !content) { changeRequested = true; break; }
-      if (!plan.reads.length) break;
+      if (!plan.codeMode && !plan.reads.length) break;
+      if (plan.codeMode) await runCodeMode(plan.codeMode);
       for (const r of plan.reads) results.push(Object.assign({}, r, await read(r.tool, r.args)));
     }
+    // The projects the reads were about (a self-check names one when the data
+    // was missing there): each read's project argument and every project a
+    // Code Mode run's tool calls named, by id or by name against the index
+    // (an insight takes a project's name as readily as its id).
+    const scopedProjectIds = ac.projectsReadAbout(results, index.projects);
     return {
       changeRequested, results, used: results.some((r) => r.ok), text: ac.consoleBlock(results),
       names: ac.namesById([projects.text, concepts.text, ...results.map((r) => r.text)]),
       tools: [...new Set(results.filter((r) => r.ok).map((r) => r.tool))],
+      codeMode, cut: ac.consoleWasCut(results), scopedProjectIds,
+      failedReads: results.filter((r) => !r.ok && !r.codeMode).map((r) => ({ tool: r.tool, error: r.text })),
     };
   }
-  const consoleFacts = (c) => ({ reads: c.results.filter((r) => r.ok).length, tools: c.tools });
+  const consoleFacts = (c) => Object.assign({ reads: c.results.filter((r) => r.ok).length, tools: c.tools }, c.codeMode ? { codeMode: c.codeMode } : {});
   // Ticket (and other) ids out of text written from console data: each becomes
   // its title, unless the instruction asks for ids. Used by answers and writes alike.
   const withoutIds = (text, c, instruction) => ac.stripIds(text, c.names, { asked: ac.asksForIds(instruction) });
@@ -480,6 +572,69 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   function consoleReply(answer, c, instruction) {
     return ac.shapeConsoleAnswer({ replyText: withoutIds(answer.replyText, c, instruction), documentMd: withoutIds(answer.documentMd, c, instruction), title: answer.title });
   }
+
+  // ── The voice (functions/aidan-voice.js) ──
+  // With Aidan's model stubbed (`run`) the voice runs only when it is stubbed
+  // too (`run.voice`), so no test reaches the network.
+  const voiceOn = () => !runImpl || typeof runImpl.voice === "function";
+  // The "aidan-voice" skill, from the library. When the library has none it
+  // is added as first written (insert-only, in a transaction, under a fixed
+  // id so two instances can't add it twice); a failure leaves the run using
+  // the built-in text.
+  async function voiceSkillFrom(skills) {
+    const found = av.voiceSkillIn(skills);
+    if (found || !voiceOn()) return found;
+    const doc = av.defaultSkillDoc();
+    try {
+      const ref = db.collection("skills").doc(av.VOICE_SLUG);
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (snap.exists) return;
+        tx.set(ref, Object.assign({}, doc, { createdVia: "aidan", createdByEmail: null, updatedByEmail: null, createdAt: now(), updatedAt: now() }));
+      });
+    } catch (err) { logger.warn("support: Aidan couldn't add the voice skill to the library", { error: errText(err) }); }
+    return Object.assign({ id: av.VOICE_SLUG }, doc);
+  }
+  // The finished reply body, in Aidan's voice: the body exactly as it was
+  // written, then at most one aside. `kind`: "answer", "helpCentre" or
+  // "generate" (a cover note; the attached document never comes here).
+  // Returns { text, voice } where voice is what goes on the ticket
+  // ({ quirk: bool, reason? }), or null when the voice didn't run at all.
+  // Never throws: a reply is never held up by its voice.
+  // `content`: the thread the instruction refers to (readThreadContent), when
+  // there is one: a complaint or a pricing question quoted below "@Aidan,
+  // please answer John's question" makes the reply a plain one too.
+  // "Are you a bot?" (asked in the instruction) is settled here, for every
+  // kind of reply and whether or not the voice runs: the reply says yes (a
+  // dodge gets the line first, a sentence denying it is taken out), and that
+  // yes is the email's one touch of character, so no aside is added. On an
+  // email that gets no quirk the yes is the plain line.
+  async function inVoice({ ticketId, kind, body, instruction, msg, ticket, voiceSkill = null, content = null }) {
+    let text = String(body || "").replace(/\r/g, "").trim();
+    if (!text) return { text, voice: null };
+    const sensitive = av.sensitiveReason([instruction, msg && msg.subject, ticket && ticket.subject, core.stripQuoted((msg && msg.text) || ""), content && content.text, text]);
+    if (av.asksIfAi(instruction)) {
+      if (sensitive) text = text.split(av.AI_LINE).join(av.AI_LINE_PLAIN);
+      const said = av.ensureAiDisclosure(text, { asked: true, line: sensitive ? av.AI_LINE_PLAIN : av.AI_LINE });
+      return { text: said.text, voice: { quirk: false, aiAsked: true, reason: said.added ? "asked whether Aidan is an AI: the yes was added" : "asked whether Aidan is an AI" } };
+    }
+    if (!voiceOn()) return { text, voice: null };
+    if (sensitive) return { text, voice: { quirk: false, reason: `plain reply: ${sensitive}` } };
+    try {
+      const input = { kind, instruction, body: text, firstName: ac.greetingName(msg && msg.fromName) };
+      const system = av.voiceSystemFor(voiceSkill);
+      const prompt = av.voicePrompt(input);
+      const raw = runImpl ? await runImpl.voice(Object.assign({ system, content: prompt, skill: voiceSkill }, input))
+        : await model({ system, schema: av.VOICE_SCHEMA, effort: "low", maxTokens: 400, content: prompt, timeout: VOICE_TIMEOUT_MS });
+      const quirk = av.cleanQuirk(raw);
+      if (!quirk) return { text, voice: { quirk: false, reason: raw && raw.sensitive === true ? "plain reply: the voice judged it sensitive" : "no aside fitted" } };
+      return { text: av.withQuirk(text, quirk), voice: { quirk: true } };
+    } catch (err) {
+      logger.warn("support: Aidan's voice wasn't added", { ticketId, error: errText(err) });
+      return { text, voice: { quirk: false, reason: "the voice couldn't be reached" } };
+    }
+  }
+  const voiceFact = (v) => (v ? { voice: v } : {});
 
   // Send a plain reply (or one with files) on the thread from the mailbox and file it on the ticket.
   async function sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments = [], fields = {} }) {
@@ -507,7 +662,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const recipients = ac.consoleRecipients(ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail }), config.allowedSenders);
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeReadOnlyReply({ firstName: ac.greetingName(msg.fromName), fromName: config.fromName });
+    const text = ac.composeReadOnlyReply({ firstName: ac.greetingName(msg.fromName), fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", readOnly: true } });
     const n = recipients.to.length + recipients.cc.length;
     return finish({
@@ -520,7 +675,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // A "generate" run: write the document with the skill and reply to everyone
   // on the email (the verified From address plus the original To and Cc; never
   // Reply-To, never our own addresses), on the thread, with it attached.
-  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish, consoleData = null, content = null }) {
+  async function generateAndReply({ ticketId, ticket, job, msg, config, skill, client, instruction, email, inputs, skipped, finish, consoleData = null, content = null, voiceSkill = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}`;
@@ -535,7 +690,9 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const all = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     const recipients = fromConsole ? ac.consoleRecipients(all, config.allowedSenders) : all;
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: doc.replyText, fromName: config.fromName });
+    // The cover note in Aidan's voice; the document is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "generate", body: doc.replyText, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const raw = ac.buildMultipartRaw({
       fromName: config.fromName, fromEmail: settings.connectedEmail, to: recipients.to, cc: recipients.cc, subject: msg.subject || ticket.subject, text,
       inReplyTo: msg.messageId, references: msg.references, attachments: [{ name: doc.fileName, type: "text/markdown; charset=UTF-8", content: doc.documentMd }],
@@ -554,7 +711,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const n = recipients.to.length + recipients.cc.length;
     return finish({
       aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName: skill.name || skill.slug, client, document: { name: doc.fileName, title: doc.title, size }, recipients: n, sentId },
-        fromConsole ? { console: consoleFacts(consoleData) } : {}),
+        fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan wrote ${doc.fileName} with the ${skill.name || skill.slug} skill${fromConsole ? " and the console's data" : ""} and replied to ${n} ${n === 1 ? "person" : "people"}.${fromConsole ? leftOffNote(recipients.leftOff) : ""}`);
@@ -585,6 +742,18 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     try { const a = (await accounts()) || {}; return cc.prospectFor({ instruction, client, prospects: a.prospects || [], leads: a.leads || [] }); }
     catch (err) { logger.warn("support: Aidan couldn't read Prospects and Leads", { error: errText(err) }); return cc.prospectFor({ instruction, client }); }
   }
+  // The Brand Guidelines market page for the company's country
+  // (mErc7MPAkrKjF9fWgqXb): { market, missing }. `missing` is the country when
+  // the company has one and no market page covers it, so the self-check files
+  // a ticket to add it; the default guidelines apply meanwhile.
+  async function marketOf(prospect) {
+    const country = prospect && prospect.country ? String(prospect.country).trim() : "";
+    if (!country || typeof markets !== "function") return { market: null, missing: "" };
+    try {
+      const market = mc.marketFor(country, (await markets()) || []);
+      return { market, missing: market ? "" : core.clip(country, 60) };
+    } catch (err) { logger.warn("support: Aidan couldn't read the market pages", { error: errText(err) }); return { market: null, missing: "" }; }
+  }
   async function helpCentreText(industry) {
     if (!helpCentre || typeof helpCentre.articles !== "function") return "";
     try { return cc.helpCentreBlock(await helpCentre.articles(), industry); }
@@ -596,12 +765,15 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   async function writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content = null }) {
     const [prospect, internalNames] = await Promise.all([prospectOf(instruction, client), projectNames()]);
     const industry = cc.industryFor(instruction, prospect);
+    const { market, missing } = await marketOf(prospect);
     const helpText = await helpCentreText(industry);
     const refs = await referencesFor(skill.id);
     const hasCollateralSkill = skill.id !== brand.id;
-    const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}`
+    const marketLine = mc.marketSystem(market, missing);
+    const system = `${ac.DOC_SYSTEM}${content ? `\n${ac.CONTENT_LINE}` : ""}\n${cc.collateralSystem({ format, industry, prospect, internalNames })}${marketLine ? `\n${marketLine}` : ""}`
       + `\n\n<brand_skill name="${String(brand.name || brand.slug || "").replace(/"/g, "")}">\n${await skillFiles(cc.promptFiles(brand))}\n</brand_skill>`
       + (hasCollateralSkill ? `\n\n<skill name="${String(skill.name || skill.slug || "").replace(/"/g, "")}">\n${await skillFiles(skill)}\n</skill>` : "")
+      + (market ? `\n\n${mc.marketBlock(market)}` : "")
       + (refs.text ? `\n\n<reference_material>\n${refs.text}\n</reference_material>` : "");
     const header = `From: ${msg.fromName || ""}\nSubject: ${msg.subject || ticket.subject || ""}\nInstruction to Aidan: ${instruction}${prospect && prospect.name ? `\nFor: ${prospect.name}` : client ? `\nFor: ${client}` : ""}\nCollateral: ${format.label}`;
     const blocks = contentBlocks({ header, email, inputs, skipped });
@@ -610,7 +782,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const facts = cc.prospectBlock(prospect, industry);
     if (facts) blocks.push({ type: "text", text: facts });
     if (helpText) blocks.push({ type: "text", text: helpText });
-    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: { format: format.key, industry, prospect } })
+    const raw = runImpl && runImpl.write ? await runImpl.write({ skill, brand, client, instruction, system, content: blocks, references: refs.count, collateral: Object.assign({ format: format.key, industry, prospect }, market ? { market: market.slug } : {}) })
       : await model({ system, schema: ac.DOC_SCHEMA, effort: "medium", maxTokens: format.maxTokens, content: blocks, timeout: DOC_TIMEOUT_MS });
     const written = ac.cleanDocument(raw);
     // Deterministic, whatever the model wrote: no Australian positioning, no internal names, no long dashes.
@@ -618,7 +790,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const docMd = cc.guardCollateral(written.documentMd, guard);
     const title = cc.guardCollateral(written.title, guard).text || format.label;
     const replyText = cc.guardCollateral(written.replyText, guard).text || `Please find attached the ${format.label.toLowerCase()} as a branded PDF, with its Markdown source for editing.`;
-    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill };
+    return { title, replyText, docMd, files: cc.fileNames(written.fileName, title), industry, prospect, hasCollateralSkill, market, missingMarket: missing };
   }
   // Print: the branded page, printed on the server. -> { printed, failure }:
   // `printed` is { pdf, pages } or null, and then `failure` says why.
@@ -656,12 +828,15 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   }
   // The whole run: write, print, send (reply-all with the PDF and the
   // Markdown), keep the example, file it on the ticket. No PDF, no email.
-  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null }) {
+  async function collateralAndReply({ ticketId, ticket, msg, config, skill, brand, format, client, instruction, email, inputs, skipped, finish, content = null, voiceSkill = null, signals = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
-    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
+    const { title, replyText, docMd, files, industry, prospect, hasCollateralSkill, market, missingMarket } = await writeCollateral({ ticket, msg, skill, brand, format, client, instruction, email, inputs, skipped, content });
     const removed = docMd.changes;
-    const collateralFacts = { format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null };
+    // Which market page it followed, or the country no page covers (the default guidelines were used).
+    const marketFact = market ? { market: { slug: market.slug, name: market.name } } : missingMarket ? { market: { missing: missingMarket } } : {};
+    if (signals && missingMarket) signals.missingMarket = { country: missingMarket, format: format.label };
+    const collateralFacts = Object.assign({ format: format.key, formatLabel: format.label, industry, prospect: prospect ? { name: prospect.name, source: prospect.source } : null }, marketFact);
     const mdSize = Buffer.byteLength(docMd.text, "utf8");
     // The branded PDF, printed on the server. Without it nothing is sent.
     const { printed, failure } = await printCollateral({ docMd, title, format, industry, prospect, brand });
@@ -676,7 +851,10 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     }
     const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
-    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText, fromName: config.fromName });
+    // The cover note in Aidan's voice. The collateral itself (the PDF and its
+    // Markdown) is the brand voice's alone and is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "generate", body: replyText, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanReply({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const pdfSize = printed.pdf.length;
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text,
       attachments: [{ name: files.pdf, type: "application/pdf", content: printed.pdf }, { name: files.md, type: "text/markdown; charset=UTF-8", content: docMd.text }],
@@ -686,11 +864,11 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const pages = printed.pages || 0;
     const skillName = skill.name || skill.slug;
     return finish({
-      aidan: { status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
-        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) },
+      aidan: Object.assign({ status: "replied", kind: "generate", skillId: skill.id, skillName, client, document: { name: files.md, title, size: mdSize }, recipients: n, sentId,
+        collateral: Object.assign({}, collateralFacts, { pdf: Object.assign({ name: files.pdf, size: pdfSize, pages }, storagePath ? { storagePath } : {}), markdown: { name: files.md, size: mdSize }, referenceId, removed }) }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
-    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
+    }, `Aidan wrote the branded ${format.label.toLowerCase()} ${files.pdf}${pages ? ` (${pages} page${pages === 1 ? "" : "s"})` : ""} with its Markdown source, using the ${skillName} skill${hasCollateralSkill ? ` and the ${brand.name || brand.slug} brand` : ""}${market ? `, tailored to the ${market.name} market page` : missingMarket ? ` (no market page for ${missingMarket}, so the default brand guidelines)` : ""}, and replied to ${n} ${n === 1 ? "person" : "people"}.${referenceId ? ` Kept as a reference example for the ${skillName} skill.` : ""}${cc.guardLine(removed) ? ` ${cc.guardLine(removed)}` : ""}`);
   }
 
   // An "answer" run: reply to everyone on the email (the same recipients as a
@@ -708,7 +886,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // With thread `content` (the instruction refers to the thread), the email
   // block is the sender's new text only and the content is its own block,
   // marked as third-party material; the reply is written for everyone on it.
-  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null, consoleData = null, content = null }) {
+  async function answerInline({ ticketId, ticket, job, msg, config, skill = null, instruction, inputs, skipped, finish, noSkill = null, consoleData = null, content = null, signals = null, voiceSkill = null }) {
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const fromConsole = Boolean(consoleData && consoleData.used);
@@ -727,7 +905,17 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       : await model(fromConsole
         ? { system, schema: ac.CONSOLE_ANSWER_SCHEMA, effort: "medium", maxTokens: 16000, content: blocks, timeout: ANSWER_TIMEOUT_MS }
         : { system, schema: ac.ANSWER_SCHEMA, effort: "medium", maxTokens: 4000, content: blocks, timeout: ANSWER_TIMEOUT_MS });
-    const answer = fromConsole ? ac.cleanConsoleAnswer(raw) : ac.cleanAnswer(raw);
+    let answer = fromConsole ? ac.cleanConsoleAnswer(raw) : ac.cleanAnswer(raw);
+    // The model's own self-check, for the self-improvement ticket (never sent).
+    if (signals) signals.selfCheck = answer.selfCheck;
+    // "Are you a bot?" always gets a plain yes: when the model had nothing to
+    // say to a short instruction that asks only that, the line is the answer.
+    const askedAi = av.asksIfAi(instruction);
+    if (askedAi && !answer.canAnswer && noSkill === null && String(instruction || "").length <= av.AI_ONLY_MAX) {
+      answer = Object.assign({}, answer, { canAnswer: true, replyText: av.AI_LINE, documentMd: "", title: "", reason: "", selfCheck: null });
+      // The request was met (it asked only that), so there is no gap to file.
+      if (signals) signals.selfCheck = null;
+    }
     if (!answer.canAnswer) {
       const why = answer.reason ? ` (${answer.reason})` : "";
       const where = fromConsole ? "the email and the console" : "the email alone";
@@ -743,11 +931,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       body = shaped.inline;
       attachment = shaped.attachment;
     }
-    const text = ac.composeAidanAnswer({ replyText: body, fromName: config.fromName });
+    // The voice: "are you a bot?" answered yes, or at most one aside after
+    // the body; an attached answer is never passed to it.
+    const voiced = await inVoice({ ticketId, kind: "answer", body, instruction, msg, ticket, voiceSkill, content });
+    const text = ac.composeAidanAnswer({ replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config) });
     const attachments = attachment ? [{ name: attachment.name, type: "text/markdown; charset=UTF-8", content: attachment.content }] : [];
     const named = skill ? { skillId: skill.id, skillName: skill.name || skill.slug } : {};
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, attachments, fields: Object.assign({ kind: "answer" }, named, fromConsole ? { console: true } : {}) });
-    const extra = fromConsole ? { console: consoleFacts(consoleData) } : {};
+    const extra = Object.assign(fromConsole ? { console: consoleFacts(consoleData) } : {}, voiceFact(voiced.voice));
     if (attachment) extra.document = { name: attachment.name, title: answer.title || attachment.name, size: Buffer.byteLength(attachment.content, "utf8") };
     return finish({
       aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId }, named, extra),
@@ -773,7 +964,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // instructions" line (ac.CONTENT_LINE), ahead of the sender's new text
   // (answer-core.js → questionFromEmail, emailBlock).
   async function helpCentreAnswer({ ticketId, msg, ticket, instruction, skill, content = null }) {
-    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction)) return null;
+    // "Are you a bot?" is Aidan's own to answer, not the Help Centre's.
+    if (!helpCentre || typeof helpCentre.articles !== "function" || skill || ac.isAcknowledgement(instruction) || av.asksIfAi(instruction)) return null;
     if (runImpl && !helpCentre.run) return null;
     try {
       const articles = await helpCentre.articles();
@@ -793,19 +985,22 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // (the Help Centre is public, so nobody is left off). Always sent: the
   // Support Inbox's confidence threshold and auto-send switch are not Aidan's.
   // The confidence and the articles go on the ticket, not in the email.
-  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited, content = null }) {
+  async function sendHelpCentreAnswer({ ticketId, ticket, msg, config, finish, triage, cited, content = null, signals = null, instruction = "", voiceSkill = null }) {
+    if (signals) signals.helpCentre = { confidence: triage.confidence };
     const settings = await readSettings();
     if (!settings.connectedEmail) throw new Error("The mailbox isn't connected.");
     const recipients = ac.replyAllRecipients({ from: msg.from, to: msg.to || [], cc: msg.cc || [] }, { mailbox: settings.connectedEmail });
     if (!recipients.to.length) throw new Error("There is no one to reply to.");
     const n = recipients.to.length + recipients.cc.length;
+    // The engine's answer and its articles first, exactly as drafted; then the voice's one aside, if any.
+    const voiced = await inVoice({ ticketId, kind: "helpCentre", body: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), instruction, msg, ticket, voiceSkill, content });
     // A question from the thread is answered to everyone on it: "Hi all".
-    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: answerCore.withArticleTitles(core.stripOpening(triage.reply), cited), fromName: config.fromName, all: Boolean(content) });
+    const text = ac.composeHelpCentreAnswer({ firstName: ac.greetingName(msg.fromName), replyText: voiced.text, fromName: config.fromName, signatureLine: ac.signatureLineOf(config), all: Boolean(content) });
     const sentId = await sendOnThread({ ticketId, ticket, msg, config, settings, recipients, text, fields: { kind: "answer", helpCentre: true, confidence: triage.confidence, articles: cited } });
     const pct = Math.round(triage.confidence * 100);
     return finish({
-      aidan: { status: "replied", kind: "answer", recipients: n, sentId,
-        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } },
+      aidan: Object.assign({ status: "replied", kind: "answer", recipients: n, sentId,
+        helpCentre: { confidence: triage.confidence, confidenceSteps: triage.confidenceSteps, articles: cited, question: triage.summary } }, voiceFact(voiced.voice)),
       status: "resolved", resolvedBy: "aidan", resolvedAt: now(), needsHuman: false, firstResponseAt: ticket.firstResponseAt || now(), lastReplyAt: now(), lastMessageAt: now(),
       messageCount: (ticket.messageCount || 0) + 1, snippet: core.clip(text.replace(/\s+/g, " "), 240),
     }, `Aidan answered from the Help Centre (${cited.length} article${cited.length === 1 ? "" : "s"}, ${pct}% confidence) in the email itself and replied to ${n} ${n === 1 ? "person" : "people"}.`);
@@ -855,14 +1050,17 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       return { ok: true, spam: true };
     }
     const { ticket, job } = claim;
+    // What the run did, for the self-check at its end (reflect): filled as it goes.
+    const signals = { gated: false };
     const finish = async (fields, event) => {
       // Marked as spam while the run worked: the run's result is not written
       // over the spam record (a store would otherwise resolve the ticket).
       await stopIfSpam(ticketId);
       await ref.set(Object.assign({ updatedAt: now() }, fields, { aidan: Object.assign({}, job, fields.aidan || {}, { finishedAt: now() }) }), { merge: true });
+      signals.final = Object.assign({}, fields.aidan || {});
       if (event) await logEvent(ticketId, "aidan", event);
     };
-    try {
+    const result = await (async () => { try {
       const config = await readConfig();
       const msgSnap = await ref.collection("messages").doc(job.gmailId).get();
       const msg = data(msgSnap);
@@ -887,6 +1085,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         const auth = ac.senderAuthenticated(headers, facts.from);
         if (!auth.ok) return finish({ aidan: { status: "ignored", reason: "The sender's address couldn't be verified (no SPF, DKIM or DMARC pass in Gmail's own check), so Aidan did nothing." } }, "Aidan did nothing: the sender's address couldn't be verified.");
       }
+      // Past every gate: from here the run is checked at its end (reflect).
+      // The mark is kept on the job too (aidan.gatedAt), so the 15-minute
+      // sweep files a cut-off run only when it had passed every gate.
+      signals.gated = true;
+      await markGated(ref, job);
+      signals.instruction = d.instruction;
+      signals.kind = d.action;
       // Instruction and content: the instruction is d.instruction, from the
       // sender's new text only; the content is what it refers to on the
       // thread (readThreadContent), and the email the run reads is then the
@@ -896,15 +1101,19 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       if (content) job.content = ac.contentFacts(content);
       if (job.refersToThread || content) job.refersToThread = Boolean(content);
       const email = content ? content.fresh : core.stripQuoted(msg.text || "");
-      const base = { ticketId, ticket, job, msg, config, instruction: d.instruction, email, finish, content };
+      const base = { ticketId, ticket, job, msg, config, instruction: d.instruction, email, finish, content, signals };
       // Aidan can only read the console: a request to change it (create a
       // ticket, update a README, deploy …) gets a fixed, polite reply and
       // nothing is changed. Decided from the instruction's own words, before
       // any model is asked; a store is left to its skill.
       if (d.action !== "store" && ac.consoleChangeRequest(d.instruction)) return readOnlyReply(base);
       const key = String(apiKey() || "");
-      if (!runImpl && (!key || key === "unset")) return finish({ aidan: { status: "needs-person", reason: "No model is configured (ANTHROPIC_API_KEY)." }, needsHuman: true });
-      const skills = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
+      if (!runImpl && (!key || key === "unset")) { signals.noModel = true; return finish({ aidan: { status: "needs-person", reason: "No model is configured (ANTHROPIC_API_KEY)." }, needsHuman: true }); }
+      const library = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
+      // The voice is how the reply is delivered, never a skill a document is
+      // written with: it is taken out of the list a run chooses from.
+      const skills = av.withoutVoiceSkill(library);
+      base.voiceSkill = await voiceSkillFrom(library);
       // What the console holds, read-only. An answer always reads it (a plain
       // acknowledgement plans no read). A write reads it only when the
       // instruction is clearly about the console (ac.writeReadsConsole: a
@@ -919,6 +1128,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const readTheConsole = async () => {
         try { consoleData = await readConsole({ instruction: d.instruction, email, content }); }
         catch (err) { logger.error("support: Aidan console read failed", { ticketId, error: errText(err) }); }
+        if (consoleData) Object.assign(signals, { codeMode: consoleData.codeMode, failedReads: consoleData.failedReads, consoleCut: consoleData.cut, scopedProjectIds: consoleData.scopedProjectIds });
         return Boolean(consoleData && consoleData.changeRequested);
       };
       // An answer needs no skill: one named in the instruction is read, and
@@ -969,12 +1179,93 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     } catch (err) {
       // Marked as spam while it worked: nothing was sent, and markSpam has
       // already recorded "no action — spam" on the ticket.
-      if (err && err.code === SPAM_STOP) return { ok: true, spam: true };
+      if (err && err.code === SPAM_STOP) { signals.spam = true; return { ok: true, spam: true }; }
       // Never customer text in the log: the ticket id and the error only.
       logger.error("support: Aidan run failed", { ticketId, error: errText(err) });
       try { return await finish({ aidan: { status: "error", reason: `Aidan couldn't finish: ${errText(err)}` }, needsHuman: true }, "Aidan couldn't finish, so a person takes it."); }
-      catch (e) { if (e && e.code === SPAM_STOP) return { ok: true, spam: true }; throw e; }
+      catch (e) { if (e && e.code === SPAM_STOP) { signals.spam = true; return { ok: true, spam: true }; } throw e; }
+    } })();
+    // The self-check: only a run that passed every gate, never a spam thread.
+    if (signals.gated && !signals.spam) await reflect({ ticketId, ticket, job, signals });
+    return result;
+  }
+
+  // ── Self-improvement (IJhIIzTxOJyZVCzzYggZ) ──
+  // Was the request fully and well met? (ac.assessRun, from what the run
+  // recorded and the model's self-check.) If not, file a Backlog ticket on
+  // the right project (a gap in one project's data on that project; anything
+  // about what Aidan can do on his own home, the console's project) or, when
+  // an open ticket already says it (the same gap for the same request, or
+  // worded alike), comment on it instead. At most IMPROVEMENTS_PER_DAY new
+  // tickets a day. The ticket is linked on the thread's timeline and in
+  // `aidan.improvement`. Never fails the run: a failure is logged and noted.
+  async function reflect({ ticketId, ticket, job, signals }) {
+    if (!improvements) return null;
+    let found = null;
+    try {
+      found = ac.assessRun(signals);
+      if (!found) return null;
+      const instruction = signals.instruction || job.instruction || "";
+      const at = now();
+      const ticketKey = ticket.key || ticketId;
+      // A missing market page is one gap per country, whatever the request.
+      const key = ac.improvementKey(found.category, found.keyText || instruction);
+      const label = ac.IMPROVEMENT_LABELS[found.category] || found.category;
+      const projects = await improvements.projects();
+      const home = ac.homeProject(projects);
+      const target = (found.projectId && projects.find((p) => p.id === found.projectId && !p.archived)) || home;
+      const title = ac.improvementTitle(found);
+      const keyed = await improvements.byKey(key);
+      const open = target ? await improvements.openTickets(target.id) : [];
+      const match = ac.matchImprovement({ key, category: found.category, gap: found.gap, title }, keyed, open);
+      let rec;
+      let event;
+      if (match) {
+        const c = await improvements.comment(match.id, ac.improvementComment({ category: found.category, gap: found.gap, instruction, ticketKey, at }));
+        rec = { action: "commented", itemId: match.id, title: match.title, projectId: match.projectId || (target && target.id) || "", link: c.board || "" };
+        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). An open Backlog ticket already covers it, so Aidan commented on "${match.title}" instead of filing a duplicate: ${rec.link}`;
+      } else if (!target) {
+        rec = { action: "not-filed", reason: "no project to file it on" };
+        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}), but there is no project to file a ticket on.`;
+      } else if (await improvements.filedOn(at.toISOString().slice(0, 10)) >= ac.IMPROVEMENTS_PER_DAY) {
+        rec = { action: "not-filed", reason: `already ${ac.IMPROVEMENTS_PER_DAY} tickets filed today` };
+        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). No ticket was filed: Aidan has already filed ${ac.IMPROVEMENTS_PER_DAY} today.`;
+      } else {
+        const filed = await improvements.file({ projectId: target.id, title,
+          desc: ac.improvementDesc({ category: found.category, gap: found.gap, suggestion: found.suggestion, instruction, ticketKey, kind: signals.kind || job.kind, at }),
+          improvement: { key, day: at.toISOString().slice(0, 10), category: found.category, gap: found.gap, suggestion: found.suggestion, supportTicketId: ticketId, supportTicketKey: ticketKey, kind: signals.kind || job.kind || "" } });
+        if (!filed || !filed.ok) {
+          rec = { action: "not-filed", reason: core.clip(String((filed && filed.error) || "the ticket couldn't be filed"), 200) };
+          event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). The ticket couldn't be filed: ${rec.reason}`;
+        } else {
+          rec = { action: "filed", itemId: filed.itemId, title: filed.title, projectId: filed.projectId, link: filed.board || "" };
+          event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). Aidan filed a Backlog ticket on ${target.name}: "${filed.title}" ${rec.link}`;
+        }
+      }
+      const record = Object.assign({ category: found.category, gap: found.gap, suggestion: found.suggestion, at }, rec);
+      const ref = tickets().doc(ticketId);
+      const cur = data(await ref.get());
+      if (cur && cur.aidan && !cur.aidan.spam) await ref.set({ aidan: Object.assign({}, cur.aidan, { improvement: record }) }, { merge: true });
+      await logEvent(ticketId, "aidan", event);
+      return record;
+    } catch (err) {
+      logger.error("support: Aidan self-check failed", { ticketId, error: errText(err) });
+      try { await logEvent(ticketId, "aidan", `Aidan's self-check couldn't file its ticket: ${errText(err)}`); } catch (_) { /* the run is already filed */ }
+      return null;
     }
+  }
+
+  // The job passed every gate: aidan.gatedAt on the job and on the ticket,
+  // only while this same run is still working on it (a spam mark or a newer
+  // job is never written over).
+  async function markGated(ref, job) {
+    const gatedAt = now();
+    job.gatedAt = gatedAt;
+    await db.runTransaction(async (tx) => {
+      const t = data(await tx.get(ref));
+      if (!t || !t.aidan || t.aidan.status !== "working" || t.aidan.gmailId !== job.gmailId || isSpam(t)) return;
+      tx.update(ref, { aidan: Object.assign({}, t.aidan, { gatedAt }) });
+    });
   }
 
   // A run still "working" STALE_MS after it started was cut off (the function
@@ -987,9 +1278,11 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     let moved = 0;
     for (const id of ids) {
       const ref = tickets().doc(id);
+      let cut = null;
       const done = await db.runTransaction(async (tx) => {
         const t = data(await tx.get(ref));
         if (!t || !t.aidan || t.aidan.status !== "working" || now().getTime() - tsMs(t.aidan.startedAt) < STALE_MS) return false;
+        cut = t;
         // A cut-off run on a spam thread is no action, not work for a person.
         if (isSpam(t)) { tx.update(ref, { aidanPending: false, aidan: spamState(t.aidan), updatedAt: now() }); return "spam"; }
         tx.set(ref, { needsHuman: true, updatedAt: now(), aidan: Object.assign({}, t.aidan, { status: "needs-person", finishedAt: now(),
@@ -997,7 +1290,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
         return true;
       });
       if (done === "spam") await logEvent(id, "aidan", "Aidan: no action — spam. The request waiting on this thread was cancelled.");
-      else if (done) { moved += 1; await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it."); }
+      else if (done) {
+        moved += 1;
+        await logEvent(id, "aidan", "Aidan's run stopped before it finished, so a person takes it.");
+        // The time budget is a gap too: the self-check files or comments.
+        // Only a run that had passed every gate (aidan.gatedAt, markGated):
+        // one cut off before the sender checks is never filed.
+        if (cut.aidan.gatedAt) await reflect({ ticketId: id, ticket: cut, job: cut.aidan, signals: { gated: true, stale: true, instruction: cut.aidan.instruction || "", kind: cut.aidan.kind || "" } });
+      }
     }
     return moved;
   }
@@ -1019,4 +1319,4 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts };
 }
 
-module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, STALE_MS };
+module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, VOICE_TIMEOUT_MS, STALE_MS };

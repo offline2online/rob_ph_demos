@@ -15,6 +15,14 @@
 //            (Aidan's answer run), and the reply Aidan would send.
 // EVAL_PATHS=support (or aidan) runs one of them.
 //
+// With GOOGLE_APPLICATION_CREDENTIALS it also runs the Support Inbox Test
+// lab's cases (Firestore supportEvalCases, read directly; LAB_CASES=0 skips
+// them) through the support@ path and prints only each case's id, the
+// article titles chosen and expected, and the judge's verdict: a case copied
+// from a ticket is a customer's email, so never its subject or text. A failing
+// lab case is reported, not a failed check: the lab's set tracks what the
+// engine still gets wrong.
+//
 // REPLAY=<n> (and GOOGLE_APPLICATION_CREDENTIALS) also re-runs the newest n
 // real tickets and prints only their SUP key, the articles matched before and
 // now, and the scores. Never their subject, sender or text: logs here are
@@ -29,6 +37,7 @@ const core = require("../functions/support-core");
 const answerCore = require("../functions/answer-core");
 const ac = require("../functions/aidan-core");
 const { callJson } = require("../functions/support-mail");
+const labCore = require("../functions/support-lab-core");
 const { articleView } = answerCore;
 
 const root = path.join(__dirname, "..", "..");
@@ -62,16 +71,9 @@ function engineInput(c, pathName) {
   if (pathName === "aidan") return answerCore.questionFromEmail({ fromName: c.fromName, fromEmail: c.fromEmail, subject: c.subject, text: `@Aidan, ${c.text || ""}` });
   return { ticket: { subject: c.subject || "(no subject)", customerEmail: c.fromEmail, fromEmail: c.fromEmail, customerName: c.fromName || "" }, messages: [{ direction: "in", text: c.text || "" }] };
 }
-// What is wrong with the engine's answer for a fixture: the same rules for both paths.
-function judgeCase(c, raw, t) {
-  const chosen = (raw && raw.selectedIds) || [];
-  const problems = [];
-  if (t.relevant !== c.relevant) problems.push(c.relevant ? "treated as not about Personalisation Hub" : "treated as about Personalisation Hub");
-  if (c.relevant && c.articles.length && !chosen.some((id) => c.articles.includes(id))) problems.push("no right article chosen");
-  if (c.relevant && !c.articles.length && t.answerable) problems.push("claimed the Help Centre answers it");
-  if (!c.relevant && t.reply) problems.push("drafted a reply");
-  return { chosen, problems };
-}
+// What is wrong with the engine's answer for a fixture: the same rules for
+// both paths, and for the Test lab's runs (functions/support-lab-core.js).
+const { judgeCase } = labCore;
 // The reply each path would write from the engine's answer: the Support
 // Inbox's draft, or the email Aidan sends ("" when the Help Centre doesn't
 // answer and his run carries on to the console and the email).
@@ -148,20 +150,54 @@ async function main() {
     console.log(`same first article through both paths: ${cases.length - differ.length}/${cases.length}${differ.length ? ` (differ: ${differ.join(", ")})` : ""}`);
   }
 
+  if (process.env.LAB_CASES !== "0" && !only.length) await labCases(articles, title);
   const replay = Number(process.env.REPLAY || 0);
   if (replay > 0) await replayTickets(replay, articles, title);
   process.exit(bad.length ? 1 : 0);
 }
 
-// The newest real tickets again, printing nothing a customer wrote.
-async function replayTickets(n, articles, title) {
-  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) { console.log("\nreplay: skipped (no service account)"); return; }
-  // firebase-admin is a dependency of functions/, not of this folder.
+// Firestore through the service account (firebase-admin is a dependency of
+// functions/, not of this folder). One app for the lab cases and the replay.
+let firestore = null;
+function adminDb() {
+  if (firestore) return firestore;
   const fromFunctions = (m) => require(require.resolve(m, { paths: [path.join(__dirname, "..", "functions")] }));
   const { initializeApp, applicationDefault } = fromFunctions("firebase-admin/app");
   const { getFirestore } = fromFunctions("firebase-admin/firestore");
   initializeApp({ credential: applicationDefault() });
-  const db = getFirestore();
+  firestore = getFirestore();
+  return firestore;
+}
+
+// The Test lab's cases (Support › Support Inbox › Test lab), printing nothing
+// a customer wrote: the case id, its source, and article titles only.
+async function labCases(articles, title) {
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) { console.log("\nlab cases: skipped (no service account)"); return; }
+  let rows = [];
+  try {
+    const snap = await adminDb().collection("supportEvalCases").get();
+    rows = snap.docs.map((d) => Object.assign({ id: d.id }, d.data() || {})).filter(labCore.inRun);
+  } catch (err) { console.log(`\nlab cases: not read (${String(err && err.message ? err.message : err).slice(0, 160)})`); return; }
+  console.log(`\nlab cases: ${rows.length} from the Test lab (id and article titles only)`);
+  const names = (ids) => (ids.length ? ids.map((id) => title.get(id) || `(${id})`).join(" | ") : "(none)");
+  const results = await pool(rows, CONCURRENCY, async (c) => {
+    const fixture = labCore.fixtureOf(c);
+    try {
+      const { raw, triage: t } = await answerCore.answerFromHelpCentre({ call: liveCall, articles, source: "support", ...answerCore.questionFromEmail({ fromEmail: "customer@example.com", subject: c.subject, text: c.text }) });
+      return Object.assign({ c, fixture }, judgeCase(fixture, raw, t));
+    } catch (err) { return { c, fixture, chosen: [], problems: ["error"] }; }
+  });
+  for (const r of results) {
+    console.log(`${r.problems.length ? "FAIL" : "ok  "} lab:${r.c.id} [${r.c.source || "lab"}]  chose: ${names(r.chosen)}`);
+    console.log(`     expected: ${r.fixture.relevant ? names(r.fixture.articles) : "not about Personalisation Hub"}${r.problems.length ? ` · problem: ${r.problems.join("; ")}` : ""}`);
+  }
+  console.log(`[lab] cases passed: ${results.filter((r) => !r.problems.length).length}/${results.length}`);
+}
+
+// The newest real tickets again, printing nothing a customer wrote.
+async function replayTickets(n, articles, title) {
+  if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) { console.log("\nreplay: skipped (no service account)"); return; }
+  const db = adminDb();
   const snap = await db.collection("supportTickets").orderBy("lastMessageAt", "desc").limit(Math.min(n, 20)).get();
   console.log(`\nreplay: the ${snap.size} newest real tickets (key and article titles only)`);
   for (const d of snap.docs) {

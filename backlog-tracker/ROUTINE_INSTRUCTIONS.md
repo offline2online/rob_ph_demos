@@ -546,6 +546,17 @@ model is set at claude.ai/code/routines and the fire endpoint takes only
   not an Opus (`modelGuardRefusal` in `functions/model-requirement.js`): the
   patch is not landed and the card is flagged `model-unavailable`, not
   rebuilt.
+- **The requirement in your fire text is the one your patch is judged by**
+  (18 Nov 2026). The fire records it on the card (`lastFire.model`); if the
+  classifier changes the card's model while you build (it no longer does
+  while your build is in flight, and it no longer reads the Test steps or
+  Dependencies sections you fill in), the guard still judges your patch by
+  what you were fired with. A person's explicit change still counts. So build
+  to the block you were sent, and still word the intake sections plainly.
+- **Your session may already be on Opus.** When an admin has registered an
+  Advanced (Opus) Routine (`set_advanced_routine_binding`), Advanced tickets
+  are fired on it, so step 1 above applies and nothing needs delegating.
+  Always check your own model id rather than assuming either way.
 - **Review Batch** (below) lists each ticket's model. An Advanced ticket is
   reviewed on Opus only, by delegating its review the same way if this
   session isn't one; with no Opus, write `reviewStatus: "blocked"` and

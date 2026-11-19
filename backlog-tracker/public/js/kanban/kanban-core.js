@@ -66,7 +66,7 @@ export const OPTIONAL_FIELDS = [
   { key: "logged", label: "Time logged" },
   { key: "labels", label: "Labels" },
   { key: "comments", label: "Comments" },
-  { key: "attachments", label: "Attachments" },
+  { key: "attachments", label: "Attachments", lockShow: true },
   { key: "epic", label: "Parent" },
   { key: "links", label: "Linked tickets" },
   { key: "flag", label: "Flag" },
@@ -83,7 +83,7 @@ export function defaultFields() {
     type: { show: true, required: true }, priority: { show: true, required: false },
     sprint: { show: false, required: false }, project: { show: true, required: false }, due: { show: false, required: false },
     logged: { show: true, required: false }, labels: { show: false, required: false },
-    comments: { show: true, required: false }, attachments: { show: false, required: false },
+    comments: { show: true, required: false }, attachments: { show: true, required: false },
     links: { show: false, required: false },
     epic: { show: true, required: false }, flag: { show: true, required: false },
   };
@@ -119,6 +119,10 @@ export function normaliseSettings(raw) {
     if (f && typeof f === "object") fields[k] = { show: !!f.show, required: !!f.required };
   }
   for (const f of CORE_FIELDS) fields[f.key].show = true;
+  // Attachments (videos, PDFs, spreadsheets, screenshots) are always on the
+  // create and edit forms, whatever was saved (KB-SET-1): a ticket has to be
+  // able to carry its files from the moment it is created.
+  for (const f of OPTIONAL_FIELDS) if (f.lockShow) fields[f.key].show = true;
   fields.title.required = true;
   fields.status.required = true;
   for (const k of ["comments", "attachments", "flag", "release"]) fields[k].required = false; // a ticket may have no release

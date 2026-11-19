@@ -1952,6 +1952,32 @@ T("KB-C29", "the board shows its cards without waiting for the server's counts",
   await p.done();
 });
 
+T("KB-C30", "scrolled down, + New task stays pinned at the right of the filter bar, which keeps its height; it opens New task", { timeout: 60000 }, async (prof) => {
+  const p = await open(prof, "#staff-kanban", TALL);
+  const shown = () => p.$eval("#kb-pinned-new", (e) => getComputedStyle(e).visibility === "visible");
+  assert.equal(await shown(), false, "hidden while the header's own + New task is on screen");
+  const h0 = await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().height));
+  await p.evaluate(() => scrollTo(0, 900));
+  await eventually(async () => assert.equal(await shown(), true, "shown once the header has scrolled away"));
+  await eventually(async () => assert.equal(await p.$eval("#kb-sticky", (e) => Math.round(e.getBoundingClientRect().top)), 0, "the bar is pinned"));
+  const m = await p.evaluate(() => {
+    const bar = document.getElementById("kb-sticky").getBoundingClientRect(), b = document.getElementById("kb-pinned-new").getBoundingClientRect();
+    return { barH: Math.round(bar.height), barR: bar.right, barT: bar.top, top: b.top, bottom: b.bottom, right: b.right, w: document.documentElement.scrollWidth, text: document.getElementById("kb-pinned-new").textContent.trim() };
+  });
+  assert.equal(m.text, "+ New task");
+  assert.ok(m.barH <= h0, `the pinned bar is no taller (${m.barH} against ${h0})`);
+  assert.ok(m.top >= m.barT && m.bottom <= m.barT + m.barH, "the button sits inside the bar");
+  assert.ok(m.barR - m.right <= 16 && m.right <= m.barR + 0.5, `at the bar's right edge (${m.right} of ${m.barR})`);
+  assert.equal(m.w, prof.width, "no sideways page scroll");
+  assert.equal(await p.$$eval("#kb-sticky .btn-primary", (e) => e.filter((x) => x.getClientRects().length && getComputedStyle(x).visibility === "visible").length), 1, "the only CTA pinned");
+  await press(p, "#kb-pinned-new");
+  await until(() => p.$("#task-backdrop:not([hidden]) #f-title"), "the New task form");
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => scrollTo(0, 0));
+  await eventually(async () => assert.equal(await shown(), false, "hidden again back at the top"));
+  await p.done();
+});
+
 T("KB-C16", "a ticket address opens that ticket; editing the key opens another; an unknown key says Ticket not found", async (prof) => {
   const p = await open(prof, "#staff-kanban/ticket/PH-21");
   await p.waitForSelector("#task-backdrop:not([hidden])");
@@ -1984,6 +2010,89 @@ T("KB-C16", "a ticket address opens that ticket; editing the key opens another; 
   assert.equal(await p.$(".kb-notfound"), null);
   assert.deepEqual(await writes(p, /kanban/), [], "opening tickets by address writes nothing");
   await p.done();
+});
+
+// The "created in Backlog" toast opens the new ticket (to add a forgotten assignee or date)
+// and stays longer than other toasts: 8 seconds, not 3.6.
+T("KB-C30", "the created toast stays 8 seconds and a click on it opens the new ticket", async (prof) => {
+  const p = await open(prof);
+  await press(p, "#kb-new-btn");
+  await p.fill("#f-title", "Opened from the toast");
+  await press(p, "#f-save");
+  await until(async () => /PH-\d+ created in Backlog/.test(await toastText(p)), "the created toast");
+  const key = /PH-\d+/.exec(await toastText(p))[0];
+  assert.equal(await p.getAttribute("#kb-toast .kb-toast-open", "aria-label"), `Open ${key}`, "the toast is a button naming the ticket");
+  assert.match(await p.textContent("#kb-toast .kb-toast-cta"), /Open/);
+  await sleep(4500);
+  assert.ok(await p.isVisible("#kb-toast .kb-toast-open"), "still showing after 4.5 seconds (other toasts go at 3.6)");
+  await press(p, "#kb-toast .kb-toast-open");
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await until(async () => (await modalKey(p)) === key, "the new ticket open");
+  assert.equal(await p.isVisible("#kb-toast"), false, "the toast goes when the ticket opens");
+  // Over an open ticket a toast never takes a tap meant for the form beneath it.
+  await p.evaluate((k) => { const el = document.querySelector("#kb-toast"); el.innerHTML = `<button type="button" class="kb-toast-open" data-toast-key="${k}">x</button>`; el.hidden = false; }, key);
+  assert.equal(await p.$eval("#kb-toast", (e) => getComputedStyle(e).pointerEvents), "none", "taps go through the toast while a ticket is open");
+  await p.evaluate(() => { document.querySelector("#kb-toast").hidden = true; });
+  // Any other toast is plain text, not a button.
+  await press(p, "#task-close");
+  await p.evaluate(() => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async () => {} } }); });
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await p.waitForSelector("#task-backdrop:not([hidden])");
+  await press(p, "#task-share");
+  await until(async () => /Link copied/.test(await toastText(p)), "the Link copied toast");
+  assert.equal(await p.$("#kb-toast .kb-toast-open"), null, "a plain toast opens nothing");
+  await p.done();
+});
+T("KB-C31", "attachments: videos, PDFs and spreadsheets attach when a ticket is created and when it is edited; files Storage would refuse are refused first; Attachments can't be hidden", async (prof) => {
+  const p = await open(prof);
+  const file = (name, mimeType, size = 64) => ({ name, mimeType, buffer: Buffer.alloc(size, 1) });
+  // Created: the field is on the new-ticket form even though the seed's settings never showed it.
+  await press(p, "#kb-new-btn");
+  await p.waitForSelector('#task-form [data-field="attachments"]');
+  const accept = await p.getAttribute("#f-file", "accept");
+  for (const want of ["video/*", "application/pdf", ".xlsx", ".mov", ".docx"]) assert.ok(accept.includes(want), `the picker offers ${want}`);
+  assert.equal(await p.$eval("#f-file", (e) => e.multiple), true, "several files at once");
+  await p.fill("#f-title", "Ticket with files");
+  // An .xlsx whose type the browser left empty is still sent as a spreadsheet.
+  await p.setInputFiles("#f-file", [file("demo.mp4", "video/mp4"), file("spec.pdf", "application/pdf"), file("stock.xlsx", "")]);
+  await eventually(async () => assert.equal(await p.$$eval("#f-attachments li[data-att-kind]", (e) => e.length), 3, "three listed"));
+  assert.deepEqual(await p.$$eval("#f-attachments li[data-att-kind]", (e) => e.map((li) => li.dataset.attKind)), ["movie", "picture_as_pdf", "table_chart"], "each shows its kind");
+  // A program is refused before it is uploaded.
+  await p.setInputFiles("#f-file", [file("run.exe", "application/x-msdownload")]);
+  await until(async () => /run\.exe.*can't be attached/.test(await toastText(p)), "the refusal toast");
+  assert.equal(await p.$$eval("#f-attachments li[data-att-kind]", (e) => e.length), 3, "nothing else was attached");
+  await eventually(async () => assert.equal(await p.$$eval("#f-attachments .kb-none", (e) => e.filter((x) => /Uploading/.test(x.textContent)).length), 0, "uploads finished"));
+  await press(p, "#f-save");
+  await until(async () => /PH-\d+ created in Backlog/.test(await toastText(p)), "the created toast");
+  const key = /PH-\d+/.exec(await toastText(p))[0];
+  const made = await stored(p, key);
+  assert.deepEqual(made.attachments.map((a) => [a.name, a.contentType]), [["demo.mp4", "video/mp4"], ["spec.pdf", "application/pdf"], ["stock.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"]]);
+  for (const a of made.attachments) assert.match(a.url, /^https:\/\/firebasestorage\.googleapis\.com\//);
+  const ups = await p.evaluate(() => globalThis.__fbStub.uploads || {});
+  const sheet = Object.entries(ups).find(([k]) => /stock\.xlsx$/.test(k));
+  assert.ok(sheet && sheet[1].contentType === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Storage got the spreadsheet type, not application/octet-stream");
+  assert.equal((await p.evaluate((k) => globalThis.__fbStub.col("kanbanCards").get(k), key)).attachmentCount, 3, "the card counts them");
+  // Edited: an existing ticket takes a .mov (type left empty by the browser) and saves it.
+  await press(p, '.kb-card[data-key="PH-20"]');
+  await until(async () => (await modalKey(p)) === "PH-20", "PH-20 to open");
+  await p.waitForSelector('.kb-task-main [data-field="attachments"]');
+  const had = ((await stored(p, "PH-20")).attachments || []).map((a) => a.name);
+  await p.setInputFiles("#f-file", [file("walkthrough.mov", "")]);
+  await eventually(async () => assert.ok(await p.isEnabled("#f-save"), "Save is on"));
+  await eventually(async () => assert.equal(await p.$$eval("#f-attachments .kb-none", (e) => e.filter((x) => /Uploading/.test(x.textContent)).length), 0, "upload finished"));
+  await press(p, "#f-save");
+  await eventually(async () => {
+    const list = (await stored(p, "PH-20")).attachments;
+    assert.deepEqual(list.slice(0, -1).map((a) => a.name), had, "the ones it had are kept");
+    assert.deepEqual([list.at(-1).name, list.at(-1).contentType], ["walkthrough.mov", "video/quicktime"]);
+  });
+  assert.ok(Object.keys(await p.evaluate(() => globalThis.__fbStub.uploads || {})).some((k) => /^kanban\/PH-20\/.*walkthrough\.mov$/.test(k)), "held under the ticket");
+  await p.done();
+  // Settings: the Show box for Attachments is locked on.
+  const s = await open(prof, "#staff-kanban/settings");
+  await s.waitForSelector('[data-show="attachments"]');
+  assert.equal(await s.$eval('[data-show="attachments"]', (e) => e.checked && e.disabled), true, "shown and can't be switched off");
+  await s.done();
 });
 
 T("KB-C17", "Share link copies the ticket's address and says Link copied; the copied link opens the ticket", async (prof) => {
@@ -2044,6 +2153,7 @@ const E = {
   sel: { title: "#kb-view .page-header h2", count: "#kb-view .page-header-count" },
   pid, person: (id) => FULL[id] || id, rel: (id) => id.replace(".", "-"),
   hash: (route, q) => (route === "kanban" ? "#staff-kanban" : `#staff-kanban/${route}`) + (q ? "?" + q : ""),
+  attachmentsAlwaysShown: true, // KB-SET-1: the console's Attachments can't be hidden
   go: async (p, route, q) => { await p.evaluate((h) => { location.hash = h; }, E.hash(route, q)); await sleep(250); },
   stored, writes, viewerSeed,
   roleSeed: (role) => kanbanSeed({ user: { email: emailOf("Linh"), role } }),

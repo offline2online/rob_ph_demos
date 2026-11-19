@@ -99,7 +99,7 @@ const ARTICLE = { categoryId: "c1", status: "published", title: "Add a display t
 const GOOD = { category: "how-to", summary: "Wants to add a display.", answerable: true, confidence: 0.92, reply: "Hello Ann,\n\nOpen Displays and Devices, then Add display.", articleIds: ["a1"], spamLikely: false };
 
 // `triage: null` with an `Anthropic` stand-in runs the real answering engine (functions/answer-core.js).
-function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null, Anthropic = null } = {}) {
+function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = {}, prospects = {}, kanban = true, aidan = null, bucket = null, consoleReader = null, Anthropic = null, improvements = null } = {}) {
   const google = fakeGoogle(mail);
   let clock = 1760000000000;
   const kanbanCalls = { created: [], comments: [] };
@@ -117,7 +117,7 @@ function make({ mail = [], triage = async () => GOOD, db = fakeDb(), settings = 
     baseUrl: "https://console.example", triage, freeDomains: ["gmail.com"],
     createKanbanTask: kanban ? async (task, actor) => { kanbanCalls.created.push({ task, actor }); return `PH-${kanbanCalls.created.length}`; } : null,
     commentKanbanTask: async (key, text, actor) => { kanbanCalls.comments.push({ key, text, actor }); },
-    aidan, bucket, consoleReader, Anthropic,
+    aidan, bucket, consoleReader, Anthropic, improvements,
   });
   return { api, db, google, kanbanCalls, tick: (ms) => { clock += ms; }, mail };
 }
@@ -620,8 +620,8 @@ const engineStub = (seen, helpCentre) => async (input) => {
   seen.helpCentre.push(input);
   return helpCentre ? helpCentre(input) : NOT_IN_HELP_CENTRE;
 };
-function makeAidan(mail, { write, answer, helpCentre } = {}) {
-  const seen = { write: [], triaged: [], answer: [], helpCentre: [] };
+function makeAidan(mail, { write, answer, helpCentre, voice } = {}) {
+  const seen = { write: [], triaged: [], answer: [], helpCentre: [], voice: [] };
   const stored = [];
   const t = make({
     mail,
@@ -632,6 +632,8 @@ function makeAidan(mail, { write, answer, helpCentre } = {}) {
       write: async (input) => { seen.write.push(input); return write ? write(input) : DOC; },
       // An answer in the email itself. By default the model says it can't answer from the email.
       answer: async (input) => { seen.answer.push(input); return answer ? answer(input) : { canAnswer: false, replyText: "", reason: "it needs a document" }; },
+      // Aidan's voice (functions/aidan-voice.js): only the tests that give one run it.
+      ...(voice ? { voice: async (input) => { seen.voice.push(input); return voice(input); } } : {}),
     },
     bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
   });
@@ -802,7 +804,7 @@ check("Aidan: \"please confirm you received this email\" is answered in the emai
   const tk = ticketOf(t, "t-ack");
   assert.deepStrictEqual([tk.status, tk.resolvedBy, tk.needsHuman, tk.aidanPending, tk.aidan.status, tk.aidan.kind, tk.aidan.recipients, tk.aidan.document, tk.aidan.skillId], ["resolved", "aidan", false, false, "replied", "answer", 3, undefined, undefined]);
   const out = messagesOf(t, "t-ack").find((m) => m.direction === "out");
-  assert.deepStrictEqual([out.source, out.sentBy, out.kind, out.to, out.cc, out.attachments, out.text], ["aidan", "aidan", "answer", [OWNER], ["client@shop.example", "colleague@shop.example"], [], "Got it, Owner, all good.\n\nAidan\nAssistant to Rob, Personalisation Hub"], "the reply is on the thread in the Aidan tab");
+  assert.deepStrictEqual([out.source, out.sentBy, out.kind, out.to, out.cc, out.attachments, out.text], ["aidan", "aidan", "answer", [OWNER], ["client@shop.example", "colleague@shop.example"], [], "Got it, Owner, all good.\n\nAidan Hubbot, Personalisation Hub"], "the reply is on the thread in the Aidan tab");
   assert.ok(messagesOf(t, "t-ack").some((m) => m.direction === "event" && /Aidan answered on the email and replied to 3 people/.test(m.text)));
   // The next sync reads the sent answer back from Gmail: nothing is filed twice or run again.
   t.mail.push(gmailMessage({ id: sent.id, threadId: "t-ack", from: `Aidan <${MAILBOX}>`, labels: ["SENT"], date: 1760000900000, text: "Got it, Owner, all good." }));
@@ -1051,7 +1053,10 @@ check("Aidan, spam: a run already working sends nothing once its thread is spam;
 });
 
 check("Aidan's model calls: no retry, and timeouts that fit the function", async () => {
-  const { createAidan, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
+  const { createAidan, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, LATEST_START_MS, VOICE_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS } = require("../functions/aidan");
+  // The voice is one short call after the reply is written; with it the longest runs still fit.
+  assert.ok(VOICE_TIMEOUT_MS <= 20000, "the voice is a short call");
+  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + DOC_TIMEOUT_MS + COLLATERAL_RENDER_TIMEOUT_MS + VOICE_TIMEOUT_MS < 540000, "start + skill choice + document + PDF + the voice fit in 540 s");
   assert.ok(ANSWER_TIMEOUT_MS <= DOC_TIMEOUT_MS, "an answer, even after a skill choice that found none, takes no longer than a document");
   assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + document + a minute for attachments and the send fit in 540 s");
   const db = fakeDb();
@@ -1066,13 +1071,14 @@ check("Aidan's model calls: no retry, and timeouts that fit the function", async
     gmail: async (path) => (path.startsWith("messages/send") ? { id: "sent-1" } : { payload: { mimeType: "text/plain", body: { data: b64("@Aidan, write the usual thing for Kestrel") },
       headers: [{ name: "From", value: `Owner Person <${OWNER}>` }, { name: "Authentication-Results", value: VERIFIED }] } }),
     readSettings: async () => ({ connectedEmail: MAILBOX }), logEvent: async () => {}, now: () => new Date(), logger: { error() {} },
-    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, schema: opts.schema && Object.keys(opts.schema.properties) }); return opts.schema.properties.skillId ? { skillId: "s2", client: "Kestrel", reason: "fits" } : opts.schema.properties.canAnswer ? { canAnswer: true, replyText: "Got it.", reason: "" } : DOC; },
+    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, schema: opts.schema && Object.keys(opts.schema.properties) }); return opts.schema.properties.skillId ? { skillId: "s2", client: "Kestrel", reason: "fits" } : opts.schema.properties.canAnswer ? { canAnswer: true, replyText: "Got it.", reason: "" } : opts.schema.properties.quirk ? { sensitive: false, quirk: "" } : DOC; },
     apiKey: () => "sk-test",
   });
   await a.runOne("t1");
-  assert.deepStrictEqual(calls.map((c) => [c.timeout, c.maxRetries]), [[SELECT_TIMEOUT_MS, 0], [DOC_TIMEOUT_MS, 0]]);
+  assert.deepStrictEqual(calls.map((c) => [c.timeout, c.maxRetries]), [[SELECT_TIMEOUT_MS, 0], [DOC_TIMEOUT_MS, 0], [VOICE_TIMEOUT_MS, 0]], "the voice last, after the document is written, never retried");
   assert.strictEqual(db.state.supportTickets.t1.aidan.status, "replied");
-  // An answer: one model call, no skill choice, no retry, its own shorter timeout.
+  assert.strictEqual(db.state.skills["aidan-voice"].slug, "aidan-voice", "the voice skill is added to the library the first time it is missing");
+  // An answer: one model call and the voice's, no skill choice, no retry, its own shorter timeout.
   db.state.supportTickets.t2 = { inboxes: ["aidan"], threadId: "t2", subject: "S", aidanPending: true, aidan: { status: "queued", kind: "answer", gmailId: "g2", instruction: "please confirm you received this" } };
   db.state["supportTickets/t2/messages"] = { g2: { direction: "in", from: OWNER, fromName: "Owner Person", to: [AIDAN], cc: [], text: "@Aidan, please confirm you received this", subject: "S" } };
   const b = createAidan({
@@ -1080,12 +1086,12 @@ check("Aidan's model calls: no retry, and timeouts that fit the function", async
     gmail: async (path) => (path.startsWith("messages/send") ? { id: "sent-2" } : { payload: { mimeType: "text/plain", body: { data: b64("@Aidan, please confirm you received this") },
       headers: [{ name: "From", value: `Owner Person <${OWNER}>` }, { name: "Authentication-Results", value: VERIFIED }] } }),
     readSettings: async () => ({ connectedEmail: MAILBOX }), logEvent: async () => {}, now: () => new Date(), logger: { error() {} },
-    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, answer: Boolean(opts.schema.properties.canAnswer) }); return { canAnswer: true, replyText: "Got it.", reason: "" }; },
+    callJson: async (opts) => { calls.push({ timeout: opts.timeout, maxRetries: opts.maxRetries, answer: Boolean(opts.schema.properties.canAnswer) }); return opts.schema.properties.quirk ? { sensitive: false, quirk: "" } : { canAnswer: true, replyText: "Got it.", reason: "" }; },
     apiKey: () => "sk-test",
   });
   calls.length = 0;
   await b.runOne("t2");
-  assert.deepStrictEqual(calls, [{ timeout: ANSWER_TIMEOUT_MS, maxRetries: 0, answer: true }]);
+  assert.deepStrictEqual(calls, [{ timeout: ANSWER_TIMEOUT_MS, maxRetries: 0, answer: true }, { timeout: VOICE_TIMEOUT_MS, maxRetries: 0, answer: false }]);
   assert.deepStrictEqual([db.state.supportTickets.t2.aidan.status, db.state.supportTickets.t2.aidan.kind], ["replied", "answer"]);
 });
 
@@ -1108,6 +1114,32 @@ check("Aidan's allowed senders: an admin sets them, they are never read back in 
   assert.deepStrictEqual([ticketOf(t, "t-a1").aidan.status, t.google.calls.sent.length], ["ignored", 0]);
 });
 
+
+// Sender name (QVpqiMuwipZ4mKSXHplM): "Aidan Hubbot" by default, set in the console, used by the next email with no deploy.
+check("Aidan's sender name: \"Aidan Hubbot\" by default; an admin changes it and the next email's From and sign-off use it", async () => {
+  const t = makeAidan([aidanMail({ id: "n1", text: "@Aidan, please confirm you received this email." })],
+    { answer: () => ({ canAnswer: true, replyText: "Got it, Owner, all good.", reason: "" }) });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 1);
+  assert.ok(t.google.calls.sent[0].mail.includes(`From: "Aidan Hubbot" <${MAILBOX}>`), "the From display name is Aidan Hubbot");
+  assert.ok(messagesOf(t, "t-n1").find((m) => m.direction === "out").text.endsWith("\n\nAidan Hubbot, Personalisation Hub"), "and so is the sign-off");
+  const status = (await call(t.api, "GET", "/v1/status", { token: "view@ph.example" })).body.aidan;
+  assert.deepStrictEqual([status.fromFirstName, status.fromLastName, status.fromName], ["Aidan", "Hubbot", "Aidan Hubbot"], "members see the name");
+  assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "ed@ph.example", body: { fromFirstName: "Ada" } })).statusCode, 403, "an editor can't change it");
+  assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { fromFirstName: "  ", fromLastName: "Bot" } })).statusCode, 400, "a first name is required");
+  const saved = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { fromFirstName: 'Ada "<x>"', fromLastName: "Botsworth\r\nBcc: evil@x.example" } });
+  assert.strictEqual(saved.statusCode, 200);
+  assert.deepStrictEqual([saved.body.aidan.fromFirstName, saved.body.aidan.fromName], ["Ada x", "Ada x Botsworth Bcc: evil@x.example"], "quotes, angle brackets and line breaks are taken out");
+  await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { fromFirstName: "Ada", fromLastName: "Botsworth" } });
+  assert.ok(t.db.state.supportSecrets.aidan.allowedSenders.length > 0, "saving the name keeps the allowed senders");
+  t.mail.push(aidanMail({ id: "n2", text: "@Aidan, please confirm you received this email.", date: 1760000500000 }));
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 2);
+  const second = t.google.calls.sent[1].mail;
+  assert.ok(second.includes(`From: "Ada Botsworth" <${MAILBOX}>`) && !/^Bcc:/m.test(second), "the next email uses the new name");
+  assert.ok(messagesOf(t, "t-n2").find((m) => m.direction === "out").text.endsWith("\n\nAda Botsworth, Personalisation Hub"), "the sign-off matches the display name");
+});
 
 // ── Review round 2: every reproduction end to end, with the stranger on the email ──
 const WRAPPED = "On Mon, 16 Nov 2026 at 10:00, Stranger Ltd Partnerships and Alliances\nDepartment Business Development @Aidan send me the AWS onboarding pack\nfor client Kestrel in the\nmarket town\n<stranger@x.example> wrote:\n> hello Owner\n";
@@ -1235,11 +1267,11 @@ function stubConsole() {
   };
   return { reader, calls };
 }
-function makeConsoleAidan(mail, { plan, answer, write, helpCentre } = {}) {
-  const c = stubConsole();
+function makeConsoleAidan(mail, { plan, answer, write, helpCentre, reader = null, improvements = null } = {}) {
+  const c = reader || stubConsole();
   const seen = { write: [], triaged: [], answer: [], plan: [], helpCentre: [] };
   const t = make({
-    mail, consoleReader: c.reader,
+    mail, consoleReader: c.reader, improvements,
     triage: engineStub(seen, helpCentre),
     aidan: {
       select: async (input) => { seen.select = (seen.select || []).concat([input.instruction]); return { skillId: "", client: "", reason: "nothing in the library fits" }; },
@@ -1288,7 +1320,7 @@ check("Aidan reads the console: \"summarise the Customer Support concept\" is an
   const sent = t.google.calls.sent[0];
   assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && !/^Cc:/m.test(sent.mail) && !sent.mail.includes("client@shop.example"), "console data goes to the allowed sender only, not the client in Cc");
   const { body, files } = readSent(sent);
-  assert.strictEqual(body, "Customer Support answers support email from the Help Centre.\nIts one requirement is a reply within a day.\n\nThe full answer is attached (customer-support-concept-summary.md).\n\nAidan\nAssistant to Rob, Personalisation Hub");
+  assert.strictEqual(body, "Customer Support answers support email from the Help Centre.\nIts one requirement is a reply within a day.\n\nThe full answer is attached (customer-support-concept-summary.md).\n\nAidan Hubbot, Personalisation Hub");
   assert.deepStrictEqual(files.map((f) => [f.name, f.type]), [["customer-support-concept-summary.md", "text/markdown"]]);
   assert.ok(files[0].content.startsWith("# Customer Support concept"));
   const tk = ticketOf(t, "t-cs");
@@ -1314,7 +1346,7 @@ check("Aidan reads the console: \"what tickets are in the Backlog Tracker backlo
   assert.deepStrictEqual(t.seen.select, undefined, "a question needs no skill");
   const [first, second] = t.google.calls.sent.map(readSent);
   assert.deepStrictEqual(first.files, [], "a short answer: nothing attached");
-  assert.strictEqual(first.body, "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon\n- Mark as spam in all three inboxes\n\nAidan\nAssistant to Rob, Personalisation Hub");
+  assert.strictEqual(first.body, "There are two tickets in the Backlog Tracker backlog:\n- Fix the console favicon\n- Mark as spam in all three inboxes\n\nAidan Hubbot, Personalisation Hub");
   assert.ok(!/[A-Za-z0-9]{20}/.test(first.body), "no ticket id in the body");
   assert.ok(second.body.includes("Fav1c0nT1cketAbcdeFg") && second.body.includes("Sp4mBu7tonT1cketXyzQ"), "ids are kept when the instruction asks for them");
   assert.deepStrictEqual([ticketOf(t, "t-bl").aidan.kind, ticketOf(t, "t-bl").aidan.console], ["answer", { reads: 1, tools: ["list_backlog_items"] }]);
@@ -1454,7 +1486,232 @@ check("Aidan reads the console within the function's budget: planning rounds are
   const { CONSOLE_PLAN_TIMEOUT_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, LATEST_START_MS } = require("../functions/aidan");
   const ac = require("../functions/aidan-core");
   assert.ok(ac.CONSOLE_ROUNDS <= 2 && CONSOLE_PLAN_TIMEOUT_MS <= 30000);
-  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + document + a minute fit in 540 s");
+  assert.ok(LATEST_START_MS + SELECT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ac.CODE_MODE_RUNS * ac.CONSOLE_SCRIPT_TIMEOUT_MS + DOC_TIMEOUT_MS + 60000 <= 540000, "start + skill choice + console plans + the one Code Mode run + document + a minute fit in 540 s");
+});
+
+// ── Code Mode by default and self-improvement tickets (IJhIIzTxOJyZVCzzYggZ) ──
+// The console reader with Code Mode (mcp-server.js → consoleReader .script /
+// .insight; the real sandbox is in aidan-console.test.js), and an in-memory
+// stand-in for the Backlog (mcp-server.js → aidanImprovements).
+const DSPP = "mIPdOCAWevhrgD8g2tCZ";
+const DSP_STATUS = { project: { id: DSPP, name: "Display Types & DSP Integration" }, byStage: { Backlog: 4, "Ready for Testing": 2, "Approved for Deployment": 0 }, blockers: [{ id: "Dsp7woT1cketAbcdeFgh", title: "Partner API rate limits", reason: "waiting-on-input" }], train: { state: "testing", onTrain: 2 } };
+function codeModeConsole({ script, insight } = {}) {
+  const c = stubConsole();
+  const read = c.reader.read;
+  const codeModeCalls = [];
+  c.reader.read = async (name, args) => {
+    if (name !== "list_projects") return read(name, args);
+    c.calls.push({ name, args });
+    return { ok: true, text: JSON.stringify({ projects: [{ id: BT, name: "Backlog Tracker & FAQs", counts: {} }, { id: DSPP, name: "Display Types & DSP Integration", counts: { backlog: 4 } }] }) };
+  };
+  c.reader.describeScriptTools = () => "declare const tools: {\n  list_backlog_items(args?: { projectId?: string }): Promise<unknown>;\n};";
+  c.reader.insights = () => ["pipeline_status", "project_status", "release_status"].map((name) => ({ name, description: `${name} (stub)`, params: name === "project_status" ? [{ name: "projectId", type: "string", required: true }] : [] }));
+  c.reader.script = async (code, opts) => { codeModeCalls.push({ kind: "script", code, opts }); return script ? script(code) : { ok: true, text: "{}", toolCalls: ["list_backlog_items"], durationMs: 40 }; };
+  c.reader.insight = async (name, params, opts) => { codeModeCalls.push({ kind: "insight", name, params, opts }); return insight ? insight(name, params) : { ok: true, text: JSON.stringify(DSP_STATUS), toolCalls: ["list_projects", "list_backlog_items", "get_pipeline_health"], durationMs: 120 }; };
+  return Object.assign(c, { codeModeCalls });
+}
+function stubImprovements(projects = [{ id: BT, name: "Backlog Tracker & FAQs" }, { id: DSPP, name: "Display Types & DSP Integration" }]) {
+  const items = [];
+  const comments = [];
+  const open = (i) => i.status !== "published-live" && i.status !== "archived";
+  const link = (id) => `https://console.example/#item-${id}`;
+  return {
+    items, comments,
+    async projects() { return projects; },
+    async openTickets(projectId) { return items.filter((i) => i.projectId === projectId && open(i)); },
+    async byKey(key) { return items.filter((i) => i.aidanImprovementKey === key && open(i)); },
+    async filedOn(day) { return items.filter((i) => i.aidanImprovementDay === day).length; },
+    async file({ projectId, title, desc, improvement }) {
+      const id = `Imp${items.length + 1}T1cketAbcdeFghij`.slice(0, 20);
+      items.push({ id, projectId, title, desc, status: "backlog", aidanImprovementKey: improvement.key, aidanImprovementDay: improvement.day, aidanImprovement: improvement, notes: [] });
+      return { ok: true, itemId: id, title, projectId, board: link(id) };
+    },
+    async comment(itemId, text) { comments.push({ itemId, text }); items.find((i) => i.id === itemId).notes.push({ author: "aidan", text }); return { ok: true, itemId, board: link(itemId) }; },
+  };
+}
+const planCodeMode = (cm) => (input) => (input.round === 0 ? Object.assign({ changeRequested: false, reads: [], reason: "one Code Mode run", script: "", insight: "", insightParams: "{}" }, cm) : { changeRequested: false, reads: [], reason: "done" });
+
+check("Aidan, Code Mode: \"give me a status summary of the DSP project\" is served by ONE Code Mode run, and a fully met request files nothing", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "dsp", text: "@Aidan, give me a status summary of the DSP project" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: DSPP }) }),
+    answer: (input) => ({ canAnswer: true, replyText: input.console && input.console.text.includes("Partner API rate limits") ? "Display Types & DSP Integration: 4 in Backlog, 2 in Ready for Testing. One blocker: Partner API rate limits (Dsp7woT1cketAbcdeFgh)." : "no data", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => [c.kind, c.name, c.params]), [["insight", "project_status", { projectId: DSPP }]], "one Code Mode run");
+  assert.strictEqual(reader.codeModeCalls[0].opts.timeoutMs, require("../functions/aidan-core").CONSOLE_SCRIPT_TIMEOUT_MS);
+  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts"], "only the index; no chain of single reads");
+  const p0 = t.seen.plan[0];
+  assert.ok(p0.codeMode && /declare const tools/.test(p0.codeMode.scriptTools) && !p0.codeMode.done);
+  assert.deepStrictEqual(p0.codeMode.insights.map((i) => i.name), ["pipeline_status", "project_status"], "only the insights Aidan may run");
+  assert.strictEqual(t.seen.plan[1].codeMode.done, true, "the second round knows the run has been used");
+  const a = t.seen.answer[0];
+  assert.ok(a.console.text.includes("<read tool=\"get_insight\"") && a.console.text.includes("Partner API rate limits"), "the answer is written from the run's compact result");
+  const body = readSent(t.google.calls.sent[0]).body;
+  assert.ok(body.startsWith("Display Types & DSP Integration: 4 in Backlog, 2 in Ready for Testing. One blocker: Partner API rate limits."), body);
+  const tk = ticketOf(t, "t-dsp");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.console.reads, tk.aidan.console.tools], ["replied", 1, ["get_insight"]]);
+  assert.deepStrictEqual(Object.assign({}, tk.aidan.console.codeMode, { durationMs: 0 }), { ran: true, ok: true, kind: "insight", name: "project_status", toolCalls: 3, durationMs: 0 });
+  assert.deepStrictEqual([imp.items.length, imp.comments.length, tk.aidan.improvement], [0, 0, undefined], "nothing to improve: nothing filed");
+});
+
+check("Aidan, self-improvement: a request he can't fully do files a ticket on the right project with the gap and the improvement, linked on the thread; asking again comments instead", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const ask = "when will the DSP tickets ship?";
+  const t = makeConsoleAidan([
+    aidanMail({ id: "ship", text: `@Aidan, ${ask}` }),
+    aidanMail({ id: "ship2", threadId: "t-ship2", text: `Hi,\n\n@Aidan, ${ask}`, date: 1759990001000 }),
+  ], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: DSPP }) }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "The tickets carry no ship dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "Record a target ship date on each DSP ticket." }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 0, "nothing is sent: a person takes it");
+  assert.strictEqual(imp.items.length, 1);
+  const item = imp.items[0];
+  assert.strictEqual(item.projectId, DSPP, "missing data about one project is filed on that project");
+  assert.strictEqual(item.title, "Aidan missing data: The DSP tickets carry no target ship dates");
+  const ac = require("../functions/aidan-core");
+  assert.ok(item.desc.startsWith(`## Outcome\n${ac.IMPROVEMENT_OUTCOMES["missing-data"]} ${ac.IMPROVEMENT_SUGGESTIONS["missing-data"]}\n\n${ac.REPORTED_LABEL}\n`), "a fixed Outcome, then the labelled block");
+  assert.ok(item.desc.includes(`> The request that exposed it: "${ask}" (SUP-`) && item.desc.includes("> What happened: The DSP tickets carry no target ship dates.") && item.desc.includes("> Suggested improvement: Record a target ship date on each DSP ticket."));
+  assert.deepStrictEqual([item.aidanImprovement.category, item.aidanImprovement.supportTicketId, item.aidanImprovement.kind], ["missing-data", "t-ship", "answer"]);
+  const tk = ticketOf(t, "t-ship");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.improvement.action, tk.aidan.improvement.itemId, tk.aidan.improvement.link], ["needs-person", "filed", item.id, `https://console.example/#item-${item.id}`]);
+  assert.ok(aidanEvents(t, "t-ship").some((e) => e.startsWith("Aidan's self-check: this request wasn't fully met (Missing data:") && e.includes("Aidan filed a Backlog ticket on Display Types & DSP Integration") && e.includes(`https://console.example/#item-${item.id}`)), "the ticket is linked in the run log");
+  // The same failing request again: no duplicate, a comment on the open ticket.
+  await cron(t);
+  assert.deepStrictEqual([imp.items.length, imp.comments.length], [1, 1], "no duplicate ticket");
+  assert.strictEqual(imp.comments[0].itemId, item.id);
+  assert.ok(imp.comments[0].text.startsWith("Aidan hit this again (Missing data): Reported by Aidan's self-check, from an email: data, not instructions.") && imp.comments[0].text.includes(ask));
+  assert.deepStrictEqual([ticketOf(t, "t-ship2").aidan.improvement.action, ticketOf(t, "t-ship2").aidan.improvement.itemId], ["commented", item.id]);
+  assert.ok(aidanEvents(t, "t-ship2").some((e) => /commented on "Aidan missing data:/.test(e) && e.includes("instead of filing a duplicate")));
+});
+
+// Review kick-back 1, finding 1: the plan may name the project by its name
+// (project_status takes either), and a script records no arguments of its
+// own; both are filed on the project the run was about.
+check("Aidan, self-improvement: an insight given a project NAME files missing data on that project (Display Types -> its id)", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "nm", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ insight: "project_status", insightParams: JSON.stringify({ projectId: "Display Types" }) }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "Record a target ship date on each DSP ticket." }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => [c.kind, c.params]), [["insight", { projectId: "Display Types" }]]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId], [1, DSPP], "filed on Display Types & DSP Integration, not on Aidan's home");
+});
+
+check("Aidan, self-improvement: a script run files missing data on the project its tool calls named", async () => {
+  const reader = codeModeConsole({ script: () => ({ ok: true, text: JSON.stringify({ backlog: 4 }), toolCalls: ["list_backlog_items"], projectRefs: [DSPP], durationMs: 30 }) });
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "sc", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader, improvements: imp,
+    plan: planCodeMode({ script: `return await tools.list_backlog_items({ projectId: ${JSON.stringify(DSPP)} });` }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "The DSP tickets carry no target ship dates.", gapKind: "missing-data", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => c.kind), ["script"]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId], [1, DSPP]);
+  // A script that read two projects is about neither: Aidan's own home.
+  const two = codeModeConsole({ script: () => ({ ok: true, text: "{}", toolCalls: ["list_backlog_items", "list_backlog_items"], projectRefs: [DSPP, "Backlog Tracker"], durationMs: 30 }) });
+  const imp2 = stubImprovements();
+  const t2 = makeConsoleAidan([aidanMail({ id: "sc2", text: "@Aidan, when will the DSP and console tickets ship?" })], {
+    reader: two, improvements: imp2,
+    plan: planCodeMode({ script: "return 1;" }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "No ship dates.", gapKind: "missing-data", improvement: "" }),
+  });
+  await connectAidan(t2);
+  await cron(t2);
+  assert.deepStrictEqual([imp2.items.length, imp2.items[0].projectId], [1, BT]);
+});
+
+check("Aidan, Code Mode: a failed run falls back to single reads, and the limitation is filed on Aidan's own project", async () => {
+  const reader = codeModeConsole({ script: () => ({ ok: false, error: "The script ran past 10 s.", errorKind: "timeout", toolCalls: ["list_backlog_items"], durationMs: 10000 }) });
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "cs2", text: "@Aidan, how many open tickets does the Customer Support concept have?" })], {
+    reader, improvements: imp,
+    plan: (input) => (input.round === 0 ? { changeRequested: false, reads: [], reason: "", script: "const r = await tools.list_backlog_items({}); return r;", insight: "", insightParams: "{}" }
+      : { changeRequested: false, reads: [{ tool: "get_concept", args: JSON.stringify({ conceptId: CONCEPT }) }], reason: "the run failed", script: "return 1;", insight: "", insightParams: "{}" }),
+    answer: () => ({ canAnswer: true, replyText: "Customer Support is a concept, so it has no tickets yet.", documentMd: "", title: "", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual(reader.codeModeCalls.map((c) => c.kind), ["script"], "one Code Mode run, never a second");
+  assert.deepStrictEqual(t.consoleCalls.map((c) => c.name), ["list_projects", "list_concepts", "get_concept"], "then the single read");
+  assert.ok(t.seen.answer[0].console.text.includes("failed=\"true\"") && t.seen.answer[0].console.text.includes("CS-1 Reply within a day"));
+  const tk = ticketOf(t, "t-cs2");
+  assert.deepStrictEqual([tk.aidan.status, tk.aidan.console.codeMode.ok, tk.aidan.console.codeMode.errorKind], ["replied", false, "timeout"]);
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId, imp.items[0].aidanImprovement.category], [1, BT, "code-mode"], "a Code Mode limitation is Aidan's own project's");
+  assert.ok(imp.items[0].aidanImprovement.gap.startsWith("The Code Mode run failed (timeout): The script ran past 10 s."));
+});
+
+check("Aidan, self-improvement: every gate still applies; refused, unverified and read-only runs file nothing; a cut-off run files a time-budget ticket", async () => {
+  const reader = codeModeConsole();
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([
+    aidanMail({ id: "st", from: "Someone <someone@shop.example>", auth: "mx.google.com; dmarc=pass header.from=shop.example", text: "@Aidan, when will the DSP tickets ship?" }),
+    aidanMail({ id: "fg", threadId: "t-fg", auth: "", text: "@Aidan, when will the DSP tickets ship?", date: 1759990001000 }),
+    aidanMail({ id: "ro", threadId: "t-ro", text: "@Aidan, please create a ticket for the DSP ship dates.", date: 1759990002000 }),
+    aidanMail({ id: "ok", threadId: "t-ok", text: "@Aidan, please confirm you received this email", date: 1759990003000 }),
+  ], {
+    reader, improvements: imp,
+    answer: () => ({ canAnswer: true, replyText: "Got it, Owner, all good.", reason: "", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(t);
+  for (let i = 0; i < 4; i++) await cron(t);
+  assert.deepStrictEqual([ticketOf(t, "t-st").aidan.status, ticketOf(t, "t-fg").aidan.status], ["ignored", "ignored"], "not allowed, not verified: nothing runs");
+  assert.deepStrictEqual([ticketOf(t, "t-ro").aidan.readOnly, ticketOf(t, "t-ok").aidan.status], [true, "replied"]);
+  assert.deepStrictEqual([imp.items.length, imp.comments.length], [0, 0], "nothing filed for any of them");
+  assert.deepStrictEqual(reader.codeModeCalls, [], "an acknowledgement reads nothing");
+  // A run that passed the gates keeps the mark (review kick-back 1, finding 2).
+  assert.ok(ticketOf(t, "t-ok").aidan.gatedAt, "a gated run is marked aidan.gatedAt");
+  assert.deepStrictEqual([ticketOf(t, "t-st").aidan.gatedAt, ticketOf(t, "t-fg").aidan.gatedAt], [undefined, undefined], "a refused or unverified run is not");
+  // A run cut off before the gates (no aidan.gatedAt): a person takes it, nothing is filed.
+  const nowMs = 1760000000000 + 10 * 60 * 60 * 1000;
+  t.db.state.supportTickets["t-fg"].aidan = { status: "working", kind: "answer", gmailId: "fg", instruction: "when will the DSP tickets ship?", startedAt: new Date(nowMs) };
+  // A run cut off by the time limit after the gates: a person takes it, and the time budget is filed.
+  t.db.state.supportTickets["t-ok"].aidan = { status: "working", kind: "answer", gmailId: "ok", instruction: "summarise every ticket on every project", startedAt: new Date(nowMs), gatedAt: new Date(nowMs + 1000) };
+  t.tick(16 * 60 * 1000 + 10 * 60 * 60 * 1000);
+  await call(t.api, "POST", "/v1/sync", { token: "ed@ph.example" });
+  assert.deepStrictEqual([ticketOf(t, "t-fg").aidan.status, ticketOf(t, "t-ok").aidan.status], ["needs-person", "needs-person"]);
+  assert.strictEqual(ticketOf(t, "t-fg").aidan.improvement, undefined, "the stale run with no gate mark files nothing");
+  assert.deepStrictEqual([imp.items.length, imp.items[0].projectId, imp.items[0].aidanImprovement.category], [1, BT, "time-budget"], "only the gated run is filed");
+  assert.ok(!imp.items[0].desc.includes("DSP tickets ship"), "nothing from the ungated run's request");
+  assert.strictEqual(ticketOf(t, "t-ok").aidan.improvement.action, "filed");
+});
+
+check("Aidan, self-improvement: at most five new tickets a day; a failure to file never fails the run", async () => {
+  const ac = require("../functions/aidan-core");
+  const imp = stubImprovements();
+  const t = makeConsoleAidan([aidanMail({ id: "cap", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader: codeModeConsole(), improvements: imp,
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "", gapKind: "", improvement: "" }),
+  });
+  const realFiled = imp.filedOn;
+  imp.filedOn = async () => ac.IMPROVEMENTS_PER_DAY;
+  await connectAidan(t);
+  await cron(t);
+  assert.deepStrictEqual([imp.items.length, ticketOf(t, "t-cap").aidan.improvement.action], [0, "not-filed"]);
+  assert.ok(aidanEvents(t, "t-cap").some((e) => /No ticket was filed: Aidan has already filed 5 today\./.test(e)));
+  imp.filedOn = realFiled;
+  const broken = makeConsoleAidan([aidanMail({ id: "brk", text: "@Aidan, when will the DSP tickets ship?" })], {
+    reader: codeModeConsole(), improvements: Object.assign(stubImprovements(), { projects: async () => { throw new Error("Firestore is down"); } }),
+    answer: () => ({ canAnswer: false, replyText: "", documentMd: "", title: "", reason: "No dates.", gap: "", gapKind: "", improvement: "" }),
+  });
+  await connectAidan(broken);
+  const r = await cron(broken);
+  assert.deepStrictEqual([r.statusCode, ticketOf(broken, "t-brk").aidan.status], [200, "needs-person"], "the run is filed as it finished");
+  assert.ok(aidanEvents(broken, "t-brk").some((e) => /self-check couldn't file its ticket: Firestore is down/.test(e)));
 });
 
 // ── One answering engine (rVv1x2N8xlKAZs0gpkRx, functions/answer-core.js) ──
@@ -1463,7 +1720,7 @@ function recordingModel(answers) {
   const reqs = [];
   class Client {
     constructor(opts) { this.beta = { messages: { create: async (req) => {
-      const step = req.system.startsWith("You route") ? "select" : req.system.startsWith("You write replies") ? "draft" : "other";
+      const step = req.system.startsWith("You route") ? "select" : req.system.startsWith("You write replies") ? "draft" : req.system.startsWith("You add Aidan's voice") ? "voice" : "other";
       reqs.push({ step, system: req.system, content: req.messages[0].content, maxRetries: opts.maxRetries, timeout: opts.timeout });
       return { stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(answers(step, req)) }] };
     } } }; }
@@ -1475,8 +1732,10 @@ check("one answering engine: the same question to support@ and to @Aidan matches
   const core = require("../functions/support-core");
   const QUESTION = "How do I add a display to my store?";
   const BODY = "Open Displays and Devices, then Add display.";
+  const ASIDE = "Fewer steps than a meal deal.";
   const model = recordingModel((step) => (step === "select"
     ? { relevant: true, question: "How to add a display.", category: "how-to", articleIds: ["a1"], spamLikely: false }
+    : step === "voice" ? { sensitive: false, quirk: ASIDE }
     : { summary: "Wants to add a display.", answerable: true, confidence: 0.62, reply: BODY, articleIds: ["a1"] }));
   // Sending by itself is ON for support: its gates still hold a 62% draft for a person.
   const t = make({ triage: null, Anthropic: model.Client, settings: { autoReply: true }, mail: [
@@ -1504,15 +1763,21 @@ check("one answering engine: the same question to support@ and to @Aidan matches
   assert.ok(sent.mail.includes(`To: ${OWNER}\r\n`) && sent.mail.includes("Cc: client@shop.example"), "reply-all: the Help Centre is public");
   assert.ok(/Content-Type: text\/plain/.test(sent.mail) && !/multipart|filename=/i.test(sent.mail), "inline, nothing attached");
   const body = readSent(sent).body;
-  assert.strictEqual(body.trim(), `Hi Owner,\n\n${BODY}\n\nHelp Centre article:\nAdd a display to a store: https://personalisationhub.com/support-centre/article.html?id=a1\n\nAidan\nAssistant to Rob, Personalisation Hub`);
+  // The engine's answer and its article first, word for word; then Aidan's one aside; then the sign-off.
+  assert.strictEqual(body.trim(), `Hi Owner,\n\n${BODY}\n\nHelp Centre article:\nAdd a display to a store: https://personalisationhub.com/support-centre/article.html?id=a1\n\n${ASIDE}\n\nAidan Hubbot, Personalisation Hub`);
+  assert.deepStrictEqual(aid.aidan.voice, { quirk: true });
+  assert.ok(!sup.aiDraft.text.includes(ASIDE), "the Support Inbox's own draft to a customer has no aside: the voice is Aidan's alone");
   assert.ok(!/62|confidence/i.test(body), "the confidence is on the ticket, never in the email");
   assert.deepStrictEqual([aid.status, aid.resolvedBy, aid.aidan.status, aid.aidan.kind, aid.aidan.recipients, aid.aiDraft, aid.triagePending], ["resolved", "aidan", "replied", "answer", 2, null, false]);
   const out = messagesOf(t, "t-q1").find((m) => m.direction === "out");
   assert.deepStrictEqual([out.kind, out.helpCentre, out.confidence, out.articles.map((a) => a.id)], ["answer", true, 0.62, ["a1"]]);
   assert.ok(messagesOf(t, "t-q1").some((m) => m.direction === "event" && /Aidan answered from the Help Centre \(1 article, 62% confidence\) in the email itself and replied to 2 people\./.test(m.text)));
   // Exactly the same pipeline: the same two prompts, the same catalogue, the same question.
-  const [aSel, aDraft, sSel, sDraft] = model.reqs;
-  assert.deepStrictEqual(model.reqs.map((r) => r.step), ["select", "draft", "select", "draft"], "match then draft, for each");
+  const [aSel, aDraft, sSel, sDraft] = model.reqs.filter((r) => r.step !== "voice");
+  assert.deepStrictEqual(model.reqs.map((r) => r.step), ["select", "draft", "voice", "select", "draft"], "match then draft, for each; Aidan's voice after his answer is written");
+  const voiceReq = model.reqs.find((r) => r.step === "voice");
+  assert.ok(voiceReq.content.includes(`<reply>\n${BODY}`) && voiceReq.system.includes("<voice_skill>") && voiceReq.system.includes("## The character"), "the voice is given the finished reply and the skill");
+  assert.deepStrictEqual([voiceReq.maxRetries, voiceReq.timeout], [0, 20000]);
   assert.deepStrictEqual([aSel.system, aDraft.system], [core.SELECT_SYSTEM, core.TRIAGE_SYSTEM]);
   assert.deepStrictEqual([sSel.system, sDraft.system], [aSel.system, aDraft.system]);
   const catalogue = (r) => r.content.match(/<catalogue>[\s\S]*<\/catalogue>/)[0];
@@ -1536,7 +1801,7 @@ check("one answering engine: Aidan always replies when the Help Centre answers, 
   assert.deepStrictEqual(tk.aidan.helpCentre, { confidence: 0.31, confidenceSteps: [{ articles: 1, confidence: 0.2 }, { articles: 2, confidence: 0.31 }], question: "How to set up targeting.",
     articles: [{ id: "a1", title: "Add a display to a store", url: "https://personalisationhub.com/support-centre/article.html?id=a1" }, { id: "h1", title: "Targeting rules (internal draft)", url: "" }] });
   const body = readSent(t.google.calls.sent[0]).body.trim();
-  assert.strictEqual(body, "Hi Owner,\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nAidan\nAssistant to Rob, Personalisation Hub", "the engine's greeting and sign-off are replaced by Aidan's; an article the reply names is not listed twice");
+  assert.strictEqual(body, "Hi Owner,\n\nOpen the campaign, then Targeting. See Add a display to a store.\n\nAidan Hubbot, Personalisation Hub", "the engine's greeting and sign-off are replaced by Aidan's; an article the reply names is not listed twice");
   assert.ok(!/internal draft/.test(body), "an article hidden from the website is on the ticket, never named in the email");
   // The engine was given the tagged email only, as a customer's first email: not the thread's earlier mail, and no answer model, console read or skill.
   const asked = t.seen.helpCentre[0];
@@ -1578,7 +1843,7 @@ check("one answering engine: a question put to the Help Centre first still fits 
   const core = require("../functions/support-core");
   assert.ok(core.MAX_ARTICLES >= 1 && DRAFT_TIMEOUT_MS <= 40000);
   // The match, the best article's draft and one wider draft; then, when the Help Centre doesn't answer, the console plans and the answer.
-  assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000);
+  assert.ok(LATEST_START_MS + 3 * DRAFT_TIMEOUT_MS + ac.CONSOLE_ROUNDS * CONSOLE_PLAN_TIMEOUT_MS + ac.CODE_MODE_RUNS * ac.CONSOLE_SCRIPT_TIMEOUT_MS + ANSWER_TIMEOUT_MS + 60000 <= 540000, "with the one Code Mode run");
 });
 
 // ── Branded sales collateral (JtkLrEG0aTnC5JfkdPA1) ──
@@ -1603,21 +1868,23 @@ function attachmentsOf(mail) {
   }
   return out;
 }
-function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = { s1: SKILLS.s1, b1: BRAND_SKILL }, prospects = {}, leads = {} } = {}) {
+function makeCollateral(mail, { write = () => COLLATERAL_DOC, render, skills = { s1: SKILLS.s1, b1: BRAND_SKILL }, prospects = {}, leads = {}, voice = null, projectDocs = null, improvements = null } = {}) {
   const seen = { write: [], render: [], select: [] };
   const stored = [];
   const t = make({
-    mail, prospects,
+    mail, prospects, improvements,
     aidan: {
       select: async (input) => { seen.select.push(input.instruction); return { skillId: "", client: "", reason: "the brand skill alone" }; },
       write: async (input) => { seen.write.push(input); return write(input); },
       answer: async () => ({ canAnswer: false, replyText: "", reason: "n/a" }),
+      ...(voice ? { voice } : {}),
       render: async (html, opts) => { seen.render.push({ html, opts }); return render ? render(html, opts) : { pdf: FAKE_PDF(opts.format.key === "one-pager" ? 1 : 4), pages: opts.format.key === "one-pager" ? 1 : 4 }; },
     },
     bucket: () => ({ file: (path) => ({ save: async (buf, opts) => { stored.push({ path, size: buf.length, type: opts.contentType }); } }) }),
   });
   t.db.state.skills = JSON.parse(JSON.stringify(skills));
   t.db.state.leads = leads;
+  if (projectDocs) t.db.state.projectDocs = projectDocs;
   t.db.state.projects = { p1: { name: "Display Types & DSP Integration" }, p2: { name: "Retail Media Insights & Analytics Dashboards" } };
   return Object.assign(t, { seen, stored });
 }
@@ -1722,6 +1989,62 @@ check("Aidan collateral: the gates hold: a stranger's request for a one-pager do
   assert.strictEqual(t.seen.render.length, 0, "no PDF for anything but collateral");
   const x2 = ticketOf(t, "t-x2");
   assert.deepStrictEqual([x2.aidan.status, x2.aidan.collateral, Object.keys(attachmentsOf(t.google.calls.sent[0].mail))], ["replied", undefined, ["aws-onboarding-pack-kestrel.md"]]);
+});
+
+// ── Brand Guidelines › Markets (mErc7MPAkrKjF9fWgqXb) ──
+// The market pages as the post-merge sync writes them (the real repo files).
+const marketDoc = (slug) => ({ projectId: BT, name: `6 — Brand market: ${slug}`, mirrorKey: `brand-market-${slug}`, sourcePath: `backlog-tracker/promote/markets/${slug}.md`,
+  sourcePrefix: "> Copy of the file.\n\n", contentMd: `> Copy of the file.\n\n${require("fs").readFileSync(require("path").join(__dirname, "..", "promote", "markets", `${slug}.md`), "utf8")}` });
+const MARKET_DOCS = { mth: marketDoc("thailand"), msg: marketDoc("singapore"), mus: marketDoc("united-states"), bg: { projectId: BT, name: "6 — Brand Guidelines (Promote)", mirrorKey: "brand-guidelines", contentMd: "# Brand Guidelines" } };
+
+check("Aidan collateral, markets: a one-pager for a Thai prospect follows the Thailand page; the same request for a US lead follows the US page", async () => {
+  const t = makeCollateral([
+    aidanMail({ id: "m1", subject: "CP Group", text: "@Aidan, send me a one-pager for CP Group, retail grocery." }),
+    aidanMail({ id: "m2", subject: "Kroger", date: 1759990005000, text: "@Aidan, send me a one-pager for Kroger, retail grocery." }),
+  ], {
+    projectDocs: MARKET_DOCS, improvements: stubImprovements(),
+    prospects: { cp: { name: "CP Group", country: "Thailand", industry: "Grocery & Supermarkets" } },
+    leads: { k: { company: { name: "Kroger", industry: "Grocery & Supermarkets", countries: ["USA"] } } },
+  });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const [th, us] = t.seen.write;
+  assert.ok(th && us, "both written");
+  assert.strictEqual(th.collateral.market, "thailand");
+  assert.ok(th.system.includes('<market name="Thailand">') && th.system.includes("Khun") && /Lèse-majesté/.test(th.system), "the whole Thailand page, agent-only detail included");
+  assert.ok(/Tailor tone, forms of address, spelling/.test(th.system) && /\(Thailand\)/.test(th.system));
+  assert.ok(!th.system.includes("<market name=\"United States\">"), "only the one market");
+  assert.strictEqual(us.collateral.market, "united-states");
+  assert.ok(us.system.includes('<market name="United States">') && us.system.includes("personalize, color, center") && us.system.includes("Direct and concise"));
+  const tk = ticketOf(t, "t-m1");
+  assert.deepStrictEqual(tk.aidan.collateral.market, { slug: "thailand", name: "Thailand" });
+  assert.deepStrictEqual(ticketOf(t, "t-m2").aidan.collateral.market, { slug: "united-states", name: "United States" });
+  assert.ok(messagesOf(t, "t-m1").some((m) => m.direction === "event" && /tailored to the Thailand market page/.test(m.text)));
+  assert.strictEqual(tk.aidan.improvement, undefined, "a market with a page files nothing");
+});
+
+check("Aidan collateral, markets: a company in a market with no page gets the default guidelines, and Aidan files one missing-market ticket for that country", async () => {
+  const imp = stubImprovements();
+  const t = makeCollateral([
+    aidanMail({ id: "n1", subject: "Mydin", text: "@Aidan, send me a one-pager for Mydin, retail grocery." }),
+    aidanMail({ id: "n2", subject: "Mydin deck", date: 1759990005000, text: "@Aidan, prepare a sales deck for Mydin." }),
+  ], { projectDocs: MARKET_DOCS, improvements: imp, prospects: { my: { name: "Mydin", country: "Malaysia", industry: "Grocery & Supermarkets" } } });
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  const w = t.seen.write[0];
+  assert.ok(!w.system.includes("<market") && /no market page for Malaysia: follow the brand skill's default guidelines/.test(w.system), "the default guidelines");
+  assert.strictEqual(w.collateral.market, undefined);
+  assert.strictEqual(t.google.calls.sent.length, 2, "the collateral still goes out");
+  const tk = ticketOf(t, "t-n1");
+  assert.deepStrictEqual(tk.aidan.collateral.market, { missing: "Malaysia" });
+  assert.strictEqual(imp.items.length, 1, "one ticket for the missing market");
+  const filed = imp.items[0];
+  assert.deepStrictEqual([filed.projectId, filed.title, filed.aidanImprovement.category], [BT, "Aidan missing market page: No Brand Guidelines market page for Malaysia", "missing-market"]);
+  assert.ok(filed.desc.startsWith("## Outcome\nBrand Guidelines has a Markets page") && /promote\/markets\//.test(filed.desc));
+  assert.deepStrictEqual([tk.aidan.improvement.action, tk.aidan.improvement.category], ["filed", "missing-market"]);
+  assert.deepStrictEqual([imp.comments.length, imp.comments[0].itemId, ticketOf(t, "t-n2").aidan.improvement.action], [1, filed.id, "commented"], "the next request for the same country comments instead of filing again");
 });
 
 // ── Instruction and content (OrkZBBjz9RM5DY54azIG) ──
@@ -2061,6 +2384,212 @@ check("bulk, Aidan: dismiss clears a state that asks for attention and leaves a 
   assert.ok(eventsOf(t, "t-d1").includes("Aidan's state on this thread was dismissed."));
   assert.deepStrictEqual([ticketOf(t, "t-d2").aidan.status, ticketOf(t, "t-d3").aidan.status, ticketOf(t, "t-d3").aidanPending], ["replied", "queued", true], "nothing done or waiting is touched");
   assert.strictEqual((await bulk(t, { ids: ["t-d1"], action: "aidan-dismiss" })).body.skipped, 1, "nothing left to dismiss");
+});
+
+// ── Aidan's voice (SYkk20srKT7pIKM1HS8Z) ──
+const QUIRK = "I only got distracted by one retail media chart on the way.";
+const quirky = () => ({ sensitive: false, quirk: QUIRK });
+const bodyOf = (t, id) => messagesOf(t, id).find((m) => m.direction === "out").text;
+
+check("Aidan's voice: an acknowledgement is answered in character, with one quirk after the substance", async () => {
+  const t = makeAidan([aidanMail({ id: "ack", cc: "client@shop.example", text: "@Aidan, please confirm you received this email." })],
+    { answer: () => ({ canAnswer: true, replyText: "Got it, Owner. Filed and sorted.", reason: "" }), voice: quirky });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(bodyOf(t, "t-ack"), `Got it, Owner. Filed and sorted.\n\n${QUIRK}\n\nAidan Hubbot, Personalisation Hub`, "the substance, then the one quirk, then the sign-off");
+  assert.strictEqual(bodyOf(t, "t-ack").split(QUIRK).length, 2, "once");
+  const v = t.seen.voice[0];
+  assert.deepStrictEqual([t.seen.voice.length, v.kind, v.body, v.instruction, v.firstName], [1, "answer", "Got it, Owner. Filed and sorted.", "please confirm you received this email.", "Owner"]);
+  assert.ok(v.system.includes("<voice_skill>") && v.system.includes("One quirk per email at most"), "the voice reads the skill");
+  assert.deepStrictEqual(ticketOf(t, "t-ack").aidan.voice, { quirk: true });
+  // The same voice for everyone on the email, internal or external: one email, to all of them.
+  assert.ok(t.google.calls.sent[0].mail.includes(`To: ${OWNER}\r\n`) && t.google.calls.sent[0].mail.includes("Cc: client@shop.example"));
+  // The skill is added to the library the first time, as first written, and is never one a document is written with.
+  const lib = t.db.state.skills["aidan-voice"];
+  assert.deepStrictEqual([lib.slug, lib.name, lib.files[0].path, lib.createdVia], ["aidan-voice", "Aidan voice", "SKILL.md", "aidan"]);
+  assert.strictEqual(lib.files[0].content, require("../functions/aidan-voice").DEFAULT_SKILL_MD);
+});
+
+check("Aidan's voice: the library's skill is the one read, so it is tuned without a deploy; it is never chosen or named as a documentation skill", async () => {
+  const t = makeAidan([
+    aidanMail({ id: "ack", text: "@Aidan, please confirm you received this email." }),
+    aidanMail({ id: "w", threadId: "t-w", text: "@Aidan, write something in the Aidan voice for Kestrel", date: 1759990001000 }),
+  ], { answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }), voice: quirky });
+  t.db.state.skills.v1 = { slug: "aidan-voice", name: "Aidan voice", summary: "The voice.", files: [{ path: "SKILL.md", content: "Tuned character: drier, one analogy at most." }] };
+  await connectAidan(t);
+  await cron(t);
+  await cron(t);
+  assert.ok(t.seen.voice[0].system.includes("<voice_skill>\nTuned character: drier, one analogy at most.\n</voice_skill>"), "the tuned text, not the built-in one");
+  assert.strictEqual(t.db.state.skills["aidan-voice"], undefined, "nothing is added when the library has it");
+  // A write that names it: the name is not a skill to write with, so the model is asked to choose, and is never offered it.
+  assert.deepStrictEqual(t.seen.select, ["write something in the Aidan voice for Kestrel"]);
+  assert.strictEqual(t.seen.write.length, 0);
+});
+
+check("Aidan's voice: a platform question gets the Help Centre's answer first, word for word, and at most one aside at the end", async () => {
+  const t = makeAidan([aidanMail({ id: "q", text: "@Aidan, how do I set up targeting?" })], {
+    helpCentre: () => ({ relevant: true, category: "question", summary: "How to set up targeting.", answerable: true, confidence: 0.9, reply: "Hi Owner,\n\nThanks for your email.\n\nOpen the campaign, then Targeting.", articleIds: ["a1"], spamLikely: false }),
+    voice: () => ({ sensitive: false, quirk: "Targeting is my favourite bit, so ask me anything else about it." }),
+  });
+  await connectAidan(t);
+  await cron(t);
+  const body = bodyOf(t, "t-q");
+  const aside = "Targeting is my favourite bit, so ask me anything else about it.";
+  assert.ok(body.startsWith("Hi Owner,\n\nOpen the campaign, then Targeting."), body);
+  assert.ok(body.endsWith(`\n\n${aside}\n\nAidan Hubbot, Personalisation Hub`), body);
+  assert.ok(body.indexOf("Help Centre article") < body.indexOf(aside), "the aside is after the answer and its articles, never in the middle of the facts");
+  assert.deepStrictEqual([t.seen.voice.length, t.seen.voice[0].kind], [1, "helpCentre"]);
+  assert.ok(!t.seen.voice[0].body.includes("Hi Owner") && t.seen.voice[0].body.startsWith("Open the campaign, then Targeting."), "the voice is given the answer, which it cannot change");
+});
+
+check("Aidan's voice: a complaint, an outage, a fault or a pricing query gets a plain reply; the voice is not even asked", async () => {
+  const cases = [
+    ["complaint", "@Aidan, I'm really unhappy with how the rollout was handled. Can you confirm you have this?", "plain reply: a complaint"],
+    ["outage", "@Aidan, the screens in Leeds are down again. Can you confirm you received this?", "plain reply: an outage or a fault"],
+    ["pricing", "@Aidan, can you confirm you got my note on the pricing for 200 stores?", "plain reply: a commercial matter"],
+  ];
+  const t = makeAidan(cases.map(([id, text], i) => aidanMail({ id, text, date: 1759990000000 + i })), { answer: () => ({ canAnswer: true, replyText: "Got it, Owner. A person will pick this up.", reason: "" }), voice: quirky });
+  // The subject alone is enough ("Invoice 1042"), and so is the reply itself.
+  t.mail.push(aidanMail({ id: "subj", subject: "Invoice 1042", text: "@Aidan, please confirm you received this.", date: 1759990000010 }));
+  await connectAidan(t);
+  for (let i = 0; i < 4; i++) await cron(t);
+  assert.strictEqual(t.seen.voice.length, 0, "decided from the words, before any model is asked");
+  for (const [id, , reason] of [...cases, ["subj", "", "plain reply: a commercial matter"]]) {
+    assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner. A person will pick this up.\n\nAidan Hubbot, Personalisation Hub", id);
+    assert.deepStrictEqual(ticketOf(t, `t-${id}`).aidan.voice, { quirk: false, reason }, id);
+  }
+});
+
+check("Aidan's voice: a complaint in the thread Aidan is asked to answer makes the reply plain too", async () => {
+  const quoted = "On Mon, 16 Nov 2026 at 10:00, John Smith <john@shop.example> wrote:\n> I'm really unhappy: the screens in two stores have been down since Friday. When will it be fixed?";
+  const t = makeAidan([aidanMail({ id: "jc", to: "John Smith <john@shop.example>", cc: AIDAN, text: `@Aidan, please answer John's question below.\n\n${quoted}` })],
+    { answer: () => ({ canAnswer: true, replyText: "Hi all, a person will come back to you on this today.", reason: "" }), voice: quirky });
+  await connectAidan(t);
+  await cron(t);
+  assert.strictEqual(t.seen.voice.length, 0, "the instruction is harmless, the thread is not: the voice is not asked");
+  assert.strictEqual(bodyOf(t, "t-jc"), "Hi all, a person will come back to you on this today.\n\nAidan Hubbot, Personalisation Hub");
+  assert.deepStrictEqual(ticketOf(t, "t-jc").aidan.voice, { quirk: false, reason: "plain reply: a complaint" });
+});
+
+check("Aidan's voice: the model's own \"sensitive\", a quirk with a fact in it, and a voice that fails all leave the reply plain and sent", async () => {
+  const replies = { m: { sensitive: true, quirk: "A joke anyway." }, f: { sensitive: false, quirk: "It only takes 3 minutes." }, x: null };
+  const t = makeAidan(Object.keys(replies).map((id, i) => aidanMail({ id, text: `@Aidan, please confirm you received this (${id}).`, date: 1759990000000 + i })), {
+    answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }),
+    voice: (input) => { const id = /\((\w)\)/.exec(input.instruction)[1]; if (id === "x") throw new Error("timed out"); return replies[id]; },
+  });
+  await connectAidan(t);
+  for (let i = 0; i < 3; i++) await cron(t);
+  assert.strictEqual(t.google.calls.sent.length, 3, "a reply is never held up by its voice");
+  for (const id of ["m", "f", "x"]) assert.strictEqual(bodyOf(t, `t-${id}`), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub", id);
+  assert.deepStrictEqual([ticketOf(t, "t-m").aidan.voice, ticketOf(t, "t-f").aidan.voice, ticketOf(t, "t-x").aidan.voice],
+    [{ quirk: false, reason: "plain reply: the voice judged it sensitive" }, { quirk: false, reason: "no aside fitted" }, { quirk: false, reason: "the voice couldn't be reached" }]);
+});
+
+check("Aidan's voice: \"are you a bot?\" always gets a clear yes, in character, and never a denial; it is not put to the Help Centre", async () => {
+  const answers = {
+    yes: { canAnswer: true, replyText: "Yes, I'm Personalisation Hub's AI assistant. Fast, and no coffee needed.", reason: "" },
+    dodge: { canAnswer: true, replyText: "Happy to help with whatever you need.", reason: "" },
+    deny: { canAnswer: true, replyText: "No, I'm not a bot. I'm a real person.", reason: "" },
+    none: { canAnswer: false, replyText: "", reason: "it isn't in the email" },
+  };
+  const AI_LINE = require("../functions/aidan-voice").AI_LINE;
+  const t = makeAidan(Object.keys(answers).map((id, i) => aidanMail({ id, from: i === 3 ? `Owner Person <${OWNER}>` : undefined, cc: "client@shop.example", subject: `Bot ${id}`, text: "@Aidan, are you a bot or a real person?", date: 1759990000000 + i })), {
+    answer: (input) => answers[/Subject: Bot (\w+)/.exec(JSON.stringify(input.content))[1]],
+    helpCentre: () => ({ relevant: true, category: "question", summary: "x", answerable: true, confidence: 0.9, reply: "See the Help Centre.", articleIds: ["a1"], spamLikely: false }),
+    voice: quirky,
+  });
+  await connectAidan(t);
+  for (let i = 0; i < 4; i++) await cron(t);
+  assert.deepStrictEqual([t.seen.helpCentre.length, t.seen.voice.length], [0, 0], "Aidan's own to answer; the yes in character is this email's quirk");
+  assert.strictEqual(bodyOf(t, "t-yes"), `${answers.yes.replyText}\n\nAidan Hubbot, Personalisation Hub`, "a plain yes is sent as written");
+  assert.strictEqual(bodyOf(t, "t-dodge"), `${AI_LINE}\n\nHappy to help with whatever you need.\n\nAidan Hubbot, Personalisation Hub`, "a dodge gets the plain line first");
+  assert.strictEqual(bodyOf(t, "t-deny"), `${AI_LINE}\n\nAidan Hubbot, Personalisation Hub`, "a denial is never sent");
+  assert.strictEqual(bodyOf(t, "t-none"), `${AI_LINE}\n\nAidan Hubbot, Personalisation Hub`, "nothing to say: the line is the answer, not a person");
+  for (const id of ["yes", "dodge", "deny", "none"]) {
+    const added = id === "dodge" || id === "deny";
+    assert.deepStrictEqual([ticketOf(t, `t-${id}`).aidan.status, ticketOf(t, `t-${id}`).aidan.voice],
+      ["replied", { quirk: false, aiAsked: true, reason: added ? "asked whether Aidan is an AI: the yes was added" : "asked whether Aidan is an AI" }], id);
+    assert.ok(/\bAI assistant\b/.test(bodyOf(t, `t-${id}`)) && !/not a bot|real person/.test(bodyOf(t, `t-${id}`)), id);
+    assert.ok(t.google.calls.sent.some((s) => s.threadId === `t-${id}` && s.mail.includes("Cc: client@shop.example")), "any recipient: the yes goes to everyone on the email");
+  }
+  // He does not volunteer it: an ordinary reply never has the line added.
+  const plain = makeAidan([aidanMail({ id: "ack", text: "@Aidan, please confirm you received this email." })], { answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }), voice: quirky });
+  await connectAidan(plain);
+  await cron(plain);
+  // "bot" as a word: the sign-off's sender name, "Aidan Hubbot" (QVpqiMuwipZ4mKSXHplM), is not him saying so.
+  assert.ok(!/\bAI\b|\bbot\b/i.test(bodyOf(plain, "t-ack")), bodyOf(plain, "t-ack"));
+});
+
+check("Aidan's voice: \"are you a bot?\" in a write or on a complaint still gets a yes; on a complaint it is the plain yes", async () => {
+  const AV = require("../functions/aidan-voice");
+  // A write: the cover note says yes (it dodged), the document is untouched, and no aside is asked for.
+  const w = makeAidan([aidanMail({ id: "wb", text: "@Aidan, send the AWS onboarding pack for client Kestrel. Also, are you a bot?" })], { voice: quirky });
+  await connectAidan(w);
+  await cron(w);
+  const out = messagesOf(w, "t-wb").find((m) => m.direction === "out");
+  assert.strictEqual(out.text, `Hi Owner,\n\n${AV.AI_LINE}\n\n${DOC.replyText}\n\nAidan Hubbot, Personalisation Hub`);
+  assert.strictEqual(attachmentsOf(w.google.calls.sent[0].mail)["aws-onboarding-pack-kestrel.md"].body.toString("utf8"), DOC.documentMd, "the document is exactly what the skill wrote");
+  assert.strictEqual(w.seen.voice.length, 0, "the yes is this email's one touch of character");
+  assert.ok(/never deny it/.test(w.seen.write[0].system), "the document prompt says so too");
+  // A complaint: the yes is plain (no joke on a complaint), and a denial in the reply is taken out, the rest kept.
+  const c = makeAidan([aidanMail({ id: "cb", text: "@Aidan, I'm unhappy with the rollout. Are you a bot?" })], {
+    answer: () => ({ canAnswer: true, replyText: "No, I'm not a bot. The rollout is with the team and they will reply today.", reason: "" }), voice: quirky });
+  await connectAidan(c);
+  await cron(c);
+  assert.strictEqual(bodyOf(c, "t-cb"), `${AV.AI_LINE_PLAIN}\n\nThe rollout is with the team and they will reply today.\n\nAidan Hubbot, Personalisation Hub`);
+  assert.strictEqual(c.seen.voice.length, 0);
+});
+
+check("Aidan's voice: a write gets a quirky cover note; the attached document is exactly what the skill wrote", async () => {
+  const t = makeAidan([aidanMail({ id: "w", text: "@Aidan, send the AWS onboarding pack for client Kestrel." })], { voice: () => ({ sensitive: false, quirk: "I kept the attachment strictly on brand, so all the personality stayed in this email." }) });
+  await connectAidan(t);
+  await cron(t);
+  const sent = t.google.calls.sent[0];
+  const out = messagesOf(t, "t-w").find((m) => m.direction === "out");
+  assert.strictEqual(out.text, `Hi Owner,\n\n${DOC.replyText}\n\nI kept the attachment strictly on brand, so all the personality stayed in this email.\n\nAidan Hubbot, Personalisation Hub`);
+  assert.deepStrictEqual([t.seen.voice.length, t.seen.voice[0].kind, t.seen.voice[0].body], [1, "generate", DOC.replyText], "only the cover note goes to the voice");
+  assert.ok(!JSON.stringify(t.seen.voice[0]).includes("For Kestrel."), "the document is never passed to the voice");
+  assert.strictEqual(attachmentsOf(sent.mail)["aws-onboarding-pack-kestrel.md"].body.toString("utf8"), DOC.documentMd, "the document is exactly what the skill wrote: no quirk");
+  assert.ok(/no joke, aside or quirk anywhere in it/.test(t.seen.write[0].system), "and its prompt says so");
+  assert.deepStrictEqual(ticketOf(t, "t-w").aidan.voice, { quirk: true });
+});
+
+check("Aidan's voice: branded collateral gets a quirky cover note; the PDF and its Markdown carry none of it", async () => {
+  const aside = "It is a quick read, and I checked it against a checkout queue.";
+  const seenVoice = [];
+  const t = makeCollateral([aidanMail({ id: "c", text: "@Aidan, send me a one-pager for Kestrel." })], { voice: async (input) => { seenVoice.push(input); return { sensitive: false, quirk: aside }; } });
+  await connectAidan(t);
+  await cron(t);
+  const sent = t.google.calls.sent[0];
+  const out = messagesOf(t, "t-c").find((m) => m.direction === "out");
+  assert.ok(out.text.endsWith(`\n\n${aside}\n\nAidan Hubbot, Personalisation Hub`), out.text);
+  assert.deepStrictEqual([seenVoice.length, seenVoice[0].kind], [1, "generate"]);
+  const files = attachmentsOf(sent.mail);
+  for (const [name, f] of Object.entries(files)) assert.ok(f.body.length > 0 && !f.body.toString("latin1").includes("checkout queue"), `${name} has no quirk`);
+  assert.ok(!t.seen.render[0].html.includes("checkout queue"), "the printed page has none either");
+});
+
+check("Aidan's signature: \"Aidan Hubbot, Personalisation Hub\" by default; the signature line is a setting, off by default, saved by an admin", async () => {
+  const t = makeAidan([aidanMail({ id: "a", text: "@Aidan, please confirm you received this email." })], { answer: () => ({ canAnswer: true, replyText: "Got it, Owner.", reason: "" }) });
+  await connectAidan(t);
+  const before = (await call(t.api, "GET", "/v1/status", { token: "admin@ph.example" })).body.aidan;
+  assert.deepStrictEqual([before.signatureLineOn, before.signatureLine], [false, ""], "off by default");
+  await cron(t);
+  assert.strictEqual(bodyOf(t, "t-a"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub");
+  // Only an admin; it can't be switched on empty; the text is kept when it is switched off.
+  assert.strictEqual((await call(t.api, "POST", "/v1/aidan", { token: "ed@ph.example", body: { signatureLineOn: true, signatureLine: "PH's digital assistant" } })).statusCode, 403);
+  const empty = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { signatureLineOn: true, signatureLine: "  " } });
+  assert.deepStrictEqual([empty.statusCode, empty.body.error], [400, "Write the signature line, or switch it off."]);
+  const on = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { enabled: true, allowedSenders: "", signatureLineOn: true, signatureLine: " PH's digital\nassistant " } });
+  assert.deepStrictEqual([on.statusCode, on.body.aidan.signatureLineOn, on.body.aidan.signatureLine, on.body.aidan.senderCount], [200, true, "PH's digital assistant", 1], "saved as one clean line; the senders are untouched");
+  t.mail.push(aidanMail({ id: "b", text: "@Aidan, please confirm you received this email.", date: 1759990005000 }));
+  await cron(t);
+  assert.strictEqual(bodyOf(t, "t-b"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub\nPH's digital assistant", "on: the configured line is appended");
+  const off = await call(t.api, "POST", "/v1/aidan", { token: "admin@ph.example", body: { signatureLineOn: false } });
+  assert.deepStrictEqual([off.body.aidan.signatureLineOn, off.body.aidan.signatureLine], [false, "PH's digital assistant"]);
+  t.mail.push(aidanMail({ id: "c", text: "@Aidan, please confirm you received this email.", date: 1759990009000 }));
+  await cron(t);
+  assert.strictEqual(bodyOf(t, "t-c"), "Got it, Owner.\n\nAidan Hubbot, Personalisation Hub", "off again: the default signature");
 });
 
 (async () => {

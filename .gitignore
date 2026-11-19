@@ -4,3 +4,11 @@ media-studio/.env
 media-studio/output/
 
 node_modules/
+
+# Google service-account keys (never commit — public repo)
+ph-analytics-*.json
+*-service-account*.json
+
+# Local-only pharmacy promo work (third-party logos, client videos)
+pharmacy-promo/
+lamisil-portrait/

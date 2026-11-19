@@ -177,7 +177,14 @@ columns.
 **KB-BOARD-7 Page scroll and pinned headers.** The board scrolls as one page
 (columns have no inner scrollbars). The console topbar scrolls away; the
 filter bar and column headers stay pinned at the top. Columns stretch to the
-tallest so a card can be dropped anywhere down a column.
+tallest so a card can be dropped anywhere down a column. Once the page header
+has scrolled away, **+ New task** is pinned at the right of the filter bar
+(the only header action that is), and it hides again when the header's own
+button is back on screen. Its place on the bar's row is always kept, so the
+pinned bar is no taller and the board does not move when it appears; between
+phone width and 1240 px the filters keep to one line and scroll sideways
+instead of wrapping, and on a phone it takes the right end of the staff row.
+KB-C30.
 
 **KB-BOARD-8 Phone.** One column per screen as a sideways carousel (swipe,
 snap); a pinned strip of column tabs shows and changes the current column.
@@ -226,7 +233,16 @@ bug above the lowest level (KB-TASK-14).
 assignee, status, release (fix version), estimate. **Optional fields** (Jira
 equivalents): type, priority, sprint, project, due date, time logged, labels, comments,
 attachments, parent (an epic, task or subtask; KB-TASK-14), linked tickets, flag. All fields flow into filters
-and the release report. **Release is optional**: it is never a required field (settings
+and the release report. **Attachments** (always on the form, KB-SET-1): the
+**Attach file** picker takes several files at once — videos (MP4, MOV, WebM…),
+PDFs, Excel/CSV, Word and PowerPoint files, images, text files, JSON and zips,
+up to 100 MB each (`storage.rules` → `kanban/{key}`). The picker offers those
+types (`ATTACHMENT_ACCEPT`, `public/js/item-attachments.js`); a file the
+browser gives no type (often `.mov` or `.xlsx`) is typed from its extension,
+and anything Storage would refuse (a program, an empty file, over 100 MB) is
+refused with a toast before it uploads. Each attachment is listed with an icon
+for its kind (video, PDF, spreadsheet, image, document) and stored with its
+`contentType`. **Release is optional**: it is never a required field (settings
 can't make it so), a ticket created on the form or over MCP (`kanban_create_task`) may have
 none, and one can be added later; unreleased tickets still show on the board and in
 filters, and appear under "All releases" in the report.
@@ -380,6 +396,17 @@ Comments). The heading and primary button follow the type: **Create task**,
 Type, Parent epic, Assignee, Reporter, Release, Estimate, Time logged (then
 any other shown optional fields; Status last when editing).
 
+**Open the new ticket from its confirmation (19 Nov 2026).** The "PH-n created
+in Backlog" toast (also its "· added to <epic>" and "· <names> notified" forms)
+is a button with **Open**: a click or tap opens the new ticket, so a forgotten
+assignee, date or label is one click away without searching. It shows for 8
+seconds (other toasts 3.6) and does not go while the pointer or keyboard focus
+rests on it. While a ticket dialog is open the toast hides **Open** and lets
+taps through to the form beneath it; a ticket with unsaved changes is never
+closed by it. Every other toast is plain text.
+AC: create a ticket; the toast is still there after 4.5 s; click it and the
+ticket opens. Case KB-C30.
+
 **KB-MOD-2 Voice first.** One **Record task** button captures speech (live
 transcript, timer, red stop state, keeps listening through pauses until
 stopped). On stop, an agent writes the title and description and sets
@@ -470,6 +497,9 @@ rolled up from its non-withdrawn child tickets in any release). Explanations liv
 **KB-SET-1** Per optional field: show on the create/edit form, and required.
 Core fields always shown (title and status always required). Hidden fields
 stay editable on an existing ticket under "N more fields" and over MCP.
+**Attachments are always shown** (settings mark them "Always shown" and the
+Show box is locked on, whatever was saved; never required), so files can be
+attached when a ticket is created as well as when it is edited.
 
 **KB-SET-2** Current release (when none is
 stored the current release is the earliest unreleased one

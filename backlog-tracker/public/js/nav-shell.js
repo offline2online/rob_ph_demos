@@ -29,6 +29,7 @@ function activeNavId(hash) {
   if (h === "#skills" || h === "#releases") return "faq-settings-btn";
   if (h === "#concept-incubator" || h.startsWith("#concept-")) return "concept-incubator-btn";
   if (h === "#faq-management" || h.startsWith("#faq-article")) return "faq-articles-btn";
+  if (h === "#documentation" || h.startsWith("#doc/")) return "documentation-btn";
   if (h === "#settings" || h.startsWith("#settings/")) return "faq-settings-btn";
   if (h === "#support" || h.startsWith("#support/")) return "support-inbox-btn";
   if (promoteNavId(h)) return promoteNavId(h);
@@ -175,7 +176,7 @@ export function initNavShell({ getEntries, openEntry, goHome }) {
     profileMenu.querySelectorAll(".profile-menu-item").forEach((b) => {
       if (b.id === id) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
     });
-    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" || id === "support-inbox-btn" ? "publish" : id === "faq-settings-btn" ? "settings" : "build";
+    const section = id.startsWith("promote-") ? "promote" : id === "faq-articles-btn" || id === "support-inbox-btn" || id === "documentation-btn" ? "publish" : id === "faq-settings-btn" ? "settings" : "build";
     setTab(drawer.classList.contains("open") ? drawer.dataset.show : section);
   }
   window.addEventListener("hashchange", syncActive);
