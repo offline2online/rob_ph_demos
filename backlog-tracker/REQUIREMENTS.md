@@ -6525,8 +6525,8 @@ hello@ and aidan@ (at personalisationhub.com). Each has its own tab.
   inbox). The header line counts the inbox on show. `#support/ticket/<id>`
   still opens any ticket, under its own inbox's tab. Only the Support Inbox
   has queues and their counts (SUP-INB-9).
-- **SUP-INB-7** The Dashboard's three Support tiles count the Support
-  Inbox only. Mail written only to hello@ or aidan@ is in none of its figures.
+- **SUP-INB-7** The Dashboard's Support tile counts the Support Inbox
+  only. Mail written only to hello@ or aidan@ is in none of its figures.
 - **SUP-INB-8** Only a ticket in the Support Inbox can be answered without a
   person. With sending switched on, a draft for mail written only to hello@
   or aidan@ still waits for a person to approve it.
@@ -7557,9 +7557,8 @@ with nothing sent and nothing touching the mailbox.
 
 - **SUP-STAT-1** Removed 17 Nov 2026: the Support Inbox has no Stats tab.
   `#support/stats` opens the inbox. SUP-STAT-2 to 4 went with it.
-- **SUP-STAT-5** The support figures are the Dashboard's three Support
-  tiles (Needs a person, AI drafts to approve, Resolved & automation), all of
-  the support@ inbox (SUP-INB-7). See "Dashboard —
+- **SUP-STAT-5** The support figures are the Dashboard's Support tile:
+  exactly three, all of the support@ inbox (SUP-INB-7). See "Dashboard —
   the console's landing page".
 
 ### Writing a new email (17 Nov 2026)
@@ -7578,10 +7577,8 @@ with nothing sent and nothing touching the mailbox.
   on the same ticket and reopens it. A recipient who is a high-value sender
   (SUP-HV-1) is marked high value, so their answer is never replied to
   automatically.
-- **SUP-NEW-4** A new email is not a reply and does not resolve a ticket,
-  so it is in none of the Dashboard's support figures (the "Replied or
-  resolved today" figure it was kept out of was replaced on 19 Nov 2026 by
-  Resolved & automation).
+- **SUP-NEW-4** A new email is not a reply: it is not counted in the
+  Dashboard's "Replied or resolved today".
 
 ### iPad
 
@@ -7701,97 +7698,60 @@ attention" above): it is shown here and on no other page. It sits in normal
 flow after the tile sections, so it never covers or holds back the tiles
 (Dashboard v2, GUI9xPe3CJY3LyMws88m; it used to be first on the page).
 
-Eight KPI tiles in three sections (Dashboard v2 content, 19 Nov 2026, ticket
-cMyA3FMlUUrSjGtPkLZC; it was five tiles before). Every figure is in the
-viewer's local time: **yesterday** is the local calendar day before today, and
-**the last 7 days** the 7 local days ending yesterday. Times are never shown or
-compared in UTC. Each tile's breakdown is its **summary panel** (below), and
-what the tile means is in its info tooltip, with no explanatory copy under the
-tiles. A tile never opens its section (see "Dashboard v2"); the panel's
-**Open section** does.
+Five KPI tiles in three sections, each a headline figure for **yesterday**,
+meaning the viewer's local calendar day before today, compared with the local
+day before it (the Support tile is the exception: it shows the inbox as it
+stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
+is its **summary panel** (below), and what the tile means is in its info
+tooltip, with no explanatory copy under the tiles. A tile never opens its
+section (see "Dashboard v2").
 
-| Section | Tile | Headline (on the tile) | Summary panel | Open section |
+| Section | Tile | Headline | Breakdown (summary panel) | Open section |
 |---|---|---|---|---|
-| Internal | Delivery | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), against the day before, with a 7-day line; average lead time from Backlog (`createdAt`) to Live and the first-time pass rate, both over the tickets deployed in the last 7 days | Per project: deployed yesterday, last 7 days, lead time, first-time pass | `#board` |
-| Internal | Flow & blockers | Tickets stuck now, split blocked / failed testing / waiting to test | Each stuck ticket with its project, the reason and how long it has waited, longest first | `#board` |
-| Internal | Staff Kanban | Open tasks of the current release split To do (Backlog, Ready for Dev) / In progress / Testing (Ready for Testing, Approved); the release's name and % done; amber flags for overdue, unassigned, unestimated and waiting on you in Testing | Workload per person: remaining effort as hours with days in brackets at 8 h a day ("24h (3d)"), open tasks, overdue, and which tasks have no estimate | `#staff-kanban` |
-| External | Leads | New leads in the last 7 days against the 7 days before, with a 7-day line and yesterday's count; the company pipeline Lead → Hot Lead → Demo → Post-demo → Closed Won with the count at each stage now and the conversion from the stage before; stale and not-contacted flags | The last 7 days' leads by source (Website, Network operator, Partner, Other), industry and market, with names; the pipeline with conversion; the stale and not-contacted leads by name | `#promote/leads` |
-| External | Conversion funnel | Unique visitors over the last 7 days against the 7 days before, with a 7-day line; visitor-to-lead %; a mini funnel Visitors → Industry → Engaged → Leads → Opps with the biggest drop-off in amber; the top-moving industry and market | The full funnel with count and drop-off at each step; industries and markets ranked by visitors with the change on the week before; traffic sources | `#promote/conversion-funnel` |
-| Support | Needs a person | The Support Inbox's Needs a person queue count, and the age of the oldest | Each ticket with the customer and its wait, longest first (the first 10) | `#support` |
-| Support | AI drafts to approve | The AI drafts to approve queue count, and how many are high confidence (80% or more) | Each draft with the customer and its confidence, most confident first (the first 10) | `#support?queue=ai-drafts` |
-| Support | Resolved & automation | Tickets resolved yesterday against the day before; the % resolved by the AI with no person involved | FAQ gaps: questions from the last 30 days the Help Centre couldn't answer (the first 10) | `#support?queue=resolved` |
+| Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
+| Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
+| External | Leads | New leads yesterday (test and archived leads left out), with the change | Companies and network operators, by name | `#promote/leads` |
+| External | Conversion funnel | Unique website visitors yesterday (personalisationhub.com, GA4 via `funnelDaily`), with the change | Funnel steps with count and drop-off: unique visitors → industry page → walkthrough or calculator → lead; industries ranked by visitors, peak first | `#promote/conversion-funnel` |
+| Support | Support | Exactly three figures, all of the support@ inbox (the Support Inbox tab) and never of mail written only to hello@ or aidan@: **Awaiting a reply** (open tickets, so the customer's last email has no reply); **Oldest waiting** (the age of the oldest of those, from when the customer wrote, "None" when nothing waits); **Replied or resolved today** (tickets replied to or resolved since the start of the viewer's local day; spam left out) | The tickets awaiting a reply, each with the customer and how long it has waited, longest first (the first 10) | `#support` |
 
 Rules:
 
-- **Delivery**: lead time is `mergedAt` (else `statusEnteredAt`) minus
-  `createdAt`, averaged over the tickets deployed in the last 7 days. A ticket
-  passed first time when it has no counted send-back and one testing round
-  (`countedSendBacks`, `testRound`); a ticket from before testing rounds were
-  kept passed when it has no `lastFailureReason`.
-- **Flow & blockers**: a ticket is stuck when it is blocked (except a plain
-  `waiting-on-dependency` wait, which releases itself; one marked `stuckOn`
-  counts), when it was sent back with Failed testing and is not rebuilding (a
-  Backlog card whose `lastFailureReason.at` is not older than its move to
-  Backlog, with no build running and no patch waiting to land), or when it has
-  been in Ready for Testing (waiting on a person) for more than 24 hours.
-  Approved and live tickets are never stuck.
-- **Staff Kanban** reads every open task (`kanbanCards` where `open == true`,
-  the query Staff Kanban itself uses; `kanbanTasks` while the cards lag) and
-  the current release's tasks for its progress. The current release is Staff
-  Kanban's own `currentReleaseId` rule (Kanban settings' release, else the
-  earliest not yet live by version, then order). The console's releases say
-  `status: "live"` where kanban-core reads `released`, so the Dashboard maps
-  one to the other as Staff Kanban does (until 19 Nov 2026 it did not, picked
-  the already-live release and showed nothing). Tasks of archived projects
-  and epics are left out. With no release, or none of its tasks open, the tile
-  counts **All open work**, so it is never blank. % done is completed tasks of
-  every task in the release, withdrawn tasks and epics left out. Overdue is a
-  due date before today; waiting on you is a Ready for Testing task assigned
-  to the viewer. Remaining effort is a task's estimate minus time logged.
-- **Leads**: test and archived leads are never counted. The pipeline is the
-  company pipeline (network operators have their own); a lead has reached a
-  stage when it is at that stage or beyond, and the conversion under a stage
-  is how many reached it of those that reached the stage before (Lost leads
-  are left out). Stale is an open lead with no activity (history entry, stage
-  change, update) for 7 days; not contacted is a lead in its first stage that
-  never changed stage and has no history entry from a person. Source: Network
-  operator by lead type; Partner when the source names a partner, referral or
-  the marketplace; Website for a website lead; else Other. Market is the
-  company's first country (an operator's region).
-- **Funnel steps from `funnelDaily`**, summed over the last 7 days (the
-  14 days are read, one query a day, for the change on the week before):
-  unique visitors are each day's `ga4-total` users (GA4's own unique count);
-  "industry page" is the day's `ga4-industry-total` users (GA4's
-  de-duplicated count over every `/industries/*` page), never more than the
-  day's unique visitors. The industry list is `ga4-industry-users`; markets are
-  the `ga4-site` users by country; traffic sources the `ga4-site` users by
-  channel. Older ingest rows without those sources fall back to the
-  `ga4-industry` users. "Engaged" (walkthrough or calculator) is product tour
-  starts, calculator uses, demo requests and downloads on `ga4-events` rows.
-  Rows written before the ingest (no `source`) keep the older reading: users
-  else visits, rows with an industry, demo requests plus downloads. "Leads" is
-  leads created in the 7 days that came from the website (source "Website…",
-  a source page or website activity). "Opps" is ACE opportunities created
-  (`ace` rows) when the ingest has them for the week, else those website leads
-  now at Demo or beyond. The biggest drop-off is the step with the largest
-  percentage drop. A top mover is the industry or market whose visitors grew
-  most on the week before.
-- **Support figures**: all three tiles are of the support@ inbox only
-  (SUP-INB-7) and use the Support Inbox's own queues, so Needs a person and AI
-  drafts to approve equal those two queue counts on the Support Inbox tab. The
-  wait runs from `lastInboundAt` (else the last message). Resolved yesterday is
-  a ticket still resolved whose `resolvedAt` is yesterday; by the AI alone is
-  `resolvedBy: "ai"` with no `humanInvolved`. An FAQ gap is a ticket from the
-  last 30 days whose draft was marked not answerable, or whose triage says the
-  Help Centre doesn't answer it (spam left out).
+- **Support figures** (17 Nov 2026): "open" is the ticket's status, so
+  Needs a person, AI drafts to approve and Automated & not about PH all
+  count as awaiting a reply, and the first figure equals those three queue
+  counts on the Support Inbox tab added together. The wait runs from
+  `lastInboundAt` (else the last message). "Replied" reads `lastReplyAt`
+  (else `firstResponseAt` on a ticket last replied to before that was
+  recorded); "resolved" reads `resolvedAt` on a ticket that is still
+  resolved. A ticket is counted once. A new email written from the console
+  is not a reply.
+- **Remaining effort** is a task's estimate minus time logged, for outstanding
+  tasks of that release; epics and done tasks are left out (the same as the
+  release report).
+- **Funnel steps from `funnelDaily`**: unique visitors are the day's
+  `ga4-total` users (GA4's own unique count); "industry page" is the day's
+  `ga4-industry-total` users (GA4's de-duplicated count over every
+  `/industries/*` page, so a person who views two industries counts once), and
+  never more than unique visitors. The summary panel's industry list is
+  `ga4-industry-users` (users per industry, no country split); one industry
+  with several pages may still count a person twice there. Industry page
+  views are the `pageViews` on `ga4-industry` rows. Older ingest rows without
+  those two sources fall back to the `ga4-industry` users, capped at unique
+  visitors. "walkthrough or
+  calculator" is product tour starts, calculator uses, demo requests and
+  downloads on `ga4-events` rows. Rows written before the ingest (no
+  `source`) keep the older reading: users else visits, rows with an industry,
+  demo requests plus downloads; "lead" is leads created
+  yesterday that came from the website (source "Website…", a source page or
+  website activity).
 - **Who sees which tile**: the Dashboard is open to every member and is not a
   permission section of its own. Each tile follows its section's permission
   (`agent-board`, `staff-kanban`, `promote-leads`, `conversion-funnel`,
   `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
   left with no tiles.
-- **Reads**: Delivery and Flow & blockers use the tickets the console already
-  holds and redraw with the board. Conversion funnel reads `funnelDaily` for the
-  last 14 local days (one query a day). The other sources read their collections once when
+- **Reads**: the Agent board tile uses the tickets the console already holds
+  and redraws with the board. Conversion funnel reads `funnelDaily` for the
+  last 7 local days (one query a day). The other four read their collections once when
   the page opens, again on Refresh, or when reopened after five minutes. The
   page keeps no listeners.
 - **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
@@ -7803,38 +7763,36 @@ Rules:
 ### Dashboard v2: responsive grid, pinned summary panels (19 Nov 2026)
 
 Ticket GUI9xPe3CJY3LyMws88m. Layout, interaction and look; what each tile
-shows is in the table above (cMyA3FMlUUrSjGtPkLZC, eight tiles).
+shows is unchanged here.
 
 - **Responsive grid.** Internal, External and Support each have a slim
   section heading, and the tiles of all three flow through one grid in order
-  (Delivery, Flow & blockers, Staff Kanban, Leads, Conversion funnel, Needs a
-  person, AI drafts to approve, Resolved & automation), so a row is
+  (Agent board, Staff Kanban, Leads, Conversion funnel, Support), so a row is
   always full while tiles remain and a section may wrap across rows. Each
   section's heading sits in the label slot above its first tile (every tile
   has the slot, so a row's tiles line up; on a phone only the headings show).
   Tiles are four across from 1440 px, three from 1024 px (a laptop at about
   1180 px, an iPad in landscape), two from 641 px (an iPad in portrait) and
-  one on a phone. So on a wide desktop the first row is Internal and Leads,
-  the second Conversion funnel and Support; on a laptop the rows are Internal,
-  then External and Needs a person, then the other two Support tiles.
+  one on a phone. So on a wide desktop Internal and External share the first
+  row and Support starts the second; on a laptop the first row is Agent board,
+  Staff Kanban and Leads, and the second Conversion funnel and Support.
 - **Compact tiles.** An icon, the title and a status dot; the metric label;
-  a large headline figure with a trend arrow and the change (the full
-  sentence for screen readers and on hover); a row of small cells where the
-  tile has them (Staff Kanban's columns, the Leads pipeline, the mini funnel);
-  a 7-day sparkline, the last 7 local days ending yesterday, where the figure
-  has a daily history (Delivery, Leads, Conversion funnel); then the tile's
-  secondary figures and amber flags. Flow & blockers, Staff Kanban and the
-  support queues keep no history, so they have no trend or line. An info icon on each tile holds its explanation as a
+  a large headline figure with a trend arrow and the change against the day
+  before (the full sentence for screen readers and on hover); a 7-day
+  sparkline of the headline figure, the last 7 local days ending yesterday,
+  where it has a daily history (Agent board, Leads, Conversion funnel; Staff
+  Kanban's remaining effort and Support's inbox figures have no history, so
+  they have none). Support's "Replied or resolved today" has a trend against
+  yesterday, counted by the same rule; Staff Kanban keeps no history of
+  remaining effort, so its tile has no trend and its info tooltip says so. An info icon on each tile holds its explanation as a
   tooltip (hover or focus on a PC, a tap on an iPad).
-- **Status colour** (`tileStatus` in `dashboard-core.js`, eight tiles since
-  cMyA3FMlUUrSjGtPkLZC): green when nothing needs attention; Flow & blockers
-  amber when a ticket is stuck, red at three or more; Staff Kanban amber on
-  any flag (overdue, unassigned, unestimated, waiting on you in Testing);
-  Leads amber when a lead is stale or not contacted; Conversion funnel amber
-  when yesterday has no website data yet, red when a source failed on the
-  last ingest; Needs a person amber when one waits, red when the oldest has
-  waited a day or more; AI drafts to approve amber when one waits; Delivery
-  and Resolved & automation always green; red on any tile that couldn't load.
+- **Status colour** (`tileStatus` in `dashboard-core.js`): green when nothing
+  needs attention; Agent board amber when a ticket is blocked, red at three
+  or more; Staff Kanban amber when an outstanding task has no estimate or no
+  release is selected; Conversion funnel amber when yesterday has no website
+  data yet; Support amber when anything awaits a reply, red when the oldest
+  has waited a day or more; Leads always green; red on any tile that couldn't
+  load.
 - **No click-through; click or tap pins the summary panel.** Clicking (PC) or
   tapping (iPad) a tile opens its summary panel inline, full width, directly
   under that tile's row (after the last tile on that row, whichever section
@@ -7856,11 +7814,8 @@ Code: `public/js/dashboard-core.js` (rules, no DOM) and
 the console on `#board` by default; a case that wants the landing page passes
 `hash: ""`.
 
-Known gaps: weekly figures (Leads, Conversion funnel) compare with the 7 days
-before, daily ones with the day before; Staff Kanban and the support queues
-keep no history, so they show no trend or line. Unique visitors over 7 days
-are the sum of each day's unique visitors (GA4 users are not additive across
-days, so one person on two days counts twice). Google Ads figures have no
+Known gaps: trends compare with the day before only; Staff Kanban's remaining
+effort has no history, so it shows no trend. Google Ads figures have no
 country, and calculator uses stay 0 until the website sends a `calculator_use`
 GA4 event (its calculator pushes `ph_ind_calculator` to the dataLayer only).
 

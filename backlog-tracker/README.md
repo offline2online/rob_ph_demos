@@ -3305,7 +3305,7 @@ its To and Cc headers (and Delivered-To / X-Original-To for a Bcc), never
 from the mailbox it landed in, and the ticket keeps the result in `inboxes`.
 An email to two aliases is in both tabs; one that names none, and every
 ticket from before the tabs, is in Support Inbox. The Dashboard's Support
-tiles count the Support Inbox only, and only a Support
+tile counts the Support Inbox only, and only a Support
 Inbox ticket can be answered without a person. Requirements: SUP-INB-1 to 8.
 
 **Aidan, the agent mailbox (17 Nov 2026).** aidan@ acts as Rob's assistant.
@@ -3720,8 +3720,8 @@ server (`composeProblem` in both `support-core.js` files); a member can send
 
 **No Stats tab, no Try an email (17 Nov 2026).** Both tabs were removed, with
 `supportStats`, the `/v1/preview` route and their styles. `#support/stats`
-and `#support/try` open the inbox. The support figures are the Dashboard's three
-Support tiles (below).
+and `#support/try` open the inbox. The support figures are the three on the
+Dashboard's Support tile (below).
 
 **Test lab (18 Nov 2026).** The fourth tab, **Test lab** (`#support/lab`),
 asks the answering engine questions and tracks how often it answers right.
@@ -3850,26 +3850,18 @@ holds it to them:
 
 ## Dashboard — the landing page (17 Nov 2026)
 
-The console opens on **Dashboard** (`#dashboard`): eight KPI tiles in three
-sections, all in the viewer's local time (19 Nov 2026, cMyA3FMlUUrSjGtPkLZC).
-Internal: **Delivery** (tickets deployed yesterday, average lead time Backlog
-to Live and first-time test pass rate over the last 7 days), **Flow &
-blockers** (tickets stuck now: blocked, failed testing and not rebuilding, or
-over 24 h in Ready for Testing) and **Staff Kanban** (open tasks of the
-current release by column, its % done, and overdue / unassigned / unestimated
-/ waiting-on-you flags; with no release open it counts all open work, so it is
-never blank). External: **Leads** (new leads in the last 7 days, yesterday's
-count, the pipeline Lead to Closed Won with stage conversion, stale and
-not-contacted flags; test leads left out) and **Conversion funnel** (visitors
-over the last 7 days, visitor-to-lead %, a mini funnel to opportunities with
-the biggest drop-off in amber, top-moving industry and market). Support, all
-of the support@ inbox only: **Needs a person**, **AI drafts to approve** and
-**Resolved & automation** (resolved yesterday, % by the AI alone; the panel
-lists FAQ gaps). Dashboard v2 (19 Nov 2026): the tiles of all
+The console opens on **Dashboard** (`#dashboard`): five KPI tiles for
+yesterday (the viewer's local day) in three sections. Internal: Agent board
+(tickets deployed) and Staff Kanban (remaining effort on the release selected
+for deployment, "24h (3d)" at 8 h a day, plus unestimated tasks). External:
+Leads and Conversion funnel (website visitors). Support: exactly three
+figures for the support@ inbox as it stands now (never hello@ or aidan@
+mail): open and awaiting a reply, the age of the oldest unanswered email, and
+tickets replied to or resolved today. Dashboard v2 (19 Nov 2026): the tiles of all
 three sections flow through one grid, each section's heading above its first
 tile, four across on a wide desktop, three on a laptop,
 two on an iPad in portrait and one on a phone; each tile is a headline figure,
-a 7-day sparkline where it has a daily history, a trend arrow and a green / amber /
+a 7-day sparkline, a trend arrow against the day before and a green / amber /
 red status dot, with its explanation in an info tooltip. A tile never
 navigates: a click or tap pins its summary panel open, full width under its
 row, until it is closed or another tile is chosen; the panel's "Open section"

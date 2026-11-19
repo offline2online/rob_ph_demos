@@ -3,24 +3,23 @@
 // test/dashboard.test.mjs drives them; dashboard-page.js owns the rendering
 // and the reads.
 //
-// Every tile reports in the viewer's local time: "yesterday" is the local
-// calendar day before today and "the last 7 days" the 7 local days ending
-// yesterday. Nothing here formats or compares a UTC day.
+// Every tile reports "yesterday" as the viewer's local calendar day, compared
+// with the local day before it, except Support, which reports the inbox as it
+// stands now and today. Nothing here formats or compares a UTC day.
 //
-// Tiles (Dashboard v2 content, cMyA3FMlUUrSjGtPkLZC) and where their numbers come from:
-//   Delivery          backlogItems the console already holds (mergedAt,
-//                     createdAt, countedSendBacks / testRound)
-//   Flow & blockers   the same tickets (blocked, lastFailureReason, statusEnteredAt)
-//   Staff Kanban      open kanbanCards (open == true) and the current release's
-//                     cards; kanbanSettings/main picks the release
-//   Leads             leads (createdAt, stage, source, history, test, archivedAt)
-//   Conversion funnel funnelDaily rows for 14 days (GA4, ACE) plus website leads
-//   Needs a person, AI drafts to approve, Resolved & automation
-//                     supportTickets of the support@ inbox (its queues)
+// Tiles and where their numbers come from:
+//   Agent board     backlogItems the console already holds (mergedAt, lastFire,
+//                   status, blocked)
+//   Staff Kanban    kanbanCards of the current release (estimate, logged,
+//                   status, assignee); kanbanSettings/main picks the release
+//   Leads           leads (createdAt, leadType, test, archivedAt)
+//   Conversion      funnelDaily rows for the day (GA4) plus website leads
+//   Support         supportTickets written to support@ (status, lastInboundAt,
+//                   lastReplyAt, resolvedAt): three figures, as things stand now
 
 import { remaining, currentReleaseId } from "./kanban/kanban-core.js";
 import { leadName } from "./leads-core.js";
-import { inInbox, DEFAULT_INBOX, QUEUES } from "./support-core.js";
+import { inInbox, DEFAULT_INBOX } from "./support-core.js";
 
 export const HOURS_PER_DAY = 8;
 
@@ -56,12 +55,11 @@ export function fmtEffort(hours) {
   const d = Math.round((h / HOURS_PER_DAY) * 10) / 10;
   return `${h}h (${d}d)`;
 }
-// Change against an earlier figure: { dir: "up" | "down" | "flat", delta, text }.
-// `than` names what it is compared with ("the 7 days before" for a weekly figure).
-export function trend(cur, prev, than = "the day before") {
+// Change against the day before: { dir: "up" | "down" | "flat", delta, text }.
+export function trend(cur, prev) {
   const delta = (Number(cur) || 0) - (Number(prev) || 0);
   const dir = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
-  return { dir, delta, text: dir === "flat" ? `Same as ${than}` : `${delta > 0 ? "+" : "−"}${fmtCount(Math.abs(delta))} vs ${than}` };
+  return { dir, delta, text: dir === "flat" ? "Same as the day before" : `${delta > 0 ? "+" : "−"}${fmtCount(Math.abs(delta))} vs the day before` };
 }
 // "3h", "2d 4h", "12m": how long something has waited.
 export function fmtWait(ms) {
@@ -127,57 +125,39 @@ export function rowEnd(i, cols, n) {
 }
 // A tile's status colour: "ok" (green), "warn" (amber) or "alert" (red), with
 // the reason in words for the tile's accessible name. Only a tile with
-// something to act on is amber or red; any tile that couldn't load is red
-// (dashboard-page.js).
-//   delivery   always green (a quiet day is not a fault)
-//   flow       amber when a ticket is stuck; red at three or more
-//   kanban     amber when an open task is overdue, unassigned, unestimated or
-//              waiting on the viewer in Testing
-//   leads      amber when a lead is stale or not yet contacted
-//   funnel     amber when yesterday has no website data (the daily ingest has
-//              not run); red when a source failed on the last ingest
-//   person     amber when a ticket needs a person; red when the oldest has waited a day
-//   drafts     amber when an AI draft waits for approval
-//   resolved   always green
+// something to act on is amber or red.
+//   agent    amber when a ticket is blocked; red at three or more
+//   kanban   amber when an outstanding task has no estimate; amber with no release
+//   leads    always green (a quiet day is not a fault)
+//   funnel   amber when yesterday has no website data (the daily ingest has not run)
+//   support  amber when anything awaits a reply; red when the oldest has waited a day
 export const SUPPORT_RED_MS = 24 * 3600000;
-const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 export function tileStatus(key, k) {
   const ok = { level: "ok", reason: "Nothing needs attention" };
   if (!k) return ok;
-  if (key === "flow") {
-    const n = (k.stuck || []).length;
-    if (!n) return ok;
-    return { level: n >= 3 ? "alert" : "warn", reason: `${plural(n, "ticket")} stuck` };
+  if (key === "agent") {
+    const blocked = (k.projects || []).reduce((n, p) => n + (p.blocked || 0), 0);
+    if (!blocked) return ok;
+    return { level: blocked >= 3 ? "alert" : "warn", reason: `${blocked} ticket${blocked === 1 ? "" : "s"} blocked` };
   }
   if (key === "kanban") {
-    const f = k.flags || {};
-    const parts = [];
-    if (f.overdue) parts.push(`${f.overdue} overdue`);
-    if (f.unassigned) parts.push(`${f.unassigned} unassigned`);
-    if (f.unestimated) parts.push(`${f.unestimated} unestimated`);
-    if (f.waitingOnMe) parts.push(`${f.waitingOnMe} waiting on you in Testing`);
-    return parts.length ? { level: "warn", reason: parts.join(", ") } : ok;
-  }
-  if (key === "leads") {
-    const a = k.needsAction || {};
-    const n = (a.stale || []).length + (a.notContacted || []).length;
-    return n ? { level: "warn", reason: `${plural(n, "lead")} need${n === 1 ? "s" : ""} action` } : ok;
+    if (!k.release) return { level: "warn", reason: "No release selected" };
+    return k.unestimated ? { level: "warn", reason: `${k.unestimated} task${k.unestimated === 1 ? "" : "s"} unestimated` } : ok;
   }
   if (key === "funnel") {
     // A source failed on the last ingest (consoleConfig/funnelIngest): the figures are stale.
     if (k.dataNotUpdated) return { level: "alert", reason: "Data not updated" };
     return k.hasData ? ok : { level: "warn", reason: "No website data for yesterday yet" };
   }
-  if (key === "person") {
-    if (!k.count) return ok;
+  if (key === "support") {
+    if (!k.open) return ok;
     const late = k.oldestMs != null && k.oldestMs >= SUPPORT_RED_MS;
-    return { level: late ? "alert" : "warn", reason: `${k.count} need${k.count === 1 ? "s" : ""} a person${late ? ", one for over a day" : ""}` };
+    return { level: late ? "alert" : "warn", reason: `${k.open} awaiting a reply${late ? ", one for over a day" : ""}` };
   }
-  if (key === "drafts") return k.count ? { level: "warn", reason: `${plural(k.count, "draft")} to approve` } : ok;
   return ok;
 }
 
-// ── Agent board: Delivery, Flow & blockers ─────────────────────────────────
+// ── Agent board ──────────────────────────────────────────────────────────
 const LIVE = "published-live";
 // When the card shipped: the train's merge, else when it entered Merged to Main.
 const deployedMs = (it) => (it.status === LIVE || it.status === "archived" ? toMillis(it.mergedAt) || toMillis(it.statusEnteredAt) : toMillis(it.mergedAt));
@@ -190,251 +170,84 @@ export function isBuilding(it) {
   if (bs && (bs.status === "done" || bs.status === "error") && (toMillis(bs.reportedAt) || toMillis(bs.finishedAt)) >= fired) return false;
   return it.status === "backlog" || !it.status;
 }
-// Passed testing first time: never sent back (no counted send-back, one
-// testing round); a card from before testing rounds were kept falls back to
-// "never failed testing".
-export function firstTimePass(it) {
-  if (typeof it.countedSendBacks === "number" || typeof it.testRound === "number") return !(Number(it.countedSendBacks) > 0) && !(Number(it.testRound) > 1);
-  return !it.lastFailureReason;
-}
-const pctOf = (n, d) => (d > 0 ? Math.round((n / d) * 100) : null);
-const avg = (list) => (list.length ? list.reduce((a, b) => a + b, 0) / list.length : null);
-// "2d 4h" for a lead time; "—" when there is none.
-export const fmtSpan = (ms) => (ms == null ? "—" : fmtWait(ms));
-
-// Delivery: tickets deployed yesterday (local day), with the day before and a
-// 7-day line; over the tickets deployed in the last 7 days, the average lead
-// time from Backlog (createdAt) to Live and the share that passed testing
-// first time. Per project: deployed yesterday, last 7 days, lead time, first pass.
-export function deliveryKpi(items, projects, now = Date.now()) {
+// items: backlogItems; projects: [{id, name, archived?}].
+// Per project: deployed yesterday, left Backlog yesterday (a build started),
+// in build now, in Ready for Testing now, blocked now.
+export function agentBoardKpi(items, projects, now = Date.now()) {
   const y = localDayRange(1, now), p = localDayRange(2, now);
-  const week = lastDays(SERIES_DAYS, now);
-  const win = { from: week[0].from, to: week[week.length - 1].to };
   const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
   const rows = new Map();
   const row = (pid) => {
     const id = pid || "general";
-    if (!rows.has(id)) rows.set(id, { id, name: names.get(pid) || "General", yesterday: 0, week: 0, leads: [], passed: 0 });
+    if (!rows.has(id)) rows.set(id, { id, name: names.get(pid) || "General", deployed: 0, leftBacklog: 0, building: 0, testing: 0, blocked: 0 });
     return rows.get(id);
   };
   let deployed = 0, prev = 0;
-  const leads = [];
-  let passed = 0, shipped = 0;
   for (const it of items || []) {
-    const at = deployedMs(it);
-    if (!at) continue;
-    if (inRange(at, y)) { deployed++; row(it.projectId).yesterday++; }
-    if (inRange(at, p)) prev++;
-    if (!inRange(at, win)) continue;
-    const r = row(it.projectId);
-    r.week++; shipped++;
-    const born = toMillis(it.createdAt);
-    if (born && born <= at) { leads.push(at - born); r.leads.push(at - born); }
-    if (firstTimePass(it)) { passed++; r.passed++; }
+    const shipped = deployedMs(it);
+    if (inRange(shipped, y)) { deployed++; row(it.projectId).deployed++; }
+    if (inRange(shipped, p)) prev++;
+    if (it.status === "archived") continue;
+    if (it.lastFire && inRange(toMillis(it.lastFire.at), y)) row(it.projectId).leftBacklog++;
+    if (isBuilding(it)) row(it.projectId).building++;
+    if (it.status === "ready-for-testing") row(it.projectId).testing++;
+    if (it.blocked && it.status !== LIVE) row(it.projectId).blocked++;
   }
   const projectsOut = [...rows.values()]
-    .map((r) => ({ id: r.id, name: r.name, yesterday: r.yesterday, week: r.week, leadTimeMs: avg(r.leads), firstPassPct: pctOf(r.passed, r.week) }))
-    .sort((a, b) => b.yesterday - a.yesterday || b.week - a.week || a.name.localeCompare(b.name));
+    .filter((r) => r.deployed || r.leftBacklog || r.building || r.testing || r.blocked)
+    .sort((a, b) => b.deployed - a.deployed || a.name.localeCompare(b.name));
   const series = dailyCounts((items || []).map(deployedMs), SERIES_DAYS, now);
-  return { value: deployed, prev, trend: trend(deployed, prev), series, shipped, leadTimeMs: avg(leads), firstPassPct: pctOf(passed, shipped), projects: projectsOut };
-}
-
-export const READY_WAIT_MS = 24 * 3600000;
-const BLOCK_REASONS = {
-  "waiting-on-input": "Waiting on an answer",
-  "waiting-on-dependency": "Stuck behind another ticket",
-  "model-unavailable": "Not built: needs Opus",
-  "tools-unavailable": "Not built: a tool is missing",
-};
-// Flow & blockers: the tickets that are stuck now, longest wait first:
-//   blocked      a blocked card (not a plain wait for another ticket to land,
-//                which releases itself; one marked stuckOn does count)
-//   failed       sent back with Failed testing and not rebuilding yet: a
-//                Backlog card whose lastFailureReason is newer than its move
-//                to Backlog, with no build running and no patch waiting to land
-//   testing      in Ready for Testing for more than 24 hours, waiting on a person
-export function flowKpi(items, projects, now = Date.now()) {
-  const names = new Map((projects || []).map((x) => [x.id, x.name || "Untitled project"]));
-  const stuck = [];
-  for (const it of items || []) {
-    if (!it || it.status === LIVE || it.status === "archived") continue;
-    const base = { id: it.id, title: it.title || "Untitled ticket", project: names.get(it.projectId) || "General" };
-    const b = it.blocked;
-    if (b && typeof b === "object" && (b.reason !== "waiting-on-dependency" || b.stuckOn)) {
-      const since = toMillis(b.setAt) || toMillis(it.statusEnteredAt) || toMillis(it.updatedAt);
-      stuck.push({ ...base, kind: "blocked", reason: String(b.note || "").trim() || BLOCK_REASONS[b.reason] || "Blocked", waitedMs: since ? Math.max(0, now - since) : null });
-      continue;
-    }
-    const f = it.lastFailureReason;
-    const failedAt = f && toMillis(f.at);
-    if ((it.status === "backlog" || !it.status) && failedAt && failedAt >= (toMillis(it.statusEnteredAt) || 0) && !isBuilding(it) && !it.patchReady) {
-      stuck.push({ ...base, kind: "failed", reason: `Failed testing${f.text ? `: ${String(f.text).trim()}` : ""}`, waitedMs: Math.max(0, now - failedAt) });
-      continue;
-    }
-    if (it.status === "ready-for-testing") {
-      const since = toMillis(it.statusEnteredAt);
-      if (since && now - since > READY_WAIT_MS) stuck.push({ ...base, kind: "testing", reason: "Waiting in Ready for Testing", waitedMs: now - since });
-    }
-  }
-  stuck.sort((a, b) => (b.waitedMs || 0) - (a.waitedMs || 0) || a.title.localeCompare(b.title));
-  const count = (k) => stuck.filter((s) => s.kind === k).length;
-  return { value: stuck.length, stuck, blocked: count("blocked"), failed: count("failed"), testing: count("testing") };
+  return { value: deployed, prev, trend: trend(deployed, prev), projects: projectsOut, series };
 }
 
 // ── Staff Kanban ─────────────────────────────────────────────────────────
-// The columns the tile counts: To do is Backlog and Ready for Dev; Testing is
-// Ready for Testing and Approved for Deployment.
-export const KANBAN_COLUMNS = [
-  { key: "todo", label: "To do", statuses: ["backlog", "ready-for-dev"] },
-  { key: "progress", label: "In progress", statuses: ["in-progress"] },
-  { key: "testing", label: "Testing", statuses: ["ready-for-testing", "approved"] },
-];
+// tasks: kanbanCards of the release; nameOf(email) -> a person's name.
+// Epics are left out, as in the release report.
+export function kanbanKpi(release, tasks, nameOf = (e) => e || "Unassigned") {
+  const outstanding = (tasks || []).filter((t) => t && t.type !== "epic" && t.status !== "done" && (!release || t.release === release.id));
+  const hasEstimate = (t) => +t.estimate > 0;
+  const people = new Map();
+  for (const t of outstanding) {
+    const id = t.assignee || "";
+    if (!people.has(id)) people.set(id, { id, name: id ? nameOf(id) : "Unassigned", hours: 0, tasks: 0, unestimated: [] });
+    const p = people.get(id);
+    p.tasks++;
+    p.hours += remaining(t);
+    if (!hasEstimate(t)) p.unestimated.push({ key: t.key || t.id || "", title: t.title || "" });
+  }
+  const list = [...people.values()].sort((a, b) => b.hours - a.hours || b.tasks - a.tasks || a.name.localeCompare(b.name));
+  const hours = outstanding.reduce((n, t) => n + remaining(t), 0);
+  return {
+    release: release ? { id: release.id, name: release.name || release.version || release.id } : null,
+    hours, effort: fmtEffort(hours), outstanding: outstanding.length,
+    unestimated: outstanding.filter((t) => !hasEstimate(t)).length,
+    people: list,
+  };
+}
 // The release Staff Kanban is working towards. Which one is Staff Kanban's
 // own rule, kanban-core's currentReleaseId (the one picked in its settings,
 // else the earliest release not yet live by version, then order), so the tile
-// and Staff Kanban's report always name the same release.
-// The console's releases say "live" in `status` (the Releases page), where
-// kanban-core reads `released`; Staff Kanban maps one to the other
-// (kanban-page.js). The tile used to pass them straight through, so it took a
-// release that was already live, with no open task, and showed nothing.
+// and Staff Kanban's report always name the same release. This only turns the
+// id into a release to show.
 export function dashboardRelease(settings, releases) {
-  const list = (releases || []).map((r) => ({ ...r, released: r.released === true || r.status === "live" }));
+  const list = (releases || []).slice();
   const chosen = settings && typeof settings.currentRelease === "string" ? settings.currentRelease : "";
   const id = currentReleaseId({ currentRelease: chosen }, list);
   if (!id) return null;
   return list.find((r) => r.id === id) || { id, name: id };
 }
-// The viewer's local calendar day as YYYY-MM-DD (a task's due date is a day).
-export const localIsoDay = (ms) => localDayRange(0, ms).day;
-// input: { release, open, releaseTasks, projects, me, now }
-//   release       dashboardRelease(), or null
-//   open          every open Staff Kanban task (kanbanCards with open == true)
-//   releaseTasks  every task of the release, done ones included (its progress)
-//   projects      the console's projects: tasks of an archived project are left out
-//   me            the viewer's email: Testing tasks assigned to them wait on them
-// The scope is the release's open tasks; with no release, or none of its tasks
-// open, it is all open work, so the tile is never blank. Epics are left out,
-// as in the release report.
-export function kanbanKpi(input, nameOf = (e) => e || "Unassigned") {
-  const { release = null, open = [], releaseTasks = [], projects = [], me = "", now = Date.now() } = input || {};
-  const archived = new Set((projects || []).filter((p) => p && p.archived).map((p) => p.id));
-  const live = (open || []).filter((t) => t && t.type !== "epic" && t.status !== "done" && !archived.has(t.project));
-  const inRelease = release ? live.filter((t) => t.release === release.id) : [];
-  const scoped = inRelease.length ? inRelease : live;
-  const allWork = !inRelease.length;
-  const columns = KANBAN_COLUMNS.map((c) => ({ key: c.key, label: c.label, count: scoped.filter((t) => c.statuses.includes(t.status)).length }));
-  // The release's progress: done (completed) of every task in it, withdrawn and epics left out.
-  let progress = null;
-  if (release && !allWork) {
-    const all = new Map();
-    for (const t of [...(releaseTasks || []), ...inRelease]) if (t && t.type !== "epic" && t.release === release.id) all.set(t.key || t.id, t);
-    const counted = [...all.values()].filter((t) => !(t.status === "done" && t.resolution === "withdrawn"));
-    const done = counted.filter((t) => t.status === "done").length;
-    progress = { done, total: counted.length, pct: pctOf(done, counted.length) ?? 0 };
-  }
-  const today = localIsoDay(now);
-  const mine = String(me || "").toLowerCase();
-  const isOverdue = (t) => !!t.due && String(t.due).slice(0, 10) < today;
-  const hasEstimate = (t) => +t.estimate > 0;
-  const flags = {
-    overdue: scoped.filter(isOverdue).length,
-    unassigned: scoped.filter((t) => !t.assignee).length,
-    unestimated: scoped.filter((t) => !hasEstimate(t)).length,
-    waitingOnMe: mine ? scoped.filter((t) => t.status === "ready-for-testing" && String(t.assignee || "").toLowerCase() === mine).length : 0,
-  };
-  const people = new Map();
-  for (const t of scoped) {
-    const id = t.assignee || "";
-    if (!people.has(id)) people.set(id, { id, name: id ? nameOf(id) : "Unassigned", hours: 0, tasks: 0, unestimated: [], overdue: 0 });
-    const p = people.get(id);
-    p.tasks++;
-    p.hours += remaining(t);
-    if (isOverdue(t)) p.overdue++;
-    if (!hasEstimate(t)) p.unestimated.push({ key: t.key || t.id || "", title: t.title || "" });
-  }
-  const list = [...people.values()].sort((a, b) => b.hours - a.hours || b.tasks - a.tasks || a.name.localeCompare(b.name));
-  const hours = scoped.reduce((n, t) => n + remaining(t), 0);
-  return {
-    value: scoped.length, columns, flags, progress, allWork,
-    scopeLabel: allWork ? "All open work" : (release.name || release.version || release.id),
-    release: release ? { id: release.id, name: release.name || release.version || release.id } : null,
-    hours, effort: fmtEffort(hours), people: list,
-  };
-}
 
 // ── Leads ────────────────────────────────────────────────────────────────
-const realLead = (l) => l && !l.test && !l.archivedAt && !l.archived;
-// The company pipeline, Lead through to Closed Won (Lost is left out).
-export const PIPELINE = [
-  { key: "lead", label: "Lead" },
-  { key: "hot-lead", label: "Hot Lead" },
-  { key: "demo", label: "Demo" },
-  { key: "post-demo", label: "Post-demo" },
-  { key: "closed-won", label: "Closed Won" },
-];
-const CLOSED = new Set(["closed-won", "closed-lost", "approved", "not-a-fit"]);
-export const STALE_MS = 7 * 24 * 3600000;
-// Where a lead came from, for the panel: the website, a network operator
-// (their own pipeline), a partner (a referral or the marketplace), else Other.
-export function leadSourceGroup(l) {
-  if (!l) return "Other";
-  if (l.leadType === "operator") return "Network operator";
-  const src = String(l.source || "");
-  if (/partner|referr|marketplace|\baws\b|\bace\b/i.test(src)) return "Partner";
-  if (isWebsiteLead(l)) return "Website";
-  return "Other";
-}
-const leadIndustry = (l) => String((l.company && l.company.industry) || l.sourceIndustry || (l.operator && l.operator.networkIndustry) || "").trim() || "Not given";
-const leadMarket = (l) => String((l.company && Array.isArray(l.company.countries) && l.company.countries[0]) || (l.operator && l.operator.region) || "").trim() || "Not given";
-// The last thing that happened on a lead: its newest history entry, stage
-// change, update or creation.
-export function leadLastActivity(l) {
-  const hist = (Array.isArray(l.history) ? l.history : []).map((h) => toMillis(h && h.at));
-  return Math.max(toMillis(l.createdAt), toMillis(l.updatedAt), toMillis(l.stageChangedAt), ...hist, 0);
-}
-// Contacted: anyone but the website wrote a note on it, or it moved stage.
-const contacted = (l) => !!toMillis(l.stageChangedAt) || (Array.isArray(l.history) ? l.history : []).some((h) => h && h.kind !== "created" && h.by && h.by !== "website");
-const firstStage = (l) => (l.leadType === "operator" ? !l.stage || l.stage === "applied" : !l.stage || l.stage === "lead");
-// Groups `list` by key(l) into [{ name, count, leads: [names] }], biggest first.
-function groupLeads(list, key) {
-  const m = new Map();
-  for (const l of list) { const k = key(l); if (!m.has(k)) m.set(k, []); m.get(k).push(leadName(l)); }
-  return [...m.entries()].map(([name, leads]) => ({ name, count: leads.length, leads })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-// New leads over the last 7 local days ending yesterday (test and archived
-// leads left out), against the 7 days before, with yesterday's count and a
-// 7-day line; the company pipeline now, with how many reached each stage and
-// the conversion from the stage before; and what needs action: open leads with
-// no activity for 7 days (stale) and leads in their first stage nobody has
-// contacted. The panel groups the week's leads by source, industry and market.
+const realLead = (l) => l && !l.test && !l.archivedAt;
 export function leadsKpi(leads, now = Date.now()) {
-  const real = (leads || []).filter(realLead);
-  const week = lastDays(SERIES_DAYS, now);
-  const win = { from: week[0].from, to: week[week.length - 1].to };
-  const prevWin = { from: localDayRange(SERIES_DAYS * 2, now).from, to: win.from };
-  const y = localDayRange(1, now);
+  const y = localDayRange(1, now), p = localDayRange(2, now);
+  const fresh = (leads || []).filter((l) => realLead(l) && inRange(toMillis(l.createdAt), y));
+  const prev = (leads || []).filter((l) => realLead(l) && inRange(toMillis(l.createdAt), p)).length;
   const byTime = (a, b) => toMillis(a.createdAt) - toMillis(b.createdAt);
-  const fresh = real.filter((l) => inRange(toMillis(l.createdAt), win)).sort(byTime);
-  const prev = real.filter((l) => inRange(toMillis(l.createdAt), prevWin)).length;
-  const yesterday = real.filter((l) => inRange(toMillis(l.createdAt), y)).length;
-  const series = dailyCounts(real.map((l) => toMillis(l.createdAt)), SERIES_DAYS, now);
-  // Pipeline: companies only (network operators have a pipeline of their own).
-  const companies = real.filter((l) => l.leadType !== "operator");
-  const idx = (l) => PIPELINE.findIndex((s) => s.key === (l.stage || "lead"));
-  const pipeline = PIPELINE.map((s, i) => {
-    const now_ = companies.filter((l) => idx(l) === i).length;
-    const reached = companies.filter((l) => idx(l) >= i).length;
-    return { key: s.key, label: s.label, count: now_, reached };
-  });
-  pipeline.forEach((s, i) => { s.conversionPct = i ? pctOf(s.reached, pipeline[i - 1].reached) : null; });
-  const openLeads = real.filter((l) => !CLOSED.has(l.stage));
-  const stale = openLeads.filter((l) => now - leadLastActivity(l) >= STALE_MS).map(leadName);
-  const notContacted = openLeads.filter((l) => firstStage(l) && !contacted(l)).map(leadName);
-  return {
-    value: fresh.length, prev, trend: trend(fresh.length, prev, "the 7 days before"), yesterday, series,
-    pipeline, needsAction: { stale, notContacted },
-    bySource: groupLeads(fresh, leadSourceGroup), byIndustry: groupLeads(fresh, leadIndustry), byMarket: groupLeads(fresh, leadMarket),
-  };
+  const companies = fresh.filter((l) => l.leadType !== "operator").sort(byTime).map((l) => leadName(l));
+  const operators = fresh.filter((l) => l.leadType === "operator").sort(byTime).map((l) => leadName(l));
+  const series = dailyCounts((leads || []).filter(realLead).map((l) => toMillis(l.createdAt)), SERIES_DAYS, now);
+  return { value: fresh.length, prev, trend: trend(fresh.length, prev), companies, operators, series };
 }
 
 // ── Conversion funnel ────────────────────────────────────────────────────
@@ -445,141 +258,81 @@ export const isWebsiteLead = (l) => !!l && (/website/i.test(String(l.source || "
 // sends one (`users`), else its visits.
 const visitorsOf = (rows) => rows.reduce((n, r) => n + (typeof r.users === "number" ? num(r.users) : num(r.visits)), 0);
 const sourceIs = (src) => (r) => String(r.source || "") === src;
-const tagged = (list) => list.some((r) => r.source);
-const OPP_STAGES = new Set(["demo", "post-demo", "closed-won"]);
-// rows: funnelDaily documents. The ingest (functions/funnel-ingest.js) tags
-// each row with a `source`:
+// rows: funnelDaily documents for the day. The ingest (functions/funnel-ingest.js)
+// tags each row with a `source`:
 //   ga4-total     the day's unique visitors (GA4 users, one row: users are not
 //                 additive across rows, so only this row is counted for them)
-//   ga4-site      visits and users by country (market) and channel
 //   ga4-industry  real page views of /industries/* pages (by industry and country)
 //   ga4-industry-total  one row: GA4 users over every /industries/* page, de-duplicated
 //                 (the "Industry page" step; capped at unique visitors)
 //   ga4-industry-users  users per industry, no country (the industry list)
 //   ga4-events    walkthroughs (product tour starts), calculatorUses, demoRequests,
 //                 downloads, leadForms
-//   ace           aceCreated: opportunities created
 // Rows with no `source` (written before the ingest existed) keep the older
 // reading: visitors are every row's users (else visits), industry visitors the
-// rows carrying an industry.
-// One day's figures.
-function funnelDay(cur) {
-  const isTagged = tagged(cur);
+// rows carrying an industry. leads as for leadsKpi.
+export function funnelKpi(rows, leads, now = Date.now()) {
+  const y = localDayRange(1, now), p = localDayRange(2, now);
+  const of = (day) => (rows || []).filter((r) => r && String(r.date || "").slice(0, 10) === day);
+  const cur = of(y.day), before = of(p.day);
+  const tagged = (list) => list.some((r) => r.source);
   const visitorsFor = (list) => {
-    if (!isTagged) return visitorsOf(list);
+    if (!tagged(list)) return visitorsOf(list);
     const totals = list.filter(sourceIs("ga4-total"));
     return totals.length ? visitorsOf(totals) : visitorsOf(list.filter(sourceIs("ga4-site")));
   };
   const visitors = visitorsFor(cur);
+  // The industry list: users per industry (ga4-industry-users), else, on rows
+  // written before that source existed, the ga4-industry rows.
   const pick = (...srcs) => { for (const src of srcs) { const l = cur.filter(sourceIs(src)); if (l.length) return l; } return []; };
-  const industryRows = isTagged ? pick("ga4-industry-users", "ga4-industry") : cur.filter((r) => String(r.industry || "").trim());
-  const industryTotal = isTagged ? cur.filter(sourceIs("ga4-industry-total")) : [];
+  const industryRows = tagged(cur) ? pick("ga4-industry-users", "ga4-industry") : cur.filter((r) => String(r.industry || "").trim());
+  // The "Industry page" step: GA4's de-duplicated users over every /industries/*
+  // page (ga4-industry-total), never a sum of per-industry users, and never more
+  // than the unique visitors it is a step of.
+  const industryTotal = tagged(cur) ? cur.filter(sourceIs("ga4-industry-total")) : [];
   const industryRaw = industryTotal.length ? visitorsOf(industryTotal) : visitorsOf(industryRows);
-  const industryPage = isTagged && visitors > 0 ? Math.min(industryRaw, visitors) : industryRaw;
-  const engagedRows = isTagged ? cur.filter(sourceIs("ga4-events")) : cur;
+  const industryPage = tagged(cur) && visitors > 0 ? Math.min(industryRaw, visitors) : industryRaw;
+  const engagedRows = tagged(cur) ? cur.filter(sourceIs("ga4-events")) : cur;
   const engaged = engagedRows.reduce((n, r) => n + num(r.walkthroughs) + num(r.calculatorUses) + num(r.demoRequests) + num(r.downloads), 0);
-  const industries = new Map();
-  for (const r of industryRows) { const k = String(r.industry || "").trim(); if (k) industries.set(k, (industries.get(k) || 0) + visitorsOf([r])); }
-  // Markets: visitors by country (ga4-site), else the industry pages' countries.
-  const marketRows = isTagged ? pick("ga4-site", "ga4-industry") : cur;
-  const markets = new Map();
-  for (const r of marketRows) { const k = String(r.country || "").trim(); if (k) markets.set(k, (markets.get(k) || 0) + visitorsOf([r])); }
-  const channelRows = isTagged ? cur.filter(sourceIs("ga4-site")) : cur;
-  const channels = new Map();
-  for (const r of channelRows) { const k = String(r.channel || "").trim() || "Other"; channels.set(k, (channels.get(k) || 0) + visitorsOf([r])); }
-  const ace = cur.filter(sourceIs("ace")).reduce((n, r) => n + num(r.aceCreated), 0);
-  return { visitors, industryPage, engaged, industries, markets, channels, ace, hasAce: cur.some(sourceIs("ace")) };
-}
-const addMap = (into, from) => { for (const [k, v] of from) into.set(k, (into.get(k) || 0) + v); return into; };
-// Ranked with the change on the week before; top mover = biggest growth.
-function ranked(cur, prev) {
-  return [...cur.entries()].map(([name, count]) => ({ name, count, prev: prev.get(name) || 0, change: count - (prev.get(name) || 0) }))
-    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-}
-const topMover = (list) => list.filter((x) => x.change > 0).sort((a, b) => b.change - a.change || b.count - a.count)[0] || null;
-// The last 7 local days ending yesterday, against the 7 before: visitors with
-// a 7-day line; visitor-to-lead %; the funnel Visitors → Industry page →
-// Walkthrough or calculator → Lead → Opportunity with the drop at each step
-// and the biggest flagged; industries and markets ranked with the change on
-// the week before, and the top mover of each; traffic sources.
-// Opportunities are ACE opportunities created when the ingest has ACE rows for
-// the week, else website leads now at Demo or beyond.
-export function funnelKpi(rows, leads, now = Date.now()) {
-  const of = (day) => (rows || []).filter((r) => r && String(r.date || "").slice(0, 10) === day);
-  const week = lastDays(SERIES_DAYS, now);
-  const before = week.map((r) => localDayRange(0, r.from - 7 * 24 * 3600000 + 12 * 3600000));
-  const days = week.map((r) => funnelDay(of(r.day)));
-  const prevDays = before.map((r) => funnelDay(of(r.day)));
-  const sum = (list, k) => list.reduce((n, d) => n + d[k], 0);
-  const visitors = sum(days, "visitors"), prev = sum(prevDays, "visitors");
-  const win = { from: week[0].from, to: week[week.length - 1].to };
-  const webLeads = (leads || []).filter((l) => realLead(l) && isWebsiteLead(l) && inRange(toMillis(l.createdAt), win));
-  const hasAce = days.some((d) => d.hasAce);
-  const opps = hasAce ? sum(days, "ace") : webLeads.filter((l) => OPP_STAGES.has(l.stage)).length;
-  const counts = [visitors, sum(days, "industryPage"), sum(days, "engaged"), webLeads.length, opps];
-  const labels = ["Unique visitors", "Industry page", "Walkthrough or calculator", "Lead", "Opportunity"];
-  const short = ["Visitors", "Industry", "Engaged", "Leads", "Opps"];
+  const leadCount = (leads || []).filter((l) => realLead(l) && isWebsiteLead(l) && inRange(toMillis(l.createdAt), y)).length;
+  const counts = [visitors, industryPage, engaged, leadCount];
+  const labels = ["Unique visitors", "Industry page", "Walkthrough or calculator", "Lead"];
   const steps = labels.map((label, i) => {
     const count = counts[i];
     const base = i ? counts[i - 1] : null;
-    return { label, short: short[i], count, dropOff: base ? Math.max(0, base - count) : null, dropOffPct: base ? Math.round(Math.max(0, base - count) / base * 100) : null };
+    return { label, count, dropOff: base ? Math.max(0, base - count) : null, dropOffPct: base ? Math.round(Math.max(0, base - count) / base * 100) : null };
   });
-  let biggest = -1;
-  steps.forEach((s, i) => { if (s.dropOffPct != null && s.dropOffPct > 0 && (biggest < 0 || s.dropOffPct > steps[biggest].dropOffPct)) biggest = i; });
-  if (biggest >= 0) steps[biggest].biggest = true;
-  const industries = ranked(days.reduce((m, d) => addMap(m, d.industries), new Map()), prevDays.reduce((m, d) => addMap(m, d.industries), new Map()));
-  const markets = ranked(days.reduce((m, d) => addMap(m, d.markets), new Map()), prevDays.reduce((m, d) => addMap(m, d.markets), new Map()));
-  const channels = [...days.reduce((m, d) => addMap(m, d.channels), new Map()).entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-  const y = localDayRange(1, now);
-  return {
-    value: visitors, prev, trend: trend(visitors, prev, "the 7 days before"), series: days.map((d) => d.visitors),
-    conversionPct: visitors ? Math.round((webLeads.length / visitors) * 1000) / 10 : null,
-    steps, biggestDrop: biggest >= 0 ? steps[biggest] : null, oppsFrom: hasAce ? "ace" : "leads",
-    industries, markets, channels, topIndustry: topMover(industries), topMarket: topMover(markets),
-    hasData: of(y.day).length > 0,
-  };
+  const byIndustry = new Map();
+  for (const r of industryRows) {
+    const k = String(r.industry || "").trim();
+    if (!k) continue;
+    byIndustry.set(k, (byIndustry.get(k) || 0) + visitorsOf([r]));
+  }
+  const industries = [...byIndustry.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const prev = visitorsFor(before);
+  const series = lastDays(SERIES_DAYS, now).map((r) => visitorsFor(of(r.day)));
+  return { value: visitors, prev, trend: trend(visitors, prev), steps, industries, hasData: cur.length > 0, series };
 }
 
-// ── Support (three tiles) ────────────────────────────────────────────────
-// tickets: normalised supportTickets (support-core's normaliseTicket). All
-// three tiles are of the Support Inbox (mail written to support@; Hello's and
-// Aidan's tickets are never counted), and use the inbox's own queues, so the
-// two counts equal the queue counts on the Support Inbox tab.
-export const FAQ_GAP_DAYS = 30;
-const queueTest = (key) => QUEUES.find((q) => q.key === key).test;
-const waitOf = (t, now) => Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now));
-const customerOf = (t) => t.customerName || t.customerEmail || "Unknown sender";
-// Needs a person: the queue's count, the age of the oldest and every ticket
-// with its customer and wait, longest first.
-export function needsPersonKpi(tickets, now = Date.now()) {
-  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("needs-person")(t))
-    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", waitedMs: waitOf(t, now) }))
+// ── Support ──────────────────────────────────────────────────────────────
+// tickets: normalised supportTickets (support-core's normaliseTicket).
+// Exactly three figures, all of the Support Inbox (mail written to support@;
+// Hello's and Aidan's tickets are never counted), all as things stand now:
+//   open        tickets that are open, so the customer's last email has no reply
+//   oldestMs    how long the oldest of those has waited (null when none wait)
+//   doneToday   tickets replied to or resolved since the start of today (local)
+// `waiting` lists the open tickets, longest wait first, for the tooltip.
+export function supportKpi(tickets, now = Date.now()) {
+  const today = localDayRange(0, now);
+  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX));
+  const waiting = list.filter((t) => t.status === "open")
+    .map((t) => ({ id: t.id, customer: t.customerName || t.customerEmail || "Unknown sender", subject: t.subject || "", waitedMs: Math.max(0, now - (t.lastInboundAt || t.lastMessageAt || t.createdAt || now)) }))
     .sort((a, b) => b.waitedMs - a.waitedMs);
-  return { count: list.length, oldestMs: list.length ? list[0].waitedMs : null, tickets: list };
-}
-// AI drafts to approve: the queue's count and each draft with its confidence,
-// most confident first (the quickest to approve).
-export function draftsKpi(tickets, now = Date.now()) {
-  const list = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && queueTest("ai-drafts")(t))
-    .map((t) => ({ id: t.id, customer: customerOf(t), subject: t.subject || "", confidence: (t.aiDraft && t.aiDraft.confidence) || 0, waitedMs: waitOf(t, now) }))
-    .sort((a, b) => b.confidence - a.confidence || b.waitedMs - a.waitedMs);
-  return { count: list.length, high: list.filter((d) => d.confidence >= 0.8).length, drafts: list };
-}
-// Resolved & automation: tickets resolved yesterday (still resolved), against
-// the day before; the share of those the AI resolved with no person involved;
-// and the FAQ gaps of the last 30 days: questions the Help Centre couldn't
-// answer (a draft marked not answerable, or triage saying so), newest first.
-export function resolvedKpi(tickets, now = Date.now()) {
-  const inbox = (tickets || []).filter((t) => inInbox(t, DEFAULT_INBOX) && t.status !== "spam");
-  const y = localDayRange(1, now), p = localDayRange(2, now);
-  const on = (r) => inbox.filter((t) => t.status === "resolved" && inRange(t.resolvedAt, r));
-  const done = on(y);
-  const ai = done.filter((t) => t.resolvedBy === "ai" && !t.humanInvolved).length;
-  const since = now - FAQ_GAP_DAYS * 24 * 3600000;
-  const gaps = inbox.filter((t) => (t.createdAt || t.lastMessageAt) >= since
-      && ((t.aiDraft && !t.aiDraft.answerable) || /help centre doesn.t answer/i.test(t.triageReason || "")))
-    .map((t) => ({ id: t.id, subject: t.subject || "", customer: customerOf(t), at: t.createdAt || t.lastMessageAt }))
-    .sort((a, b) => b.at - a.at);
-  const prev = on(p).length;
-  return { value: done.length, prev, trend: trend(done.length, prev), aiCount: ai, aiPct: pctOf(ai, done.length), gaps };
+  // A ticket filed before lastReplyAt was recorded has only its first reply's time.
+  const doneOn = (day) => list.filter((t) => t.status !== "spam" && ((t.status === "resolved" && inRange(t.resolvedAt, day)) || inRange(t.lastReplyAt || t.firstResponseAt, day))).length;
+  const doneToday = doneOn(today);
+  // Yesterday by the same rule (a ticket replied to yesterday and again today
+  // counts today only: its latest reply is the one recorded).
+  const doneYesterday = doneOn(localDayRange(1, now));
+  return { open: waiting.length, oldestMs: waiting.length ? waiting[0].waitedMs : null, doneToday, doneYesterday, doneTrend: trend(doneToday, doneYesterday), waiting };
 }

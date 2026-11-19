@@ -12193,7 +12193,6 @@ function ensureDashboardUi() {
         attention: document.getElementById("needs-attention"),
         items: () => items, projects: () => projects, releases: () => releases,
         canView: (key) => sectionAllowed(key),
-        me: () => normEmail(auth.currentUser && auth.currentUser.email),
         go: (hash) => { setRouteHash(hash); applyRouteFromHash(); },
       });
       return dashboardUi;
