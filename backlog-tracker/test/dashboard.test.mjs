@@ -2,7 +2,7 @@
 // Days are the viewer's local days, so every instant here is built with the
 // local Date constructor, never a UTC string.
 import assert from "node:assert";
-import { localDayRange, fmtEffort, trend, fmtWait, agentBoardKpi, kanbanKpi, dashboardRelease, leadsKpi, funnelKpi, supportKpi, isBuilding, isWebsiteLead } from "../public/js/dashboard-core.js";
+import { localDayRange, fmtEffort, trend, fmtWait, agentBoardKpi, kanbanKpi, dashboardRelease, leadsKpi, funnelKpi, supportKpi, isBuilding, isWebsiteLead, lastDays, dailyCounts, sparklinePoints, trendShort, tileStatus } from "../public/js/dashboard-core.js";
 import { normaliseTicket } from "../public/js/support-core.js";
 import { currentReleaseId } from "../public/js/kanban/kanban-core.js";
 
@@ -151,13 +151,16 @@ const tickets = [
   t("14", { status: "open", inboxes: ["support", "hello"], lastInboundAt: at(17, 9) }),
 ];
 const sk = supportKpi(tickets, NOW);
-assert.deepStrictEqual(Object.keys(sk).sort(), ["doneToday", "oldestMs", "open", "waiting"], "three figures and the list behind them, nothing else");
+assert.deepStrictEqual(Object.keys(sk).sort(), ["doneToday", "doneTrend", "doneYesterday", "oldestMs", "open", "waiting"], "three figures, yesterday's replied or resolved for its trend, and the list behind them");
 assert.strictEqual(sk.open, 5, "open and awaiting a reply, support@ only");
 assert.deepStrictEqual(sk.waiting.map((w) => w.id), ["2", "3", "7", "1", "14"], "longest-waiting first");
 assert.strictEqual(sk.waiting[0].customer, "Customer 2");
 assert.strictEqual(sk.oldestMs, NOW - at(16, 9, 30), "the oldest unanswered email, measured from when the customer wrote");
 assert.strictEqual(fmtWait(sk.oldestMs), fmtWait(NOW - at(16, 9, 30)));
 assert.strictEqual(sk.doneToday, 4, "resolved or replied since local midnight: 4, 6, 11 and 12");
+// Dashboard v2 (GUI9xPe3CJY3LyMws88m): the same count for yesterday gives the tile its trend.
+assert.strictEqual(sk.doneYesterday, 2, "resolved or replied yesterday: 5 and 10 (12 was replied to again today)");
+assert.deepStrictEqual([sk.doneTrend.dir, sk.doneTrend.delta], ["up", 2]);
 // An email written only to hello@ or aidan@ changes none of the three.
 const more = supportKpi([...tickets, t("20", { status: "open", inboxes: ["hello"], lastInboundAt: at(10, 9) }), t("21", { status: "resolved", inboxes: ["aidan"], resolvedAt: at(17, 9), lastReplyAt: at(17, 9) }), t("22", { status: "pending", inboxes: ["hello", "aidan"], lastReplyAt: at(17, 9) })], NOW);
 assert.deepStrictEqual([more.open, more.oldestMs, more.doneToday], [sk.open, sk.oldestMs, sk.doneToday], "hello@ and aidan@ mail is never counted");
@@ -165,4 +168,33 @@ assert.deepStrictEqual([more.open, more.oldestMs, more.doneToday], [sk.open, sk.
 const quiet = supportKpi([t("1", { status: "resolved", resolvedAt: at(16, 9) })], NOW);
 assert.deepStrictEqual([quiet.open, quiet.oldestMs, quiet.doneToday, quiet.waiting], [0, null, 0, []]);
 
+// ── Dashboard v2 (GUI9xPe3CJY3LyMws88m): 7-day series, sparkline, trend, status ──
+{
+  const days = lastDays(7, NOW);
+  assert.strictEqual(days.length, 7);
+  assert.strictEqual(days[0].day, "2026-11-10", "the series starts 7 local days back");
+  assert.strictEqual(days[6].day, "2026-11-16", "and ends yesterday, never today");
+  assert.deepStrictEqual(dailyCounts([at(10, 1), at(16, 23, 59), at(16, 0, 1), at(17, 8), at(9, 12)], 7, NOW), [1, 0, 0, 0, 0, 0, 2], "counts per local day; today and older days are left out");
+  assert.deepStrictEqual(agentBoardKpi(items, projects, NOW).series, [0, 0, 0, 0, 0, 1, 3], "deployed per day, the last point is the headline");
+  assert.strictEqual(sparklinePoints([1]), "", "one point draws nothing");
+  const pts = sparklinePoints([0, 5, 10], 96, 28, 2).split(" ").map((p) => p.split(",").map(Number));
+  assert.deepStrictEqual(pts, [[2, 26], [48, 14], [94, 2]], "the lowest value at the bottom, the highest at the top, inside the padding");
+  assert.ok(sparklinePoints([3, 3, 3]).split(" ").every((p) => p.endsWith(",14")), "a flat series runs along the middle");
+  assert.strictEqual(trendShort(trend(5, 3)), "+2");
+  assert.strictEqual(trendShort(trend(1, 4)), "−3");
+  assert.strictEqual(trendShort(trend(2, 2)), "0");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 0 }] }).level, "ok");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 1 }, { blocked: 1 }] }).level, "warn");
+  assert.strictEqual(tileStatus("agent", { projects: [{ blocked: 2 }, { blocked: 1 }] }).level, "alert", "red at three blocked");
+  assert.strictEqual(tileStatus("kanban", { release: null }).level, "warn");
+  assert.strictEqual(tileStatus("kanban", { release: { id: "r" }, unestimated: 2 }).reason, "2 tasks unestimated");
+  assert.strictEqual(tileStatus("kanban", { release: { id: "r" }, unestimated: 0 }).level, "ok");
+  assert.strictEqual(tileStatus("leads", { value: 0 }).level, "ok", "a quiet day is not a fault");
+  assert.strictEqual(tileStatus("funnel", { hasData: false }).level, "warn");
+  assert.strictEqual(tileStatus("support", { open: 0, oldestMs: null }).level, "ok");
+  assert.strictEqual(tileStatus("support", { open: 2, oldestMs: 3600000 }).level, "warn");
+  assert.strictEqual(tileStatus("support", { open: 1, oldestMs: 25 * 3600000 }).level, "alert", "red when the oldest has waited a day");
+  const fs = funnelKpi([{ date: "2026-11-10", visits: 5 }, { date: "2026-11-15", visits: 7 }, { date: "2026-11-16", visits: 9, users: 8 }], [], NOW).series;
+  assert.deepStrictEqual(fs, [5, 0, 0, 0, 0, 7, 8], "funnel visitors per day for the sparkline");
+}
 console.log("dashboard.test.mjs: ok");

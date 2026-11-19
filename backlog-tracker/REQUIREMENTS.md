@@ -7640,17 +7640,20 @@ Ticket yYzYdxqAdI5KTdqZXs3C. Opening the console with no address
 address, `#board`, so a reload on the board stays on the board; Agent Board in
 the sidebar and the Dashboard's Agent board tile both go there.
 
-First on the page, above the tiles, is **Needs attention** (see "Needs
-attention" above): it is shown here and on no other page.
+Last on the page, below the tiles, is **Needs attention** (see "Needs
+attention" above): it is shown here and on no other page. It sits in normal
+flow after the tile sections, so it never covers or holds back the tiles
+(Dashboard v2, GUI9xPe3CJY3LyMws88m; it used to be first on the page).
 
 Five KPI tiles in three sections, each a headline figure for **yesterday**,
 meaning the viewer's local calendar day before today, compared with the local
 day before it (the Support tile is the exception: it shows the inbox as it
 stands now, and today). Times are never shown or compared in UTC. Each tile's breakdown
-is a tooltip shown on hover or keyboard focus, with no explanatory copy under
-the tiles. Clicking a tile opens its section.
+is its **summary panel** (below), and what the tile means is in its info
+tooltip, with no explanatory copy under the tiles. A tile never opens its
+section (see "Dashboard v2").
 
-| Section | Tile | Headline | Breakdown (tooltip) | Opens |
+| Section | Tile | Headline | Breakdown (summary panel) | Open section |
 |---|---|---|---|---|
 | Internal | Agent board | Tickets deployed yesterday (`mergedAt`, else `statusEnteredAt` of a Merged to Main card), with the change against the day before | Per project: deployed, left Backlog yesterday (a build started, `lastFire.at`), in build now, in Ready for Testing now, blocked now | `#board` |
 | Internal | Staff Kanban | Remaining effort on the release selected for deployment (Kanban settings' current release, else the earliest not yet live by version, then order: Staff Kanban's own `currentReleaseId` rule, so the tile names the same release Staff Kanban does) as hours with days in brackets at 8 h a day, e.g. "24h (3d)"; the release's name; "N tasks unestimated" when outstanding tasks have no estimate | Per assignee: remaining effort in hours (days), tasks outstanding, and which tasks have no estimate | `#staff-kanban` |
@@ -7684,14 +7687,62 @@ Rules:
   `support-inbox`); a tile the viewer can't open isn't shown, nor is a section
   left with no tiles.
 - **Reads**: the Agent board tile uses the tickets the console already holds
-  and redraws with the board. The other four read their collections once when
+  and redraws with the board. Conversion funnel reads `funnelDaily` for the
+  last 7 local days (one query a day). The other four read their collections once when
   the page opens, again on Refresh, or when reopened after five minutes. The
   page keeps no listeners.
 - **Redraws keep your place** (7Pq6sqazzDyqvzWmh3Sg): a redraw updates the
   tiles already on the page rather than replacing them, so a tile reached with
-  Tab keeps its keyboard focus and its open tooltip when tickets change (the
+  Tab keeps its keyboard focus and its pinned summary panel when tickets change (the
   automation writes cards every few minutes), and only the figures that moved
   change. The tiles are rebuilt only when the set the viewer may see changes.
+
+### Dashboard v2: responsive grid, pinned summary panels (19 Nov 2026)
+
+Ticket GUI9xPe3CJY3LyMws88m. Layout, interaction and look; what each tile
+shows is unchanged here.
+
+- **Responsive grid.** Internal, External and Support each have a slim
+  section heading, and the tiles of all three flow through one grid in order
+  (Agent board, Staff Kanban, Leads, Conversion funnel, Support), so a row is
+  always full while tiles remain and a section may wrap across rows. Each
+  section's heading sits in the label slot above its first tile (every tile
+  has the slot, so a row's tiles line up; on a phone only the headings show).
+  Tiles are four across from 1440 px, three from 1024 px (a laptop at about
+  1180 px, an iPad in landscape), two from 641 px (an iPad in portrait) and
+  one on a phone. So on a wide desktop Internal and External share the first
+  row and Support starts the second; on a laptop the first row is Agent board,
+  Staff Kanban and Leads, and the second Conversion funnel and Support.
+- **Compact tiles.** An icon, the title and a status dot; the metric label;
+  a large headline figure with a trend arrow and the change against the day
+  before (the full sentence for screen readers and on hover); a 7-day
+  sparkline of the headline figure, the last 7 local days ending yesterday,
+  where it has a daily history (Agent board, Leads, Conversion funnel; Staff
+  Kanban's remaining effort and Support's inbox figures have no history, so
+  they have none). Support's "Replied or resolved today" has a trend against
+  yesterday, counted by the same rule; Staff Kanban keeps no history of
+  remaining effort, so its tile has no trend and its info tooltip says so. An info icon on each tile holds its explanation as a
+  tooltip (hover or focus on a PC, a tap on an iPad).
+- **Status colour** (`tileStatus` in `dashboard-core.js`): green when nothing
+  needs attention; Agent board amber when a ticket is blocked, red at three
+  or more; Staff Kanban amber when an outstanding task has no estimate or no
+  release is selected; Conversion funnel amber when yesterday has no website
+  data yet; Support amber when anything awaits a reply, red when the oldest
+  has waited a day or more; Leads always green; red on any tile that couldn't
+  load.
+- **No click-through; click or tap pins the summary panel.** Clicking (PC) or
+  tapping (iPad) a tile opens its summary panel inline, full width, directly
+  under that tile's row (after the last tile on that row, whichever section
+  it belongs to), and keeps it open until it is closed (×,
+  Escape, or the same tile again) or another tile is chosen. One panel is
+  open at a time; the tile shows it is pinned (`aria-expanded`). The panel
+  has an **Open section** link to the tile's section; the tile itself never
+  navigates (people use the sidebar for that). Hover does not preview the
+  panel.
+- **Redraws keep the panel.** A backlogItems snapshot updates the figures
+  in place: a focused tile keeps its focus, and a pinned panel stays open and
+  shows the new figures. Only the panel moves when the row breaks change (a
+  resize or rotation), never a tile.
 
 Code: `public/js/dashboard-core.js` (rules, no DOM) and
 `public/js/dashboard-page.js` (reads and rendering); routing in `app.js`
