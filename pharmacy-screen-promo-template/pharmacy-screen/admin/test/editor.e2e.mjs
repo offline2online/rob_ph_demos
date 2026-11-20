@@ -1088,3 +1088,31 @@ test('Open today bar: each message can be shown in the preview, by tab or by cli
   assert.deepEqual(errors, []);
   await ctx.close();
 });
+
+test('Remote config for this pharmacy opens inside the editor column, never over the preview', async () => {
+  // Ticket Jh9lIUcSFVZq0lZ7eTrx: opened on a narrow frame (a 1024px iPad), the JSON's longest line widened the box
+  // past the editor column and over the preview. Its lines now wrap inside the column.
+  for (const viewport of [{ width: 768, height: 900 }, { width: 1024, height: 768 }, { width: 1400, height: 1000 }]) {
+    const { ctx, page, errors } = await open('dev-admin', { viewport });
+    const box = () => page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const ed = r('.edcol'), cfg = r('#cfgBox'), pre = r('#cfgJson'), pv = r('.pv'), el = document.querySelector('#cfgJson');
+      return { edLeft: Math.round(ed.left), edRight: Math.round(ed.right), cfgLeft: Math.round(cfg.left), cfgRight: Math.round(cfg.right),
+        preRight: Math.round(pre.right), pvLeft: Math.round(pv.left), sideScroll: el.scrollWidth - el.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - innerWidth };
+    });
+    const shut = await box();
+    await page.click('#cfgBox summary');
+    assert.equal(await page.$eval('#cfgBox', (d) => d.open), true);
+    assert.ok((await page.textContent('#cfgJson')).includes('"storeCode"'));
+    const m = await box();
+    const where = `${viewport.width}px: ${JSON.stringify(m)}`;
+    assert.equal(m.cfgRight, shut.cfgRight, `opening it does not widen the box, ${where}`);
+    assert.ok(m.cfgLeft >= m.edLeft && m.cfgRight <= m.edRight && m.preRight <= m.edRight, `the box stays in the editor column, ${where}`);
+    assert.ok(m.pvLeft >= m.edRight || m.pvLeft === m.edLeft, `the preview keeps its place, ${where}`);
+    assert.equal(m.sideScroll, 0, `long lines wrap, ${where}`);
+    assert.equal(m.pageOverflow, 0, where);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});

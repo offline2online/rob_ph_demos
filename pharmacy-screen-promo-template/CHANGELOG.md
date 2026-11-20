@@ -104,6 +104,9 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 - **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
   the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
   of the page jumping.
+- **Remote config for this pharmacy opens beside the preview, not over it.** In the full editor, expanding it on a
+  narrow frame (a tablet, or PH's left menu expanded) used to widen it past the editor column and over the
+  preview. It now opens in the editor column's width and its long lines wrap.
 
 ## [0.1.0] — first handover candidate
 
