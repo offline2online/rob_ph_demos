@@ -322,7 +322,34 @@ function selectPromo(id) {
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
 function renderPromoTabs() {
   $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
+  tabsActiveIntoView();
 }
+
+// The promotion tabs stay on one line whatever the width of the frame (Personalisation Hub's left menu expanded or
+// collapsed): when they don't fit they scroll sideways, the arrows appear, and the selected tab is kept in view,
+// including when the frame is resized.
+function tabsSync() {
+  const el = $('dpTabs'), max = el.scrollWidth - el.clientWidth, over = max > 1;
+  $('dpScroll').classList.toggle('over', over);
+  $('dpPrev').hidden = !over; $('dpNext').hidden = !over;
+  $('dpPrev').disabled = el.scrollLeft <= 1; $('dpNext').disabled = el.scrollLeft >= max - 1;
+}
+function tabsActiveIntoView() {
+  const el = $('dpTabs');
+  tabsSync();
+  const b = el.querySelector('[aria-selected="true"]');
+  if (b) {
+    const r = b.getBoundingClientRect(), c = el.getBoundingClientRect(), pad = 16;
+    if (r.left < c.left + pad) el.scrollLeft -= c.left + pad - r.left;
+    else if (r.right > c.right - pad) el.scrollLeft += r.right - (c.right - pad);
+  }
+  tabsSync();
+}
+const tabsStep = (dir) => { const el = $('dpTabs'); el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.7) }); };
+$('dpPrev').onclick = () => tabsStep(-1);
+$('dpNext').onclick = () => tabsStep(1);
+$('dpTabs').addEventListener('scroll', tabsSync, { passive: true });
+new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
 function tplOptions(sel) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
   return g('Built-in', S.templates.filter((t) => t.builtIn)) + g('Custom', S.templates.filter((t) => !t.builtIn));

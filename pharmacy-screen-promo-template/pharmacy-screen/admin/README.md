@@ -35,6 +35,25 @@ A pharmacy's content is stored per promotion record id. Switching a promotion to
 keeps the content of both kinds (a content object can hold `slots` and `headlines`), so switching back loses
 nothing.
 
+## Layout in the Personalisation Hub frame
+
+The editor is shown in Personalisation Hub's content area, beside the left-hand menu, so its width changes when
+the menu is expanded or collapsed. It lays itself out to the width of that frame, not the browser window, and
+adjusts as soon as the menu changes, with no reload:
+
+- CSS container queries, no viewport media queries: `body` is the frame container (`frame`), the editor column
+  (`.edcol`) and the preview (`.pv`) are containers of their own. The preview column takes `clamp(360px, 36%, 400px)`
+  of the frame and the editor the rest; below a 920px frame the preview moves under the editor.
+- Nothing wraps onto a second line. The promotion tabs stay on one line and scroll sideways when they don't fit,
+  with left/right arrows and faded edges, and the selected tab is kept in view (also when the frame is resized).
+  In a narrow editor column (700px or less) Reset, Settings and Edit HTML show as icons (their names stay in the tooltip and
+  for screen readers); the pharmacy picker, the promo URL pill and the preview's store-data pill shorten with an
+  ellipsis instead of pushing controls onto a new row.
+- Nothing is `position: fixed`.
+
+`test/editor.e2e.mjs` checks this inside a stand-in PH shell (256px menu expanded, 70px collapsed) at 1280, 1440
+and 1920px windows, toggling the menu back and forth with six extra promotions.
+
 ## Live preview
 
 `../js/render.js` (the screen's own render engine) draws the selected promotion, fed the same config a screen
@@ -53,7 +72,7 @@ preview uses sample hours and no suburb, and says so.
 |---|---|
 | `index.html` | The page: sign-in gate, editor, Settings, Edit HTML dialog, preview. |
 | `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (Firebase web config). Non-secret. |
-| `css/admin.css` | The prototype's editor styles plus the sign-in gate and save status. The screen itself uses `../css/screen.css`. |
+| `css/admin.css` | The prototype's editor styles plus the sign-in gate and save status, laid out with container queries (see Layout above). The screen itself uses `../css/screen.css`. |
 | `js/editor.js` | The editor: state, rendering, what each save sends, preview loop. |
 | `js/save-queue.js` | The write queue: one chain of writes per record, debounced edits, the save-status pill's state, and `flush()` (waits for every write, including follow-ups, before the editor switches or deletes a pharmacy). |
 | `js/rich-text.js` | Rich-text fields (headlines, bar messages): bold, regular, italic, accent, line break. |

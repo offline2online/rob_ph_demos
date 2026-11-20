@@ -70,13 +70,13 @@
 </dialog>
 
 <div class="wrap" id="app" hidden>
-  <div>
+  <div class="edcol">
     <div class="toolbar" id="toolbar">
-      <label class="f" style="min-width:240px;flex:1"><span>Pharmacy</span><select id="storeSel"></select></label>
+      <label class="f pick"><span>Pharmacy</span><select id="storeSel"></select></label>
       <button id="addBtn" class="primary"><span class="ms">add</span>Add pharmacy</button>
-      <button id="resetBtn" class="text" title="Restore this pharmacy's sample content"><span class="ms">restart_alt</span>Reset</button>
+      <button id="resetBtn" class="text" title="Restore this pharmacy's sample content"><span class="ms">restart_alt</span><span class="tlb">Reset</span></button>
       <button id="delBtn" class="text" style="color:var(--err)"><span class="ms">delete</span><span id="delTx">Delete</span></button>
-      <button id="setBtn" aria-pressed="false" title="Store record from the Location API, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx">Settings</span></button>
+      <button id="setBtn" aria-pressed="false" title="Store record from the Location API, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
     </div>
 
     <div id="contentView">
@@ -108,8 +108,12 @@
 
     <div class="card promo-mod">
       <div class="sect">Promotions <span class="tag" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span></div>
-      <div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
-        <div class="tabs" role="tablist" id="dpTabs" style="flex:1;min-width:0"></div>
+      <div class="promo-bar">
+        <div class="tabscroll" id="dpScroll">
+          <button type="button" class="tsarrow" id="dpPrev" tabindex="-1" aria-label="Scroll promotions left" hidden><span class="ms">chevron_left</span></button>
+          <div class="tabs" role="tablist" id="dpTabs" aria-label="Promotions"></div>
+          <button type="button" class="tsarrow" id="dpNext" tabindex="-1" aria-label="Scroll promotions right" hidden><span class="ms">chevron_right</span></button>
+        </div>
         <button type="button" id="newPromoBtn"><span class="ms">add</span>New promotion</button>
       </div>
       <div id="newPromo" class="slot" hidden>
@@ -126,9 +130,9 @@
         <div class="meta-row">
           <label class="f"><span>Promotion name</span><input id="pmName"></label>
           <label class="f"><span>Promo ID <span class="ms" style="font-size:14px;cursor:help" title="Personalisation Hub Core plays this promotion with promo=&lt;ID&gt; in the campaign URL.">info</span></span><input id="pmToken"></label>
-          <label class="f"><span>Template</span><span class="tplpick"><select id="pmTpl" autocomplete="off"></select><button type="button" id="pmHtml" title="Edit or clone this template"><span class="ms">code</span>Edit HTML</button></span></label>
+          <label class="f"><span>Template</span><span class="tplpick"><select id="pmTpl" autocomplete="off"></select><button type="button" id="pmHtml" title="Edit or clone this template"><span class="ms">code</span><span class="tlb">Edit HTML</span></button></span></label>
         </div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><code class="pill" id="pmUrl" style="font:12px ui-monospace,Menlo,Consolas,monospace"></code><span class="hint" id="pmErr" style="color:var(--err)" hidden></span>
+        <div class="pm-row"><code class="pill" id="pmUrl" style="font:12px ui-monospace,Menlo,Consolas,monospace"></code><span class="hint" id="pmErr" style="color:var(--err)" hidden></span>
           <button type="button" class="text" id="pmDel" style="color:var(--err);margin-left:auto"><span class="ms">delete</span><span id="pmDelTx">Delete promotion</span></button></div>
       </div>
       <div id="dpBody" style="display:grid;gap:12px"></div>

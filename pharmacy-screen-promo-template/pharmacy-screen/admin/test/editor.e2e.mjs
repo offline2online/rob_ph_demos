@@ -445,3 +445,94 @@ test('every save is audit-logged with the admin who made it', async () => {
   for (const entity of ['pharmacy', 'promotion', 'template']) assert.ok(byEditor.some((e) => e.entity === entity), entity);
   assert.ok(dev.phAudit.entries.some((e) => e.action === 'ph-api.token.set' && e.actorUid === 'dev-admin'));
 });
+
+test('layout follows the frame inside the PH shell: menu expanded or collapsed, nothing wraps, tabs scroll', async () => {
+  // Personalisation Hub shows the editor in an iframe beside its left menu (256px expanded, 70px collapsed).
+  // Extra promotions so the tabs cannot fit on one line at the narrow width.
+  const promos = (await api('GET', '/api/admin/promotions')).body;
+  const templateId = promos[0].templateId;
+  const made = [];
+  for (let i = 1; i <= 6; i++) {
+    const r = await api('POST', '/api/admin/promotions', { body: { name: `Layout check promotion ${i}`, promoId: `layout-${i}`, templateId } });
+    assert.equal(r.status < 300, true, JSON.stringify(r.body));
+    made.push(r.body);
+  }
+  const shell = `<!doctype html><html><head><style>html,body{margin:0;height:100%}body{display:flex}
+    aside{width:256px;flex:none;background:#333}body.collapsed aside{width:70px}
+    main{flex:1;min-width:0;display:flex}iframe{border:0;flex:1;min-width:0;height:100%}</style></head>
+    <body><aside></aside><main><iframe src="/admin/"></iframe></main></body></html>`;
+  const lines = (sel) => { // how many lines the visible children of `sel` sit on
+    const el = document.querySelector(sel);
+    let n = 0, bottom = -1e9;
+    for (const c of el.children) {
+      if (!c.offsetParent || getComputedStyle(c).position === 'absolute') continue;
+      const b = c.getBoundingClientRect();
+      if (b.top >= bottom - 1) n++;
+      bottom = Math.max(bottom, b.bottom);
+    }
+    return n;
+  };
+  for (const width of [1280, 1440, 1920]) {
+    const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/ph-shell.html', (r) => r.fulfill({ contentType: 'text/html', body: shell }));
+    await page.goto(dev.base + '/ph-shell.html');
+    const fr = page.frame({ url: /\/admin\/$/ });
+    await fr.fill('#gateTokenIn', 'dev-admin');
+    await fr.click('#gateToken button[type=submit]');
+    await fr.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+    await fr.click(`#dpTabs button[data-dp="${made[5].id}"]`); // the last tab, selected
+    const seen = {};
+    for (const state of ['expanded', 'collapsed', 'expanded', 'collapsed']) {
+      await page.evaluate((s) => document.body.classList.toggle('collapsed', s === 'collapsed'), state);
+      await fr.waitForFunction((w) => innerWidth === w, width - (state === 'collapsed' ? 70 : 256));
+      await fr.waitForTimeout(400); // the tab strip's smooth scroll
+      const m = await fr.evaluate((linesSrc) => {
+        const lines = eval(linesSrc);
+        const t = document.getElementById('dpTabs'), a = t.querySelector('[aria-selected="true"]').getBoundingClientRect(), c = t.getBoundingClientRect();
+        return {
+          editor: Math.round(document.querySelector('.edcol').getBoundingClientRect().width),
+          preview: Math.round(document.querySelector('.pv').getBoundingClientRect().width),
+          tabLines: lines('#dpTabs'), barLines: lines('.promo-bar'), toolbarLines: lines('#toolbar'), controlsLines: lines('.controls'),
+          pmLines: lines('.pm-row'), metaLines: lines('.meta-row'), copyRowLines: lines('.cprow'),
+          activeInView: a.left >= c.left - 1 && a.right <= c.right + 1,
+          scrolls: t.scrollWidth > t.clientWidth, arrows: !document.getElementById('dpPrev').hidden && !document.getElementById('dpNext').hidden,
+          pageOverflow: document.documentElement.scrollWidth - innerWidth,
+          fixed: [...document.querySelectorAll('*')].filter((e) => getComputedStyle(e).position === 'fixed').length,
+        };
+      }, lines.toString());
+      const where = `${width}px, menu ${state}: ${JSON.stringify(m)}`;
+      for (const k of ['tabLines', 'barLines', 'toolbarLines', 'controlsLines', 'pmLines', 'metaLines', 'copyRowLines']) assert.equal(m[k], 1, `${k} at ${where}`);
+      assert.equal(m.activeInView, true, where);
+      assert.equal(m.pageOverflow, 0, where);
+      assert.equal(m.fixed, 0, where);
+      if (m.scrolls) assert.equal(m.arrows, true, where);
+      if (seen[state]) assert.deepEqual([m.editor, m.preview], seen[state], `same layout after toggling back, ${where}`);
+      seen[state] = [m.editor, m.preview];
+    }
+    assert.ok(seen.collapsed[0] > seen.expanded[0], 'the editor widens when the menu collapses, without a reload');
+    if (width === 1280) {
+      // the narrowest frame: the tabs scroll, and the arrows move them
+      await page.evaluate(() => document.body.classList.remove('collapsed'));
+      await fr.waitForFunction((w) => innerWidth === w, width - 256);
+      await fr.waitForFunction(() => document.getElementById('dpTabs').scrollLeft > 0);
+      const before = await fr.$eval('#dpTabs', (t) => t.scrollLeft);
+      assert.equal(await fr.isDisabled('#dpPrev'), false);
+      await fr.click('#dpPrev');
+      await fr.waitForFunction((x) => document.getElementById('dpTabs').scrollLeft < x - 50, before);
+      await fr.waitForFunction(() => !document.getElementById('dpNext').disabled);
+      // picking a tab that is scrolled out of view brings it back
+      await fr.click('#dpTabs button[data-dp="seed-promotion-morning"]');
+      await fr.click(`#dpTabs button[data-dp="${made[5].id}"]`);
+      await fr.waitForFunction(() => { const t = document.getElementById('dpTabs'), a = t.querySelector('[aria-selected="true"]').getBoundingClientRect(), c = t.getBoundingClientRect(); return a.right <= c.right + 1 && a.left >= c.left - 1; });
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+  for (const p of made) {
+    const r = (await api('GET', '/api/admin/promotions')).body.find((x) => x.id === p.id);
+    await fetch(dev.base + `/api/admin/promotions/${p.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer dev-admin', 'If-Match': `"${r.version}"` } });
+  }
+});
