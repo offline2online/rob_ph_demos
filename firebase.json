@@ -5,7 +5,8 @@
   "functions": [
     {
       "source": "menu-board-demo/functions",
-      "codebase": "default"
+      "codebase": "default",
+      "runtime": "nodejs22"
     }
   ]
 }
