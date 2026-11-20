@@ -43,6 +43,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Landscape Morning, Afternoon and Closed: a narrower brand panel and bigger content.** The coloured arrow on the
+  left is now 580px wide with its tip at x=780 (was 820px, tip at x=1120), and the headline wraps inside its
+  straight-sided part, so no line reaches into the arrow's point or past the coloured area. The content on the right
+  (service tiles, the large service icon, the copy under them, the opening hours card and holiday note) starts
+  about 340px further left and is drawn larger. Portrait and Seasonal are unchanged; the "Screen
+  not set up" page in landscape follows the same narrower panel.
 - **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
   the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
   store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays

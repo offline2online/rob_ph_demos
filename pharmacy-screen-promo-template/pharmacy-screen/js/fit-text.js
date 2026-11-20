@@ -1,7 +1,8 @@
 // Panel geometry and copy auto-fit for the pharmacy screen, shared with the admin editor's preview.
 //
 // Portrait (1080x1920): a brand triangle panel across the top, its tip at y=920 (830 on the hours template).
-// Landscape (1920x1080): a brand arrow panel on the left, its tip at x=1120.
+// Landscape (1920x1080): a narrow brand arrow panel on the left (580px wide, its tip at x=780), so the content on the
+// right has most of the screen; the headline wraps inside the panel's straight-sided part.
 // fitText() shrinks the headline block (--k) until every line sits inside the panel with a 24px margin,
 // and the content block (--kb) until it fits its box. auditScene() re-checks the result with no margin.
 // Seasonal templates (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
@@ -18,13 +19,13 @@ export function geom(land, hours) {
       inside: (x, y, m) => (y <= 300 ? x >= m && x <= 1080 - m && y >= 0 : Math.abs(x - 540) <= (540 * (tip - y)) / (tip - 300) - m && y <= tip - 150),
     };
   }
-  const ph = hours ? 1080 : 960, c = ph / 2, w1 = 820, tip = 1120;
+  const ph = hours ? 1080 : 960, c = ph / 2, w1 = 580, tip = 780;
   return {
     W: 1920, H: 1080,
     pts: [[0, 0], [w1, 0], [tip, c], [w1, ph], [0, ph]],
     edge: [[w1, 0], [tip, c], [w1, ph]],
     chev: `left:${tip - 150}px;top:${c - 25}px;transform:rotate(-90deg)`,
-    inside: (x, y, m) => (x <= w1 ? y >= m && y <= ph - m && x >= m : Math.abs(y - c) <= (c * (tip - x)) / (tip - w1) - m && x <= tip - 160),
+    inside: (x, y, m) => x >= m && x <= w1 - m && y >= m && y <= ph - m,
   };
 }
 
