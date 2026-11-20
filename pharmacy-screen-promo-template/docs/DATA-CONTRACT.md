@@ -134,6 +134,16 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${StoreName}` | The pharmacy's name from the editor (Christmas and New Year's sign-offs) |
 | `${CloseTime}` | Close time of today's current or next session, e.g. `7PM` ("Open today" bar) |
 | `${OpenTime}` | Open time of today's next session, e.g. `8.30AM` ("Open today" bar) |
+| `${Phone}` | `store_info.address_info.phone_number` |
+| `${State}` | `store_info.address_info.state`, e.g. `Victoria` |
+| `${StoreCode}` | `store_location.store_code`, e.g. `VIC-MP-001` |
+
+Every headline field in the editor (each scene's headline, the hours headlines, the seasonal beats' main lines and
+the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Brand name
+(`${BrandName}`), Store code, State, Phone number, Website (`${Website}`), Languages spoken by store staff
+(`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`) that inserts the token at the caret
+(`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). Brand name, Website, Languages spoken and Localised copy have no
+store data behind them: each shows the value the pharmacy sets in Settings → Tokens, and nothing until it does.
 
 **In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
 `pharmacy-screen/js/tokens.js`):
@@ -161,16 +171,18 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${Suburb}` | all | As above |
 | `${StoreName}` | all | As above |
 | `${Phone}` | all | `store_info.address_info.phone_number` |
+| `${State}` | all | `store_info.address_info.state` |
+| `${StoreCode}` | all | `store_location.store_code` |
 
 **Set by hand.** A pharmacy can give any token a value of its own (Admin → Settings → **Tokens**, stored as
-the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}` and `${Phone}` show it instead
-of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
+the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${Phone}`, `${State}` and `${StoreCode}` show it
+instead of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
 e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
 resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
 beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
 by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
 and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
-rest of the table above, other than `${Suburb}`, `${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
+rest of the table above, other than `${Suburb}`, `${StoreName}`, `${Phone}`, `${State}` and `${StoreCode}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
 pharmacy.
 
 Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,

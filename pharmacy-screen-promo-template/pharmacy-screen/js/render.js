@@ -257,6 +257,9 @@ export function storeModel(campaignData, config) {
     suburb: tokens.Suburb || String(addr.suburb || '').trim(),
     tz: loc.store_timezone || 'Australia/Melbourne',
     phone: tokens.Phone || addr.phone_number || '',
+    // ${State} / ${StoreCode} (the editor's "+ Add token" menu): the store's data unless set by hand.
+    state: tokens.State || String(addr.state || '').trim(),
+    storeCode: tokens.StoreCode || code,
     address: addr.address || '',
     sessions: parseOpeningHours(info.opening_hours),
     brand: { p: (ph.brand && ph.brand.p) || '#0f1050', a: (ph.brand && ph.brand.a) || '#5ee6b0' },
@@ -442,14 +445,14 @@ export function renderScene(el, opts) {
   Object.assign(T, {
     ViewBox: `0 0 ${G.W} ${G.H}`, EdgePath: ptsPath(G.edge), Logo: logoHtml(s), Headline: hl, AccentLine: acc,
     Chevron: `<svg class="s-chev" viewBox="0 0 90 50" style="${G.chev}"><path d="M8 8 L45 42 L82 8"/></svg>`,
-    Suburb: esc(sub), StoreName: esc(s.name), Phone: esc(s.phone || ''),
+    Suburb: esc(sub), StoreName: esc(s.name), Phone: esc(s.phone || ''), State: esc(s.state || ''), StoreCode: esc(s.storeCode || ''),
   });
   // Any other token the pharmacy has set by hand: in template HTML as a slot, and in copy (with ${StoreName} and
   // ${Phone}, which copy otherwise leaves as written outside occasions).
   const custom = Object.fromEntries(Object.entries(s.tokens || {}).filter(([k]) => !DATA_TOKENS.includes(k) && !(k in T)));
   for (const [k, v] of Object.entries(custom)) T[k] = esc(v);
   const P = play.template;
-  const html = applyTokens(fillTemplate(P.html || DEFAULT_HTML[play.base], T), { ...custom, StoreName: s.name, Phone: s.phone || '' });
+  const html = applyTokens(fillTemplate(P.html || DEFAULT_HTML[play.base], T), { ...custom, StoreName: s.name, Phone: s.phone || '', State: s.state || '', StoreCode: s.storeCode || '' });
   const css = P.css ? scopeCss(P.css, '#' + (el.id || 'screen')) : '';
   el.innerHTML = (css ? `<style>${css}</style>` : '') + html;
   const top = el.querySelector('.s-top');
@@ -521,7 +524,7 @@ export function renderOccasion(el, opts) {
   occasionStyles(doc);
   // Tokens the pharmacy set by hand (Settings → Tokens) beyond the store's data, as in the other templates' copy.
   const custom = Object.fromEntries(Object.entries(store.tokens || {}).filter(([k]) => !DATA_TOKENS.includes(k)));
-  const T = (h) => applyTokens(applyStoreName(h, store.name), { ...custom, Phone: store.phone || '' });
+  const T = (h) => applyTokens(applyStoreName(h, store.name), { ...custom, Phone: store.phone || '', State: store.state || '', StoreCode: store.storeCode || '' });
   const R = (t) => T(rich(t, store.suburb)), P = (t) => T(fill(t, store.suburb));
   el.removeAttribute('style');
   el.className = 'screen occasion' + (land ? ' land' : '');

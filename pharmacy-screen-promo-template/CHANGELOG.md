@@ -15,6 +15,14 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   "Phone ${Phone}", "from the whole ${StoreName} team") instead of blanking them, so it is clear the master's copy
   carries a token. `${CloseTime}` / `${OpenTime}` keep the sample times. Preview only: a pharmacy's preview and the
   screens are unchanged ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Master template").
+- **Editor: + Add token above every headline field.** Each headline (every promotion's scenes, the opening hours
+  headlines, the seasonal beats' main lines) and each Open today bar message has **+ Add token** on its label row,
+  as in PH's HQ Admin. It lists Store name, Suburb, Brand name, Store code, State, Phone number, Website, Languages
+  spoken by store staff and Localised copy, and inserts the chosen `${Token}` at the cursor. New store-data tokens
+  `${State}` (`store_info.address_info.state`) and `${StoreCode}` (`store_location.store_code`) work in copy and
+  template HTML and can be overridden in Settings → Tokens like `${Suburb}` and `${Phone}`; Brand name, Website,
+  Languages spoken and Localised copy (`${BrandName}`, `${Website}`, `${LanguagesSpoken}`, `${LocalisedCopy}`) show
+  the pharmacy's value from Settings → Tokens ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "3. Template tokens").
 - **Seasonal dates show as a yearly schedule in both views.** A season's **Dates** card header reads **Every
   year: <start> to <end>** (for example "Every year: 15 Dec to 27 Dec") in the admin editor and in the pharmacy
   view (`admin/?store=<code>`). The pharmacy view now shows the Dates card, read-only: Starts and Ends as plain

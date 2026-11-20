@@ -15,7 +15,7 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 1. **Store data by device**, from the back-end proxy (`ph-proxy/`): `GET /api/device/{UniqueDeviceID}/campaign_data`.
    The screen never calls the PH API directly and never holds a token. Fields used: `store_location`
    (`store_code`, `store_name`, `store_timezone`), `store_info.opening_hours[]` (sessions may cross midnight),
-   `store_info.address_info` (`suburb` for `${Suburb}`, `address`, `phone_number`) and `store_info.logo_url`
+   `store_info.address_info` (`suburb` for `${Suburb}`, `address`, `phone_number` for `${Phone}`, `state` for `${State}`) and `store_info.logo_url`
    (the store logo once the Location API returns it, PH-181; until then the config logo).
 2. **Config by store code**, from the public config read (`config-api/`): `GET /api/screens/{store_code}`, using the
    store code the proxy returned, never anything in the URL. `js/live-data.js` maps the published config onto the
@@ -167,7 +167,7 @@ Split so the admin editor's live preview can reuse the same code:
 | Module | What it does |
 |---|---|
 | `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight), store time in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing), time formats, the weekly hours rows. No DOM. |
-| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `LIVE_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data, except for the live `${StoreName}`, `${CloseTime}` and `${OpenTime}`, which cannot be set), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
+| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, `${Phone}` / `${State}` / `${StoreCode}`, the editor's "+ Add token" list (`ADD_TOKENS`), template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `LIVE_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data, except for the live `${StoreName}`, `${CloseTime}` and `${OpenTime}`, which cannot be set), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
 | `fit-text.js` | Panel geometry (triangle / arrow; the landscape arrow is 580px wide, tip at x=780, and the headline stays in its straight-sided part), `fitText()` (headline and content shrink to stay inside the panel), `fitOccasion()` (each occasion beat shrinks to stay inside its text box) and `auditScene()` (the overflow check). |
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
 | `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |

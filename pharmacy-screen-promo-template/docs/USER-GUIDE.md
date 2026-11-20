@@ -111,6 +111,11 @@ Service copy needs TGA advertising review before go-live.
 **Copy tips**
 
 - Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
+- **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Brand
+  name, Store code, State, Phone number, Website, Languages spoken by store staff and Localised copy. Pick one to
+  insert it where the cursor is (e.g. `${StoreCode}`). Store name, Suburb, Store code, State and Phone number come
+  from the pharmacy and Personalisation Hub; Brand name, Website, Languages spoken and Localised copy show the
+  value set for the pharmacy in **Settings → Tokens**, and nothing until one is set.
 - `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
@@ -210,7 +215,8 @@ Signing in still needs the admin role: the link narrows what the editor shows, i
   **Pharmacy name** label: change the name here to change it on screens.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
-  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub). `${StoreName}`
+  (the placeholder says where it comes from: the suburb, phone number, state and store code from Personalisation
+  Hub). `${StoreName}`
   (the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
   filled in live and are not listed. Type a value to show it on this pharmacy's screens instead, for
   example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses

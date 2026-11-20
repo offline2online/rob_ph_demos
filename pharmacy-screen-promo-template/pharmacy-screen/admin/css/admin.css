@@ -150,6 +150,17 @@ button:disabled{opacity:.35;cursor:default}
 .rt-bar .sep{width:1px;background:var(--divider);margin:3px 4px}
 .rt{min-height:32px;padding:5px 10px;font-weight:700;color:var(--text);outline:none;font-size:14px;line-height:1.5}
 .rt .reg{font-weight:400}.rt .acc{color:var(--primary)}
+.rtf{position:relative}
+.rt-lab{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.rt-lab>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rt-lab .tok-add{flex:none;min-height:24px;padding:0 4px;font-size:12px;gap:2px}
+.rt-lab .tok-add .ms{font-size:16px}
+.tok-menu{position:absolute;right:0;top:26px;z-index:20;width:min(340px,100%);max-height:320px;overflow-y:auto;display:grid;padding:4px;background:var(--bg);border:1px solid var(--border);border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05)}
+.tok-menu[hidden]{display:none}
+.tok-menu button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px;justify-items:start;align-items:center;text-align:left;border-color:transparent;background:none;min-height:0;padding:5px 8px;font-size:14px;color:var(--text)}
+.tok-menu button:hover,.tok-menu button:focus-visible{background:var(--primary-tint);color:var(--text);outline:none}
+.tok-menu code{font:12px/18px ui-monospace,Menlo,Consolas,monospace;color:var(--primary)}
+.tok-menu .tok-s{grid-column:1/-1;font-size:12px;color:var(--muted)}
 .icp{width:100%;justify-content:space-between;padding:4px 10px}
 .icp .cur{display:inline-flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .icp .cur .ms{font-variation-settings:'FILL' 1}

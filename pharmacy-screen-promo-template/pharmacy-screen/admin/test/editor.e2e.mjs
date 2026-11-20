@@ -332,7 +332,8 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
   assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
   assert.equal(await page.textContent('#pbSecs'), '13s');
-  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
+  // Each Main line has its "+ Add token" menu (aria-label "Add token") on its label row.
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Add token', 'Main line', 'Seconds on screen', 'Small line above', 'Add token', 'Main line']);
   // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
   // The dates read as a yearly schedule: start and end, every year.
@@ -1151,4 +1152,44 @@ test('Remote config for this pharmacy opens inside the editor column, never over
     assert.deepEqual(errors, []);
     await ctx.close();
   }
+});
+
+test('+ Add token above every headline field lists the available tokens and inserts one at the caret', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-004');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
+  // Every rich-text field (each headline, the Open today bar messages) has its own "+ Add token" on its label row.
+  const fields = await page.$$eval('#dpBody .rtf', (l) => l.map((f) => !!f.querySelector('.rt-lab .tok-add')));
+  assert.ok(fields.length >= 3 && fields.every(Boolean), `${fields.length} headline fields, each with Add token`);
+  await own(page);
+  const add = '.tok-add[data-tok-for="dg"]', menu = '[data-tok-menu="dg"]';
+  assert.equal((await page.textContent(add)).replace('add', '').trim(), 'Add token');
+  assert.equal(await page.isVisible(menu), false);
+  await page.click(add);
+  assert.equal(await page.getAttribute(add, 'aria-expanded'), 'true');
+  assert.deepEqual(await page.$$eval(`${menu} button .tok-l`, (l) => l.map((e) => e.textContent)),
+    ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
+  assert.deepEqual(await page.$$eval(`${menu} button code`, (l) => l.map((e) => e.textContent)),
+    ['${StoreName}', '${Suburb}', '${BrandName}', '${StoreCode}', '${State}', '${Phone}', '${Website}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+  // Escape and a click elsewhere close it without inserting anything.
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isVisible(menu), false);
+  await page.click(add);
+  await page.click('#dpBody .sect', { position: { x: 2, y: 2 } }).catch(() => page.mouse.click(5, 5));
+  assert.equal(await page.isVisible(menu), false);
+  // A pick goes in where the caret was, and the preview fills it from the store's data.
+  await page.click('#dg');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' at ');
+  await page.click(add);
+  await page.click(`${menu} button[data-t="StoreCode"]`);
+  assert.equal(await page.isVisible(menu), false);
+  assert.match(await page.textContent('#dg'), / at \$\{StoreCode\}$/);
+  await page.waitForFunction(() => /at VIC-MP-004/.test(document.querySelector('#screen').textContent));
+  await settle(page);
+  const rec = await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004');
+  assert.match(rec.body.content['seed-promotion-morning'].greeting, / at \$\{StoreCode\}$/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
 });
