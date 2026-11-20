@@ -11,6 +11,8 @@ recorded in the audit log.
 The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
 show its scene.
+It stays beside the editor when Personalisation Hub's left menu is expanded (it just gets narrower), so you can
+keep the menu open while you edit.
 
 The editor has two pages. The **promotions** page (the one it opens on) has the **Promo preview** drop-down at
 the top: pick a pharmacy there to edit and preview its copy for each promotion. **Settings** (the cog beside

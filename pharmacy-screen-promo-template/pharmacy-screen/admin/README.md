@@ -48,7 +48,9 @@ adjusts as soon as the menu changes, with no reload:
 
 - CSS container queries, no viewport media queries: `body` is the frame container (`frame`), the editor column
   (`.edcol`) and the preview (`.pv`) are containers of their own. The preview column takes `clamp(360px, 36%, 400px)`
-  of the frame and the editor the rest; below a 920px frame the preview moves under the editor.
+  of the frame and the editor the rest. Below a 920px frame (a tablet with the menu expanded: 1024 − 256 = 768px)
+  the preview stays beside the editor and narrows to `clamp(240px, 38%, 360px)` (landscape `min(640px, 44%)`), so it
+  never disappears below the editor; only a phone-sized frame (600px or less) puts the preview under the editor.
 - Nothing wraps onto a second line. The promotion tabs stay on one line and scroll sideways when they don't fit,
   with left/right arrows and faded edges, and the selected tab is kept in view (also when the frame is resized).
   In a narrow editor column (700px or less) Reset, Settings and Edit HTML show as icons (their names stay in the tooltip and
@@ -61,7 +63,8 @@ adjusts as soon as the menu changes, with no reload:
   preview fits on a tablet with its browser bars showing.
 
 `test/editor.e2e.mjs` checks this inside a stand-in PH shell (256px menu expanded, 70px collapsed) at 1280, 1440
-and 1920px windows, toggling the menu back and forth with six extra promotions.
+and 1920px windows, toggling the menu back and forth with six extra promotions, and that with the menu expanded on
+1024 and 1180px windows the preview stays beside the editor and in view in both orientations.
 
 ## Live preview
 
