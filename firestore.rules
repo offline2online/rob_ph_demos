@@ -229,8 +229,11 @@ service cloud.firestore {
     // Everything else under pharmacyScreen/ falls through to the deny below.
     // Tested by pharmacy-screen-promo-template/pharmacy-screen/config-api/test/rules.test.js.
 
+    // No list: a screen reads its own store's config (through the config
+    // API), and nobody needs every store's at once.
     match /pharmacyScreen/published/screens/{storeCode} {
-      allow get, list: if true;
+      allow get: if true;
+      allow list: if false;
       allow write: if false;
     }
 

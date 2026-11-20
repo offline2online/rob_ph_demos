@@ -83,7 +83,7 @@ function setup({ servers = { "https://ph.mipharmacy.net": okFor([TOKEN_A]) }, en
   };
   const auth = { verify: async (h) => { const m = /^Bearer (.+)$/.exec(h.authorization || ""); return m ? users[m[1]] || null : null; } };
   const api = createApi({
-    env: { PH_PROXY_CACHE_SECONDS: "15", ...env },
+    env: { PH_PROXY_CACHE_SECONDS: "15", PH_API_ALLOWED_HOSTS: "*", ...env },
     settingsStore: store,
     auditLog: audit,
     secretStore: secretStore === undefined ? createEnvelopeSecretStore({ kms: localKmsProvider({ keyBase64: LOCAL_KEY, env: {} }) }) : secretStore,
@@ -510,4 +510,20 @@ test("Firebase auth adapter: admin is a custom claim, bad tokens are anonymous",
   assert.equal(await a.verify({}), null);
   const custom = firebaseAuthAdapter({ auth: { verifyIdToken: async () => ({ uid: "c", pharmacyScreenAdmin: true }) }, adminClaim: "pharmacyScreenAdmin" });
   assert.equal((await custom.verify({ authorization: "Bearer x" })).admin, true);
+});
+
+test("base URLs: only hosts the deployment allows can be saved, so the token cannot be pointed elsewhere", async () => {
+  const save = (ctx, url) => ctx.call("PUT", "/api/settings/ph-api", { as: "admin-token", body: { baseUrls: [url] } });
+  // Default: the default base URL's own host, and nothing else.
+  const dflt = setup({ env: { PH_API_ALLOWED_HOSTS: "" } });
+  assert.equal((await save(dflt, "https://ph.mipharmacy.net")).status, 200);
+  for (const bad of ["https://evil.example", "https://ph.mipharmacy.net.evil.example", "https://xph.mipharmacy.net"]) {
+    const res = await save(dflt, bad);
+    assert.equal(res.status, 400, bad);
+    assert.equal(res.body.error.code, "BASE_URL_HOST_NOT_ALLOWED");
+  }
+  assert.deepEqual((await dflt.call("GET", "/api/settings/ph-api", { as: "admin-token" })).body.settings.baseUrls, ["https://ph.mipharmacy.net"]);
+  const listed = setup({ env: { PH_API_ALLOWED_HOSTS: "ph.mipharmacy.net, .personalisationhub.com" } });
+  assert.equal((await save(listed, "https://demo.personalisationhub.com")).status, 200);
+  assert.equal((await save(listed, "https://personalisationhub.com.evil.example")).status, 400);
 });

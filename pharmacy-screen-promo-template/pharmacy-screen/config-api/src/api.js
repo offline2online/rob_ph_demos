@@ -16,10 +16,15 @@
 //     services, services/{id}
 //     audit
 
+const crypto = require("node:crypto");
 const { ApiError, bad } = require("./validate");
 const { createConfigService } = require("./service");
 
 const JSON_LIMIT = 2 * 1024 * 1024;
+// How long a CDN may reuse a published screen config. Part of how soon an
+// edit reaches a screen: this, plus the screen's config poll (js/live-data.js
+// CONFIG_POLL_MS).
+const PUBLIC_MAX_AGE = 5;
 
 function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = () => {} }) {
   const svc = createConfigService({ store, blobs, now, log });
@@ -120,7 +125,10 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
     const base = {
       "Content-Type": "application/json; charset=utf-8",
       "X-Content-Type-Options": "nosniff",
-      "Cache-Control": isPublic ? "public, max-age=15" : "no-store",
+      // The published config: shared caches (the CDN) hold it PUBLIC_MAX_AGE
+      // seconds; with the ETag below a screen's poll that finds nothing new
+      // costs a 304 and no body.
+      "Cache-Control": isPublic ? `public, max-age=${PUBLIC_MAX_AGE}` : "no-store",
       ...corsHeaders(isPublic, headers.origin),
     };
     const reply = (status, body, extra = {}) => ({ status, headers: { ...base, ...extra }, body });
@@ -178,6 +186,12 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
       };
       const out = await r.handler({ actor, params, query, headers, body, json });
       if (out && out[CREATED]) return reply(201, out.value);
+      if (isPublic && method === "GET" && out !== null && out !== undefined) {
+        const etag = `"${crypto.createHash("sha256").update(JSON.stringify(out)).digest("base64url").slice(0, 27)}"`;
+        const asked = String(headers["if-none-match"] || "").split(",").map((t) => t.trim().replace(/^W\//, ""));
+        if (asked.includes(etag) || asked.includes("*")) return reply(304, null, { ETag: etag });
+        return reply(200, out, { ETag: etag });
+      }
       return reply(200, out);
     } catch (err) {
       if (err instanceof ApiError) return reply(err.status, errorBody(err));

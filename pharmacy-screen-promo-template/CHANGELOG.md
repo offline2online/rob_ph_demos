@@ -8,6 +8,30 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Changed
+
+- **Edits reach screens sooner, with less traffic.** A running screen now checks its published config every 15 s
+  (was 60 s) and the config API answers `304` with no body while nothing changed (`ETag`); the CDN holds the config
+  5 s (was 15 s). An edit in the editor is on screen within about 20 s (was up to 76 s). Store data from PH's
+  Location API is checked every 20 s (was 30 s), so changed hours show within about 35 s. A screen also checks at
+  once when its page is shown again or its network returns, and writes its last good copy to storage only when it
+  changed ([docs/CONFIGURATION.md](docs/CONFIGURATION.md) → "Fixed behaviour").
+- **Images on the player.** Our own logos and backgrounds (content-hashed URLs) are downloaded once and never
+  asked for again. A logo URL that comes from PH, which can be replaced in place, is shown from the player's copy
+  and re-checked in the background, so a replaced logo shows on the next play. A failed image download is no longer
+  kept, and the screen asks the browser to keep its storage (`navigator.storage.persist`).
+
+### Security
+
+- **Template HTML cannot run script.** Template markup is cleaned in the page before it is shown on a screen or in
+  the editor preview (event handlers, script URLs and elements that load or run something are removed), and the
+  config API's check now reads tags the way a browser does: `<img title=">" onerror=…>` was accepted before.
+- **The PH API token can only be sent to allowed hosts.** Base URLs saved in Admin → Settings must be on a host in
+  `PH_API_ALLOWED_HOSTS` (default: the host of `PH_API_DEFAULT_BASE_URL`), so a stolen administrator session cannot
+  point the token at another server.
+- **Published screen configs can no longer be listed** through Firestore (one store's config can still be read),
+  and every Hosting response carries `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`.
+
 ### Added
 
 - **Sign-in from Personalisation Hub; no separate login.** Embedded in HQ Admin (Pharmacy Promos) or Retail

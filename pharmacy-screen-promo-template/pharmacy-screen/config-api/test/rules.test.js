@@ -88,7 +88,8 @@ test("Firestore: the published screen config is publicly readable", async () => 
   for (const [, ctx] of who()) {
     const db = ctx.firestore();
     await assertSucceeds(getDoc(doc(db, SCREEN_DOC)));
-    await assertSucceeds(getDocs(collection(db, "pharmacyScreen/published/screens")));
+    // One store's config, never the whole list of stores.
+    await assertFails(getDocs(collection(db, "pharmacyScreen/published/screens")));
   }
 });
 

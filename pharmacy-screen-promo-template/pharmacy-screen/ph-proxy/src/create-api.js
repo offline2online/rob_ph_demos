@@ -25,6 +25,7 @@ function createApi({ env = process.env, settingsStore, auditLog, secretStore, au
     audit: auditLog,
     logger,
     defaultBaseUrls: defaults.length ? defaults : ["https://ph.mipharmacy.net"],
+    allowedHosts: list(env.PH_API_ALLOWED_HOSTS),
     cacheMs,
     now: now ? () => new Date(now()) : undefined,
   });

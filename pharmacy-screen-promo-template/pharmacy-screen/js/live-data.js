@@ -11,8 +11,10 @@
 // server that answered is tried first, then the others in order, one request at a time.
 // `?mockapi=1` swaps in createMockClient(), which reads the seed fixtures (fixtures/*.json) instead.
 
-export const STORE_POLL_MS = 30000;
-export const CONFIG_POLL_MS = 60000;
+// How soon a change reaches a running screen: an edit in the editor within CONFIG_POLL_MS plus the config API's
+// CDN life (5 s); a change in PH's Location API within STORE_POLL_MS plus the proxy's cache (15 s).
+export const STORE_POLL_MS = 20000;
+export const CONFIG_POLL_MS = 15000;
 export const REQUEST_TIMEOUT_MS = 8000;
 export const CACHE_PREFIX = 'pharmacy-screen:last:';
 
@@ -29,12 +31,13 @@ export function parseServers(list) {
   return out.length ? out : [''];
 }
 
-/** One GET with a timeout. Never throws: {status, json} or {status: 0, error: 'timeout' | 'network'}. */
+/** One GET with a timeout, always checked with the server (cache: 'no-cache'): where the server sends an ETag (the
+ *  published config), an unchanged answer is a 304 with no body and the browser hands back its own copy. Never throws: {status, json} or {status: 0, error: 'timeout' | 'network'}. */
 export async function getJson(fetchImpl, url, timeoutMs = REQUEST_TIMEOUT_MS) {
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
   try {
-    const res = await fetchImpl(url, { method: 'GET', headers: { accept: 'application/json' }, cache: 'no-store', signal: ctl ? ctl.signal : undefined });
+    const res = await fetchImpl(url, { method: 'GET', headers: { accept: 'application/json' }, cache: 'no-cache', signal: ctl ? ctl.signal : undefined });
     let json = null;
     try { json = await res.json(); } catch (e) { json = null; }
     return { status: res.status, json };
@@ -195,7 +198,7 @@ export function screenView(s) {
 }
 
 /**
- * Poll store data (every 30 s) and config (every 60 s) for one device, one request in flight per endpoint,
+ * Poll store data (every 20 s) and config (every 15 s) for one device, one request in flight per endpoint,
  * keeping the last good result in memory and in `storage` (localStorage) so a screen survives network drops
  * and restarts. Calls onUpdate(state, changed) after every poll; `changed` is true only when what the screen
  * renders would change, so the player re-renders only then.
@@ -208,13 +211,17 @@ export function createScreenData({ client, device, storage = null, onUpdate = ()
     deviceStatus: null, configStatus: null, fromCache: false,
     lastStore: null, lastConfig: null, // {at, kind, server, tried, stale?}
   };
-  let lastSig = null, stopped = false;
+  let lastSig = null, stopped = false, saved = null;
 
+  // Written only when what is kept changed: localStorage writes are synchronous, and a screen polls for days.
   const persist = () => {
     if (!storage) return;
     try {
-      if (s.campaign) storage.setItem(key, JSON.stringify({ campaign: s.campaign, config: s.config, storeCode: s.storeCode, savedAt: new Date(now()).toISOString() }));
+      const keep = s.campaign ? JSON.stringify({ campaign: s.campaign, config: s.config, storeCode: s.storeCode }) : null;
+      if (keep === saved) return;
+      if (keep) storage.setItem(key, keep.slice(0, -1) + `,"savedAt":${JSON.stringify(new Date(now()).toISOString())}}`);
       else storage.removeItem(key);
+      saved = keep;
     } catch (e) { /* storage full or blocked: the in-memory copy still carries the screen */ }
   };
   const restore = () => {

@@ -114,7 +114,7 @@ export async function startDevServer({ port = 0, seed = true, quiet = false, phE
   const phSettings = memorySettingsStore();
   const phAudit = memoryAuditLog();
   const phApi = createPhApi({
-    env: { PH_PROXY_CACHE_SECONDS: '0' },
+    env: { PH_PROXY_CACHE_SECONDS: '0', PH_API_ALLOWED_HOSTS: '*' },
     settingsStore: phSettings,
     auditLog: phAudit,
     secretStore: createEnvelopeSecretStore({ kms: localKmsProvider({ keyBase64: crypto.randomBytes(32).toString('base64'), env: {} }) }),

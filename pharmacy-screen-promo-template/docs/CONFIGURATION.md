@@ -38,12 +38,12 @@ Saving, replacing and removing the token need the admin role and are audit-logge
 
 | Behaviour | Value | Where |
 |---|---|---|
-| Store data poll (Location API through the proxy) | Every 30 s, one request in flight | `pharmacy-screen/js/live-data.js` `STORE_POLL_MS` |
-| Config poll (published screen config) | Every 60 s, one request in flight | `live-data.js` `CONFIG_POLL_MS` |
+| Store data poll (Location API through the proxy) | Every 20 s, one request in flight; at once when the page is shown again or the network returns | `pharmacy-screen/js/live-data.js` `STORE_POLL_MS` |
+| Config poll (published screen config) | Every 15 s, one request in flight, answered `304` with no body while nothing changed | `live-data.js` `CONFIG_POLL_MS` |
 | Request timeout per server (screen) | 8 s | `live-data.js` |
 | "Last 30 minutes" bar state | 30 minutes before close | `pharmacy-screen/js/hours.js` `LAST_MINUTES` |
 | Screen update check (service worker) | Every 30 minutes, and on every page load | `pharmacy-screen/js/player.js` |
-| Public config cache | 15 s (`Cache-Control: public, max-age=15`) | `config-api/src/api.js` |
+| Public config cache | 5 s (`Cache-Control: public, max-age=5`, with an `ETag`) | `config-api/src/api.js` |
 | Upload limits | Logos PNG/WebP ≤ 2 MB; backgrounds PNG/JPEG/WebP ≤ 5 MB (≤ 4 MB on AWS) | `config-api/src/service.js` |
 
 ## AWS deploy options
@@ -106,6 +106,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_TOKEN_KMS_KEY` | KMS key that wraps the token's data key: Cloud KMS key name, or AWS KMS key ARN | None: saving a token answers `SECRET_STORE_NOT_CONFIGURED` | `arn:aws:kms:ap-southeast-2:111122223333:key/…` | No (a key reference; only the function's role may use the key) | `.env.rob-ph-demos`; the CDK stack |
 | `PH_LOCAL_KMS_KEY` | Base64 of 32 random bytes, for `PH_SECRET_STORE=local` | None | `<base64 32 bytes>` | **Yes**. Emulators and tests only: refused on Cloud Functions/Run and Lambda | Never in a deployment |
 | `PH_API_DEFAULT_BASE_URL` | Comma-separated https URLs used until an admin saves a list | `https://ph.mipharmacy.net` | `https://ph.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack (`--ph-api-base-url`) |
+| `PH_API_ALLOWED_HOSTS` | Comma-separated hosts an admin may save as a PH API base URL (the token is sent to them). `.example.com` allows any host under it; `*` any https host | The hosts of `PH_API_DEFAULT_BASE_URL` | `ph.mipharmacy.net,.personalisationhub.com` | No | Default |
 | `PH_ADMIN_CLAIM` | Firebase custom claim marking an admin (Firebase) | `admin` | `admin` | No | `.env.rob-ph-demos` (on AWS `PS_ADMIN_CLAIM` is used) |
 | `PH_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the settings endpoints from a browser | None | `https://screens.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PH_SETTINGS_DOC` | Firestore document for the settings and encrypted token (Firebase) | `pharmacyScreen/private/settings/phApi` | | No | `.env.rob-ph-demos` |

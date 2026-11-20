@@ -67,10 +67,19 @@ function str(value, field, { max = LIMITS.name, required = true, allowEmpty = fa
 // unattended screens in shops, so one compromised admin account must not be
 // able to run code there. The screen page also scopes and sanitises what it
 // renders; this is the server-side half of that.
+const TAG = /<[a-zA-Z/!][^"'>]*(?:(?:"[^"]*"?|'[^']*'?)[^"'>]*)*/g;
+function hasEventHandler(text) {
+  for (const tag of String(text).match(TAG) || []) {
+    if (/[\s/"']on[a-z]+\s*=/i.test(tag)) return true;
+  }
+  return false;
+}
 const UNSAFE_MARKUP = [
   { re: /<\s*(script|iframe|object|embed|frame|frameset|base|meta|link)\b/i, why: "a <script>, <iframe>, <object>, <embed>, <frame>, <base>, <meta> or <link> element" },
-  // Only inside a tag, so copy such as "Buy one = get one" is fine.
-  { re: /<[^>]*[\s/"']on[a-z]+\s*=/i, why: "an inline event handler (on…=)" },
+  // Only inside a tag, so copy such as "Buy one = get one" is fine. A tag is
+  // read the way a browser reads it: a ">" inside a quoted attribute value
+  // does not end it (<img title=">" onerror=…> is one tag).
+  { test: hasEventHandler, why: "an inline event handler (on…=)" },
   { re: /(javascript|vbscript)\s*:/i, why: "a javascript: or vbscript: URL" },
   { re: /data\s*:\s*text\/html/i, why: "a data:text/html URL" },
 ];
@@ -83,8 +92,8 @@ const UNSAFE_CSS = [
 ];
 
 function assertSafe(text, field, rules) {
-  for (const { re, why } of rules) {
-    if (re.test(text)) throw bad(`${field} contains ${why}, which is not allowed`);
+  for (const { re, test, why } of rules) {
+    if (test ? test(text) : re.test(text)) throw bad(`${field} contains ${why}, which is not allowed`);
   }
 }
 

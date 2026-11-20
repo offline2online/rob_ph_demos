@@ -81,8 +81,8 @@ them for this project). Everything a back end needs from the cloud goes through 
 auth, secret store; see each function's README), so the AWS deployment below adds adapters and an entry point
 without changing the API.
 
-The screen polls its store data (the Location API through `/api/device/…`) every 30 s and its published config
-(`/api/screens/{store_code}`) every 60 s, one request in flight per endpoint, re-rendering only on change
+The screen polls its store data (the Location API through `/api/device/…`) every 20 s and its published config
+(`/api/screens/{store_code}`) every 15 s (a `304` with no body while nothing changed), one request in flight per endpoint, re-rendering only on change
 (`pharmacy-screen/README.md` → "How the screen gets its data (live)").
 
 ## Security
