@@ -121,9 +121,3 @@ after, copy fades up, icons float with the outer and middle tiles in opposite ph
   suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
   own origin (self-hosted fonts).
-
-## Admin editor (`admin/`)
-
-The signed-in editor for pharmacies, promotions, templates and scenes, saving to the config API, with a live
-preview drawn by `js/render.js`. See `admin/README.md`. `npm test` here also runs the editor's model tests
-(`test/admin-model.test.mjs`); its end-to-end tests are `cd admin && npm test`.
