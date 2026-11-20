@@ -61,7 +61,9 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
 
 test('edits are saved to the server and another admin sees them after a reload', async () => {
   const a = await open();
+  await a.page.click('#setBtn'); // pharmacy details are in Settings
   await a.page.fill('#sName', 'Beaumaris Pharmacy Plus');
+  await a.page.click('#setBtn');
   await a.page.fill('#dit', 'Four reasons to walk in');
   await settle(a.page);
   assert.match(await a.page.textContent('#saveState'), /All changes saved/);
@@ -77,7 +79,7 @@ test('edits are saved to the server and another admin sees them after a reload',
   assert.equal(await b.page.inputValue('#dit'), 'Four reasons to walk in');
   // nothing kept in browser storage but view preferences
   const keys = await b.page.evaluate(() => Object.keys(localStorage));
-  assert.ok(keys.every((k) => /^ps-admin-(orient|pharmacy|device-)/.test(k)), keys.join(','));
+  assert.ok(keys.every((k) => /^ps-admin-(orient|pharmacy)/.test(k)), keys.join(','));
   await a.ctx.close(); await b.ctx.close();
 });
 
@@ -96,8 +98,8 @@ test('a non-admin cannot open the editor or call write endpoints', async () => {
 test('the PH API token is write-only: saved encrypted, shown only as its last 4', async () => {
   const { ctx, page } = await open();
   await page.click('#setBtn');
-  assert.equal(await page.isHidden('#addBtn'), true); // only "Back to pharmacy content" in the toolbar
-  assert.match(await page.textContent('#setBtn'), /Back to pharmacy content/);
+  assert.equal(await page.isHidden('#pvSel'), true); // only "Back to promotions" in the toolbar
+  assert.match(await page.textContent('#setBtn'), /Back to promotions/);
   await page.waitForSelector('#apiState:has-text("No token saved")');
   await page.fill('#apiBase', 'https://ph.example.com');
   await page.fill('#apiTok', TOKEN);
@@ -115,29 +117,39 @@ test('the PH API token is write-only: saved encrypted, shown only as its last 4'
   assert.ok(!JSON.stringify(got.body).includes(TOKEN.slice(0, -4)), 'token not returned by the API');
   assert.ok(!JSON.stringify(dev.phSettings.raw()).includes(TOKEN), 'token not stored in plain text');
   assert.deepEqual(got.body.settings.baseUrls, ['https://ph.example.com']);
+  // the screens' Location API calls go through the proxy, which adds the saved token
+  assert.equal((await api('GET', '/api/device/DEVICE-VIC-MP-001/campaign_data', { token: '' })).status, 200);
+  assert.ok(dev.upstreamCalls.length && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token');
   await ctx.close();
 });
 
-test('Settings reads the store record from the Location API through the proxy; the preview uses it', async () => {
-  const { ctx, page } = await open();
+test('Settings holds the pharmacies, their details and branding, and the API; promotions has only a Promo preview drop-down', async () => {
+  const { ctx, page, errors } = await open();
+  // promotions page: no pharmacy details, branding or pharmacy management, just the Promo preview drop-down
+  for (const id of ['#detailsCard', '#brandingCard', '#pharmaciesCard', '#addBtn', '#delBtn', '#sName', '#cP', '#logoBtn']) assert.equal(await page.isHidden(id), true, id);
+  assert.equal(await page.isVisible('#pvSel'), true);
+  assert.match(await page.textContent('#toolbar'), /Promo preview/);
+  const pv = await page.$$eval('#pvSel option', (o) => o.map((x) => x.value));
+  assert.deepEqual(pv, await page.$$eval('#storeSel option', (o) => o.map((x) => x.value)));
+  assert.equal(pv.length, 5);
+  // picking a pharmacy in Promo preview switches the content and the preview
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
+  assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
+  assert.match(await page.textContent('#pvData'), /Sample store data/);
+  // Settings: pharmacies, details, branding and the PH API; the store record section is gone
   await page.click('#setBtn');
-  await page.fill('#devId', 'DEVICE-VIC-MP-001');
-  await page.click('#devGo');
-  await page.waitForSelector('#recBody:not([hidden])');
-  const fields = await page.$$eval('#recFields .f', (f) => f.map((x) => x.textContent));
-  assert.ok(fields.some((t) => /Suburb store_info\.address_info\.suburbBeaumaris/.test(t)), fields.join('|'));
-  assert.equal(await page.$$eval('#recFields input', (i) => i.length), 0); // read-only
-  assert.equal(await page.$$eval('#hours .d', (d) => d.length), 7);
-  assert.match(await page.textContent('#pvData'), /DEVICE-VIC-MP-001/);
-  assert.ok(dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token');
+  for (const id of ['#pharmaciesCard', '#addBtn', '#detailsCard', '#sName', '#sCode', '#brandingCard', '#cP', '#cA', '#logoBtn', '#apiBase']) assert.equal(await page.isVisible(id), true, id);
+  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-003');
+  assert.equal((await page.$$('#devId, #devGo, #recBody')).length, 0);
+  assert.doesNotMatch(await page.textContent('#settingsView'), /Store record/);
+  // picking a pharmacy in Settings moves Promo preview with it
+  await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  assert.equal(await page.inputValue('#pvSel'), 'seed-pharmacy-vic-mp-001');
   await page.click('#setBtn');
-  await page.click('#playBtn');
-  await page.click('#tl button[data-i="0"]');
-  assert.match(await headline(page), /Good morning,\s*Beaumaris/);
-  await page.click('#setBtn');
-  await page.fill('#devId', 'NO-SUCH-DEVICE');
-  await page.click('#devGo');
-  await page.waitForSelector('#devErr:not([hidden])');
+  assert.equal(await page.isVisible('#dpTabs'), true);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 
@@ -247,7 +259,7 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
 
 test('scenes: add from the whole service library, reorder, durations, delete', async () => {
   const { ctx, page } = await open();
-  await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-004');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
   await page.click('#dpTabs button:has-text("Morning")');
   const before = await page.$$eval('#slotList .slot', (s) => s.length);
@@ -378,7 +390,9 @@ test('preview: timeline and editor highlight each other; orientation and experie
 
 test('pharmacies: add (unique store code), logo upload and remove, delete', async () => {
   const { ctx, page } = await open();
+  await page.click('#setBtn'); // adding a pharmacy, its details and branding are in Settings
   await page.click('#addBtn');
+  assert.equal(await page.isVisible('#settingsView'), true);
   await page.fill('#sName', 'Brighton Pharmacy');
   await page.fill('#sCode', 'vic-mp-001');
   assert.match(await page.textContent('#codeErr'), /already used/);
@@ -415,6 +429,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
     await held;
     return route.continue();
   });
+  await page.click('#setBtn');
   await page.click('#addBtn');
   await page.fill('#sName', 'Hampton Pharmacy');
   const posted = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/admin\/pharmacies$/.test(r.url()));
@@ -423,6 +438,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
   assert.equal(JSON.parse(req.postData()).name, 'Hampton Pharmacy');
   // while the create is in flight: rename it and edit the greeting's Line 1
   await page.fill('#sName', 'Hampton Street Pharmacy');
+  await page.click('#setBtn'); // back to the promotions
   await page.fill('#dit', 'Edited during the create');
   await page.waitForTimeout(800); // longer than the edit debounce
   assert.match(await page.textContent('#saveState'), /Saving/);
@@ -436,7 +452,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
   assert.equal(rec.content['seed-promotion-morning'].introTitle, 'Edited during the create');
   // another admin sees both after a reload
   const b = await open();
-  await b.page.selectOption('#storeSel', created.id);
+  await b.page.selectOption('#pvSel', created.id);
   await b.page.waitForFunction((id) => window.pharmacyAdmin.state.cur.id === id, created.id);
   assert.equal(await b.page.inputValue('#sName'), 'Hampton Street Pharmacy');
   assert.equal(await b.page.inputValue('#dit'), 'Edited during the create');
@@ -450,6 +466,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
     await held2;
     return route.continue();
   });
+  await page.click('#setBtn');
   await page.click('#addBtn');
   await page.fill('#sName', 'Sandringham Pharmacy');
   const posted2 = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/admin\/pharmacies$/.test(r.url()));

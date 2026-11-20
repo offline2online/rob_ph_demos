@@ -14,7 +14,6 @@ import * as M from './model.js';
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, OCCASION_SCENES } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
-import { parseOpeningHours, weeklyRows } from '../../js/hours.js';
 
 const $ = (id) => document.getElementById(id);
 const pref = {
@@ -30,8 +29,6 @@ const S = {
   services: [],
   cur: null, // the selected pharmacy, full record with content; id null while it is a new, unsaved pharmacy
   dpTab: null, // selected promotion's record id
-  record: null, // Location API campaign_data for the preview (looked up in Settings), or null for sample data
-  recordDevice: '',
   phApi: null,
   sample: null, // seed fixtures for Reset, if this deployment serves them
 };
@@ -78,7 +75,7 @@ function previewModel() {
   const ph = { ...S.cur, storeCode: previewCode() };
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
-  const store = storeModel(M.campaignForPreview(S.record, previewCode(), S.cur.name), cfg);
+  const store = storeModel(M.campaignForPreview(null, previewCode(), S.cur.name), cfg);
   const play = resolvePromotion(cfg, store, promo().promoId);
   return { cfg, store, play };
 }
@@ -612,8 +609,8 @@ $('hdReset').onclick = async () => {
 function renderStoreSel() {
   const rows = S.pharmacies.map((s) => `<option value="${esc(s.id)}">${esc(s.name || 'New pharmacy')}${s.storeCode ? ' · ' + esc(s.storeCode) : ''}</option>`);
   if (!S.cur.id) rows.push(`<option value="">${esc(S.cur.name || 'New pharmacy')}${S.cur.storeCode ? ' · ' + esc(S.cur.storeCode) : ''} (not saved yet)</option>`);
-  $('storeSel').innerHTML = rows.join('');
-  $('storeSel').value = S.cur.id || '';
+  // The same list feeds Settings' pharmacy picker and the promotions page's Promo preview drop-down.
+  for (const id of ['storeSel', 'pvSel']) { $(id).innerHTML = rows.join(''); $(id).value = S.cur.id || ''; }
   $('resetBtn').hidden = !sampleFor(S.cur.storeCode);
   $('delBtn').hidden = S.pharmacies.length < 1 || (S.pharmacies.length < 2 && !!S.cur.id);
   delArm = false; $('delTx').textContent = 'Delete';
@@ -694,7 +691,6 @@ function loadStore() {
   $('logoIn').value = ''; $('logoErr').hidden = true;
   renderLogo(); renderDp(); renderUrl(); renderJson();
   scene = 0; elapsed = 0; lastKey = '';
-  loadRecordFor(s);
 }
 function renderLogo() {
   const s = S.cur, url = s.logo && s.logo.url;
@@ -733,11 +729,12 @@ function newDraft() {
   return { id: null, storeCode: '', name: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: M.newPharmacyContent(S.promotions, S.templates) };
 }
 let delArm = false;
-$('storeSel').onchange = (e) => { if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
+$('storeSel').onchange = $('pvSel').onchange = (e) => { if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
+// Adding a pharmacy, and its details and branding, live in Settings.
 $('addBtn').onclick = async () => {
   await Save.flush();
   S.cur = newDraft(); renderStoreSel(); loadStore();
-  if (!$('settingsView').hidden) $('setBtn').click();
+  if ($('settingsView').hidden) $('setBtn').click();
   $('sName').focus();
 };
 $('delBtn').onclick = async () => {
@@ -785,51 +782,10 @@ $('resetBtn').onclick = async () => {
 $('setBtn').onclick = () => {
   const on = $('settingsView').hidden;
   $('settingsView').hidden = !on; $('contentView').hidden = on; $('toolbar').classList.toggle('inSettings', on);
-  $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to pharmacy content' : 'Settings';
+  $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to promotions' : 'Settings';
   $('setBtn').firstChild.textContent = on ? 'arrow_back' : 'settings';
   if (on) loadPhApi();
 };
-
-const devKey = (code) => 'device-' + code;
-function renderRecord() {
-  const r = S.record;
-  $('recBody').hidden = !r;
-  $('pvData').hidden = false;
-  $('pvData').textContent = r ? `Store data: ${S.recordDevice}` : 'Sample store data';
-  $('pvData').title = r ? 'From the Location API, through the server-side proxy' : 'Look up one of this store’s devices in Settings to preview with its real store data';
-  if (!r) return;
-  $('recFields').innerHTML = M.storeFields(r).map((f) => `<div class="f${f.label === 'Address' ? '" style="grid-column:1/-1' : ''}"><span>${esc(f.label)} <code class="kp">${esc(f.path)}</code></span><div class="ro-val">${esc(f.value)}</div></div>`).join('');
-  const rows = weeklyRows(parseOpeningHours((r.data || r).store_info && (r.data || r).store_info.opening_hours));
-  $('hours').innerHTML = rows.map((x) => `<span class="d">${x.name}</span><span class="${x.text ? '' : 'off'}">${esc(x.text || 'Closed')}</span>`).join('');
-  $('apiJson').textContent = JSON.stringify(r, null, 2);
-}
-function devErr(m) { $('devErr').textContent = m || ''; $('devErr').hidden = !m; }
-async function lookUp(device, { quiet = false } = {}) {
-  const forId = S.cur && S.cur.id;
-  try {
-    const r = await api.campaignData(device);
-    if ((S.cur && S.cur.id) !== forId) return;
-    S.record = { data: r.data };
-    S.recordDevice = device;
-    if (S.cur.storeCode) pref.set(devKey(S.cur.storeCode), device);
-    const code = r.data && r.data.store_location && r.data.store_location.store_code;
-    devErr(code && S.cur.storeCode && code.toUpperCase() !== S.cur.storeCode ? `This device belongs to store ${code}, not ${S.cur.storeCode}. The preview uses its store data anyway.` : '');
-  } catch (e) {
-    if ((S.cur && S.cur.id) !== forId) return;
-    S.record = null; S.recordDevice = '';
-    if (!quiet) devErr(e.message);
-  }
-  ver++; renderRecord();
-}
-function loadRecordFor(s) {
-  S.record = null; S.recordDevice = '';
-  const dev = s.storeCode ? pref.get(devKey(s.storeCode)) : null;
-  $('devId').value = dev || ''; devErr('');
-  renderRecord();
-  if (dev) lookUp(dev, { quiet: true });
-}
-$('devGo').onclick = () => { const v = $('devId').value.trim(); if (!v) { devErr('Enter a device ID.'); return; } lookUp(v); };
-$('devId').onkeydown = (e) => { if (e.key === 'Enter') $('devGo').click(); };
 
 function apiErr(m) { $('apiErr').textContent = m || ''; $('apiErr').hidden = !m; }
 function renderApi({ clearToken = false } = {}) {

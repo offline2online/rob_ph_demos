@@ -5,8 +5,21 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 
 ## [Unreleased]
 
-Nothing yet. Add changes here; at release time this section becomes `## [x.y.z] — <date>`
+Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
+
+### Changed
+
+- **Admin editor: pharmacies are managed in Settings.** Adding a pharmacy, its details (name, store code) and
+  its branding (colours, logo) moved from the promotions page into Settings, beside the Personalisation Hub API.
+  The promotions page now has only a **Promo preview** drop-down to pick the pharmacy whose copy is edited and
+  previewed. Settings' button back reads **Back to promotions**.
+
+### Removed
+
+- **Settings → Store record** (the device ID lookup of the Location API record). The preview always uses sample
+  store data; to check a screen's store, open its campaign URL with `&debug=1`. The proxy endpoint
+  (`GET /api/device/{id}/campaign_data`) is unchanged: screens still use it.
 
 ## [0.1.0] — first handover candidate
 
