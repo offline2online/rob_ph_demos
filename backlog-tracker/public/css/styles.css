@@ -3283,3 +3283,141 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .fa-library-docs .fa-body-viewer { max-height: none; }
 .fa-library-docs #fa-body-editor .ql-editor { max-height: 70vh; }
 .fa-body-viewer blockquote { border-left: 3px solid var(--border); margin: 0 0 10px; padding: 2px 12px; color: var(--text-muted); }
+
+/* ── Aidan in the console (yvnAPPAW9ROLrNwJceyn): js/aidan-chat.js ──────────
+   The launcher is the platform's AI assistant button exactly as the
+   ph-designer skill measures it (components.md section 21, hq-admin.md "AI
+   assistant FAB"): a 64 px circle fixed right 24 / bottom 24, z-index 1000,
+   Tailwind shadow-lg, white glyph at half its width, filled with
+   ai-gradient-fab running top to bottom. The console is not iframed, so it
+   may be fixed to the viewport. The panel is built from the skill's tokens
+   (Roboto, primary #169bc2, AI violet #9747ff, 8 px card radius, 6 px
+   control radius, shadow-lg): the header on the same gradient with the same
+   glyph, the member's messages on the gradient's tint (ai-gradient-surface),
+   Aidan's on a neutral surface. On a phone it is full width. */
+:root {
+  --aidan-fab: linear-gradient(180deg, #169bc2 0%, #9747ff 100%);
+  --aidan-fab: linear-gradient(in oklab, #169bc2 0%, #9747ff 100%);
+  --aidan-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, .1), 0 4px 6px -4px rgba(0, 0, 0, .1);
+  --aidan-font: Roboto, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --aidan-surface: #ffffff;
+  --aidan-surface-alt: #f5f5f5;
+  --aidan-text: #333333;
+  --aidan-muted: rgba(0, 0, 0, .45);
+  --aidan-border: #d9d9d9;
+  --aidan-member-bg: linear-gradient(135deg, rgba(22, 155, 194, .2), rgba(151, 71, 255, .2));
+  --aidan-right: 24px;
+  --aidan-bottom: 24px;
+}
+:root[data-theme="dark"] {
+  --aidan-surface: #1c1c1e; --aidan-surface-alt: #2c2c2e; --aidan-text: #f5f5f7; --aidan-muted: rgba(235, 235, 245, .6); --aidan-border: rgba(235, 235, 245, .16);
+  --aidan-member-bg: linear-gradient(135deg, rgba(22, 155, 194, .35), rgba(151, 71, 255, .35));
+}
+.aidan-launcher {
+  position: fixed; right: var(--aidan-right); bottom: var(--aidan-bottom); z-index: 1000;
+  width: 64px; height: 64px; padding: 0; border: 0; border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; background: var(--aidan-fab); box-shadow: var(--aidan-shadow-lg); cursor: pointer;
+  transition: transform .16s ease-out, box-shadow .16s ease-out;
+}
+.aidan-launcher[hidden] { display: none; }
+.aidan-launcher svg { width: 32px; height: 32px; display: block; }
+.aidan-launcher:hover { transform: translateY(-1px); box-shadow: 0 14px 20px -4px rgba(0, 0, 0, .16), 0 6px 8px -5px rgba(0, 0, 0, .12); }
+.aidan-launcher:active { transform: scale(.96); }
+.aidan-launcher:focus-visible { outline: 2px solid #169bc2; outline-offset: 3px; }
+
+.aidan-panel {
+  position: fixed; right: var(--aidan-right); bottom: calc(var(--aidan-bottom) + 64px + 16px); z-index: 1000;
+  width: 380px; max-width: calc(100vw - 32px); height: min(600px, calc(100vh - var(--aidan-bottom) - 64px - 16px - 24px));
+  display: flex; flex-direction: column; overflow: hidden;
+  font-family: var(--aidan-font); font-size: 14px; line-height: 1.5; color: var(--aidan-text);
+  background: var(--aidan-surface); border-radius: 8px; box-shadow: var(--aidan-shadow-lg), 0 0 0 1px rgba(5, 5, 5, .06);
+  transform-origin: bottom right; animation: aidan-in .18s ease-out;
+}
+.aidan-panel[hidden] { display: none; }
+@keyframes aidan-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .aidan-panel, .aidan-launcher { animation: none; transition: none; } }
+.aidan-head { display: flex; align-items: center; gap: 10px; padding: 12px 8px 12px 16px; color: #fff; background: var(--aidan-fab); flex: none; }
+.aidan-head-mark { width: 36px; height: 36px; flex: none; border-radius: 9999px; display: flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .18); }
+.aidan-head-mark svg { width: 20px; height: 20px; display: block; }
+.aidan-head-text { flex: 1; min-width: 0; }
+.aidan-head-title { margin: 0; font-size: 16px; font-weight: 500; line-height: 1.3; color: #fff; }
+.aidan-head-sub { margin: 0; font-size: 12px; line-height: 1.3; color: rgba(255, 255, 255, .85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aidan-head-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+.aidan-head-btn { width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #fff; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.aidan-head-btn .material-symbols-outlined { font-size: 20px; }
+.aidan-head-btn:hover, .aidan-head-btn[aria-pressed="true"] { background: rgba(255, 255, 255, .2); }
+.aidan-head-btn[hidden] { display: none; }
+.aidan-head-btn:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
+
+.aidan-messages, .aidan-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px; background: var(--aidan-surface); }
+.aidan-messages[hidden], .aidan-list[hidden] { display: none; }
+.aidan-messages { display: flex; flex-direction: column; gap: 8px; }
+.aidan-msg { max-width: 85%; padding: 8px 12px; border-radius: 8px; overflow-wrap: anywhere; animation: aidan-msg-in .16s ease-out; }
+@keyframes aidan-msg-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.aidan-msg p { margin: 0; }
+.aidan-msg p + p, .aidan-msg p + ul, .aidan-msg ul + p { margin-top: 8px; }
+.aidan-msg ul { margin: 0; padding-left: 18px; }
+.aidan-msg-member { align-self: flex-end; background: var(--aidan-member-bg); color: var(--aidan-text); border-bottom-right-radius: 2px; white-space: pre-wrap; }
+.aidan-msg-aidan { align-self: flex-start; background: var(--aidan-surface-alt); color: var(--aidan-text); border-bottom-left-radius: 2px; }
+.aidan-msg-readonly { box-shadow: inset 3px 0 0 #9747ff; }
+.aidan-link { color: #169bc2; font-weight: 500; text-decoration: none; }
+.aidan-link:hover { text-decoration: underline; }
+.aidan-msg-pending { display: inline-flex; align-items: center; gap: 8px; color: var(--aidan-muted); }
+.aidan-dots { display: inline-flex; gap: 3px; }
+.aidan-dots i { width: 6px; height: 6px; border-radius: 9999px; background: linear-gradient(135deg, #169bc2, #9747ff); animation: aidan-dot 1.2s ease-in-out infinite; }
+.aidan-dots i:nth-child(2) { animation-delay: .15s; }
+.aidan-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes aidan-dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.aidan-list { display: flex; flex-direction: column; gap: 4px; }
+.aidan-list-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--aidan-text); font: inherit; text-align: left; cursor: pointer; }
+.aidan-list-row:hover { background: rgba(22, 155, 194, .1); }
+.aidan-list-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.aidan-list-meta, .aidan-list-empty { font-size: 12px; color: var(--aidan-muted); }
+.aidan-list-empty { margin: 0; }
+
+.aidan-speaking { display: flex; align-items: center; gap: 8px; padding: 6px 16px; font-size: 12px; color: var(--aidan-muted); border-top: 1px solid rgba(5, 5, 5, .06); flex: none; }
+.aidan-speaking[hidden] { display: none; }
+.aidan-speaking .material-symbols-outlined { font-size: 16px; color: #9747ff; }
+.aidan-stop { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 1px solid var(--aidan-border); border-radius: 6px; background: var(--aidan-surface); color: var(--aidan-text); font: inherit; font-size: 12px; cursor: pointer; }
+.aidan-stop .material-symbols-outlined { font-size: 16px; color: inherit; }
+.aidan-error { margin: 0; padding: 6px 16px; font-size: 12px; color: #ff4d4f; flex: none; }
+.aidan-error[hidden] { display: none; }
+.aidan-panel .listening-hint, .aidan-panel .mic-error { margin: 0; padding: 0 16px; font-size: 12px; }
+.aidan-panel .mic-error:empty { display: none; }
+.aidan-input-row { display: flex; align-items: flex-end; gap: 8px; padding: 12px 12px 12px 16px; border-top: 1px solid rgba(5, 5, 5, .06); background: var(--aidan-surface); flex: none; }
+.aidan-input { flex: 1; min-width: 0; min-height: 36px; max-height: 140px; resize: none; padding: 7px 11px; border: 1px solid var(--aidan-border); border-radius: 6px; background: var(--aidan-surface); color: var(--aidan-text); font-family: var(--aidan-font); font-size: 14px; line-height: 20px; }
+.aidan-input:focus { outline: none; border-color: #169bc2; box-shadow: 0 0 0 2px rgba(22, 155, 194, .1); }
+.aidan-icon-btn { width: 36px; height: 36px; min-width: 36px; padding: 0; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.aidan-icon-btn[hidden] { display: none; }
+.aidan-icon-btn .material-symbols-outlined { font-size: 20px; }
+.aidan-mic { border: 1px solid var(--aidan-border); background: var(--aidan-surface); color: var(--aidan-text); }
+.aidan-mic.listening { border-color: #ff4d4f; background: #ff4d4f; color: #fff; animation: mic-pulse 1.4s ease-in-out infinite; }
+.aidan-mic:disabled { opacity: .35; cursor: not-allowed; }
+.aidan-send { border: 0; background: #169bc2; color: #fff; }
+.aidan-send:hover { background: #38b0cf; }
+.aidan-send:disabled { opacity: .45; cursor: not-allowed; }
+.aidan-mic:focus-visible, .aidan-send:focus-visible, .aidan-list-row:focus-visible, .aidan-stop:focus-visible { outline: 2px solid #169bc2; outline-offset: 2px; }
+
+/* An overlay (a modal, the search, the slide-over, the profile menu) is the
+   page's action while it is open: the launcher steps out of its way, and an
+   open panel drops under it (a link in the panel can open a ticket's modal). */
+html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden]), .nav-drawer-backdrop.open, #profile-menu:not([hidden])) .aidan-launcher { visibility: hidden; pointer-events: none; }
+html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden])) .aidan-panel { z-index: 19; }
+/* Room under the last thing on a page, so the launcher never sits on it. */
+.app:not([hidden]) { padding-bottom: calc(var(--aidan-bottom) + 64px + 16px); }
+@media (pointer: coarse), (max-width: 1023px) {
+  .aidan-head-btn { width: 44px; height: 44px; }
+  .aidan-icon-btn { width: 44px; height: 44px; min-width: 44px; }
+  .aidan-input { min-height: 44px; padding-top: 11px; padding-bottom: 11px; }
+}
+/* A phone: above the tab bar, and the panel full width over the page. */
+@media (max-width: 640px) {
+  :root { --aidan-right: 16px; --aidan-bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom, 0px)); }
+  .app:not([hidden]) { padding-bottom: calc(var(--tabbar-h) + 16px + 64px + 16px + env(safe-area-inset-bottom, 0px)); }
+  /* Leads keeps its one primary action at the bottom: the launcher sits above it. */
+  html:has(#leads-page:not([hidden]) #leads-add-btn:not([hidden])) { --aidan-bottom: calc(var(--tabbar-h) + 16px + 48px + 16px + env(safe-area-inset-bottom, 0px)); }
+  .aidan-panel { left: 0; right: 0; top: 0; bottom: 0; width: 100%; max-width: none; height: auto; border-radius: 0; z-index: 1001; padding-bottom: env(safe-area-inset-bottom, 0px); padding-top: env(safe-area-inset-top, 0px); background: var(--aidan-surface); transform-origin: bottom center; }
+  html.aidan-chat-open .aidan-launcher { display: none; }
+  .aidan-msg { max-width: 90%; }
+}

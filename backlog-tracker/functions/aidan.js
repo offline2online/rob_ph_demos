@@ -122,6 +122,7 @@ const cc = require("./collateral-core");
 const cl = require("./collateral-layout");
 const av = require("./aidan-voice");
 const mc = require("./market-core");
+const chatCore = require("./aidan-chat-core");
 
 const CONFIG_DOC = "aidan";              // supportSecrets/aidan
 const REFERENCES = "skillReferences";
@@ -496,8 +497,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // finds is not acted on, because it may have come from the content: a change
   // request is refused only from the instruction's own words
   // (ac.consoleChangeRequest, before any model is asked).
-  async function readConsole({ instruction, email, content = null }) {
+  // `reader` is the console reader to read with: the mailbox's read-only
+  // stand-in by default, or (the console's chat panel, `channel: "chat"`) a
+  // reader scoped to the signed-in member who asked (mcp-server.js →
+  // consoleReader(names, session)). `planTimeoutMs`: one planning round's budget.
+  async function readConsole({ instruction, email, content = null, reader = consoleReader, channel = "email", planTimeoutMs = CONSOLE_PLAN_TIMEOUT_MS }) {
+    const consoleReader = reader;
     if (!consoleReader || !ac.mayReadConsole(instruction)) return null;
+    const planSystem = channel === "chat" ? `${ac.CONSOLE_PLAN_SYSTEM}\n${chatCore.CHAT_PLAN_LINE}` : ac.CONSOLE_PLAN_SYSTEM;
     const planEmail = content ? `${email}\n\n${ac.contentBlock(content)}` : email;
     const read = async (tool, args) => {
       try {
@@ -542,7 +549,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     for (let round = 0; round < ac.CONSOLE_ROUNDS; round += 1) {
       const cmPrompt = canScript ? { scriptTools, insights, done: Boolean(codeMode) } : null;
       const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail, codeMode: cmPrompt })
-        : await model({ system: content ? `${ac.CONSOLE_PLAN_SYSTEM}\n${ac.CONTENT_LINE}` : ac.CONSOLE_PLAN_SYSTEM, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: CONSOLE_PLAN_TIMEOUT_MS,
+        : await model({ system: content ? `${planSystem}\n${ac.CONTENT_LINE}` : planSystem, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: planTimeoutMs,
           content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results, codeMode: cmPrompt }) });
       // Documents and critiques are read inside the Code Mode run.
       // Only while the one Code Mode run is still to come: once it has run
@@ -1209,6 +1216,49 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // worded alike), comment on it instead. At most IMPROVEMENTS_PER_DAY new
   // tickets a day. The ticket is linked on the thread's timeline and in
   // `aidan.improvement`. Never fails the run: a failure is logged and noted.
+  // File the gap a self-check found: comment on the matching open ticket, or
+  // file a new one on the project the run was about (Aidan's home project
+  // otherwise), at most IMPROVEMENTS_PER_DAY new tickets a day. Shared by the
+  // mailbox (`reflect`) and the console chat (`chat`, source "chat").
+  // Returns { rec, event }: the record kept and the line for the timeline.
+  async function fileGap(found, { instruction, ticketKey, supportTicketId = "", kind = "", source = "email" }) {
+    const at = now();
+    // A missing market page is one gap per country, whatever the request.
+    const key = ac.improvementKey(found.category, found.keyText || instruction);
+    const label = ac.IMPROVEMENT_LABELS[found.category] || found.category;
+    const projects = await improvements.projects();
+    const home = ac.homeProject(projects);
+    const target = (found.projectId && projects.find((p) => p.id === found.projectId && !p.archived)) || home;
+    const title = ac.improvementTitle(found);
+    const keyed = await improvements.byKey(key);
+    const open = target ? await improvements.openTickets(target.id) : [];
+    const match = ac.matchImprovement({ key, category: found.category, gap: found.gap, title }, keyed, open);
+    let rec;
+    let event;
+    if (match) {
+      const c = await improvements.comment(match.id, ac.improvementComment({ category: found.category, gap: found.gap, instruction, ticketKey, at, source }));
+      rec = { action: "commented", itemId: match.id, title: match.title, projectId: match.projectId || (target && target.id) || "", link: c.board || "" };
+      event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). An open Backlog ticket already covers it, so Aidan commented on "${match.title}" instead of filing a duplicate: ${rec.link}`;
+    } else if (!target) {
+      rec = { action: "not-filed", reason: "no project to file it on" };
+      event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}), but there is no project to file a ticket on.`;
+    } else if (await improvements.filedOn(at.toISOString().slice(0, 10)) >= ac.IMPROVEMENTS_PER_DAY) {
+      rec = { action: "not-filed", reason: `already ${ac.IMPROVEMENTS_PER_DAY} tickets filed today` };
+      event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). No ticket was filed: Aidan has already filed ${ac.IMPROVEMENTS_PER_DAY} today.`;
+    } else {
+      const filed = await improvements.file({ projectId: target.id, title,
+        desc: ac.improvementDesc({ category: found.category, gap: found.gap, suggestion: found.suggestion, instruction, ticketKey, kind, at, source }),
+        improvement: Object.assign({ key, day: at.toISOString().slice(0, 10), category: found.category, gap: found.gap, suggestion: found.suggestion, supportTicketId, supportTicketKey: ticketKey, kind }, source === "chat" ? { source: "chat" } : {}) });
+      if (!filed || !filed.ok) {
+        rec = { action: "not-filed", reason: core.clip(String((filed && filed.error) || "the ticket couldn't be filed"), 200) };
+        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). The ticket couldn't be filed: ${rec.reason}`;
+      } else {
+        rec = { action: "filed", itemId: filed.itemId, title: filed.title, projectId: filed.projectId, link: filed.board || "" };
+        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). Aidan filed a Backlog ticket on ${target.name}: "${filed.title}" ${rec.link}`;
+      }
+    }
+    return { rec: Object.assign({ category: found.category, gap: found.gap, suggestion: found.suggestion, at }, rec), event };
+  }
   async function reflect({ ticketId, ticket, job, signals }) {
     if (!improvements) return null;
     let found = null;
@@ -1216,43 +1266,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       found = ac.assessRun(signals);
       if (!found) return null;
       const instruction = signals.instruction || job.instruction || "";
-      const at = now();
       const ticketKey = ticket.key || ticketId;
-      // A missing market page is one gap per country, whatever the request.
-      const key = ac.improvementKey(found.category, found.keyText || instruction);
-      const label = ac.IMPROVEMENT_LABELS[found.category] || found.category;
-      const projects = await improvements.projects();
-      const home = ac.homeProject(projects);
-      const target = (found.projectId && projects.find((p) => p.id === found.projectId && !p.archived)) || home;
-      const title = ac.improvementTitle(found);
-      const keyed = await improvements.byKey(key);
-      const open = target ? await improvements.openTickets(target.id) : [];
-      const match = ac.matchImprovement({ key, category: found.category, gap: found.gap, title }, keyed, open);
-      let rec;
-      let event;
-      if (match) {
-        const c = await improvements.comment(match.id, ac.improvementComment({ category: found.category, gap: found.gap, instruction, ticketKey, at }));
-        rec = { action: "commented", itemId: match.id, title: match.title, projectId: match.projectId || (target && target.id) || "", link: c.board || "" };
-        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). An open Backlog ticket already covers it, so Aidan commented on "${match.title}" instead of filing a duplicate: ${rec.link}`;
-      } else if (!target) {
-        rec = { action: "not-filed", reason: "no project to file it on" };
-        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}), but there is no project to file a ticket on.`;
-      } else if (await improvements.filedOn(at.toISOString().slice(0, 10)) >= ac.IMPROVEMENTS_PER_DAY) {
-        rec = { action: "not-filed", reason: `already ${ac.IMPROVEMENTS_PER_DAY} tickets filed today` };
-        event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). No ticket was filed: Aidan has already filed ${ac.IMPROVEMENTS_PER_DAY} today.`;
-      } else {
-        const filed = await improvements.file({ projectId: target.id, title,
-          desc: ac.improvementDesc({ category: found.category, gap: found.gap, suggestion: found.suggestion, instruction, ticketKey, kind: signals.kind || job.kind, at }),
-          improvement: { key, day: at.toISOString().slice(0, 10), category: found.category, gap: found.gap, suggestion: found.suggestion, supportTicketId: ticketId, supportTicketKey: ticketKey, kind: signals.kind || job.kind || "" } });
-        if (!filed || !filed.ok) {
-          rec = { action: "not-filed", reason: core.clip(String((filed && filed.error) || "the ticket couldn't be filed"), 200) };
-          event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). The ticket couldn't be filed: ${rec.reason}`;
-        } else {
-          rec = { action: "filed", itemId: filed.itemId, title: filed.title, projectId: filed.projectId, link: filed.board || "" };
-          event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). Aidan filed a Backlog ticket on ${target.name}: "${filed.title}" ${rec.link}`;
-        }
-      }
-      const record = Object.assign({ category: found.category, gap: found.gap, suggestion: found.suggestion, at }, rec);
+      const { rec: record, event } = await fileGap(found, { instruction, ticketKey, supportTicketId: ticketId, kind: signals.kind || job.kind || "" });
       const ref = tickets().doc(ticketId);
       const cur = data(await ref.get());
       if (cur && cur.aidan && !cur.aidan.spam) await ref.set({ aidan: Object.assign({}, cur.aidan, { improvement: record }) }, { merge: true });
@@ -1326,7 +1341,86 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     return ran;
   }
 
-  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts };
+  // ── Aidan in the console's chat panel (yvnAPPAW9ROLrNwJceyn) ──
+  // One turn: the member's message answered from the console, exactly as an
+  // email answer reads it (readConsole: PH Agent Context first, then ONE Code
+  // Mode run), but with `reader`, the CALLER's own read-only reader
+  // (mcp-server.js → consoleReader(names, session)), so a viewer's chat reads
+  // only what a viewer's agent can. Nothing is sent and nothing on the console
+  // is changed: a request to change it gets the read-only reply (no model is
+  // asked). The answer is put in Aidan's voice (inVoice) and self-checked; a
+  // gap is filed or commented on a Backlog ticket like the mailbox's
+  // (fileGap, source "chat"). Never throws: functions/aidan-chat.js stores
+  // and audits what this returns.
+  // Returns { outcome ("answered" | "read-only" | "cannot-answer" | "unavailable" | "error"),
+  //   reply, readOnly, reads, tools, codeMode, topics, voice, improvement, durationMs }.
+  let chatLibrary = null;   // { at, rows }: the skills library, read at most every five minutes
+  async function chatSkills() {
+    if (chatLibrary && now().getTime() - chatLibrary.at < 5 * 60 * 1000) return chatLibrary.rows;
+    const rows = (await rowsOf("skills")).map((s) => ({ id: s.id, slug: s.slug || "", name: s.name || "", summary: s.summary || "", files: s.files || [] }));
+    chatLibrary = { at: now().getTime(), rows };
+    return rows;
+  }
+  async function chat({ instruction, reader = null, member = {}, history = [], origin = "" }) {
+    const started = now().getTime();
+    const text = chatCore.cleanText(instruction);
+    const done = (o) => Object.assign({ readOnly: false, reads: 0, tools: [], codeMode: null, topics: [], voice: null, improvement: null }, o, { durationMs: now().getTime() - started });
+    if (!text) return done({ outcome: "error", reply: chatCore.ERROR_REPLY });
+    if (chatCore.changeRequest(text)) return done({ outcome: "read-only", readOnly: true, reply: chatCore.readOnlyReply(text) });
+    const key = String(apiKey() || "");
+    if (!runImpl && (!key || key === "unset")) return done({ outcome: "unavailable", reply: chatCore.UNAVAILABLE_REPLY });
+    const signals = { instruction: text, kind: "chat", gated: true };
+    const conversation = chatCore.transcript(history);
+    let c = null;
+    try {
+      c = await readConsole({ instruction: text, email: conversation, reader, channel: "chat", planTimeoutMs: chatCore.CHAT_PLAN_TIMEOUT_MS });
+    } catch (err) { logger.error("aidan chat: console read failed", { error: errText(err) }); }
+    if (c) Object.assign(signals, { codeMode: c.codeMode, failedReads: c.failedReads, consoleCut: c.cut, scopedProjectIds: c.scopedProjectIds, context: c.context });
+    const facts = c ? { reads: c.results.filter((r) => r.ok).length, tools: c.tools, codeMode: c.codeMode, topics: c.topics || [] } : {};
+    if (c && c.changeRequested) return done(Object.assign({ outcome: "read-only", readOnly: true, reply: chatCore.readOnlyReply(text) }, facts));
+    let answer;
+    try {
+      const system = chatCore.chatAnswerSystem(origin);
+      const blocks = [{ type: "text", text: `Member: ${core.clip(String(member.name || ""), 80)} (${String(member.role || "viewer")})\nInstruction to Aidan: ${text}` }];
+      if (conversation) blocks.push({ type: "text", text: `<conversation>\n${conversation}\n</conversation>` });
+      if (c && c.used) blocks.push({ type: "text", text: c.text });
+      const raw = runImpl && runImpl.answer ? await runImpl.answer({ instruction: text, system, content: blocks, console: c, chat: true })
+        : await model({ system, schema: chatCore.CHAT_ANSWER_SCHEMA, effort: "medium", maxTokens: 6000, content: blocks, timeout: chatCore.CHAT_ANSWER_TIMEOUT_MS });
+      answer = chatCore.cleanChatAnswer(raw);
+    } catch (err) {
+      logger.error("aidan chat: the answer failed", { error: errText(err) });
+      answer = { canAnswer: false, replyText: "", reason: "", selfCheck: null, failed: errText(err) };
+    }
+    signals.selfCheck = answer.selfCheck;
+    let reply;
+    let outcome;
+    let voice = null;
+    if (answer.failed) { outcome = "error"; reply = chatCore.ERROR_REPLY; }
+    else if (!answer.canAnswer) { outcome = "cannot-answer"; reply = chatCore.cannotAnswerReply(answer.reason); }
+    else {
+      outcome = "answered";
+      const consoleText = c ? c.text : "";
+      reply = chatCore.stripIdsOutsideLinks(chatCore.safeLinks(answer.replyText, consoleText, origin), c ? c.names : []);
+      let voiceSkill = null;
+      try { voiceSkill = await voiceSkillFrom(await chatSkills()); } catch (err) { logger.warn("aidan chat: the voice skill couldn't be read", { error: errText(err) }); }
+      const voiced = await inVoice({ ticketId: "chat", kind: "answer", body: reply, instruction: text, msg: { fromName: member.name || "" }, ticket: null, voiceSkill });
+      reply = voiced.text || reply;
+      voice = voiced.voice;
+    }
+    // The self-check, as the mailbox's: a gap is filed on the project the turn
+    // was about, or commented on the open ticket that already covers it.
+    let improvement = null;
+    if (improvements) {
+      try {
+        const final = outcome === "answered" ? { status: "replied" } : { status: outcome === "error" ? "error" : "needs-person", reason: answer.failed ? `The answer failed: ${answer.failed}` : answer.reason || "Aidan couldn't answer this from the console." };
+        const found = ac.assessRun(Object.assign({}, signals, { final }));
+        if (found) improvement = (await fileGap(found, { instruction: text, ticketKey: "console chat", kind: "chat", source: "chat" })).rec;
+      } catch (err) { logger.error("aidan chat: self-check failed", { error: errText(err) }); }
+    }
+    return done(Object.assign({ outcome, reply, voice, improvement }, facts));
+  }
+
+  return { readConfig, status, saveConfig, afterIngest, runOne, runQueued, sweepStale, markSpam, markNotSpam, dismiss, factsOf: ac.mailFacts, chat };
 }
 
 module.exports = { createAidan, CONFIG_DOC, REFERENCES, LATEST_START_MS, SELECT_TIMEOUT_MS, DOC_TIMEOUT_MS, ANSWER_TIMEOUT_MS, CONSOLE_PLAN_TIMEOUT_MS, COLLATERAL_RENDER_TIMEOUT_MS, VOICE_TIMEOUT_MS, STALE_MS };

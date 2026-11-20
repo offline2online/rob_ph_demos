@@ -4443,6 +4443,97 @@ const scenarios = [
       assert.strictEqual(await c.page.locator(".support-aidan-ignored").count(), 0);
     },
   },
+  {
+    // Aidan in the console (yvnAPPAW9ROLrNwJceyn): the launcher sits in the
+    // same place on every page (the platform's AI assistant button: 64 px,
+    // right 24 / bottom 24, or above the tab bar on a phone), opens the
+    // panel, a typed question is answered in it with a link into the console,
+    // and the conversation is still there on another page and after closing.
+    name: "Aidan chat: launcher on every page, a question answered in the panel, kept across pages",
+    seed: () => seed(),
+    run: async (c) => {
+      const { page } = c;
+      const posts = [];
+      await page.route("**/mcp/aidan/chat**", async (route) => {
+        const req = route.request();
+        const origin = new URL(req.url()).origin;
+        if (req.method() === "POST") {
+          const body = JSON.parse(req.postData() || "{}");
+          posts.push(body);
+          return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversationId: "cv1", title: body.text, message: { role: "aidan", text: posts.length === 1 ? `Display Types has one ticket in testing: [Fix the thing](${origin}/#item-r1). Also [elsewhere](https://evil.example/x).` : "Nothing else is waiting.", at: new Date().toISOString(), outcome: "answered" } }) });
+        }
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversations: [] }) });
+      });
+      await c.boardReady();
+      await c.visible("#aidan-chat-launcher", "the launcher shows once signed in");
+      const place = async () => page.evaluate(() => {
+        const r = document.getElementById("aidan-chat-launcher").getBoundingClientRect();
+        const cs = getComputedStyle(document.getElementById("aidan-chat-launcher"));
+        return { w: r.width, h: r.height, right: innerWidth - r.right, bottom: innerHeight - r.bottom, pos: cs.position, bg: cs.backgroundImage, radius: cs.borderTopLeftRadius, svg: !!document.querySelector("#aidan-chat-launcher svg path[d^='M20.6 11.8']") };
+      });
+      const home = await place();
+      c.at("the launcher is the platform's AI assistant button");
+      assert.deepStrictEqual([home.w, home.h, home.pos, home.svg], [64, 64, "fixed", true], JSON.stringify(home));
+      assert.match(home.bg, /linear-gradient/);
+      assert.strictEqual(home.right, c.width <= 640 ? 16 : 24, JSON.stringify(home));
+      if (c.width > 640) assert.strictEqual(home.bottom, 24, JSON.stringify(home));
+      else assert.ok(home.bottom >= 56 + 16, `above the tab bar on a phone: ${JSON.stringify(home)}`);
+      // Same place on another page.
+      await page.evaluate(() => { location.hash = "#settings"; });
+      await until(() => page.evaluate(() => location.hash.startsWith("#settings")), "settings route");
+      const there = await place();
+      c.at("the launcher is in the same place on Settings");
+      assert.deepStrictEqual([there.right, there.bottom], [home.right, home.bottom]);
+      await page.evaluate(() => { location.hash = ""; });
+      await c.boardReady();
+
+      await c.click("#aidan-chat-launcher", "open the panel");
+      await c.visible("#aidan-chat-panel");
+      await c.waitText("#aidan-chat-messages", "Hi, I'm Aidan");
+      c.at("type a question and send it");
+      await page.fill("#aidan-chat-input", "where are we with Display Types?");
+      await c.click("#aidan-chat-send");
+      await c.waitText("#aidan-chat-messages", "one ticket in testing");
+      c.at("the answer links into the console only");
+      const links = await page.$$eval("#aidan-chat-messages a", (as) => as.map((a) => a.getAttribute("href")));
+      assert.deepStrictEqual(links, ["#item-r1"]);
+      assert.ok((await c.text("#aidan-chat-messages")).includes("elsewhere"), "the dropped link keeps its words");
+      assert.deepStrictEqual(posts[0], { text: "where are we with Display Types?", input: "text" });
+      if (c.width <= 640) {
+        const full = await page.evaluate(() => { const r = document.getElementById("aidan-chat-panel").getBoundingClientRect(); return r.width === innerWidth; });
+        assert.ok(full, "the panel is full width on a phone");
+      }
+      // Enter sends the follow-up on the same conversation.
+      await page.fill("#aidan-chat-input", "anything else?");
+      await page.press("#aidan-chat-input", "Enter");
+      await c.waitText("#aidan-chat-messages", "Nothing else is waiting");
+      assert.deepStrictEqual(posts[1], { text: "anything else?", conversationId: "cv1", input: "text" });
+      // Close, move to another page, reopen: the conversation is still there.
+      await c.click("#aidan-chat-close", "close the panel");
+      await c.hidden("#aidan-chat-panel");
+      await page.evaluate(() => { location.hash = "#settings"; });
+      await until(() => page.evaluate(() => location.hash.startsWith("#settings")), "settings route");
+      await c.click("#aidan-chat-launcher", "reopen on another page");
+      await c.visible("#aidan-chat-panel");
+      await c.waitText("#aidan-chat-messages", "one ticket in testing");
+      // Read aloud is off until the member turns it on.
+      const speak = await page.$("#aidan-chat-speak:not([hidden])");
+      if (speak) {
+        assert.strictEqual(await speak.getAttribute("aria-pressed"), "false");
+        await c.click("#aidan-chat-speak", "turn read aloud on");
+        assert.strictEqual(await speak.getAttribute("aria-pressed"), "true");
+        await c.click("#aidan-chat-speak", "and off again");
+      }
+      await c.click("#aidan-chat-close");
+      await c.hidden("#aidan-chat-panel");
+      // An open modal is the page's action: the launcher steps out of its way.
+      c.at("the launcher steps aside while a modal is open");
+      await page.evaluate(() => { document.getElementById("dialog-backdrop").hidden = false; });
+      assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById("aidan-chat-launcher")).visibility), "hidden");
+      await page.evaluate(() => { document.getElementById("dialog-backdrop").hidden = true; });
+      assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById("aidan-chat-launcher")).visibility), "visible");
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

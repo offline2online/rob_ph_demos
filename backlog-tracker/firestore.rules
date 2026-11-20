@@ -1235,6 +1235,27 @@ service cloud.firestore {
     // The key the audit hashes queries with. No client reads or writes it.
     match /contextSecrets/{docId} { allow read, write: if false; }
 
+    // Aidan in the console's chat panel (functions/aidan-chat.js):
+    //   aidanChats       one conversation per document, kept per member (the
+    //                    last 20): its owner reads their own, an admin reads
+    //                    all, no other member reads one.
+    //   aidanChatRuns    the audit of every chat turn (who, when, what was
+    //                    read, how long, how it ended; never the message
+    //                    text): admins read it.
+    //   aidanChatLimits  each member's turn count for the rate limit: no
+    //                    client reads or writes it.
+    // Written only by the server (Admin SDK); every client is read-only.
+    match /aidanChats/{chatId} {
+      allow read: if isAdmin()
+        || (isMember() && resource.data.email == callerEmail());
+      allow write: if false;
+    }
+    match /aidanChatRuns/{entryId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+    match /aidanChatLimits/{docId} { allow read, write: if false; }
+
     // ── FAQ / Help Center content ─────────────────────────────────────────
     // These two collections feed the PUBLIC help centre (repo-root faq/,
     // iframed into personalisationhub.com). Reads stay public — the site
