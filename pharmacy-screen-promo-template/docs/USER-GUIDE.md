@@ -40,7 +40,7 @@ launch pharmacy (VIC-MP-001 to 005) back to its sample content.
 
 The **Promo preview** drop-down's first entry, **Master template**, holds the default content of every promotion: the
 greeting, the promotion slots, the walk-in close, the Open today bar, the opening-hours headlines and address
-toggle, and the occasion copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
+toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
 screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
 until you edit it or click **Save as master**.
 
@@ -99,7 +99,7 @@ Service copy needs TGA advertising review before go-live.
 - **Reorder** scenes by dragging, or with the up/down buttons.
 - **Delete** a scene (click again to confirm; one you have just added deletes with one click).
 - **Timings**: each scene has its own seconds on screen (1–60). The timeline and Playback duration update as
-  you change them. The Closed headlines and every occasion beat have the same control.
+  you change them. The Closed headlines and every season beat have the same control.
 
 **Copy tips**
 
@@ -144,7 +144,7 @@ Year's. A line that is too long is made smaller to fit. Anzac Day is commemorati
 ## Templates
 
 A template is the layout a promotion uses. Built-ins: **Promotion scenes**, **Opening hours** and the six
-occasion templates. Built-ins are read-only; occasion templates can't be cloned.
+seasonal templates. Built-ins are read-only; seasonal templates can't be cloned.
 
 1. Select the promotion and click **Edit HTML** beside its Template.
 2. On a built-in, click **Clone template**, and give the copy a **Template name**.
@@ -174,7 +174,7 @@ In the pharmacy view:
   every promotion back to the master template ("Inherited from master") in one go. Click it twice: the second
   click discards the pharmacy's own changes. It is greyed out while every section already inherits.
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
-  walk-in close, opening-hours headlines, occasion beats); the screens play the timings set in the full editor.
+  walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
 - **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
   there; there is no promotion name, promo ID or `promo=` line, and no Dates card (an administrator sets the
