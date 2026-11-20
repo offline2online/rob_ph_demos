@@ -293,7 +293,21 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
   assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
   assert.equal(await page.textContent('#pbSecs'), '13s');
-  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Main line', 'Small line above', 'Main line']);
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
+  // Each beat has its own seconds on screen: the loop, the timeline and the playback duration follow, and the playing
+  // preview runs the beats on keyframes of that length.
+  assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['6', '6']);
+  await page.fill('#o0dur', '8');
+  assert.equal(await page.textContent('#loopLen'), 'Loop 14s');
+  await page.waitForFunction(() => document.getElementById('pbSecs').textContent === '15s');
+  assert.match(await page.getAttribute('#tl button[data-i="0"]', 'title'), /· 8s$/);
+  await page.click('#playBtn'); // play
+  await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-christmas:not(.hold) .b1'); return b && getComputedStyle(b).animationDuration === '14s'; });
+  await page.click('#playBtn'); // pause
+  await settle(page);
+  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas.beats[0].dur, 8);
+  await page.fill('#o0dur', '6');
+  assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
   await page.click('#tl button[data-i="1"]');
   await page.waitForFunction(() => document.querySelector('#screen .occ.occ-christmas.hold .b2.on'));
   assert.equal(await page.$$eval('#screen .s-top, #screen .s-logo, #screen .s-foot', (e) => e.length), 0);
@@ -458,8 +472,17 @@ test('preview: timeline and editor highlight each other; orientation and experie
   assert.match(await page.textContent('#cpTip'), /pharmacy-screen\.html\?device=\$\{UniqueDeviceID\}&promo=closed&orientation=landscape$/);
   await page.hover('#cpUrl');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('cpTip')).opacity === '1');
-  // opening hours editor: three rich-text headlines and the address toggle
+  // opening hours editor: three rich-text headlines, each with its own seconds on screen, and the address toggle
   assert.equal(await page.$$eval('#dpBody .rt', (r) => r.length), 3);
+  assert.deepEqual(await page.$$eval('#hlSec input[type=number]', (e) => e.map((x) => x.value)), ['2.7', '2.7', '2.6']);
+  assert.equal(await page.textContent('#loopLen'), 'Loop 8s');
+  await page.fill('#h1dur', '4');
+  assert.equal(await page.textContent('#loopLen'), 'Loop 9.3s');
+  await page.waitForSelector('#tl button[data-i="1"][aria-current="true"]');
+  assert.match(await page.getAttribute('#tl button[data-i="1"]', 'title'), /· 4s$/);
+  assert.ok(await page.$eval('#hlSec .slot[data-h="1"]', (e) => e.classList.contains('focus')));
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-closed'].headlineDurs[1], 4);
   await page.check('#cAddr');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-closed'].showAddress, true);

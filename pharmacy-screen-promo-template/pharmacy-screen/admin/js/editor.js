@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 
@@ -136,7 +136,7 @@ function setPlaying(v) { playing = v; $('playIc').textContent = v ? 'pause' : 'p
 
 function editorTarget(i) {
   if (isOcc()) return document.querySelector(`#occList .slot[data-o="${i}"]`);
-  if (isHours()) { const ed = $('ch' + i); return ed && ed.closest('.rtf'); }
+  if (isHours()) return document.querySelector(`#hlSec .slot[data-h="${i}"]`);
   const s = seq()[i];
   if (!s) return null;
   if (s.k === 'intro') return $('dg') && $('dg').closest('.slot');
@@ -162,9 +162,9 @@ $('stage').onclick = () => goScene(scene, true);
 $('dpBody').addEventListener('focusin', (e) => {
   if (e.target.closest('.icp-pop')) return;
   let i = -1;
-  const r = e.target.closest('.rtf'), sl = e.target.closest('.slot');
+  const sl = e.target.closest('.slot');
   if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
-  else if (isHours() && r) { const ed = r.querySelector('.rt'); if (ed) i = +ed.id.slice(2); }
+  else if (isHours()) { if (sl && sl.dataset.h !== undefined) i = +sl.dataset.h; }
   else if (sl) { if (sl.dataset.i !== undefined) i = +sl.dataset.i + 1; else if (sl.querySelector('#dg')) i = 0; else if (sl.querySelector('#cdur')) i = content().slots.length + 1; }
   if (i < 0) return;
   if (i !== scene || playing) goScene(i, false);
@@ -248,6 +248,10 @@ const bindRt = (id, set) => bindRichText(id, set, changed);
 
 // icon picker: searchable Material Symbols, icon-picker.js
 
+/** A scene's "seconds on screen" control (1-60) for its card's header. */
+const durInput = (id, v, step = 0.1) => `<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="${id}" min="1" max="60" step="${step}" value="${v}" aria-label="Seconds on screen">s</label>`;
+const loopText = (t) => `Loop ${t % 1 ? t.toFixed(1) : t}s`;
+
 // Promotion slots added since the page loaded: deleting one of these needs no confirmation.
 const justAdded = new WeakSet();
 
@@ -258,9 +262,21 @@ function renderDp() {
   if (!S.promotions.length) { B.innerHTML = '<span class="hint">No promotions yet. Add one with New promotion.</span>'; return; }
   const s = S.cur, d = content();
   if (isHours()) {
-    B.innerHTML = `<div id="hlSec" style="display:grid;gap:12px">${d.headlines.map((h, i) => rt('ch' + i, 'Headline ' + (i + 1), h)).join('')}</div>
+    // Each headline is a scene with its own seconds on screen (headlineDurs[i]; blank: the default).
+    const hs = M.headlineSeconds(d);
+    B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div id="hlSec" style="display:grid;gap:12px">${d.headlines.map((h, i) => `<div class="slot" data-h="${i}"><div class="slot-h">Headline ${i + 1}${durInput(`h${i}dur`, hs[i])}</div>${rt('ch' + i, 'Text', h, 'Headline ' + (i + 1))}</div>`).join('')}</div>
      <label class="chk"><input type="checkbox" id="cAddr" ${d.showAddress ? 'checked' : ''}>Show address under phone</label>`;
-    d.headlines.forEach((h, i) => bindRt('ch' + i, (v) => { d.headlines[i] = v; }));
+    const total = () => { $('loopLen').textContent = loopText(M.loopSeconds(d, 'hours')); };
+    d.headlines.forEach((h, i) => {
+      bindRt('ch' + i, (v) => { d.headlines[i] = v; });
+      $(`h${i}dur`).oninput = (e) => {
+        const durs = Array.isArray(d.headlineDurs) ? d.headlineDurs : (d.headlineDurs = []);
+        while (durs.length < d.headlines.length) durs.push(null);
+        durs[i] = M.clampDur(e.target.value) ?? null;
+        changed(); total();
+      };
+    });
+    total();
     $('cAddr').onchange = (e) => { d.showAddress = e.target.checked; changed(); };
     decorateSections(B);
     return;
@@ -288,7 +304,7 @@ function renderDp() {
      <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
      <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
   const on = (id, fn) => { $(id).oninput = (e) => { fn(e.target.value); changed(); }; };
-  const total = () => { const t = M.loopSeconds(d); $('loopLen').textContent = `Loop ${t % 1 ? t.toFixed(1) : t}s`; };
+  const total = () => { $('loopLen').textContent = loopText(M.loopSeconds(d)); };
   $('ddur').oninput = (e) => { d.introDur = M.clampDur(e.target.value); changed(); total(); };
   $('cdur').oninput = (e) => { d.close.dur = M.clampDur(e.target.value); changed(); total(); };
   d.slots.forEach((x, i) => { $(`s${i}dur`).oninput = (e) => { x.dur = M.clampDur(e.target.value); changed(); total(); }; });
@@ -436,25 +452,30 @@ function showMasterChrome(on) {
 
 /**
  * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to, one card per beat of the
- * design (a main line, and a small label line where the design has one). The beats share the template's fixed 12 s
- * loop. The occasion itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion
+ * design (a main line, and a small label line where the design has one), each with its own seconds on screen (the
+ * loop is their sum; at the defaults, an equal share of the design's 12 s). The occasion itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion
  * keeps its own copy.
  */
 function renderOccasion(B, d) {
   const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
-  const o = d.occasions[occ.id], secs = M.loopSeconds(o) / occ.beats.length;
+  const o = d.occasions[occ.id];
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">Loop ${M.loopSeconds(o)}s</span>
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
    <div id="occList" style="display:grid;gap:12px">${occ.beats.map((layout, i) => {
     const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
-    return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}<span class="hint" style="margin-left:auto;font-weight:400" title="How long this shows on screen"><span class="ms" style="font-size:16px">timer</span> ${secs}s</span></div>
+    return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
      <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
   }).join('')}</div>`;
   occ.beats.forEach((layout, i) => {
     const x = o.beats[i];
     bindRt(`o${i}text`, (v) => { x.text = v; });
     if (layout.label) $(`o${i}label`).oninput = (e) => { x.label = e.target.value; changed(); };
+    $(`o${i}dur`).oninput = (e) => {
+      const v = M.clampDur(e.target.value);
+      if (v === undefined) delete x.dur; else x.dur = v;
+      changed(); $('loopLen').textContent = loopText(M.loopSeconds(o));
+    };
   });
 }
 

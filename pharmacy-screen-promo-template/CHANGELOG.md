@@ -19,6 +19,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Timings for every scene of every template.** Besides the Promotion scenes' greeting, slots and close, each
+  Closed (opening hours) headline and each occasion beat now has its own seconds on screen (1–60) in the editor.
+  The timeline, Loop and Playback duration follow; at the default timings nothing changes (Closed 2.7 + 2.7 +
+  2.6 s, occasions a 12 s loop, playback 13 s). Stored as the headlines' `headlineDurs` and each beat's `dur`
+  ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
 - **Editor: the preview stays beside the editor when Personalisation Hub's left menu is expanded.** On a tablet or
   small laptop the expanded menu left a frame under 920px, where the preview used to drop below the whole editor
   and seemed to disappear. It now narrows and stays in view beside the editor down to a 600px frame; only a

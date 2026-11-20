@@ -238,3 +238,33 @@ test('tokens set by hand: every token the pharmacy uses, master template include
   // renderConfig passes them to the render engine.
   assert.deepEqual(M.renderConfig({ pharmacies: [{ ...ph, storeCode: 'A1', colours: {} }], promotions: promos, templates: tpls }).pharmacies[0].tokens, { Suburb: 'Beaumaris', Old: 'left over' });
 });
+
+test('timings: every scene of every template has its own seconds, the Closed headlines and occasion beats included', () => {
+  // Opening hours (Closed): each headline's own seconds, blank ones at the defaults (2.7 + 2.7 + 2.6).
+  const hours = { headlines: ['A', 'B', 'C'], showAddress: false };
+  assert.deepEqual(M.headlineSeconds(hours), [2.7, 2.7, 2.6]);
+  assert.equal(M.loopSeconds(hours, 'hours'), 8);
+  hours.headlineDurs = [5, null, 90];
+  assert.deepEqual(M.headlineSeconds(hours), [5, 2.7, 60]);
+  assert.equal(M.loopSeconds(hours, 'hours'), 67.7);
+  assert.deepEqual(R.sequence({ base: 'hours', content: hours }).map((x) => x.t), [5, 2.7, 60]);
+  // The headline timings are part of the Headlines master section, in the editor and the config API alike.
+  assert.deepEqual(M.MASTER_SECTIONS.headlines, ['headlines', 'headlineDurs']);
+  const eff = M.effectiveContent({ headlines: ['M1', 'M2', 'M3'], headlineDurs: [4, 4, 4] }, { headlines: ['P1', 'P2', 'P3'], headlineDurs: [1, 1, 1] }, []);
+  assert.deepEqual(eff.headlineDurs, [4, 4, 4]);
+  // Occasions: each beat's own seconds (1-60), kept through ensureContent; the loop is their sum.
+  const c = M.ensureContent({ occasions: { easter: { beats: [{ text: 'A', dur: 6 }, { text: 'B' }, { text: 'C', dur: 'x' }] } } }, 'occasion');
+  assert.deepEqual(c.occasions.easter.beats.map((b) => b.dur), [6, undefined, undefined]);
+  assert.equal(M.loopSeconds(c.occasions.easter), 14);
+  assert.equal(M.playbackSeconds(M.loopSeconds(c.occasions.easter)), 15);
+  assert.deepEqual(R.occasionCopy('christmas', { beats: [{ text: 'X', dur: 0.2 }, { text: 'Y', dur: 99 }] }).beats.map((b) => b.dur), [1, 60]);
+  // Left at the defaults the design's own CSS loop plays; otherwise each beat gets its own keyframes over the sum.
+  assert.deepEqual(R.occasionTiming([{}, {}, {}]), { custom: false, total: 12 });
+  assert.deepEqual(R.occasionTiming([{ dur: 6 }, { dur: 6 }]), { custom: false, total: 12 });
+  const t = R.occasionTiming([{ dur: 5 }, {}, { dur: 2.5 }]);
+  assert.equal(t.custom, true);
+  assert.equal(t.total, 11.5);
+  assert.equal(t.style(1), 'animation-name:occT5_4_2p5B2;animation-duration:11.5s');
+  assert.match(t.css, /@keyframes occT5_4_2p5B1\{0%\{opacity:0;/);
+  assert.match(t.css, /@keyframes occT5_4_2p5B3\{0%,78\.261%\{opacity:0;/);
+});

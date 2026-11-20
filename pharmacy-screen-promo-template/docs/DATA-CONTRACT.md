@@ -201,17 +201,20 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
     },
     "<promotion id, opening hours template>": {
       "headlines": ["Sorry, we're closed", "Serving ${Suburb}", "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"],
+      "headlineDurs": [2.7, 2.7, 2.6],
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "occasions": { "christmas": { "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team" } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
+      "occasions": { "christmas": { "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
 }
 ```
 
 - Scene durations (`dur`, `introDur`) are 1–60 seconds; missing ones use the defaults (greeting 3 s, service 2 s,
-  close 2 s). An occasion's beats share its fixed 12 s loop (no `dur`).
+  close 2 s). The Closed headlines' seconds are `headlineDurs[i]` (optional, `null` or missing for the default:
+  2.7, 2.7, 2.6 for three headlines; part of the `headlines` master section). An occasion beat's seconds are its
+  optional `dur`; missing ones share the design's 12 s loop equally (Christmas 6 s each, the others 4 s).
 - Occasion beats: `text` is the main line (rich text), `label` the small label line, present only on the beats
   whose design has one. Copy saved in the earlier shape (`scenes[3]` of `title`, `sub`, `line1`, `line2`) still
   plays: unedited as the new defaults, edited beat by beat (`title` as the main line, `sub` as the label).

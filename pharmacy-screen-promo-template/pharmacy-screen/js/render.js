@@ -17,7 +17,9 @@ import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
 // standalone, full-screen animation (js/occasions.js, the approved designs): no brand panel, logo, brand colours,
 // icon tiles or Open today bar. Its copy plays as beats on a 12 s loop (Christmas 2 beats, the others 3); a beat is
 // a main line and, where the design has one, a small label line (above it, or for Australia Day's last beat a pill
-// below it). The copy is each pharmacy's own (content.occasions[<occasion>] = {beats: [{label?, text}]}), with
+// below it). Each beat's seconds on screen can be set (beat.dur, 1-60; the loop is then their sum): left at the
+// defaults, the design's own CSS loop plays unchanged (occasionTiming()).
+// The copy is each pharmacy's own (content.occasions[<occasion>] = {beats: [{label?, text, dur?}]}), with
 // ${Suburb} in all six and ${StoreName} in Christmas and New Year's. Anzac Day is commemorative: fades only.
 // design: the template's key in js/occasions.js. fonts: what to load before fitting the copy (document.fonts.load).
 const BT = (main, text, label) => ({ main, text, ...label });
@@ -57,8 +59,17 @@ export const OCCASIONS = [
 ];
 export const OCCASION_IDS = OCCASIONS.map((o) => o.id);
 export const DEFAULT_OCCASION = 'christmas';
-/** One loop of an occasion's beats, in seconds (the designs' CSS animations). The playback duration is this + 1. */
+/** One loop of an occasion's beats at their default timings, in seconds (the designs' CSS animations). */
 export const OCCASION_LOOP = 12;
+
+/** Seconds on screen, as set in the editor: a number from 1 to 60, or the default `d` when it is not one. */
+export const sceneSeconds = (v, d) => { const n = typeof v === 'string' && v.trim() ? +v : v; return typeof n === 'number' && Number.isFinite(n) && n > 0 ? Math.max(1, Math.min(60, n)) : d; };
+
+/** The default seconds of the opening-hours headlines: 2.7, 2.7, 2.6 for three (8 s), else 8 s shared equally. */
+export const defaultHeadlineSeconds = (n) => (n === 3 ? [2.7, 2.7, 2.6] : Array.from({ length: n }, () => +(8 / n).toFixed(2)));
+
+/** One beat's seconds on screen: its `dur`, else its share of the design's default 12 s loop. */
+export const beatSeconds = (beat, count) => sceneSeconds(beat && beat.dur, OCCASION_LOOP / (count || 1));
 export const occasionOf = (id) => OCCASIONS.find((o) => o.id === id) || OCCASIONS[0];
 /** The editor's name for each line of a beat: the label line by where the design puts it, and the main line. */
 export const occasionFieldName = (beat, key) => (key === 'label' ? (beat.label && beat.label.pos === 'below' ? 'Line below' : 'Small line above') : 'Main line');
@@ -90,7 +101,12 @@ export function occasionCopy(id, saved) {
   const occ = occasionOf(id), def = defaultOccasion(occ.id);
   const str = (v, d) => (typeof v === 'string' ? v : d);
   if (saved && Array.isArray(saved.beats)) {
-    return { beats: def.beats.map((d, i) => { const v = saved.beats[i] && typeof saved.beats[i] === 'object' ? saved.beats[i] : {}; return 'label' in d ? { label: str(v.label, d.label), text: str(v.text, d.text) } : { text: str(v.text, d.text) }; }) };
+    return { beats: def.beats.map((d, i) => {
+      const v = saved.beats[i] && typeof saved.beats[i] === 'object' ? saved.beats[i] : {};
+      const b = 'label' in d ? { label: str(v.label, d.label), text: str(v.text, d.text) } : { text: str(v.text, d.text) };
+      const dur = sceneSeconds(v.dur, undefined);
+      return dur === undefined ? b : { ...b, dur };
+    }) };
   }
   if (saved && Array.isArray(saved.scenes) && !isLegacyDefault(occ.id, saved.scenes)) {
     return { beats: def.beats.map((d, i) => { const v = saved.scenes[i] && typeof saved.scenes[i] === 'object' ? saved.scenes[i] : {}; return 'label' in d ? { label: str(v.sub, d.label), text: str(v.title, d.text) } : { text: str(v.title, d.text) }; }) };
@@ -217,11 +233,13 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
 export function sequence(play) {
   const d = play.content;
   if (play.base === 'hours') {
-    const n = (d.headlines || []).length || 1;
-    return n === 3 ? [{ k: 0, t: 2.7 }, { k: 1, t: 2.7 }, { k: 2, t: 2.6 }] : Array.from({ length: n }, (_, i) => ({ k: i, t: +(8 / n).toFixed(2) }));
+    // Each headline's seconds (headlineDurs[i]), else the defaults (2.7 + 2.7 + 2.6 for three).
+    const n = (d.headlines || []).length || 1, def = defaultHeadlineSeconds(n), durs = Array.isArray(d.headlineDurs) ? d.headlineDurs : [];
+    return def.map((t, i) => ({ k: i, t: sceneSeconds(durs[i], t) }));
   }
-  // An occasion's beats share its CSS loop equally (Christmas 6 s + 6 s, the others 4 s each).
-  if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: OCCASION_LOOP / d.beats.length }));
+  // An occasion's beats: each its own seconds, else an equal share of the design's 12 s loop (Christmas 6 s + 6 s,
+  // the others 4 s each).
+  if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: beatSeconds(x, d.beats.length) }));
   return [{ k: 'intro', t: +d.introDur || 3 }, ...d.slots.map((x, i) => ({ k: i, t: +x.dur || 2 })), { k: 'close', t: +(d.close && d.close.dur) || 2 }];
 }
 
@@ -384,13 +402,34 @@ function occasionStyles(doc) {
   doc.head.appendChild(st);
 }
 
+/**
+ * An occasion's beat timings. Left at their defaults (every beat an equal share of 12 s) the design's own CSS loop
+ * plays unchanged: { custom: false }. Otherwise { custom: true, total, css, style(i) }: keyframes for each beat over
+ * a loop of `total` seconds, fading in and out like the designs (in 0.6 s, out 0.5 s, shorter for a 1 s beat), and
+ * the inline style that puts beat i on them (inline, so it wins over each design's own animation-name).
+ */
+export function occasionTiming(beats) {
+  const n = beats.length, t = beats.map((b) => beatSeconds(b, n));
+  if (t.every((x) => x === OCCASION_LOOP / n)) return { custom: false, total: OCCASION_LOOP };
+  const total = t.reduce((a, b) => a + b, 0), pc = (s) => +((s / total) * 100).toFixed(3) + '%';
+  const id = 'occT' + t.map((x) => String(x).replace('.', 'p')).join('_');
+  let start = 0, css = '';
+  t.forEach((d, i) => {
+    const a = start, end = start + d, fin = Math.min(0.6, d / 4), fout = Math.min(0.5, d / 4);
+    const hide = 'opacity:0;transform:var(--from,translateY(5cqmin))', gone = 'opacity:0;transform:var(--to,translateY(-3cqmin))';
+    css += `@keyframes ${id}B${i + 1}{${a ? `0%,${pc(a)}` : '0%'}{${hide}}${pc(a + fin)},${pc(end - fout)}{opacity:1;transform:none}${end < total ? `${pc(end)},100%` : '100%'}{${gone}}}`;
+    start = end;
+  });
+  return { custom: true, total, css, style: (i) => `animation-name:${id}B${i + 1};animation-duration:${total}s` };
+}
+
 /** One beat of an occasion: its label line (above or below, where the design has one) and its main line. */
-function beatHtml(layout, copy, i, on, R, P) {
+function beatHtml(layout, copy, i, on, R, P, style) {
   const text = R(copy.text), lab = layout.label ? P(copy.label) : '';
   const label = lab ? `<div class="${layout.label.cls}">${layout.label.span ? `<span>${lab}</span>` : lab}</div>` : '';
   const main = text ? `<div class="${layout.main}">${text}</div>` : '';
   const pos = layout.label && layout.label.pos;
-  return `<div class="b b${i + 1}${on ? ' on' : ''}">${pos === 'above' ? label : ''}${main}${pos === 'below' ? label : ''}</div>`;
+  return `<div class="b b${i + 1}${on ? ' on' : ''}"${style ? ` style="${style}"` : ''}>${pos === 'above' ? label : ''}${main}${pos === 'below' ? label : ''}</div>`;
 }
 
 /**
@@ -414,14 +453,16 @@ export function renderOccasion(el, opts) {
   const R = (t) => T(rich(t, store.suburb)), P = (t) => T(fill(t, store.suburb));
   el.removeAttribute('style');
   el.className = 'screen occasion' + (land ? ' land' : '');
-  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P)).join('');
-  el.innerHTML = `<div class="occ occ-${occ.design}${opts.loop ? '' : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
+  // Beat timings set in the editor: the loop's own keyframes (only while it plays; a held beat has no animation).
+  const timing = opts.loop ? occasionTiming(occ.beats.map((_, i) => beats[i] || {})) : { custom: false };
+  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P, timing.custom ? timing.style(i) : '')).join('');
+  el.innerHTML = `${timing.custom ? `<style>${timing.css}</style>` : ''}<div class="occ occ-${occ.design}${opts.loop ? '' : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
   const G = { W: land ? 1920 : 1080, H: land ? 1080 : 1920, inside: () => true };
   const fit = fitOccasion(el, G);
-  const root = el.firstElementChild;
+  const root = el.querySelector('.occ');
   const fonts = doc.fonts && doc.fonts.load ? Promise.all(occ.fonts.map((f) => doc.fonts.load(f).catch(() => null))) : Promise.resolve();
   // Measured again once the fonts are in, unless the screen has been redrawn since.
-  const ready = fonts.then(() => { if (el.firstElementChild === root) Object.assign(fit, fitOccasion(el, G)); });
+  const ready = fonts.then(() => { if (el.querySelector('.occ') === root) Object.assign(fit, fitOccasion(el, G)); });
   return { G, fit, state, ready };
 }
 

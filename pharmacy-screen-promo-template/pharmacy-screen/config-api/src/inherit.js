@@ -21,7 +21,7 @@ const SECTIONS = Object.freeze({
   greeting: ["greeting", "introTitle", "introSub", "introDur"],
   slots: ["slots"],
   close: ["close"],
-  headlines: ["headlines"],
+  headlines: ["headlines", "headlineDurs"],
   address: ["showAddress"],
   occasions: ["occasions"],
   footer: ["footer"],

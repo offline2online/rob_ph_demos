@@ -318,6 +318,16 @@ test('published config: an occasion template plays its occasion (t_occ_<occasion
   assert.deepEqual(xmas.content.beats[1], { label: 'With warm wishes', text: 'from the whole ${StoreName} team' });
 });
 
+test('published config: beat and Closed headline timings set in the editor reach the screen', () => {
+  const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null,
+    content: { 'rec-occ': { occasions: { easter: { beats: [{ text: 'A', dur: 7 }, { text: 'B' }, { text: 'C', dur: 1.5 }] } } }, 'rec-closed': { headlines: ['X', 'Y', 'Z'], headlineDurs: [null, 6, null] } } };
+  const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-easter' }, { id: 'rec-closed', promoId: 'closed', name: 'Closed', templateId: 'builtin-opening-hours' }];
+  const cfg = fromPublishedConfig(buildScreenConfig(ph, promos, [], '2026-11-20T00:00:00.000Z'));
+  const store = storeModel({ data: { store_location: { store_code: 'VIC-MP-001' } } }, cfg);
+  assert.deepEqual(sequence(resolvePromotion(cfg, store, 'occasions')).map((x) => x.t), [7, 4, 1.5]);
+  assert.deepEqual(sequence(resolvePromotion(cfg, store, 'closed')).map((x) => x.t), [2.7, 6, 2.6]);
+});
+
 test('published config: tokens set by hand reach the screen and win over the store data', () => {
   const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: {}, tokens: { Suburb: 'Beaumaris', Website: 'mi.example' } };
   const cfg = fromPublishedConfig(buildScreenConfig(ph, [], [], '2026-11-20T00:00:00.000Z'));
