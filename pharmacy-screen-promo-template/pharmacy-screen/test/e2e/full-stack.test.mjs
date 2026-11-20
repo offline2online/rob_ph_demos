@@ -140,6 +140,10 @@ test('an admin edit in the editor reaches a running screen at its next config po
   await admin.click('#gateToken button[type=submit]');
   await admin.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   assert.match(await admin.$eval('#storeSel', (e) => e.selectedOptions[0].textContent), /VIC-MP-001/);
+  // The seeded pharmacies inherit the master template, so the edit is made there and reaches every screen.
+  assert.equal(await admin.$eval('#dit', (e) => e.closest('[inert]') !== null), true, 'inherited: read-only on the pharmacy');
+  await admin.selectOption('#pvSel', '__master');
+  await admin.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
   await admin.fill('#dit', 'Four reasons to walk in');
   await admin.evaluate(async () => { await window.pharmacyAdmin.flush(); for (let i = 0; i < 100 && window.pharmacyAdmin.pending(); i++) await new Promise((r) => setTimeout(r, 50)); });
   assert.match(await admin.textContent('#saveState'), /All changes saved/);

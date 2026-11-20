@@ -83,6 +83,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
         Object.entries(out.content).map(([k, v]) => [k, "sha256:" + crypto.createHash("sha256").update(JSON.stringify(v)).digest("hex").slice(0, 16)])
       );
     }
+    if (out.master && typeof out.master === "object") out.master = "sha256:" + crypto.createHash("sha256").update(JSON.stringify(out.master)).digest("hex").slice(0, 16);
     if (typeof out.html === "string" && out.html.length > 200) out.html = `(${out.html.length} chars) sha256:${crypto.createHash("sha256").update(out.html).digest("hex").slice(0, 16)}`;
     if (typeof out.css === "string" && out.css.length > 200) out.css = `(${out.css.length} chars) sha256:${crypto.createHash("sha256").update(out.css).digest("hex").slice(0, 16)}`;
     return out;

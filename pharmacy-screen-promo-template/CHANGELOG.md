@@ -34,6 +34,14 @@ Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharm
   refuses to package a token, key, `.env` file, personal address or any pharmacy beyond the five launch pharmacies.
   `npm run release:verify -- <zip>` checks a downloaded package the same way. See
   [docs/RELEASING.md](docs/RELEASING.md).
+- **Master template** for the promotions: pick **Master template** in the editor's **Promo preview** drop-down to edit the
+  default content of every promotion (greeting, promotion slots, walk-in close, Open today bar, opening-hours
+  headlines and address, occasion copy). Every pharmacy, including each new one, inherits it section by section
+  and keeps its own name, logo and colours. On a pharmacy, each section says **Inherited from master** or
+  **Managed separately**; **Edit for this pharmacy** makes a section its own (a message says the master no
+  longer reaches it) and **Revert to master** inherits it again. The seed makes Beaumaris's content the master
+  of the four default promotions. Stored as `promotion.master` and `pharmacy.detached`; screens get the
+  resolved content, so the published config is unchanged in shape.
 - **Handover package**: [START-HERE.md](START-HERE.md), [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md),
   [.env.example](.env.example), and `docs/`: [DEPLOYMENT.md](docs/DEPLOYMENT.md),
   [CONFIGURATION.md](docs/CONFIGURATION.md), [DATA-CONTRACT.md](docs/DATA-CONTRACT.md),

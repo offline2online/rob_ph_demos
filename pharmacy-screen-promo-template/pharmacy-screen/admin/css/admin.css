@@ -213,3 +213,19 @@ details summary{cursor:pointer;color:var(--primary)}
 .stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 250px,760px) * .5625))}
 div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 @container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}
+/* Master template (requirement 23): each section of a pharmacy's promotion says whether it is inherited from the
+   master template (read-only here) or managed separately, with the action to switch. Outlined pill, text button,
+   light alert (ph-designer components). */
+.inh{display:grid;gap:6px}
+.inh-bar{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:nowrap}
+.inh-pill{background:transparent;border-color:var(--border);color:var(--muted);white-space:nowrap}
+.inh-pill .ms{font-size:16px}
+.inh.own .inh-pill{border-color:var(--primary);color:var(--primary)}
+.inh-bar .inh-act{margin-left:auto;min-height:28px;padding:0 6px;white-space:nowrap}
+.inh-ro{opacity:.6}
+.inh-alert{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--primary-tint);border:1px solid var(--primary);border-radius:6px;padding:8px 10px;font-size:14px}
+.inh-alert>.ms{color:var(--primary)}
+.inh-alert>span:not(.ms){flex:1;min-width:180px}
+.inh-alert.warn{background:rgba(250,173,20,.10);border-color:var(--warn)}
+.inh-alert.warn>.ms{color:var(--warn)}
+.inh-alert select{width:auto}

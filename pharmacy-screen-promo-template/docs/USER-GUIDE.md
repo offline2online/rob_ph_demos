@@ -32,6 +32,24 @@ In Settings, switch pharmacies with the *Pharmacies* picker; the promotions page
 lists the same pharmacies and follows it. **Delete** asks you to click again to confirm. **Reset** puts a
 launch pharmacy (VIC-MP-001 to 005) back to its sample content.
 
+## Master template
+
+The **Promo preview** drop-down's first entry, **Master template**, holds the default content of every promotion: the
+greeting, the promotion slots, the walk-in close, the Open today bar, the opening-hours headlines and address
+toggle, and the occasion copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
+screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
+until you edit it or click **Save as master**.
+
+On a pharmacy, each section of a promotion says where it comes from:
+
+- **Inherited from master**: read-only here; edit it in the master template. **Edit for this pharmacy** makes it
+  this pharmacy's own, starting from the master's copy. A message confirms the section is now managed
+  separately: changes to the master no longer reach it.
+- **Managed separately**: this pharmacy's own copy. **Revert to master** inherits the master's again (its own
+  copy is replaced).
+
+Name, store code, logo and colours are always each pharmacy's own.
+
 ## Branding and logo
 
 In **Settings** → *Branding*, for the pharmacy picked in *Pharmacies*:

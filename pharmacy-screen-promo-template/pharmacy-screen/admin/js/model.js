@@ -1,8 +1,9 @@
 // Admin editor data model. No DOM: runs under `node --test` (test/admin-model.test.mjs).
 //
 // The editor works on the config API's records (config-api/README.md → "Data model"):
-//   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}}, version}
-//   promotion {id, name, promoId, templateId, version}
+//   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}},
+//              detached? {<promotion record id>: [master section id, …]}, version}
+//   promotion {id, name, promoId, templateId, master? {...}, version}
 //   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
 //   service   {id, label, icon, category, headline, accent, line1, line2, offeredBy [store codes]}
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
@@ -52,8 +53,9 @@ const NEW_CONTENT = {
   occasions: () => defaultContent('occasion'),
 };
 
-/** Starting content for one promotion of a new pharmacy. */
+/** Starting content for one promotion of a new pharmacy: the promotion's master template when it has one. */
 export function newContentFor(promotion, base) {
+  if (promotion && promotion.master && typeof promotion.master === 'object') return ensureContent(promotion.master, base);
   const make = NEW_CONTENT[promotion && promotion.promoId];
   const c = make ? make() : defaultContent(base);
   return ensureContent(c, base);
@@ -96,6 +98,67 @@ export function newPharmacyContent(promotions, templates) {
   const out = {};
   for (const p of promotions || []) out[p.id] = newContentFor(p, baseOfTemplate(templates, p.templateId));
   return out;
+}
+
+// ── master template (requirement 23) ──
+// A promotion's `master` is the content every pharmacy inherits; a pharmacy's `detached[promotion id]` lists the
+// sections it manages itself. The config API resolves the same way when it publishes a screen
+// (config-api/src/inherit.js — keep the two section maps equal; test/admin-model.test.mjs checks they are).
+
+export const MASTER_SECTIONS = {
+  greeting: ['greeting', 'introTitle', 'introSub', 'introDur'],
+  slots: ['slots'],
+  close: ['close'],
+  headlines: ['headlines'],
+  address: ['showAddress'],
+  occasions: ['occasions'],
+  footer: ['footer'],
+};
+const SECTION_OF_KEY = Object.fromEntries(Object.entries(MASTER_SECTIONS).flatMap(([s, keys]) => keys.map((k) => [k, s])));
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+/** The editor's name for each section, as its card reads. */
+export const SECTION_NAMES = { greeting: 'Greeting', slots: 'Promotion slots', close: 'Walk-in close', headlines: 'Headlines', address: 'Address', occasions: 'Occasion copy', footer: 'Open today bar' };
+
+/** The master sections a template kind shows, in the order the editor draws them. */
+export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions', 'footer'] : ['greeting', 'slots', 'close', 'footer']);
+
+/** What a pharmacy plays for one promotion: the master's sections, with its own copy of each detached section. */
+export function effectiveContent(master, own, detached) {
+  const mine = isObj(own) ? own : {};
+  if (!isObj(master)) return clone(mine);
+  const det = new Set(Array.isArray(detached) ? detached : []);
+  const out = clone(master);
+  for (const s of det) for (const k of MASTER_SECTIONS[s] || []) delete out[k];
+  for (const [k, v] of Object.entries(mine)) { const s = SECTION_OF_KEY[k]; if (!s || det.has(s)) out[k] = clone(v); }
+  return out;
+}
+
+/** The sections pharmacy `ph` manages itself for promotion `promotionId`. */
+export const detachedOf = (ph, promotionId) => ((ph && ph.detached && ph.detached[promotionId]) || []).slice();
+
+/** `ph.detached` with section `sec` of `promotionId` detached (on) or inherited again (off). Returns a new object. */
+export function setDetached(ph, promotionId, sec, on) {
+  const all = clone((ph && ph.detached) || {});
+  const list = new Set(all[promotionId] || []);
+  if (on) list.add(sec); else list.delete(sec);
+  const clean = Object.keys(MASTER_SECTIONS).filter((s) => list.has(s));
+  if (clean.length) all[promotionId] = clean; else delete all[promotionId];
+  return all;
+}
+
+/**
+ * Copy the master's value of every inherited section into `content` (in place), so the editor and its preview
+ * show what the screen plays. Detached sections are left alone. Returns `content`.
+ */
+export function syncInherited(content, master, detached) {
+  if (!isObj(master) || !isObj(content)) return content;
+  const det = new Set(detached || []);
+  for (const [s, keys] of Object.entries(MASTER_SECTIONS)) {
+    if (det.has(s)) continue;
+    for (const k of keys) { if (k in master) content[k] = clone(master[k]); else delete content[k]; }
+  }
+  return content;
 }
 
 /** Promotions in the order the editor shows them: the four defaults first, then by creation. */

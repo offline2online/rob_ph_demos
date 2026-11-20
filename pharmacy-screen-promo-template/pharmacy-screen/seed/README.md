@@ -48,6 +48,11 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
   is put back (pharmacy name, colours, logo and its content for the four default promotions; promotion name,
   promo ID and template, so Occasions goes back to Christmas; service copy). Content for other promotions and records the seed doesn't know about
   are never touched. A second `--reset` changes nothing.
+- **Master template.** `fixtures/promotions.json`'s `masterFrom` (`VIC-MP-001`, Beaumaris) names the pharmacy
+  whose fixture content becomes each default promotion's `master`, so every pharmacy inherits Beaumaris's
+  page elements and keeps its own branding. A seeded promotion with no master yet (a store seeded before the
+  master existed) gets it on a plain re-run; a master edited in the editor is kept unless `--reset`, and a
+  promotion made by hand is left as it is.
 - Pharmacy content is keyed by promo ID in the fixtures and stored under each promotion's record id, as the
   API stores it.
 
