@@ -14,7 +14,7 @@
 </head>
 <body>
 <!-- Content frame only (it may be iframed into HQ Admin): no header, sidebar or breadcrumb, nothing position:fixed. -->
-<div class="titlebar"><h1>Pharmacy Screen Template</h1><span class="pill savest" id="saveState" role="status" aria-live="polite" hidden></span></div>
+<div class="titlebar"><h1 id="pageTitle">Pharmacy Screen Template</h1><span class="pill savest" id="saveState" role="status" aria-live="polite" hidden></span></div>
 
 <section id="gate" class="gate">
   <div class="card gate-card">
@@ -79,13 +79,13 @@
   <div class="edcol">
     <div class="toolbar" id="toolbar">
       <label class="f pick"><span>Promo preview <span class="ms help" id="pvHelp" title="The pharmacy whose content you are editing and previewing. Add pharmacies and set their details and branding in Settings.">info</span></span><select id="pvSel"></select></label>
-      <span class="pill lockpill" id="lockPill" hidden><span class="ms">lock</span><span class="lockpill-tx" id="lockTx"></span></span>
       <button id="setBtn" aria-pressed="false" title="Pharmacies, their details and branding, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
     </div>
 
     <div id="contentView">
     <div class="card promo-mod">
-      <div class="sect">Promotions <span class="tag" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span></div>
+      <div class="sect">Promotions <span class="tag" id="promoShared" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span>
+        <span class="restore" id="restoreWrap" hidden><button type="button" class="text" id="restoreBtn"><span class="ms">settings_backup_restore</span><span id="restoreTx">Restore to default</span></button><span class="ms help" title="Puts every section of every promotion back to the master template. This pharmacy's own changes are discarded.">info</span></span></div>
       <div class="promo-bar">
         <div class="tabscroll" id="dpScroll">
           <button type="button" class="tsarrow" id="dpPrev" tabindex="-1" aria-label="Scroll promotions left" hidden><span class="ms">chevron_left</span></button>

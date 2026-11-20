@@ -254,6 +254,13 @@ const bindRt = (id, set) => bindRichText(id, set, changed);
 /** A scene's "seconds on screen" control (1-60) for its card's header. */
 const durInput = (id, v, step = 0.1) => `<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="${id}" min="1" max="60" step="${step}" value="${v}" aria-label="Seconds on screen">s</label>`;
 const loopText = (t) => `Loop ${t % 1 ? t.toFixed(1) : t}s`;
+/** Promotion slots a promotion can hold: 6 in the admin view; 3 in the pharmacy view, where Add promotion is hidden
+ *  at the limit. */
+const MAX_SLOTS = 6, PHARMACY_MAX_SLOTS = 3;
+const maxSlots = () => (S.lock ? PHARMACY_MAX_SLOTS : MAX_SLOTS);
+/** Pharmacy view: scene timings are set by an administrator only, so every "seconds on screen" control is hidden
+ *  (the slots can still be reordered and deleted). */
+function hideTimings(B) { if (S.lock) B.querySelectorAll('.dur').forEach((e) => { e.hidden = true; }); }
 
 // Promotion slots added since the page loaded: deleting one of these needs no confirmation.
 const justAdded = new WeakSet();
@@ -281,10 +288,10 @@ function renderDp() {
     });
     total();
     $('cAddr').onchange = (e) => { d.showAddress = e.target.checked; changed(); };
-    decorateSections(B);
+    hideTimings(B); decorateSections(B);
     return;
   }
-  if (isOcc()) { renderOccasion(B, d); decorateSections(B); return; }
+  if (isOcc()) { renderOccasion(B, d); hideTimings(B); decorateSections(B); return; }
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const F = footerConfig(d);
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
@@ -296,7 +303,7 @@ function renderDp() {
      <div class="grid2">${f(`s${i}label`, 'Service chip label', x.label)}<div class="f icp-wrap"><span style="font-size:12px;color:var(--muted)">Icon</span><button type="button" class="icp" id="s${i}icon" aria-haspopup="listbox" aria-expanded="false"><span class="cur"><span class="ms">${esc(x.icon)}</span><span>${esc(String(x.icon).replace(/_/g, ' '))}</span></span><span class="ms">expand_more</span></button></div></div>
      ${f(`s${i}line1`, 'Line 1', x.line1)}
      ${f(`s${i}line2`, 'Line 2', x.line2)}</div></div>`).join('')}</div>
-   <button type="button" id="addSlot" ${d.slots.length >= 6 ? 'disabled' : ''} style="justify-self:start" aria-expanded="false"><span class="ms">add</span>Add promotion</button>
+   <button type="button" id="addSlot" ${d.slots.length < maxSlots() ? '' : S.lock ? 'hidden' : 'disabled'} style="justify-self:start" aria-expanded="false"><span class="ms">add</span>Add promotion</button>
    <div class="svcpick" id="svcPick" hidden>
      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="svcQ" placeholder="Search ${S.services.length} services" style="flex:1;min-width:180px" autocomplete="off">
        <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button>
@@ -330,7 +337,7 @@ function renderDp() {
   $('svcClose').onclick = () => { showPick(false); $('addSlot').focus(); };
   $('svcPick').onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); showPick(false); $('addSlot').focus(); } };
   $('svcQ').oninput = drawSvc;
-  const addSlot = (x) => { justAdded.add(x); d.slots.push(x); reflow(); };
+  const addSlot = (x) => { if (d.slots.length >= maxSlots()) return; justAdded.add(x); d.slots.push(x); reflow(); };
   $('svcBlank').onclick = () => addSlot(M.blankSlot());
   $('svcList').onclick = (e) => { const b = e.target.closest('.svc'); if (!b) return; const v = S.services.find((x) => x.id === b.dataset.id); if (v) addSlot(M.serviceToSlot(v)); };
   const SL = $('slotList'); let dragFrom = null;
@@ -358,7 +365,7 @@ function renderDp() {
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
-  decorateSections(B);
+  hideTimings(B); decorateSections(B);
 }
 
 // ───────────────────────── master template (requirement 23) ─────────────────────────
@@ -387,8 +394,8 @@ function decorateSections(B) {
     wrap.className = 'inh' + (own ? ' own' : '');
     wrap.dataset.sec = sec;
     wrap.innerHTML = `<div class="inh-bar"><span class="pill inh-pill"><span class="ms">${own ? 'edit_note' : 'account_tree'}</span>${own ? 'Managed separately' : 'Inherited from master'}</span>
-      <span class="ms help" title="${own ? `${esc(name)} is this pharmacy's own. Changes to the master template no longer reach it.` : S.lock ? `${esc(name)} comes from the master template. Manage it separately to edit it for this pharmacy.` : `${esc(name)} comes from the master template. Edit it there, or manage it separately for this pharmacy.`}">info</span>
-      <button type="button" class="text inh-act" data-sec="${sec}" data-own="${own ? 1 : 0}" ${canEdit ? '' : 'disabled title="Add the pharmacy name and store code first"'}><span class="ms">${own ? 'undo' : 'edit'}</span>${own ? 'Revert to master' : 'Edit for this pharmacy'}</button></div>`;
+      <span class="ms help" title="${own ? `${esc(name)} is this pharmacy's own. Changes to the master template no longer reach it.` : S.lock ? `${esc(name)} comes from the master template. Choose Edit to change it for this pharmacy.` : `${esc(name)} comes from the master template. Edit it there, or manage it separately for this pharmacy.`}">info</span>
+      <button type="button" class="text inh-act" data-sec="${sec}" data-own="${own ? 1 : 0}" ${canEdit ? '' : 'disabled title="Add the pharmacy name and store code first"'}><span class="ms">${own ? 'undo' : 'edit'}</span>${own ? 'Revert to master' : S.lock ? 'Edit' : 'Edit for this pharmacy'}</button></div>`;
     if (own && S.note && S.note.promotionId === p.id && S.note.sec === sec) {
       wrap.insertAdjacentHTML('beforeend', `<div class="inh-alert" role="status"><span class="ms">info</span><span><b>${esc(name)}</b> is now managed separately for ${esc(S.cur.name)}. Changes to the master template no longer reach it until you revert it to the master.</span><button type="button" class="text inh-x" aria-label="Dismiss"><span class="ms">close</span></button></div>`);
     }
@@ -407,7 +414,7 @@ async function setSection(sec, on) {
   await Save.flush();
   ph.detached = M.setDetached(ph, p.id, sec, on);
   S.note = on ? { promotionId: p.id, sec } : null;
-  ver++; lastKey = ''; renderDp(); renderJson(); // renderDp → content(): an inherited section takes the master's copy again
+  ver++; lastKey = ''; renderDp(); renderJson(); renderRestore(); // renderDp → content(): an inherited section takes the master's copy again
   const id = ph.id;
   await Save.queue(`ph:${id}`, async () => {
     // Its own copy first (the master's, until edited), then the switch, so the screen never plays an empty section.
@@ -416,6 +423,40 @@ async function setSection(sec, on) {
     if (S.cur === ph) syncListRow();
   });
 }
+
+/** Pharmacy view: "Restore to default" at the top of the page, in place of "shared by all pharmacies". It puts
+ *  every section of every promotion back to the master template; available while any section is managed
+ *  separately, and asks for a second click before it discards this pharmacy's own changes. */
+let rsArm = false;
+const ownSections = (ph) => Object.values((ph && ph.detached) || {}).some((l) => Array.isArray(l) && l.length);
+function renderRestore() {
+  $('restoreWrap').hidden = !S.lock; $('promoShared').hidden = !!S.lock;
+  if (!S.lock || !S.cur) return;
+  const any = ownSections(S.cur);
+  if (!any) rsArm = false;
+  $('restoreBtn').disabled = !any || !S.cur.id;
+  $('restoreBtn').title = any ? '' : 'Every section already uses the master template';
+  $('restoreTx').textContent = rsArm ? 'Click again to restore' : 'Restore to default';
+}
+async function restoreDefaults() {
+  const ph = S.cur;
+  if (!S.lock || !ph.id || !ownSections(ph)) return;
+  if (!rsArm) { rsArm = true; renderRestore(); setTimeout(() => { rsArm = false; renderRestore(); }, 4000); return; }
+  rsArm = false;
+  await Save.flush();
+  ph.detached = {};
+  S.note = null;
+  const ids = S.promotions.filter((p) => p.master).map((p) => p.id);
+  for (const id of ids) content(id); // each inherited section takes the master's copy again
+  ver++; lastKey = ''; scene = 0; elapsed = 0; renderDp(); renderJson(); renderRestore();
+  const id = ph.id;
+  await Save.queue(`ph:${id}`, async () => {
+    for (const pid of ids) { const a = await api.setContent(id, pid, ph.content[pid], ph.version); ph.version = a.version; }
+    const b = await api.updatePharmacy(id, { detached: {} }, ph.version); ph.version = b.version;
+    if (S.cur === ph) syncListRow();
+  });
+}
+$('restoreBtn').onclick = () => restoreDefaults().catch(Save.fail);
 
 /** Master view, promotion with no master saved yet: which pharmacy it starts from, and Save as master. */
 function renderMasterStart(B, p) {
@@ -537,7 +578,10 @@ function renderPromoMeta() {
   const occ = isOcc(x.id);
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only here.
-  $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock;
+  // On an Occasions promotion the pharmacy view shows only the Occasion drop-down, and it can change the occasion.
+  const occOnly = !!S.lock && occ;
+  $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
+  $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
   // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
   $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
@@ -571,7 +615,7 @@ function savePromotion(p) {
 }
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
-  if (S.lock) return;
+  if (S.lock && !isOcc()) return; // the pharmacy view changes only an Occasions promotion's occasion
   const p = promo(); p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();
@@ -851,7 +895,7 @@ function loadStore() {
   bindVal('cA', () => s.colours.accent, (v) => { s.colours.accent = v.toLowerCase(); });
   showCodeErr(s.id ? '' : detailsError());
   $('logoIn').value = ''; $('logoErr').hidden = true;
-  renderLogo(); renderTokens(); renderDp(); renderUrl(); renderJson();
+  renderLogo(); renderTokens(); renderDp(); renderUrl(); renderJson(); renderRestore();
   scene = 0; elapsed = 0; lastKey = '';
 }
 // Tokens set by hand: every token this pharmacy's promotions and templates use (master template included), each
@@ -1062,16 +1106,15 @@ async function main() {
   try { document.fonts.ready.then(() => { lastKey = ''; }); document.fonts.addEventListener('loadingdone', () => { lastKey = ''; }); } catch (e) {}
 }
 
-/** Pharmacy view: show the lock, and hide what belongs to the administrator (other pharmacies, the master template,
- *  creating or deleting promotions, the PH API). Every write handler checks S.lock as well. */
+/** Pharmacy view: titled "Display Promotions" and showing only the promotions. The administrator's controls are
+ *  hidden: the Promo preview drop-down, Settings (other pharmacies, details, tokens, branding, the PH API), the
+ *  master template, creating or deleting promotions, and every scene timing (hideTimings). "Restore to default"
+ *  replaces "shared by all pharmacies" (renderRestore), and Add promotion stops at 3 slots (maxSlots). Every write
+ *  handler checks S.lock as well. */
 function applyLock() {
-  $('lockPill').hidden = false;
-  $('lockTx').textContent = `Pharmacy view · ${S.lock}`;
-  $('lockPill').title = `Pharmacy view · ${S.lock}`;
-  for (const id of ['newPromoBtn', 'newPromo', 'pharmaciesCard', 'phApiCard']) $(id).hidden = true;
-  $('detailsCard').style.marginTop = '0';
-  $('setBtn').title = "This pharmacy's details, tokens and branding";
-  $('pvHelp').title = 'This link opens the editor for this pharmacy only. Edit its own copy for each promotion here, and its details, tokens and branding in Settings.';
+  document.title = $('pageTitle').textContent = 'Display Promotions';
+  $('toolbar').hidden = true; // Promo preview, the lock pill and Settings
+  for (const id of ['newPromoBtn', 'newPromo', 'settingsView']) $(id).hidden = true;
 }
 
 // Hook for the editor's end-to-end tests.

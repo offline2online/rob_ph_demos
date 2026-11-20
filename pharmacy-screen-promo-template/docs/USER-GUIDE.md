@@ -147,22 +147,32 @@ Deleting a custom template moves the promotions that used it back to the built-i
 ## Pharmacy view
 
 Add a store code to the editor's link to open it for **one pharmacy only**:
-`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in you see the same editor and
-live preview, with **Pharmacy view · VIC-MP-002** beside Promo preview, which lists only that pharmacy and cannot
-be changed. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
+`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in the page is titled
+**Display Promotions** and shows only that pharmacy's promotions and the live preview: there is no Promo preview
+drop-down and no Settings. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
 "Pharmacy not found"; the link without a store code opens the full editor as before.
 
 In the pharmacy view:
 
-- **Its own content is fully editable.** **Edit for this pharmacy** makes any inherited section its own; edit
-  every line, add promotions from the service library or blank, reorder, retime and delete them, and
-  **Revert to master** to inherit again. Edits save as you type and reach that pharmacy's screens as usual.
-- **Settings** shows its **Pharmacy details** (the store code is read-only), **Tokens** and **Branding**.
-- **Shared by every pharmacy, so read-only**: the promotion name, promo ID and template, and the templates
+- **Its own content is editable.** **Edit** makes any inherited section its own; edit every line, add
+  promotions from the service library or blank, reorder and delete them, and **Revert to master** to inherit
+  that section again. Edits save as you type and reach that pharmacy's screens as usual.
+- **Restore to default**, at the top of the page in place of "shared by all pharmacies", puts every section of
+  every promotion back to the master template ("Inherited from master") in one go. Click it twice: the second
+  click discards the pharmacy's own changes. It is greyed out while every section already inherits.
+- **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
+  walk-in close, opening-hours headlines, occasion beats); the screens play the timings set in the full editor.
+- **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
+- **Occasions shows only the Occasion drop-down.** Pick the occasion the screens play there; there is no
+  promotion name, promo ID or `promo=` line. The occasion is the Occasions promotion's, so the change reaches
+  every pharmacy's screens, as it does in the full editor.
+- **Shared by every pharmacy, so read-only**: the promotion name, promo ID and template of the other promotions,
+  and the templates
   themselves (**Edit HTML** opens read-only, without Clone: "Shared by every pharmacy. Only an administrator can
   change it.").
-- **Not shown**: the master template, the other pharmacies (adding, resetting or deleting one), New promotion,
-  Delete promotion and the Personalisation Hub API settings.
+- **Not shown**: scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+  the Personalisation Hub API settings), the master template, New promotion and Delete promotion. An
+  administrator sets the pharmacy's details, tokens and branding in the full editor.
 
 Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
 
