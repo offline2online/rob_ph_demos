@@ -14,7 +14,7 @@
 </head>
 <body>
 <!-- Content frame only (it may be iframed into HQ Admin): no header, sidebar or breadcrumb, nothing position:fixed. -->
-<div class="titlebar"><h1>Pharmacy Screen Template</h1><span class="pill savest" id="saveState" role="status" aria-live="polite" hidden></span></div>
+<div class="titlebar"><h1 id="pageTitle">Pharmacy Screen Template</h1><span class="pill savest" id="saveState" role="status" aria-live="polite" hidden></span></div>
 
 <section id="gate" class="gate">
   <div class="card gate-card">
@@ -79,7 +79,6 @@
   <div class="edcol">
     <div class="toolbar" id="toolbar">
       <label class="f pick"><span>Promo preview <span class="ms help" id="pvHelp" title="The pharmacy whose content you are editing and previewing. Add pharmacies and set their details and branding in Settings.">info</span></span><select id="pvSel"></select></label>
-      <span class="pill lockpill" id="lockPill" hidden><span class="ms">lock</span><span class="lockpill-tx" id="lockTx"></span></span>
       <button id="setBtn" aria-pressed="false" title="Pharmacies, their details and branding, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
     </div>
 

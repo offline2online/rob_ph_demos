@@ -830,7 +830,7 @@ test('with the PH left menu expanded on a tablet or small laptop, the preview st
   }
 });
 
-test('pharmacy view: admin/?store=<code> locks the editor to that pharmacy; its own content is editable, shared things are not', async () => {
+test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions, titled Display Promotions; its own content is editable, shared things are not', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   const page = await ctx.newPage();
   const errors = [];
@@ -842,11 +842,13 @@ test('pharmacy view: admin/?store=<code> locks the editor to that pharmacy; its 
   await signInAt('/admin/?store=vic-mp-005');
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   await page.click('#playBtn'); // pause
-  // Locked to that pharmacy: the label, one entry in Promo preview (no master template), and it cannot be changed.
-  assert.equal(await page.textContent('#lockTx'), 'Pharmacy view · VIC-MP-005');
-  assert.equal(await page.isVisible('#lockPill'), true);
-  assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.value)), ['seed-pharmacy-vic-mp-005']);
-  assert.equal(await page.isDisabled('#pvSel'), true);
+  // Locked to that pharmacy and titled Display Promotions; only the promotions show: no Promo preview drop-down,
+  // no pharmacy-view pill, no Settings.
+  assert.equal(await page.textContent('#pageTitle'), 'Display Promotions');
+  assert.equal(await page.title(), 'Display Promotions');
+  assert.equal(await page.isHidden('#toolbar'), true);
+  for (const id of ['#pvSel', '#setBtn', '#settingsView']) assert.equal(await page.isHidden(id), true, id);
+  assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.cur.id), 'seed-pharmacy-vic-mp-005');
   // Shared promotion settings are read-only; creating or deleting a promotion is not offered.
   assert.equal(await page.$eval('#pmName', (e) => e.readOnly), true);
   assert.equal(await page.$eval('#pmToken', (e) => e.readOnly), true);
@@ -877,16 +879,23 @@ test('pharmacy view: admin/?store=<code> locks the editor to that pharmacy; its 
   await page.click('#hdTabs [data-t="html"]');
   assert.equal(await page.$eval('#hdHtml', (e) => e.readOnly), true);
   await page.click('#hdDone');
-  // Settings: its details (store code read-only), tokens and branding; no Pharmacies card, no PH API card.
-  await page.click('#setBtn');
-  assert.equal(await page.isVisible('#detailsCard'), true);
-  assert.equal(await page.$eval('#sCode', (e) => e.readOnly), true);
-  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-005');
-  assert.equal(await page.isVisible('#tokensCard'), true);
-  assert.equal(await page.isVisible('#brandingCard'), true);
-  assert.equal(await page.isHidden('#pharmaciesCard'), true);
-  assert.equal(await page.isHidden('#phApiCard'), true);
-  await page.click('#setBtn');
+  // Occasions: only the Occasion drop-down (no promotion name, promo ID or promo= pill), and the occasion can be
+  // changed here; it is what the screen plays.
+  assert.equal(await page.isVisible('#pmName'), true);
+  await page.click('#dpTabs button:has-text("Occasions")');
+  for (const id of ['#pmName', '#pmToken', '#pmUrl', '#pmHtml', '#pmDel']) assert.equal(await page.isHidden(id), true, id);
+  assert.equal(await page.isVisible('#pmTpl'), true);
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
+  assert.equal(await page.isDisabled('#pmTpl'), false);
+  await page.selectOption('#pmTpl', 'builtin-occasion-easter');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.template.occasion, 'easter');
+  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  await page.click('#dpTabs button:has-text("Morning")');
+  assert.equal(await page.isVisible('#pmName'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.
   await page.reload();
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });

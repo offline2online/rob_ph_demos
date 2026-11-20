@@ -26,11 +26,13 @@ Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 | Settings → Personalisation Hub API | API base URL and write-only token (Save / Replace / Remove; only its last 4 characters are ever shown) | `/api/settings/ph-api` |
 
 **Pharmacy view** (`admin/?store=<store code>` or `?storeCode=`, read by `model.js` `storeFromQuery`): after
-sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`). Promo preview lists only it (disabled)
-with a "Pharmacy view · <code>" pill; its content, details (store code read-only), tokens and branding are edited
-as in the admin view. Promotion name, promo ID and template, and templates (Edit HTML, no Clone) are read-only;
-New / Delete promotion, the master template, Settings → Pharmacies and Personalisation Hub API are hidden, and
-every write handler for them returns early. An unknown store code shows "Pharmacy not found". It never writes the
+sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`, `applyLock`): the page is titled
+"Display Promotions" and shows only the promotions. The toolbar (Promo preview and Settings) is hidden, so the
+pharmacy's details, tokens and branding, Settings → Pharmacies and Personalisation Hub API are not reachable; its
+content is edited as in the admin view. Promotion name, promo ID and template, and templates (Edit HTML, no Clone)
+are read-only, except that on an Occasions promotion only the Occasion drop-down shows and it can be changed
+(it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
+are hidden, and every write handler for them returns early. An unknown store code shows "Pharmacy not found". It never writes the
 remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).
 The API is unchanged: it still requires the admin role for every call.
 

@@ -537,7 +537,10 @@ function renderPromoMeta() {
   const occ = isOcc(x.id);
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only here.
-  $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock;
+  // On an Occasions promotion the pharmacy view shows only the Occasion drop-down, and it can change the occasion.
+  const occOnly = !!S.lock && occ;
+  $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
+  $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
   // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
   $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
@@ -571,7 +574,7 @@ function savePromotion(p) {
 }
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
-  if (S.lock) return;
+  if (S.lock && !isOcc()) return; // the pharmacy view changes only an Occasions promotion's occasion
   const p = promo(); p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();
@@ -1062,16 +1065,13 @@ async function main() {
   try { document.fonts.ready.then(() => { lastKey = ''; }); document.fonts.addEventListener('loadingdone', () => { lastKey = ''; }); } catch (e) {}
 }
 
-/** Pharmacy view: show the lock, and hide what belongs to the administrator (other pharmacies, the master template,
- *  creating or deleting promotions, the PH API). Every write handler checks S.lock as well. */
+/** Pharmacy view: titled "Display Promotions" and showing only the promotions. The administrator's controls are
+ *  hidden: the Promo preview drop-down, Settings (other pharmacies, details, tokens, branding, the PH API), the
+ *  master template, and creating or deleting promotions. Every write handler checks S.lock as well. */
 function applyLock() {
-  $('lockPill').hidden = false;
-  $('lockTx').textContent = `Pharmacy view · ${S.lock}`;
-  $('lockPill').title = `Pharmacy view · ${S.lock}`;
-  for (const id of ['newPromoBtn', 'newPromo', 'pharmaciesCard', 'phApiCard']) $(id).hidden = true;
-  $('detailsCard').style.marginTop = '0';
-  $('setBtn').title = "This pharmacy's details, tokens and branding";
-  $('pvHelp').title = 'This link opens the editor for this pharmacy only. Edit its own copy for each promotion here, and its details, tokens and branding in Settings.';
+  document.title = $('pageTitle').textContent = 'Display Promotions';
+  $('toolbar').hidden = true; // Promo preview, the lock pill and Settings
+  for (const id of ['newPromoBtn', 'newPromo', 'settingsView']) $(id).hidden = true;
 }
 
 // Hook for the editor's end-to-end tests.
