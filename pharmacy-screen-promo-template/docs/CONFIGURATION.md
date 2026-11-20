@@ -87,6 +87,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PS_ADMIN_CLAIM` | ID token claim name | `admin` (Firebase custom claim); `cognito:groups` on AWS | `cognito:groups` | No | `.env.rob-ph-demos`; the CDK stack (`--admin-claim`). On AWS also used by `PhApi` |
 | `PS_ADMIN_VALUE` | Claim value meaning admin (AWS/OIDC only) | `admin` | `admin` | No | The CDK stack (`--admin-value`) |
 | `PS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call admin endpoints from a browser | None (same-origin only) | `https://screens.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack (the site URL). Local dev server default `http://localhost:5173,http://localhost:8080` |
+| `PS_REQUIRE_PH_SESSION` | `true`: accept only editor sessions started from Personalisation Hub ([PH-EMBED.md](PH-EMBED.md)); every other sign-in gets 401 (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PH_REQUIRE_PH_SESSION` and `PS_ADMIN_AUTH=ph` |
 | `PS_MEDIA_BUCKET` | Bucket for logos and backgrounds | `<project>-pharmacy-screen-media` (Firebase) | `pharmacyscreen-media-…` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PS_MEDIA_BASE_URL` | Public base URL media is served from (AWS) | None | `https://screens.mipharmacy.net` | No | The CDK stack (the site URL; CloudFront serves `/pharmacyScreen/media/*`) |
 | `PS_FIRESTORE_ROOT` | Top-level Firestore collection (Firebase) | `pharmacyScreen` | `pharmacyScreen` | No | `.env.rob-ph-demos` |
@@ -118,6 +119,11 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_RATE_LIMIT_PER_DEVICE_PER_MIN` | Cache misses per device per minute, per instance | `12` | `12` | No | Default |
 | `PH_RATE_LIMIT_PER_IP_PER_MIN` | Cache misses per client address per minute, per instance | `600` | `600` | No | Default |
 | `PH_UPSTREAM_CALLS_PER_MIN` | Calls to PH per minute, per instance | `1200` | `1200` | No | Default |
+| `PH_SESSION_AUTH` | `on` or `off`: whether `POST /api/auth/ph-session` (sign-in from Personalisation Hub) exists (Firebase) | `on` | `on` | No | Default |
+| `PH_REQUIRE_PH_SESSION` | `true`: the settings endpoints accept only sessions started from Personalisation Hub (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PS_REQUIRE_PH_SESSION` |
+| `PH_SESSION_HQ_ROLES` | Comma-separated HQ Admin roles that open the editor as an administrator | `ADMIN` | `ADMIN,HELP_DESK` | No | Default |
+| `PH_SESSION_MAX_HOURS` | Longest an editor session lasts before Personalisation Hub is asked again | `8` | `8` | No | Default |
+| `PH_SESSION_RATE_LIMIT_PER_IP_PER_MIN` | Sign-in attempts per client address per minute, per instance | `30` | `30` | No | Default |
 | `PH_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform | `1` (Firebase); `2` on AWS | `1` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PS_ORIGIN_VERIFY` | Value CloudFront adds to every API request, so the proxy trusts the viewer address only behind CloudFront (AWS) | None | `<generated>` | **Yes** (generated into Secrets Manager by the stack; never set by hand) | The CDK stack |
 
@@ -137,6 +143,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `AWS_REGION` | Region when `--region` is not given (`deploy:aws`, `seed:aws`) | None | `ap-southeast-2` | No |
 | `AWS_PROFILE` | AWS named profile (set from `--profile`) | Default credentials | `mipharmacy-prod` | No |
 | `CDK_DEFAULT_ACCOUNT` | Account the CDK app deploys to (set by the CDK CLI from your credentials) | From credentials | `111122223333` | No |
+| `PS_ADMIN_AUTH` | How people sign in to the editor on Firebase (`npm run deploy`): `ph` (only from Personalisation Hub), `ph+firebase` (the same, with the Firebase sign-in where the embedding page hands no session over) or `firebase` | `ph+firebase` | `ph` | No |
 | `CDK_DEFAULT_REGION` | Region the CDK app deploys to (set by `deploy:aws`) | `--region` | `ap-southeast-2` | No |
 
 ### Local development and tests
@@ -221,6 +228,7 @@ answered first, then the rest in order.
 |---|---|---|
 | `apiBase` | Where `/api/**` is served | `''` (this site) |
 | `screenPage` | Screen page URL that "Copy experience URL" builds on | `''` (`../pharmacy-screen.html`) |
-| `auth.mode` | `firebase`, `oidc` (AWS) or `token` (local development only, never deployed) | `firebase` |
+| `auth.mode` | `ph` (the Personalisation Hub session of the page that embeds the editor, [PH-EMBED.md](PH-EMBED.md)), `firebase`, `oidc` (AWS) or `token` (local development only, never deployed) | `firebase` in the repo; the Firebase deploy writes `ph` (`PS_ADMIN_AUTH`) |
+| `auth.ph` | `{parentOrigins, fallback}`: the origins allowed to hand a PH session to the editor (`https://ph.mipharmacy.net`), and `fallback: 'firebase'` to offer the Firebase sign-in when none does | Written by the Firebase deploy |
 | `auth.firebase` | Firebase web app config `{apiKey, authDomain, projectId}` (public by design) | `null` in the repo, so an undeployed copy refuses to sign in |
 | `auth.oidc` | `{clientId, authorizeUrl, tokenUrl, logoutUrl, logoutParam, scopes}` | Written by the AWS deploy |

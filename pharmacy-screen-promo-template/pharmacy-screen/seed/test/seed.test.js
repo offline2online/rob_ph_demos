@@ -102,7 +102,7 @@ test("step 2: a second run makes no duplicates and no changes", async () => {
 test("step 3: an edit survives a re-run without --reset; --reset puts the fixture back", async () => {
   const { store, svc, seed } = setup();
   await seed();
-  const actor = { uid: "u-admin", email: "admin@example.com" };
+  const actor = { uid: "u-admin", email: "admin@example.com", admin: true };
   const id = ids.pharmacy("vic-mp-002");
   const promoMorning = ids.promotion("morning");
   await svc.updatePharmacy(actor, id, { name: "North Ringwood Pharmacy & Clinic", colours: { accent: "#123456" } });
@@ -135,7 +135,7 @@ test("step 3: an edit survives a re-run without --reset; --reset puts the fixtur
 
 test("records made by hand with the same natural key are not duplicated or overwritten", async () => {
   const { store, svc, seed } = setup();
-  const actor = { uid: "u-admin", email: null };
+  const actor = { uid: "u-admin", email: null, admin: true };
   await svc.createPromotion(actor, { name: "Mornings", promoId: "morning", templateId: "builtin-promotion-scenes" });
   await svc.createPharmacy(actor, { storeCode: "VIC-MP-001", name: "Beaumaris (hand made)", colours: { primary: "#000000", accent: "#ffffff" } });
   await svc.createService(actor, { label: "Blood pressure", headline: "Mine" });
@@ -197,7 +197,7 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
   const edited = await svc.getPharmacy(ids.pharmacy("vic-mp-001"));
   const morningId = (await svc.listPromotions()).find((p) => p.promoId === "morning").id;
   edited.content[morningId].greeting = "Edited greeting";
-  await svc.updatePharmacy({ uid: "u-admin", email: null }, edited.id, { content: edited.content });
+  await svc.updatePharmacy({ uid: "u-admin", email: null, admin: true }, edited.id, { content: edited.content });
 
   const report = await seed();
   assert.deepEqual(report.promotions.created, ["occasions"]);
@@ -232,7 +232,7 @@ test("a promotion the seed made as Occasions is renamed Seasonal; a renamed one 
   assert.equal((await seed()).promotions.updated.length, 0);
   assert.deepEqual(store.dump(), before, "re-running is a no-op");
   // Renamed by hand to something else: kept.
-  await svc.updatePromotion({ uid: "u-admin", email: null }, occ.id, { name: "Holidays" });
+  await svc.updatePromotion({ uid: "u-admin", email: null, admin: true }, occ.id, { name: "Holidays" });
   await seed();
   assert.equal((await svc.listPromotions()).find((p) => p.promoId === "occasions").name, "Holidays");
 });
@@ -249,11 +249,11 @@ test("an environment seeded with the old occasion copy: seed-made records get th
   // Someone edits Easter on Beaumaris (still the old shape), and Christmas on the master.
   const ph = await svc.getPharmacy(ids.pharmacy("vic-mp-001"));
   ph.content[occId].occasions.easter.scenes[0].title = "Hoppy Easter";
-  await svc.updatePharmacy({ uid: "u-admin", email: null }, ph.id, { content: ph.content });
+  await svc.updatePharmacy({ uid: "u-admin", email: null, admin: true }, ph.id, { content: ph.content });
   const promo = (await svc.listPromotions()).find((p) => p.id === occId);
   const master = JSON.parse(JSON.stringify(promo.master));
   master.occasions.christmas.scenes[0].title = "Merry Xmas";
-  await svc.updatePromotion({ uid: "u-admin", email: null }, occId, { master });
+  await svc.updatePromotion({ uid: "u-admin", email: null, admin: true }, occId, { master });
 
   const report = await seed();
   assert.deepEqual(report.pharmacies.updated.sort(), CODES);
@@ -310,7 +310,7 @@ test("master template: each default promotion's master is Beaumaris's content, i
 
   // A seeded promotion with no master yet (a store seeded before the master existed) gets it on a re-run; an edited
   // master is kept without --reset and put back with it.
-  const actor = { uid: "u-admin", email: null };
+  const actor = { uid: "u-admin", email: null, admin: true };
   await svc.updatePromotion(actor, ids.promotion("closed"), { master: null });
   await svc.updatePromotion(actor, ids.promotion("morning"), { master: { ...beaumaris.content.morning, introTitle: "Edited master" } });
   const report = await seed();

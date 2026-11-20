@@ -209,15 +209,32 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
 
   // ── pharmacies ─────────────────────────────────────────────────────────
 
-  async function listPharmacies() {
-    const rows = await store.list("pharmacies");
+  // ── store users ────────────────────────────────────────────────────────
+  // A store user (actor.admin false, actor.stores = their store codes, from a
+  // Personalisation Hub Retail Admin session) sees and edits only the
+  // pharmacies with one of those codes, and only their overrides: a
+  // promotion's content and which sections are detached from the master.
+  // No actor (the seed, internal calls) and admins are not narrowed.
+  const narrowed = (actor) => !!actor && actor.admin !== true;
+  function assertOwnPharmacy(actor, rec) {
+    if (!narrowed(actor)) return;
+    if (!rec || !(actor.stores || []).includes(rec.storeCode)) throw new ApiError(403, "forbidden", "This pharmacy is not one of yours");
+  }
+  const STORE_USER_FIELDS = new Set(["detached"]);
+
+  async function listPharmacies(actor) {
+    const all = await store.list("pharmacies");
+    const rows = narrowed(actor) ? all.filter((r) => (actor.stores || []).includes(r.storeCode)) : all;
     return rows
       .map(({ content, ...rest }) => ({ ...rest, promotionsWithContent: Object.keys(content || {}).sort() }))
       .sort((a, b) => a.storeCode.localeCompare(b.storeCode));
   }
 
-  async function getPharmacy(id) {
+  async function getPharmacy(id, actor) {
     const rec = await store.get("pharmacies", id);
+    // A store user gets the same answer for someone else's pharmacy as for
+    // one that does not exist, so ids cannot be probed.
+    if (narrowed(actor)) assertOwnPharmacy(actor, rec);
     if (!rec) throw notFound("Pharmacy", id);
     return withId(id, rec);
   }
@@ -249,9 +266,14 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
   async function updatePharmacy(actor, id, body, expectedVersion) {
     return write(actor, (cfg) => {
       const stored = cfg.pharmacies.get(id);
+      assertOwnPharmacy(actor, stored);
       if (!stored) throw notFound("Pharmacy", id);
       checkVersion(stored, expectedVersion ?? (body && body.expectedVersion));
       const { expectedVersion: _ignored, ...fields } = body || {};
+      if (narrowed(actor)) {
+        const extra = Object.keys(fields).filter((k) => !STORE_USER_FIELDS.has(k));
+        if (extra.length) throw new ApiError(403, "forbidden", "Only an administrator can change a pharmacy's details");
+      }
       const data = normalisePharmacy(fields, stripMeta(stored));
       assertStoreCodeFree(cfg, data.storeCode, id);
       const rec = stamp(data, actor, cfg.at, stored);
@@ -270,6 +292,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
   async function setPharmacyContent(actor, id, promotionId, body, expectedVersion) {
     return write(actor, (cfg) => {
       const stored = cfg.pharmacies.get(id);
+      assertOwnPharmacy(actor, stored);
       if (!stored) throw notFound("Pharmacy", id);
       if (!cfg.promotions.has(promotionId)) throw notFound("Promotion", promotionId);
       checkVersion(stored, expectedVersion);

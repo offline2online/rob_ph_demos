@@ -26,12 +26,17 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
   const origins = new Set(allowedOrigins.filter(Boolean));
 
   const routes = [];
-  const route = (method, pattern, handler, { admin = true, raw = false } = {}) => {
+  // admin: true   the admin role only (the default).
+  // store: true   also a store user (actor.stores, a Personalisation Hub
+  //               Retail Admin session): the service narrows what they see
+  //               and may change to their own pharmacies (service.js ->
+  //               "store users").
+  const route = (method, pattern, handler, { admin = true, raw = false, store = false } = {}) => {
     const keys = [];
     const re = new RegExp(
       "^" + pattern.replace(/\{(\w+)\}/g, (_, k) => (keys.push(k), "([^/]+)")) + "/?$"
     );
-    routes.push({ method, re, keys, handler, admin, raw });
+    routes.push({ method, re, keys, handler, admin, raw, store });
   };
 
   // ── public ─────────────────────────────────────────────────────────────
@@ -46,26 +51,27 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
     return raw === undefined ? undefined : String(raw).replace(/^W\//, "").replace(/"/g, "").trim();
   };
 
-  route("GET", "/api/admin/me", ({ actor }) => actor);
+  const STORE = { store: true };
+  route("GET", "/api/admin/me", ({ actor }) => actor, STORE);
 
-  route("GET", "/api/admin/pharmacies", () => svc.listPharmacies());
+  route("GET", "/api/admin/pharmacies", ({ actor }) => svc.listPharmacies(actor), STORE);
   route("POST", "/api/admin/pharmacies", ({ actor, json }) => created(svc.createPharmacy(actor, json())));
-  route("GET", "/api/admin/pharmacies/{id}", ({ params }) => svc.getPharmacy(params.id));
-  route("PATCH", "/api/admin/pharmacies/{id}", (r) => svc.updatePharmacy(r.actor, r.params.id, r.json(), v(r)));
+  route("GET", "/api/admin/pharmacies/{id}", ({ actor, params }) => svc.getPharmacy(params.id, actor), STORE);
+  route("PATCH", "/api/admin/pharmacies/{id}", (r) => svc.updatePharmacy(r.actor, r.params.id, r.json(), v(r)), STORE);
   route("PUT", "/api/admin/pharmacies/{id}", (r) => svc.updatePharmacy(r.actor, r.params.id, r.json(), v(r)));
   route("DELETE", "/api/admin/pharmacies/{id}", (r) => svc.deletePharmacy(r.actor, r.params.id, v(r)));
-  route("PUT", "/api/admin/pharmacies/{id}/content/{promotionId}", (r) => svc.setPharmacyContent(r.actor, r.params.id, r.params.promotionId, r.json(), v(r)));
+  route("PUT", "/api/admin/pharmacies/{id}/content/{promotionId}", (r) => svc.setPharmacyContent(r.actor, r.params.id, r.params.promotionId, r.json(), v(r)), STORE);
   route("PUT", "/api/admin/pharmacies/{id}/logo", (r) => svc.setLogo(r.actor, r.params.id, r.headers["content-type"], r.body), { raw: true });
   route("DELETE", "/api/admin/pharmacies/{id}/logo", (r) => svc.removeLogo(r.actor, r.params.id));
 
-  route("GET", "/api/admin/promotions", () => svc.listPromotions());
+  route("GET", "/api/admin/promotions", () => svc.listPromotions(), STORE);
   route("POST", "/api/admin/promotions", ({ actor, json }) => created(svc.createPromotion(actor, json())));
   route("GET", "/api/admin/promotions/{id}", ({ params }) => svc.getPromotion(params.id));
   route("PATCH", "/api/admin/promotions/{id}", (r) => svc.updatePromotion(r.actor, r.params.id, r.json(), v(r)));
   route("PUT", "/api/admin/promotions/{id}", (r) => svc.updatePromotion(r.actor, r.params.id, r.json(), v(r)));
   route("DELETE", "/api/admin/promotions/{id}", (r) => svc.deletePromotion(r.actor, r.params.id, v(r)));
 
-  route("GET", "/api/admin/templates", () => svc.listTemplates());
+  route("GET", "/api/admin/templates", () => svc.listTemplates(), STORE);
   route("POST", "/api/admin/templates", ({ actor, json }) => created(svc.createTemplate(actor, json())));
   route("GET", "/api/admin/templates/{id}", ({ params }) => svc.getTemplate(params.id));
   route("PATCH", "/api/admin/templates/{id}", (r) => svc.updateTemplate(r.actor, r.params.id, r.json(), v(r)));
@@ -75,7 +81,7 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
   route("PUT", "/api/admin/templates/{id}/backgrounds/{orientation}", (r) => svc.setBackground(r.actor, r.params.id, r.params.orientation, r.headers["content-type"], r.body), { raw: true });
   route("DELETE", "/api/admin/templates/{id}/backgrounds/{orientation}", (r) => svc.removeBackground(r.actor, r.params.id, r.params.orientation));
 
-  route("GET", "/api/admin/services", () => svc.listServices());
+  route("GET", "/api/admin/services", () => svc.listServices(), STORE);
   route("POST", "/api/admin/services", ({ actor, json }) => created(svc.createService(actor, json())));
   route("GET", "/api/admin/services/{id}", ({ params }) => svc.getService(params.id));
   route("PATCH", "/api/admin/services/{id}", (r) => svc.updateService(r.actor, r.params.id, r.json(), v(r)));
@@ -138,7 +144,8 @@ function createConfigApi({ store, blobs, auth, allowedOrigins = [], now, log = (
       if (r.admin) {
         actor = await auth.identify(headers.authorization);
         if (!actor) throw new ApiError(401, "unauthenticated", "Sign in: send Authorization: Bearer <ID token>");
-        if (!actor.admin) throw new ApiError(403, "forbidden", "This needs the admin role");
+        const storeUser = !actor.admin && Array.isArray(actor.stores) && actor.stores.length > 0;
+        if (!actor.admin && !(r.store && storeUser)) throw new ApiError(403, "forbidden", "This needs the admin role");
       }
       const m = r.re.exec(path);
       // Ids are store document ids: never let an encoded "/" (or anything

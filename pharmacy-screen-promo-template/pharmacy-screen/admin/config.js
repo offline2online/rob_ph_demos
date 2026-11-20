@@ -4,7 +4,10 @@
 //               /api/device/** to the config API and the PH API proxy).
 //   screenPage  the screen page URL that "Copy experience URL" builds on. '' = ../pharmacy-screen.html beside
 //               this editor.
-//   auth.mode   'firebase': sign in with Firebase Auth; admins carry the `admin` custom claim
+//   auth.mode   'ph': no sign-in of its own; the Personalisation Hub page that embeds the editor hands over the
+//               signed-in user's session (docs/PH-EMBED.md). auth.ph is {parentOrigins, fallback}; auth.firebase
+//               is still needed (the session is exchanged through this project). The Firebase deploy writes it.
+//               'firebase': sign in with Firebase Auth; admins carry the `admin` custom claim
 //               (config-api/scripts/set-admin-claim.js). auth.firebase is the web app config
 //               ({apiKey, authDomain, projectId}) from the Firebase console.
 //               'oidc': OpenID Connect sign-in (the AWS deployment: Cognito or the retailer's identity provider).

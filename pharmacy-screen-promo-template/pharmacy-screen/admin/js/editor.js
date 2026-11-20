@@ -1203,12 +1203,14 @@ $('cpUrl').onclick = async () => {
 // ───────────────────────── start ─────────────────────────
 
 async function main() {
-  session = await signIn(CONFIG.auth || {});
+  session = await signIn({ ...(CONFIG.auth || {}), apiBase: CONFIG.apiBase });
   api = createClient({ apiBase: CONFIG.apiBase, getToken: session.getToken });
+  let me;
   try {
-    await api.me();
+    me = await api.me();
   } catch (e) {
-    if (e.status === 403) showBlocked('Admin role required', 'You are signed in, but this account does not have the admin role, so it cannot open the editor. Ask an administrator to grant it.', { signOut: session.signOut });
+    if (session.ph) showBlocked('Access denied', e.status === 403 ? 'Your Personalisation Hub account cannot open this page.' : 'Your Personalisation Hub session was not accepted. Sign in to Personalisation Hub again.');
+    else if (e.status === 403) showBlocked('Admin role required', 'You are signed in, but this account does not have the admin role, so it cannot open the editor. Ask an administrator to grant it.', { signOut: session.signOut });
     else if (e.status === 401) showBlocked('Not signed in', 'Your sign-in was not accepted. Sign out and sign in again.', { signOut: session.signOut });
     else showBlocked('The editor could not load', e.message, { signOut: session.signOut });
     return;
@@ -1217,9 +1219,20 @@ async function main() {
   S.pharmacies = pharmacies; S.promotions = M.orderPromotions(promotions); S.templates = templates; S.services = services;
   S.dpTab = S.promotions[0] && S.promotions[0].id;
   // Pharmacy view: admin/?store=<store code> (or ?storeCode=) opens the editor locked to that one pharmacy.
-  const lock = M.storeFromQuery(location.search);
+  // A store user (a Retail Admin session) is always locked to one of their own stores: the server only ever
+  // returns and accepts those (config-api/src/service.js), and ?store= is just which of them to open. A store
+  // code that is not theirs is refused here rather than quietly swapped for their own.
+  const asked = M.storeFromQuery(location.search);
+  const mineOnly = !!me && me.admin !== true;
+  const own = mineOnly ? (Array.isArray(me.stores) ? me.stores : []) : null;
+  if (mineOnly && (!own.length || (asked && !own.includes(asked)))) {
+    showBlocked('Access denied', asked ? `Your Personalisation Hub sign-in does not include the store ${asked}.` : 'Your Personalisation Hub sign-in has no store to edit.');
+    return;
+  }
+  const lock = asked || (mineOnly ? own.find((c) => S.pharmacies.some((p) => p.storeCode === c)) || own[0] : null);
   if (lock) {
     const mine = S.pharmacies.find((p) => p.storeCode === lock);
+    if (!mine && mineOnly) { showBlocked('Pharmacy not set up', `The store ${lock} has no display promotions yet. Ask your administrator to add it.`); return; }
     if (!mine) { showBlocked('Pharmacy not found', `No pharmacy has the store code ${lock}. Check the link, or open the editor without a store code.`, { signOut: session.signOut }); return; }
     S.lock = lock;
     applyLock();

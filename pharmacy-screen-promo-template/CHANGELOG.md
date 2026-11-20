@@ -10,6 +10,16 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Sign-in from Personalisation Hub; no separate login.** Embedded in HQ Admin (Pharmacy Promos) or Retail
+  Admin (Display Promotions), the editor uses the PH session of the person looking at it: the PH page hands the
+  session to the editor's frame, the server checks it with PH and issues a short editor session
+  ([docs/PH-EMBED.md](docs/PH-EMBED.md)). An HQ Admin user is an administrator. A Retail Admin user sees and edits
+  only their own store's promotions and **Restore to default**; this is enforced by the server, and a store code
+  in the URL that is not theirs shows "Access denied". The editor can only be framed by PH. `PS_ADMIN_AUTH`
+  chooses `ph`, `ph+firebase` (the changeover default) or `firebase`
+  ([docs/CONFIGURATION.md](docs/CONFIGURATION.md)). **The PH pages must send the session for this to take
+  effect** (the snippet is in docs/PH-EMBED.md); until they do, `ph+firebase` keeps the previous sign-in.
+
 - **Season drop-down shows each season's dates.** On the Seasonal promotion, every line of the **Season**
   drop-down has the season's start and end dates in brackets after its name, for example
   "Christmas (15 Dec – 27 Dec)" and "New Year's (28 Dec – 5 Jan)"; a one-day season shows one date

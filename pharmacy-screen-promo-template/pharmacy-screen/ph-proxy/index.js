@@ -3,7 +3,8 @@
 // the Location API proxy. One HTTPS function, `pharmacyScreenPhApi`, serves:
 //   /api/settings/ph-api, /api/settings/ph-api/token   (admin)
 //   /api/device/{UniqueDeviceID}/campaign_data          (screens)
-// Firebase Hosting rewrites those two path prefixes to it (see README.md).
+//   /api/auth/ph-session                                (PH session -> editor session)
+// Firebase Hosting rewrites those path prefixes to it (see README.md).
 // The token is decrypted only here, in memory, per request.
 
 const { onRequest } = require("firebase-functions/v2/https");
@@ -28,8 +29,12 @@ function getApi() {
     settingsStore: firestoreSettingsStore({ db, docPath: env.PH_SETTINGS_DOC || "pharmacyScreen/private/settings/phApi" }),
     auditLog: firestoreAuditLog({ db, collectionPath: env.PH_AUDIT_COLLECTION || "pharmacyScreen/private/auditLog" }),
     secretStore: secretStoreFromEnv(env),
-    auth: firebaseAuthAdapter({ auth: getAuth(), adminClaim: env.PH_ADMIN_CLAIM || "admin" }),
+    auth: firebaseAuthAdapter({ auth: getAuth(), adminClaim: env.PH_ADMIN_CLAIM || "admin", requirePhSession: /^(1|true|yes)$/i.test(env.PH_REQUIRE_PH_SESSION || "") }),
     fetchImpl: globalThis.fetch,
+    // PH session sign-in: a Firebase custom token carrying the role and
+    // store claims (src/ph-session.js). Signing needs the function's service
+    // account to hold roles/iam.serviceAccountTokenCreator on itself.
+    mintSession: (uid, claims) => getAuth().createCustomToken(uid, claims),
   });
   return api;
 }

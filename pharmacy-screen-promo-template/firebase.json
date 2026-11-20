@@ -22,6 +22,13 @@
           }
         },
         {
+          "source": "/api/auth/**",
+          "function": {
+            "functionId": "pharmacyScreenPhApi",
+            "region": "us-central1"
+          }
+        },
+        {
           "source": "/api/device/**",
           "function": {
             "functionId": "pharmacyScreenPhApi",
@@ -81,6 +88,10 @@
             {
               "key": "Referrer-Policy",
               "value": "same-origin"
+            },
+            {
+              "key": "Content-Security-Policy",
+              "value": "frame-ancestors 'self' https://ph.mipharmacy.net"
             }
           ]
         }

@@ -46,6 +46,7 @@ Remove it: `npm run destroy:aws -- --region ap-southeast-2`.
 |---|---|
 | Deploying, upgrading, rolling back or removing it | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Looking up a setting, env var or URL parameter | [docs/CONFIGURATION.md](docs/CONFIGURATION.md), [.env.example](.env.example) |
+| Embedding the editor in PH (sign-in from HQ Admin / Retail Admin) | [docs/PH-EMBED.md](docs/PH-EMBED.md) |
 | Integrating with PH, or debugging a screen | [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) |
 | Signing it off | [docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md) |
 | Setting up pharmacies and content | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) |

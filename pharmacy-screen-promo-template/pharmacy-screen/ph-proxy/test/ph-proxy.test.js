@@ -504,7 +504,7 @@ test("Firebase auth adapter: admin is a custom claim, bad tokens are anonymous",
     },
   };
   const a = firebaseAuthAdapter({ auth: fakeAuth });
-  assert.deepEqual(await a.verify({ authorization: "Bearer good-admin" }), { uid: "a", email: "a@ph.example", admin: true });
+  assert.deepEqual(await a.verify({ authorization: "Bearer good-admin" }), { uid: "a", email: "a@ph.example", admin: true, stores: [], ph: false });
   assert.equal((await a.verify({ authorization: "Bearer good-user" })).admin, false);
   assert.equal(await a.verify({ authorization: "Bearer nope" }), null);
   assert.equal(await a.verify({}), null);

@@ -59,10 +59,17 @@ test(".firebaserc targets rob-ph-demos: a dedicated Hosting site and the media b
   assert.equal(t.bucket, "rob-ph-demos-pharmacy-screen-media");
 });
 
+test("the admin editor can only be framed by Personalisation Hub", () => {
+  const admin = hosting.headers.find((h) => h.source === "/admin/**");
+  const csp = admin.headers.find((h) => h.key === "Content-Security-Policy");
+  assert.equal(csp.value, "frame-ancestors 'self' https://ph.mipharmacy.net");
+});
+
 test("Hosting rewrites send each /api path to the function that serves it", () => {
   assert.equal(routeOf("/api/settings/ph-api"), "pharmacyScreenPhApi");
   assert.equal(routeOf("/api/settings/ph-api/token"), "pharmacyScreenPhApi");
   assert.equal(routeOf("/api/device/DEVICE-1/campaign_data"), "pharmacyScreenPhApi");
+  assert.equal(routeOf("/api/auth/ph-session"), "pharmacyScreenPhApi");
   assert.equal(routeOf("/api/health"), "pharmacyScreenConfigApi");
   assert.equal(routeOf("/api/screens/VIC-MP-001"), "pharmacyScreenConfigApi");
   assert.equal(routeOf("/api/admin/me"), "pharmacyScreenConfigApi");
@@ -117,15 +124,21 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
   if (OUR_ENV) assert.equal(readFileSync(join(out, "firestore.rules"), "utf8"), read(RULES_SOURCE));
 });
 
-test("the deploy writes the admin editor's Firebase web app config into the staged copy only", () => {
-  const js = adminConfigJs({ apiKey: "k", projectId: "rob-ph-demos", appId: "1:2:web:3" });
+test("the deploy writes the admin editor's Firebase web app config into the staged copy only", async () => {
+  const js = adminConfigJs({ apiKey: "k", projectId: "rob-ph-demos", appId: "1:2:web:3" }, { adminAuth: "firebase" });
   const cfg = JSON.parse(js.slice(js.indexOf("{"), js.lastIndexOf("}") + 1));
   assert.deepEqual(cfg, { apiBase: "", screenPage: "", auth: { mode: "firebase", firebase: { apiKey: "k", authDomain: "rob-ph-demos.firebaseapp.com", projectId: "rob-ph-demos", appId: "1:2:web:3" } } });
   assert.match(js, /^\/\/ .*\nexport default \{/);
   assert.throws(() => adminConfigJs({ projectId: "p" }), /apiKey/);
+  // Sign-in from Personalisation Hub: the default keeps the Firebase sign-in as a fallback for the changeover;
+  // "ph" alone offers no sign-in of its own. Only PH's origin may hand a session over.
+  const authOf = async (opts) => (await import(`data:text/javascript,${encodeURIComponent(adminConfigJs({ apiKey: "k", projectId: "p" }, opts))}`)).default.auth;
+  assert.deepEqual((await authOf()).ph, { parentOrigins: ["https://ph.mipharmacy.net"], fallback: "firebase" });
+  assert.deepEqual(await authOf({ adminAuth: "ph" }), { mode: "ph", firebase: { apiKey: "k", authDomain: "p.firebaseapp.com", projectId: "p" }, ph: { parentOrigins: ["https://ph.mipharmacy.net"] } });
+  assert.throws(() => adminConfigJs({ apiKey: "k", projectId: "p" }, { adminAuth: "open" }), /PS_ADMIN_AUTH/);
   const out = mkdtempSync(join(tmpdir(), "ps-admin-cfg-"));
   stagePublic(ROOT, join(out, "public"));
-  const file = writeAdminConfig({ apiKey: "k", authDomain: "custom.example", projectId: "p" }, out);
+  const file = writeAdminConfig({ apiKey: "k", authDomain: "custom.example", projectId: "p" }, out, { adminAuth: "firebase" });
   assert.equal(file, join(out, "public", "admin", "config.js"));
   assert.match(readFileSync(file, "utf8"), /"authDomain": "custom\.example"/);
   // The committed config stays unconfigured, so an unstaged copy refuses to sign in.
