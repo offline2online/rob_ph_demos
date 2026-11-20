@@ -315,6 +315,9 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
   // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
+  // The dates read as a yearly schedule: start and end, every year.
+  assert.equal(await page.textContent('#occYearly'), 'event_repeatEvery year:15 Dec to 27 Dec');
+  assert.equal(await page.isVisible('#occYearly'), true);
   assert.deepEqual([await page.inputValue('#occFromd'), await page.inputValue('#occFromm'), await page.inputValue('#occTod'), await page.inputValue('#occTom')], ['15', '12', '27', '12']);
   await page.selectOption('#occTod', '24');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
@@ -952,7 +955,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.isHidden('#o0dur'), true);
-  assert.equal(await page.isHidden('#occDates'), true, 'season dates are set by an administrator');
+  assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
@@ -960,6 +963,12 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  // The season's start and end dates show here too, every year, read-only: an administrator sets them.
+  assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
+  assert.match(await page.textContent('#occYearly'), /Every year:\d{1,2} [A-Z][a-z]{2}( to \d{1,2} [A-Z][a-z]{2})?$/);
+  assert.equal(await page.$$eval('#occDates select', (e) => e.length), 0, 'no date pickers in the pharmacy view');
+  for (const id of ['#occFromRo', '#occToRo']) assert.equal(await page.$eval(id, (e) => e.readOnly), true, id);
+  assert.equal(await page.textContent('#occWhen'), `${await page.inputValue('#occFromRo')} to ${await page.inputValue('#occToRo')}`);
   await page.click('#dpTabs button:has-text("Morning")');
   assert.equal(await page.isHidden('#promoMeta'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.

@@ -10,6 +10,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Seasonal dates show as a yearly schedule in both views.** A season's **Dates** card header reads **Every
+  year: <start> to <end>** (for example "Every year: 15 Dec to 27 Dec") in the admin editor and in the pharmacy
+  view (`admin/?store=<code>`). The pharmacy view now shows the Dates card, read-only: Starts and Ends as plain
+  read-only fields, no pickers (an administrator still sets the dates in the full editor). Easter shows this
+  year's Good Friday to Easter Monday.
 - **Editor: see each "Open today" bar message in the preview.** Under Footer: Open today bar, "Open today bar in
   the preview" has tabs for Store's time, While open, Last 30 minutes, Before opening and After closing; the
   preview's bar shows the chosen message and that message is marked "In preview". It works while the bar is
@@ -24,7 +29,7 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   nobody has to change the drop-down; outside every season's dates it plays the season picked in the drop-down.
   An administrator can change a season's dates in the editor (**Dates** card above the beats; saved with the
   season's copy as `content.occasions.<season>.from` / `.to`, `MM-DD`, inherited from the master template like
-  the copy). The pharmacy view doesn't show the dates. The seed renames its default promotion still called
+  the copy). The pharmacy view shows the dates read-only (see the entry above). The seed renames its default promotion still called
   Occasions, and the editor shows it as Seasonal until then. New testing parameter `date=YYYY-MM-DD`.
 
 - **Pharmacy view: `admin/?store=<store code>` (or `?storeCode=`) opens the editor locked to that pharmacy.** The

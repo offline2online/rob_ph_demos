@@ -128,7 +128,9 @@ every year: Christmas 15–27 December, New Year's 28 December–5 January, Aust
 Day 14 February, Easter Good Friday to Easter Monday (Easter moves, so its dates are worked out each year) and
 Anzac Day 25 April. On those dates, in the store's time zone, the screens play that season, and at midnight
 they move on to the next season by themselves: nobody needs to change anything. To change a season's dates,
-pick the season and set **Starts** and **Ends** in its **Dates** card (above its beats).
+pick the season and set **Starts** and **Ends** in its **Dates** card (above its beats). The card's header shows
+the schedule as it repeats, for example **Every year: 15 Dec to 27 Dec** (Easter: this year's Good Friday to
+Easter Monday).
 
 In place of Template, the Seasonal promotion has a **Season** drop-down: Christmas, New Year's, Australia
 Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and previewing, and the season the
@@ -177,13 +179,14 @@ In the pharmacy view:
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
 - **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
-  there; there is no promotion name, promo ID or `promo=` line, and no Dates card (an administrator sets the
-  dates in the full editor). The season is the Seasonal promotion's, so the change reaches every pharmacy's
+  there; there is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
+  end dates, read-only, as **Every year: <start> to <end>** (an administrator sets the dates in the full editor).
+  The season is the Seasonal promotion's, so the change reaches every pharmacy's
   screens, as it does in the full editor.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, season dates, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, the season date pickers (the dates themselves show, read-only), Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the
