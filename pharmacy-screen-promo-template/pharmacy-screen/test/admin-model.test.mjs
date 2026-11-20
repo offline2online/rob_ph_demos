@@ -297,3 +297,37 @@ test('seasonal: dates saved on a season survive ensureContent; bad dates are dro
   assert.ok(!('from' in c.occasions.easter), 'an invalid month is not kept');
   assert.equal(c.occasions['new-year'].beats.length, 3);
 });
+
+test('schedule: No schedule by default; Annual keeps a start and an end date', () => {
+  assert.deepEqual(M.SCHEDULE_TYPES.map((t) => t.name), ['No schedule', 'Annual']);
+  assert.deepEqual(M.scheduleOf({}), { type: 'none' });
+  assert.deepEqual(M.scheduleOf({ schedule: { type: 'annual', from: '11-01', to: '01-15' } }), { type: 'annual', from: '11-01', to: '01-15' });
+  assert.deepEqual(M.scheduleOf({ schedule: { type: 'annual', from: '13-01', to: '01-15' } }), { type: 'none' }, 'a bad date is no schedule');
+  assert.deepEqual(M.defaultAnnual(new Date(2026, 2, 5)), { type: 'annual', from: '03-05', to: '12-31' });
+  assert.equal(M.scheduleText({ type: 'none' }), 'No schedule');
+  assert.equal(M.scheduleText({ type: 'annual', from: '11-01', to: '01-15' }), 'Every year, 1 Nov to 15 Jan');
+});
+
+test('master template preview: ${Suburb}, ${StoreName} and ${Phone} show as written; a pharmacy is unchanged', async () => {
+  const { rich, fill, applyStoreName } = await import('../js/tokens.js');
+  const master = { id: '', isMaster: true, name: 'Master template', storeCode: '', content: {} };
+  const ph = M.previewPharmacy(master);
+  assert.equal(ph.name, '${StoreName}');
+  assert.deepEqual(ph.tokens, { Suburb: '${Suburb}', Phone: '${Phone}' });
+  assert.equal(master.name, 'Master template', 'the master record itself is not changed');
+  assert.equal(master.tokens, undefined);
+  const cfg = M.renderConfig({ pharmacies: [{ ...ph, storeCode: 'NEW' }], promotions, templates });
+  const store = storeModel(M.campaignForPreview(null, 'NEW', ph.name), cfg);
+  assert.equal(store.name, '${StoreName}');
+  assert.equal(store.suburb, '${Suburb}');
+  assert.equal(store.phone, '${Phone}');
+  assert.equal(rich('Good morning,<br>${Suburb}', store.suburb), 'Good morning,<br>${Suburb}');
+  assert.equal(fill('Serving ${Suburb}', store.suburb), 'Serving ${Suburb}');
+  assert.equal(applyStoreName(rich('from the whole ${StoreName} team', store.suburb), store.name), 'from the whole ${StoreName} team');
+  // A pharmacy previews with its own data: no suburb in the sample data blanks the token with its comma.
+  const own = { id: 'x', name: 'North Ringwood', storeCode: 'VIC-MP-002', tokens: { Custom: 'hi' } };
+  assert.equal(M.previewPharmacy(own), own);
+  const s2 = storeModel(M.campaignForPreview(null, 'VIC-MP-002', own.name), M.renderConfig({ pharmacies: [own], promotions, templates }));
+  assert.equal(rich('Good morning,<br>${Suburb}', s2.suburb), 'Good morning');
+  assert.equal(s2.name, 'North Ringwood');
+});

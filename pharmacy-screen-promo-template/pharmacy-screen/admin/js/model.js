@@ -3,13 +3,13 @@
 // The editor works on the config API's records (config-api/README.md → "Data model"):
 //   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}},
 //              detached? {<promotion record id>: [master section id, …]}, tokens? {<token name>: text}, version}
-//   promotion {id, name, promoId, templateId, master? {...}, version}
+//   promotion {id, name, promoId, templateId, schedule? {type 'annual', from 'MM-DD', to 'MM-DD'}, master? {...}, version}
 //   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
 //   service   {id, label, icon, category, headline, accent, line1, line2, offeredBy [store codes]}
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds } from '../../js/render.js';
+import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay } from '../../js/render.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -217,6 +217,17 @@ export function campaignForPreview(record, storeCode, name) {
   return c;
 }
 
+// The master template has no store of its own, so its preview shows the data tokens as written: ${StoreName},
+// ${Suburb} and ${Phone} appear in the copy exactly as typed, making clear the master carries them. ${CloseTime} /
+// ${OpenTime} keep the sample hours' times (the "Open today bar in the preview" tabs). Preview only: nothing saved.
+export const MASTER_PREVIEW_TOKENS = { Suburb: '${Suburb}', Phone: '${Phone}' };
+
+/** The pharmacy record the editor's preview draws: a pharmacy as it is; the master template with its tokens as written. */
+export function previewPharmacy(ph) {
+  if (!ph || !ph.isMaster) return ph;
+  return { ...ph, name: '${StoreName}', tokens: { ...cleanTokens(ph.tokens), ...MASTER_PREVIEW_TOKENS } };
+}
+
 /** The read-only store fields Settings shows, with their paths in the Location API response. */
 export function storeFields(record) {
   const d = (record && (record.data || record)) || {};
@@ -230,6 +241,23 @@ export function storeFields(record) {
     { label: 'Address', path: 'store_info.address_info.address', value: [a.address, a.state, a.postcode].filter(Boolean).join(', ') },
   ].map((f) => ({ ...f, value: f.value == null ? '' : String(f.value) }));
 }
+
+// A promotion's schedule. "No schedule" is the default (Personalisation Hub Core decides when it plays); "Annual" adds a
+// start and an end date (month and day, inclusive) that repeat every year. A record without one has no schedule.
+export const SCHEDULE_TYPES = [{ id: 'none', name: 'No schedule' }, { id: 'annual', name: 'Annual' }];
+const MONTH_DAY = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+export function scheduleOf(p) {
+  const s = p && p.schedule;
+  return s && s.type === 'annual' && MONTH_DAY.test(s.from) && MONTH_DAY.test(s.to) ? { type: 'annual', from: s.from, to: s.to } : { type: 'none' };
+}
+/** The dates a promotion switched to Annual starts with: today to the last day of the year. */
+export function defaultAnnual(now = new Date()) {
+  return { type: 'annual', from: String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0'), to: '12-31' };
+}
+export const scheduleText = (s) => {
+  const x = scheduleOf({ schedule: s });
+  return x.type === 'annual' ? `Every year, ${fmtMonthDay(x.from)}${x.to !== x.from ? ' to ' + fmtMonthDay(x.to) : ''}` : 'No schedule';
+};
 
 export const slug = (v) => String(v || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 
@@ -311,6 +339,8 @@ export function editsSince(sent, ph) {
 export const TOKEN_SOURCES = {
   Suburb: 'Suburb from Personalisation Hub',
   Phone: 'Phone number from Personalisation Hub',
+  State: 'State from Personalisation Hub',
+  StoreCode: 'Store code from Personalisation Hub',
 };
 
 // The Open today bar's messages, unless the bar is hidden.

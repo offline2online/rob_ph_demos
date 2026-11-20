@@ -40,7 +40,9 @@ launch pharmacy (VIC-MP-001 to 005) back to its sample content.
 
 The **Promo preview** drop-down's first entry, **Master template**, holds the default content of every promotion: the
 greeting, the promotion slots, the walk-in close, the Open today bar, the opening-hours headlines and address
-toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
+toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours and shows the tokens as written, so
+`${Suburb}`, `${StoreName}` and `${Phone}` appear in the copy exactly as typed ("Good morning, ${Suburb}",
+"Phone ${Phone}"); `${CloseTime}` / `${OpenTime}` show the sample hours' times. A pharmacy's preview fills them in. Every pharmacy uses it, including each one you add, so a change here reaches every
 screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
 until you edit it or click **Save as master**.
 
@@ -70,8 +72,13 @@ Promotions are **shared by all pharmacies**: the tabs across the top. Each has a
 campaign URL's `promo=` names) and a template. The defaults are Morning (`morning`), Afternoon (`afternoon`),
 Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own copy for each one.
 
-- **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template → **Create
-  promotion**. It appears for every pharmacy.
+- **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template, **Schedule** →
+  **Create promotion**. It appears for every pharmacy. Schedule is **No schedule** by default; choose **Annual**
+  to give it a start and an end date (day and month, inclusive) that repeat every year. A Seasonal template has no
+  Schedule here: its seasons have their own dates (Dates card).
+- Change an existing promotion's **Schedule** under its promo ID and template (No schedule, or Annual with
+  Starts / Ends). Personalisation Hub Core still decides when a campaign plays; the dates go out with the
+  promotion's screen config.
 - Rename it or change its promo ID in **Promotion name** / **Promo ID**. Changing a promo ID means changing
   the campaign URL in PH too.
 - **Delete promotion** (click again to delete for all pharmacies).
@@ -104,6 +111,11 @@ Service copy needs TGA advertising review before go-live.
 **Copy tips**
 
 - Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
+- **+ Add token**, on the right of each headline's label, lists the tokens you can use: Store name, Suburb, Brand
+  name, Store code, State, Phone number, Website, Languages spoken by store staff and Localised copy. Pick one to
+  insert it where the cursor is (e.g. `${StoreCode}`). Store name, Suburb, Store code, State and Phone number come
+  from the pharmacy and Personalisation Hub; Brand name, Website, Languages spoken and Localised copy show the
+  value set for the pharmacy in **Settings → Tokens**, and nothing until one is set.
 - `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
@@ -128,7 +140,9 @@ every year: Christmas 15–27 December, New Year's 28 December–5 January, Aust
 Day 14 February, Easter Good Friday to Easter Monday (Easter moves, so its dates are worked out each year) and
 Anzac Day 25 April. On those dates, in the store's time zone, the screens play that season, and at midnight
 they move on to the next season by themselves: nobody needs to change anything. To change a season's dates,
-pick the season and set **Starts** and **Ends** in its **Dates** card (above its beats).
+pick the season and set **Starts** and **Ends** in its **Dates** card (above its beats). The card's header shows
+the schedule as it repeats, for example **Every year: 15 Dec to 27 Dec** (Easter: this year's Good Friday to
+Easter Monday).
 
 In place of Template, the Seasonal promotion has a **Season** drop-down: Christmas, New Year's, Australia
 Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and previewing, and the season the
@@ -177,13 +191,14 @@ In the pharmacy view:
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
 - **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
-  there; there is no promotion name, promo ID or `promo=` line, and no Dates card (an administrator sets the
-  dates in the full editor). The season is the Seasonal promotion's, so the change reaches every pharmacy's
+  there; there is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
+  end dates, read-only, as **Every year: <start> to <end>** (an administrator sets the dates in the full editor).
+  The season is the Seasonal promotion's, so the change reaches every pharmacy's
   screens, as it does in the full editor.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, season dates, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, the season date pickers (the dates themselves show, read-only), Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the
@@ -200,7 +215,8 @@ Signing in still needs the admin role: the link narrows what the editor shows, i
   **Pharmacy name** label: change the name here to change it on screens.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
-  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub). `${StoreName}`
+  (the placeholder says where it comes from: the suburb, phone number, state and store code from Personalisation
+  Hub). `${StoreName}`
   (the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
   filled in live and are not listed. Type a value to show it on this pharmacy's screens instead, for
   example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses

@@ -235,6 +235,13 @@ test('promotions: create, unique promo ID, rename, delete with confirm', async (
   await page.click('#newPromoBtn');
   await page.fill('#npName', 'Weekend');
   assert.equal(await page.inputValue('#npToken'), 'weekend');
+  // Schedule: No schedule by default, no dates; Annual shows a start and an end date.
+  assert.equal(await page.inputValue('#npSch'), 'none');
+  assert.equal(await page.$('#npFromd'), null);
+  await page.selectOption('#npSch', 'annual');
+  await page.waitForSelector('#npFromd');
+  await page.selectOption('#npFromd', '1'); await page.selectOption('#npFromm', '11');
+  await page.selectOption('#npTod', '15'); await page.selectOption('#npTom', '1');
   await page.fill('#npToken', 'morning');
   await page.click('#npCreate');
   assert.match(await page.textContent('#npErr'), /already used/);
@@ -242,6 +249,19 @@ test('promotions: create, unique promo ID, rename, delete with confirm', async (
   await page.click('#npCreate');
   await page.waitForSelector('#dpTabs button:has-text("Weekend")[aria-selected=true]');
   assert.match(await page.textContent('#pmUrl'), /promo=weekend/);
+  assert.deepEqual((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule, { type: 'annual', from: '11-01', to: '01-15' });
+  assert.equal(await page.inputValue('#pmSch'), 'annual');
+  assert.equal(await page.inputValue('#pmFromm'), '11');
+  // Back to No schedule: the dates go, on the page and on the server.
+  await page.selectOption('#pmSch', 'none');
+  assert.equal(await page.$('#pmFromd'), null);
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule, undefined);
+  // An existing promotion can be given one too.
+  await page.selectOption('#pmSch', 'annual');
+  await page.selectOption('#pmTod', '30'); await page.selectOption('#pmTom', '12');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule.to, '12-30');
   await page.fill('#pmToken', 'closed');
   assert.match(await page.textContent('#pmErr'), /already used/);
   await page.fill('#pmToken', 'sat-sun');
@@ -312,9 +332,13 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
   assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
   assert.equal(await page.textContent('#pbSecs'), '13s');
-  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
+  // Each Main line has its "+ Add token" menu (aria-label "Add token") on its label row.
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Add token', 'Main line', 'Seconds on screen', 'Small line above', 'Add token', 'Main line']);
   // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
+  // The dates read as a yearly schedule: start and end, every year.
+  assert.equal(await page.textContent('#occYearly'), 'event_repeatEvery year:15 Dec to 27 Dec');
+  assert.equal(await page.isVisible('#occYearly'), true);
   assert.deepEqual([await page.inputValue('#occFromd'), await page.inputValue('#occFromm'), await page.inputValue('#occTod'), await page.inputValue('#occTom')], ['15', '12', '27', '12']);
   await page.selectOption('#occTod', '24');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
@@ -639,6 +663,10 @@ test('master template: every pharmacy inherits it section by section; a section 
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
   assert.equal(await page.isVisible('#masterCard'), true);
   assert.equal(await page.$('#dpBody .inh-bar'), null);
+  // The master's preview shows its tokens as written: the greeting carries ${Suburb}.
+  await page.click('#dpTabs button:has-text("Morning")');
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => /Good morning,\s*\$\{Suburb\}/.test(document.querySelector('#screen .s-head h2').textContent));
   // Seeded from Beaumaris: the master's Morning greeting is Beaumaris's fixture copy.
   const master = (await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master;
   assert.equal(master.introSub, 'No fuss. Just ask in store.');
@@ -653,6 +681,9 @@ test('master template: every pharmacy inherits it section by section; a section 
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
   assert.equal(await page.isHidden('#masterCard'), true);
+  // A pharmacy's preview fills its tokens in: no token shows as written.
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => !/\$\{/.test(document.querySelector('#screen').textContent));
   assert.deepEqual(await page.$$eval('#dpBody .inh', (s) => s.map((x) => x.dataset.sec)), ['greeting', 'slots', 'close', 'footer']);
   assert.ok((await page.$$eval('#dpBody .inh-pill', (p) => p.map((x) => x.textContent))).every((t) => /Inherited from master/.test(t)));
   assert.equal(await page.inputValue('#dis'), 'Walk in, no appointment');
@@ -952,7 +983,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.isHidden('#o0dur'), true);
-  assert.equal(await page.isHidden('#occDates'), true, 'season dates are set by an administrator');
+  assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
@@ -960,6 +991,12 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  // The season's start and end dates show here too, every year, read-only: an administrator sets them.
+  assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
+  assert.match(await page.textContent('#occYearly'), /Every year:\d{1,2} [A-Z][a-z]{2}( to \d{1,2} [A-Z][a-z]{2})?$/);
+  assert.equal(await page.$$eval('#occDates select', (e) => e.length), 0, 'no date pickers in the pharmacy view');
+  for (const id of ['#occFromRo', '#occToRo']) assert.equal(await page.$eval(id, (e) => e.readOnly), true, id);
+  assert.equal(await page.textContent('#occWhen'), `${await page.inputValue('#occFromRo')} to ${await page.inputValue('#occToRo')}`);
   await page.click('#dpTabs button:has-text("Morning")');
   assert.equal(await page.isHidden('#promoMeta'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.
@@ -1085,6 +1122,74 @@ test('Open today bar: each message can be shown in the preview, by tab or by cli
     await settle(page);
   }
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Remote config for this pharmacy opens inside the editor column, never over the preview', async () => {
+  // Ticket Jh9lIUcSFVZq0lZ7eTrx: opened on a narrow frame (a 1024px iPad), the JSON's longest line widened the box
+  // past the editor column and over the preview. Its lines now wrap inside the column.
+  for (const viewport of [{ width: 768, height: 900 }, { width: 1024, height: 768 }, { width: 1400, height: 1000 }]) {
+    const { ctx, page, errors } = await open('dev-admin', { viewport });
+    const box = () => page.evaluate(() => {
+      const r = (s) => document.querySelector(s).getBoundingClientRect();
+      const ed = r('.edcol'), cfg = r('#cfgBox'), pre = r('#cfgJson'), pv = r('.pv'), el = document.querySelector('#cfgJson');
+      return { edLeft: Math.round(ed.left), edRight: Math.round(ed.right), cfgLeft: Math.round(cfg.left), cfgRight: Math.round(cfg.right),
+        preRight: Math.round(pre.right), pvLeft: Math.round(pv.left), sideScroll: el.scrollWidth - el.clientWidth,
+        pageOverflow: document.documentElement.scrollWidth - innerWidth };
+    });
+    const shut = await box();
+    await page.click('#cfgBox summary');
+    assert.equal(await page.$eval('#cfgBox', (d) => d.open), true);
+    assert.ok((await page.textContent('#cfgJson')).includes('"storeCode"'));
+    const m = await box();
+    const where = `${viewport.width}px: ${JSON.stringify(m)}`;
+    assert.equal(m.cfgRight, shut.cfgRight, `opening it does not widen the box, ${where}`);
+    assert.ok(m.cfgLeft >= m.edLeft && m.cfgRight <= m.edRight && m.preRight <= m.edRight, `the box stays in the editor column, ${where}`);
+    assert.ok(m.pvLeft >= m.edRight || m.pvLeft === m.edLeft, `the preview keeps its place, ${where}`);
+    assert.equal(m.sideScroll, 0, `long lines wrap, ${where}`);
+    assert.equal(m.pageOverflow, 0, where);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});
+
+test('+ Add token above every headline field lists the available tokens and inserts one at the caret', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-004');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
+  // Every rich-text field (each headline, the Open today bar messages) has its own "+ Add token" on its label row.
+  const fields = await page.$$eval('#dpBody .rtf', (l) => l.map((f) => !!f.querySelector('.rt-lab .tok-add')));
+  assert.ok(fields.length >= 3 && fields.every(Boolean), `${fields.length} headline fields, each with Add token`);
+  await own(page);
+  const add = '.tok-add[data-tok-for="dg"]', menu = '[data-tok-menu="dg"]';
+  assert.equal((await page.textContent(add)).replace('add', '').trim(), 'Add token');
+  assert.equal(await page.isVisible(menu), false);
+  await page.click(add);
+  assert.equal(await page.getAttribute(add, 'aria-expanded'), 'true');
+  assert.deepEqual(await page.$$eval(`${menu} button .tok-l`, (l) => l.map((e) => e.textContent)),
+    ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
+  assert.deepEqual(await page.$$eval(`${menu} button code`, (l) => l.map((e) => e.textContent)),
+    ['${StoreName}', '${Suburb}', '${BrandName}', '${StoreCode}', '${State}', '${Phone}', '${Website}', '${LanguagesSpoken}', '${LocalisedCopy}']);
+  // Escape and a click elsewhere close it without inserting anything.
+  await page.keyboard.press('Escape');
+  assert.equal(await page.isVisible(menu), false);
+  await page.click(add);
+  await page.click('#dpBody .sect', { position: { x: 2, y: 2 } }).catch(() => page.mouse.click(5, 5));
+  assert.equal(await page.isVisible(menu), false);
+  // A pick goes in where the caret was, and the preview fills it from the store's data.
+  await page.click('#dg');
+  await page.keyboard.press('End');
+  await page.keyboard.type(' at ');
+  await page.click(add);
+  await page.click(`${menu} button[data-t="StoreCode"]`);
+  assert.equal(await page.isVisible(menu), false);
+  assert.match(await page.textContent('#dg'), / at \$\{StoreCode\}$/);
+  await page.waitForFunction(() => /at VIC-MP-004/.test(document.querySelector('#screen').textContent));
+  await settle(page);
+  const rec = await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004');
+  assert.match(rec.body.content['seed-promotion-morning'].greeting, / at \$\{StoreCode\}$/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

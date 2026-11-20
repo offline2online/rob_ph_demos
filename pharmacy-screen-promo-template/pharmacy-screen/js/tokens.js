@@ -5,6 +5,8 @@
 //                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
 //   ${StoreName} the pharmacy's name (Seasonal copy: "from the whole ${StoreName} team").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
+//   ${Phone} ${State} ${StoreCode}   store_info.address_info.phone_number / .state and store_location.store_code.
+// The editor's "+ Add token" menu on every headline field lists the tokens copy can use (ADD_TOKENS).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
 //
 // A pharmacy can set a token's value by hand (Admin → Settings → Tokens; pharmacy.tokens, a map of token name ->
@@ -92,13 +94,27 @@ export const fillTemplate = (html, T) => String(html || '').replace(/\$\{(\w+)\}
 
 /** The slots each built-in template base offers to custom template HTML (shown as chips in the editor). */
 export const TEMPLATE_TOKENS = {
-  scenes: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'ServiceLabel', 'Line1', 'Line2', 'Tiles', 'Footer', 'OpenToday', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
-  hours: ['Logo', 'Headline', 'HoursCard', 'HolidayNote', 'ContactLine', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
-  occasion: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'Line1', 'Line2', 'Tiles', 'Decor', 'Footer', 'OpenToday', 'HolidayNote', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
+  scenes: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'ServiceLabel', 'Line1', 'Line2', 'Tiles', 'Footer', 'OpenToday', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone', 'State', 'StoreCode'],
+  hours: ['Logo', 'Headline', 'HoursCard', 'HolidayNote', 'ContactLine', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone', 'State', 'StoreCode'],
+  occasion: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'Line1', 'Line2', 'Tiles', 'Decor', 'Footer', 'OpenToday', 'HolidayNote', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone', 'State', 'StoreCode'],
 };
 
 /** Tokens filled from the store's data (the Location API, the pharmacy's name, today's hours). */
-export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime'];
+export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'State', 'StoreCode', 'CloseTime', 'OpenTime'];
+
+/** The tokens the editor's "+ Add token" menu offers above every headline field, in the order shown: the store's
+ *  data first, then the ones a pharmacy sets in Settings → Tokens (they show nothing until a value is set there). */
+export const ADD_TOKENS = [
+  { name: 'StoreName', label: 'Store name', source: 'Pharmacy name' },
+  { name: 'Suburb', label: 'Suburb', source: 'From Personalisation Hub' },
+  { name: 'BrandName', label: 'Brand name', source: 'Set in Settings → Tokens' },
+  { name: 'StoreCode', label: 'Store code', source: 'From Personalisation Hub' },
+  { name: 'State', label: 'State', source: 'From Personalisation Hub' },
+  { name: 'Phone', label: 'Phone number', source: 'From Personalisation Hub' },
+  { name: 'Website', label: 'Website', source: 'Set in Settings → Tokens' },
+  { name: 'LanguagesSpoken', label: 'Languages spoken by store staff', source: 'Set in Settings → Tokens' },
+  { name: 'LocalisedCopy', label: 'Localised copy', source: 'Set in Settings → Tokens' },
+];
 
 /** Data tokens never set by hand: ${StoreName} is the pharmacy name (Settings → Pharmacy details), and today's
  *  ${CloseTime} / ${OpenTime} change through the day, so a fixed value would be wrong most of the time. */

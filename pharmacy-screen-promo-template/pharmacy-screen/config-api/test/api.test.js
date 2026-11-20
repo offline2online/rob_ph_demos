@@ -326,6 +326,32 @@ test("published config follows every change: rename, store code change, promotio
   assert.deepEqual((await call("GET", "/api/screens/VIC-MP-010", { auth: null })).body.promotions, {});
 });
 
+test("promotion schedule: no schedule by default; Annual keeps a start and end date and is published", async () => {
+  const { call } = setup();
+  const { morning } = await seedBasics(call);
+  assert.equal(morning.schedule, undefined, "no schedule by default");
+  const screen = async () => (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body.promotions.morning;
+  assert.equal((await screen()).schedule, undefined);
+
+  const annual = { type: "annual", from: "11-01", to: "01-15" };
+  const u = await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { schedule: annual } });
+  assert.equal(u.status, 200);
+  assert.deepEqual(u.body.schedule, annual);
+  assert.deepEqual((await screen()).schedule, annual, "published with the promotion");
+
+  const c = await call("POST", "/api/admin/promotions", { body: { name: "Winter", promoId: "winter", templateId: "builtin-promotion-scenes", schedule: { type: "annual", from: "06-01", to: "08-31" } } });
+  assert.equal(c.status, 201);
+  assert.deepEqual(c.body.schedule, { type: "annual", from: "06-01", to: "08-31" });
+
+  const none = await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { schedule: { type: "none" } } });
+  assert.equal(none.body.schedule, undefined, "No schedule removes the dates");
+  assert.equal((await screen()).schedule, undefined);
+
+  for (const bad of [{ type: "weekly" }, { type: "annual", from: "13-01", to: "01-01" }, { type: "annual", from: "02-30", to: "03-01" }, { type: "annual", from: "01-01" }, "annual"]) {
+    assert.equal((await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { schedule: bad } })).status, 400, JSON.stringify(bad));
+  }
+});
+
 // ── audit, versions, uploads, validation ────────────────────────────────
 
 test("every write is audit-logged with who, what and which fields", async () => {

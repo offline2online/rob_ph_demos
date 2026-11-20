@@ -87,10 +87,11 @@ function content(id = S.dpTab) {
 const previewCode = () => S.cur.storeCode || 'NEW';
 
 function previewModel() {
-  const ph = { ...S.cur, storeCode: previewCode() };
+  // The master template previews its ${Suburb} / ${StoreName} / ${Phone} tokens as written (M.previewPharmacy).
+  const ph = { ...M.previewPharmacy(S.cur), storeCode: previewCode() };
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
-  const store = storeModel(M.campaignForPreview(null, previewCode(), S.cur.name), cfg);
+  const store = storeModel(M.campaignForPreview(null, previewCode(), ph.name), cfg);
   const play = resolvePromotion(cfg, store, promo().promoId);
   return { cfg, store, play };
 }
@@ -567,9 +568,32 @@ function monthDayPick(id, label, md) {
 }
 const readMonthDay = (id) => { const m = +$(id + 'm').value, d = Math.min(+$(id + 'd').value, DAYS_IN[m - 1]); return String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
 
+// A promotion's Schedule: No schedule (the default) or Annual, which shows a start and an end date that repeat every
+// year. Drawn into #npSched (New promotion) and #pmSched (the selected promotion), with ids prefixed np / pm.
+const SCHEDULE_HELP = 'When this promotion runs. No schedule (the default): it plays whenever Personalisation Hub Core plays its promo ID. Annual: from the start date to the end date every year, inclusive; the dates are saved with the promotion and go out in its screen config.';
+function scheduleFields(prefix, s) {
+  const x = M.scheduleOf({ schedule: s }), annual = x.type === 'annual';
+  return `<label class="f"><span>Schedule <span class="ms help" title="${esc(SCHEDULE_HELP)}">info</span></span><select id="${prefix}Sch" aria-label="Schedule">${M.SCHEDULE_TYPES.map((t) => `<option value="${t.id}" ${t.id === x.type ? 'selected' : ''}>${t.name}</option>`).join('')}</select></label>`
+    + (annual ? monthDayPick(prefix + 'From', 'Starts', x.from) + monthDayPick(prefix + 'To', 'Ends', x.to) : '');
+}
+const readSchedule = (prefix) => ($(prefix + 'Sch').value === 'annual' ? { type: 'annual', from: readMonthDay(prefix + 'From'), to: readMonthDay(prefix + 'To') } : { type: 'none' });
+function drawSchedule(prefix, s, onChange) {
+  const el = $(prefix + 'Sched');
+  el.innerHTML = scheduleFields(prefix, s);
+  el.onchange = (e) => {
+    if (e.target.id === prefix + 'Sch') {
+      // Switching to Annual shows its dates (today to 31 Dec until changed); back to No schedule hides them.
+      el.innerHTML = scheduleFields(prefix, e.target.value === 'annual' ? M.defaultAnnual() : null);
+      $(prefix + 'Sch').focus();
+    }
+    if (onChange) onChange(readSchedule(prefix));
+  };
+}
+
 /**
  * A seasonal promotion: this pharmacy's dates and copy for the season the promotion is set to. The dates card says
- * when the screen plays this season by itself each year (from and to, inclusive, in the store's time zone; Easter
+ * (in both views, as "Every year: <start> to <end>"; read-only in the pharmacy view) when the screen plays this season
+ * by itself each year (from and to, inclusive, in the store's time zone; Easter
  * moves each year, so its dates are worked out: Good Friday to Easter Monday). Then one card per beat of the design (a
  * main line, and a small label line where the design has one), each with its own seconds on screen (the loop is their
  * sum; at the defaults, an equal share of the design's 12 s). The season itself is picked in the Season drop-down
@@ -581,25 +605,30 @@ function renderOccasion(B, d) {
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
   const year = new Date().getFullYear(), r = seasonDates(occ.id, o, year), movable = occ.season && occ.season.easter && !seasonDatesOf(o).from;
-  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.`;
-  const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occWhen" style="margin-left:auto;font-weight:400">${esc(fmtMonthDay(r.from))}${r.to !== r.from ? ' to ' + esc(fmtMonthDay(r.to)) : ''}${movable ? ' this year' : ''}</span></div>
-    ${movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>` : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`}</div>`;
+  const span = (from, to) => fmtMonthDay(from) + (to !== from ? ' to ' + fmtMonthDay(to) : '');
+  // Both views show the start and end dates as a yearly schedule ("Every year: 15 Dec to 27 Dec"). The admin view can
+  // change them; the pharmacy view shows them read-only (an administrator sets them, like the seconds on screen).
+  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.${S.lock ? ' Your administrator sets these dates.' : ''}`;
+  const roDate = (id, label, md) => `<label class="f"><span>${label}</span><input id="${id}" value="${esc(fmtMonthDay(md))}" readonly></label>`;
+  const pickers = movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>`
+    : S.lock ? `<div class="grid2">${roDate('occFromRo', 'Starts', r.from)}${roDate('occToRo', 'Ends', r.to)}</div>`
+      : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`;
+  const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occYearly" style="margin-left:auto;font-weight:400"><span class="ms" style="font-size:14px" aria-hidden="true">event_repeat</span><span>Every year:</span><span id="occWhen">${esc(span(r.from, r.to))}${movable ? ' this year' : ''}</span></span></div>
+    ${pickers}</div>`;
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
    <div id="occList" style="display:grid;gap:12px">${dates}${occ.beats.map((layout, i) => {
     const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
     return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
      <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
   }).join('')}</div>`;
-  if (!movable) {
+  if (!movable && !S.lock) {
     const setDates = () => {
       o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
-      $('occWhen').textContent = fmtMonthDay(o.from) + (o.to !== o.from ? ' to ' + fmtMonthDay(o.to) : '');
+      $('occWhen').textContent = span(o.from, o.to);
       changed();
     };
     ['occFromd', 'occFromm', 'occTod', 'occTom'].forEach((id) => { $(id).onchange = setDates; });
   }
-  // The pharmacy view: dates are set by an administrator, like the seconds on screen.
-  if (S.lock) $('occDates').hidden = true;
   occ.beats.forEach((layout, i) => {
     const x = o.beats[i];
     bindRt(`o${i}text`, (v) => { x.text = v; });
@@ -677,6 +706,9 @@ function renderPromoMeta() {
   $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Season' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Season' : 'Template');
   $('pmHtml').hidden = occ;
+  // Schedule: not on Seasonal (its seasons have their own dates, in the Dates card).
+  $('pmSched').hidden = occ;
+  if (!occ) drawSchedule('pm', x.schedule, (sch) => { if (S.lock) return; const p = promo(); p.schedule = sch; savePromotion(p); });
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = !!S.lock || S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
 }
@@ -691,7 +723,7 @@ async function reloadPromotions() {
 function savePromotion(p) {
   Save.later(`promo:${p.id}`, `promo:${p.id}`, async () => {
     try {
-      const res = await api.updatePromotion(p.id, { name: p.name, promoId: p.promoId, templateId: p.templateId }, p.version);
+      const res = await api.updatePromotion(p.id, { name: p.name, promoId: p.promoId, templateId: p.templateId, schedule: M.scheduleOf(p) }, p.version);
       p.version = res.version;
       showPmErr('');
     } catch (e) {
@@ -731,8 +763,10 @@ $('pmDel').onclick = async () => {
   } catch (e) { showPmErr(e.message); }
 };
 let npTouched = false;
-$('newPromoBtn').onclick = () => { if (S.lock) return; $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
+$('newPromoBtn').onclick = () => { if (S.lock) return; $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; drawSchedule('np', null); $('npSched').hidden = false; npTouched = false; $('npName').focus(); };
 $('npCancel').onclick = () => { $('newPromo').hidden = true; };
+// A seasonal template's dates are its seasons' own (the Dates card), so a new seasonal promotion has no Schedule.
+$('npType').onchange = (e) => { $('npSched').hidden = !!M.occasionOfTemplate(e.target.value); };
 $('npName').oninput = (e) => { if (!npTouched) $('npToken').value = M.slug(e.target.value); };
 $('npToken').oninput = () => { npTouched = true; };
 $('npCreate').onclick = async () => {
@@ -743,7 +777,8 @@ $('npCreate').onclick = async () => {
   show(er); if (er) return;
   $('npCreate').disabled = true;
   try {
-    const rec = await Save.queue('promo:new', () => api.createPromotion({ name, promoId: t, templateId: $('npType').value }));
+    const schedule = $('npSched').hidden ? { type: 'none' } : readSchedule('np');
+    const rec = await Save.queue('promo:new', () => api.createPromotion({ name, promoId: t, templateId: $('npType').value, ...(schedule.type === 'annual' ? { schedule } : {}) }));
     S.promotions.push(rec);
     $('newPromo').hidden = true;
     selectPromo(rec.id);

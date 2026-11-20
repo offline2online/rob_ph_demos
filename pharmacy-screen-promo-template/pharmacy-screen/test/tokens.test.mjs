@@ -51,7 +51,7 @@ test('${StoreName} in copy is the escaped store name (Occasions sign-offs)', () 
 
 test('tokens set by hand: settable names, cleaning and applying', async () => {
   const { DATA_TOKENS, LIVE_TOKENS, SLOT_TOKENS, isSettableToken, tokensIn, cleanTokens, applyTokens, TEMPLATE_TOKENS } = await import('../js/tokens.js');
-  assert.deepEqual(DATA_TOKENS, ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime']);
+  assert.deepEqual(DATA_TOKENS, ['Suburb', 'StoreName', 'Phone', 'State', 'StoreCode', 'CloseTime', 'OpenTime']);
   // ${StoreName} is the pharmacy name and today's hours change through the day: never set by hand.
   assert.deepEqual(LIVE_TOKENS, ['StoreName', 'CloseTime', 'OpenTime']);
   for (const k of Object.values(TEMPLATE_TOKENS).flat()) assert.equal(isSettableToken(k), DATA_TOKENS.includes(k) && !LIVE_TOKENS.includes(k), k);
@@ -83,4 +83,20 @@ test('tokens set by hand win over the store data on the screen; the pharmacy nam
   const bar = footerMessage(s, {}, { state: 'open', closeTime: '19:00' });
   assert.match(bar, /7PM/, 'today\'s closing time, not a stored ${CloseTime}');
   assert.doesNotMatch(bar, /9PM/);
+});
+
+test('"+ Add token" lists the ticketed tokens; ${State} and ${StoreCode} come from the store unless set by hand', async () => {
+  const { ADD_TOKENS, isSettableToken, TEMPLATE_TOKENS } = await import('../js/tokens.js');
+  assert.deepEqual(ADD_TOKENS.map((t) => t.label), ['Store name', 'Suburb', 'Brand name', 'Store code', 'State', 'Phone number', 'Website', 'Languages spoken by store staff', 'Localised copy']);
+  assert.deepEqual(ADD_TOKENS.map((t) => t.name), ['StoreName', 'Suburb', 'BrandName', 'StoreCode', 'State', 'Phone', 'Website', 'LanguagesSpoken', 'LocalisedCopy']);
+  // every one but the pharmacy name can be given a value in Settings → Tokens
+  for (const t of ADD_TOKENS) assert.equal(isSettableToken(t.name), t.name !== 'StoreName', t.name);
+  for (const k of Object.keys(TEMPLATE_TOKENS)) for (const t of ['State', 'StoreCode']) assert.ok(TEMPLATE_TOKENS[k].includes(t), `${k} offers ${t}`);
+  const { storeModel } = await import('../js/render.js');
+  const campaign = { data: { store_location: { store_code: 'VIC-MP-001' }, store_info: { address_info: { suburb: 'Beaumaris', state: ' Victoria ' } } } };
+  const cfg = (tokens) => ({ pharmacies: [{ storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', content: {}, tokens }] });
+  let s = storeModel(campaign, cfg(undefined));
+  assert.deepEqual([s.state, s.storeCode], ['Victoria', 'VIC-MP-001']);
+  s = storeModel(campaign, cfg({ State: 'VIC', StoreCode: 'MP1' }));
+  assert.deepEqual([s.state, s.storeCode], ['VIC', 'MP1']);
 });

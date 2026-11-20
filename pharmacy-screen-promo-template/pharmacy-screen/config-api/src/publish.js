@@ -56,6 +56,9 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
       promoId: p.promoId,
       name: p.name,
       template: resolveTemplate(p.templateId, templatesById),
+      // An annual schedule ({type, from, to}, "MM-DD", inclusive) when the
+      // promotion has one; left out for no schedule (the default).
+      ...(p.schedule && p.schedule.type === "annual" ? { schedule: { type: "annual", from: p.schedule.from, to: p.schedule.to } } : {}),
       // The master template's sections, except those this pharmacy manages
       // itself (src/inherit.js); the pharmacy's own content when the
       // promotion has no master.

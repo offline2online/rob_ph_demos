@@ -118,7 +118,9 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
-Core, not here.
+Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
+and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
+in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
 
 ## 3. Template tokens
 
@@ -132,6 +134,16 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${StoreName}` | The pharmacy's name from the editor (Christmas and New Year's sign-offs) |
 | `${CloseTime}` | Close time of today's current or next session, e.g. `7PM` ("Open today" bar) |
 | `${OpenTime}` | Open time of today's next session, e.g. `8.30AM` ("Open today" bar) |
+| `${Phone}` | `store_info.address_info.phone_number` |
+| `${State}` | `store_info.address_info.state`, e.g. `Victoria` |
+| `${StoreCode}` | `store_location.store_code`, e.g. `VIC-MP-001` |
+
+Every headline field in the editor (each scene's headline, the hours headlines, the seasonal beats' main lines and
+the bar messages) has **+ Add token** on its label row: a menu of Store name (`${StoreName}`), Suburb, Brand name
+(`${BrandName}`), Store code, State, Phone number, Website (`${Website}`), Languages spoken by store staff
+(`${LanguagesSpoken}`) and Localised copy (`${LocalisedCopy}`) that inserts the token at the caret
+(`ADD_TOKENS` in `pharmacy-screen/js/tokens.js`). Brand name, Website, Languages spoken and Localised copy have no
+store data behind them: each shows the value the pharmacy sets in Settings → Tokens, and nothing until it does.
 
 **In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
 `pharmacy-screen/js/tokens.js`):
@@ -159,16 +171,18 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${Suburb}` | all | As above |
 | `${StoreName}` | all | As above |
 | `${Phone}` | all | `store_info.address_info.phone_number` |
+| `${State}` | all | `store_info.address_info.state` |
+| `${StoreCode}` | all | `store_location.store_code` |
 
 **Set by hand.** A pharmacy can give any token a value of its own (Admin → Settings → **Tokens**, stored as
-the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}` and `${Phone}` show it instead
-of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
+the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${Phone}`, `${State}` and `${StoreCode}` show it
+instead of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
 e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
 resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
 beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
 by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
 and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
-rest of the table above, other than `${Suburb}`, `${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
+rest of the table above, other than `${Suburb}`, `${StoreName}`, `${Phone}`, `${State}` and `${StoreCode}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
 pharmacy.
 
 Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,
@@ -239,7 +253,8 @@ Tokens set by hand: a pharmacy's optional `"tokens": { "<token name>": "<text>" 
 blank values are dropped and the field is left out when none are set. The published screen config carries it
 as it is.
 
-Promotion: `{ "name", "promoId", "templateId", "master"? }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
+Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where `schedule` is `{ "type": "none" }`
+(the default; nothing is stored) or `{ "type": "annual", "from": "MM-DD", "to": "MM-DD" }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
 
@@ -269,7 +284,8 @@ as every write that affects it, copied field by field (`config-api/src/publish.j
 }
 ```
 
-`tokens` is present only when the pharmacy has set a token by hand.
+`tokens` is present only when the pharmacy has set a token by hand. A promotion's `schedule`
+(`{ "type": "annual", "from": "MM-DD", "to": "MM-DD" }`) is present only when it has an annual schedule.
 
 ## 5. PH API token
 

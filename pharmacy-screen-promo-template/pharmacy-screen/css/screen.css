@@ -75,34 +75,35 @@
 @keyframes riseIn{from{opacity:0;transform:translateY(70px) scale(.92)}to{opacity:1;transform:none}}
 .s-title,.s-sub{font-size:calc(var(--fs)*var(--kb,1))!important}
 .s-title{--fs:58px}.s-sub{--fs:38px}
-/* landscape 1920x1080 */
+/* landscape 1920x1080: a narrow brand arrow on the left (js/fit-text.js geom(): 580px, tip at x=780), the headline
+   wrapping inside it, and the content (tiles, opening hours) filling the rest of the screen */
 .screen.land{width:1920px;height:1080px}
 .land .s-logo{left:80px;right:auto;top:48px;justify-items:start}
-.land .s-logo img{height:140px;max-width:560px;object-position:left center}
+.land .s-logo img{height:140px;max-width:440px;object-position:left center}
 .land .s-mark{width:420px;height:140px}
-.land .s-head{left:80px;right:auto;width:860px;top:220px;bottom:160px;align-content:center;justify-items:start;text-align:left}
+.land .s-head{left:72px;right:auto;width:476px;top:220px;bottom:160px;align-content:center;justify-items:start;text-align:left}
 .land.closed .s-head{bottom:60px}
-.land .s-head h2{font-size:calc(96px*var(--k,1))}
-.land .s-head p{font-size:calc(40px*var(--k,1))}
+.land .s-head h2{font-size:calc(84px*var(--k,1))}
+.land .s-head p{font-size:calc(36px*var(--k,1))}
 .land .s-chev{left:auto;margin-left:0}
-.land .s-body{left:1190px;right:60px;top:40px;bottom:150px;gap:30px}
-.land .s-tiles{gap:calc(30px*var(--tz))}
-.land .s-tiles .s-ico{width:calc(170px*var(--tz)*var(--kb,1));height:calc(170px*var(--tz)*var(--kb,1));border-radius:calc(36px*var(--tz))}
-.land .s-tiles .s-ico .ms{font-size:calc(96px*var(--tz)*var(--kb,1))}
-.land .s-tile{width:calc(190px*var(--tz)*var(--kb,1));gap:16px}
-.land .s-tiles .lbl{font-size:calc(26px*max(var(--tz),.8))!important}
-.land .s-ico.big{width:300px;height:300px;border-radius:58px}
-.land .s-ico.big .ms{font-size:170px}
-.land .s-title{--fs:54px}.land .s-sub{--fs:36px}
+.land .s-body{left:850px;right:70px;top:40px;bottom:150px;gap:34px}
+.land .s-tiles{gap:calc(48px*var(--tz))}
+.land .s-tiles .s-ico{width:calc(220px*var(--tz)*var(--kb,1));height:calc(220px*var(--tz)*var(--kb,1));border-radius:calc(44px*var(--tz))}
+.land .s-tiles .s-ico .ms{font-size:calc(120px*var(--tz)*var(--kb,1))}
+.land .s-tile{width:calc(250px*var(--tz)*var(--kb,1));gap:18px}
+.land .s-tiles .lbl{font-size:calc(30px*max(var(--tz),.8))!important}
+.land .s-ico.big{width:360px;height:360px;border-radius:68px}
+.land .s-ico.big .ms{font-size:204px}
+.land .s-title{--fs:66px}.land .s-sub{--fs:42px}
 .land .s-foot{height:120px;gap:0}
 .land .s-foot .f1{font-size:44px}
-.land .s-card{left:1180px;right:70px;top:70px;padding:26px 20px 14px;border-radius:32px}
+.land .s-card{left:880px;right:90px;top:60px;padding:28px 24px 16px;border-radius:36px}
 .land .s-card .ch{padding-bottom:14px;margin:0 30px 10px}
-.land .s-card .ch h3{font-size:46px}
-.land .s-badge{font-size:26px;padding:8px 22px}
-.land .s-row{height:68px;font-size:36px;padding:0 30px}
-.land .s-note{left:1180px;right:70px;top:auto;bottom:46px;gap:10px}
-.land .s-note .n1{font-size:36px}.land .s-note .n2{font-size:28px}
+.land .s-card .ch h3{font-size:52px}
+.land .s-badge{font-size:28px;padding:8px 24px}
+.land .s-row{height:72px;font-size:40px;padding:0 30px}
+.land .s-note{left:880px;right:90px;top:auto;bottom:40px;gap:10px}
+.land .s-note .n1{font-size:38px}.land .s-note .n2{font-size:30px}
 /* Occasions (promo=occasions): a standalone, full-screen animation per occasion, drawn by js/render.js
    renderOccasion() with the designs' own CSS (js/occasions.js, injected once), fonts (css/occasion-fonts.css) and
    media (css/occasion-media.css). The screen element only frames it; its beats keep playing under reduced motion
@@ -126,10 +127,10 @@
 .s-setup-body p{margin:0;font-size:40px;line-height:1.3;color:#6b7280;overflow-wrap:anywhere;text-wrap:balance}
 .s-devid{position:absolute;left:80px;right:80px;bottom:64px;text-align:center;font-size:28px;color:#6b7280;overflow-wrap:anywhere}
 .s-devid b{font-weight:600;color:var(--s-p);font-variant-numeric:tabular-nums}
-.land .s-setup-mark{right:auto;width:820px;top:0;bottom:0;align-content:center}
-.land .s-setup-body{left:1190px;right:70px;top:0;bottom:120px;align-content:center}
+.land .s-setup-mark{right:auto;width:580px;top:0;bottom:0;align-content:center}
+.land .s-setup-body{left:850px;right:70px;top:0;bottom:120px;align-content:center}
 .land .s-setup-body h2{font-size:72px}
 .land .s-setup-body p{font-size:34px}
-.land .s-devid{left:1190px;right:70px;bottom:46px;font-size:24px}
+.land .s-devid{left:850px;right:70px;bottom:46px;font-size:24px}
 .s-errbadge{display:inline-flex;align-items:center;gap:16px;margin-top:12px;padding:12px 32px;border-radius:9999px;border:2px solid #ff4d4f;background:rgba(255,77,79,.14);color:#fff;font-size:32px;font-weight:600}
 .s-errbadge i{width:18px;height:18px;border-radius:50%;background:#ff4d4f}

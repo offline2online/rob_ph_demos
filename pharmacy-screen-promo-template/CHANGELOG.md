@@ -10,6 +10,29 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Master template preview shows its tokens as written.** In Promo preview → **Master template**, the preview
+  prints `${Suburb}`, `${StoreName}` and `${Phone}` as typed ("Good morning, ${Suburb}", "Serving ${Suburb}",
+  "Phone ${Phone}", "from the whole ${StoreName} team") instead of blanking them, so it is clear the master's copy
+  carries a token. `${CloseTime}` / `${OpenTime}` keep the sample times. Preview only: a pharmacy's preview and the
+  screens are unchanged ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Master template").
+- **Editor: + Add token above every headline field.** Each headline (every promotion's scenes, the opening hours
+  headlines, the seasonal beats' main lines) and each Open today bar message has **+ Add token** on its label row,
+  as in PH's HQ Admin. It lists Store name, Suburb, Brand name, Store code, State, Phone number, Website, Languages
+  spoken by store staff and Localised copy, and inserts the chosen `${Token}` at the cursor. New store-data tokens
+  `${State}` (`store_info.address_info.state`) and `${StoreCode}` (`store_location.store_code`) work in copy and
+  template HTML and can be overridden in Settings → Tokens like `${Suburb}` and `${Phone}`; Brand name, Website,
+  Languages spoken and Localised copy (`${BrandName}`, `${Website}`, `${LanguagesSpoken}`, `${LocalisedCopy}`) show
+  the pharmacy's value from Settings → Tokens ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "3. Template tokens").
+- **Seasonal dates show as a yearly schedule in both views.** A season's **Dates** card header reads **Every
+  year: <start> to <end>** (for example "Every year: 15 Dec to 27 Dec") in the admin editor and in the pharmacy
+  view (`admin/?store=<code>`). The pharmacy view now shows the Dates card, read-only: Starts and Ends as plain
+  read-only fields, no pickers (an administrator still sets the dates in the full editor). Easter shows this
+  year's Good Friday to Easter Monday.
+- **Editor: Schedule on new and existing promotions.** New promotion has a **Schedule** drop-down, **No schedule**
+  by default; **Annual** shows a start and an end date (day and month, inclusive) that repeat every year. The same
+  Schedule shows under an existing promotion's promo ID and template (not on Seasonal, whose seasons keep their
+  Dates card). The config API stores and validates it (`schedule`, `"MM-DD"`) and publishes it in the screen
+  config; Personalisation Hub Core still decides when a campaign plays ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
 - **Editor: see each "Open today" bar message in the preview.** Under Footer: Open today bar, "Open today bar in
   the preview" has tabs for Store's time, While open, Last 30 minutes, Before opening and After closing; the
   preview's bar shows the chosen message and that message is marked "In preview". It works while the bar is
@@ -24,7 +47,7 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   nobody has to change the drop-down; outside every season's dates it plays the season picked in the drop-down.
   An administrator can change a season's dates in the editor (**Dates** card above the beats; saved with the
   season's copy as `content.occasions.<season>.from` / `.to`, `MM-DD`, inherited from the master template like
-  the copy). The pharmacy view doesn't show the dates. The seed renames its default promotion still called
+  the copy). The pharmacy view shows the dates read-only (see the entry above). The seed renames its default promotion still called
   Occasions, and the editor shows it as Seasonal until then. New testing parameter `date=YYYY-MM-DD`.
 
 - **Pharmacy view: `admin/?store=<store code>` (or `?storeCode=`) opens the editor locked to that pharmacy.** The
@@ -43,6 +66,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Landscape Morning, Afternoon and Closed: a narrower brand panel and bigger content.** The coloured arrow on the
+  left is now 580px wide with its tip at x=780 (was 820px, tip at x=1120), and the headline wraps inside its
+  straight-sided part, so no line reaches into the arrow's point or past the coloured area. The content on the right
+  (service tiles, the large service icon, the copy under them, the opening hours card and holiday note) starts
+  about 340px further left and is drawn larger. Portrait and Seasonal are unchanged; the "Screen
+  not set up" page in landscape follows the same narrower panel.
 - **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
   the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
   store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
@@ -104,6 +133,9 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 - **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
   the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
   of the page jumping.
+- **Remote config for this pharmacy opens beside the preview, not over it.** In the full editor, expanding it on a
+  narrow frame (a tablet, or PH's left menu expanded) used to widen it past the editor column and over the
+  preview. It now opens in the editor column's width and its long lines wrap.
 
 ## [0.1.0] — first handover candidate
 
