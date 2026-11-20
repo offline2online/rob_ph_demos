@@ -4,4 +4,3 @@ node_modules/
 .deploy-aws/
 aws/cdk.out/
 aws/cdk.context.json
-release/

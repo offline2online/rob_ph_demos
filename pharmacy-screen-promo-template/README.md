@@ -19,7 +19,6 @@ New here? **[START-HERE.md](START-HERE.md)** is one page: deploy to AWS in one c
 | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | The admin editor: pharmacies, branding, promotions, service library, copy and timings, templates |
 | [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) | Instructions for coding and deployment agents |
 | [CHANGELOG.md](CHANGELOG.md) | What changed, per release |
-| [docs/RELEASING.md](docs/RELEASING.md) | The release package for the Google Shared Drive: `npm run release`, what is in it, sharing it |
 
 Mock data for running with no PH instance is in `pharmacy-screen/fixtures/` (`mockapi=1`) and the seed in
 `pharmacy-screen/seed/`. `npm run check:docs` (part of `check:all`) fails when an environment variable or query
@@ -41,7 +40,6 @@ npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in addres
 | `pharmacy-screen/seed/` | Launch data and the script that loads it ([README](pharmacy-screen/seed/README.md)); not published |
 | `firebase.json`, `.firebaserc`, `firestore.indexes.json` | Firebase deploy config for our test environment. The Firestore rules are the repo-root `firestore.rules` (rob-ph-demos has one ruleset); the deploy stages a copy in `.deploy/` because the Firebase CLI reads rules only from inside this folder |
 | `scripts/deploy.mjs` | The one-command deploy |
-| `scripts/release.mjs` | The release package: versioned zip, checksum, release notes and tag (`npm run release`, [docs/RELEASING.md](docs/RELEASING.md)); writes `release/` (not committed) |
 | `ci/deploy-pharmacy-screen.yml` | GitHub Actions workflow to install (see "Continuous deploy") |
 | `test/` | Deploy config checks and the deployed admin sign-in gate (`test/ui/admin-gate.test.mjs`) |
 | `aws/` | The deployment target for the retailer's own AWS account: AWS adapters, Lambda entries, CDK stack, one-command install and teardown ([README](aws/README.md)) |
@@ -169,7 +167,6 @@ npm run check          # deploy config, staging allow-list, plan, URLs (offline)
 npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests, and the handover docs check
 npm run check:docs     # the handover docs check alone: env vars and query parameters in code = docs/CONFIGURATION.md
 npm run check:admin    # the deployed admin sign-in gate, then the editor's end-to-end tests (Playwright + Chromium)
-npm run release -- --dry-run   # build and scan the release package without writing it (docs/RELEASING.md)
 npm run check:aws      # the AWS target: adapters, Lambda entries, CDK template, deploy plan, OIDC sign-in (aws/README.md)
 cd pharmacy-screen/config-api && npm install && npm run test:emulator   # Firestore + Storage rules (needs Java)
 ```

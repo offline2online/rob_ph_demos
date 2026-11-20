@@ -37,7 +37,6 @@ For coding and deployment agents (Claude Code, Codex, Copilot agents, …) worki
 | `pharmacy-screen/fixtures/` | Mock Location API data and mock config (`mockapi=1`, dev server, tests) |
 | `aws/` | AWS adapters, Lambda entries, CDK stack, `deploy:aws` / `destroy:aws` / `seed:aws` |
 | `scripts/deploy.mjs`, `firebase.json`, `.firebaserc` | Firebase deploy for our test environment |
-| `scripts/release.mjs` | The Shared Drive release package (`npm run release`, [docs/RELEASING.md](docs/RELEASING.md)) |
 | `docs/` | Handover docs: deployment, configuration, data contract, test checklist, user guide |
 | `test/` | Deploy config checks and the deployed admin gate test |
 
@@ -80,9 +79,6 @@ level on purpose (README → Tests).
   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 - **Firebase (our test environment)**: `npm run deploy` (`deploy:plan` to preview). Cloud Functions are only
   ever deployed by this command or CI.
-- **Release for miPharmacy**: `npm run release` builds `release/v<version>/` (zip, checksum, START-HERE, release
-  notes) from the commit and tags it; `npm run release:verify -- <zip>` checks a package. Only from a clean,
-  merged `main`; never move a tag that was shared. See [docs/RELEASING.md](docs/RELEASING.md).
 
 Deploying needs cloud credentials a person gives you; never ask for or handle the PH API token to do it.
 

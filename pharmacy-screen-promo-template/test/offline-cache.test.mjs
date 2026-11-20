@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, writeFileSync, appendFileSync, mkdtempSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { ROOT, PUBLIC_SOURCE, PUBLIC_ENTRIES, stagePublic, shellBuildId, stampServiceWorker, SW_FILE, SW_PLACEHOLDER } from "../scripts/deploy.mjs";
+import { ROOT, PUBLIC_SOURCE, PUBLIC_ENTRIES, stage, shellBuildId, stampServiceWorker, SW_FILE, SW_PLACEHOLDER } from "../scripts/deploy.mjs";
 
 const SRC = join(ROOT, PUBLIC_SOURCE);
 const swSource = readFileSync(join(SRC, SW_FILE), "utf8");
@@ -24,8 +24,8 @@ test("sw.js is published and the committed copy is unstamped (network first on a
 
 test("staging stamps sw.js with a hash of the shell; the same files give the same build", () => {
   const a = mkdtempSync(join(tmpdir(), "ps-sw-a-")), b = mkdtempSync(join(tmpdir(), "ps-sw-b-"));
-  stagePublic(ROOT, join(a, "public"));
-  stagePublic(ROOT, join(b, "public"));
+  stage(ROOT, a);
+  stage(ROOT, b);
   const swA = readFileSync(join(a, "public", SW_FILE), "utf8");
   assert.ok(!swA.includes(SW_PLACEHOLDER), "stamped");
   const build = swA.match(/const BUILD = '([0-9a-f]{16})'/);
@@ -36,8 +36,8 @@ test("staging stamps sw.js with a hash of the shell; the same files give the sam
 
 test("the build changes when a shell file changes, and not when anything else does", () => {
   const out = mkdtempSync(join(tmpdir(), "ps-sw-c-"));
+  stage(ROOT, out);
   const pub = join(out, "public");
-  stagePublic(ROOT, pub);
   const before = shellBuildId(pub);
   appendFileSync(join(pub, "fixtures", "config.json"), "\n");
   writeFileSync(join(pub, "admin", "extra.txt"), "x");
