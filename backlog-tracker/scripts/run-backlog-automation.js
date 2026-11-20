@@ -2781,6 +2781,13 @@ const HOSTED_DEPLOYS = [
       "dsp-integration/package-lock.json", ".github/workflows/dsp-api-deploy.yml",
     ],
   },
+  // The Pharmacy Screen test environment (Firebase project rob-ph-demos):
+  // Hosting, two functions and the repo-root Firestore rules it shares with
+  // the menu-board demo, so a train touching firestore.rules redeploys it too.
+  {
+    workflow: "deploy-pharmacy-screen.yml",
+    sources: ["pharmacy-screen-promo-template/", "firestore.rules", ".github/workflows/deploy-pharmacy-screen.yml"],
+  },
 ];
 
 // TRAIN_MERGE_DISPATCHES: the workflows finishTrain dispatches by hand after a
@@ -2946,6 +2953,7 @@ const TRAIN_TEST_WORKFLOWS = [
   // Kanban suite (test/ui/staff-kanban.test.mjs) belongs to the console
   // tests above and to no other workflow (test/ci-coverage.test.js).
   { workflow: "kanban-staff-board-tests.yml", prefix: "kanban-staff-board/", label: "Staff Kanban tests", kanban: "all" },
+  { workflow: "pharmacy-screen-tests.yml", prefix: "pharmacy-screen-promo-template/", label: "Pharmacy Screen tests" },
 ];
 const CONSOLE_TEST_WORKFLOW = TRAIN_TEST_WORKFLOWS[0].workflow;
 

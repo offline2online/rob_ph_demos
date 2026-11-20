@@ -85,16 +85,16 @@ After the first deploy:
 
 ## Continuous deploy
 
-`ci/deploy-pharmacy-screen.yml` runs the tests and `npm run deploy -- --skip-setup` on every push to the
-deployment train (`deploy/pharmacy-screen-promo-template`, so the test environment shows what is in testing)
-and to `main`. The board's pipeline never adds a new workflow file, so a person installs it once:
+`.github/workflows/deploy-pharmacy-screen.yml` (installed 20 Nov 2026 from `ci/deploy-pharmacy-screen.yml`; keep
+the two identical) runs the tests and `npm run deploy -- --skip-setup` on `main`: on a push touching this folder,
+`firestore.rules` or the workflow, and after a train merge that touches them, which
+`backlog-tracker/scripts/run-backlog-automation.js` dispatches (`HOSTED_DEPLOYS`; a merge made with the
+automation's token never fires a push trigger). It does not deploy the train branch, so the test environment
+shows `main`, not what is in testing. It signs in with the repository secret `FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS`,
+a key for the rob-ph-demos service account `pharmacy-screen-ci` with the Firebase Admin, Cloud Functions Admin,
+Service Account User and Cloud Build Editor roles.
 
-1. Copy it to `.github/workflows/deploy-pharmacy-screen.yml` on `main`.
-2. Add the repository secret `FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS`: a JSON key for a rob-ph-demos service
-   account with the Firebase Admin, Cloud Functions Admin, Service Account User and Cloud Build Editor roles.
-
-Until then, deploy with the command above; Cloud Functions are always deployed by that command or CI, never by
-hand.
+Cloud Functions are always deployed by the command above or CI, never by hand.
 
 ## Tests
 

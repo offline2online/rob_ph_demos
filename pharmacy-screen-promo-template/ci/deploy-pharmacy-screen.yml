@@ -1,6 +1,9 @@
 # Deploys the Pharmacy Screen Promo Template to our test environment
-# (Firebase project rob-ph-demos) whenever a ticket lands on its deployment
-# train, and again when the train merges to main.
+# (Firebase project rob-ph-demos) from main. A train merge is made with the
+# automation's GITHUB_TOKEN, which never fires `on: push`, so
+# run-backlog-automation.js dispatches this workflow after a merge that
+# touches its paths (HOSTED_DEPLOYS). It does not run on the train branch:
+# tickets land there with the same token, so a push trigger would never fire.
 #
 # This file is a template: the pipeline never adds new workflow files, so a
 # person installs it once (pharmacy-screen-promo-template/README.md →
@@ -16,7 +19,6 @@ name: Deploy Pharmacy Screen (rob-ph-demos)
 on:
   push:
     branches:
-      - deploy/pharmacy-screen-promo-template
       - main
     paths:
       - "pharmacy-screen-promo-template/**"
