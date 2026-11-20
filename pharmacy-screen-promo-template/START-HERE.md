@@ -10,8 +10,17 @@ an ACM certificate in us-east-1, a VPC, your own OIDC identity provider.
 
 ## Deploy it (AWS)
 
+From a release package (the Shared Drive's `v<version>` folder), check the download, then unzip it:
+
 ```bash
-git clone <this repository> && cd <repository>/pharmacy-screen-promo-template
+sha256sum -c pharmacy-screen-v<version>.zip.sha256           # macOS: shasum -a 256 -c …
+unzip pharmacy-screen-v<version>.zip && cd pharmacy-screen-v<version>
+```
+
+From the repository instead: `git clone <this repository> && cd <repository>/pharmacy-screen-promo-template`.
+Then, in that folder:
+
+```bash
 npm run check:all                                            # offline tests, ~1 minute
 npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in address>
 ```
@@ -41,7 +50,8 @@ Remove it: `npm run destroy:aws -- --region ap-southeast-2`.
 | Signing it off | [docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md) |
 | Setting up pharmacies and content | [docs/USER-GUIDE.md](docs/USER-GUIDE.md) |
 | An AI agent working on this repo | [AGENTS.md](AGENTS.md) |
-| Checking what changed | [CHANGELOG.md](CHANGELOG.md) |
+| Checking what changed | [CHANGELOG.md](CHANGELOG.md), and in a package `RELEASE-NOTES.md` |
+| Packaging a release for the Shared Drive | [docs/RELEASING.md](docs/RELEASING.md) |
 | Looking for the full picture | [README.md](README.md) |
 
 **Two rules.** Never log, commit or paste the PH API token. Never put a secret in the front end (the screen and

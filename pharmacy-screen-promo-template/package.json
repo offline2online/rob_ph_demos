@@ -1,5 +1,6 @@
 {
   "name": "pharmacy-screen-promo-template",
+  "version": "0.1.0",
   "private": true,
   "description": "Pharmacy Screen Promo Template: one-command deploy to our Firebase test environment (rob-ph-demos) or to the retailer's AWS account (aws/), and the deploy checks.",
   "type": "module",
@@ -17,6 +18,8 @@
     "plan:aws": "node aws/scripts/deploy.mjs deploy --dry-run",
     "destroy:aws": "node aws/scripts/deploy.mjs destroy",
     "seed:aws": "node aws/scripts/seed.js",
+    "release": "node scripts/release.mjs",
+    "release:verify": "node scripts/release.mjs --verify",
     "check:aws": "npm --prefix aws ci --no-audit --no-fund && npm --prefix aws test && npm --prefix aws run test:ui"
   }
 }

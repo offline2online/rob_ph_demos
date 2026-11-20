@@ -26,6 +26,7 @@ cd pharmacy-screen && npm run serve     # screen on mock data: /pharmacy-screen.
 node pharmacy-screen/admin/tools/dev-server.mjs   # editor + APIs in memory: http://localhost:8790/admin/ (token dev-admin)
 npm run deploy:aws -- --region <region> # AWS install (docs/DEPLOYMENT.md); npm run plan:aws to preview
 npm run deploy                          # Firebase test environment (our own)
+npm run release -- --dry-run            # release package for the Shared Drive (docs/RELEASING.md)
 ```
 
 Layout, tests and the definition of done: [AGENTS.md](AGENTS.md).

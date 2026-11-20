@@ -3,12 +3,24 @@
 All notable changes to the Pharmacy Screen. Versions follow [Semantic Versioning](https://semver.org/); each
 release handed to miPharmacy is tagged and packaged with this file and the `docs/` folder. Newest first.
 
-## [Unreleased] — 0.1.0, first handover candidate
+## [Unreleased]
+
+Nothing yet. Add changes here; at release time this section becomes `## [x.y.z] — <date>`
+([docs/RELEASING.md](docs/RELEASING.md)).
+
+## [0.1.0] — first handover candidate
 
 Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharmacy.
 
 ### Added
 
+- **Release package** (`npm run release`): a versioned zip for the Google Shared Drive
+  (`pharmacy-screen-v<version>.zip`, with a `.sha256` checksum, `START-HERE.md` and `RELEASE-NOTES.md` beside it)
+  and a git tag `pharmacy-screen-v<version>`. Built from the commit, never the working tree; carries the built
+  screen and admin front ends, back end, AWS infrastructure, seed and mock data, `docs/` and the agent files;
+  refuses to package a token, key, `.env` file, personal address or any pharmacy beyond the five launch pharmacies.
+  `npm run release:verify -- <zip>` checks a downloaded package the same way. See
+  [docs/RELEASING.md](docs/RELEASING.md).
 - **Handover package**: [START-HERE.md](START-HERE.md), [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md),
   [.env.example](.env.example), and `docs/`: [DEPLOYMENT.md](docs/DEPLOYMENT.md),
   [CONFIGURATION.md](docs/CONFIGURATION.md), [DATA-CONTRACT.md](docs/DATA-CONTRACT.md),

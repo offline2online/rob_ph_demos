@@ -149,7 +149,9 @@ The KMS key rotates itself every 90 days; nothing to do.
 
 ## Upgrade
 
-1. Get the new release (a tag, or the Shared Drive zip) and read [../CHANGELOG.md](../CHANGELOG.md).
+1. Get the new release (a tag, or the Shared Drive zip: check it with its `.sha256`, see
+   [RELEASING.md](RELEASING.md) → "Check a package") and read its `RELEASE-NOTES.md` and
+   [../CHANGELOG.md](../CHANGELOG.md).
 2. From its folder, run the same command with the same options:
    `npm run deploy:aws -- --region <region> [the options you installed with]`. CloudFormation updates in place;
    data in DynamoDB and S3 is kept.
