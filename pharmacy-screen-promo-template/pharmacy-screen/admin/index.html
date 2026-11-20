@@ -50,7 +50,7 @@
   <div class="tmeta">
     <label class="f"><span>Template name</span><input id="tmName"></label>
     <div class="acts"><button type="button" id="tmClone"><span class="ms">content_copy</span>Clone template</button><button type="button" class="text" id="tmDel" style="color:var(--err)"><span class="ms">delete</span><span id="tmDelTx">Delete</span></button></div>
-    <div class="lockmsg" id="tmLock" style="grid-column:1/-1"><span class="ms">lock</span><span>Built-in template. Clone it to make your own version.</span></div>
+    <div class="lockmsg" id="tmLock" style="grid-column:1/-1"><span class="ms">lock</span><span id="tmLockTx">Built-in template. Clone it to make your own version.</span></div>
     <span class="hint" id="tmUsed" style="grid-column:1/-1"></span>
   </div>
   <div class="tabs" role="tablist" id="hdTabs"><button role="tab" data-t="bg" aria-selected="true">Background</button><button role="tab" data-t="html" aria-selected="false">HTML</button><button role="tab" data-t="css" aria-selected="false">CSS</button></div>
@@ -78,7 +78,8 @@
 <div class="wrap" id="app" hidden>
   <div class="edcol">
     <div class="toolbar" id="toolbar">
-      <label class="f pick"><span>Promo preview <span class="ms help" title="The pharmacy whose content you are editing and previewing. Add pharmacies and set their details and branding in Settings.">info</span></span><select id="pvSel"></select></label>
+      <label class="f pick"><span>Promo preview <span class="ms help" id="pvHelp" title="The pharmacy whose content you are editing and previewing. Add pharmacies and set their details and branding in Settings.">info</span></span><select id="pvSel"></select></label>
+      <span class="pill lockpill" id="lockPill" hidden><span class="ms">lock</span><span class="lockpill-tx" id="lockTx"></span></span>
       <button id="setBtn" aria-pressed="false" title="Pharmacies, their details and branding, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
     </div>
 
@@ -158,7 +159,7 @@
       </div>
       <span class="hint" id="logoErr" style="color:var(--err)" hidden></span>
     </div>
-    <div class="card" style="margin-top:16px">
+    <div class="card" id="phApiCard" style="margin-top:16px">
       <div class="sect">Personalisation Hub API <span class="tag" title="Used by every screen to call the Location API. The token is encrypted at rest on the server, never sent to a screen or back to this page, and added to Location API calls by a server-side proxy.">authentication</span></div>
       <div class="grid2">
         <label class="f"><span>API base URL</span><input id="apiBase" placeholder="https://your-ph-server.example.com" inputmode="url" autocomplete="off"></label>

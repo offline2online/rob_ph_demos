@@ -829,3 +829,85 @@ test('with the PH left menu expanded on a tablet or small laptop, the preview st
     await ctx.close();
   }
 });
+
+test('pharmacy view: admin/?store=<code> locks the editor to that pharmacy; its own content is editable, shared things are not', async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  const signInAt = async (path) => {
+    await page.goto(dev.base + path);
+    if (await page.isVisible('#gateTokenIn')) { await page.fill('#gateTokenIn', 'dev-admin'); await page.click('#gateToken button[type=submit]'); }
+  };
+  await signInAt('/admin/?store=vic-mp-005');
+  await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+  await page.click('#playBtn'); // pause
+  // Locked to that pharmacy: the label, one entry in Promo preview (no master template), and it cannot be changed.
+  assert.equal(await page.textContent('#lockTx'), 'Pharmacy view · VIC-MP-005');
+  assert.equal(await page.isVisible('#lockPill'), true);
+  assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.value)), ['seed-pharmacy-vic-mp-005']);
+  assert.equal(await page.isDisabled('#pvSel'), true);
+  // Shared promotion settings are read-only; creating or deleting a promotion is not offered.
+  assert.equal(await page.$eval('#pmName', (e) => e.readOnly), true);
+  assert.equal(await page.$eval('#pmToken', (e) => e.readOnly), true);
+  assert.equal(await page.isDisabled('#pmTpl'), true);
+  assert.equal(await page.isHidden('#newPromoBtn'), true);
+  assert.equal(await page.isHidden('#pmDel'), true);
+  // Its own content: make the greeting its own and edit it; it saves and reaches its screen.
+  await page.click('.inh[data-sec="greeting"] .inh-act');
+  await settle(page);
+  await page.fill('#dit', 'This pharmacy only');
+  await settle(page);
+  let scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introTitle, 'This pharmacy only');
+  // Add a promotion slot (blank) to its own slots.
+  await page.click('.inh[data-sec="slots"] .inh-act');
+  await settle(page);
+  const before = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body.promotions.morning.content.slots.length;
+  await page.click('#addSlot');
+  await page.click('#svcBlank');
+  await settle(page);
+  scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.slots.length, before + 1);
+  // Templates are shared: Edit HTML opens read-only, with no Clone.
+  await page.click('#pmHtml');
+  assert.equal(await page.isHidden('#tmClone'), true);
+  assert.equal(await page.isHidden('#tmDel'), true);
+  assert.equal(await page.textContent('#tmLockTx'), 'Shared by every pharmacy. Only an administrator can change it.');
+  await page.click('#hdTabs [data-t="html"]');
+  assert.equal(await page.$eval('#hdHtml', (e) => e.readOnly), true);
+  await page.click('#hdDone');
+  // Settings: its details (store code read-only), tokens and branding; no Pharmacies card, no PH API card.
+  await page.click('#setBtn');
+  assert.equal(await page.isVisible('#detailsCard'), true);
+  assert.equal(await page.$eval('#sCode', (e) => e.readOnly), true);
+  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-005');
+  assert.equal(await page.isVisible('#tokensCard'), true);
+  assert.equal(await page.isVisible('#brandingCard'), true);
+  assert.equal(await page.isHidden('#pharmaciesCard'), true);
+  assert.equal(await page.isHidden('#phApiCard'), true);
+  await page.click('#setBtn');
+  // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.
+  await page.reload();
+  await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+  assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.lock), 'VIC-MP-005');
+  assert.equal(await page.evaluate(() => localStorage.getItem('ps-admin-pharmacy')), null);
+  // Put it back: inherit the master again.
+  await page.click('#playBtn');
+  await page.click('.inh[data-sec="greeting"] .inh-act');
+  await settle(page);
+  await page.click('.inh[data-sec="slots"] .inh-act');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body.detached, undefined);
+  // ?storeCode= works too.
+  await signInAt('/admin/?storeCode=VIC-MP-005');
+  await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.state.lock === 'VIC-MP-005', null, { timeout: 20000 });
+  // An unknown store code is refused.
+  await signInAt('/admin/?store=NOPE-1');
+  await page.waitForSelector('#gateBlocked:not([hidden])');
+  assert.match(await page.textContent('#gateBlocked'), /No pharmacy has the store code NOPE-1/);
+  assert.match(await page.textContent('#gateTitle'), /Pharmacy not found/);
+  assert.equal(await page.isHidden('#app'), true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

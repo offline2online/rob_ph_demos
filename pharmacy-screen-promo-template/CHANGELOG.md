@@ -10,6 +10,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Pharmacy view: `admin/?store=<store code>` (or `?storeCode=`) opens the editor locked to that pharmacy.** The
+  same editor and preview as the admin view, labelled "Pharmacy view · <store code>", with everything that is the
+  pharmacy's own editable (inherited sections made its own, promotions added from the service library or blank,
+  details, tokens and branding). Shared promotion settings and templates are read-only; the master template,
+  the other pharmacies and the PH API settings are hidden. Sign-in still needs the admin role
+  ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Pharmacy view", [docs/CONFIGURATION.md](docs/CONFIGURATION.md) →
+  "Admin page").
 - **Settings → Tokens: set any token's value by hand, per pharmacy.** Settings lists every `${…}` token the
   pharmacy's promotions and templates use (the master template's inherited sections included), with the
   promotions that use each. A value typed there shows on that pharmacy's screens instead of the store's data

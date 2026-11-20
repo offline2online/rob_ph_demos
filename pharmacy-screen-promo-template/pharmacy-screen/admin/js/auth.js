@@ -118,7 +118,8 @@ async function beginOidc(cfg, redirectUri) {
   const verifier = randomString(48);
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
   const state = randomString(16);
-  store.set(OIDC_PENDING_KEY, { state, verifier, redirectUri });
+  // `back`: the page's own query (e.g. ?store=VIC-MP-002), put back after the provider returns.
+  store.set(OIDC_PENDING_KEY, { state, verifier, redirectUri, back: location.search });
   const q = new URLSearchParams({
     response_type: 'code',
     client_id: cfg.clientId,
@@ -146,7 +147,8 @@ async function oidcMode(cfg) {
   if (params.has('code') || params.has('error')) {
     const pending = store.get(OIDC_PENDING_KEY);
     store.del(OIDC_PENDING_KEY);
-    history.replaceState(null, '', redirectUri + location.hash);
+    const back = pending && typeof pending.back === 'string' && pending.back.startsWith('?') ? pending.back : '';
+    history.replaceState(null, '', redirectUri + back + location.hash);
     if (params.has('error') || !pending || params.get('state') !== pending.state) {
       session = null;
       store.del(OIDC_KEY);

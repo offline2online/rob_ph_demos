@@ -268,3 +268,13 @@ test('timings: every scene of every template has its own seconds, the Closed hea
   assert.match(t.css, /@keyframes occT5_4_2p5B1\{0%\{opacity:0;/);
   assert.match(t.css, /@keyframes occT5_4_2p5B3\{0%,78\.261%\{opacity:0;/);
 });
+
+test('pharmacy view: storeFromQuery reads ?store= or ?storeCode=, normalised like a typed store code', () => {
+  assert.equal(M.storeFromQuery('?store=vic-mp-002'), 'VIC-MP-002');
+  assert.equal(M.storeFromQuery('?storeCode=VIC-MP-003&x=1'), 'VIC-MP-003');
+  assert.equal(M.storeFromQuery('?store=VIC-MP-001&storeCode=VIC-MP-009'), 'VIC-MP-001');
+  assert.equal(M.storeFromQuery('?store=%20vic-mp-004%20'), 'VIC-MP-004');
+  assert.equal(M.storeFromQuery(''), null);
+  assert.equal(M.storeFromQuery('?store='), null);
+  assert.equal(M.storeFromQuery('?code=abc&state=x'), null);
+});

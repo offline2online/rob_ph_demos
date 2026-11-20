@@ -144,6 +144,28 @@ occasion templates. Built-ins are read-only; occasion templates can't be cloned.
 
 Deleting a custom template moves the promotions that used it back to the built-in of the same kind.
 
+## Pharmacy view
+
+Add a store code to the editor's link to open it for **one pharmacy only**:
+`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in you see the same editor and
+live preview, with **Pharmacy view · VIC-MP-002** beside Promo preview, which lists only that pharmacy and cannot
+be changed. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
+"Pharmacy not found"; the link without a store code opens the full editor as before.
+
+In the pharmacy view:
+
+- **Its own content is fully editable.** **Edit for this pharmacy** makes any inherited section its own; edit
+  every line, add promotions from the service library or blank, reorder, retime and delete them, and
+  **Revert to master** to inherit again. Edits save as you type and reach that pharmacy's screens as usual.
+- **Settings** shows its **Pharmacy details** (the store code is read-only), **Tokens** and **Branding**.
+- **Shared by every pharmacy, so read-only**: the promotion name, promo ID and template, and the templates
+  themselves (**Edit HTML** opens read-only, without Clone: "Shared by every pharmacy. Only an administrator can
+  change it.").
+- **Not shown**: the master template, the other pharmacies (adding, resetting or deleting one), New promotion,
+  Delete promotion and the Personalisation Hub API settings.
+
+Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
+
 ## Settings
 
 **Settings** (the cog beside Promo preview) shows:

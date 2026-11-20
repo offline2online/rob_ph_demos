@@ -34,6 +34,7 @@ const S = {
   dpTab: null, // selected promotion's record id
   phApi: null,
   sample: null, // seed fixtures for Reset, if this deployment serves them
+  lock: null, // pharmacy view: the store code an admin/?store=<code> link locks the editor to (null: the admin view)
 };
 let orient = pref.get('orient') === 'landscape' ? 'landscape' : 'portrait';
 
@@ -60,6 +61,8 @@ const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
 const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
+/** Templates are shared by every pharmacy: read-only for built-ins, and for everything in the pharmacy view. */
+const tplRO = (T) => !!(T && T.builtIn) || !!S.lock;
 
 /** This pharmacy's content for a promotion, with the fields its current template needs. In the master template
  *  view, the promotion's master (or, until one is saved, the starting pharmacy's content). For a pharmacy, the
@@ -384,7 +387,7 @@ function decorateSections(B) {
     wrap.className = 'inh' + (own ? ' own' : '');
     wrap.dataset.sec = sec;
     wrap.innerHTML = `<div class="inh-bar"><span class="pill inh-pill"><span class="ms">${own ? 'edit_note' : 'account_tree'}</span>${own ? 'Managed separately' : 'Inherited from master'}</span>
-      <span class="ms help" title="${own ? `${esc(name)} is this pharmacy's own. Changes to the master template no longer reach it.` : `${esc(name)} comes from the master template. Edit it there, or manage it separately for this pharmacy.`}">info</span>
+      <span class="ms help" title="${own ? `${esc(name)} is this pharmacy's own. Changes to the master template no longer reach it.` : S.lock ? `${esc(name)} comes from the master template. Manage it separately to edit it for this pharmacy.` : `${esc(name)} comes from the master template. Edit it there, or manage it separately for this pharmacy.`}">info</span>
       <button type="button" class="text inh-act" data-sec="${sec}" data-own="${own ? 1 : 0}" ${canEdit ? '' : 'disabled title="Add the pharmacy name and store code first"'}><span class="ms">${own ? 'undo' : 'edit'}</span>${own ? 'Revert to master' : 'Edit for this pharmacy'}</button></div>`;
     if (own && S.note && S.note.promotionId === p.id && S.note.sec === sec) {
       wrap.insertAdjacentHTML('beforeend', `<div class="inh-alert" role="status"><span class="ms">info</span><span><b>${esc(name)}</b> is now managed separately for ${esc(S.cur.name)}. Changes to the master template no longer reach it until you revert it to the master.</span><button type="button" class="text inh-x" aria-label="Dismiss"><span class="ms">close</span></button></div>`);
@@ -533,11 +536,13 @@ function renderPromoMeta() {
   if (!x) return;
   const occ = isOcc(x.id);
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
+  // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only here.
+  $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock;
   // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
   $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
   $('pmHtml').hidden = occ;
-  $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = S.promotions.length < 2;
+  $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = !!S.lock || S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
 }
 function showPmErr(msg) { $('pmErr').textContent = msg; $('pmErr').hidden = !msg; }
@@ -566,18 +571,21 @@ function savePromotion(p) {
 }
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
+  if (S.lock) return;
   const p = promo(); p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();
 };
-$('pmName').oninput = (e) => { const p = promo(); p.name = e.target.value || 'Untitled'; savePromotion(p); renderPromoTabs(); lastKey = ''; };
+$('pmName').oninput = (e) => { if (S.lock) return; const p = promo(); p.name = e.target.value || 'Untitled'; savePromotion(p); renderPromoTabs(); lastKey = ''; };
 $('pmToken').oninput = (e) => {
+  if (S.lock) return;
   const t = M.slug(e.target.value), er = M.promoIdError(t, S.promotions, S.dpTab);
   showPmErr(er); $('pmUrl').textContent = 'promo=' + t;
   if (!er) { promo().promoId = t; savePromotion(promo()); renderUrl(); renderPromoTabs(); ver++; }
 };
 $('pmToken').onblur = () => { $('pmToken').value = promo().promoId; };
 $('pmDel').onclick = async () => {
+  if (S.lock) return;
   if (!pmArm) { pmArm = true; $('pmDelTx').textContent = 'Click again to delete for all pharmacies'; setTimeout(() => { pmArm = false; $('pmDelTx').textContent = 'Delete promotion'; }, 4000); return; }
   const p = promo();
   await Save.flush();
@@ -588,11 +596,12 @@ $('pmDel').onclick = async () => {
   } catch (e) { showPmErr(e.message); }
 };
 let npTouched = false;
-$('newPromoBtn').onclick = () => { $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
+$('newPromoBtn').onclick = () => { if (S.lock) return; $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
 $('npCancel').onclick = () => { $('newPromo').hidden = true; };
 $('npName').oninput = (e) => { if (!npTouched) $('npToken').value = M.slug(e.target.value); };
 $('npToken').oninput = () => { npTouched = true; };
 $('npCreate').onclick = async () => {
+  if (S.lock) return;
   const name = $('npName').value.trim(), t = M.slug($('npToken').value);
   const er = name ? M.promoIdError(t, S.promotions) : 'Add a name.';
   const show = (m) => { $('npErr').textContent = m; $('npErr').hidden = !m; };
@@ -613,9 +622,12 @@ let tmArm = false;
 function hdErr(msg) { $('hdErr').textContent = msg || ''; $('hdErr').hidden = !msg; }
 function openHtml() { renderTmeta(); hdTab('bg'); hdErr(''); $('htmlDlg').showModal(); }
 function renderTmeta() {
-  const T = curT(), ro = !!T.builtIn, base = M.baseOfKind(T.kind);
+  const T = curT(), ro = tplRO(T), base = M.baseOfKind(T.kind);
   $('hdTitle').textContent = 'Template';
   $('tmName').value = T.name; $('tmName').disabled = ro; $('tmLock').hidden = !ro; $('tmDel').hidden = ro;
+  // Pharmacy view: no Clone either, since a clone is a new shared template.
+  $('tmClone').hidden = !!S.lock;
+  $('tmLockTx').textContent = S.lock ? 'Shared by every pharmacy. Only an administrator can change it.' : 'Built-in template. Clone it to make your own version.';
   tmArm = false; $('tmDelTx').textContent = 'Delete';
   const used = S.promotions.filter((x) => x.templateId === T.id).map((x) => x.name);
   $('tmUsed').textContent = used.length ? 'Used by: ' + used.join(', ') : 'Not used by any promotion';
@@ -628,7 +640,7 @@ function renderTmeta() {
 function hdTab(t) {
   document.querySelectorAll('#hdTabs button').forEach((b) => b.setAttribute('aria-selected', b.dataset.t === t));
   document.querySelectorAll('#htmlDlg .dlg-b').forEach((p) => { p.hidden = p.dataset.p !== t; });
-  $('hdNote').textContent = curT().builtIn ? '' : 'Changes apply to every promotion using this template.';
+  $('hdNote').textContent = tplRO(curT()) ? '' : 'Changes apply to every promotion using this template.';
 }
 function bgSvg(land, img) {
   const G = geom(land, curT().kind === 'opening-hours'), b = S.cur.colours, p2 = boost(b.primary, 1.8);
@@ -686,8 +698,9 @@ function saveTemplate(T, fields) {
 }
 $('hdClose').onclick = $('hdDone').onclick = () => $('htmlDlg').close();
 $('hdTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) hdTab(b.dataset.t); };
-$('tmName').oninput = (e) => { const T = curT(); if (T.builtIn) return; T.name = e.target.value || 'Untitled template'; saveTemplate(T, { name: 1 }); renderPromoMeta(); renderJson(); };
+$('tmName').oninput = (e) => { const T = curT(); if (tplRO(T)) return; T.name = e.target.value || 'Untitled template'; saveTemplate(T, { name: 1 }); renderPromoMeta(); renderJson(); };
 $('tmClone').onclick = async () => {
+  if (S.lock) return;
   const T = curT(), p = promo();
   try {
     const rec = await Save.queue(`tpl:${T.id}`, () => api.cloneTemplate(T.id, `${T.name} copy`));
@@ -697,7 +710,7 @@ $('tmClone').onclick = async () => {
   } catch (e) { hdErr(e.message); }
 };
 $('tmDel').onclick = async () => {
-  const T = curT(); if (T.builtIn) return;
+  const T = curT(); if (tplRO(T)) return;
   if (!tmArm) { tmArm = true; $('tmDelTx').textContent = 'Click again to delete'; setTimeout(() => { tmArm = false; $('tmDelTx').textContent = 'Delete'; }, 4000); return; }
   await Save.flush();
   try {
@@ -708,10 +721,10 @@ $('tmDel').onclick = async () => {
   } catch (e) { hdErr(e.message); }
 };
 [['P', 'portrait', 1080, 1920], ['L', 'landscape', 1920, 1080]].forEach(([k, o, W, H]) => {
-  $('bg' + k + 'btn').onclick = () => { if (!curT().builtIn) $('bg' + k + 'in').click(); };
+  $('bg' + k + 'btn').onclick = () => { if (!tplRO(curT())) $('bg' + k + 'in').click(); };
   $('bg' + k + 'in').onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
-    const T = curT();
+    const T = curT(); if (tplRO(T)) return;
     try {
       const blob = await shrinkImg(f, W, H);
       const res = await Save.queue(`tpl:${T.id}`, () => api.setBackground(T.id, o, blob));
@@ -719,16 +732,16 @@ $('tmDel').onclick = async () => {
     } catch (err) { hdErr(err.message); }
   };
   $('bg' + k + 'rm').onclick = async () => {
-    const T = curT();
+    const T = curT(); if (tplRO(T)) return;
     try { takeTemplate(await Save.queue(`tpl:${T.id}`, () => api.removeBackground(T.id, o)), true); tChanged(); renderBgs(); } catch (err) { hdErr(err.message); }
   };
 });
-$('hdHtml').oninput = (e) => { const T = curT(); if (T.builtIn) return; const base = M.baseOfKind(T.kind); T.html = e.target.value.trim() === DEFAULT_HTML[base].trim() ? '' : e.target.value; saveTemplate(T, { html: 1 }); tChanged(); };
-$('hdCss').oninput = (e) => { const T = curT(); if (T.builtIn) return; T.css = e.target.value; saveTemplate(T, { css: 1 }); tChanged(); };
-$('hdTokens').onclick = (e) => { const b = e.target.closest('button'); if (!b || curT().builtIn) return; const ta = $('hdHtml'), v = '${' + b.dataset.t + '}'; ta.setRangeText(v, ta.selectionStart, ta.selectionEnd, 'end'); ta.focus(); ta.dispatchEvent(new Event('input')); };
+$('hdHtml').oninput = (e) => { const T = curT(); if (tplRO(T)) return; const base = M.baseOfKind(T.kind); T.html = e.target.value.trim() === DEFAULT_HTML[base].trim() ? '' : e.target.value; saveTemplate(T, { html: 1 }); tChanged(); };
+$('hdCss').oninput = (e) => { const T = curT(); if (tplRO(T)) return; T.css = e.target.value; saveTemplate(T, { css: 1 }); tChanged(); };
+$('hdTokens').onclick = (e) => { const b = e.target.closest('button'); if (!b || tplRO(curT())) return; const ta = $('hdHtml'), v = '${' + b.dataset.t + '}'; ta.setRangeText(v, ta.selectionStart, ta.selectionEnd, 'end'); ta.focus(); ta.dispatchEvent(new Event('input')); };
 $('hdHtml').onkeydown = $('hdCss').onkeydown = (e) => { if (e.key === 'Tab' && !e.target.readOnly) { e.preventDefault(); e.target.setRangeText('  ', e.target.selectionStart, e.target.selectionEnd, 'end'); } };
 $('hdReset').onclick = async () => {
-  const T = curT(); if (T.builtIn) return;
+  const T = curT(); if (tplRO(T)) return;
   const t = document.querySelector('#hdTabs [aria-selected=true]').dataset.t;
   if (t === 'bg') {
     try {
@@ -747,8 +760,16 @@ function renderStoreSel() {
   if (!S.cur.id && !S.cur.isMaster) rows.push(`<option value="">${esc(S.cur.name || 'New pharmacy')}${S.cur.storeCode ? ' · ' + esc(S.cur.storeCode) : ''} (not saved yet)</option>`);
   // The same list feeds Settings' pharmacy picker and the promotions page's Promo preview drop-down; Promo preview
   // also offers the master template, first.
-  $('storeSel').innerHTML = rows.join(''); $('storeSel').value = S.cur.id || '';
-  $('pvSel').innerHTML = [`<option value="${MASTER_ID}">Master template</option>`, ...rows].join('');
+  if (S.lock) {
+    // Pharmacy view: only this pharmacy, and it cannot be changed.
+    const one = rows.filter((r, i) => S.pharmacies[i] && S.pharmacies[i].id === S.cur.id).join('');
+    $('storeSel').innerHTML = $('pvSel').innerHTML = one;
+    $('storeSel').disabled = $('pvSel').disabled = true;
+  } else {
+    $('storeSel').innerHTML = rows.join('');
+    $('pvSel').innerHTML = [`<option value="${MASTER_ID}">Master template</option>`, ...rows].join('');
+  }
+  $('storeSel').value = S.cur.id || '';
   $('pvSel').value = S.cur.isMaster ? MASTER_ID : S.cur.id || '';
   $('resetBtn').hidden = S.cur.isMaster || !sampleFor(S.cur.storeCode);
   $('delBtn').hidden = S.cur.isMaster || S.pharmacies.length < 1 || (S.pharmacies.length < 2 && !!S.cur.id);
@@ -824,7 +845,8 @@ function loadStore() {
   const s = S.cur;
   showMasterChrome(!!s.isMaster);
   bindVal('sName', () => s.name, (v) => { s.name = v; renderStoreSel(); });
-  bindVal('sCode', () => s.storeCode, (v) => { s.storeCode = M.normStoreCode(v); $('sCode').value = s.storeCode; renderStoreSel(); });
+  $('sCode').readOnly = !!S.lock;
+  bindVal('sCode', () => s.storeCode, (v) => { if (S.lock) return; s.storeCode = M.normStoreCode(v); $('sCode').value = s.storeCode; renderStoreSel(); });
   bindVal('cP', () => s.colours.primary, (v) => { s.colours.primary = v.toLowerCase(); renderLogo(); renderDp(); });
   bindVal('cA', () => s.colours.accent, (v) => { s.colours.accent = v.toLowerCase(); });
   showCodeErr(s.id ? '' : detailsError());
@@ -887,7 +909,7 @@ async function selectPharmacy(id) {
   const rec = await api.getPharmacy(id);
   S.cur = { ...rec, content: rec.content || {} };
   S.note = null;
-  pref.set('pharmacy', id);
+  if (!S.lock) pref.set('pharmacy', id); // the pharmacy view never changes the admin view's remembered pharmacy
   renderStoreSel(); loadStore();
 }
 function newDraft() {
@@ -895,15 +917,17 @@ function newDraft() {
   return { id: null, storeCode: '', name: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: M.newPharmacyContent(S.promotions, S.templates) };
 }
 let delArm = false;
-$('storeSel').onchange = $('pvSel').onchange = (e) => { if (e.target.value === MASTER_ID) selectMaster().catch(Save.fail); else if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
+$('storeSel').onchange = $('pvSel').onchange = (e) => { if (S.lock) return; if (e.target.value === MASTER_ID) selectMaster().catch(Save.fail); else if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
 // Adding a pharmacy, and its details and branding, live in Settings.
 $('addBtn').onclick = async () => {
+  if (S.lock) return;
   await Save.flush();
   S.cur = newDraft(); renderStoreSel(); loadStore();
   if ($('settingsView').hidden) $('setBtn').click();
   $('sName').focus();
 };
 $('delBtn').onclick = async () => {
+  if (S.lock) return;
   if (!delArm) { delArm = true; $('delTx').textContent = 'Click again to delete'; setTimeout(() => { delArm = false; $('delTx').textContent = 'Delete'; }, 4000); return; }
   await Save.flush();
   const s = S.cur;
@@ -924,7 +948,7 @@ async function loadSample() {
   } catch { S.sample = null; }
 }
 $('resetBtn').onclick = async () => {
-  const s = S.cur, o = sampleFor(s.storeCode); if (!o || !s.id) return;
+  const s = S.cur, o = sampleFor(s.storeCode); if (!o || !s.id || S.lock) return;
   await Save.flush();
   const contentNext = { ...(s.content || {}) };
   for (const p of S.promotions) if (o.content && o.content[p.promoId]) contentNext[p.id] = JSON.parse(JSON.stringify(o.content[p.promoId]));
@@ -950,7 +974,7 @@ $('setBtn').onclick = () => {
   $('settingsView').hidden = !on; $('contentView').hidden = on; $('toolbar').classList.toggle('inSettings', on);
   $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to promotions' : 'Settings';
   $('setBtn').firstChild.textContent = on ? 'arrow_back' : 'settings';
-  if (on) { loadPhApi(); if (!S.cur.isMaster) renderTokens(); }
+  if (on) { if (!S.lock) loadPhApi(); if (!S.cur.isMaster) renderTokens(); }
   // Settings works on pharmacies, never the master template: show the first pharmacy there.
   if (on && S.cur && S.cur.isMaster && S.pharmacies[0]) selectPharmacy(S.pharmacies[0].id).catch(Save.fail);
 };
@@ -971,10 +995,12 @@ async function loadPhApi() {
 }
 const baseUrls = () => $('apiBase').value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 $('apiBase').onchange = async () => {
+  if (S.lock) return;
   const list = baseUrls(); if (!list.length) { apiErr('Add the API base URL, starting with https://.'); return; }
   try { S.phApi = await Save.queue('phapi', () => api.savePhApi({ baseUrls: list })); renderApi(); apiErr(''); } catch (e) { apiErr(e.message); }
 };
 $('apiSave').onclick = async () => {
+  if (S.lock) return;
   const t = $('apiTok').value.trim(), list = baseUrls();
   if (!list.length || !list.every((u) => /^https:\/\/[^\s/]+/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1)/.test(u))) { apiErr('Add the API base URL, starting with https://.'); return; }
   if (!t) { apiErr('Paste the full API token.'); return; }
@@ -984,6 +1010,7 @@ $('apiSave').onclick = async () => {
   } catch (e) { $('apiTok').value = ''; apiErr(e.message); }
 };
 $('apiRm').onclick = async () => {
+  if (S.lock) return;
   try { S.phApi = await Save.queue('phapi', () => api.removePhApiToken()); renderApi({ clearToken: true }); apiErr(''); } catch (e) { apiErr(e.message); }
 };
 
@@ -1010,6 +1037,20 @@ async function main() {
   const [pharmacies, promotions, templates, services] = await Promise.all([api.listPharmacies(), api.listPromotions(), api.listTemplates(), api.listServices(), loadSample()]);
   S.pharmacies = pharmacies; S.promotions = M.orderPromotions(promotions); S.templates = templates; S.services = services;
   S.dpTab = S.promotions[0] && S.promotions[0].id;
+  // Pharmacy view: admin/?store=<store code> (or ?storeCode=) opens the editor locked to that one pharmacy.
+  const lock = M.storeFromQuery(location.search);
+  if (lock) {
+    const mine = S.pharmacies.find((p) => p.storeCode === lock);
+    if (!mine) { showBlocked('Pharmacy not found', `No pharmacy has the store code ${lock}. Check the link, or open the editor without a store code.`, { signOut: session.signOut }); return; }
+    S.lock = lock;
+    applyLock();
+    hideGate(); $('app').hidden = false;
+    await selectPharmacy(mine.id);
+    setOrient(orient); fit();
+    requestAnimationFrame(loop);
+    try { document.fonts.ready.then(() => { lastKey = ''; }); document.fonts.addEventListener('loadingdone', () => { lastKey = ''; }); } catch (e) {}
+    return;
+  }
   hideGate(); $('app').hidden = false;
   const want = pref.get('pharmacy');
   const first = S.pharmacies.find((p) => p.id === want) || S.pharmacies[0];
@@ -1019,6 +1060,18 @@ async function main() {
   setOrient(orient); fit();
   requestAnimationFrame(loop);
   try { document.fonts.ready.then(() => { lastKey = ''; }); document.fonts.addEventListener('loadingdone', () => { lastKey = ''; }); } catch (e) {}
+}
+
+/** Pharmacy view: show the lock, and hide what belongs to the administrator (other pharmacies, the master template,
+ *  creating or deleting promotions, the PH API). Every write handler checks S.lock as well. */
+function applyLock() {
+  $('lockPill').hidden = false;
+  $('lockTx').textContent = `Pharmacy view · ${S.lock}`;
+  $('lockPill').title = `Pharmacy view · ${S.lock}`;
+  for (const id of ['newPromoBtn', 'newPromo', 'pharmaciesCard', 'phApiCard']) $(id).hidden = true;
+  $('detailsCard').style.marginTop = '0';
+  $('setBtn').title = "This pharmacy's details, tokens and branding";
+  $('pvHelp').title = 'This link opens the editor for this pharmacy only. Edit its own copy for each promotion here, and its details, tokens and branding in Settings.';
 }
 
 // Hook for the editor's end-to-end tests.

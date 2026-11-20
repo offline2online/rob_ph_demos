@@ -232,6 +232,13 @@ export function promoIdError(id, promotions, selfId) {
 
 export const normStoreCode = (v) => String(v || '').toUpperCase().replace(/\s+/g, '');
 
+/** The store code an `admin/?store=<code>` (or `?storeCode=<code>`) link opens the editor locked to (the pharmacy
+ *  view), normalised like a typed store code; `store` wins if both are set. Null when the link has neither. */
+export function storeFromQuery(search) {
+  const q = new URLSearchParams(search || '');
+  return normStoreCode(q.get('store') || q.get('storeCode')) || null;
+}
+
 /** '' or why this store code can't be used. */
 export function storeCodeError(code, pharmacies, selfId) {
   if (!code) return 'Add a store code. The Location API returns it for this pharmacy’s screens.';
