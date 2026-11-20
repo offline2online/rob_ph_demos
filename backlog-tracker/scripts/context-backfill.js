@@ -39,7 +39,7 @@ function parseArgs(argv) {
 }
 
 // The collections one run reads, for the dry run's counts.
-const COLLECTIONS = { ticket: ["backlogItems"], kanban: ["kanbanTasks"], project: ["projects"], concept: ["concepts"], critique: ["conceptCritiques"], faq: ["faqArticles"], lead: ["leads"], prospect: ["prospects"], support: ["supportTickets"], document: ["projectDocs", "interfaces"], skill: ["skills"] };
+const COLLECTIONS = { ticket: ["backlogItems"], kanban: ["kanbanTasks"], project: ["projects"], concept: ["concepts"], critique: ["conceptCritiques"], faq: ["faqArticles"], lead: ["leads"], prospect: ["prospects"], support: ["supportTickets"], document: ["projectDocs", "interfaces"], documentation: ["docArticles"], skill: ["skills"] };
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));

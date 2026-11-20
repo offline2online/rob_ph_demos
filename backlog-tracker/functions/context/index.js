@@ -37,6 +37,7 @@ const crypto = require("crypto");
 const core = require("./core");
 const { makeSources, documentEntries, ms } = require("./sources");
 const embedderLib = require("./embedder");
+const library = require("../documentation-library");
 
 const INDEX = "searchIndex";
 const STATE = "searchIndexState";     // one doc, "main": when the backfill last finished
@@ -314,14 +315,53 @@ function create(deps) {
     const snap = await ref.get();
     return { d: snap.exists ? snap.data() || {} : null, o: Object.assign({}, opts || {}, { srcAt: readAt(snap) }) };
   }
+  // The documentation library's sections (docCategories), for the section a
+  // document sits in. Small (tens of rows) and read at most once a minute per
+  // instance, or at once after a section changes (syncDocCategory).
+  let libraryCats = { at: 0, map: null, loading: null };
+  async function docCategories() {
+    if (libraryCats.map && now() - libraryCats.at < 60 * 1000) return libraryCats.map;
+    if (!libraryCats.loading) {
+      libraryCats.loading = (async () => {
+        const map = new Map();
+        (await db().collection("docCategories").get()).forEach((c) => map.set(c.id, c.data() || {}));
+        libraryCats = { at: now(), map, loading: null };
+        return map;
+      })().catch((err) => { libraryCats.loading = null; throw err; });
+    }
+    return libraryCats.loading;
+  }
+  // What a source's build needs beyond the record itself.
+  async function extraFor(source, def, id) {
+    if (def.sub) return subDocs(def.collection, id, def.sub);
+    if (source === "documentation") return { cats: await docCategories() };
+    return undefined;
+  }
   async function syncRecord(source, id, data, opts) {
     const def = SRC[source];
     if (!def) throw new Error(`context: no source "${source}"`);
     const { d, o } = await current(db().collection(def.collection).doc(String(id)), data, opts);
     if (!d) return remove(source, id, o);
-    const extra = def.sub ? await subDocs(def.collection, id, def.sub) : undefined;
+    const extra = await extraFor(source, def, id);
     const entry = def.build(String(id), d, extra);
     return entry ? put(source, id, entry, o) : remove(source, id, o);
+  }
+  // A section renamed, moved or removed changes the location every document
+  // under it is indexed with: re-index those documents (an unchanged one
+  // costs a read and no write).
+  async function syncDocCategory(id, before, after) {
+    const moved = !before || !after || String(before.name || "") !== String(after.name || "") || (before.parentId || null) !== (after.parentId || null);
+    if (!moved) return { changed: false };
+    libraryCats = { at: 0, map: null, loading: null };
+    const cats = await docCategories();
+    // A removed section: its own documents (it has no subtree left to walk).
+    const ids = cats.has(String(id)) ? library.subtreeIds(cats, String(id)) : [String(id)];
+    let changed = false;
+    for (const cid of ids) {
+      const snap = await db().collection("docArticles").where("categoryId", "==", cid).get();
+      for (const doc of snap.docs) { const r = await syncRecord("documentation", doc.id); changed = changed || Boolean(r && r.changed); }
+    }
+    return { changed };
   }
   async function syncProjectMd(projectId, kind, data, opts) {
     const { d, o } = await current(db().collection("projects").doc(String(projectId)).collection("docs").doc(kind), data, opts);
@@ -904,6 +944,8 @@ function create(deps) {
     { name: "contextIndexConcept", document: "concepts/{id}", run: simple("concept") },
     { name: "contextIndexCritique", document: "conceptCritiques/{id}", run: simple("critique") },
     { name: "contextIndexFaqArticle", document: "faqArticles/{id}", run: simple("faq") },
+    { name: "contextIndexDocArticle", document: "docArticles/{id}", run: simple("documentation") },
+    { name: "contextIndexDocCategory", document: "docCategories/{id}", run: (p, before, after) => syncDocCategory(p.id, before, after) },
     { name: "contextIndexLead", document: "leads/{id}", run: simple("lead") },
     { name: "contextIndexProspect", document: "prospects/{id}", run: simple("prospect") },
     { name: "contextIndexSkill", document: "skills/{id}", run: simple("skill") },
@@ -916,7 +958,7 @@ function create(deps) {
   return {
     core, origin, SOURCES: core.SOURCES, mayRead, visibleSources, visibilityOf,
     ensureFresh, search, topicContext, touchTopic, prewarm, openTickets, indexReady,
-    syncRecord, syncProjectMd, syncProjectDoc, syncInterface, put, remove, backfill, triggers,
+    syncRecord, syncProjectMd, syncProjectDoc, syncInterface, syncDocCategory, put, remove, backfill, triggers,
     // For the tools file and the tests.
     _mem: mem, _audit: audit,
     // Tests: as if the refresh window had passed since this instance last looked.

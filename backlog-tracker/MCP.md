@@ -197,7 +197,8 @@ mis-edited collection can never lock everyone out.
 `get_approved_for_deployment_board`, `get_project_docs`,
 `list_project_documents`, `get_project_document`,
 `list_doc_revisions`, `get_doc_revision`, `search_faq`, `get_faq_article`,
-`list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
+`list_documentation`, `get_documentation` (the documentation library, see
+"Documentation library" below), `list_pending_faq_revisions`, `get_faq_revision`, `list_skills`,
 `get_skill`, `list_skill_misses`, `get_routine_setup_instructions`,
 `list_concepts`, `get_concept`, and, across all of it, `search_console` and
 `get_topic_context` (see "PH Agent Context" below), with
@@ -923,6 +924,7 @@ read and by the MCP server's own per-call check, neither of which is cached.
 | `functions/index.js` | exports `mcpServer` and `syncConsoleUserClaims` |
 | `functions/code-mode/` | Code Mode: the sandbox (`sandbox.js`, `sandbox-worker.js`), the four tools and the allow-list (`index.js`), the insight scripts (`insights/`) |
 | `functions/context/` | PH Agent Context: the ranking rules (`core.js`), what each source gives the index (`sources.js`), the semantic vector (`embedder.js`), the index, the packs, both cache tiers and the triggers (`index.js`), the seven tools (`tools.js`) |
+| `functions/documentation-library.js` | The documentation library as the server sees it (section location, archived, body as Markdown), shared by `list_documentation` / `get_documentation` and the `documentation` index source |
 | `scripts/context-backfill.js` | indexes existing data into `searchIndex`; run by `.github/workflows/context-backfill.yml` |
 | `claude-plugin/` | the Claude plugin that packages this server: manifest, `.mcp.json`, two skills (`test/claude-plugin.test.js`) |
 | `firebase.json` | hosting rewrites putting it at `/mcp` and the two `/.well-known` paths |
@@ -1140,6 +1142,7 @@ script can call these existing read tools and nothing else:
 - Prospects: `list_prospects`
 - Skills library: `list_skills`, `get_skill`, `list_skill_misses`
 - Help centre: `search_faq`, `get_faq_article`, `list_faq_categories`
+- Documentation library: `list_documentation`, `get_documentation`
 
 There are no write tools in a script. Each call is the existing tool's own
 code, run with the caller's own session, so a script reads exactly what its
@@ -1231,6 +1234,40 @@ Tests: `node code-mode-sandbox.test.js` (the limits, with stub tools) and
 `npm run test:mcp`. They need `isolated-vm`, which `test/package.json`
 installs.
 
+## Documentation library: the pages migrated from Confluence (20 Nov 2026)
+
+Support › Documentation (`docCategories` sections and folders, `docArticles`
+documents; README → "Documentation — the internal docs library") holds the
+team's internal documentation, including every page carried over from
+Confluence on 19 Nov 2026 (ids `cf-<Confluence page id>`). Before 20 Nov 2026
+no tool could reach it: `search_console` with `sources: ["document"]` only
+covers project documents, so a search for "MIST" or "Confluence" found none
+of it. Now it is a source of its own, read-only over MCP, in Code Mode and
+in the context layer:
+
+| Tool | What |
+| --- | --- |
+| `list_documentation` | The sections (`{id, name, parentId, location, documents}`) and the documents without their text (`{id, title, slug, location, categoryId, docType, status, needsReview, archived, updatedAt, url, origin}`), paged (`offset`, `limit` default 50, max 100). `categoryId` narrows to a section or folder and everything under it. Archive and drafts only with `includeArchived`. |
+| `get_documentation` | One document by `docId` (or `slug`) as Markdown, with its location, document type, status, needs-review flag and `origin` (Confluence page id, space, original path, last updated there, archived, link). Paged, with `outline` and `section`, exactly like `get_project_document`. |
+
+- **Search** is `search_console` with source `documentation` (or no
+  `sources`): the same index, BM25 plus vectors, chunking by heading, hot
+  query cache and per-instance refresh as every other source, so a hit names
+  the heading it was under and a repeat is served from the cache. A page is
+  found by the name of the section or folder it sits in as well as its own
+  text (the MIST folder's "Webhook service" page for "MIST").
+- **Topic packs**: `get_topic_context` includes the `documentation` records
+  that match the topic, like any other source.
+- **Code Mode**: both tools are script tools, and `search_console` accepts
+  `sources: ["documentation"]` in a script.
+- **Indexing**: `contextIndexDocArticle` re-indexes a document when it is
+  written; `contextIndexDocCategory` re-indexes the documents under a section
+  or folder that is renamed, moved or removed. The backfill indexes the
+  existing pages (`--sources documentation`), and runs by itself after the
+  console deploy that ships this.
+- **Who**: members, like the console page. It is guarded by
+  `get_documentation` (`board.read`, no role), so it follows that tool's rule.
+
 ## PH Agent Context: one search, and a topic in one call
 
 `functions/context/` (19 Nov 2026). Before it, finding everything on a topic
@@ -1267,6 +1304,7 @@ Code Mode script can search and then count or join what it found.
 | `prospect` | the TAM company record: industry, markets, insights, vendors, campaigns | `list_prospects` |
 | `support` | Support threads: subject, summary and the newest 30 messages | `list_support_threads` |
 | `document` | Requirements, README, repo mirrors, board documents and interface contracts, cut into sections | `get_project_document` |
+| `documentation` | the documentation library (Support › Documentation, every page migrated from Confluence): title, the section and folder it sits in, the original Confluence path, summary, keywords and the body as Markdown (link and image targets dropped), cut into sections. Pages under Archive, from an archived Confluence page, or not published are archived | `get_documentation` |
 | `skill` | skills: summary and every file | `get_skill` |
 
 A long document is cut at its headings into chunks of at most 1,600
@@ -1304,8 +1342,9 @@ indexed.
 (an email), `since` and `until` (a date, an ISO time, or a span back from now
 like `7d`), `open`, `includeArchived`, `limit` (default 10, max 50). With no
 `query` the tool lists what the filters match, newest first. Archived
-tickets, leads and projects and unpublished help articles are hidden unless
-`includeArchived` is set or their `status` is named.
+tickets, leads and projects, unpublished help articles and archived
+documentation are hidden unless `includeArchived` is set or their `status`
+is named.
 
 **Indexed on write, never at query time.** One Firestore trigger per source
 collection (`contextIndex…` in `functions/index.js`) rewrites the one entry

@@ -3273,7 +3273,7 @@ The per-source searches (`list_backlog_items` with `search`,
 | `functions/context/index.js` | The index in memory and in `searchIndex`, the search, the packs, the hot and warm caches, invalidation, the prewarm, the backfill, the trigger handlers |
 | `functions/context/tools.js` | The seven MCP tools |
 | `functions/code-mode/insights/topic_context.js` | The insight |
-| `functions/index.js` → `contextIndex…`, `contextPrewarmTopic` | The sixteen Firestore triggers |
+| `functions/index.js` → `contextIndex…`, `contextPrewarmTopic` | The eighteen Firestore triggers |
 | `scripts/context-backfill.js`, `.github/workflows/context-backfill.yml` | Index existing data; re-run safely |
 | `firestore.rules`, `firestore.indexes.json` | Members read `searchIndex`, `searchIndexState`, `topicContext`, `searchRuns`; only the server writes. The large fields are exempt from indexing |
 
@@ -4034,6 +4034,13 @@ and PROC), which is no longer needed: every page was carried over on
   `cf-<Confluence page id>`, sections `sec-<path slug>`, so links between
   documents (`#doc/cf-…`) still work. Current documents last updated in
   Confluence before 2025 are flagged **Needs review**.
+- **Agents** (20 Nov 2026): every document, migrated or not, is reachable
+  over MCP: `search_console` (source `documentation`, the same index and
+  caches as every other source), `list_documentation` and `get_documentation`
+  (read-only, Markdown, paged by section), both also in Code Mode, and
+  `get_topic_context` packs. Indexed by `contextIndexDocArticle` /
+  `contextIndexDocCategory` (`functions/documentation-library.js` holds the
+  shared section and archive rules). See `MCP.md` → "Documentation library".
 - **Sections**: Product & Roadmap, Architecture & Solution Design, Feature
   Specifications, Installation & Deployment, Infrastructure & Operations,
   Engineering Process, Archive (AEM Screens, Optus delivery, Kafka/ELK,

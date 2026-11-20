@@ -178,8 +178,9 @@ function seed() {
     for (const w of WRITE_TOOLS) assert.ok(!r.text.includes(`  ${w}(`), `${w} is not described`);
     assert.match(r.text, /50 tool calls/);
     assert.match(r.text, /20 KB returned value/);
-    // 31 tools since PH Agent Context added documents, critiques, search, topic context, Support threads and run history (21 before, under 12,000).
-    assert.ok(r.text.length < 18500, `the description is compact (${r.text.length} chars)`);
+    // 31 tools since PH Agent Context added documents, critiques, search, topic context, Support threads and run history (21 before, under 12,000);
+    // the documentation library's two read tools (20 Nov 2026) made it 33, under 19,000.
+    assert.ok(r.text.length < 19000, `the description is compact (${r.text.length} chars)`);
   });
 
   // ── run_script ─────────────────────────────────────────────────────────

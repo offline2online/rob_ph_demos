@@ -124,13 +124,18 @@ const SCRIPT_TOOLS = [
     returns: "{ id: string; title: string; slug: string; docType: string | null; category: string | null; status: string | null; summary: string; keywords: string[]; bodyMd: string; directAnswer: string | null; hiddenFromWebsite: boolean; appliesToRelease: boolean }" },
   { name: "list_faq_categories", args: "{}",
     returns: "{ matched: number; categories: Array<{ id: string; name: string; parentId: string | null; order: number; hiddenFromWebsite: boolean }> }" },
+  // Documentation library (Support › Documentation, incl. the pages migrated from Confluence)
+  { name: "list_documentation", args: "{ categoryId?: string; includeArchived?: boolean; offset?: number; limit?: number /* max 100 */ }",
+    returns: "{ sections?: Array<{ id: string; name: string; location: string; documents: number }>; totalDocuments: number; documents: Array<{ id: string; title: string; location: string | null; archived: boolean }>; nextOffset: number | null }" },
+  { name: "get_documentation", args: "{ docId?: string; slug?: string; section?: string; offset?: number; maxChars?: number; outline?: boolean }",
+    returns: "{ id: string; title: string; location: string | null; origin: { pageId: string | null; path: string | null } | null; totalChars: number; content: string; nextOffset: number | null }" },
 ];
 const SCRIPT_TOOL_NAMES = SCRIPT_TOOLS.map((t) => t.name);
 
 const SHARED_TYPES = [
   "type Status = \"backlog\" | \"ready-for-testing\" | \"ready-to-publish\" | \"published-live\" | \"archived\";",
   "type ItemSummary = { id: string; projectId: string | null; project: string | null; title: string; type: \"feature\" | \"bug\"; category: string; status: Status; statusLabel: string; updatedAt: string | null; createdAt: string | null; comments: number; blocked: { reason: string; note: string; setBy: string | null; setAt: string | null } | null; ownerEmail: string | null; state?: string; stateLine?: string; waitingOn?: string | null; ageHours?: number; overdue?: boolean };",
-  "type Source = \"ticket\" | \"kanban\" | \"project\" | \"concept\" | \"critique\" | \"faq\" | \"lead\" | \"prospect\" | \"support\" | \"document\" | \"skill\";",
+  "type Source = \"ticket\" | \"kanban\" | \"project\" | \"concept\" | \"critique\" | \"faq\" | \"lead\" | \"prospect\" | \"support\" | \"document\" | \"documentation\" | \"skill\";",
   "type Capped = { shown: Array<{ id: string; title: string; url: string | null; [field: string]: unknown }>; more: number /* how many were left out */ };",
   "type DocRow = { id: string; chars: number; sourceCommit: string | null; updatedAt: string | null };",
   "type KanbanTask = { key: string; type: string; title: string; status: string; statusLabel: string; resolution: string | null; priority: string | null; flagged: boolean; assignee: string | null; assigneeName: string | null; release: string | null; sprint: string | null; project: string | null; epic: string | null; estimate: string | null; logged: string | null; remaining: string | null; due: string | null; labels: string[] };",

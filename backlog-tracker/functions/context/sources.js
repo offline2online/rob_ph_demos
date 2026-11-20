@@ -14,6 +14,7 @@
 "use strict";
 
 const core = require("./core");
+const library = require("../documentation-library");
 
 const OPEN_TICKET = ["backlog", "ready-for-testing", "ready-to-publish"];
 const ms = (v) => {
@@ -144,6 +145,32 @@ function makeSources(origin) {
           updatedAt: ms(d.updatedAt) || ms(d.createdAt), createdAt: ms(d.createdAt),
           url: link(`#faq-article/${id}`),
           meta: { slug: str(d.slug) || null, hiddenFromWebsite: d.hiddenFromWebsite === true },
+        };
+      },
+    },
+    // Support › Documentation (docArticles): the internal docs library,
+    // including every page migrated from Confluence. extra: { cats } — the
+    // sections (docCategories) as a Map, read by index.js, so a document is
+    // found by the name of the section or folder it sits in, and a hit says
+    // where it is. A document under Archive, or from an archived Confluence
+    // page, is kept as "archived" (search with includeArchived to reach it).
+    documentation: {
+      collection: "docArticles",
+      build(id, d, extra) {
+        const cats = extra && extra.cats instanceof Map ? extra.cats : new Map();
+        const status = str(d.status) || "draft";
+        const location = library.locationOf(cats, str(d.categoryId));
+        const src = library.sourceOf(d);
+        const archived = status !== "published" || library.isArchived(cats, d);
+        return {
+          title: str(d.title) || id,
+          text: join(location && `Section: ${location}`, src && src.path && `Confluence: ${src.path}`, d.summary, lines(d.keywords), library.searchableText(library.bodyMarkdown(d))),
+          projectId: str(d.projectId) || null, status, type: str(d.docType) || null,
+          open: false, archived,
+          updatedAt: ms(d.updatedAt) || ms(d.createdAt), createdAt: ms(d.createdAt),
+          url: link(`#doc/${id}`),
+          meta: Object.assign({ slug: str(d.slug) || null, categoryId: str(d.categoryId) || null, location: location || null, needsReview: d.needsReview === true },
+            src ? { origin: { system: src.system, pageId: src.pageId, space: src.space, lastUpdated: src.lastUpdated } } : {}),
         };
       },
     },
