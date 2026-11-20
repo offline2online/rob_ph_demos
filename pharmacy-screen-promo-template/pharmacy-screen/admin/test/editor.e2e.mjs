@@ -186,7 +186,11 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   await page.click('#setBtn');
   assert.equal(await page.isVisible('#tokensCard'), true);
   const names = await page.$$eval('#tokList input[data-token]', (l) => l.map((e) => e.dataset.token));
-  for (const n of ['Suburb', 'StoreName', 'CloseTime', 'OpenTime']) assert.ok(names.includes(n), `${n} in ${names}`);
+  assert.ok(names.includes('Suburb'), `Suburb in ${names}`);
+  // ${StoreName} is the Pharmacy name field (its token shown beside the label); today's hours are filled live.
+  for (const n of ['StoreName', 'CloseTime', 'OpenTime']) assert.ok(!names.includes(n), `${n} not in ${names}`);
+  assert.equal((await page.textContent('#detailsCard label:has(#sName) > span')).trim(), 'Pharmacy name * ${StoreName}');
+  assert.equal(await page.textContent('#sNameTok'), '${StoreName}');
   assert.ok(!names.some((n) => ['Headline', 'Logo', 'Content', 'Footer'].includes(n)), 'layout slots are not listed');
   assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from Personalisation Hub');
   assert.match(await page.textContent('#tokList'), /Used in Morning/);
@@ -206,7 +210,8 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
   await page.fill('#tokList input[data-token="Suburb"]', '');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.tokens, undefined);
-  // A token used only in a custom template, and ${StoreName} in copy, render from the values set by hand.
+  // A token used only in a custom template renders from the value set by hand; ${StoreName} in copy is always the
+  // pharmacy name, even with a value stored for it before it stopped being settable.
   const html = await page.evaluate(async () => {
     const R = await import('/js/render.js');
     const el = document.createElement('div'); el.id = 'tokTest'; el.className = 'screen'; document.body.append(el);
@@ -218,7 +223,8 @@ test('Settings → Tokens: lists the tokens the pharmacy uses (master included);
     const out = el.innerHTML; el.remove(); return out;
   });
   assert.match(html, /<p class="w">mi\.example<\/p>/);
-  assert.match(html, /From Set Name/);
+  assert.match(html, /From Own Name/);
+  assert.doesNotMatch(html, /Set Name/);
   assert.match(html, /Visit mi\.example/);
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -494,7 +500,8 @@ test('preview: timeline and editor highlight each other; orientation and experie
   await page.fill('#h1dur', '4');
   assert.equal(await page.textContent('#loopLen'), 'Loop 9.3s');
   await page.waitForSelector('#tl button[data-i="1"][aria-current="true"]');
-  assert.match(await page.getAttribute('#tl button[data-i="1"]', 'title'), /· 4s$/);
+  // The timeline re-renders after the edit: wait for it rather than reading the title straight away.
+  await page.waitForFunction(() => /· 4s$/.test(document.querySelector('#tl button[data-i="1"]').title), null, { timeout: 5000 });
   assert.ok(await page.$eval('#hlSec .slot[data-h="1"]', (e) => e.classList.contains('focus')));
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-closed'].headlineDurs[1], 4);

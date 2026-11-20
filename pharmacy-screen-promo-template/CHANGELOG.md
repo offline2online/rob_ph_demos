@@ -30,6 +30,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
   store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
   ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
+- **Settings: `${StoreName}` is the Pharmacy name, and today's hours are always live.** Pharmacy details shows the
+  `${StoreName}` token beside the **Pharmacy name** label, and Settings → Tokens no longer lists `${StoreName}`,
+  `${CloseTime}` or `${OpenTime}`: the name is set in Pharmacy details, and the times change through the day, so
+  none of them can be given a fixed value. A value stored for one earlier is ignored on screens and dropped the
+  next time the pharmacy is saved ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "Template tokens").
 - **Pharmacy view: no `${Suburb}` hint, remote config or Copy experience URL.** `admin/?store=<store code>` no
   longer shows "Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.", "Remote
   config for this pharmacy", or Copy experience URL with the Playback duration and its info tooltip under the

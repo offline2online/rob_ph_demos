@@ -67,7 +67,7 @@ Firestore (`PS_FIRESTORE_ROOT`, default `pharmacyScreen`):
 
 | Path | What | Client access (rules) |
 | --- | --- | --- |
-| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately), `tokens {<token name>: text}` (only when a token is set by hand; names as `js/tokens.js` `isSettableToken`, never a template slot; text up to 200 characters, 50 per pharmacy; blank values dropped) | none |
+| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately), `tokens {<token name>: text}` (only when a token is set by hand; names as `js/tokens.js` `isSettableToken`, never a template slot or `StoreName` / `CloseTime` / `OpenTime`, which are dropped; text up to 200 characters, 50 per pharmacy; blank values dropped) | none |
 | `pharmacyScreen/config/promotions/{id}` | `name`, `promoId`, `templateId`, `master {...}` (the master template's content; only once saved) | none |
 | `pharmacyScreen/config/templates/{id}` | custom templates: `name`, `kind`, `basedOn`, `html`, `css`, `backgrounds {portrait, landscape}` | none |
 | `pharmacyScreen/config/services/{id}` | `label`, `icon`, `category`, `headline`, `accent`, `line1`, `line2`, `offeredBy [store codes]` | none |

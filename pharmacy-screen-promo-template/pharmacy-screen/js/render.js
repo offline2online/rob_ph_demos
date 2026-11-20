@@ -184,11 +184,12 @@ export function storeModel(campaignData, config) {
   const code = String(loc.store_code || '').trim();
   const ph = ((config && config.pharmacies) || []).find((x) => String(x.storeCode || '').trim().toUpperCase() === code.toUpperCase());
   if (!code || !ph) throw new ScreenError('not-set-up', 'Screen not set up', code ? `Store ${code} has no screen content yet.` : 'No store is linked to this screen.');
-  // Token values set by hand on the pharmacy (Admin → Settings → Tokens) win over the store's data.
+  // Token values set by hand on the pharmacy (Admin → Settings → Tokens) win over the store's data. ${StoreName}
+  // is always the pharmacy name (cleanTokens drops LIVE_TOKENS).
   const tokens = cleanTokens(ph.tokens);
   return {
     code,
-    name: tokens.StoreName || ph.name || loc.store_name || '',
+    name: ph.name || loc.store_name || '',
     suburb: tokens.Suburb || String(addr.suburb || '').trim(),
     tz: loc.store_timezone || 'Australia/Melbourne',
     phone: tokens.Phone || addr.phone_number || '',
@@ -300,8 +301,8 @@ function logoHtml(store) {
 export function footerMessage(store, content, state) {
   const F = footerConfig(content);
   const key = state.state === 'open' ? 'open' : state.state === 'closing' ? 'closing' : state.state === 'before' ? 'before' : 'closed';
-  const tok = store.tokens || {};
-  return timeTokens(rich(F[key], store.suburb), tok.CloseTime || fmtShort(state.closeTime, true), tok.OpenTime || fmtShort(state.openTime, true));
+  // Today's times, always live: ${CloseTime} / ${OpenTime} cannot be set by hand (tokens.js LIVE_TOKENS).
+  return timeTokens(rich(F[key], store.suburb), fmtShort(state.closeTime, true), fmtShort(state.openTime, true));
 }
 
 /**

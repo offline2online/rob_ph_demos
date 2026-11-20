@@ -184,11 +184,13 @@ Signing in still needs the admin role: the link narrows what the editor shows, i
 **Settings** (the cog beside Promo preview) shows:
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
-- **Pharmacy details**: name and store code.
+- **Pharmacy details**: name and store code. The name is the `${StoreName}` token, shown beside the
+  **Pharmacy name** label: change the name here to change it on screens.
 - **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
   sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
-  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub, the pharmacy
-  name, today's opening or closing time). Type a value to show it on this pharmacy's screens instead, for
+  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub). `${StoreName}`
+  (the Pharmacy name above) and `${CloseTime}` / `${OpenTime}` (today's hours, which change through the day) are
+  filled in live and are not listed. Type a value to show it on this pharmacy's screens instead, for
   example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses
   (e.g. `${Website}`) shows nothing until it has a value here. Changes save as you type and show in the
   preview; clear the field to go back to the store's data. Available once the pharmacy is created.

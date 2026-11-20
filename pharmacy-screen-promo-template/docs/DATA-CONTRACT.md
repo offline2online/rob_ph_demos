@@ -161,12 +161,14 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${Phone}` | all | `store_info.address_info.phone_number` |
 
 **Set by hand.** A pharmacy can give any token a value of its own (Admin → Settings → **Tokens**, stored as
-the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${StoreName}`, `${Phone}`,
-`${CloseTime}` and `${OpenTime}` show it instead of the Location API's or the editor's value, and any other token
-name (letters, digits and underscores, starting with a letter, e.g. `${Website}`) used in copy or template HTML
-shows it instead of nothing. With a value set, `${StoreName}` and `${Phone}` also resolve in promotion copy. The
-layout slots (`${Headline}`, `${Logo}`, `${Content}` and the rest of the table above, other than `${Suburb}`,
-`${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
+the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}` and `${Phone}` show it instead
+of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
+e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
+resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
+beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
+by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
+and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
+rest of the table above, other than `${Suburb}`, `${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
 pharmacy.
 
 Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,

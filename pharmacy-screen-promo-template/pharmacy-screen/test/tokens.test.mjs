@@ -50,9 +50,13 @@ test('${StoreName} in copy is the escaped store name (Occasions sign-offs)', () 
 });
 
 test('tokens set by hand: settable names, cleaning and applying', async () => {
-  const { DATA_TOKENS, SLOT_TOKENS, isSettableToken, tokensIn, cleanTokens, applyTokens, TEMPLATE_TOKENS } = await import('../js/tokens.js');
+  const { DATA_TOKENS, LIVE_TOKENS, SLOT_TOKENS, isSettableToken, tokensIn, cleanTokens, applyTokens, TEMPLATE_TOKENS } = await import('../js/tokens.js');
   assert.deepEqual(DATA_TOKENS, ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime']);
-  for (const k of Object.values(TEMPLATE_TOKENS).flat()) assert.equal(isSettableToken(k), DATA_TOKENS.includes(k), k);
+  // ${StoreName} is the pharmacy name and today's hours change through the day: never set by hand.
+  assert.deepEqual(LIVE_TOKENS, ['StoreName', 'CloseTime', 'OpenTime']);
+  for (const k of Object.values(TEMPLATE_TOKENS).flat()) assert.equal(isSettableToken(k), DATA_TOKENS.includes(k) && !LIVE_TOKENS.includes(k), k);
+  for (const k of LIVE_TOKENS) assert.equal(isSettableToken(k), false, k);
+  assert.deepEqual(cleanTokens({ StoreName: 'Set Name', CloseTime: '9PM', OpenTime: '8AM', Suburb: 'Beaumaris' }), { Suburb: 'Beaumaris' }, 'a stored live token is ignored');
   assert.equal(isSettableToken('Website'), true);
   for (const k of ['1st', 'my token', '_x', '__proto__', '']) assert.equal(isSettableToken(k), false, k);
   assert.deepEqual(tokensIn('Hi ${Suburb}, call ${Phone} or ${Suburb}'), ['Suburb', 'Phone']);
@@ -63,16 +67,20 @@ test('tokens set by hand: settable names, cleaning and applying', async () => {
   const { createRequire } = await import('node:module');
   const validate = createRequire(import.meta.url)('../config-api/src/validate.js');
   assert.deepEqual([...validate.SLOT_TOKENS].sort(), [...SLOT_TOKENS].sort());
+  assert.deepEqual([...validate.LIVE_TOKENS], LIVE_TOKENS);
 });
 
-test('tokens set by hand win over the store data on the screen', async () => {
+test('tokens set by hand win over the store data on the screen; the pharmacy name and today\'s hours are always live', async () => {
   const { storeModel, footerMessage } = await import('../js/render.js');
   const campaign = { data: { store_location: { store_code: 'VIC-MP-001', store_name: 'PH name' }, store_info: { address_info: { suburb: 'Wrong', phone_number: '03 0000 0000' } } } };
   const cfg = (tokens) => ({ pharmacies: [{ storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', content: {}, tokens }] });
   let s = storeModel(campaign, cfg(undefined));
   assert.deepEqual([s.suburb, s.name, s.phone], ['Wrong', 'Beaumaris Pharmacy', '03 0000 0000']);
   s = storeModel(campaign, cfg({ Suburb: 'Beaumaris', StoreName: 'MiPharmacy Beaumaris', Phone: '03 9589 0000', CloseTime: '9PM', Website: 'x.example' }));
-  assert.deepEqual([s.suburb, s.name, s.phone], ['Beaumaris', 'MiPharmacy Beaumaris', '03 9589 0000']);
+  assert.deepEqual([s.suburb, s.name, s.phone], ['Beaumaris', 'Beaumaris Pharmacy', '03 9589 0000'], 'a stored ${StoreName} is ignored');
   assert.equal(s.tokens.Website, 'x.example');
-  assert.match(footerMessage(s, {}, { state: 'open', closeTime: 1140 }), /9PM/);
+  assert.equal(s.tokens.CloseTime, undefined);
+  const bar = footerMessage(s, {}, { state: 'open', closeTime: '19:00' });
+  assert.match(bar, /7PM/, 'today\'s closing time, not a stored ${CloseTime}');
+  assert.doesNotMatch(bar, /9PM/);
 });

@@ -549,6 +549,12 @@ test("tokens set by hand: saved on the pharmacy, published to its screens, blank
   for (const tokens of [{ Headline: "x" }, { "my token": "x" }, { "1st": "x" }, { Suburb: 5 }, { Suburb: "x".repeat(201) }, ["Suburb"]]) {
     assert.equal((await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens } })).status, 400, JSON.stringify(tokens).slice(0, 40));
   }
+  // ${StoreName} (the pharmacy name) and ${CloseTime} / ${OpenTime} (today's hours) are filled live: a value sent
+  // for one, or stored before that rule, is dropped rather than refused, so an older record still saves.
+  const live = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens: { Suburb: "Beaumaris", StoreName: "Set Name", CloseTime: "9PM", OpenTime: "8AM" } } });
+  assert.equal(live.status, 200);
+  assert.deepEqual(live.body.tokens, { Suburb: "Beaumaris" });
+  assert.deepEqual((await pub()).tokens, { Suburb: "Beaumaris" });
   // Clearing every value removes the field from the record and the published config.
   const back = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens: {} } });
   assert.equal(back.body.tokens, undefined);

@@ -53,6 +53,7 @@ h1{font-size:20px;font-weight:700;margin:0}
 .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
 @container (max-width:520px){.grid2,.grid3{grid-template-columns:minmax(0,1fr)}}
 label.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
+label.f .tok{margin-left:4px;padding:0 6px;border-radius:4px;background:var(--primary-tint);color:var(--primary);font:12px/18px ui-monospace,Menlo,Consolas,monospace}
 input,select,textarea{font:14px var(--ui);color:var(--text);background:var(--field);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-height:32px;width:100%;min-width:0}
 input[type=color]{padding:2px;height:32px}
 input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--primary);outline-offset:1px}

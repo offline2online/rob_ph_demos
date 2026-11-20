@@ -219,12 +219,13 @@ test('tokens set by hand: every token the pharmacy uses, master template include
   ];
   const ph = { id: 'ph1', content: { 'p-x': { greeting: 'Hello', introTitle: '${Unused', introSub: '', slots: [], close: { title: '${Offer}' } } }, tokens: { Suburb: 'Beaumaris', Old: 'left over' } };
   const list = M.usedTokens(ph, promos, tpls);
-  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime', 'Offer', 'Old', 'Website']);
+  // ${StoreName} (the Pharmacy name field) and ${CloseTime} / ${OpenTime} (today's hours) are filled live: not listed.
+  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'Phone', 'Offer', 'Old', 'Website']);
   const by = Object.fromEntries(list.map((t) => [t.name, t]));
   assert.deepEqual(by.Suburb, { name: 'Suburb', data: true, value: 'Beaumaris', promotions: ['Morning', 'Occasions'] });
   assert.deepEqual(by.Phone.promotions, ['Morning'], 'from the master template');
-  assert.deepEqual(by.StoreName.promotions, ['Occasions'], 'the occasion sign-off');
-  assert.deepEqual(by.CloseTime.promotions, ['Extra'], 'the Open today bar, unless hidden (an occasion has none)');
+  const stale = M.usedTokens({ ...ph, tokens: { ...ph.tokens, StoreName: 'Set Name', CloseTime: '9PM' } }, promos, tpls);
+  assert.deepEqual(stale.map((t) => t.name), list.map((t) => t.name), 'a stored live token is not listed either');
   assert.deepEqual(by.Website.promotions, ['Extra'], 'custom template HTML; its layout slots are not listed');
   assert.deepEqual(by.Old, { name: 'Old', data: false, value: 'left over', promotions: [] });
   // Detaching a section uses the pharmacy's own copy instead of the master's.
