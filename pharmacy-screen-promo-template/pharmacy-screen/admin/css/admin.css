@@ -94,7 +94,7 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 .infowrap .ms{font-size:16px;cursor:help;color:var(--muted);border-radius:50%}
 .infowrap .ms:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
 .infotip{position:absolute;right:0;bottom:calc(100% + 8px);z-index:15;width:max-content;max-width:min(280px,80vw);background:rgba(0,0,0,.85);color:#fff;border-radius:6px;padding:6px 8px;font:14px/1.5714 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;white-space:normal;overflow-wrap:break-word;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .15s,transform .15s}
-.infowrap:hover .infotip,#pbInfo:focus-visible+.infotip{opacity:1;transform:none}
+.infowrap:hover .infotip,.infowrap .ms:focus-visible+.infotip{opacity:1;transform:none}
 .meta-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);gap:10px 12px;align-items:end}
 @container edcol (max-width:700px){.meta-row{grid-template-columns:minmax(0,.9fr) minmax(0,.8fr) minmax(0,1.7fr)}}
 @container (max-width:480px){.meta-row{grid-template-columns:minmax(0,1fr)}}
@@ -186,6 +186,11 @@ details summary{cursor:pointer;color:var(--primary)}
 .controls{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
 .controls>button{flex:none;white-space:nowrap}
 .controls>.pill{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* The sample-hours info tooltip opens from the controls row's left edge and is no wider than the row, so it is never
+   clipped by the preview column however narrow it is. */
+.controls{position:relative}
+.controls>.infowrap{position:static;flex:none;margin-left:-4px}
+.controls .infotip{left:0;right:auto;max-width:100%}
 .tl{display:flex;gap:4px;min-width:0}
 .tl button{flex-grow:var(--w);flex-basis:0;min-width:0;display:grid;gap:4px;padding:0;border:none;background:none;min-height:0;cursor:pointer;text-align:left}
 .tl .bar{height:8px;border-radius:4px;background:var(--primary-tint);overflow:hidden;display:block}

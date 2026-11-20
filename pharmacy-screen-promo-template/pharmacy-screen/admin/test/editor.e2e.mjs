@@ -149,7 +149,20 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
-  assert.match(await page.textContent('#pvData'), /Sample store data/);
+  // The pill under the preview says the hours are sample ones; its info tooltip says each screen uses its store's
+  // actual hours for the day and time the promotion plays, opens on hover and keyboard focus, and is not clipped.
+  assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
+  assert.match(await page.textContent('#pvTip'), /sample opening hours .*Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays\.$/);
+  await page.hover('#pvInfo');
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
+  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.controls').getBoundingClientRect(); return { l: r.left, r: r.right, cl: c.left, cr: c.right, h: r.height }; });
+  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.h > 40, JSON.stringify(pvTip));
+  await page.mouse.move(0, 0);
+  await page.focus('#playBtn');
+  await page.keyboard.press('Tab');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'pvInfo');
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
+  await page.evaluate(() => document.activeElement.blur());
   // Settings: pharmacies, details, branding and the PH API; the store record section is gone
   await page.click('#setBtn');
   for (const id of ['#pharmaciesCard', '#addBtn', '#detailsCard', '#sName', '#sCode', '#brandingCard', '#cP', '#cA', '#logoBtn', '#apiBase']) assert.equal(await page.isVisible(id), true, id);

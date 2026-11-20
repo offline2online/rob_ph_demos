@@ -26,6 +26,10 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
+  the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
+  store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
+  ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
 - **Pharmacy view: no `${Suburb}` hint, remote config or Copy experience URL.** `admin/?store=<store code>` no
   longer shows "Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.", "Remote
   config for this pharmacy", or Copy experience URL with the Playback duration and its info tooltip under the

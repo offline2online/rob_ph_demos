@@ -72,7 +72,7 @@ adjusts as soon as the menu changes, with no reload:
 - Nothing wraps onto a second line. The promotion tabs stay on one line and scroll sideways when they don't fit,
   with left/right arrows and faded edges, and the selected tab is kept in view (also when the frame is resized).
   In a narrow editor column (700px or less) Reset, Settings and Edit HTML show as icons (their names stay in the tooltip and
-  for screen readers); the pharmacy picker, the promo URL pill and the preview's store-data pill shorten with an
+  for screen readers); the pharmacy picker, the promo URL pill and the preview's sample-hours pill shorten with an
   ellipsis instead of pushing controls onto a new row.
 - Nothing is `position: fixed`.
 - The preview scrolls up with the page until its Portrait/Landscape tabs reach the very top of the frame, then
@@ -93,8 +93,12 @@ Copy experience URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&o
 in a wrapping tooltip on hover). Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
 promotion's total length plus one second, rounded up (`playbackSeconds()` in `js/model.js`), so the last scene
 finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
-setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). Store data comes from the device looked up in Settings; until one is, the
-preview uses sample hours and no suburb, and says so.
+setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). The
+preview uses sample opening hours (`sampleCampaign()` in `js/model.js`: Monday to Friday 9:00–17:30, Saturday
+9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill beside Play (`#pvData`) with an info icon
+(`#pvInfo`) whose tooltip (`#pvTip`) says each screen uses its own store's actual opening and closing hours from
+Personalisation Hub, for the day and time the promotion plays. The tooltip opens from the left edge of the
+controls row and is never wider than it, so it is not clipped in a narrow preview column.
 
 ## Files
 

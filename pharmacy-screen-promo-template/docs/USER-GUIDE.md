@@ -10,7 +10,9 @@ recorded in the audit log.
 
 The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
-show its scene.
+show its scene. The **Sample opening hours** label beside Play says the preview's hours are sample ones (Monday to
+Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its info tooltip explains that each screen uses its own
+store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
 It stays beside the editor when Personalisation Hub's left menu is expanded (it just gets narrower), so you can
 keep the menu open while you edit.
 
