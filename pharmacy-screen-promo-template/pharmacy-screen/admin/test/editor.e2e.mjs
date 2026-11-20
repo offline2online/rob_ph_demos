@@ -49,7 +49,7 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
   const opts = await page.$$eval('#storeSel option', (o) => o.map((x) => x.textContent));
   assert.equal(opts.length, 5);
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule)/, ''))), ['Morning', 'Afternoon', 'Closed']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Occasions']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -209,6 +209,42 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
   await ctx.close();
 });
 
+test('occasions: the Occasion drop-down picks what promo=occasions plays; each occasion keeps its own copy', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#dpTabs button:has-text("Occasions")');
+  await page.click('#playBtn'); // pause
+  // The Template drop-down is the Occasion drop-down here, Christmas by default; occasion templates have no Edit HTML.
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
+  assert.deepEqual(await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent)), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
+  assert.equal(await page.isHidden('#pmHtml'), true);
+  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Greeting', '2Message', '3Sign-off']);
+  await page.click('#tl button[data-i="2"]');
+  await page.waitForFunction(() => document.querySelector('#screen .s-body') && /team\.$/.test(document.querySelector('#screen .s-body').textContent.trim()));
+  // ${StoreName} is the pharmacy's name as saved (an earlier test may have renamed it).
+  const name = await page.evaluate(() => window.pharmacyAdmin.state.cur.name);
+  assert.ok((await page.$eval('#screen .s-title', (e) => e.textContent)) === `Merry Christmas from the whole ${name} team.`);
+  // Edit Christmas's sign-off, then switch to Easter and save.
+  await page.fill('#o2line1', 'Merry Christmas from all of us at ${StoreName}.');
+  await page.selectOption('#pmTpl', 'builtin-occasion-easter');
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => /Happy Easter/.test(document.querySelector('#screen .s-head h2').textContent));
+  await page.fill('#o1line2', 'Have a safe long weekend, everyone');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
+  const screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
+  assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
+  assert.equal(screen.content.occasions.easter.scenes[1].line2, 'Have a safe long weekend, everyone');
+  assert.equal(screen.content.occasions.christmas.scenes[2].line1, 'Merry Christmas from all of us at ${StoreName}.', 'Christmas copy kept');
+  assert.ok(!/StoreName/.test(JSON.stringify(screen.content.occasions.easter)), 'Easter: suburb only, no store-name sign-off');
+  // Back to Christmas for the other tests.
+  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('scenes: add from the whole service library, reorder, durations, delete', async () => {
   const { ctx, page } = await open();
   await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
@@ -354,7 +390,7 @@ test('pharmacies: add (unique store code), logo upload and remove, delete', asyn
   const list = (await api('GET', '/api/admin/pharmacies')).body;
   const created = list.find((p) => p.storeCode === 'VIC-MP-006');
   assert.ok(created);
-  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning']);
+  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning', 'seed-promotion-occasions']);
   // a 1x1 transparent PNG
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
   await page.setInputFiles('#logoIn', { name: 'logo.png', mimeType: 'image/png', buffer: png });

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clean, rich, fill, timeTokens, fillTemplate, esc } from '../js/tokens.js';
+import { clean, rich, fill, timeTokens, fillTemplate, esc, applyStoreName } from '../js/tokens.js';
 
 test('${Suburb} is replaced with the suburb only', () => {
   assert.equal(rich('Good morning,<br>${Suburb}', 'Beaumaris'), 'Good morning,<br>Beaumaris');
@@ -42,4 +42,9 @@ test('${CloseTime} and ${OpenTime}', () => {
 test('template slots: known tokens filled, unknown tokens blank', () => {
   assert.equal(fillTemplate('<div>${Headline}</div>${Nope}', { Headline: '<h2>Hi</h2>' }), '<div><h2>Hi</h2></div>');
   assert.equal(fillTemplate('${toString}', {}), '');
+});
+
+test('${StoreName} in copy is the escaped store name (Occasions sign-offs)', () => {
+  assert.equal(applyStoreName(fill('Merry Christmas from the whole ${StoreName} team.', 'Beaumaris'), "O'Brien's Pharmacy"), "Merry Christmas from the whole O'Brien's Pharmacy team.");
+  assert.equal(applyStoreName(rich('Thanks from ${StoreName}', ''), 'A <b>&</b> B'), 'Thanks from A &lt;b&gt;&amp;&lt;/b&gt; B');
 });

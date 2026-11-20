@@ -297,3 +297,21 @@ test('mockapi=1 reads the seed fixtures the same way, and an unknown device is n
   assert.equal((await client.getCampaign('NOPE')).kind, 'not-found');
   assert.equal((await client.getConfig('NOPE')).kind, 'not-found');
 });
+
+test('published config: an occasion template plays its occasion (t_occ_<occasion>), with that occasion\'s copy', () => {
+  const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null,
+    content: { 'rec-occ': { occasions: { easter: { scenes: [{ title: 'Happy Easter,<br>${Suburb}', sub: '', line1: 'L1', line2: '' }, { title: 'M' }, { title: 'Lest', line1: '' }] } } } } };
+  const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-easter' }];
+  const cfg = fromPublishedConfig(buildScreenConfig(ph, promos, [], '2026-11-20T00:00:00.000Z'));
+  assert.deepEqual(cfg.promotions, [{ id: 'occasions', promoId: 'occasions', name: 'Occasions', template: 't_occ_easter' }]);
+  const store = storeModel({ data: { store_location: { store_code: 'VIC-MP-001' }, store_info: { address_info: { suburb: 'Beaumaris' } } } }, cfg);
+  const play = resolvePromotion(cfg, store, 'occasions');
+  assert.equal(play.base, 'occasion');
+  assert.equal(play.occasion, 'easter');
+  assert.equal(play.content.scenes[0].title, 'Happy Easter,<br>${Suburb}');
+  assert.deepEqual(sequence(play).map((x) => x.t), [3, 3, 4]);
+  // Christmas, not yet edited: the default copy, signing off with the store name.
+  const xmas = resolvePromotion(cfg, store, 'occasions', { occasion: 'christmas' });
+  assert.equal(xmas.occasion, 'christmas');
+  assert.match(xmas.content.scenes[2].line1, /from the whole \$\{StoreName\} team\.$/);
+});

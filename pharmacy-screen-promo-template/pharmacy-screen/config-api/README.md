@@ -88,6 +88,19 @@ backgrounds (403); clone one to edit. A custom template keeps the `kind` of
 what it was cloned from, and deleting it moves every promotion that used it
 to the built-in of that kind.
 
+**Occasion templates** — six more built-ins, kind `occasion`, one per
+occasion: `builtin-occasion-christmas`, `-new-year`, `-australia-day`,
+`-valentines-day`, `-easter`, `-anzac-day`. Each carries `occasion` (the
+part after `builtin-occasion-`), which the published config passes on so the
+screen draws that occasion (`../js/render.js` → `OCCASIONS`). The seeded
+Occasions promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
+the admin editor's Occasion drop-down sets its `templateId` to another one.
+They can't be cloned (400: there is no editable HTML version of an
+occasion). A pharmacy's content for an occasion promotion keeps every
+occasion's copy, `content.occasions.<occasion>.scenes[3]` (greeting, message,
+sign-off: `title`, `sub`, `line1`, `line2`, `dur`), plus the promotion's
+`footer`.
+
 **Media** goes to the bucket `PS_MEDIA_BUCKET` (default
 `<project>-pharmacy-screen-media`) under `pharmacyScreen/media/logos/{pharmacyId}/…`
 and `pharmacyScreen/media/backgrounds/{templateId}/{orientation}-…`, named by
@@ -159,7 +172,7 @@ code.
 | GET, PATCH, PUT, DELETE | `/api/admin/promotions/{id}` | read / update / delete |
 | GET, POST | `/api/admin/templates` | list (built-ins first) / create a custom `{name, kind, html?, css?}` |
 | GET, PATCH, PUT, DELETE | `/api/admin/templates/{id}` | read / update / delete (custom only; delete falls back) |
-| POST | `/api/admin/templates/{id}/clone` | clone a built-in or custom `{name?}` |
+| POST | `/api/admin/templates/{id}/clone` | clone a built-in or custom `{name?}` (not an occasion template: 400) |
 | PUT, DELETE | `/api/admin/templates/{id}/backgrounds/{portrait\|landscape}` | upload (raw image body) / remove |
 | GET, POST | `/api/admin/services` | list / create |
 | GET, PATCH, PUT, DELETE | `/api/admin/services/{id}` | read / update / delete |
@@ -248,7 +261,8 @@ bucket (the menu-board demo uses it).
 **The screen reads this** through `fromPublishedConfig()` in
 `../js/live-data.js`, which maps it onto the render engine's
 `fixtures/config.json` shape: a promotion's `template.kind` is the fixture's
-`base` (`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`),
+`base` (`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`,
+`occasion` → `t_occ_<occasion>`),
 `colours` is `brand`, `logo` is a URL, and `promotions` is keyed by promo ID
 with that pharmacy's `content` inside. `../test/live-data.test.mjs` builds a
 published config with `src/publish.js` and checks the mapping, so a change to

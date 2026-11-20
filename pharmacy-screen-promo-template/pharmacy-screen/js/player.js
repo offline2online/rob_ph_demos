@@ -13,7 +13,7 @@
 //   scene=<n>          hold on scene n (0-based) instead of playing the loop
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
 
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError } from './render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS } from './render.js';
 import { parseTestTime, storeNow, storeState } from './hours.js';
 import { auditScene } from './fit-text.js';
 import { parseServers, createLiveClient, createMockClient, createScreenData, screenView } from './live-data.js';
@@ -226,14 +226,16 @@ function createDebugPanelLazy() {
 // Hook for the overflow audit, the screen tests and the admin editor's tests.
 window.pharmacyScreen = {
   get ready() { return !!play || !!el.querySelector('.s-msg,.s-setup-body'); },
-  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
+  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
-  /** Stop playback and show one promotion's scene, exactly as it renders after its entrance. */
-  show(promoId, i) {
+  occasions: () => OCCASION_IDS.slice(),
+  /** Stop playback and show one promotion's scene, exactly as it renders after its entrance. `occasion`: play that
+   *  occasion on an occasion promotion (the copy-fit audit checks every one). */
+  show(promoId, i, occasion) {
     playing = false;
     clearTimers();
-    play = resolvePromotion(config, store, promoId);
+    play = resolvePromotion(config, store, promoId, { occasion });
     show(i, false);
     return this.info;
   },

@@ -59,6 +59,21 @@ editor is never touched).
   nothing; a changed stylesheet is picked up by the update check and the page reloads onto it; the screen still plays
   with the server stopped) and `../test/offline-cache.test.mjs` (staging, stamping, the shell list).
 
+## Occasions (`promo=occasions`)
+
+A fourth default promotion for every pharmacy. It plays one of six read-only built-in templates, Christmas,
+New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: whichever the promotion's template is. An admin
+picks it in the editor's **Occasion** drop-down (seeded: Christmas); nothing switches by date. Each occasion has
+three scenes in the Promotion scenes layout and animations: a greeting over three themed icon tiles, a message
+and a sign-off with a large icon, the "Open today" bar with the public holiday line under it, and small seasonal
+symbols twinkling in the brand panel's free corners. Anzac Day is commemorative: a remembrance poppy, no
+decoration, tiles that fade in without the bounce and a slower, smaller float. All of it is off under reduced motion.
+
+Copy is per pharmacy and per occasion (`content.occasions.<occasion>.scenes[]`: headline, accent line, line 1,
+line 2, seconds), with defaults in `js/render.js` → `OCCASIONS`. Christmas and New Year's sign off with
+`${StoreName}` ("Merry Christmas from the whole ${StoreName} team."); the others use `${Suburb}` only. No product
+or health claims.
+
 ## Run it locally
 
 ```bash
@@ -93,14 +108,14 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | File | What it holds |
 |---|---|
 | `fixtures/campaign-data.json` | Mock Location API `campaign_data` responses keyed by device ID, in the real shape (`store_location`, `store_info.opening_hours[]`, `store_info.address_info`). Devices: `TEST` (Beaumaris), `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005` (the five launch pharmacies), `TEST-NO-SUBURB` (no suburb, for the `${Suburb}` blanking rule), `TEST-LATE-NIGHT` (a session crossing midnight). |
-| `fixtures/config.json` | Config: promotions (`morning`, `afternoon`, `closed`, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
+| `fixtures/config.json` | Config: promotions (`morning`, `afternoon`, `closed`, `occasions` on Christmas, plus a fixture-only `custom-demo` that uses a custom template), custom templates (HTML with `${…}` tokens, scoped CSS, portrait/landscape backgrounds) and per-pharmacy branding, logo and content, keyed by store code. |
 
 ## Query parameters
 
 | Parameter | Meaning |
 |---|---|
 | `device` | Required. The screen's device ID. Without it the screen shows "Invalid screen URL". An unknown device, or a store with no config, shows "Screen not set up" with the device ID. |
-| `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
+| `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
 | `orientation` | `portrait` (default, 1080x1920) or `landscape` (1920x1080). |
 | `scene` | Testing only: hold on scene *n* (0-based) instead of playing the loop. |
 | `now` | Testing only: the store's local time, e.g. `now=fri-18:45`, to see each "Open today" bar message. |
@@ -115,9 +130,9 @@ Split so the admin editor's live preview can reuse the same code:
 | Module | What it does |
 |---|---|
 | `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight), store time in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing), time formats, the weekly hours rows. No DOM. |
-| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
+| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
 | `fit-text.js` | Panel geometry (triangle / arrow), `fitText()` (headline and content shrink to stay inside the panel) and `auditScene()` (the overflow check). |
-| `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes" and "Opening hours", custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`. |
+| `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
 | `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes, re-renders on a data change and when the store's bar state changes, shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests. |
 | `debug-panel.js` | The `?debug=1` panel (styles in `css/debug.css`, loaded only then). |
@@ -171,7 +186,7 @@ run holds the train's deploy; see "CI" below.
 
 - `test/ui/copy-fit.test.mjs`: the copy-fit audit (`tools/overflow-audit.mjs`, `runAudit()`): every seeded
   pharmacy x promotion x scene, portrait and landscape, at each "Open today" bar state, plus the `TEST-NO-SUBURB`
-  and `TEST-LATE-NIGHT` fixtures (882 scenes). It fails if any headline or content line leaves the brand panel,
+  and `TEST-LATE-NIGHT` fixtures; the Occasions promotion once per occasion, all six (1,890 scenes). It fails if any headline or content line leaves the brand panel,
   its content box or the screen, and each failure names the device, store, promo, orientation, scene and bar
   state. A self-test makes one headline far too long and checks that exactly that scene is named.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's

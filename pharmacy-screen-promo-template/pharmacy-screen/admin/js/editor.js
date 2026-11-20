@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, OCCASION_SCENES } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 import { parseOpeningHours, weeklyRows } from '../../js/hours.js';
@@ -57,6 +57,7 @@ addEventListener('beforeunload', (e) => { if (Save.pending()) { e.preventDefault
 const promo = (id = S.dpTab) => S.promotions.find((p) => p.id === id) || S.promotions[0];
 const baseOf = (id = S.dpTab) => (promo(id) ? M.baseOfTemplate(S.templates, promo(id).templateId) : 'scenes');
 const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
+const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
 
@@ -65,7 +66,8 @@ function content(id = S.dpTab) {
   const p = promo(id);
   const all = S.cur.content || (S.cur.content = {});
   const b = baseOf(id), c = all[p.id];
-  const fits = b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
+  const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].scenes) && c.occasions[o.id].scenes.length === 3)
+    : b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
   if (!fits) all[p.id] = c ? M.ensureContent(c, b) : M.newContentFor(p, b);
   return all[p.id];
 }
@@ -121,6 +123,7 @@ const secs = (t) => (Math.round(t * 10) / 10).toFixed(1) + 's';
 function setPlaying(v) { playing = v; $('playIc').textContent = v ? 'pause' : 'play_arrow'; $('playTx').textContent = v ? 'Pause' : 'Play'; }
 
 function editorTarget(i) {
+  if (isOcc()) return document.querySelector(`#occList .slot[data-o="${i}"]`);
   if (isHours()) { const ed = $('ch' + i); return ed && ed.closest('.rtf'); }
   const s = seq()[i];
   if (!s) return null;
@@ -148,7 +151,8 @@ $('dpBody').addEventListener('focusin', (e) => {
   if (e.target.closest('.icp-pop')) return;
   let i = -1;
   const r = e.target.closest('.rtf'), sl = e.target.closest('.slot');
-  if (isHours() && r) { const ed = r.querySelector('.rt'); if (ed) i = +ed.id.slice(2); }
+  if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
+  else if (isHours() && r) { const ed = r.querySelector('.rt'); if (ed) i = +ed.id.slice(2); }
   else if (sl) { if (sl.dataset.i !== undefined) i = +sl.dataset.i + 1; else if (sl.querySelector('#dg')) i = 0; else if (sl.querySelector('#cdur')) i = content().slots.length + 1; }
   if (i < 0) return;
   if (i !== scene || playing) goScene(i, false);
@@ -238,6 +242,7 @@ function renderDp() {
     $('cAddr').onchange = (e) => { d.showAddress = e.target.checked; changed(); };
     return;
   }
+  if (isOcc()) { renderOccasion(B, d); return; }
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const F = footerConfig(d);
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
@@ -313,6 +318,35 @@ function renderDp() {
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
 }
 
+/**
+ * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to (greeting, message,
+ * sign-off: headline, accent line, line 1, line 2, seconds on screen) and the Open today bar. The occasion
+ * itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion keeps its own copy.
+ */
+function renderOccasion(B, d) {
+  const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
+  const o = d.occasions[occ.id], F = footerConfig(d), s = S.cur;
+  const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
+  const icon = (i) => { const n = i ? occ.icons[i - 1] : occ.tiles[0]; return n === 'poppy' ? 'local_florist' : n; };
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span>
+   <div id="occList" style="display:grid;gap:12px">${o.scenes.map((x, i) => `<div class="slot" data-o="${i}"><div class="slot-h"><span class="ic" style="background:linear-gradient(145deg,${tileTop(s.colours.primary)},${esc(s.colours.primary)})"><span class="ms">${esc(icon(i))}</span></span>${['Top: ', '', 'Tail: '][i]}${OCCASION_SCENES[i]}
+     <label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="o${i}dur" min="1" max="60" step="0.5" value="${+x.dur || [3, 3, 4][i]}" aria-label="Seconds on screen">s</label></div>
+     <div class="stack">${rt(`o${i}title`, 'Headline', x.title)}${f(`o${i}sub`, 'Accent line', x.sub)}${f(`o${i}line1`, 'Line 1', x.line1)}${f(`o${i}line2`, 'Line 2', x.line2)}</div></div>`).join('')}</div>
+   <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
+     <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
+     <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
+  const total = () => { const t = M.loopSeconds(o); $('loopLen').textContent = `Loop ${t % 1 ? t.toFixed(1) : t}s`; };
+  o.scenes.forEach((x, i) => {
+    $(`o${i}dur`).oninput = (e) => { x.dur = M.clampDur(e.target.value); changed(); total(); };
+    bindRt(`o${i}title`, (v) => { x.title = v; });
+    ['sub', 'line1', 'line2'].forEach((k) => { $(`o${i}${k}`).oninput = (e) => { x[k] = e.target.value; changed(); }; });
+  });
+  total();
+  const fset = (k, v) => { d.footer = Object.assign({}, footerConfig(d), { [k]: v }); };
+  bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
+  $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
+}
+
 // ───────────────────────── promotions (shared) ─────────────────────────
 
 function selectPromo(id) {
@@ -321,7 +355,7 @@ function selectPromo(id) {
 }
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
 function renderPromoTabs() {
-  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
+  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
   tabsActiveIntoView();
 }
 
@@ -350,16 +384,27 @@ $('dpPrev').onclick = () => tabsStep(-1);
 $('dpNext').onclick = () => tabsStep(1);
 $('dpTabs').addEventListener('scroll', tabsSync, { passive: true });
 new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
-function tplOptions(sel) {
+// The template drop-down: built-ins and custom templates. Occasion templates are picked in the Occasion
+// drop-down of an occasion promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
+function tplOptions(sel, withOccasions) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
-  return g('Built-in', S.templates.filter((t) => t.builtIn)) + g('Custom', S.templates.filter((t) => !t.builtIn));
+  const occ = (t) => t.kind === 'occasion';
+  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Occasion', S.templates.filter(occ)) : '');
+}
+function occasionOptions(sel) {
+  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
 }
 let pmArm = false;
 function renderPromoMeta() {
   const x = promo();
   $('promoMeta').hidden = !x;
   if (!x) return;
-  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = tplOptions(x.templateId);
+  const occ = isOcc(x.id);
+  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
+  // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
+  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
+  $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
+  $('pmHtml').hidden = occ;
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
 }
@@ -410,7 +455,7 @@ $('pmDel').onclick = async () => {
   } catch (e) { showPmErr(e.message); }
 };
 let npTouched = false;
-$('newPromoBtn').onclick = () => { $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
+$('newPromoBtn').onclick = () => { $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
 $('npCancel').onclick = () => { $('newPromo').hidden = true; };
 $('npName').oninput = (e) => { if (!npTouched) $('npToken').value = M.slug(e.target.value); };
 $('npToken').oninput = () => { npTouched = true; };

@@ -25,7 +25,7 @@ const {
   normaliseStoreCode,
   ORIENTATIONS,
 } = require("./validate");
-const { BUILTIN_TEMPLATES, BUILTIN_BY_ID, builtInFor, isBuiltInId, builtInView } = require("./builtins");
+const { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASION_KIND, builtInFor, isBuiltInId, builtInView } = require("./builtins");
 const { buildScreenConfig } = require("./publish");
 const { MEDIA_PREFIX } = require("./adapters/blobs");
 
@@ -397,6 +397,7 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return write(actor, (cfg) => {
       const src = isBuiltInId(sourceId) ? BUILTIN_BY_ID.get(sourceId) : cfg.templates.get(sourceId) && withId(sourceId, cfg.templates.get(sourceId));
       if (!src) throw notFound("Template", sourceId);
+      if (src.kind === OCCASION_KIND) throw bad(`${src.name} is an occasion template: it has no editable HTML to clone. Pick it in the Occasions promotion's Occasion drop-down.`);
       const name = body && body.name !== undefined ? body.name : `${src.name} (copy)`;
       // The clone shares the source's background objects until either is
       // replaced; a shared object is only deleted once nothing points at it.

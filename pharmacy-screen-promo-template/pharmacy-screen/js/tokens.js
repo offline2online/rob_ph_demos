@@ -3,6 +3,7 @@
 // Copy uses Personalisation Hub's token format, ${TokenName}:
 //   ${Suburb}    store_info.address_info.suburb. With no suburb it is blanked, together with its
 //                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
+//   ${StoreName} the pharmacy's name (Occasions copy: "Merry Christmas from the whole ${StoreName} team.").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
 
@@ -73,6 +74,9 @@ export function fill(t, suburb) {
   return esc(v ? x.replace(SUB, v) : x.replace(SUBGAP, ''));
 }
 
+/** ${StoreName} in already-safe HTML (rich() / fill() output): the escaped store name. */
+export const applyStoreName = (html, name) => String(html).replace(/\$\{StoreName\}/g, esc(String(name || '').trim()));
+
 /** ${CloseTime} / ${OpenTime} in already-safe HTML. */
 export const timeTokens = (html, closeTime, openTime) =>
   String(html).replace(/\$\{CloseTime\}/g, esc(closeTime || '')).replace(/\$\{OpenTime\}/g, esc(openTime || ''));
@@ -84,4 +88,5 @@ export const fillTemplate = (html, T) => String(html || '').replace(/\$\{(\w+)\}
 export const TEMPLATE_TOKENS = {
   scenes: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'ServiceLabel', 'Line1', 'Line2', 'Tiles', 'Footer', 'OpenToday', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
   hours: ['Logo', 'Headline', 'HoursCard', 'HolidayNote', 'ContactLine', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
+  occasion: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'Line1', 'Line2', 'Tiles', 'Decor', 'Footer', 'OpenToday', 'HolidayNote', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
 };

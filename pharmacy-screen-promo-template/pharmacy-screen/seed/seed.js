@@ -3,9 +3,10 @@
 
 // Seed the Pharmacy Screen config store with what the concept prototype
 // holds: the five launch pharmacies (branding, logo, morning / afternoon /
-// closed content), the three default promotions, the 28-service library, and
-// a check that the two read-only built-in templates are there (they live in
-// code, config-api/src/builtins.js, so there is nothing to write for them).
+// closed / occasions content), the four default promotions, the 28-service
+// library, and a check that the eight read-only built-in templates (Promotion
+// scenes, Opening hours, six occasions) are there (they live in code,
+// config-api/src/builtins.js, so there is nothing to write for them).
 //
 // Every write goes through the config service (../config-api/src/service.js),
 // so the seed gets the same validation, published screen config and audit
@@ -14,9 +15,12 @@
 // Idempotent: a record the seed made before (same fixed id), or one with the
 // same natural key (store code, promo ID, service label), is left exactly as
 // it is, so a re-run creates no duplicates and never undoes someone's edit.
+// The one addition to an existing record: when this run creates a default
+// promotion (e.g. Occasions, added after launch), each pharmacy the seed made
+// earlier gets its fixture content for that promotion, if it has none yet.
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
-// and a pharmacy's content for promotions other than the three defaults is
+// and a pharmacy's content for promotions other than the four defaults is
 // kept).
 //
 //   node seed.js                                   dry run on an in-memory store (no cloud)
@@ -118,6 +122,7 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
 
   // Promotions first: pharmacy content is stored under each promotion's record id.
   const promotionIdByPromoId = {};
+  const createdPromotionIds = new Set();
   for (const p of fixtures.promotions) {
     const fields = { name: p.name, promoId: p.promoId, templateId: p.templateId };
     const rows = await store.list("promotions");
@@ -125,6 +130,7 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     if (!existing) {
       const rec = await svc.createPromotion(SEED_ACTOR, fields, { id: ids.promotion(p.key) });
       promotionIdByPromoId[p.promoId] = rec.id;
+      createdPromotionIds.add(rec.id);
       report.promotions.created.push(p.promoId);
       continue;
     }
@@ -160,7 +166,17 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       continue;
     }
     if (!reset) {
-      report.pharmacies.unchanged.push(ph.storeCode);
+      // A default promotion this run created: give a pharmacy the seed made its content for it (only if
+      // missing). A pharmacy made by hand is left exactly as it is.
+      const have = existing.content || {};
+      const seeded = existing.id === ids.pharmacy(ph.key);
+      const added = seeded ? Object.fromEntries(Object.entries(content).filter(([id]) => createdPromotionIds.has(id) && !have[id])) : {};
+      if (Object.keys(added).length) {
+        await svc.updatePharmacy(SEED_ACTOR, existing.id, { content: { ...have, ...added } });
+        report.pharmacies.updated.push(ph.storeCode);
+      } else {
+        report.pharmacies.unchanged.push(ph.storeCode);
+      }
       continue;
     }
     // --reset: the fixture's fields and its content for the seeded

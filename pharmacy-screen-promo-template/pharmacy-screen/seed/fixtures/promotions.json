@@ -1,5 +1,5 @@
 {
-  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js.",
+  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js. Occasions plays the occasion its template names (Christmas when seeded); the admin editor's Occasion drop-down changes it.",
   "promotions": [
     {
       "key": "morning",
@@ -18,6 +18,12 @@
       "name": "Closed",
       "promoId": "closed",
       "templateId": "builtin-opening-hours"
+    },
+    {
+      "key": "occasions",
+      "name": "Occasions",
+      "promoId": "occasions",
+      "templateId": "builtin-occasion-christmas"
     }
   ]
 }

@@ -110,7 +110,8 @@ export function fromPublishedConfig(pub) {
     const t = p.template || {};
     let templateId;
     if (t.builtIn) {
-      templateId = BUILTIN_BY_KIND[t.kind] || 't_scenes';
+      // An occasion template carries which occasion it is (config-api/src/builtins.js): t_occ_<occasion>.
+      templateId = t.kind === 'occasion' && /^[a-z0-9-]{1,40}$/.test(String(t.occasion || '')) ? 't_occ_' + t.occasion : BUILTIN_BY_KIND[t.kind] || 't_scenes';
     } else {
       templateId = 'custom:' + String(t.id || promoId);
       if (!templates.some((x) => x.id === templateId)) {
