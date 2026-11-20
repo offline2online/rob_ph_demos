@@ -221,11 +221,20 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return withId(id, rec);
   }
 
-  async function createPharmacy(actor, body) {
+  // `opts.id` lets the seed (../seed/) create records under fixed ids so a
+  // re-run finds them again; the HTTP API never passes it.
+  function newRecordId(cfg, collection, opts) {
+    if (!opts || opts.id === undefined) return store.newId();
+    const id = String(opts.id);
+    if (cfg[collection].has(id)) throw conflict("duplicate-id", `${collection} ${id} already exists`);
+    return id;
+  }
+
+  async function createPharmacy(actor, body, opts) {
     return write(actor, (cfg) => {
       const data = normalisePharmacy(body);
       assertStoreCodeFree(cfg, data.storeCode);
-      const id = store.newId();
+      const id = newRecordId(cfg, "pharmacies", opts);
       const rec = stamp(data, actor, cfg.at);
       return {
         set: [["pharmacies", id, rec]],
@@ -302,12 +311,12 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return withId(id, rec);
   }
 
-  async function createPromotion(actor, body) {
+  async function createPromotion(actor, body, opts) {
     return write(actor, (cfg) => {
       const data = normalisePromotion(body);
       assertPromoIdFree(cfg, data.promoId);
       assertTemplateExists(cfg, data.templateId);
-      const id = store.newId();
+      const id = newRecordId(cfg, "promotions", opts);
       const rec = stamp(data, actor, cfg.at);
       return {
         set: [["promotions", id, rec]],
@@ -470,12 +479,12 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
     return withId(id, rec);
   }
 
-  async function createService(actor, body) {
+  async function createService(actor, body, opts) {
     return write(
       actor,
       (cfg) => {
         const data = normaliseService(body);
-        const id = store.newId();
+        const id = newRecordId(cfg, "services", opts);
         const rec = stamp(data, actor, cfg.at);
         return {
           set: [["services", id, rec]],

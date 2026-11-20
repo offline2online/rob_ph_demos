@@ -28,6 +28,10 @@ This build reads store data and config from local fixtures; live data (the back-
 config read endpoint) is wired in a later ticket, replacing `loadData()` in `js/player.js` only. The
 Location API proxy the screen will call lives beside this page in `ph-proxy/` (see its README).
 
+The config store is loaded with the same launch data by the seed in `seed/` (five pharmacies, the three default
+promotions, the built-in templates and the 28-service library; see its README). Its tests check its fixtures
+against `fixtures/config.json`, so the two cannot drift apart silently.
+
 | File | What it holds |
 |---|---|
 | `fixtures/campaign-data.json` | Mock Location API `campaign_data` responses keyed by device ID, in the real shape (`store_location`, `store_info.opening_hours[]`, `store_info.address_info`). Devices: `TEST` (Beaumaris), `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005` (the five launch pharmacies), `TEST-NO-SUBURB` (no suburb, for the `${Suburb}` blanking rule), `TEST-LATE-NIGHT` (a session crossing midnight). |

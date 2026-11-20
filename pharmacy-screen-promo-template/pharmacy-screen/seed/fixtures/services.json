@@ -1,0 +1,398 @@
+{
+  "_doc": "The 28-service library (requirement 13), from the concept prototype's SERVICES: researched from the five launch pharmacies' websites and Healthdirect listings. Field names are the config API's: headline is the prototype's title, accent its sub line. offeredBy lists the store codes that offer each service. Copy needs TGA advertising review before go-live.",
+  "services": [
+    {
+      "key": "vacc",
+      "label": "Vaccinations",
+      "icon": "vaccines",
+      "category": "Vaccinations",
+      "headline": "Vaccinations",
+      "accent": "No appointment needed",
+      "line1": "Flu, whooping cough and MMR",
+      "line2": "Given by our trained pharmacists",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-002",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "flu",
+      "label": "Flu vaccine",
+      "icon": "vaccines",
+      "category": "Vaccinations",
+      "headline": "Flu vaccinations",
+      "accent": "Protect yourself this season",
+      "line1": "Quick and easy in store",
+      "line2": "Ask about free vaccines if eligible",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-002",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "covid",
+      "label": "COVID-19 vaccine",
+      "icon": "coronavirus",
+      "category": "Vaccinations",
+      "headline": "COVID-19 vaccinations",
+      "accent": "Book ahead with us",
+      "line1": "Given by our trained pharmacists",
+      "line2": "Ask us which dose suits you",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "travel",
+      "label": "Travel vaccines",
+      "icon": "flight",
+      "category": "Vaccinations",
+      "headline": "Travel vaccinations",
+      "accent": "Going overseas?",
+      "line1": "Talk to us before you travel",
+      "line2": "Vaccines and travel health advice",
+      "offeredBy": [
+        "VIC-MP-002",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "bp",
+      "label": "Blood pressure",
+      "icon": "monitor_heart",
+      "category": "Health checks",
+      "headline": "Blood pressure checks",
+      "accent": "Free, as often as you like",
+      "line1": "Know your numbers",
+      "line2": "Walk-ins welcome",
+      "offeredBy": [
+        "VIC-MP-001"
+      ]
+    },
+    {
+      "key": "diab",
+      "label": "Diabetes support",
+      "icon": "bloodtype",
+      "category": "Health checks",
+      "headline": "Diabetes support",
+      "accent": "Help with your blood sugar",
+      "line1": "Understand your medicines",
+      "line2": "Ask our pharmacist",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-002",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "sleep",
+      "label": "Sleep apnoea",
+      "icon": "bedtime",
+      "category": "Health checks",
+      "headline": "Sleep apnoea",
+      "accent": "Screening and sleep studies",
+      "line1": "Advice, CPAP machines and masks",
+      "line2": "Talk to us in store",
+      "offeredBy": [
+        "VIC-MP-001"
+      ]
+    },
+    {
+      "key": "uti",
+      "label": "UTI care",
+      "icon": "medical_services",
+      "category": "Health checks",
+      "headline": "UTI care",
+      "accent": "Treated by your pharmacist",
+      "line1": "Uncomplicated UTIs assessed in store",
+      "line2": "No appointment needed",
+      "offeredBy": [
+        "VIC-MP-002",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "pill",
+      "label": "Pill resupply",
+      "icon": "event_repeat",
+      "category": "Health checks",
+      "headline": "Contraceptive pill resupply",
+      "accent": "Run out of your script?",
+      "line1": "Talk to our pharmacist",
+      "line2": "Quick and confidential",
+      "offeredBy": [
+        "VIC-MP-002"
+      ]
+    },
+    {
+      "key": "consult",
+      "label": "Health advice",
+      "icon": "clinical_notes",
+      "category": "Health checks",
+      "headline": "Health consultations",
+      "accent": "Free advice from your pharmacist",
+      "line1": "Questions about your health?",
+      "line2": "Just ask in store",
+      "offeredBy": [
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "meds",
+      "label": "MedsCheck",
+      "icon": "pill",
+      "category": "Medicines",
+      "headline": "MedsCheck",
+      "accent": "Know your medicines better",
+      "line1": "Sit down with your pharmacist",
+      "line2": "Review your medicines together",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "review",
+      "label": "Medicine review",
+      "icon": "fact_check",
+      "category": "Medicines",
+      "headline": "Medication reviews",
+      "accent": "Make sure your medicines work for you",
+      "line1": "Sit down with your pharmacist",
+      "line2": "Ask us to book one",
+      "offeredBy": [
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "packs",
+      "label": "Medicine packs",
+      "icon": "calendar_month",
+      "category": "Medicines",
+      "headline": "Weekly medicine packs",
+      "accent": "Websterpaks, sorted for you",
+      "line1": "The right dose, every day",
+      "line2": "Ask us to set one up",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "sachets",
+      "label": "Medicine sachets",
+      "icon": "medication",
+      "category": "Medicines",
+      "headline": "Medication sachets",
+      "accent": "Your doses, sorted by day and time",
+      "line1": "Easy to take, easy to track",
+      "line2": "Ask us how it works",
+      "offeredBy": [
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "info",
+      "label": "Medicines advice",
+      "icon": "info",
+      "category": "Medicines",
+      "headline": "Medicines advice",
+      "accent": "Started a new medicine?",
+      "line1": "We explain how to take it",
+      "line2": "Just ask our pharmacist",
+      "offeredBy": [
+        "VIC-MP-001"
+      ]
+    },
+    {
+      "key": "compound",
+      "label": "Compounding",
+      "icon": "science",
+      "category": "Medicines",
+      "headline": "Compounding",
+      "accent": "Made to suit you",
+      "line1": "Creams and medicines made in store",
+      "line2": "Ask us for a quote",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-003"
+      ]
+    },
+    {
+      "key": "scripts",
+      "label": "Prescriptions",
+      "icon": "prescriptions",
+      "category": "Prescriptions",
+      "headline": "Prescriptions",
+      "accent": "Paper and ePrescriptions",
+      "line1": "PBS, concession and DVA",
+      "line2": "Ready while you shop",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-002",
+        "VIC-MP-003",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "sof",
+      "label": "Script on File",
+      "icon": "inventory_2",
+      "category": "Prescriptions",
+      "headline": "Script on File",
+      "accent": "We keep your scripts safe",
+      "line1": "Reorder without the paper",
+      "line2": "Ask us to set it up",
+      "offeredBy": [
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "app",
+      "label": "MedAdvisor app",
+      "icon": "phone_iphone",
+      "category": "Prescriptions",
+      "headline": "Order in the MedAdvisor app",
+      "accent": "Reminders when it’s time to refill",
+      "line1": "Order and pay in the app",
+      "line2": "Express pick-up in store",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-002",
+        "VIC-MP-003",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "delivery",
+      "label": "Home delivery",
+      "icon": "local_shipping",
+      "category": "Prescriptions",
+      "headline": "Home delivery",
+      "accent": "Can’t make it in?",
+      "line1": "We deliver to local suburbs",
+      "line2": "Ask us about delivery",
+      "offeredBy": [
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "aged",
+      "label": "Aged care",
+      "icon": "elderly",
+      "category": "Care",
+      "headline": "Aged care services",
+      "accent": "Support for care homes",
+      "line1": "Packs and medicine management",
+      "line2": "Talk to our team",
+      "offeredBy": [
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "compress",
+      "label": "Compression",
+      "icon": "straighten",
+      "category": "Care",
+      "headline": "Compression garments",
+      "accent": "Measured and fitted in store",
+      "line1": "Supply and expert advice",
+      "line2": "Ask our team",
+      "offeredBy": [
+        "VIC-MP-001"
+      ]
+    },
+    {
+      "key": "ears",
+      "label": "Ear piercing",
+      "icon": "hearing",
+      "category": "Care",
+      "headline": "Ear piercing",
+      "accent": "Ask in store to book",
+      "line1": "Standard lobe piercing",
+      "line2": "Under 16? Bring a parent",
+      "offeredBy": [
+        "VIC-MP-001"
+      ]
+    },
+    {
+      "key": "lang",
+      "label": "Languages",
+      "icon": "translate",
+      "category": "Care",
+      "headline": "We speak your language",
+      "accent": "Vietnamese, Khmer and Chinese",
+      "line1": "Ask for help in your language",
+      "line2": "Our team is here to help",
+      "offeredBy": [
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "well",
+      "label": "Vitamins",
+      "icon": "nutrition",
+      "category": "Shop",
+      "headline": "Vitamins and wellness",
+      "accent": "Advice that suits you",
+      "line1": "Supplements and health products",
+      "line2": "Ask our team",
+      "offeredBy": [
+        "VIC-MP-001",
+        "VIC-MP-004",
+        "VIC-MP-005"
+      ]
+    },
+    {
+      "key": "skin",
+      "label": "Skincare",
+      "icon": "face",
+      "category": "Shop",
+      "headline": "Skincare and beauty",
+      "accent": "Find what suits your skin",
+      "line1": "Brands you know",
+      "line2": "Ask our team for advice",
+      "offeredBy": [
+        "VIC-MP-003",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "gifts",
+      "label": "Gifts",
+      "icon": "redeem",
+      "category": "Shop",
+      "headline": "Gifts and fragrances",
+      "accent": "Something for everyone",
+      "line1": "Gift ideas in store",
+      "line2": "Ask about gift wrapping",
+      "offeredBy": [
+        "VIC-MP-003",
+        "VIC-MP-004"
+      ]
+    },
+    {
+      "key": "first",
+      "label": "First aid",
+      "icon": "healing",
+      "category": "Shop",
+      "headline": "First aid",
+      "accent": "Be ready for anything",
+      "line1": "Kits and essentials",
+      "line2": "Ask what you need",
+      "offeredBy": [
+        "VIC-MP-003",
+        "VIC-MP-004"
+      ]
+    }
+  ]
+}

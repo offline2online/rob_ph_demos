@@ -1,0 +1,23 @@
+{
+  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js.",
+  "promotions": [
+    {
+      "key": "morning",
+      "name": "Morning",
+      "promoId": "morning",
+      "templateId": "builtin-promotion-scenes"
+    },
+    {
+      "key": "afternoon",
+      "name": "Afternoon",
+      "promoId": "afternoon",
+      "templateId": "builtin-promotion-scenes"
+    },
+    {
+      "key": "closed",
+      "name": "Closed",
+      "promoId": "closed",
+      "templateId": "builtin-opening-hours"
+    }
+  ]
+}

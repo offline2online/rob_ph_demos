@@ -11,6 +11,10 @@
 //
 // The viewer token (PS_DEV_VIEWER_TOKEN, default "dev-viewer") is a signed-in
 // non-admin, for checking refusals.
+//
+// --seed (npm run dev:seed) starts it loaded with the seed fixtures
+// (../seed/): the five launch pharmacies, the default promotions and the
+// service library.
 
 const http = require("node:http");
 const { createConfigApi } = require("../src/api");
@@ -23,9 +27,10 @@ const port = Number(process.env.PORT || 8787);
 const adminToken = process.env.PS_DEV_ADMIN_TOKEN || "dev-admin";
 const viewerToken = process.env.PS_DEV_VIEWER_TOKEN || "dev-viewer";
 const blobs = createMemoryBlobs({ baseUrl: `http://localhost:${port}/media/` });
+const store = createMemoryStore();
 
 const api = createConfigApi({
-  store: createMemoryStore(),
+  store,
   blobs,
   auth: createStaticAuth({
     [adminToken]: { uid: "dev-admin", email: "admin@example.com", admin: true },
@@ -36,7 +41,7 @@ const api = createConfigApi({
 });
 const handle = toNodeHandler(api);
 
-http
+const server = http
   .createServer((req, res) => {
     if (req.method === "GET" && req.url.startsWith("/media/")) {
       const obj = blobs.objects.get(decodeURIComponent(req.url.slice("/media/".length)));
@@ -48,5 +53,17 @@ http
       return res.end(obj.buffer);
     }
     return handle(req, res);
-  })
-  .listen(port, () => console.log(`pharmacy-screen config API on http://localhost:${port}/api (admin token: ${adminToken === "dev-admin" ? "dev-admin" : "from PS_DEV_ADMIN_TOKEN"})`));
+  });
+
+async function start() {
+  if (process.argv.includes("--seed")) {
+    const { seedConfig, summarise } = require("../../seed/seed");
+    console.log(summarise(await seedConfig({ store, blobs })));
+  }
+  server.listen(port, () => console.log(`pharmacy-screen config API on http://localhost:${port}/api (admin token: ${adminToken === "dev-admin" ? "dev-admin" : "from PS_DEV_ADMIN_TOKEN"})`));
+}
+
+start().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

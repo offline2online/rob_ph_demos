@@ -210,6 +210,12 @@ npm run dev            # http://localhost:8787/api, in-memory, token "dev-admin"
 curl -H "Authorization: Bearer dev-admin" localhost:8787/api/admin/templates
 ```
 
+`npm run dev:seed` starts it already holding the seed data (`../seed/`: the five launch pharmacies, the
+default promotions and the service library). To load the same data into Firestore, run the seed script
+(`node ../seed/seed.js --project rob-ph-demos`, see `../seed/README.md`); it writes through
+`src/service.js`, using its create functions' `{ id }` option (fixed ids, so a re-run finds its records; the
+HTTP API never passes it).
+
 ## Tests
 
 ```
