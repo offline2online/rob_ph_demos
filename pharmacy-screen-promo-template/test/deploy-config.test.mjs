@@ -214,10 +214,14 @@ test("README records the screen, admin and API URLs", () => {
   }
 });
 
-test("CI workflow template deploys on the train and main, with setup skipped", () => {
+test("CI workflow template deploys from main, with setup skipped, and matches the installed copy", () => {
   const yml = read("ci/deploy-pharmacy-screen.yml");
-  assert.match(yml, /deploy\/pharmacy-screen-promo-template/);
+  // Not on the train: tickets land there with the automation's GITHUB_TOKEN, which never fires `on: push`.
+  // A train merge dispatches it instead (HOSTED_DEPLOYS in backlog-tracker/scripts/run-backlog-automation.js).
+  assert.doesNotMatch(yml, /deploy\/pharmacy-screen-promo-template/);
   assert.match(yml, /- main/);
+  const installed = join(ROOT, "..", ".github", "workflows", "deploy-pharmacy-screen.yml");
+  if (existsSync(installed)) assert.equal(readFileSync(installed, "utf8"), yml, "the installed workflow is the template");
   assert.match(yml, /npm run deploy -- --skip-setup/);
   assert.match(yml, /secrets\.FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS/);
 });

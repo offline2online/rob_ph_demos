@@ -124,8 +124,9 @@ that folder's README.
 
 ## Tests
 
-All of it runs in CI on every pull request touching this folder and on every ticket landing on the train
-(`ci/pharmacy-screen-tests.yml`, `npm run test:ci`; see "CI" below).
+All of it runs in CI (`.github/workflows/pharmacy-screen-tests.yml`, installed from `ci/pharmacy-screen-tests.yml`;
+`npm run test:ci`) on every pull request touching this folder and on every ticket landing on the train, and a red
+run holds the train's deploy; see "CI" below.
 
 **Unit** (`npm run test:units`)
 
@@ -177,10 +178,9 @@ naming the scene.
 `ci/pharmacy-screen-tests.yml` runs `test:units`, `test:ui` and `test:e2e` on Ubuntu 24.04 with Playwright
 1.56.1, on pull requests touching `pharmacy-screen-promo-template/**`, on pushes to the train
 (`deploy/pharmacy-screen-promo-template`) and by hand. The backlog pipeline cannot add files under
-`.github/workflows/`, so it ships here; it gates deployment once a person copies it to
-`.github/workflows/pharmacy-screen-tests.yml` and adds
-`{ workflow: "pharmacy-screen-tests.yml", prefix: "pharmacy-screen-promo-template/", label: "Pharmacy Screen tests" }`
-to `TRAIN_TEST_WORKFLOWS` in `backlog-tracker/scripts/run-backlog-automation.js`, in the same commit.
+`.github/workflows/`, so it ships here; it is installed as `.github/workflows/pharmacy-screen-tests.yml` and
+listed in `TRAIN_TEST_WORKFLOWS` in `backlog-tracker/scripts/run-backlog-automation.js` (20 Nov 2026), so it
+gates deployment. Keep the two copies identical when changing it.
 
 ## Admin editor (`admin/`)
 
