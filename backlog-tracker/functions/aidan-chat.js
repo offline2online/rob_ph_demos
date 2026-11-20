@@ -28,9 +28,12 @@
 //
 // The mailbox is untouched: its email gates, its budgets and its 540 s
 // scheduled function stay as they are; a chat turn has its own budget
-// (aidan-chat-core.js: answer inside CHAT_TARGET_MS, the panel says "still
-// working" after it, and a turn still going after CHAT_TURN_MAX_MS ends with
-// a "took too long" reply).
+// (aidan-chat-core.js): Hosting ends a call at 60 s, so the work stops at
+// CHAT_WORK_MS (Aidan is given that deadline and starts nothing he cannot
+// finish by it) and the endpoint answers "took too long" at CHAT_TURN_MAX_MS,
+// telling the turn to stop (no gap is filed after that). A member has at most
+// CHAT_IN_FLIGHT_MAX turns running at once, and a turn may file a self-check
+// gap only when the member is not a viewer and filed none in the last hour.
 const cc = require("./aidan-chat-core");
 
 const CHATS = "aidanChats";
@@ -45,19 +48,44 @@ function createAidanChat(deps) {
   const { logger = console, now = () => new Date() } = deps;
   const db = () => deps.db();
   const turnMaxMs = deps.turnMaxMs || cc.CHAT_TURN_MAX_MS;
+  const workMs = deps.workMs || cc.CHAT_WORK_MS;
   const iso = (v) => (v && typeof v.toDate === "function" ? v.toDate().toISOString() : v instanceof Date ? v.toISOString() : typeof v === "string" ? v : null);
   const msOf = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : v instanceof Date ? v.getTime() : Number(new Date(v)) || 0);
   const messageOut = (m) => Object.assign({ role: m.role, text: String(m.text || ""), at: iso(m.at) }, m.readOnly ? { readOnly: true } : {}, Array.isArray(m.links) && m.links.length ? { links: m.links } : {}, m.outcome ? { outcome: m.outcome } : {});
 
-  // The rate limit, counted in Firestore so every instance agrees.
-  async function allowTurn(email) {
+  // The rate limit and the turns running at once, counted in Firestore so
+  // every instance agrees. A turn refused for either takes no slot. Returns
+  // the rate step plus { busy, turnId, mayFile }.
+  async function allowTurn(email, role) {
     const ref = db().collection(LIMITS).doc(email);
     return db().runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      const step = cc.rateStep(snap.exists ? snap.data() : null, now().getTime());
-      tx.set(ref, { windowStart: step.windowStart, count: step.count });
-      return step;
+      const cur = snap.exists ? snap.data() || {} : {};
+      const nowMs = now().getTime();
+      const flight = cc.inFlightStep(cur.inFlight, nowMs);
+      if (!flight.allowed) return { allowed: false, busy: true, retryAfterS: 10 };
+      const step = cc.rateStep(cur, nowMs);
+      if (!step.allowed) { tx.set(ref, { windowStart: step.windowStart, count: step.count }, { merge: true }); return step; }
+      const turnId = `${nowMs.toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+      // Only one running turn may file: a second one started meanwhile can't,
+      // so "one filing an hour" holds with two turns in flight.
+      const mayFile = cc.mayFile(role, cur, nowMs) && !flight.live.some((t) => t.mayFile === true);
+      tx.set(ref, { windowStart: step.windowStart, count: step.count, inFlight: [...flight.live, { id: turnId, at: nowMs, mayFile }] }, { merge: true });
+      return Object.assign({}, step, { turnId, mayFile });
     });
+  }
+  // The turn has ended (answered, failed or given up on): free its slot, and
+  // note a filing so the next one waits an hour. Never fails the turn.
+  async function endTurn(email, turnId, filed) {
+    const ref = db().collection(LIMITS).doc(email);
+    try {
+      await db().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const cur = snap.exists ? snap.data() || {} : {};
+        const inFlight = (Array.isArray(cur.inFlight) ? cur.inFlight : []).filter((t) => t && t.id !== turnId);
+        tx.set(ref, Object.assign({ inFlight }, filed ? { lastFiledAtMs: now().getTime() } : {}), { merge: true });
+      });
+    } catch (err) { logger.warn("aidan chat: the turn's slot wasn't freed", { error: String(err && err.message ? err.message : err).slice(0, 200) }); }
   }
 
   async function ownConversation(id, email) {
@@ -76,34 +104,62 @@ function createAidanChat(deps) {
     for (const id of cc.overKeep(rows)) await db().collection(CHATS).doc(id).delete();
   }
 
-  // One turn with a ceiling: a turn still working after turnMaxMs ends with
-  // the "took too long" reply (the work it was doing is dropped).
-  async function runTurn(args) {
+  // One turn with a ceiling: Aidan is given a deadline (workMs) and stops
+  // starting work after it; a turn still going at turnMaxMs ends with the
+  // "took too long" reply, and is told to stop, so it files nothing later.
+  // The clock starts when the request arrived (`receivedMs`), not when the
+  // turn starts, so sign-in, the limits and loading the conversation count
+  // against the same 60 s Hosting allows.
+  async function runTurn(args, receivedMs) {
     let timer = null;
-    const ceiling = new Promise((resolve) => { timer = setTimeout(() => resolve({ outcome: "timeout", reply: cc.TOO_LONG_REPLY, readOnly: false, reads: 0, tools: [], codeMode: null, durationMs: turnMaxMs }), turnMaxMs); });
+    let gaveUp = false;
+    const startedMs = Number.isFinite(receivedMs) ? receivedMs : now().getTime();
+    const waitMs = Math.max(0, startedMs + turnMaxMs - now().getTime());
+    const ceiling = new Promise((resolve) => { timer = setTimeout(() => { gaveUp = true; resolve({ outcome: "timeout", reply: cc.TOO_LONG_REPLY, readOnly: false, reads: 0, tools: [], codeMode: null, improvement: null, durationMs: turnMaxMs }); }, waitMs); });
     try {
-      return await Promise.race([deps.aidan().chat(args), ceiling]);
+      return await Promise.race([deps.aidan().chat(Object.assign({}, args, { deadline: startedMs + Math.min(workMs, turnMaxMs - 2000), stopped: () => gaveUp })), ceiling]);
     } catch (err) {
       logger.error("aidan chat: the turn failed", { error: String(err && err.message ? err.message : err).slice(0, 300) });
       return { outcome: "error", reply: cc.ERROR_REPLY, readOnly: false, reads: 0, tools: [], codeMode: null, durationMs: 0 };
     } finally { clearTimeout(timer); }
   }
 
-  async function post(req, res, who) {
+  async function post(req, res, who, receivedMs) {
     const body = req.body && typeof req.body === "object" ? req.body : {};
     const text = cc.cleanText(body.text);
     if (!text) { res.status(400).json({ error: "Type or say something for Aidan first." }); return; }
     const input = body.input === "voice" ? "voice" : "text";
     const email = who.user.email;
-    const step = await allowTurn(email);
+    const step = await allowTurn(email, who.user.role);
+    if (step.busy) {
+      res.status(429).set("Retry-After", String(step.retryAfterS)).json({ error: `Aidan is still answering your other question${cc.CHAT_IN_FLIGHT_MAX > 1 ? "s" : ""}. Try again in a minute, when ${cc.CHAT_IN_FLIGHT_MAX > 1 ? "one has" : "it has"} finished.` });
+      return;
+    }
     if (!step.allowed) {
       res.status(429).set("Retry-After", String(step.retryAfterS)).json({ error: `You've asked Aidan ${cc.CHAT_RATE_MAX} times in ten minutes. Try again in ${Math.ceil(step.retryAfterS / 60)} minute${step.retryAfterS > 60 ? "s" : ""}.` });
       return;
     }
+    // The slot (and a filing's hour) is written BEFORE the reply is sent:
+    // nothing is left to run after the response, where Cloud Run may not.
+    let filed = false;
+    let out;
+    try {
+      out = await turnFor(who, { body, text, input, email, step, receivedMs, setFiled: (v) => { filed = v; } });
+    } catch (err) {
+      await endTurn(email, step.turnId, filed);
+      throw err;
+    }
+    await endTurn(email, step.turnId, filed);
+    res.status(out.status).json(out.body);
+  }
+
+  // One turn, from the conversation to its audit. Returns { status, body }
+  // for post() to send once the turn's slot is freed.
+  async function turnFor(who, { body, text, input, email, step, receivedMs, setFiled }) {
     let convo = null;
     if (body.conversationId) {
       convo = await ownConversation(body.conversationId, email);
-      if (!convo) { res.status(404).json({ error: "That conversation isn't there any more. Start a new one." }); return; }
+      if (!convo) return { status: 404, body: { error: "That conversation isn't there any more. Start a new one." } };
     }
     const history = convo && Array.isArray(convo.messages) ? convo.messages : [];
     const session = cc.chatSession(who.user);
@@ -111,7 +167,9 @@ function createAidanChat(deps) {
     const turn = await runTurn({
       instruction: text, reader: deps.readerFor(session), history, origin: deps.origin || "",
       member: { email, role: who.user.role, name: who.user.displayName || "" },
-    });
+      mayFile: step.mayFile === true,
+    }, receivedMs);
+    setFiled(Boolean(turn.improvement && (turn.improvement.action === "filed" || turn.improvement.action === "commented")));
     const links = cc.linksOf(turn.reply);
     const memberMsg = { role: "member", text, at: startedAt, input };
     const aidanMsg = Object.assign({ role: "aidan", text: String(turn.reply || ""), at: now(), outcome: turn.outcome }, turn.readOnly ? { readOnly: true } : {}, links.length ? { links } : {});
@@ -141,7 +199,7 @@ function createAidanChat(deps) {
     };
     try { await db().collection(RUNS).add(audit); } catch (err) { logger.warn("aidan chat: the turn's audit row wasn't written", { error: String(err && err.message ? err.message : err).slice(0, 200) }); }
     logger.info("aidan chat turn", { role: who.user.role, outcome: audit.outcome, durationMs: audit.durationMs, reads: audit.reads, input });
-    res.status(200).json({ conversationId: ref.id, title: saved.title, message: messageOut(aidanMsg), durationMs: audit.durationMs, targetMs: cc.CHAT_TARGET_MS });
+    return { status: 200, body: { conversationId: ref.id, title: saved.title, message: messageOut(aidanMsg), durationMs: audit.durationMs, targetMs: cc.CHAT_TARGET_MS } };
   }
 
   async function get(req, res, who) {
@@ -161,13 +219,14 @@ function createAidanChat(deps) {
   }
 
   async function handle(req, res) {
+    const receivedMs = now().getTime();
     if (req.method !== "GET" && req.method !== "POST") { res.status(405).json({ error: "method not allowed" }); return; }
     // A coarse per-address ceiling in front of the per-member limit.
     if (deps.rateLimited(req, "aidan-chat", 300)) return deps.tooMany(res);
     const who = await deps.requireConsoleUser(req);
     if (!who.ok) { res.status(who.status).json({ error: who.error }); return; }
     if (req.method === "GET") return get(req, res, who);
-    return post(req, res, who);
+    return post(req, res, who, receivedMs);
   }
 
   return { handle, allowTurn, prune };

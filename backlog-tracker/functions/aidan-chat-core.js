@@ -28,10 +28,22 @@ const CHAT_KEEP = 20;                  // conversations kept per member (oldest 
 const CHAT_TITLE_MAX = 80;
 const CHAT_RATE_WINDOW_MS = 10 * 60 * 1000;
 const CHAT_RATE_MAX = 30;              // turns per member in that window
-const CHAT_PLAN_TIMEOUT_MS = 12000;    // one planning round (the mailbox allows 25 s)
-const CHAT_ANSWER_TIMEOUT_MS = 30000;  // the answer (the mailbox allows 120 s)
+const CHAT_PLAN_TIMEOUT_MS = 12000;    // one planning round at most (the mailbox allows 25 s)
+const CHAT_ANSWER_TIMEOUT_MS = 25000;  // the answer at most (the mailbox allows 120 s)
+const CHAT_VOICE_TIMEOUT_MS = 6000;    // the voice's one sentence, only when there is time left for it
 const CHAT_TARGET_MS = 30000;          // a turn should answer inside this; the panel says "still working" after it
-const CHAT_TURN_MAX_MS = 110000;       // a turn still working after this is ended with a "took too long" reply
+// Firebase Hosting ends a call to a function at 60 s (README → "Support
+// Inbox"), so a turn must be answered well inside that: the work stops at
+// CHAT_WORK_MS (no plan, read, answer or voice starts that cannot finish by
+// then, and no gap is filed after it), and the endpoint answers "took too
+// long" at CHAT_TURN_MAX_MS whatever is still running.
+const CHAT_WORK_MS = 45000;
+const CHAT_TURN_MAX_MS = 50000;
+const CHAT_MIN_ANSWER_MS = 5000;       // with less than this left, the answer is not started
+const CHAT_IN_FLIGHT_MAX = 2;          // turns one member may have running at once
+const CHAT_IN_FLIGHT_STALE_MS = 2 * CHAT_TURN_MAX_MS;   // a turn that never said it ended (a crashed instance) stops counting after this
+const CHAT_FILE_EVERY_MS = 60 * 60 * 1000;   // one self-check filing (ticket or comment) per member per hour
+const CHAT_DAY_PREFIX = "chat-";       // chat filings count against their own daily cap, never the mailbox's
 const CHAT_VIA = "aidan-chat";
 
 const clip = (s, n) => { const t = String(s == null ? "" : s); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
@@ -122,8 +134,49 @@ function readOnlyReply(instruction) {
 // mailbox's own test (aidan-core.js → consoleChangeRequest), and, in the panel,
 // a message that opens with a verb that only ever changes something there
 // ("archive ticket X", "approve the rotation editor", "deploy it").
-const CHAT_CHANGE_RE = /^\s*(?:(?:please|pls|kindly|now|just|ok|okay|aidan)[\s,]+)*(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?)?(?:go\s+ahead\s+and\s+)?(?:archive|unarchive|restore|delete|remove|move|approve|reject|fail|deploy|merge|ship|release|close|reopen|assign|reassign|rename|retire|publish|unpublish|promote|demote|mark|tick|send\s+(?:it|this|that|them|\S+)\s+to\s+build)\b/i;
-function changeRequest(text) { return ac.consoleChangeRequest(text) || CHAT_CHANGE_RE.test(String(text || "")); }
+// A request to change the console, decided before any model is asked. The
+// panel is read-only either way (the session has board.read only, and the
+// plan's own changeRequested is a second check), so this decides only whether
+// Aidan says "I can't change that" or looks it up.
+//   • An order: a verb that changes the console, opening the message (after
+//     a greeting, "please", "can you", "I want you to" …) and followed by what
+//     it acts on: "archive ticket X", "close PH-12", "merge the train",
+//     "ship 4.12 today", "create a lead for Acme", "set the status of PH-12".
+//   • A verb used as a noun is not an order: "Deploy status", "Release 4.12,
+//     what's in it?", "Delete requests last week", "Restore points?".
+//   • A question is looked up, unless it asks Aidan to do it ("can you
+//     archive ticket X?") or is an order with a question mark ("merge the
+//     train?"): "What's ready to deploy?", "Is the merge conflict fixed?".
+const LEAD = "^\\s*(?:(?:hey|hi|hello|please|pls|kindly|now|just|ok|okay|so|aidan)[\\s,!:]+)*";
+const ASK = "(?:(?:can|could|would|will)\\s+you\\s+(?:please\\s+)?|(?:i\\s+(?:want|need)|i'?d\\s+like)\\s+you\\s+to\\s+|go\\s+ahead\\s+and\\s+)";
+const VERBS = "archive|unarchive|restore|delete|remove|approve|reject|deploy|reopen|assign|reassign|rename|retire|publish|unpublish|promote|demote|tick|move|merge|ship|release|close|mark|fail|create|file|raise|add|open|set|update|change|edit";
+// What the verb acts on, right after it.
+const OBJECT = "(?:the|this|that|these|those|it|them|all|every|my|our|a|an|another|new|ticket|tickets|card|cards|item|items|task|tasks|lead|leads|concept|concepts|project|projects|article|articles|testing|PH-\\d+|#\\S+|[A-Z][A-Za-z0-9]{2,}-?\\d*|\\d+(?:\\.\\d+)+\\s+(?:to|today|tonight|now|tomorrow|live)|[A-Za-z0-9]{18,22})\\b";
+const ORDER_RES = [
+  new RegExp(`${LEAD}${ASK}(?:${VERBS})\\b`, "i"),                                   // "can you archive …", "I want you to merge …"
+  new RegExp(`${LEAD}(?:${VERBS})\\s+${OBJECT}`, "i"),                               // "archive ticket X", "ship 4.12 today"
+  new RegExp(`${LEAD}send\\s+(?:it|this|that|them|\\S+)\\s+to\\s+build\\b`, "i"),
+  new RegExp(`${LEAD}move\\s+(?:\\S+\\s+){0,4}?to\\s+(?:done|testing|backlog|ready|approved|archive)\\b`, "i"),   // "move to done PH-12", "move PH-12 to done"
+  new RegExp(`${LEAD}set\\s+(?:the\\s+)?(?:status|stage|priority|assignee|owner)\\b`, "i"),
+  /^[^?]*:\s*(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:archive|delete|merge|move|close|approve|deploy|ship|release|assign|create)\b/i,   // "the train: can you merge it?"
+];
+// Words that make an opening verb a noun: "Deploy status", "Delete requests".
+const NOUN_AFTER = /^\s*\S+\s+(?:status|statuses|requests?|points?|logs?|history|dates?|times?|rates?|counts?|report|reports|notes?|queue|plan|schedule|window|conflicts?|train\s+status)\b|^\s*move\s+to\s+(?!(?:done|testing|backlog|ready|approved|archive)\b)/i;
+// "Close the loop: what did we ship?", "Ship it or not? what do you think":
+// a question after the opening words is what is being asked.
+const FOLLOWED_BY_QUESTION = /[?:]\s*(?:what|what's|which|who|how|when|where|why|is|are|do|does|did|should)\b/i;
+const QUESTION_RE = /^\s*(?:what|what's|whats|when|where|which|who|whose|why|how|is|are|was|were|has|have|had|did|does|do|should|any)\b/i;
+function changeRequest(text) {
+  const t = String(text || "");
+  if (!t.trim()) return false;
+  const asked = new RegExp(`${LEAD}${ASK}`, "i").test(t);
+  if (!asked && (QUESTION_RE.test(t) || NOUN_AFTER.test(t) || FOLLOWED_BY_QUESTION.test(t))) return false;
+  if (ORDER_RES.some((re) => re.test(t))) return true;
+  // The mailbox's own clause test catches the rest ("… and move ticket X to
+  // done"), but a question in the panel is looked up.
+  if (/\?\s*$/.test(t) && !asked) return false;
+  return ac.consoleChangeRequest(t);
+}
 const UNAVAILABLE_REPLY = "I can't answer right now: my model isn't configured on the server. Nothing was changed. Please try again later.";
 const TOO_LONG_REPLY = "That took me longer than I'm allowed here, so I stopped before finishing. Nothing was changed. Try asking about one project or one thing at a time.";
 const ERROR_REPLY = "Something went wrong while I was looking that up, so I couldn't answer. Nothing was changed. Please try again.";
@@ -132,6 +185,11 @@ function cannotAnswerReply(reason) {
   return `I couldn't find the answer to that in what I can read in the console${why ? `: ${why.replace(/[.!]?$/, ".")}` : "."} I've noted the gap for the team.`;
 }
 
+// Published Help Centre pages, the one place outside the console a reply may
+// link (help-search.js links articles to these). Anything else found in console
+// data (a URL in a ticket or a customer's email) is never a link.
+const HELP_CENTRE_ORIGINS = ["https://help.personalisationhub.com/", "https://personalisationhub.com/support-centre/", "https://www.personalisationhub.com/support-centre/"];
+const isHelpCentreUrl = (u) => HELP_CENTRE_ORIGINS.some((o) => String(u || "").startsWith(o));
 // Every http(s) URL in the console data the turn read.
 const URL_RE = /https?:\/\/[^\s"'<>()\]\\]+/g;
 function urlsIn(text) {
@@ -148,7 +206,7 @@ function safeLinks(text, consoleText, origin) {
   const data = String(consoleText || "");
   const o = String(origin || "").replace(/\/+$/, "");
   const ok = (url) => {
-    if (known.has(url)) return true;
+    if (known.has(url) && (isHelpCentreUrl(url) || (o && url.startsWith(`${o}/#`)))) return true;
     if (!o || !url.startsWith(`${o}/`)) return false;
     const hash = url.slice(o.length + 1);
     const pre = RECORD_LINK_HASHES.find((h) => hash.startsWith(h));
@@ -194,6 +252,23 @@ function rateStep(prev, nowMs) {
   return { allowed: count <= CHAT_RATE_MAX, windowStart, count, retryAfterS: Math.max(1, Math.ceil((windowStart + CHAT_RATE_WINDOW_MS - nowMs) / 1000)) };
 }
 
+// May this turn file a self-check gap? Never for a viewer (a read-only member
+// writes nothing on the board, not even through Aidan), and at most once per
+// member per CHAT_FILE_EVERY_MS. limits: the member's aidanChatLimits doc.
+function mayFile(role, limits, nowMs) {
+  if (String(role || "viewer") === "viewer") return false;
+  const last = Number(limits && limits.lastFiledAtMs) || 0;
+  return !last || nowMs - last >= CHAT_FILE_EVERY_MS;
+}
+// One concurrency step, pure: the member's turns still running (drop those
+// older than CHAT_IN_FLIGHT_STALE_MS), and whether one more may start.
+function inFlightStep(list, nowMs) {
+  const live = (Array.isArray(list) ? list : []).filter((t) => t && typeof t.id === "string" && nowMs - (Number(t.at) || 0) < CHAT_IN_FLIGHT_STALE_MS);
+  return { live, allowed: live.length < CHAT_IN_FLIGHT_MAX };
+}
+// The time left before a deadline (ms since epoch); Infinity with none.
+function leftMs(deadline, nowMs) { return Number.isFinite(deadline) ? deadline - nowMs : Infinity; }
+
 // The read-only session a chat turn reads with: the CALLER's email and role,
 // read scope only, so every tool, search and Code Mode run scopes it exactly
 // as tools/call does for that member's own agent, and nothing it reaches writes.
@@ -203,8 +278,9 @@ function chatSession(user) {
 
 module.exports = {
   CHAT_TEXT_MAX, CHAT_HISTORY_TURNS, CHAT_REPLY_MAX, CHAT_MESSAGES_MAX, CHAT_KEEP, CHAT_RATE_WINDOW_MS, CHAT_RATE_MAX,
-  CHAT_PLAN_TIMEOUT_MS, CHAT_ANSWER_TIMEOUT_MS, CHAT_TARGET_MS, CHAT_TURN_MAX_MS, CHAT_VIA, CHAT_PLAN_LINE, CHAT_ANSWER_SCHEMA,
-  RECORD_LINK_HASHES, UNAVAILABLE_REPLY, TOO_LONG_REPLY, ERROR_REPLY,
+  CHAT_PLAN_TIMEOUT_MS, CHAT_ANSWER_TIMEOUT_MS, CHAT_VOICE_TIMEOUT_MS, CHAT_TARGET_MS, CHAT_WORK_MS, CHAT_TURN_MAX_MS, CHAT_MIN_ANSWER_MS,
+  CHAT_IN_FLIGHT_MAX, CHAT_IN_FLIGHT_STALE_MS, CHAT_FILE_EVERY_MS, CHAT_DAY_PREFIX, CHAT_VIA, CHAT_PLAN_LINE, CHAT_ANSWER_SCHEMA,
+  RECORD_LINK_HASHES, HELP_CENTRE_ORIGINS, isHelpCentreUrl, mayFile, inFlightStep, leftMs, UNAVAILABLE_REPLY, TOO_LONG_REPLY, ERROR_REPLY,
   cleanText, transcript, changeRequest, chatAnswerSystem, cleanChatAnswer, readOnlyReply, cannotAnswerReply, urlsIn, safeLinks, linksOf, stripIdsOutsideLinks,
   titleOf, keepMessages, overKeep, rateStep, chatSession,
 };

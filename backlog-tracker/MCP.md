@@ -1435,6 +1435,10 @@ and a turn reads through the MCP server's own read tools as that member:
 - **Read-only.** `board.read` only, and a request to change anything is
   answered with where to do it on the board. Nothing a chat turn reaches
   writes to the console; the only write is Aidan's own self-improvement
-  ticket or comment (`aidanImprovements`), as from an email.
+  ticket or comment (`aidanImprovements`), narrower than from an email: it
+  comments only on a ticket Aidan filed himself, has its own five a day, is
+  never made from a viewer's turn, and at most once a member an hour.
+- **Inside Hosting's 60 s.** The work stops at 45 s and the endpoint answers
+  by 50 s; a member has at most two turns running at once.
 - Each turn is audited in `aidanChatRuns` (admins read it), without the
   message text. Rules in `REQUIREMENTS.md` → SUP-AID-54 to 66.

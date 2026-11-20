@@ -6338,6 +6338,7 @@ exports.aidanImprovements = aidanImprovements;
 // `aidanChatRun`: the tests' stand-in for the model ({ plan, answer, voice }).
 let aidanChatRun = null;
 let aidanChatApi = null;
+let aidanChatAidan = null;   // the chat's own Aidan instance, for the tests
 function aidanChat() {
   if (aidanChatApi) return aidanChatApi;
   const { createAidan } = require("./aidan");
@@ -6350,7 +6351,7 @@ function aidanChat() {
     rateLimited: (req, bucket, max) => rateLimited(req, bucket, max),
     tooMany: (res) => tooMany(res),
     readerFor: (session) => consoleReader(names, session),
-    aidan: () => {
+    aidan: aidanChatAidan = () => {
       if (aidan) return aidan;
       aidan = createAidan({
         db: db(), tickets: () => db().collection("supportTickets"), secretsRef: (n) => db().collection("supportSecrets").doc(n),
@@ -6381,4 +6382,5 @@ exports.__test = {
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
   // Aidan's chat panel: the model stand-in for a test ({ plan, answer, voice }), and the tools by name.
   setAidanChatRun: (run) => { aidanChatRun = run || null; aidanChatApi = null; }, TOOLS_BY_NAME,
+  aidanForChat: () => { aidanChat(); return aidanChatAidan(); },
 };

@@ -22,15 +22,21 @@ const convoKey = (member) => `ph-aidan-chat:${String(member || "").toLowerCase()
 
 const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
+// Published Help Centre pages: the one place outside the console Aidan may
+// link (functions/aidan-chat-core.js → HELP_CENTRE_ORIGINS, the same list).
+const HELP_CENTRE_ORIGINS = ["https://help.personalisationhub.com/", "https://personalisationhub.com/support-centre/", "https://www.personalisationhub.com/support-centre/"];
+
 // A link Aidan wrote, as the panel follows it: a link into this console
-// becomes its in-page route ("#item-…"), so the panel stays open; anything
-// else is not a link at all (the server already drops links to records the
-// turn didn't read, this is the second lock).
+// becomes its in-page route ("#item-…"), so the panel stays open; a published
+// Help Centre page opens in a new tab; anything else is not a link at all (the
+// server already drops links to records the turn didn't read, this is the
+// second lock).
 export function consoleHref(url, origin) {
   const u = String(url || "").trim();
   if (/^#[A-Za-z0-9]/.test(u)) return u;
   const o = String(origin || "").replace(/\/+$/, "");
   if (o && u.startsWith(`${o}/#`)) return u.slice(o.length + 1);
+  if (HELP_CENTRE_ORIGINS.some((h) => u.startsWith(h)) && !/["'<>\s]/.test(u)) return u;
   return "";
 }
 
@@ -44,7 +50,8 @@ export function replyHTML(text, origin) {
     for (const m of String(s).matchAll(re)) {
       out += boldOf(esc(s.slice(last, m.index)));
       const href = consoleHref(m[2], origin);
-      out += href ? `<a href="${esc(href)}" class="aidan-link">${boldOf(esc(m[1]))}</a>` : boldOf(esc(m[1]));
+      const away = href && !href.startsWith("#");
+      out += href ? `<a href="${esc(href)}" class="aidan-link"${away ? ' target="_blank" rel="noopener noreferrer"' : ""}>${boldOf(esc(m[1]))}</a>` : boldOf(esc(m[1]));
       last = m.index + m[0].length;
     }
     return out + boldOf(esc(s.slice(last)));
@@ -117,6 +124,8 @@ export function initAidanChat(deps) {
   function setBusy(on) {
     state.busy = on;
     els.send.disabled = on;
+    els.history.disabled = on;
+    if (els.fresh) els.fresh.disabled = on;
     els.panel.classList.toggle("is-busy", on);
   }
   function syncSpeak() {
@@ -146,7 +155,7 @@ export function initAidanChat(deps) {
     const resp = await fetchImpl(url, { method, headers: await deps.apiHeaders(), body: body ? JSON.stringify(body) : undefined });
     let data = null;
     try { data = await resp.json(); } catch { data = null; }
-    if (!resp.ok) throw new Error((data && data.error) || `Aidan couldn't be reached (${resp.status}).`);
+    if (!resp.ok) throw Object.assign(new Error((data && data.error) || `Aidan couldn't be reached (${resp.status}).`), { status: resp.status });
     return data || {};
   }
 
@@ -160,6 +169,30 @@ export function initAidanChat(deps) {
     render();
   }
 
+  // The reply to `text`, if the server saved one although the call failed: the
+  // conversation it was asked in (or, for a new one, the newest conversation
+  // updated since it was sent), when its last two messages are this question
+  // and Aidan's answer. Returns { conversationId, text, readOnly } or null.
+  async function savedReply(conversationId, text, sentAt) {
+    // Allowing for the server's clock being a little behind this browser's.
+    const since = sentAt - 30000;
+    const fromThisTurn = (c) => {
+      const msgs = c.messages || [];
+      const last = msgs[msgs.length - 1];
+      const asked = msgs[msgs.length - 2];
+      if (!last || last.role !== "aidan" || !asked || asked.role !== "member" || String(asked.text || "").trim() !== text) return null;
+      if (!(Date.parse(last.at || "") >= since)) return null;   // an older answer to the same words is not this one
+      return { conversationId: c.id, text: last.text, readOnly: last.readOnly === true };
+    };
+    if (conversationId) return fromThisTurn((await api("GET", { query: { id: conversationId } })).conversation || {});
+    const rows = ((await api("GET")).conversations || []).filter((r) => r.updatedAt && Date.parse(r.updatedAt) >= since).slice(0, 3);
+    for (const r of rows) {
+      const hit = fromThisTurn((await api("GET", { query: { id: r.id } })).conversation || {});
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   async function firstOpen() {
     if (state.loaded) return;
     state.loaded = true;
@@ -169,6 +202,9 @@ export function initAidanChat(deps) {
   }
 
   async function showHistory() {
+    // While Aidan is answering, the conversation stays where it is: the reply
+    // belongs to it.
+    if (state.busy) return;
     if (state.view === "list") { setView("convo"); return; }
     setView("list");
     els.list.innerHTML = '<p class="aidan-list-empty">Loading…</p>';
@@ -206,19 +242,41 @@ export function initAidanChat(deps) {
     render();
     setBusy(true);
     const slow = setTimeout(() => { pending.text = "Still working on it. I'll answer here as soon as I'm done."; render(); }, STILL_WORKING_MS);
+    const askedIn = state.conversationId;
+    const sentAt = Date.now();
+    const settle = (reply) => {
+      // The reply is shown only in the conversation it was asked in.
+      const at = state.messages.indexOf(pending);
+      if (at === -1) return false;
+      if (reply) state.messages.splice(at, 1, reply); else state.messages.splice(at, 1);
+      return true;
+    };
     try {
-      const data = await api("POST", { body: { text, conversationId: state.conversationId || undefined, input } });
-      state.conversationId = data.conversationId || state.conversationId;
-      remember();
+      const data = await api("POST", { body: { text, conversationId: askedIn || undefined, input } });
       const m = data.message || {};
-      state.messages.splice(state.messages.indexOf(pending), 1, { role: "aidan", text: m.text || "", readOnly: m.readOnly === true });
-      render();
-      speak(m.text || "");
+      if (settle({ role: "aidan", text: m.text || "", readOnly: m.readOnly === true })) {
+        state.conversationId = data.conversationId || state.conversationId;
+        remember();
+        render();
+        speak(m.text || "");
+      }
     } catch (err) {
-      state.messages.splice(state.messages.indexOf(pending), 1);
-      render();
-      showError(err.message);
-      if (!els.input.value) { els.input.value = text; autoGrow(); }
+      // The call can fail after the turn was answered and saved (a slow turn,
+      // a dropped connection, a gateway timeout): look once before saying it
+      // failed. Not for an answer the server gave (busy, rate limit, gone):
+      // then nothing new was saved.
+      const lost = !err.status || err.status >= 500;
+      const saved = lost ? await savedReply(askedIn, text, sentAt).catch(() => null) : null;
+      if (saved && settle({ role: "aidan", text: saved.text || "", readOnly: saved.readOnly === true })) {
+        state.conversationId = saved.conversationId;
+        remember();
+        render();
+      } else {
+        settle(null);
+        render();
+        showError(err.message);
+        if (!els.input.value) { els.input.value = text; autoGrow(); }
+      }
     } finally {
       clearTimeout(slow);
       setBusy(false);
@@ -266,7 +324,7 @@ export function initAidanChat(deps) {
   });
   els.list.addEventListener("click", (e) => {
     const row = e.target.closest && e.target.closest("[data-aidan-convo]");
-    if (!row) return;
+    if (!row || state.busy) return;
     loadConversation(row.getAttribute("data-aidan-convo")).catch((err) => showError(err.message));
   });
   // A link to a record opens it in the console; on a phone the panel covers

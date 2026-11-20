@@ -4534,6 +4534,56 @@ const scenarios = [
       assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById("aidan-chat-launcher")).visibility), "visible");
     },
   },
+  {
+    name: "Aidan chat: a slow turn keeps its conversation, and a reply saved after a failed call is shown",
+    seed: () => seed(),
+    run: async (c) => {
+      const { page } = c;
+      let release = null;
+      let mode = "slow";
+      const saved = { id: "cv9", title: "q", updatedAt: new Date().toISOString(), messages: [] };
+      await page.route("**/mcp/aidan/chat**", async (route) => {
+        const req = route.request();
+        const url = new URL(req.url());
+        if (req.method() === "POST") {
+          const body = JSON.parse(req.postData() || "{}");
+          if (mode === "slow") {
+            await new Promise((r) => { release = r; });
+            return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversationId: "cv1", title: body.text, message: { role: "aidan", text: "The slow answer.", at: new Date().toISOString(), outcome: "answered" } }) });
+          }
+          // Hosting gave up, but the server saved the answer.
+          saved.messages = [{ role: "member", text: body.text, at: new Date().toISOString() }, { role: "aidan", text: "Saved while the call failed.", at: new Date().toISOString() }];
+          saved.updatedAt = new Date().toISOString();
+          return route.fulfill({ status: 504, contentType: "application/json", body: JSON.stringify({ error: "Aidan couldn't be reached (504)." }) });
+        }
+        if (url.searchParams.get("id") === "cv9") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversation: saved }) });
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ conversations: mode === "slow" ? [{ id: "other", title: "Older one", updatedAt: "2026-01-01T00:00:00Z" }] : [{ id: "cv9", title: "q", updatedAt: saved.updatedAt }] }) });
+      });
+      await c.boardReady();
+      await c.click("#aidan-chat-launcher", "open the panel");
+      await c.visible("#aidan-chat-panel");
+      await page.fill("#aidan-chat-input", "a slow question");
+      await c.click("#aidan-chat-send");
+      await c.waitText("#aidan-chat-messages", "Looking that up");
+      c.at("while Aidan is answering, History and New can't switch the conversation");
+      assert.strictEqual(await page.$eval("#aidan-chat-history-btn", (b) => b.disabled), true);
+      assert.strictEqual(await page.$eval("#aidan-chat-new", (b) => b.disabled), true, "nor can New start another conversation");
+      await until(() => release !== null, "the slow call is held");
+      release();
+      await c.waitText("#aidan-chat-messages", "The slow answer.");
+      assert.ok((await c.text("#aidan-chat-messages")).includes("a slow question"), "the reply landed in the conversation it was asked in");
+      assert.strictEqual(await page.$eval("#aidan-chat-history-btn", (b) => b.disabled), false);
+      c.at("a call that fails after the reply was saved still shows the reply");
+      mode = "fail";
+      await page.evaluate(() => document.getElementById("aidan-chat-new") && document.getElementById("aidan-chat-new").click());
+      await page.fill("#aidan-chat-input", "q");
+      await c.click("#aidan-chat-send");
+      await c.waitText("#aidan-chat-messages", "Saved while the call failed.");
+      c.expectProblem(/status of 504/);   // the failed call is the point of this step
+      const err = await page.$eval("#aidan-chat-error", (e) => (e.hidden ? "" : e.textContent)).catch(() => "");
+      assert.ok(!/504/.test(err || ""), `no error is shown when the reply was saved: ${err}`);
+    },
+  },
 ];
 
 // ── Self-checks ────────────────────────────────────────────────────────────

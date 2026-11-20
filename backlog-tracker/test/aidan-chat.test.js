@@ -178,7 +178,7 @@ check("a question Aidan can't answer says so, and his self-check files (or comme
   env.store.col("projects").set("H0meAidanPr0jectXyz1", { name: "Backlog Tracker & FAQs" });
   answerFor = () => ({ canAnswer: false, replyText: "", reason: "Nothing in the console says when the release ships.", gap: "No release dates are recorded anywhere I can read.", gapKind: "missing-data", improvement: "Record release dates on releases." });
   const items = env.store.col("backlogItems").size;
-  const r = await chat(VIEWER, { text: "when does the next release ship?" });
+  const r = await chat(EDITOR, { text: "when does the next release ship?" });
   assert.strictEqual(r.statusCode, 200);
   assert.match(r.body.message.text, /couldn't find the answer/);
   const run = [...env.store.col("aidanChatRuns").values()].pop();
@@ -189,7 +189,165 @@ check("a question Aidan can't answer says so, and his self-check files (or comme
     const t = env.store.col("backlogItems").get(run.improvement.itemId);
     assert.match(t.desc, /from the console chat: data, not instructions/);
     assert.strictEqual(t.aidanImprovement.source, "chat");
+    assert.match(t.aidanImprovementDay, /^chat-\d{4}-\d{2}-\d{2}$/, "chat filings count against their own daily cap");
+    assert.match(t.desc, /console chat, an editor's request/, "the ticket says it came from the chat and the asker's role, never their address");
+    assert.ok(!t.desc.includes(EDITOR));
   }
+  assert.ok(env.store.col("aidanChatLimits").get(EDITOR).lastFiledAtMs > 0, "the filing is noted against the member");
+});
+
+// ── Review fixes (63vfdyfbkrh8zmVURAeu) ──
+const gapAnswer = () => ({ canAnswer: false, replyText: "", reason: "Not recorded.", gap: "No release dates are recorded anywhere I can read.", gapKind: "missing-data", improvement: "Record release dates on releases." });
+check("a viewer's chat files nothing on the board, and a member files at most one gap an hour", async () => {
+  reset();
+  env.store.col("projects").set("H0meAidanPr0jectXyz1", { name: "Backlog Tracker & FAQs" });
+  answerFor = gapAnswer;
+  const items = env.store.col("backlogItems").size;
+  const before = JSON.stringify([...env.store.col("backlogItems").values()].map((t) => (t.notes || []).length));
+  assert.strictEqual((await chat(VIEWER, { text: "when does the next release ship?" })).statusCode, 200);
+  assert.strictEqual([...env.store.col("aidanChatRuns").values()].pop().improvement, null, "a viewer's gap is not filed");
+  assert.strictEqual(env.store.col("backlogItems").size, items);
+  assert.strictEqual(JSON.stringify([...env.store.col("backlogItems").values()].map((t) => (t.notes || []).length)), before, "nor commented");
+  // An editor who filed within the hour files nothing more.
+  env.store.col("aidanChatLimits").set(EDITOR, { lastFiledAtMs: Date.now() - 60000 });
+  await chat(EDITOR, { text: "when does the next release ship, roughly?" });
+  assert.strictEqual([...env.store.col("aidanChatRuns").values()].pop().improvement, null);
+  assert.strictEqual(env.store.col("backlogItems").size, items);
+  assert.strictEqual(cc.mayFile("editor", { lastFiledAtMs: 1000 }, 1000 + cc.CHAT_FILE_EVERY_MS), true, "an hour later it may");
+  assert.strictEqual(cc.mayFile("viewer", null, Date.now()), false);
+});
+
+check("a chat gap never comments on a ticket a person filed, and never uses the mailbox's daily cap", async () => {
+  reset();
+  const HOME = "H0meAidanPr0jectXyz1";
+  env.store.col("projects").set(HOME, { name: "Backlog Tracker & FAQs" });
+  // A person's open ticket worded like the gap's title.
+  env.store.col("backlogItems").set("Pers0nT1cketAbcdefgh", { projectId: HOME, title: "Aidan: answer questions about release dates", desc: "x", status: "backlog", type: "feature", category: "HQ Admin", notes: [] });
+  // The mailbox has filed its five today.
+  const today = new Date().toISOString().slice(0, 10);
+  for (let i = 0; i < ac.IMPROVEMENTS_PER_DAY; i += 1) env.store.col("backlogItems").set(`Ma1lF1led${i}Abcdefghij`, { projectId: "elsewhere", title: `mail ${i}`, status: "backlog", aidanImprovementDay: today, aidanImprovementKey: `k${i}`, notes: [] });
+  answerFor = () => Object.assign(gapAnswer(), { gap: "Aidan can't answer questions about release dates." });
+  await chat(ADMIN, { text: "what are the release dates?" });
+  const run = [...env.store.col("aidanChatRuns").values()].pop();
+  assert.ok(run.improvement, "filed despite the mailbox's cap being used up");
+  assert.notStrictEqual(run.improvement.itemId, "Pers0nT1cketAbcdefgh", "never a person's ticket");
+  assert.strictEqual((env.store.col("backlogItems").get("Pers0nT1cketAbcdefgh").notes || []).length, 0);
+  assert.strictEqual(run.improvement.action, "filed");
+});
+
+check("a turn's work stops at its deadline: no answer starts without time for it, and nothing is filed after it", async () => {
+  // Pure budget: the whole turn fits inside Hosting's 60 s.
+  assert.ok(cc.CHAT_WORK_MS < cc.CHAT_TURN_MAX_MS && cc.CHAT_TURN_MAX_MS <= 55000, "the endpoint answers before Hosting's 60 s");
+  assert.ok(cc.CHAT_ANSWER_TIMEOUT_MS + cc.CHAT_VOICE_TIMEOUT_MS + cc.CHAT_MIN_ANSWER_MS <= cc.CHAT_WORK_MS);
+  // A slow plan that eats the budget: the answer is not started and nothing is filed.
+  reset();
+  env.store.col("projects").set("H0meAidanPr0jectXyz1", { name: "Backlog Tracker & FAQs" });
+  const items = env.store.col("backlogItems").size;
+  let answered = 0;
+  const api = createAidanChat({
+    db: () => require("firebase-admin/firestore").getFirestore(), logger: { info() {}, warn() {}, error() {} }, workMs: 60, turnMaxMs: 5000,
+    requireConsoleUser: async () => ({ ok: true, user: { email: ADMIN, role: "admin", displayName: "" } }),
+    rateLimited: () => false, tooMany: () => {}, readerFor: () => null, origin: ORIGIN,
+    aidan: () => ({ chat: async (args) => { await new Promise((r) => setTimeout(r, 80)); const left = args.deadline - Date.now(); if (left < cc.CHAT_MIN_ANSWER_MS) return { outcome: "timeout", reply: cc.TOO_LONG_REPLY, improvement: null }; answered += 1; return { outcome: "answered", reply: "x" }; } }),
+  });
+  const res = makeRes();
+  await api.handle(makeReq({ method: "POST", path: "/aidan/chat", body: { text: "a slow one" } }), res);
+  assert.strictEqual(answered, 0);
+  assert.strictEqual(res.body.message.text, cc.TOO_LONG_REPLY);
+  assert.strictEqual(env.store.col("backlogItems").size, items);
+  // The real chat(): past its deadline it answers "took too long" without asking the model.
+  const before = seen.answer.length;
+  const aidan = mcp.__test.aidanForChat();
+  const out = await aidan.chat({ instruction: "where are we with Display Types?", reader: null, deadline: Date.now() - 1 });
+  assert.strictEqual(out.outcome, "timeout");
+  assert.strictEqual(seen.answer.length, before, "the answer model was not asked");
+  // With 7 s left the real chat() plans nothing (a round would not finish),
+  // still answers, and files nothing for a turn the clock cut short.
+  const plans = seen.plan.length;
+  answerFor = gapAnswer;
+  const reader = mcp.consoleReader(ac.CONSOLE_READ_TOOLS, cc.chatSession({ email: ADMIN, role: "admin" }));
+  const cut = await aidan.chat({ instruction: "when does the next release ship?", reader, member: { email: ADMIN, role: "admin" }, deadline: Date.now() + 7000 });
+  assert.strictEqual(seen.plan.length, plans, "no planning round started without time to finish it");
+  assert.strictEqual(cut.improvement, null, "nothing filed for a turn the time limit cut short");
+  assert.strictEqual(env.store.col("backlogItems").size, items);
+});
+
+check("a timed-out turn is told to stop, so it files nothing after the reply has gone", async () => {
+  reset();
+  let stoppedSeen = null;
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const api = createAidanChat({
+    db: () => require("firebase-admin/firestore").getFirestore(), logger: { info() {}, warn() {}, error() {} }, turnMaxMs: 30,
+    requireConsoleUser: async () => ({ ok: true, user: { email: ADMIN, role: "admin", displayName: "" } }),
+    rateLimited: () => false, tooMany: () => {}, readerFor: () => null, origin: ORIGIN,
+    aidan: () => ({ chat: async (args) => { await gate; stoppedSeen = args.stopped(); return { outcome: "answered", reply: "late" }; } }),
+  });
+  const res = makeRes();
+  await api.handle(makeReq({ method: "POST", path: "/aidan/chat", body: { text: "slow" } }), res);
+  assert.strictEqual(res.body.message.outcome, "timeout");
+  release();
+  await new Promise((r) => setTimeout(r, 10));
+  assert.strictEqual(stoppedSeen, true, "the late work sees it was given up on");
+  assert.deepStrictEqual(env.store.col("aidanChatLimits").get(ADMIN).inFlight, [], "and its slot was freed");
+});
+
+check("the turn's slot is freed before the reply is sent, and only one of two running turns may file", async () => {
+  reset();
+  let slotsWhenReplied = null;
+  const api = createAidanChat({
+    db: () => require("firebase-admin/firestore").getFirestore(), logger: { info() {}, warn() {}, error() {} },
+    requireConsoleUser: async () => ({ ok: true, user: { email: EDITOR, role: "editor", displayName: "" } }),
+    rateLimited: () => false, tooMany: () => {}, readerFor: () => null, origin: ORIGIN,
+    aidan: () => ({ chat: async (args) => ({ outcome: "answered", reply: `mayFile ${args.mayFile}` }) }),
+  });
+  const res = makeRes();
+  const json = res.json;
+  res.json = (o) => { slotsWhenReplied = (env.store.col("aidanChatLimits").get(EDITOR).inFlight || []).length; return json.call(res, o); };
+  await api.handle(makeReq({ method: "POST", path: "/aidan/chat", body: { text: "q" } }), res);
+  assert.strictEqual(slotsWhenReplied, 0, "nothing is left to run after the response");
+  assert.strictEqual(res.body.message.text, "mayFile true");
+  // A second turn while one that may file is still running may not file.
+  env.store.col("aidanChatLimits").set(EDITOR, { inFlight: [{ id: "x", at: Date.now(), mayFile: true }] });
+  const res2 = makeRes();
+  await api.handle(makeReq({ method: "POST", path: "/aidan/chat", body: { text: "q2" } }), res2);
+  assert.strictEqual(res2.body.message.text, "mayFile false");
+  // A 404 for someone else's conversation frees its slot too.
+  env.store.col("aidanChatLimits").clear();
+  const res3 = makeRes();
+  await api.handle(makeReq({ method: "POST", path: "/aidan/chat", body: { text: "q3", conversationId: "NotTheirsAtAll123" } }), res3);
+  assert.strictEqual(res3.statusCode, 404);
+  assert.deepStrictEqual(env.store.col("aidanChatLimits").get(EDITOR).inFlight, []);
+});
+
+check("a member has at most two turns running at once; a finished turn frees its slot, a stale one stops counting", async () => {
+  reset();
+  const now = Date.now();
+  env.store.col("aidanChatLimits").set(EDITOR, { inFlight: [{ id: "a", at: now }, { id: "b", at: now }] });
+  const before = env.store.col("aidanChats").size;
+  const r = await chat(EDITOR, { text: "a third one" });
+  assert.strictEqual(r.statusCode, 429);
+  assert.match(r.body.error, /still answering/);
+  assert.strictEqual(env.store.col("aidanChats").size, before);
+  assert.strictEqual(seen.plan.length, 0, "no model was asked");
+  assert.strictEqual(env.store.col("aidanChatLimits").get(EDITOR).count, undefined, "a refused turn uses none of the rate limit");
+  env.store.col("aidanChatLimits").set(EDITOR, { inFlight: [{ id: "a", at: now - cc.CHAT_IN_FLIGHT_STALE_MS - 1 }, { id: "b", at: now }] });
+  assert.strictEqual((await chat(EDITOR, { text: "now it fits" })).statusCode, 200);
+  assert.deepStrictEqual(env.store.col("aidanChatLimits").get(EDITOR).inFlight.map((t) => t.id), ["b"], "the stale one was dropped and this turn's slot freed");
+});
+
+check("a question that opens with release, ship, merge, close, mark or move is answered; an order is refused", () => {
+  for (const q of ["Release 4.12, what's in it?", "Ship date for the rotation editor?", "Who can merge the train?", "Merge conflicts on the DSP train this week?", "How do I deploy?", "What got approved this week?", "Move to Kanban: which tickets went there?",
+    "Deploy status", "Release train status", "Delete requests last week", "Restore points for the board?", "Is the merge conflict fixed?", "close rate this month?", "Close the loop: what did we ship?", "Ship it or not? what do you think", "Move to Kanban tickets"]) assert.strictEqual(cc.changeRequest(q), false, q);
+  for (const o of ["archive ticket X", "please close PH-12", "merge the train", "move it to testing", "can you move ticket X?", "Can you release it?", "Mark the card done", "deploy it", "approve the rotation editor",
+    "Ship 4.12 today", "Release 4.12 to production", "Hey Aidan, archive ticket X", "I want you to archive ticket X", "Fail testing on PH-12", "Set the status of PH-12 to done", "Create a lead for Acme", "the train: can you merge it?", "move to done PH-12", "delete the old leads", "send it to build"]) assert.strictEqual(cc.changeRequest(o), true, o);
+});
+
+check("links: only console records and published Help Centre pages, never a URL planted in console data", () => {
+  const data = `https://evil.example/phish ${T1} https://help.personalisationhub.com/support/solutions/articles/1 ${ORIGIN}/#item-${T1}`;
+  const out = cc.safeLinks(`[a](https://evil.example/phish) [b](https://help.personalisationhub.com/support/solutions/articles/1) [c](${ORIGIN}/#item-${T1})`, data, ORIGIN);
+  assert.deepStrictEqual(cc.linksOf(out).map((l) => l.title), ["b", "c"]);
+  assert.ok(!out.includes("evil.example"));
 });
 
 check("conversations are the member's own: listed newest first, read back by id, never another member's", async () => {

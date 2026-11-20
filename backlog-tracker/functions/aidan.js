@@ -501,7 +501,10 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // stand-in by default, or (the console's chat panel, `channel: "chat"`) a
   // reader scoped to the signed-in member who asked (mcp-server.js →
   // consoleReader(names, session)). `planTimeoutMs`: one planning round's budget.
-  async function readConsole({ instruction, email, content = null, reader = consoleReader, channel = "email", planTimeoutMs = CONSOLE_PLAN_TIMEOUT_MS }) {
+  // `deadline` (ms since epoch, the chat only): no planning round, Code Mode
+  // run or read starts that cannot finish by then, so a turn ends in time.
+  async function readConsole({ instruction, email, content = null, reader = consoleReader, channel = "email", planTimeoutMs = CONSOLE_PLAN_TIMEOUT_MS, deadline = Infinity }) {
+    const left = () => chatCore.leftMs(deadline, now().getTime());
     const consoleReader = reader;
     if (!consoleReader || !ac.mayReadConsole(instruction)) return null;
     const planSystem = channel === "chat" ? `${ac.CONSOLE_PLAN_SYSTEM}\n${chatCore.CHAT_PLAN_LINE}` : ac.CONSOLE_PLAN_SYSTEM;
@@ -533,8 +536,9 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const runCodeMode = async (cm) => {
       let r;
       try {
-        r = cm.kind === "insight" ? await consoleReader.insight(cm.name, cm.params, { timeoutMs: ac.CONSOLE_SCRIPT_TIMEOUT_MS })
-          : await consoleReader.script(cm.code, { timeoutMs: ac.CONSOLE_SCRIPT_TIMEOUT_MS });
+        const timeoutMs = Math.max(1000, Math.min(ac.CONSOLE_SCRIPT_TIMEOUT_MS, left() - 1000));
+        r = cm.kind === "insight" ? await consoleReader.insight(cm.name, cm.params, { timeoutMs })
+          : await consoleReader.script(cm.code, { timeoutMs });
       } catch (err) { r = { ok: false, error: errText(err), errorKind: "error", toolCalls: [] }; }
       r = r || { ok: false, error: "no result", errorKind: "error", toolCalls: [] };
       codeMode = Object.assign({ ran: true, ok: Boolean(r.ok), kind: cm.kind, toolCalls: (r.toolCalls || []).length, durationMs: r.durationMs || 0 },
@@ -546,10 +550,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const projectRefs = Array.isArray(r.projectRefs) ? r.projectRefs.filter((x) => typeof x === "string").slice(0, 50) : [];
       results.push({ tool, args, codeMode: true, projectRefs, ok: Boolean(r.ok), text: r.ok ? String(r.text || "") : `Not read: the Code Mode run failed (${codeMode.errorKind}): ${codeMode.error}` });
     };
+    let timeCut = false;   // the deadline (chat only) ended the reading early
     for (let round = 0; round < ac.CONSOLE_ROUNDS; round += 1) {
+      // Not enough time left for a planning round and what it would read.
+      if (left() < Math.min(planTimeoutMs, 6000) + 3000) { timeCut = true; break; }
+      const roundTimeout = Math.max(2000, Math.min(planTimeoutMs, left() - 3000));
       const cmPrompt = canScript ? { scriptTools, insights, done: Boolean(codeMode) } : null;
       const raw = runImpl && runImpl.plan ? await runImpl.plan({ instruction, index, tools, results, round, email: planEmail, codeMode: cmPrompt })
-        : await model({ system: content ? `${planSystem}\n${ac.CONTENT_LINE}` : planSystem, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: planTimeoutMs,
+        : await model({ system: content ? `${planSystem}\n${ac.CONTENT_LINE}` : planSystem, schema: ac.CONSOLE_PLAN_SCHEMA, effort: "medium", maxTokens: 4000, timeout: roundTimeout,
           content: ac.consolePlanPrompt({ instruction, email: planEmail, index, tools, results, codeMode: cmPrompt }) });
       // Documents and critiques are read inside the Code Mode run.
       // Only while the one Code Mode run is still to come: once it has run
@@ -557,8 +565,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const plan = ac.cleanConsolePlan(raw, { done: results, codeModeDone: !canScript || Boolean(codeMode), scriptCovers: canScript && !codeMode });
       if (plan.changeRequested && !content) { changeRequested = true; break; }
       if (!plan.codeMode && !plan.reads.length) break;
-      if (plan.codeMode) await runCodeMode(plan.codeMode);
-      for (const r of plan.reads) results.push(Object.assign({}, r, await read(r.tool, r.args)));
+      if (plan.codeMode) { if (left() > 2000) await runCodeMode(plan.codeMode); else timeCut = true; }
+      for (const r of plan.reads) { if (left() <= 1000) { timeCut = true; break; } results.push(Object.assign({}, r, await read(r.tool, r.args))); }
     }
     // The projects the reads were about (a self-check names one when the data
     // was missing there): each read's project argument and every project a
@@ -572,7 +580,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       try { await consoleReader.rememberTopics(topics); } catch (err) { logger.warn("support: Aidan couldn't write topics back to the context cache", { error: errText(err) }); }
     }
     return {
-      context: ac.contextGap(results), topics,
+      context: ac.contextGap(results), topics, timeCut,
       changeRequested, results, used: results.some((r) => r.ok), text: ac.consoleBlock(results),
       names: ac.namesById([projects.text, concepts.text, ...results.map((r) => r.text)]),
       tools: [...new Set(results.filter((r) => r.ok).map((r) => r.tool))],
@@ -626,7 +634,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // dodge gets the line first, a sentence denying it is taken out), and that
   // yes is the email's one touch of character, so no aside is added. On an
   // email that gets no quirk the yes is the plain line.
-  async function inVoice({ ticketId, kind, body, instruction, msg, ticket, voiceSkill = null, content = null }) {
+  async function inVoice({ ticketId, kind, body, instruction, msg, ticket, voiceSkill = null, content = null, timeoutMs = VOICE_TIMEOUT_MS }) {
     let text = String(body || "").replace(/\r/g, "").trim();
     if (!text) return { text, voice: null };
     const sensitive = av.sensitiveReason([instruction, msg && msg.subject, ticket && ticket.subject, core.stripQuoted((msg && msg.text) || ""), content && content.text, text]);
@@ -642,7 +650,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       const system = av.voiceSystemFor(voiceSkill);
       const prompt = av.voicePrompt(input);
       const raw = runImpl ? await runImpl.voice(Object.assign({ system, content: prompt, skill: voiceSkill }, input))
-        : await model({ system, schema: av.VOICE_SCHEMA, effort: "low", maxTokens: 400, content: prompt, timeout: VOICE_TIMEOUT_MS });
+        : await model({ system, schema: av.VOICE_SCHEMA, effort: "low", maxTokens: 400, content: prompt, timeout: timeoutMs });
       const quirk = av.cleanQuirk(raw);
       if (!quirk) return { text, voice: { quirk: false, reason: raw && raw.sensitive === true ? "plain reply: the voice judged it sensitive" : "no aside fitted" } };
       return { text: av.withQuirk(text, quirk), voice: { quirk: true } };
@@ -1221,8 +1229,14 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // otherwise), at most IMPROVEMENTS_PER_DAY new tickets a day. Shared by the
   // mailbox (`reflect`) and the console chat (`chat`, source "chat").
   // Returns { rec, event }: the record kept and the line for the timeline.
+  // From the chat (source "chat") it is narrower: it comments only on a ticket
+  // Aidan filed himself (never on a person's ticket, however alike its title),
+  // and its new tickets count against their own daily cap
+  // (aidanImprovementDay "chat-<date>"), never against the mailbox's.
   async function fileGap(found, { instruction, ticketKey, supportTicketId = "", kind = "", source = "email" }) {
     const at = now();
+    const chatSource = source === "chat";
+    const dayKey = `${chatSource ? chatCore.CHAT_DAY_PREFIX : ""}${at.toISOString().slice(0, 10)}`;
     // A missing market page is one gap per country, whatever the request.
     const key = ac.improvementKey(found.category, found.keyText || instruction);
     const label = ac.IMPROVEMENT_LABELS[found.category] || found.category;
@@ -1231,7 +1245,8 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const target = (found.projectId && projects.find((p) => p.id === found.projectId && !p.archived)) || home;
     const title = ac.improvementTitle(found);
     const keyed = await improvements.byKey(key);
-    const open = target ? await improvements.openTickets(target.id) : [];
+    const openAll = target ? await improvements.openTickets(target.id) : [];
+    const open = chatSource ? openAll.filter((t) => t && t.aidanImprovementKey) : openAll;
     const match = ac.matchImprovement({ key, category: found.category, gap: found.gap, title }, keyed, open);
     let rec;
     let event;
@@ -1242,13 +1257,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     } else if (!target) {
       rec = { action: "not-filed", reason: "no project to file it on" };
       event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}), but there is no project to file a ticket on.`;
-    } else if (await improvements.filedOn(at.toISOString().slice(0, 10)) >= ac.IMPROVEMENTS_PER_DAY) {
+    } else if (await improvements.filedOn(dayKey) >= ac.IMPROVEMENTS_PER_DAY) {
       rec = { action: "not-filed", reason: `already ${ac.IMPROVEMENTS_PER_DAY} tickets filed today` };
       event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). No ticket was filed: Aidan has already filed ${ac.IMPROVEMENTS_PER_DAY} today.`;
     } else {
       const filed = await improvements.file({ projectId: target.id, title,
         desc: ac.improvementDesc({ category: found.category, gap: found.gap, suggestion: found.suggestion, instruction, ticketKey, kind, at, source }),
-        improvement: Object.assign({ key, day: at.toISOString().slice(0, 10), category: found.category, gap: found.gap, suggestion: found.suggestion, supportTicketId, supportTicketKey: ticketKey, kind }, source === "chat" ? { source: "chat" } : {}) });
+        improvement: Object.assign({ key, day: dayKey, category: found.category, gap: found.gap, suggestion: found.suggestion, supportTicketId, supportTicketKey: ticketKey, kind }, source === "chat" ? { source: "chat" } : {}) });
       if (!filed || !filed.ok) {
         rec = { action: "not-filed", reason: core.clip(String((filed && filed.error) || "the ticket couldn't be filed"), 200) };
         event = `Aidan's self-check: this request wasn't fully met (${label}: ${found.gap}). The ticket couldn't be filed: ${rec.reason}`;
@@ -1352,7 +1367,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
   // gap is filed or commented on a Backlog ticket like the mailbox's
   // (fileGap, source "chat"). Never throws: functions/aidan-chat.js stores
   // and audits what this returns.
-  // Returns { outcome ("answered" | "read-only" | "cannot-answer" | "unavailable" | "error"),
+  // Returns { outcome ("answered" | "read-only" | "cannot-answer" | "unavailable" | "timeout" | "error"),
   //   reply, readOnly, reads, tools, codeMode, topics, voice, improvement, durationMs }.
   let chatLibrary = null;   // { at, rows }: the skills library, read at most every five minutes
   async function chatSkills() {
@@ -1361,8 +1376,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     chatLibrary = { at: now().getTime(), rows };
     return rows;
   }
-  async function chat({ instruction, reader = null, member = {}, history = [], origin = "" }) {
+  // `deadline` (ms since epoch): nothing starts that cannot finish by then,
+  // and no gap is filed after it. `mayFile`: the endpoint's say on whether this
+  // member's turn may file a gap at all (aidan-chat-core.js → mayFile).
+  // `stopped()`: true once the endpoint has given up on the turn.
+  async function chat({ instruction, reader = null, member = {}, history = [], origin = "", deadline = Infinity, mayFile = true, stopped = () => false }) {
     const started = now().getTime();
+    const left = () => chatCore.leftMs(deadline, now().getTime());
     const text = chatCore.cleanText(instruction);
     const done = (o) => Object.assign({ readOnly: false, reads: 0, tools: [], codeMode: null, topics: [], voice: null, improvement: null }, o, { durationMs: now().getTime() - started });
     if (!text) return done({ outcome: "error", reply: chatCore.ERROR_REPLY });
@@ -1373,11 +1393,13 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
     const conversation = chatCore.transcript(history);
     let c = null;
     try {
-      c = await readConsole({ instruction: text, email: conversation, reader, channel: "chat", planTimeoutMs: chatCore.CHAT_PLAN_TIMEOUT_MS });
+      c = await readConsole({ instruction: text, email: conversation, reader, channel: "chat", planTimeoutMs: chatCore.CHAT_PLAN_TIMEOUT_MS, deadline });
     } catch (err) { logger.error("aidan chat: console read failed", { error: errText(err) }); }
     if (c) Object.assign(signals, { codeMode: c.codeMode, failedReads: c.failedReads, consoleCut: c.cut, scopedProjectIds: c.scopedProjectIds, context: c.context });
     const facts = c ? { reads: c.results.filter((r) => r.ok).length, tools: c.tools, codeMode: c.codeMode, topics: c.topics || [] } : {};
     if (c && c.changeRequested) return done(Object.assign({ outcome: "read-only", readOnly: true, reply: chatCore.readOnlyReply(text) }, facts));
+    // No time left to write an answer: say so rather than start one that can't finish.
+    if (stopped() || left() < chatCore.CHAT_MIN_ANSWER_MS) return done(Object.assign({ outcome: "timeout", reply: chatCore.TOO_LONG_REPLY }, facts));
     let answer;
     try {
       const system = chatCore.chatAnswerSystem(origin);
@@ -1385,7 +1407,7 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       if (conversation) blocks.push({ type: "text", text: `<conversation>\n${conversation}\n</conversation>` });
       if (c && c.used) blocks.push({ type: "text", text: c.text });
       const raw = runImpl && runImpl.answer ? await runImpl.answer({ instruction: text, system, content: blocks, console: c, chat: true })
-        : await model({ system, schema: chatCore.CHAT_ANSWER_SCHEMA, effort: "medium", maxTokens: 6000, content: blocks, timeout: chatCore.CHAT_ANSWER_TIMEOUT_MS });
+        : await model({ system, schema: chatCore.CHAT_ANSWER_SCHEMA, effort: "medium", maxTokens: 6000, content: blocks, timeout: Math.max(2000, Math.min(chatCore.CHAT_ANSWER_TIMEOUT_MS, left() - 1000)) });
       answer = chatCore.cleanChatAnswer(raw);
     } catch (err) {
       logger.error("aidan chat: the answer failed", { error: errText(err) });
@@ -1401,20 +1423,29 @@ function createAidan({ db, tickets, secretsRef, gmail, readSettings, logEvent, n
       outcome = "answered";
       const consoleText = c ? c.text : "";
       reply = chatCore.stripIdsOutsideLinks(chatCore.safeLinks(answer.replyText, consoleText, origin), c ? c.names : []);
-      let voiceSkill = null;
-      try { voiceSkill = await voiceSkillFrom(await chatSkills()); } catch (err) { logger.warn("aidan chat: the voice skill couldn't be read", { error: errText(err) }); }
-      const voiced = await inVoice({ ticketId: "chat", kind: "answer", body: reply, instruction: text, msg: { fromName: member.name || "" }, ticket: null, voiceSkill });
-      reply = voiced.text || reply;
-      voice = voiced.voice;
+      // The voice's aside only when there is time for it: the answer is never held up by it.
+      if (!stopped() && left() > chatCore.CHAT_VOICE_TIMEOUT_MS + 1000) {
+        let voiceSkill = null;
+        try { voiceSkill = await voiceSkillFrom(await chatSkills()); } catch (err) { logger.warn("aidan chat: the voice skill couldn't be read", { error: errText(err) }); }
+        const voiced = await inVoice({ ticketId: "chat", kind: "answer", body: reply, instruction: text, msg: { fromName: member.name || "" }, ticket: null, voiceSkill, timeoutMs: Math.min(chatCore.CHAT_VOICE_TIMEOUT_MS, left() - 1000) });
+        reply = voiced.text || reply;
+        voice = voiced.voice;
+      } else voice = { quirk: false, reason: "no time left for the aside" };
     }
     // The self-check, as the mailbox's: a gap is filed on the project the turn
     // was about, or commented on the open ticket that already covers it.
+    // Never after the turn's deadline or once the endpoint has stopped waiting,
+    // and never for a turn the endpoint says may not file (a viewer's, or a
+    // member who already filed one in the last hour).
+    // A turn the time limit cut short is not a data gap: the reading or the
+    // answer was stopped, so nothing is filed for it.
+    const timeCut = Boolean(c && c.timeCut) || Boolean(answer.failed && left() < 2000);
     let improvement = null;
-    if (improvements) {
+    if (improvements && mayFile && !timeCut && !stopped() && left() > 0) {
       try {
         const final = outcome === "answered" ? { status: "replied" } : { status: outcome === "error" ? "error" : "needs-person", reason: answer.failed ? `The answer failed: ${answer.failed}` : answer.reason || "Aidan couldn't answer this from the console." };
         const found = ac.assessRun(Object.assign({}, signals, { final }));
-        if (found) improvement = (await fileGap(found, { instruction: text, ticketKey: "console chat", kind: "chat", source: "chat" })).rec;
+        if (found) improvement = (await fileGap(found, { instruction: text, ticketKey: `console chat, ${/^[aeiou]/i.test(String(member.role || "viewer")) ? "an" : "a"} ${String(member.role || "viewer")}'s request`, kind: "chat", source: "chat" })).rec;
       } catch (err) { logger.error("aidan chat: self-check failed", { error: errText(err) }); }
     }
     return done(Object.assign({ outcome, reply, voice, improvement }, facts));

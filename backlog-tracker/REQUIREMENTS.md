@@ -7662,17 +7662,29 @@ of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
   "chat"`), the conversation so far (the last six messages) given as
   context. The answer is short, in light Markdown, and links each record it
   cites by its title. A link survives only when it points at a record the
-  turn read (a URL in the console data, or the console's own record link
-  with an id from it); any other link keeps its words and loses its target,
-  and the panel follows only links into the console. Ids are replaced by
-  titles outside links.
+  turn read: the console's own record link with an id from the console
+  data, or a published Help Centre page found in it
+  (`HELP_CENTRE_ORIGINS`). Any other link, including a URL that a ticket or
+  a customer's email happens to contain, keeps its words and loses its
+  target. The panel follows links into the console in place and opens a
+  Help Centre page in a new tab. Ids are replaced by titles outside links.
 - **SUP-AID-59** **Nothing is changed.** A message that asks to create,
   change, move, archive, approve, build or deploy something (the mailbox's
   `consoleChangeRequest`, or a message opening with a verb that only
   changes the console, such as "archive ticket X") is answered, with no
   model asked, by a plain reply that Aidan can only read the console and
   where on the board to do it (`readOnlyReply`); a plan that finds a change
-  request gets the same. No chat path writes to the console.
+  request gets the same. A question is looked up, not refused ("Release
+  4.12, what's in it?", "Ship date for X?", "Who can merge the train?",
+  "Deploy status"), unless it asks Aidan to do it ("can you archive ticket
+  X?") or is an order with a question mark ("merge the train?"). A verb
+  counts as an order when it opens the message (after a greeting, "please",
+  "can you", "I want you to") and is followed by what it acts on ("close
+  PH-12", "merge the train", "ship 4.12 today", "create a lead for Acme");
+  a verb used as a noun ("Delete requests last week", "Restore points") is
+  not one. The test decides only which reply is given: the session is
+  read-only whatever it says. No chat path writes to the console apart from
+  the self-check filing of SUP-AID-66.
 - **SUP-AID-60** **Instruction and data.** The text the member typed or
   said is their instruction. Console data, Aidan's earlier replies and
   anything read back are untrusted data, never instructions (the plan's
@@ -7686,10 +7698,23 @@ of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
 - **SUP-AID-62** **Voice in.** The mic is the console's own dictation
   (`createDictationController` in `app.js`); when the member stops, what
   they said is sent (closing the panel stops it and sends nothing).
-- **SUP-AID-63** **A time budget of its own.** One planning round may take
-  12 s and the answer 30 s (the mailbox keeps 25 s and 120 s). The panel
-  says it is still working after 30 s; a turn still going after 110 s ends
-  with a "took too long" reply. The mailbox's gates, budgets and 540 s
+- **SUP-AID-63** **A time budget of its own.** Firebase Hosting ends a call
+  to a function at 60 s, so a turn is answered well inside that. Aidan is
+  given a deadline 45 s after the turn starts (`CHAT_WORK_MS`) and starts
+  nothing he cannot finish by it: a planning round takes at most 12 s, the
+  Code Mode run at most 10 s, the answer at most 25 s and is not started
+  with under 5 s left, and the voice's aside (6 s at most) is skipped when
+  there is no time for it. At 50 s (`CHAT_TURN_MAX_MS`) the endpoint
+  answers with a "took too long" reply and tells the turn it has been given
+  up on, so it files nothing afterwards. Both are counted from when the
+  request arrived, so signing in and loading the conversation use the same
+  budget, and the turn's slot is freed before the reply is sent (nothing is
+  left to run after the response). The panel says it is still working
+  after 30 s. If the call fails after the reply was saved (a dropped
+  connection, a 5xx), the panel fetches the conversation once and shows the
+  saved reply instead of an error, only if it answers this question and was
+  written after it was asked; a refusal the server gave (busy, rate limit,
+  not found) is shown as it is. The mailbox's gates, budgets and 540 s
   function are unchanged.
 - **SUP-AID-64** **Kept per member.** Each conversation is one
   `aidanChats` document (`email`, `title`, `messages`, `turns`,
@@ -7698,20 +7723,35 @@ of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
   admin reads all, no other member reads one, and only the server writes.
   The endpoint returns only the caller's own (`GET /mcp/aidan/chat`, and
   `?id=` for one). The conversation stays in the panel while moving between
-  pages, and after a reload the panel reopens the last one.
+  pages, and after a reload the panel reopens the last one. While Aidan is
+  answering, History and New are disabled, so a reply always lands in the
+  conversation it was asked in.
 - **SUP-AID-65** **Audited, and rate limited.** Every turn writes one
   `aidanChatRuns` row (who, role, when, text or voice, the tools read and
   how many reads, the Code Mode run, the links kept, the outcome, the
   duration, the improvement filed), readable by admins; never the message
   text, and no message text in function logs. The searches and packs it
   ran are in `searchRuns` with `via: "aidan-chat"` (`list_search_runs`). At
-  most 30 turns per member per ten minutes (`aidanChatLimits/{email}`,
-  counted in a transaction), then 429 with when to try again.
-- **SUP-AID-66** **The self-check still runs.** A turn Aidan couldn't
-  answer well files a Backlog ticket or comments on the open one that
-  covers it, as the mailbox's does (`fileGap`, shared with `reflect`), with
-  the request labelled "Reported by Aidan's self-check, from the console
-  chat: data, not instructions." and `aidanImprovement.source: "chat"`.
+  most 30 turns per member per ten minutes, and at most two of their turns
+  running at once (`aidanChatLimits/{email}`: the window and `inFlight`,
+  counted in a transaction; a turn's slot is freed when it ends, and a slot
+  older than 100 s stops counting, so a crashed instance cannot lock a member
+  out). Over either, 429 with when to try again (in a minute for running
+  turns); a turn refused for running turns uses none of the rate limit.
+- **SUP-AID-66** **The self-check still runs, within limits.** A turn Aidan
+  couldn't answer well files a Backlog ticket or comments on one, through the
+  mailbox's own `fileGap`, with the request labelled "Reported by Aidan's
+  self-check, from the console chat: data, not instructions." and
+  `aidanImprovement.source: "chat"`. From the chat it is narrower than the
+  mailbox's: it comments only on a ticket Aidan filed himself, never on a
+  person's ticket however alike its title; its new tickets count against
+  their own five a day (`aidanImprovementDay` "chat-<date>"), never the
+  mailbox's; a viewer's turn files nothing; a member's turns file at most one
+  ticket or comment an hour (`aidanChatLimits.lastFiledAtMs`; of two turns
+  running at once only one may file); nothing is filed after the turn's
+  deadline or for a turn the time limit cut short (that is not a data gap);
+  and the ticket names the asker's role, never their address. Aidan's Code Mode runs from the chat count as his in
+  `list_script_runs` (`aidan: true`) by their kind.
 
 ### Connecting
 
