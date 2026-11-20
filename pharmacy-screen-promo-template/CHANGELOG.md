@@ -10,6 +10,23 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Editor: see each "Open today" bar message in the preview.** Under Footer: Open today bar, "Open today bar in
+  the preview" has tabs for Store's time, While open, Last 30 minutes, Before opening and After closing; the
+  preview's bar shows the chosen message and that message is marked "In preview". It works while the bar is
+  inherited from the master, and clicking into a message shows it. Preview only: screens still follow the store's
+  clock ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Copy tips").
+- **Occasions is now Seasonal, and it switches by date.** The fourth default promotion, its tab, its drop-down
+  (now **Season**) and every label in the editor and the docs say Seasonal instead of Occasions; its promo ID stays
+  `occasions`, so existing campaign URLs keep working. Each season has start and end dates, the same every year:
+  Christmas 15–27 December, New Year's 28 December–5 January, Australia Day 26 January, Valentine's Day 14
+  February, Easter Good Friday to Easter Monday (worked out for each year) and Anzac Day 25 April. The screen plays
+  the season whose dates hold today in the store's time zone and moves to the next one by itself at midnight, so
+  nobody has to change the drop-down; outside every season's dates it plays the season picked in the drop-down.
+  An administrator can change a season's dates in the editor (**Dates** card above the beats; saved with the
+  season's copy as `content.occasions.<season>.from` / `.to`, `MM-DD`, inherited from the master template like
+  the copy). The pharmacy view doesn't show the dates. The seed renames its default promotion still called
+  Occasions, and the editor shows it as Seasonal until then. New testing parameter `date=YYYY-MM-DD`.
+
 - **Pharmacy view: `admin/?store=<store code>` (or `?storeCode=`) opens the editor locked to that pharmacy.** The
   same editor and preview as the admin view, labelled "Pharmacy view · <store code>", with everything that is the
   pharmacy's own editable (inherited sections made its own, promotions added from the service library or blank,
@@ -26,6 +43,15 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
+  the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
+  store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
+  ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
+- **Settings: `${StoreName}` is the Pharmacy name, and today's hours are always live.** Pharmacy details shows the
+  `${StoreName}` token beside the **Pharmacy name** label, and Settings → Tokens no longer lists `${StoreName}`,
+  `${CloseTime}` or `${OpenTime}`: the name is set in Pharmacy details, and the times change through the day, so
+  none of them can be given a fixed value. A value stored for one earlier is ignored on screens and dropped the
+  next time the pharmacy is saved ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "Template tokens").
 - **Pharmacy view: no `${Suburb}` hint, remote config or Copy experience URL.** `admin/?store=<store code>` no
   longer shows "Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.", "Remote
   config for this pharmacy", or Copy experience URL with the Playback duration and its info tooltip under the
@@ -72,6 +98,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 - **Settings → Store record** (the device ID lookup of the Location API record). The preview always uses sample
   store data; to check a screen's store, open its campaign URL with `&debug=1`. The proxy endpoint
   (`GET /api/device/{id}/campaign_data`) is unchanged: screens still use it.
+
+### Fixed
+
+- **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
+  the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
+  of the page jumping.
 
 ## [0.1.0] — first handover candidate
 

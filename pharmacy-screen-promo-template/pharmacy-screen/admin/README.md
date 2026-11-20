@@ -16,10 +16,10 @@ Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 | Inheritance (on a pharmacy) | For a promotion with a master, each section (greeting, promotion slots, walk-in close, Open today bar; headlines, address; occasion copy) shows **Inherited from master** (read-only, `inert`) or **Managed separately**. **Edit for this pharmacy** makes it the pharmacy's own and shows a message that the master no longer reaches it; **Revert to master** inherits it again. A new pharmacy starts with the masters and inherits everything | `PUT …/content/{promotionId}`, then `PATCH /api/admin/pharmacies/{id}` (`detached`) |
 | Promotions (shared by all pharmacies) | Tabs, New promotion (name, promo ID, template, including an occasion), rename, change promo ID (unique), delete (click twice) | `/api/admin/promotions` |
 | Template | Drop-down and the Edit HTML modal: built-ins read-only, Clone template, rename, delete (its promotions fall back to the built-in), portrait/landscape backgrounds, HTML with `${…}` token chips, scoped CSS, Reset to default | `/api/admin/templates` |
-| Scenes (scenes templates) | Top: Greeting, one scene per service (rich-text headline, accent line, chip label, searchable Material Symbols icon, line 1, line 2), per-scene duration, drag-and-drop and up/down reorder, delete, Add promotion from the whole service library (searchable, grouped; Close adds nothing) or blank, a just-added promotion deleted with one click, Tail: Walk-in close, Footer: Open today bar (show toggle and four messages with `${CloseTime}` / `${OpenTime}`) | `PUT /api/admin/pharmacies/{id}/content/{promotionId}` |
+| Scenes (scenes templates) | Top: Greeting, one scene per service (rich-text headline, accent line, chip label, searchable Material Symbols icon, line 1, line 2), per-scene duration, drag-and-drop and up/down reorder, delete, Add promotion from the whole service library (searchable, grouped; Close adds nothing) or blank, a just-added promotion deleted with one click, Tail: Walk-in close, Footer: Open today bar (show toggle and four messages with `${CloseTime}` / `${OpenTime}`; "Open today bar in the preview" tabs show each message in the preview, preview only) | `PUT /api/admin/pharmacies/{id}/content/{promotionId}` |
 | Opening hours (hours templates) | Three rich-text headlines, each with its seconds on screen (1–60; default 2.7, 2.7, 2.6), show address toggle | the same |
-| Occasions (occasion templates) | **Occasion** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template), then that occasion's beats (Christmas 2, the others 3; by default sharing a 12 s loop): each with its seconds on screen (1–60), a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
-| Settings → Tokens | Every `${…}` token the pharmacy's promotions use (its own copy, the master template's sections it inherits, the Open today bar, template HTML; layout slots excluded), with the promotions using each and an input to set its value by hand (blank = the store's data, shown as the placeholder). Data tokens first, then the others by name; a value no promotion uses any more is still listed so it can be cleared (`model.js` `usedTokens`) | `PATCH /api/admin/pharmacies/{id}` (`tokens`) |
+| Seasonal (occasion templates) | **Season** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template and what plays outside every season's dates), then that season's **Dates** card (**Starts** / **Ends**, day and month, saved as `from` / `to`; Easter shows its worked-out Good Friday to Easter Monday instead; not shown in the pharmacy view) and its beats (Christmas 2, the others 3; by default sharing a 12 s loop): each with its seconds on screen (1–60), a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
+| Settings → Tokens | Every `${…}` token the pharmacy's promotions use (its own copy, the master template's sections it inherits, the Open today bar, template HTML; layout slots and the live `${StoreName}` / `${CloseTime}` / `${OpenTime}` excluded; `${StoreName}` is shown beside the Pharmacy name label in Pharmacy details), with the promotions using each and an input to set its value by hand (blank = the store's data, shown as the placeholder). Data tokens first, then the others by name; a value no promotion uses any more is still listed so it can be cleared (`model.js` `usedTokens`) | `PATCH /api/admin/pharmacies/{id}` (`tokens`) |
 | Settings → Pharmacies | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
 | Settings → Pharmacy details | Name, store code (unique, checked as you type and again by the API) | `PATCH /api/admin/pharmacies/{id}` |
 | Settings → Branding | Primary and accent colours; logo (transparent PNG) upload, replace, remove | `PATCH …/{id}`, `PUT/DELETE …/{id}/logo` |
@@ -31,8 +31,8 @@ sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`, `applyLo
 pharmacy's details, tokens and branding, Settings → Pharmacies and Personalisation Hub API are not reachable; its
 content is edited as in the admin view. The grey promotion section (promotion name, promo ID, template, Edit HTML
 and the `promo=` line) is not shown on Morning, Afternoon, Closed or any other non-occasion promotion
-(`renderPromoMeta` hides `#promoMeta`); on an Occasions promotion only the Occasion drop-down shows and it can be
-changed (it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
+(`renderPromoMeta` hides `#promoMeta`); on the Seasonal promotion only the Season drop-down shows (no Dates card) and it can be
+changed (it sets the shared promotion's season, as in the admin view). New / Delete promotion and the master template
 are hidden, and every write handler for them returns early. Each inherited section's action reads "Edit"; every
 scene's seconds-on-screen control is hidden (`hideTimings`: timings are set by an administrator); Add promotion is
 hidden once a promotion has 3 slots (`PHARMACY_MAX_SLOTS`; the admin view allows 6); the `${Suburb}` hint
@@ -72,7 +72,7 @@ adjusts as soon as the menu changes, with no reload:
 - Nothing wraps onto a second line. The promotion tabs stay on one line and scroll sideways when they don't fit,
   with left/right arrows and faded edges, and the selected tab is kept in view (also when the frame is resized).
   In a narrow editor column (700px or less) Reset, Settings and Edit HTML show as icons (their names stay in the tooltip and
-  for screen readers); the pharmacy picker, the promo URL pill and the preview's store-data pill shorten with an
+  for screen readers); the pharmacy picker, the promo URL pill and the preview's sample-hours pill shorten with an
   ellipsis instead of pushing controls onto a new row.
 - Nothing is `position: fixed`.
 - The preview scrolls up with the page until its Portrait/Landscape tabs reach the very top of the frame, then
@@ -93,8 +93,12 @@ Copy experience URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&o
 in a wrapping tooltip on hover). Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
 promotion's total length plus one second, rounded up (`playbackSeconds()` in `js/model.js`), so the last scene
 finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
-setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). Store data comes from the device looked up in Settings; until one is, the
-preview uses sample hours and no suburb, and says so.
+setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). The
+preview uses sample opening hours (`sampleCampaign()` in `js/model.js`: Monday to Friday 9:00–17:30, Saturday
+9:00–13:00) and no suburb, and says so: the "Sample opening hours" pill beside Play (`#pvData`) with an info icon
+(`#pvInfo`) whose tooltip (`#pvTip`) says each screen uses its own store's actual opening and closing hours from
+Personalisation Hub, for the day and time the promotion plays. The tooltip opens from the left edge of the
+controls row and is never wider than it, so it is not clipped in a narrow preview column.
 
 ## Files
 

@@ -214,24 +214,25 @@ test('tokens set by hand: every token the pharmacy uses, master template include
   const tpls = [...templates, { id: 'tpl2', name: 'Scenes, custom', kind: 'promotion-scenes', builtIn: false, html: '<div>${Headline}${Website}</div>' }];
   const promos = [
     { id: 'p-m', name: 'Morning', promoId: 'morning', templateId: M.BUILTIN_SCENES, master: { greeting: 'Good morning,<br>${Suburb}', introTitle: 'Call ${Phone}', introSub: '', slots: [], close: { title: 'Bye' }, footer: { show: false } } },
-    { id: 'p-o', name: 'Occasions', promoId: 'occasions', templateId: M.occasionTemplateId('christmas') },
+    { id: 'p-o', name: 'Seasonal', promoId: 'occasions', templateId: M.occasionTemplateId('christmas') },
     { id: 'p-x', name: 'Extra', promoId: 'extra', templateId: 'tpl2' },
   ];
   const ph = { id: 'ph1', content: { 'p-x': { greeting: 'Hello', introTitle: '${Unused', introSub: '', slots: [], close: { title: '${Offer}' } } }, tokens: { Suburb: 'Beaumaris', Old: 'left over' } };
   const list = M.usedTokens(ph, promos, tpls);
-  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime', 'Offer', 'Old', 'Website']);
+  // ${StoreName} (the Pharmacy name field) and ${CloseTime} / ${OpenTime} (today's hours) are filled live: not listed.
+  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'Phone', 'Offer', 'Old', 'Website']);
   const by = Object.fromEntries(list.map((t) => [t.name, t]));
-  assert.deepEqual(by.Suburb, { name: 'Suburb', data: true, value: 'Beaumaris', promotions: ['Morning', 'Occasions'] });
+  assert.deepEqual(by.Suburb, { name: 'Suburb', data: true, value: 'Beaumaris', promotions: ['Morning', 'Seasonal'] });
   assert.deepEqual(by.Phone.promotions, ['Morning'], 'from the master template');
-  assert.deepEqual(by.StoreName.promotions, ['Occasions'], 'the occasion sign-off');
-  assert.deepEqual(by.CloseTime.promotions, ['Extra'], 'the Open today bar, unless hidden (an occasion has none)');
+  const stale = M.usedTokens({ ...ph, tokens: { ...ph.tokens, StoreName: 'Set Name', CloseTime: '9PM' } }, promos, tpls);
+  assert.deepEqual(stale.map((t) => t.name), list.map((t) => t.name), 'a stored live token is not listed either');
   assert.deepEqual(by.Website.promotions, ['Extra'], 'custom template HTML; its layout slots are not listed');
   assert.deepEqual(by.Old, { name: 'Old', data: false, value: 'left over', promotions: [] });
   // Detaching a section uses the pharmacy's own copy instead of the master's.
   const det = { ...ph, content: { ...ph.content, 'p-m': { introTitle: 'Plain' } }, detached: { 'p-m': ['greeting'] } };
   const detList = M.usedTokens(det, promos, tpls);
   assert.ok(!detList.some((t) => t.name === 'Phone'), 'the master greeting section no longer plays');
-  assert.deepEqual(detList.find((t) => t.name === 'Suburb').promotions, ['Occasions']);
+  assert.deepEqual(detList.find((t) => t.name === 'Suburb').promotions, ['Seasonal']);
   // setToken: blank removes.
   assert.deepEqual(M.setToken(ph, 'Phone', '03 1234'), { Suburb: 'Beaumaris', Old: 'left over', Phone: '03 1234' });
   assert.deepEqual(M.setToken(ph, 'Old', '  '), { Suburb: 'Beaumaris' });
@@ -277,4 +278,22 @@ test('pharmacy view: storeFromQuery reads ?store= or ?storeCode=, normalised lik
   assert.equal(M.storeFromQuery(''), null);
   assert.equal(M.storeFromQuery('?store='), null);
   assert.equal(M.storeFromQuery('?code=abc&state=x'), null);
+});
+
+test('seasonal: the old default name Occasions shows as Seasonal; a renamed or custom promotion is left alone', () => {
+  const ps = M.orderPromotions([
+    { id: 'a', name: 'Occasions', promoId: 'occasions', templateId: M.occasionTemplateId('easter') },
+    { id: 'b', name: 'Occasions', promoId: 'other', templateId: M.BUILTIN_SCENES },
+    { id: 'c', name: 'Holidays', promoId: 'holidays', templateId: M.occasionTemplateId('christmas') },
+  ]);
+  assert.deepEqual(Object.fromEntries(ps.map((p) => [p.id, p.name])), { a: 'Seasonal', b: 'Occasions', c: 'Holidays' });
+  assert.equal(M.SECTION_NAMES.occasions, 'Seasonal copy and dates');
+});
+
+test('seasonal: dates saved on a season survive ensureContent; bad dates are dropped', () => {
+  const c = M.ensureContent({ occasions: { christmas: { from: '12-01', to: '12-26', beats: [] }, easter: { from: '13-01', to: '04-01', beats: [] } } }, 'occasion');
+  assert.equal(c.occasions.christmas.from, '12-01');
+  assert.equal(c.occasions.christmas.to, '12-26');
+  assert.ok(!('from' in c.occasions.easter), 'an invalid month is not kept');
+  assert.equal(c.occasions['new-year'].beats.length, 3);
 });

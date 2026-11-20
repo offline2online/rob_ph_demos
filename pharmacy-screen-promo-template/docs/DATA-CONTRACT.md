@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Occasions | One of the six occasion templates (seeded Christmas) | The chosen occasion's standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
+| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here.
@@ -161,12 +161,14 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${Phone}` | all | `store_info.address_info.phone_number` |
 
 **Set by hand.** A pharmacy can give any token a value of its own (Admin → Settings → **Tokens**, stored as
-the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${StoreName}`, `${Phone}`,
-`${CloseTime}` and `${OpenTime}` show it instead of the Location API's or the editor's value, and any other token
-name (letters, digits and underscores, starting with a letter, e.g. `${Website}`) used in copy or template HTML
-shows it instead of nothing. With a value set, `${StoreName}` and `${Phone}` also resolve in promotion copy. The
-layout slots (`${Headline}`, `${Logo}`, `${Content}` and the rest of the table above, other than `${Suburb}`,
-`${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
+the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}` and `${Phone}` show it instead
+of the Location API's value, and any other token name (letters, digits and underscores, starting with a letter,
+e.g. `${Website}`) used in copy or template HTML shows it instead of nothing. With a value set, `${Phone}` also
+resolves in promotion copy. `${StoreName}` is always the Pharmacy name (Settings → Pharmacy details shows the token
+beside that field), and `${CloseTime}` / `${OpenTime}` are always today's times, so none of the three can be set
+by hand (`LIVE_TOKENS` in `pharmacy-screen/js/tokens.js`); a value stored for one earlier is ignored by the screen
+and dropped the next time the pharmacy is saved. The layout slots (`${Headline}`, `${Logo}`, `${Content}` and the
+rest of the table above, other than `${Suburb}`, `${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
 pharmacy.
 
 Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,
@@ -205,7 +207,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "occasions": { "christmas": { "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
+      "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
 }
@@ -221,7 +223,11 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Rich text (headlines, bar messages) keeps only bold, italic, line breaks and `<span class="reg">` /
   `<span class="acc">`; everything else is stripped.
 - Content is bounded at 200 KB per promotion.
-- Occasion keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- Occasion (season) keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- Season dates: `from` and `to` (optional, `MM-DD`, inclusive, every year; `from` after `to` runs over New Year).
+  Missing or invalid, the defaults apply: Christmas `12-15`–`12-27`, New Year's `12-28`–`01-05`, Australia Day
+  `01-26`, Valentine's Day `02-14`, Easter Good Friday to Easter Monday (worked out for each year), Anzac Day
+  `04-25`. The screen plays the season whose dates hold the store's date, else the promotion's template.
 
 Master template: a promotion's optional `master` holds the default content (the same shape as one entry of
 `content` above) that every pharmacy inherits section by section; a pharmacy's optional

@@ -10,7 +10,7 @@
 //   css/material-symbols.css  Material Symbols Outlined, the one instance the screen draws (FILL 1, wght 500,
 //                             opsz 24, GRAD 0; every icon). It is a static font, so it is registered for every
 //                             weight and the screen's font-variation-settings have nothing to vary.
-//   css/occasion-fonts.css    The Occasions templates' display faces (js/occasions.js), latin subset, only the
+//   css/occasion-fonts.css    The Seasonal templates' display faces (js/occasions.js), latin subset, only the
 //                             weights and styles the designs use: Playfair Display, Outfit, Big Shoulders Display,
 //                             Archivo Black, Archivo, DM Serif Display, Fredoka and Cormorant Garamond.
 // All are open source (Figtree, Roboto and the occasion faces: SIL Open Font License 1.1; Material Symbols: Apache 2.0).
@@ -84,7 +84,7 @@ if (only !== 'occasions') {
   written.push(`css/fonts.css ${(fontsCss.length / 1024).toFixed(0)} KB`, `css/material-symbols.css ${(iconsCss.length / 1024).toFixed(0)} KB`);
 }
 
-// The Occasions templates (js/occasions.js): each family with exactly the weights and styles its design sets.
+// The Seasonal templates (js/occasions.js): each family with exactly the weights and styles its design sets.
 const OCCASION_FAMILIES = [
   ['Playfair Display', 'Playfair+Display:ital,wght@0,500;1,600'],
   ['Outfit', 'Outfit:wght@300..600'],
@@ -96,7 +96,7 @@ const OCCASION_FAMILIES = [
   ['Cormorant Garamond', 'Cormorant+Garamond:ital,wght@0,500;0,600;1,500'],
 ];
 if (only !== 'screen') {
-  let occCss = header('Self-hosted fonts for the Occasions templates (js/occasions.js), latin subset; all SIL OFL 1.1.');
+  let occCss = header('Self-hosted fonts for the Seasonal templates (js/occasions.js), latin subset; all SIL OFL 1.1.');
   for (const [name, family] of OCCASION_FAMILIES) occCss += await familyCss(name, family, ['latin'], null) + '\n';
   fs.writeFileSync(path.join(ROOT, 'css/occasion-fonts.css'), occCss);
   written.push(`css/occasion-fonts.css ${(occCss.length / 1024).toFixed(0)} KB`);

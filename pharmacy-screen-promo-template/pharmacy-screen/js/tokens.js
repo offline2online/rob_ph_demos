@@ -3,13 +3,15 @@
 // Copy uses Personalisation Hub's token format, ${TokenName}:
 //   ${Suburb}    store_info.address_info.suburb. With no suburb it is blanked, together with its
 //                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
-//   ${StoreName} the pharmacy's name (Occasions copy: "from the whole ${StoreName} team").
+//   ${StoreName} the pharmacy's name (Seasonal copy: "from the whole ${StoreName} team").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
 //
-// A pharmacy can set any token's value by hand (Admin → Settings → Tokens; pharmacy.tokens, a map of token name ->
-// text). A set value wins over the store's data: ${Suburb}, ${StoreName}, ${Phone}, ${CloseTime} and ${OpenTime}
-// (DATA_TOKENS), and any other token name used in copy or template HTML, which otherwise renders as nothing.
+// A pharmacy can set a token's value by hand (Admin → Settings → Tokens; pharmacy.tokens, a map of token name ->
+// text). A set value wins over the store's data for ${Suburb} and ${Phone}, and over nothing for any other token
+// name used in copy or template HTML, which otherwise renders as nothing. ${StoreName} is the pharmacy name
+// (Settings → Pharmacy details) and ${CloseTime} / ${OpenTime} change through the day, so none of the three can be
+// set by hand (LIVE_TOKENS): a value stored for one before that rule is ignored.
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -98,12 +100,17 @@ export const TEMPLATE_TOKENS = {
 /** Tokens filled from the store's data (the Location API, the pharmacy's name, today's hours). */
 export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime'];
 
+/** Data tokens never set by hand: ${StoreName} is the pharmacy name (Settings → Pharmacy details), and today's
+ *  ${CloseTime} / ${OpenTime} change through the day, so a fixed value would be wrong most of the time. */
+export const LIVE_TOKENS = ['StoreName', 'CloseTime', 'OpenTime'];
+
 /** Template slots the render engine fills with layout (headline, logo, tiles, ...): never set by hand. */
 export const SLOT_TOKENS = [...new Set(Object.values(TEMPLATE_TOKENS).flat())].filter((k) => !DATA_TOKENS.includes(k));
 
-/** A token name a pharmacy may set: letters, digits and underscores, starting with a letter, not a template slot. */
+/** A token name a pharmacy may set: letters, digits and underscores, starting with a letter, not a template slot and
+ *  not a live data token (LIVE_TOKENS). */
 export const TOKEN_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
-export const isSettableToken = (name) => TOKEN_NAME_RE.test(String(name)) && !SLOT_TOKENS.includes(String(name));
+export const isSettableToken = (name) => TOKEN_NAME_RE.test(String(name)) && !SLOT_TOKENS.includes(String(name)) && !LIVE_TOKENS.includes(String(name));
 
 /** The ${Token} names in a string, in order of first use. */
 export function tokensIn(text) {

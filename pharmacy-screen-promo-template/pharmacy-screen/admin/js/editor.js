@@ -11,9 +11,10 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
+import { nowInState, storeNow } from '../../js/hours.js';
 
 const $ = (id) => document.getElementById(id);
 const pref = {
@@ -99,6 +100,29 @@ function previewModel() {
 let ver = 0, scene = 0, elapsed = 0, playing = true, last = performance.now(), lastKey = '', model = null;
 const seq = () => (model ? sequence(model.play) : [{ k: 0, t: 3 }]);
 
+// "Open today bar in the preview": which message the preview's bar shows. null follows the store's clock (what the
+// screen does); otherwise the preview is drawn at a store time today in that state (hours.js nowInState). Editor only.
+const BAR_STATES = [
+  { k: null, label: "Store's time" },
+  { k: 'open', label: 'While open', box: 'ftOpen' },
+  { k: 'closing', label: 'Last 30 minutes', box: 'ftClosing' },
+  { k: 'before', label: 'Before opening', box: 'ftBefore' },
+  { k: 'closed', label: 'After closing', box: 'ftClosed' },
+];
+let barState = null, barFor = '';
+function previewNow(store) {
+  if (!barState || !store) return undefined;
+  return nowInState(store.sessions, barState, storeNow(store.tz)) || undefined;
+}
+function markBar() {
+  BAR_STATES.forEach((x) => { const b = x.box && $(x.box); if (b) b.closest('.rtf').classList.toggle('focus', x.k === barState); });
+  document.querySelectorAll('#barTabs button').forEach((b) => b.setAttribute('aria-selected', String((b.dataset.st || null) === barState)));
+}
+function setBarState(k) {
+  if (k === barState) return;
+  barState = k; lastKey = ''; renderScreen(true); markBar();
+}
+
 function fit() {
   const st = $('stage'), w = st.clientWidth;
   $('screen').style.transform = `scale(${w / (orient === 'landscape' ? 1920 : 1080)})`;
@@ -111,7 +135,7 @@ function renderScreen(force) {
   // promotion changes, restarting the loop and the timeline with it); paused, the selected beat is held still.
   const occLoop = isOcc() && playing;
   const minute = occLoop ? 0 : Math.floor(Date.now() / 60000);
-  const key = [S.cur.id, S.dpTab, occLoop ? 'loop' : scene, ver, orient, minute].join('|');
+  const key = [S.cur.id, S.dpTab, occLoop ? 'loop' : scene, ver, orient, minute, barState].join('|');
   if (key === lastKey && !force) return;
   if (occLoop) { scene = 0; elapsed = 0; }
   const sceneChanged = !lastKey.startsWith([S.cur.id, S.dpTab, scene].join('|') + '|');
@@ -120,7 +144,7 @@ function renderScreen(force) {
   try {
     model = previewModel();
     if (scene >= sequence(model.play).length) scene = 0;
-    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, enter: sceneChanged, loop: occLoop });
+    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, now: previewNow(model.store), enter: sceneChanged, loop: occLoop });
   } catch (e) {
     model = null;
     renderMessage(el, orient, 'Preview unavailable', (e && (e.detail || e.message)) || String(e));
@@ -150,6 +174,7 @@ function markEditor() {
   document.querySelectorAll('.focus').forEach((x) => x.classList.remove('focus'));
   const el = editorTarget(scene);
   if (el) el.classList.add('focus');
+  markBar();
   return el;
 }
 function goScene(i, scroll) {
@@ -164,6 +189,11 @@ $('playBtn').onclick = () => setPlaying(!playing);
 $('stage').onclick = () => goScene(scene, true);
 $('dpBody').addEventListener('focusin', (e) => {
   if (e.target.closest('.icp-pop')) return;
+  // Into an Open today bar message: the preview shows that message. Anywhere else in the promotion except the bar
+  // and its tabs: back to the store's clock.
+  const box = BAR_STATES.find((x) => x.box && e.target.closest('#' + x.box));
+  if (box) setBarState(box.k);
+  else if (!e.target.closest('#footSlot, .bartabs, .inh[data-sec="footer"]')) setBarState(null);
   let i = -1;
   const sl = e.target.closest('.slot');
   if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
@@ -268,6 +298,8 @@ const justAdded = new WeakSet();
 function renderDp() {
   closePicker(); setTimeout(() => markEditor());
   renderPromoTabs(); renderPromoMeta();
+  const bf = S.cur ? `${S.cur.id}|${S.dpTab}` : '';
+  if (bf !== barFor) { barFor = bf; barState = null; lastKey = ''; }
   const B = $('dpBody');
   if (!S.promotions.length) { B.innerHTML = '<span class="hint">No promotions yet. Add one with New promotion.</span>'; return; }
   const s = S.cur, d = content();
@@ -365,7 +397,21 @@ function renderDp() {
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
-  hideTimings(B); decorateSections(B);
+  hideTimings(B); decorateSections(B); renderBarTabs();
+}
+
+/** The "Open today bar in the preview" tabs, just under the bar's messages. They sit outside the section, so they
+ *  work while it is inherited from the master (read-only). Preview only: nothing is saved. */
+function renderBarTabs() {
+  const foot = $('footSlot');
+  if (!foot) return;
+  const row = document.createElement('div');
+  row.className = 'bartabs';
+  row.innerHTML = `<span class="bartabs-h">Open today bar in the preview<span class="ms help" tabindex="0" role="img" aria-label="About this preview" title="Shows the bar's message for each time of day in the preview only. Screens always show the message for the store's own time.">info</span></span>
+    <div class="tabs" role="tablist" id="barTabs" aria-label="Open today bar in the preview">${BAR_STATES.map((x) => `<button type="button" role="tab" ${x.k ? `data-st="${x.k}"` : ''} aria-selected="${x.k === barState}">${esc(x.label)}</button>`).join('')}</div>`;
+  foot.after(row);
+  $('barTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) setBarState(b.dataset.st || null); };
+  markBar();
 }
 
 // ───────────────────────── master template (requirement 23) ─────────────────────────
@@ -407,6 +453,21 @@ function decorateSections(B) {
   B.querySelectorAll('.inh-x').forEach((b) => { b.onclick = () => { S.note = null; b.closest('.inh-alert').remove(); }; });
 }
 
+/** Run `redraw` without moving the page: the element `sel` names (found again after the redraw) stays at the same
+ *  height on screen, and takes the focus back if it had it, so the page never jumps away from where you clicked.
+ *  Without an element to hold on to, the page keeps its scroll position. */
+function keepPlace(sel, redraw) {
+  const se = document.scrollingElement || document.documentElement;
+  const was = document.querySelector(sel), x = se.scrollLeft, y = se.scrollTop;
+  const top = was ? was.getBoundingClientRect().top : null;
+  const hadFocus = !!was && (document.activeElement === was || was.contains(document.activeElement));
+  redraw();
+  const now = document.querySelector(sel);
+  if (hadFocus && now) now.focus({ preventScroll: true });
+  se.scrollTop = y; se.scrollLeft = x; // the redraw may have dropped it (a shorter page, focus lost to the body)
+  if (now && top !== null) se.scrollTop += now.getBoundingClientRect().top - top;
+}
+
 /** Manage section `sec` of the selected promotion separately for this pharmacy (on), or inherit it again (off). */
 async function setSection(sec, on) {
   const ph = S.cur, p = promo();
@@ -414,7 +475,9 @@ async function setSection(sec, on) {
   await Save.flush();
   ph.detached = M.setDetached(ph, p.id, sec, on);
   S.note = on ? { promotionId: p.id, sec } : null;
-  ver++; lastKey = ''; renderDp(); renderJson(); renderRestore(); // renderDp → content(): an inherited section takes the master's copy again
+  // renderDp → content(): an inherited section takes the master's copy again. It redraws the whole panel, so
+  // keep the section's Edit / Revert button where it was on screen, and focused.
+  keepPlace(`#dpBody .inh[data-sec="${sec}"] .inh-act`, () => { ver++; lastKey = ''; renderDp(); renderJson(); renderRestore(); });
   const id = ph.id;
   await Save.queue(`ph:${id}`, async () => {
     // Its own copy first (the master's, until edited), then the switch, so the screen never plays an empty section.
@@ -494,23 +557,49 @@ function showMasterChrome(on) {
   if (card) card.hidden = !on;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS_IN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+/** A day and month picker for one end of a season's dates ("MM-DD"). */
+function monthDayPick(id, label, md) {
+  const [m, d] = md.split('-').map(Number);
+  return `<label class="f"><span>${label}</span><span class="mdpick"><select id="${id}d" aria-label="${label}: day">${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}" ${i + 1 === d ? 'selected' : ''}>${i + 1}</option>`).join('')}</select>
+    <select id="${id}m" aria-label="${label}: month">${MONTHS.map((x, i) => `<option value="${i + 1}" ${i + 1 === m ? 'selected' : ''}>${x}</option>`).join('')}</select></span></label>`;
+}
+const readMonthDay = (id) => { const m = +$(id + 'm').value, d = Math.min(+$(id + 'd').value, DAYS_IN[m - 1]); return String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
+
 /**
- * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to, one card per beat of the
- * design (a main line, and a small label line where the design has one), each with its own seconds on screen (the
- * loop is their sum; at the defaults, an equal share of the design's 12 s). The occasion itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion
- * keeps its own copy.
+ * A seasonal promotion: this pharmacy's dates and copy for the season the promotion is set to. The dates card says
+ * when the screen plays this season by itself each year (from and to, inclusive, in the store's time zone; Easter
+ * moves each year, so its dates are worked out: Good Friday to Easter Monday). Then one card per beat of the design (a
+ * main line, and a small label line where the design has one), each with its own seconds on screen (the loop is their
+ * sum; at the defaults, an equal share of the design's 12 s). The season itself is picked in the Season drop-down
+ * above (shared by every pharmacy; what plays outside every season's dates); each season keeps its own copy and dates.
  */
 function renderOccasion(B, d) {
   const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
   const o = d.occasions[occ.id];
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
+  const year = new Date().getFullYear(), r = seasonDates(occ.id, o, year), movable = occ.season && occ.season.easter && !seasonDatesOf(o).from;
+  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.`;
+  const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occWhen" style="margin-left:auto;font-weight:400">${esc(fmtMonthDay(r.from))}${r.to !== r.from ? ' to ' + esc(fmtMonthDay(r.to)) : ''}${movable ? ' this year' : ''}</span></div>
+    ${movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>` : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`}</div>`;
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
-   <div id="occList" style="display:grid;gap:12px">${occ.beats.map((layout, i) => {
+   <div id="occList" style="display:grid;gap:12px">${dates}${occ.beats.map((layout, i) => {
     const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
     return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
      <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
   }).join('')}</div>`;
+  if (!movable) {
+    const setDates = () => {
+      o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
+      $('occWhen').textContent = fmtMonthDay(o.from) + (o.to !== o.from ? ' to ' + fmtMonthDay(o.to) : '');
+      changed();
+    };
+    ['occFromd', 'occFromm', 'occTod', 'occTom'].forEach((id) => { $(id).onchange = setDates; });
+  }
+  // The pharmacy view: dates are set by an administrator, like the seconds on screen.
+  if (S.lock) $('occDates').hidden = true;
   occ.beats.forEach((layout, i) => {
     const x = o.beats[i];
     bindRt(`o${i}text`, (v) => { x.text = v; });
@@ -560,12 +649,12 @@ $('dpPrev').onclick = () => tabsStep(-1);
 $('dpNext').onclick = () => tabsStep(1);
 $('dpTabs').addEventListener('scroll', tabsSync, { passive: true });
 new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
-// The template drop-down: built-ins and custom templates. Occasion templates are picked in the Occasion
-// drop-down of an occasion promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
+// The template drop-down: built-ins and custom templates. Seasonal templates are picked in the Season
+// drop-down of a seasonal promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
 function tplOptions(sel, withOccasions) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
   const occ = (t) => t.kind === 'occasion';
-  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Occasion', S.templates.filter(occ)) : '');
+  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Seasonal', S.templates.filter(occ)) : '');
 }
 function occasionOptions(sel) {
   return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
@@ -575,18 +664,18 @@ function renderPromoMeta() {
   const x = promo();
   const occ = !!x && isOcc(x.id);
   // Pharmacy view: the grey promotion section (name, promo ID, template, promo= line) is not shown on Morning,
-  // Afternoon, Closed or any other non-occasion promotion; Occasions keeps only its Occasion drop-down.
+  // Afternoon, Closed or any other non-seasonal promotion; Seasonal keeps only its Season drop-down.
   $('promoMeta').hidden = !x || (!!S.lock && !occ);
   if (!x) return;
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only (and the
-  // section hidden, above). On an Occasions promotion it shows only the Occasion drop-down, which can be changed.
+  // section hidden, above). On the Seasonal promotion it shows only the Season drop-down, which can be changed.
   const occOnly = !!S.lock && occ;
   $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
   $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
-  // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
-  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
-  $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
+  // A seasonal promotion picks its season here (read-only built-ins: nothing to edit or clone).
+  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Season' : 'Template';
+  $('pmTpl').setAttribute('aria-label', occ ? 'Season' : 'Template');
   $('pmHtml').hidden = occ;
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = !!S.lock || S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
@@ -617,7 +706,7 @@ function savePromotion(p) {
 }
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
-  if (S.lock && !isOcc()) return; // the pharmacy view changes only an Occasions promotion's occasion
+  if (S.lock && !isOcc()) return; // the pharmacy view changes only the Seasonal promotion's season
   const p = promo(); p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();

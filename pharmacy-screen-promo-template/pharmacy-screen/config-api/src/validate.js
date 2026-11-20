@@ -41,6 +41,9 @@ const LIMITS = {
 // letters, digits and underscores, starting with a letter, never one of the template slots the render engine
 // fills with layout (js/tokens.js SLOT_TOKENS; test/tokens.test.mjs checks the two lists agree).
 const TOKEN_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+// Data tokens filled live, never set by hand (js/tokens.js LIVE_TOKENS): ${StoreName} is the pharmacy name and
+// ${CloseTime} / ${OpenTime} are today's hours. A value stored for one before that rule is dropped on the next save.
+const LIVE_TOKENS = Object.freeze(["StoreName", "CloseTime", "OpenTime"]);
 const SLOT_TOKENS = Object.freeze(["Logo", "Headline", "AccentLine", "Content", "Icon", "ServiceLabel", "Line1", "Line2", "Tiles", "Footer", "OpenToday", "Chevron", "ViewBox", "EdgePath", "HoursCard", "HolidayNote", "ContactLine", "Decor"]);
 
 function isPlainObject(v) {
@@ -184,6 +187,7 @@ function normaliseTokens(value) {
   for (const [name, text] of Object.entries(value)) {
     if (!TOKEN_NAME_RE.test(name)) throw bad(`tokens has an invalid token name "${name}" (letters, digits and underscores, starting with a letter)`);
     if (SLOT_TOKENS.includes(name)) throw bad(`tokens.${name} is a template slot and cannot be set by hand`);
+    if (LIVE_TOKENS.includes(name)) continue;
     if (typeof text !== "string") throw bad(`tokens.${name} must be text`);
     const v = text.trim();
     if (v.length > LIMITS.tokenValue) throw bad(`tokens.${name} is longer than ${LIMITS.tokenValue} characters`);
@@ -277,6 +281,7 @@ module.exports = {
   ApiError,
   bad,
   LIMITS,
+  LIVE_TOKENS,
   SLOT_TOKENS,
   TEMPLATE_KINDS,
   ORIENTATIONS,

@@ -52,7 +52,7 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 se
     ["afternoon", "Afternoon", "builtin-promotion-scenes"],
     ["closed", "Closed", "builtin-opening-hours"],
     ["morning", "Morning", "builtin-promotion-scenes"],
-    ["occasions", "Occasions", "builtin-occasion-christmas"],
+    ["occasions", "Seasonal", "builtin-occasion-christmas"],
   ]);
   const templates = await svc.listTemplates();
   assert.deepEqual(templates.map((t) => [t.name, t.builtIn]), [["Promotion scenes", true], ["Opening hours", true],
@@ -215,6 +215,26 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
   const again = await seed();
   assert.equal(again.promotions.created.length + again.pharmacies.updated.length + again.pharmacies.created.length, 0);
   assert.deepEqual(store.dump(), before, "re-running is a no-op");
+});
+
+test("a promotion the seed made as Occasions is renamed Seasonal; a renamed one is left alone; a re-run is a no-op", async () => {
+  const { store, svc, seed } = setup();
+  const f = loadFixtures();
+  // Seeded before the rename: the default promotion is called Occasions.
+  const old = { ...f, promotions: f.promotions.map((p) => (p.key === "occasions" ? { ...p, name: "Occasions" } : p)) };
+  await seed({ fixtures: old });
+  assert.equal((await svc.listPromotions()).find((p) => p.promoId === "occasions").name, "Occasions");
+  const report = await seed();
+  assert.deepEqual(report.promotions.updated, ["occasions"]);
+  const occ = (await svc.listPromotions()).find((p) => p.promoId === "occasions");
+  assert.deepEqual([occ.name, occ.promoId, occ.templateId], ["Seasonal", "occasions", "builtin-occasion-christmas"]);
+  const before = store.dump();
+  assert.equal((await seed()).promotions.updated.length, 0);
+  assert.deepEqual(store.dump(), before, "re-running is a no-op");
+  // Renamed by hand to something else: kept.
+  await svc.updatePromotion({ uid: "u-admin", email: null }, occ.id, { name: "Holidays" });
+  await seed();
+  assert.equal((await svc.listPromotions()).find((p) => p.promoId === "occasions").name, "Holidays");
 });
 
 test("an environment seeded with the old occasion copy: seed-made records get the new defaults, edited copy is kept", async () => {

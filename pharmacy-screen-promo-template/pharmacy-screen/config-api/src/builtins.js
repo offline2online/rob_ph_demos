@@ -1,7 +1,7 @@
 "use strict";
 
 // The built-in templates (requirement 11): "Promotion scenes", "Opening hours"
-// and one per occasion for the Occasions promotion. They are read-only: the API
+// and one per season for the Seasonal promotion (internally "occasion"). They are read-only: the API
 // refuses to change or delete them, and they live here in code rather than
 // in the store, so a fresh environment always has them and no admin can
 // remove the fallback that a deleted custom template's promotions return to.
@@ -16,7 +16,7 @@
 // approved standalone designs in js/occasions.js, with their fonts and the
 // Christmas background photo self-hosted beside the page (css/occasion-*.css),
 // so their html, css and backgrounds here stay empty. The admin
-// editor's Occasion drop-down sets the Occasions promotion's templateId to one
+// editor's Season drop-down sets the Seasonal promotion's templateId to one
 // of them; they can't be cloned (an occasion has no editable HTML version).
 
 const OCCASIONS = Object.freeze([

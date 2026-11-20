@@ -6,7 +6,7 @@
 <title>Pharmacy Screen Template</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Figtree:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
-<!-- The live preview draws the Occasions templates with the screen's own self-hosted fonts and photo. -->
+<!-- The live preview draws the Seasonal templates with the screen's own self-hosted fonts and photo. -->
 <link rel="stylesheet" href="../css/occasion-fonts.css">
 <link rel="stylesheet" href="../css/occasion-media.css">
 <link rel="stylesheet" href="../css/screen.css">
@@ -132,13 +132,13 @@
     <div class="card" id="detailsCard" style="margin-top:16px">
       <div class="sect">Pharmacy details</div>
       <div class="grid2">
-        <label class="f"><span>Pharmacy name *</span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
+        <label class="f"><span>Pharmacy name * <code class="tok" id="sNameTok">${StoreName}</code></span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
         <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
       </div>
       <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
     </div>
     <div class="card" id="tokensCard" style="margin-top:16px">
-      <div class="sect">Tokens <span class="ms help" title="The tokens this pharmacy's promotions and templates use, including the master template's. Leave a token blank to show the store's own data. Type a value to show it on this pharmacy's screens instead.">info</span></div>
+      <div class="sect">Tokens <span class="ms help" title="The tokens this pharmacy's promotions and templates use, including the master template's. Leave a token blank to show the store's own data. Type a value to show it on this pharmacy's screens instead. ${StoreName} is the Pharmacy name above, and ${CloseTime} and ${OpenTime} are today's hours, filled in live, so they are not listed.">info</span></div>
       <div class="grid2" id="tokList"></div>
       <span class="hint" id="tokEmpty" hidden>No promotion or template uses a token yet.</span>
     </div>
@@ -181,7 +181,8 @@
     <div class="tl" id="tl" role="tablist" aria-label="Scenes"></div>
     <div class="controls">
       <button id="playBtn" class="primary"><span class="ms" id="playIc">pause</span><span id="playTx">Pause</span></button>
-      <span class="pill" id="pvData" title="The preview uses sample store details (suburb, hours, phone). Each screen shows its own store's details from Personalisation Hub.">Sample store data</span>
+      <span class="pill" id="pvData" title="Sample opening hours">Sample opening hours</span>
+      <span class="infowrap"><span class="ms" id="pvInfo" tabindex="0" role="img" aria-label="About the sample opening hours" aria-describedby="pvTip">info</span><span class="infotip" id="pvTip" role="tooltip">The preview uses sample opening hours (Monday to Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm). Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.</span></span>
       <span class="tltime" id="tlTime"></span>
     </div>
     <div class="cprow" id="cpRow">

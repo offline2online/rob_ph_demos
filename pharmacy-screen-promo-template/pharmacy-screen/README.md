@@ -59,11 +59,20 @@ editor is never touched).
   nothing; a changed stylesheet is picked up by the update check and the page reloads onto it; the screen still plays
   with the server stopped) and `../test/offline-cache.test.mjs` (staging, stamping, the shell list).
 
-## Occasions (`promo=occasions`)
+## Seasonal (`promo=occasions`)
 
-A fourth default promotion for every pharmacy. It plays one of six read-only built-in templates, Christmas,
-New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: whichever the promotion's template is. An admin
-picks it in the editor's **Occasion** drop-down (seeded: Christmas); nothing switches by date.
+A fourth default promotion for every pharmacy, named Seasonal (it was Occasions; the promo ID stays `occasions`
+so existing campaign URLs keep working, and the code still calls a season an "occasion"). It plays one of six
+read-only built-in templates, Christmas, New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: the one
+whose dates hold the store's date (`activeOccasion()` in `js/render.js`, the date from `storeDate()` in
+`js/hours.js`, in `store_timezone`), else the promotion's template, which an admin picks in the editor's **Season**
+drop-down (seeded: Christmas). Dates are inclusive and the same every year: by default Christmas 15–27 Dec, New
+Year's 28 Dec–5 Jan, Australia Day 26 Jan, Valentine's Day 14 Feb, Easter Good Friday to Easter Monday (worked out
+for each year) and Anzac Day 25 Apr (`OCCASIONS[].season`); an admin can change them in the editor
+(`content.occasions.<season>.from` / `.to`, `MM-DD`). Where two seasons' dates overlap, the one that started most
+recently plays. A playing screen checks at the turn of every minute and starts the new season by itself when the
+date moves into another season's dates (or out of all of them). `date=YYYY-MM-DD` pretends the store's date, for
+testing.
 
 Each occasion is a standalone, full-screen animation (the designs approved on 20 Nov 2026, `js/occasions.js`): no
 brand panel, pharmacy logo, brand colours, icon tiles, Open today bar or holiday line. It fills the screen in both
@@ -158,7 +167,7 @@ Split so the admin editor's live preview can reuse the same code:
 | Module | What it does |
 |---|---|
 | `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight), store time in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing), time formats, the weekly hours rows. No DOM. |
-| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
+| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `LIVE_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data, except for the live `${StoreName}`, `${CloseTime}` and `${OpenTime}`, which cannot be set), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
 | `fit-text.js` | Panel geometry (triangle / arrow), `fitText()` (headline and content shrink to stay inside the panel), `fitOccasion()` (each occasion beat shrinks to stay inside its text box) and `auditScene()` (the overflow check). |
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
 | `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |

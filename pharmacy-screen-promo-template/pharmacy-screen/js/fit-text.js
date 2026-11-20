@@ -4,7 +4,7 @@
 // Landscape (1920x1080): a brand arrow panel on the left, its tip at x=1120.
 // fitText() shrinks the headline block (--k) until every line sits inside the panel with a 24px margin,
 // and the content block (--kb) until it fits its box. auditScene() re-checks the result with no margin.
-// Occasions (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
+// Seasonal templates (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
 // line sits inside the template's text box (.txt), and auditScene() checks the beat on screen against that box.
 
 export function geom(land, hours) {

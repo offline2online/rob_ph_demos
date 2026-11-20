@@ -47,6 +47,26 @@ export function storeNow(tz, date = new Date(), override = null) {
   }
 }
 
+/** The store's date ({y, m, d}) at `date` (default now) in time zone tz, for the seasonal promotion's dates. */
+export function storeDate(tz, date = new Date()) {
+  try {
+    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tz || 'Australia/Melbourne', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date);
+    const g = (k) => +p.find((x) => x.type === k).value;
+    return { y: g('year'), m: g('month'), d: g('day') };
+  } catch (e) {
+    return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
+  }
+}
+
+/** Parse a test-date string: "2026-12-20" or "12-20" (this year), as {y, m, d}, or null. */
+export function parseTestDate(v, fallbackYear) {
+  const m = /^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/.exec(String(v || '').trim());
+  if (!m) return null;
+  const y = m[1] ? +m[1] : fallbackYear, mo = +m[2], d = +m[3];
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  return t.getUTCMonth() === mo - 1 && t.getUTCDate() === d ? { y, m: mo, d } : null;
+}
+
 /** Parse a test-time string: "fri-18:45", "fri 18:45" or "18:45" (today). */
 export function parseTestTime(v, fallbackDay) {
   const m = /^(?:([a-z]{3})[a-z]*[\sT-]+)?(\d{1,2}):(\d{2})$/i.exec(String(v || '').trim());
@@ -103,4 +123,25 @@ export function weeklyRows(sessions) {
     const own = sessions.filter((s) => s.day === d);
     return { day: d, name: DAY_NAMES[d], text: own.length ? own.map((s) => `${fmtLong(s.open)} – ${fmtLong(s.close)}`).join(', ') : null };
   });
+}
+
+/**
+ * A store time {day, min} at which the store is in `want` ('open' | 'closing' | 'before' | 'closed'), for the
+ * editor's preview of each "Open today" bar message. Looks from `today` 00:00 through the week in 5-minute steps,
+ * so it is today wherever today allows (no session today: the first day that has one). 'open' is taken an hour into
+ * the session where that is still open, so the bar reads as a normal open time. null when the hours never give it.
+ */
+export function nowInState(sessions, want, today) {
+  const d0 = Math.max(0, dayIndex(today && today.day));
+  for (let m = 0; m < WEEK; m += 5) {
+    const t = (d0 * 1440 + m) % WEEK;
+    const at = { day: DAYS[Math.floor(t / 1440)], min: t % 1440 };
+    if (storeState(sessions, at).state !== want) continue;
+    if (want === 'open') {
+      const t2 = (t + 60) % WEEK, later = { day: DAYS[Math.floor(t2 / 1440)], min: t2 % 1440 };
+      if (storeState(sessions, later).state === 'open') return later;
+    }
+    return at;
+  }
+  return null;
 }

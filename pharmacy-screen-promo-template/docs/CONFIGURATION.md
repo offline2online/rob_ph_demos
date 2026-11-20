@@ -171,6 +171,7 @@ https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&or
 | `debug` | Flag: show the debug panel (device, store code, last fetches, server used, store time, bar state) with a test time override | Off | `debug=1` | No, testing only |
 | `scene` | Hold on scene *n* (0-based) instead of playing the loop | Plays the loop | `scene=2` | No, testing only |
 | `now` | Pretend the store's local time is this (`<day>-<HH:MM>`), for the "Open today" bar | Real time in `store_timezone` | `now=fri-18:45` | No, testing only |
+| `date` | Pretend the store's date is this (`YYYY-MM-DD`, or `MM-DD` for this year), for which season the Seasonal promotion plays | Today in `store_timezone` | `date=2026-12-20` | No, testing only |
 | `nosw` | Flag: don't keep the screen on the device (no service worker) | Off | `nosw=1` | No |
 | `sw` | Flag: use the service worker on `localhost` too (off there by default) | Off on localhost | `sw=1` | No, local testing only |
 
