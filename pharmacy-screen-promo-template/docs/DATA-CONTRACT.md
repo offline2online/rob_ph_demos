@@ -209,7 +209,13 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Content is bounded at 200 KB per promotion.
 - Occasion keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
 
-Promotion: `{ "name", "promoId", "templateId" }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
+Master template: a promotion's optional `master` holds the default content (the same shape as one entry of
+`content` above) that every pharmacy inherits section by section; a pharmacy's optional
+`"detached": { "<promotion id>": ["greeting", "slots", "close", "footer", "headlines", "address", "occasions"] }`
+lists the sections it manages itself (its own `content` is used for those). Branding is never inherited. The
+published screen config below carries the resolved content only.
+
+Promotion: `{ "name", "promoId", "templateId", "master"? }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
 

@@ -12,9 +12,14 @@ The right-hand side is a **live preview** drawn by the screen's own code: Portra
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
 show its scene.
 
+The editor has two pages. The **promotions** page (the one it opens on) has the **Promo preview** drop-down at
+the top: pick a pharmacy there to edit and preview its copy for each promotion. **Settings** (the cog beside
+it) holds everything about the pharmacies themselves (adding one, its details and its branding) and the
+Personalisation Hub API. **Back to promotions** returns.
+
 ## Add a pharmacy
 
-1. Click **Add pharmacy** in the toolbar.
+1. Open **Settings** and click **Add pharmacy** in the *Pharmacies* section.
 2. Enter the **Pharmacy name** (shown on screens as `${StoreName}`) and the **Store code**. The store code
    must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
    finds its pharmacy. It is checked as you type and must be unique.
@@ -23,10 +28,31 @@ show its scene.
    ([DEPLOYMENT.md](DEPLOYMENT.md) → "Register screens in PH"). Nothing else is needed: the campaign URL is the
    same for every pharmacy.
 
-Switch pharmacies with the picker at the top. **Delete** asks you to click again to confirm. **Reset** puts a
+In Settings, switch pharmacies with the *Pharmacies* picker; the promotions page's **Promo preview** drop-down
+lists the same pharmacies and follows it. **Delete** asks you to click again to confirm. **Reset** puts a
 launch pharmacy (VIC-MP-001 to 005) back to its sample content.
 
+## Master template
+
+The **Promo preview** drop-down's first entry, **Master template**, holds the default content of every promotion: the
+greeting, the promotion slots, the walk-in close, the Open today bar, the opening-hours headlines and address
+toggle, and the occasion copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
+screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
+until you edit it or click **Save as master**.
+
+On a pharmacy, each section of a promotion says where it comes from:
+
+- **Inherited from master**: read-only here; edit it in the master template. **Edit for this pharmacy** makes it
+  this pharmacy's own, starting from the master's copy. A message confirms the section is now managed
+  separately: changes to the master no longer reach it.
+- **Managed separately**: this pharmacy's own copy. **Revert to master** inherits the master's again (its own
+  copy is replaced).
+
+Name, store code, logo and colours are always each pharmacy's own.
+
 ## Branding and logo
+
+In **Settings** → *Branding*, for the pharmacy picked in *Pharmacies*:
 
 - **Primary** and **Accent** colours: the brand panel, text and highlights. Icon tiles use a brighter version
   of the primary automatically.
@@ -113,10 +139,11 @@ Deleting a custom template moves the promotions that used it back to the built-i
 
 ## Settings
 
-**Settings** (toolbar) shows:
+**Settings** (the cog beside Promo preview) shows:
 
-- **Store record** for a device ID: what Personalisation Hub returns for that screen (read-only), useful to
-  check a screen is registered to the right store.
+- **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
+- **Pharmacy details**: name and store code.
+- **Branding**: colours and logo ("Branding and logo" above).
 - **Personalisation Hub API**: the **API base URL** and the **API token (x-api-key)**. The token is write-only;
   after saving you see only that it is set and its last 4 characters, with Replace and Remove. Usually set once
   by IT ([DEPLOYMENT.md](DEPLOYMENT.md) → "Set the PH API base URL and token").

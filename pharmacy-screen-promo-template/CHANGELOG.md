@@ -3,12 +3,45 @@
 All notable changes to the Pharmacy Screen. Versions follow [Semantic Versioning](https://semver.org/); each
 release handed to miPharmacy is tagged and packaged with this file and the `docs/` folder. Newest first.
 
-## [Unreleased] — 0.1.0, first handover candidate
+## [Unreleased]
+
+Add changes here; at release time this section becomes `## [x.y.z] — <date>`
+([docs/RELEASING.md](docs/RELEASING.md)).
+
+### Changed
+
+- **Admin editor: pharmacies are managed in Settings.** Adding a pharmacy, its details (name, store code) and
+  its branding (colours, logo) moved from the promotions page into Settings, beside the Personalisation Hub API.
+  The promotions page now has only a **Promo preview** drop-down to pick the pharmacy whose copy is edited and
+  previewed. Settings' button back reads **Back to promotions**.
+
+### Removed
+
+- **Settings → Store record** (the device ID lookup of the Location API record). The preview always uses sample
+  store data; to check a screen's store, open its campaign URL with `&debug=1`. The proxy endpoint
+  (`GET /api/device/{id}/campaign_data`) is unchanged: screens still use it.
+
+## [0.1.0] — first handover candidate
 
 Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharmacy.
 
 ### Added
 
+- **Release package** (`npm run release`): a versioned zip for the Google Shared Drive
+  (`pharmacy-screen-v<version>.zip`, with a `.sha256` checksum, `START-HERE.md` and `RELEASE-NOTES.md` beside it)
+  and a git tag `pharmacy-screen-v<version>`. Built from the commit, never the working tree; carries the built
+  screen and admin front ends, back end, AWS infrastructure, seed and mock data, `docs/` and the agent files;
+  refuses to package a token, key, `.env` file, personal address or any pharmacy beyond the five launch pharmacies.
+  `npm run release:verify -- <zip>` checks a downloaded package the same way. See
+  [docs/RELEASING.md](docs/RELEASING.md).
+- **Master template** for the promotions: pick **Master template** in the editor's **Promo preview** drop-down to edit the
+  default content of every promotion (greeting, promotion slots, walk-in close, Open today bar, opening-hours
+  headlines and address, occasion copy). Every pharmacy, including each new one, inherits it section by section
+  and keeps its own name, logo and colours. On a pharmacy, each section says **Inherited from master** or
+  **Managed separately**; **Edit for this pharmacy** makes a section its own (a message says the master no
+  longer reaches it) and **Revert to master** inherits it again. The seed makes Beaumaris's content the master
+  of the four default promotions. Stored as `promotion.master` and `pharmacy.detached`; screens get the
+  resolved content, so the published config is unchanged in shape.
 - **Handover package**: [START-HERE.md](START-HERE.md), [AGENTS.md](AGENTS.md) and [CLAUDE.md](CLAUDE.md),
   [.env.example](.env.example), and `docs/`: [DEPLOYMENT.md](docs/DEPLOYMENT.md),
   [CONFIGURATION.md](docs/CONFIGURATION.md), [DATA-CONTRACT.md](docs/DATA-CONTRACT.md),
@@ -38,6 +71,12 @@ Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharm
   promotion, scene, orientation and bar state, end to end through the real proxy and config API, security, the
   AWS stack.
 - **One-command deploy** to our Firebase test environment, with CI.
+
+### Fixed
+
+- **Editor preview on tablets**: the preview column now scrolls up with the page until the Portrait/Landscape
+  tabs lock to the very top, and the preview screen is sized to the visible height, so the bottom of the preview
+  (scene bar, Play/Pause, Copy experience URL) is no longer cut off on a tablet.
 
 ### Notes
 

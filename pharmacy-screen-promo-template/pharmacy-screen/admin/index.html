@@ -75,40 +75,11 @@
 <div class="wrap" id="app" hidden>
   <div class="edcol">
     <div class="toolbar" id="toolbar">
-      <label class="f pick"><span>Pharmacy</span><select id="storeSel"></select></label>
-      <button id="addBtn" class="primary"><span class="ms">add</span>Add pharmacy</button>
-      <button id="resetBtn" class="text" title="Restore this pharmacy's sample content"><span class="ms">restart_alt</span><span class="tlb">Reset</span></button>
-      <button id="delBtn" class="text" style="color:var(--err)"><span class="ms">delete</span><span id="delTx">Delete</span></button>
-      <button id="setBtn" aria-pressed="false" title="Store record from the Location API, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
+      <label class="f pick"><span>Promo preview <span class="ms help" title="The pharmacy whose content you are editing and previewing. Add pharmacies and set their details and branding in Settings.">info</span></span><select id="pvSel"></select></label>
+      <button id="setBtn" aria-pressed="false" title="Pharmacies, their details and branding, and the Personalisation Hub API settings"><span class="ms">settings</span><span id="setTx" class="tlb">Settings</span></button>
     </div>
 
     <div id="contentView">
-    <div class="card" id="detailsCard">
-      <div class="sect">Pharmacy details</div>
-      <div class="grid2">
-        <label class="f"><span>Pharmacy name *</span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
-        <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
-      </div>
-      <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
-    </div>
-    <div class="card">
-      <div class="sect">Branding <span class="tag">template config</span></div>
-      <div class="grid3">
-        <label class="f"><span>Primary</span><input id="cP" type="color"></label>
-        <label class="f"><span>Accent</span><input id="cA" type="color"></label>
-      </div>
-      <div class="logo-row">
-        <div class="logo-prev" id="logoPrev"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input id="logoIn" type="file" accept="image/png" hidden>
-          <button type="button" id="logoBtn"><span class="ms">upload</span><span id="logoBtnTx">Upload logo</span></button>
-          <button type="button" id="logoRm" class="text" hidden><span class="ms">delete</span>Remove</button>
-          <span class="ms help" title="Transparent PNG, light artwork for the dark header. Shown top centre on every screen.">info</span>
-        </div>
-      </div>
-      <span class="hint" id="logoErr" style="color:var(--err)" hidden></span>
-    </div>
-
     <div class="card promo-mod">
       <div class="sect">Promotions <span class="tag" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span></div>
       <div class="promo-bar">
@@ -145,21 +116,39 @@
     </div>
 
     <div id="settingsView" hidden>
-    <div class="card">
-      <div class="sect">Store record <span class="tag">from the Location API</span></div>
-      <div class="apicall"><b>GET</b> {baseUrl}/location-api/device/<b>${UniqueDeviceID}</b>/campaign_data<br><span>x-api-key: &lt;held server-side&gt; · polled every 30s · PH maps the device to its display and store</span></div>
-      <div class="lookup">
-        <label class="f" style="flex:1;min-width:200px"><span>Device ID <span class="ms" style="font-size:14px;cursor:help" title="The UniqueDeviceID of a screen registered to this store in Personalisation Hub. The record is read through the server-side proxy; this page never sees the API token.">info</span></span><input id="devId" placeholder="e.g. DEVICE-VIC-MP-001" autocomplete="off" spellcheck="false"></label>
-        <button type="button" id="devGo"><span class="ms">search</span>Look up</button>
+    <div class="card" id="pharmaciesCard">
+      <div class="sect">Pharmacies <span class="ms help" title="Add a pharmacy here, then set its details and branding below. Each pharmacy's promotion content is edited on the promotions page, picked with Promo preview.">info</span></div>
+      <div class="toolbar phbar">
+        <label class="f pick"><span>Pharmacy</span><select id="storeSel"></select></label>
+        <button type="button" id="addBtn" class="primary"><span class="ms">add</span>Add pharmacy</button>
+        <button type="button" id="resetBtn" class="text" title="Restore this pharmacy's sample content"><span class="ms">restart_alt</span><span class="tlb">Reset</span></button>
+        <button type="button" id="delBtn" class="text" style="color:var(--err)"><span class="ms">delete</span><span id="delTx">Delete</span></button>
       </div>
-      <span class="hint" id="devErr" style="color:var(--err)" hidden></span>
-      <div id="recBody" hidden>
-        <div class="grid3" id="recFields"></div>
-        <div class="sect" style="margin-top:4px">Opening hours <code class="kp">store_info.opening_hours[]</code></div>
-        <div class="hours ro" id="hours"></div>
-        <span class="hint">Public holidays always show "Please call to confirm". Store details are read-only here: they come from Personalisation Hub.</span>
-        <details><summary>campaign_data response for this device</summary><pre class="json" id="apiJson"></pre></details>
+    </div>
+    <div class="card" id="detailsCard" style="margin-top:16px">
+      <div class="sect">Pharmacy details</div>
+      <div class="grid2">
+        <label class="f"><span>Pharmacy name *</span><input id="sName" placeholder="e.g. Brighton Pharmacy"></label>
+        <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
       </div>
+      <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
+    </div>
+    <div class="card" id="brandingCard" style="margin-top:16px">
+      <div class="sect">Branding <span class="tag">template config</span></div>
+      <div class="grid3">
+        <label class="f"><span>Primary</span><input id="cP" type="color"></label>
+        <label class="f"><span>Accent</span><input id="cA" type="color"></label>
+      </div>
+      <div class="logo-row">
+        <div class="logo-prev" id="logoPrev"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input id="logoIn" type="file" accept="image/png" hidden>
+          <button type="button" id="logoBtn"><span class="ms">upload</span><span id="logoBtnTx">Upload logo</span></button>
+          <button type="button" id="logoRm" class="text" hidden><span class="ms">delete</span>Remove</button>
+          <span class="ms help" title="Transparent PNG, light artwork for the dark header. Shown top centre on every screen.">info</span>
+        </div>
+      </div>
+      <span class="hint" id="logoErr" style="color:var(--err)" hidden></span>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="sect">Personalisation Hub API <span class="tag" title="Used by every screen to call the Location API. The token is encrypted at rest on the server, never sent to a screen or back to this page, and added to Location API calls by a server-side proxy.">authentication</span></div>
@@ -183,7 +172,7 @@
     <div class="tl" id="tl" role="tablist" aria-label="Scenes"></div>
     <div class="controls">
       <button id="playBtn" class="primary"><span class="ms" id="playIc">pause</span><span id="playTx">Pause</span></button>
-      <span class="pill" id="pvData" hidden></span>
+      <span class="pill" id="pvData" title="The preview uses sample store details (suburb, hours, phone). Each screen shows its own store's details from Personalisation Hub.">Sample store data</span>
       <span class="tltime" id="tlTime"></span>
     </div>
     <div class="cprow">

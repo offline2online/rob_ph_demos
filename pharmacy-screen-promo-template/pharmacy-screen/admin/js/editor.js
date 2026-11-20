@@ -14,7 +14,6 @@ import * as M from './model.js';
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, OCCASION_SCENES } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
-import { parseOpeningHours, weeklyRows } from '../../js/hours.js';
 
 const $ = (id) => document.getElementById(id);
 const pref = {
@@ -28,10 +27,11 @@ const S = {
   promotions: [],
   templates: [],
   services: [],
-  cur: null, // the selected pharmacy, full record with content; id null while it is a new, unsaved pharmacy
+  cur: null, // the selected pharmacy, full record with content; id null while it is a new, unsaved pharmacy;
+             // {isMaster: true, …} while the master template is selected (its content is each promotion's master)
+  masterSrc: null, // the pharmacy record a promotion without a master starts from, in the master template view
+  note: null, // {promotionId, sec}: the section just set to be managed separately, to say so on it
   dpTab: null, // selected promotion's record id
-  record: null, // Location API campaign_data for the preview (looked up in Settings), or null for sample data
-  recordDevice: '',
   phApi: null,
   sample: null, // seed fixtures for Reset, if this deployment serves them
 };
@@ -61,14 +61,22 @@ const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
 
-/** This pharmacy's content for a promotion, with the fields its current template needs. */
+/** This pharmacy's content for a promotion, with the fields its current template needs. In the master template
+ *  view, the promotion's master (or, until one is saved, the starting pharmacy's content). For a pharmacy, the
+ *  sections it inherits are kept equal to the master, so the editor and preview show what its screens play. */
 function content(id = S.dpTab) {
   const p = promo(id);
   const all = S.cur.content || (S.cur.content = {});
+  if (S.cur.isMaster && !all[p.id]) all[p.id] = p.master || M.clone((S.masterSrc && S.masterSrc.content && S.masterSrc.content[p.id]) || M.newContentFor({ promoId: p.promoId }, baseOf(id)));
   const b = baseOf(id), c = all[p.id];
   const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].scenes) && c.occasions[o.id].scenes.length === 3)
     : b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
   if (!fits) all[p.id] = c ? M.ensureContent(c, b) : M.newContentFor(p, b);
+  if (!S.cur.isMaster && p.master) {
+    // In place, so the editor's bindings keep pointing at this object.
+    const det = M.detachedOf(S.cur, p.id), key = `${p.version}|${det.join(',')}`, syn = S.cur._syn || (S.cur._syn = {});
+    if (syn[p.id] !== key) { syn[p.id] = key; Object.assign(all[p.id], M.ensureContent(M.syncInherited(all[p.id], p.master, det), b)); }
+  }
   return all[p.id];
 }
 
@@ -78,7 +86,7 @@ function previewModel() {
   const ph = { ...S.cur, storeCode: previewCode() };
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
-  const store = storeModel(M.campaignForPreview(S.record, previewCode(), S.cur.name), cfg);
+  const store = storeModel(M.campaignForPreview(null, previewCode(), S.cur.name), cfg);
   const play = resolvePromotion(cfg, store, promo().promoId);
   return { cfg, store, play };
 }
@@ -193,10 +201,20 @@ function saveContent(ph, promotionId) {
   });
 }
 
+/** Save the master template of promotion `p` (the content the master view edits). */
+function saveMaster(p) {
+  p.master = S.cur.content[p.id];
+  const start = $('msStart'); if (start) start.remove();
+  Save.later(`master:${p.id}`, `promo:${p.id}`, async () => {
+    const res = await api.updatePromotion(p.id, { master: p.master }, p.version);
+    p.version = res.version;
+  });
+}
+
 /** Something in the selected promotion's content changed. */
 function changed() {
   ver++;
-  saveContent(S.cur, promo().id);
+  if (S.cur.isMaster) saveMaster(promo()); else saveContent(S.cur, promo().id);
   renderJson();
 }
 
@@ -236,17 +254,18 @@ function renderDp() {
   if (!S.promotions.length) { B.innerHTML = '<span class="hint">No promotions yet. Add one with New promotion.</span>'; return; }
   const s = S.cur, d = content();
   if (isHours()) {
-    B.innerHTML = `<div style="display:grid;gap:12px">${d.headlines.map((h, i) => rt('ch' + i, 'Headline ' + (i + 1), h)).join('')}</div>
+    B.innerHTML = `<div id="hlSec" style="display:grid;gap:12px">${d.headlines.map((h, i) => rt('ch' + i, 'Headline ' + (i + 1), h)).join('')}</div>
      <label class="chk"><input type="checkbox" id="cAddr" ${d.showAddress ? 'checked' : ''}>Show address under phone</label>`;
     d.headlines.forEach((h, i) => bindRt('ch' + i, (v) => { d.headlines[i] = v; }));
     $('cAddr').onchange = (e) => { d.showAddress = e.target.checked; changed(); };
+    decorateSections(B);
     return;
   }
-  if (isOcc()) { renderOccasion(B, d); return; }
+  if (isOcc()) { renderOccasion(B, d); decorateSections(B); return; }
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const F = footerConfig(d);
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
-   <div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
+   <div id="slotsSec" style="display:grid;gap:12px"><div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
       <span style="margin-left:auto;display:flex;gap:2px;align-items:center"><label class="dur" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="s${i}dur" min="1" max="60" step="0.5" value="${+x.dur || 2}" aria-label="Seconds on screen">s</label><button type="button" class="text mv" data-mv="-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up"><span class="ms">arrow_upward</span></button><button type="button" class="text mv" data-mv="1" ${i < d.slots.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down"><span class="ms">arrow_downward</span></button>
       <button type="button" class="text del" ${d.slots.length > 1 ? '' : 'disabled'} style="color:var(--err)" title="Delete promotion" aria-label="Delete promotion ${i + 1}"><span class="ms">delete</span><span class="delt"></span></button></span></div>
      <div class="stack">${rt(`s${i}title`, 'Headline', x.title)}
@@ -259,7 +278,7 @@ function renderDp() {
      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="svcQ" placeholder="Search ${S.services.length} services" style="flex:1;min-width:180px" autocomplete="off">
        <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button>
        <button type="button" class="text" id="svcClose" title="Close without adding" aria-label="Close without adding"><span class="ms">close</span>Close</button></div>
-     <div class="svclist" id="svcList"></div></div>
+     <div class="svclist" id="svcList"></div></div></div>
    <div class="slot"><div class="slot-h">Tail: Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
    <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
      <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
@@ -316,6 +335,99 @@ function renderDp() {
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
+  decorateSections(B);
+}
+
+// ───────────────────────── master template (requirement 23) ─────────────────────────
+// Each promotion's master template holds the content every pharmacy uses by default. On a pharmacy, every section
+// of a promotion that has a master shows whether it is inherited (read-only here, edited in the master template)
+// or managed separately for this pharmacy, with the action to switch. Branding is always per pharmacy.
+
+/** The element that holds each master section of the promotion just drawn in `B`. */
+function sectionEls(B) {
+  const by = (id) => B.querySelector('#' + id);
+  const up = (id, sel) => { const e = by(id); return e && e.closest(sel); };
+  return { greeting: up('dg', '.slot'), slots: by('slotsSec'), close: up('cdur', '.slot'), footer: by('footSlot'),
+    headlines: by('hlSec'), address: up('cAddr', 'label'), occasions: by('occList') };
+}
+
+function decorateSections(B) {
+  const p = promo();
+  if (S.cur.isMaster) { renderMasterStart(B, p); return; }
+  if (!p || !p.master) return;
+  const det = new Set(M.detachedOf(S.cur, p.id)), els = sectionEls(B), canEdit = !!S.cur.id;
+  for (const sec of M.sectionsForBase(baseOf())) {
+    const el = els[sec];
+    if (!el) continue;
+    const own = det.has(sec), name = M.SECTION_NAMES[sec];
+    const wrap = document.createElement('div');
+    wrap.className = 'inh' + (own ? ' own' : '');
+    wrap.dataset.sec = sec;
+    wrap.innerHTML = `<div class="inh-bar"><span class="pill inh-pill"><span class="ms">${own ? 'edit_note' : 'account_tree'}</span>${own ? 'Managed separately' : 'Inherited from master'}</span>
+      <span class="ms help" title="${own ? `${esc(name)} is this pharmacy's own. Changes to the master template no longer reach it.` : `${esc(name)} comes from the master template. Edit it there, or manage it separately for this pharmacy.`}">info</span>
+      <button type="button" class="text inh-act" data-sec="${sec}" data-own="${own ? 1 : 0}" ${canEdit ? '' : 'disabled title="Add the pharmacy name and store code first"'}><span class="ms">${own ? 'undo' : 'edit'}</span>${own ? 'Revert to master' : 'Edit for this pharmacy'}</button></div>`;
+    if (own && S.note && S.note.promotionId === p.id && S.note.sec === sec) {
+      wrap.insertAdjacentHTML('beforeend', `<div class="inh-alert" role="status"><span class="ms">info</span><span><b>${esc(name)}</b> is now managed separately for ${esc(S.cur.name)}. Changes to the master template no longer reach it until you revert it to the master.</span><button type="button" class="text inh-x" aria-label="Dismiss"><span class="ms">close</span></button></div>`);
+    }
+    el.replaceWith(wrap);
+    wrap.append(el);
+    if (!own) { el.inert = true; el.classList.add('inh-ro'); }
+  }
+  B.querySelectorAll('.inh-act').forEach((b) => { b.onclick = () => setSection(b.dataset.sec, b.dataset.own !== '1').catch(Save.fail); });
+  B.querySelectorAll('.inh-x').forEach((b) => { b.onclick = () => { S.note = null; b.closest('.inh-alert').remove(); }; });
+}
+
+/** Manage section `sec` of the selected promotion separately for this pharmacy (on), or inherit it again (off). */
+async function setSection(sec, on) {
+  const ph = S.cur, p = promo();
+  if (!ph.id || ph.isMaster) return;
+  await Save.flush();
+  ph.detached = M.setDetached(ph, p.id, sec, on);
+  S.note = on ? { promotionId: p.id, sec } : null;
+  ver++; lastKey = ''; renderDp(); renderJson(); // renderDp → content(): an inherited section takes the master's copy again
+  const id = ph.id;
+  await Save.queue(`ph:${id}`, async () => {
+    // Its own copy first (the master's, until edited), then the switch, so the screen never plays an empty section.
+    const a = await api.setContent(id, p.id, ph.content[p.id], ph.version); ph.version = a.version;
+    const b = await api.updatePharmacy(id, { detached: ph.detached }, ph.version); ph.version = b.version;
+    if (S.cur === ph) syncListRow();
+  });
+}
+
+/** Master view, promotion with no master saved yet: which pharmacy it starts from, and Save as master. */
+function renderMasterStart(B, p) {
+  if (!p || p.master) return;
+  const opts = S.pharmacies.map((x) => `<option value="${esc(x.id)}" ${S.masterSrc && S.masterSrc.id === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+  B.insertAdjacentHTML('afterbegin', `<div class="inh-alert warn" id="msStart"><span class="ms">info</span><span>No master saved for this promotion yet.${opts ? ' Starting from' : ''}</span>
+    ${opts ? `<select id="msSrc" aria-label="Start from pharmacy">${opts}</select>` : ''}<button type="button" class="primary" id="msSave">Save as master</button></div>`);
+  if ($('msSrc')) $('msSrc').onchange = async (e) => { S.masterSrc = await api.getPharmacy(e.target.value); delete S.cur.content[p.id]; ver++; lastKey = ''; renderDp(); renderJson(); };
+  $('msSave').onclick = () => { saveMaster(p); ver++; renderDp(); renderJson(); };
+}
+
+const MASTER_ID = '__master';
+/** Open the master template: the promotions' masters, previewed with the default branding. */
+async function selectMaster() {
+  await Save.flush();
+  if (!S.masterSrc && S.pharmacies.length && S.promotions.some((p) => !p.master)) S.masterSrc = await api.getPharmacy(S.pharmacies[0].id);
+  S.cur = { id: '', isMaster: true, name: 'Master template', storeCode: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null,
+    content: Object.fromEntries(S.promotions.filter((p) => p.master).map((p) => [p.id, p.master])) };
+  S.note = null;
+  pref.set('pharmacy', MASTER_ID);
+  renderStoreSel(); loadStore();
+}
+
+/** The master view says what the master is, above the promotions. */
+function showMasterChrome(on) {
+  let card = $('masterCard');
+  if (!card && on) {
+    card = document.createElement('div');
+    card.className = 'card'; card.id = 'masterCard';
+    card.innerHTML = `<div class="sect">Master template <span class="ms help" title="Every pharmacy, including each new one, uses these promotions by default. A pharmacy can manage any section separately, and keeps its own name, logo and colours.">info</span></div>
+      <span class="lockmsg"><span class="ms">account_tree</span><span>Default content for every pharmacy</span></span>`;
+    const promoCard = document.querySelector('.promo-mod');
+    if (promoCard) promoCard.before(card);
+  }
+  if (card) card.hidden = !on;
 }
 
 /**
@@ -350,7 +462,7 @@ function renderOccasion(B, d) {
 // ───────────────────────── promotions (shared) ─────────────────────────
 
 function selectPromo(id) {
-  S.dpTab = id; $('newPromo').hidden = true; renderDp();
+  S.dpTab = id; $('newPromo').hidden = true; S.note = null; renderDp();
   scene = 0; elapsed = 0; renderUrl(); renderJson(); lastKey = '';
 }
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
@@ -412,6 +524,7 @@ function showPmErr(msg) { $('pmErr').textContent = msg; $('pmErr').hidden = !msg
 
 async function reloadPromotions() {
   S.promotions = M.orderPromotions(await api.listPromotions());
+  if (S.cur && S.cur.isMaster) for (const p of S.promotions) if (p.master) S.cur.content[p.id] = p.master;
   if (!S.promotions.some((p) => p.id === S.dpTab)) S.dpTab = S.promotions[0] && S.promotions[0].id;
 }
 
@@ -611,11 +724,14 @@ $('hdReset').onclick = async () => {
 
 function renderStoreSel() {
   const rows = S.pharmacies.map((s) => `<option value="${esc(s.id)}">${esc(s.name || 'New pharmacy')}${s.storeCode ? ' · ' + esc(s.storeCode) : ''}</option>`);
-  if (!S.cur.id) rows.push(`<option value="">${esc(S.cur.name || 'New pharmacy')}${S.cur.storeCode ? ' · ' + esc(S.cur.storeCode) : ''} (not saved yet)</option>`);
-  $('storeSel').innerHTML = rows.join('');
-  $('storeSel').value = S.cur.id || '';
-  $('resetBtn').hidden = !sampleFor(S.cur.storeCode);
-  $('delBtn').hidden = S.pharmacies.length < 1 || (S.pharmacies.length < 2 && !!S.cur.id);
+  if (!S.cur.id && !S.cur.isMaster) rows.push(`<option value="">${esc(S.cur.name || 'New pharmacy')}${S.cur.storeCode ? ' · ' + esc(S.cur.storeCode) : ''} (not saved yet)</option>`);
+  // The same list feeds Settings' pharmacy picker and the promotions page's Promo preview drop-down; Promo preview
+  // also offers the master template, first.
+  $('storeSel').innerHTML = rows.join(''); $('storeSel').value = S.cur.id || '';
+  $('pvSel').innerHTML = [`<option value="${MASTER_ID}">Master template</option>`, ...rows].join('');
+  $('pvSel').value = S.cur.isMaster ? MASTER_ID : S.cur.id || '';
+  $('resetBtn').hidden = S.cur.isMaster || !sampleFor(S.cur.storeCode);
+  $('delBtn').hidden = S.cur.isMaster || S.pharmacies.length < 1 || (S.pharmacies.length < 2 && !!S.cur.id);
   delArm = false; $('delTx').textContent = 'Delete';
 }
 function detailsError() {
@@ -686,6 +802,7 @@ function saveEditsMadeDuring(ph, sent) {
 function bindVal(id, get, set) { const e = $(id); e.value = get() ?? ''; e.oninput = () => { set(e.value); detailsChanged(); }; }
 function loadStore() {
   const s = S.cur;
+  showMasterChrome(!!s.isMaster);
   bindVal('sName', () => s.name, (v) => { s.name = v; renderStoreSel(); });
   bindVal('sCode', () => s.storeCode, (v) => { s.storeCode = M.normStoreCode(v); $('sCode').value = s.storeCode; renderStoreSel(); });
   bindVal('cP', () => s.colours.primary, (v) => { s.colours.primary = v.toLowerCase(); renderLogo(); renderDp(); });
@@ -694,7 +811,6 @@ function loadStore() {
   $('logoIn').value = ''; $('logoErr').hidden = true;
   renderLogo(); renderDp(); renderUrl(); renderJson();
   scene = 0; elapsed = 0; lastKey = '';
-  loadRecordFor(s);
 }
 function renderLogo() {
   const s = S.cur, url = s.logo && s.logo.url;
@@ -726,18 +842,21 @@ async function selectPharmacy(id) {
   await Save.flush();
   const rec = await api.getPharmacy(id);
   S.cur = { ...rec, content: rec.content || {} };
+  S.note = null;
   pref.set('pharmacy', id);
   renderStoreSel(); loadStore();
 }
 function newDraft() {
+  // A new pharmacy starts with each promotion's master template and inherits every section of it.
   return { id: null, storeCode: '', name: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: M.newPharmacyContent(S.promotions, S.templates) };
 }
 let delArm = false;
-$('storeSel').onchange = (e) => { if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
+$('storeSel').onchange = $('pvSel').onchange = (e) => { if (e.target.value === MASTER_ID) selectMaster().catch(Save.fail); else if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };
+// Adding a pharmacy, and its details and branding, live in Settings.
 $('addBtn').onclick = async () => {
   await Save.flush();
   S.cur = newDraft(); renderStoreSel(); loadStore();
-  if (!$('settingsView').hidden) $('setBtn').click();
+  if ($('settingsView').hidden) $('setBtn').click();
   $('sName').focus();
 };
 $('delBtn').onclick = async () => {
@@ -785,51 +904,12 @@ $('resetBtn').onclick = async () => {
 $('setBtn').onclick = () => {
   const on = $('settingsView').hidden;
   $('settingsView').hidden = !on; $('contentView').hidden = on; $('toolbar').classList.toggle('inSettings', on);
-  $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to pharmacy content' : 'Settings';
+  $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to promotions' : 'Settings';
   $('setBtn').firstChild.textContent = on ? 'arrow_back' : 'settings';
   if (on) loadPhApi();
+  // Settings works on pharmacies, never the master template: show the first pharmacy there.
+  if (on && S.cur && S.cur.isMaster && S.pharmacies[0]) selectPharmacy(S.pharmacies[0].id).catch(Save.fail);
 };
-
-const devKey = (code) => 'device-' + code;
-function renderRecord() {
-  const r = S.record;
-  $('recBody').hidden = !r;
-  $('pvData').hidden = false;
-  $('pvData').textContent = r ? `Store data: ${S.recordDevice}` : 'Sample store data';
-  $('pvData').title = r ? 'From the Location API, through the server-side proxy' : 'Look up one of this store’s devices in Settings to preview with its real store data';
-  if (!r) return;
-  $('recFields').innerHTML = M.storeFields(r).map((f) => `<div class="f${f.label === 'Address' ? '" style="grid-column:1/-1' : ''}"><span>${esc(f.label)} <code class="kp">${esc(f.path)}</code></span><div class="ro-val">${esc(f.value)}</div></div>`).join('');
-  const rows = weeklyRows(parseOpeningHours((r.data || r).store_info && (r.data || r).store_info.opening_hours));
-  $('hours').innerHTML = rows.map((x) => `<span class="d">${x.name}</span><span class="${x.text ? '' : 'off'}">${esc(x.text || 'Closed')}</span>`).join('');
-  $('apiJson').textContent = JSON.stringify(r, null, 2);
-}
-function devErr(m) { $('devErr').textContent = m || ''; $('devErr').hidden = !m; }
-async function lookUp(device, { quiet = false } = {}) {
-  const forId = S.cur && S.cur.id;
-  try {
-    const r = await api.campaignData(device);
-    if ((S.cur && S.cur.id) !== forId) return;
-    S.record = { data: r.data };
-    S.recordDevice = device;
-    if (S.cur.storeCode) pref.set(devKey(S.cur.storeCode), device);
-    const code = r.data && r.data.store_location && r.data.store_location.store_code;
-    devErr(code && S.cur.storeCode && code.toUpperCase() !== S.cur.storeCode ? `This device belongs to store ${code}, not ${S.cur.storeCode}. The preview uses its store data anyway.` : '');
-  } catch (e) {
-    if ((S.cur && S.cur.id) !== forId) return;
-    S.record = null; S.recordDevice = '';
-    if (!quiet) devErr(e.message);
-  }
-  ver++; renderRecord();
-}
-function loadRecordFor(s) {
-  S.record = null; S.recordDevice = '';
-  const dev = s.storeCode ? pref.get(devKey(s.storeCode)) : null;
-  $('devId').value = dev || ''; devErr('');
-  renderRecord();
-  if (dev) lookUp(dev, { quiet: true });
-}
-$('devGo').onclick = () => { const v = $('devId').value.trim(); if (!v) { devErr('Enter a device ID.'); return; } lookUp(v); };
-$('devId').onkeydown = (e) => { if (e.key === 'Enter') $('devGo').click(); };
 
 function apiErr(m) { $('apiErr').textContent = m || ''; $('apiErr').hidden = !m; }
 function renderApi({ clearToken = false } = {}) {
@@ -889,7 +969,8 @@ async function main() {
   hideGate(); $('app').hidden = false;
   const want = pref.get('pharmacy');
   const first = S.pharmacies.find((p) => p.id === want) || S.pharmacies[0];
-  if (first) await selectPharmacy(first.id);
+  if (want === MASTER_ID) await selectMaster();
+  else if (first) await selectPharmacy(first.id);
   else { S.cur = newDraft(); renderStoreSel(); loadStore(); }
   setOrient(orient); fit();
   requestAnimationFrame(loop);

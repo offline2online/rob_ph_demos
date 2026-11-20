@@ -475,3 +475,59 @@ test("an Occasions promotion: picking an occasion is its template, and the publi
   assert.equal(cfg.promotions.occasions.template.occasion, "easter");
   assert.equal(cfg.promotions.occasions.content.occasions.easter.scenes[0].title, "Happy Easter,<br>${Suburb}");
 });
+
+test("master template: a promotion's master is inherited section by section; detached sections are the pharmacy's own", async () => {
+  const { call } = setup();
+  const { ph, morning } = await seedBasics(call);
+  const own = { greeting: "Hi, ${Suburb}", introTitle: "Own intro", introSub: "Own sub", slots: [{ label: "Own", title: "Own slot" }], close: { title: "Own close" }, custom: "kept" };
+  await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${morning.id}`, { body: own });
+  const screen = async () => (await call("GET", "/api/screens/VIC-MP-001?promo=morning", { auth: null })).body.promotions.morning.content;
+  // No master yet: the pharmacy's own content, as before.
+  assert.equal((await screen()).introTitle, "Own intro");
+
+  const master = { greeting: "Good morning, ${Suburb}", introTitle: "Master intro", introSub: "Master sub", slots: [{ label: "BP", title: "Blood pressure" }], close: { title: "Walk in today" }, footer: { show: false } };
+  const r = await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.master, master);
+  // A name change keeps the master.
+  assert.deepEqual((await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { name: "Mornings" } })).body.master, master);
+  // Every section inherited; a field in no section stays the pharmacy's.
+  let c = await screen();
+  assert.equal(c.introTitle, "Master intro");
+  assert.deepEqual(c.slots, master.slots);
+  assert.deepEqual(c.footer, { show: false });
+  assert.equal(c.custom, "kept");
+
+  // Detach the greeting and the slots: the pharmacy's own copies play; the rest still follows the master.
+  const d = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { detached: { [morning.id]: ["slots", "greeting", "slots"] } } });
+  assert.equal(d.status, 200);
+  assert.deepEqual(d.body.detached, { [morning.id]: ["greeting", "slots"] });
+  c = await screen();
+  assert.deepEqual([c.greeting, c.introTitle, c.introSub, c.slots[0].label, c.close.title], ["Hi, ${Suburb}", "Own intro", "Own sub", "Own", "Walk in today"]);
+  await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master: { ...master, introTitle: "Changed", close: { title: "Changed close" } } } });
+  c = await screen();
+  assert.equal(c.introTitle, "Own intro", "a detached section is not reached by master changes");
+  assert.equal(c.close.title, "Changed close", "an inherited one is");
+  // Saving content keeps the detached list; a detached section without its own copy drops out (template default).
+  await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${morning.id}`, { body: { greeting: "Hey" } });
+  assert.deepEqual((await call("GET", `/api/admin/pharmacies/${ph.id}`)).body.detached, { [morning.id]: ["greeting", "slots"] });
+  c = await screen();
+  assert.equal(c.greeting, "Hey");
+  assert.equal(c.slots, undefined);
+  // Back to the master for everything: the field disappears from the record.
+  const back = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { detached: {} } });
+  assert.equal(back.body.detached, undefined);
+  assert.equal((await screen()).introTitle, "Changed");
+  // Removing the master returns to the pharmacy's own content.
+  assert.equal((await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master: null } })).body.master, undefined);
+  assert.equal((await screen()).greeting, "Hey");
+
+  // Validation: unknown sections, bad shapes and unsafe markup are refused.
+  assert.equal((await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { detached: { [morning.id]: ["logo"] } } })).status, 400);
+  assert.equal((await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { detached: { [morning.id]: "greeting" } } })).status, 400);
+  assert.equal((await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master: [] } })).status, 400);
+  assert.equal((await call("PATCH", `/api/admin/promotions/${morning.id}`, { body: { master: { greeting: "<script>x</script>" } } })).status, 400);
+  // The admin-only fields never reach the public view.
+  const pub = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.ok(!("detached" in pub) && !("master" in pub.promotions.morning));
+});

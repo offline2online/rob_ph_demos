@@ -43,12 +43,24 @@ const api = async (method, path, { token = 'dev-admin', body } = {}) => {
   return { status: r.status, body: await r.json().catch(() => null), text: '' };
 };
 const headline = (page) => page.$eval('#screen .s-head h2', (e) => e.textContent);
+// The seeded promotions have a master template (Beaumaris's content), so a pharmacy inherits every section.
+// Tests that edit a pharmacy's own copy first set the selected promotion's sections to be managed separately.
+const own = async (page) => {
+  for (let i = 0; i < 8; i++) {
+    const b = await page.$('#dpBody .inh-act[data-own="0"]:not([disabled])');
+    if (!b) return;
+    await b.click();
+    await settle(page);
+  }
+};
 
 test('loads the pharmacies, promotions and a live preview from the server', async () => {
   const { ctx, page, errors } = await open();
   const opts = await page.$$eval('#storeSel option', (o) => o.map((x) => x.textContent));
   assert.equal(opts.length, 5);
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
+  // Promo preview offers the master template first, then the same pharmacies.
+  assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.textContent)), ['Master template', ...opts]);
   assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Occasions']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
@@ -61,7 +73,10 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
 
 test('edits are saved to the server and another admin sees them after a reload', async () => {
   const a = await open();
+  await own(a.page);
+  await a.page.click('#setBtn'); // pharmacy details are in Settings
   await a.page.fill('#sName', 'Beaumaris Pharmacy Plus');
+  await a.page.click('#setBtn');
   await a.page.fill('#dit', 'Four reasons to walk in');
   await settle(a.page);
   assert.match(await a.page.textContent('#saveState'), /All changes saved/);
@@ -77,7 +92,7 @@ test('edits are saved to the server and another admin sees them after a reload',
   assert.equal(await b.page.inputValue('#dit'), 'Four reasons to walk in');
   // nothing kept in browser storage but view preferences
   const keys = await b.page.evaluate(() => Object.keys(localStorage));
-  assert.ok(keys.every((k) => /^ps-admin-(orient|pharmacy|device-)/.test(k)), keys.join(','));
+  assert.ok(keys.every((k) => /^ps-admin-(orient|pharmacy)/.test(k)), keys.join(','));
   await a.ctx.close(); await b.ctx.close();
 });
 
@@ -96,8 +111,8 @@ test('a non-admin cannot open the editor or call write endpoints', async () => {
 test('the PH API token is write-only: saved encrypted, shown only as its last 4', async () => {
   const { ctx, page } = await open();
   await page.click('#setBtn');
-  assert.equal(await page.isHidden('#addBtn'), true); // only "Back to pharmacy content" in the toolbar
-  assert.match(await page.textContent('#setBtn'), /Back to pharmacy content/);
+  assert.equal(await page.isHidden('#pvSel'), true); // only "Back to promotions" in the toolbar
+  assert.match(await page.textContent('#setBtn'), /Back to promotions/);
   await page.waitForSelector('#apiState:has-text("No token saved")');
   await page.fill('#apiBase', 'https://ph.example.com');
   await page.fill('#apiTok', TOKEN);
@@ -115,29 +130,39 @@ test('the PH API token is write-only: saved encrypted, shown only as its last 4'
   assert.ok(!JSON.stringify(got.body).includes(TOKEN.slice(0, -4)), 'token not returned by the API');
   assert.ok(!JSON.stringify(dev.phSettings.raw()).includes(TOKEN), 'token not stored in plain text');
   assert.deepEqual(got.body.settings.baseUrls, ['https://ph.example.com']);
+  // the screens' Location API calls go through the proxy, which adds the saved token
+  assert.equal((await api('GET', '/api/device/DEVICE-VIC-MP-001/campaign_data', { token: '' })).status, 200);
+  assert.ok(dev.upstreamCalls.length && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token');
   await ctx.close();
 });
 
-test('Settings reads the store record from the Location API through the proxy; the preview uses it', async () => {
-  const { ctx, page } = await open();
+test('Settings holds the pharmacies, their details and branding, and the API; promotions has only a Promo preview drop-down', async () => {
+  const { ctx, page, errors } = await open();
+  // promotions page: no pharmacy details, branding or pharmacy management, just the Promo preview drop-down
+  for (const id of ['#detailsCard', '#brandingCard', '#pharmaciesCard', '#addBtn', '#delBtn', '#sName', '#cP', '#logoBtn']) assert.equal(await page.isHidden(id), true, id);
+  assert.equal(await page.isVisible('#pvSel'), true);
+  assert.match(await page.textContent('#toolbar'), /Promo preview/);
+  const pv = await page.$$eval('#pvSel option', (o) => o.map((x) => x.value));
+  assert.deepEqual(pv, ['__master', ...(await page.$$eval('#storeSel option', (o) => o.map((x) => x.value)))]);
+  assert.equal(pv.length, 6);
+  // picking a pharmacy in Promo preview switches the content and the preview
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
+  assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
+  assert.match(await page.textContent('#pvData'), /Sample store data/);
+  // Settings: pharmacies, details, branding and the PH API; the store record section is gone
   await page.click('#setBtn');
-  await page.fill('#devId', 'DEVICE-VIC-MP-001');
-  await page.click('#devGo');
-  await page.waitForSelector('#recBody:not([hidden])');
-  const fields = await page.$$eval('#recFields .f', (f) => f.map((x) => x.textContent));
-  assert.ok(fields.some((t) => /Suburb store_info\.address_info\.suburbBeaumaris/.test(t)), fields.join('|'));
-  assert.equal(await page.$$eval('#recFields input', (i) => i.length), 0); // read-only
-  assert.equal(await page.$$eval('#hours .d', (d) => d.length), 7);
-  assert.match(await page.textContent('#pvData'), /DEVICE-VIC-MP-001/);
-  assert.ok(dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token');
+  for (const id of ['#pharmaciesCard', '#addBtn', '#detailsCard', '#sName', '#sCode', '#brandingCard', '#cP', '#cA', '#logoBtn', '#apiBase']) assert.equal(await page.isVisible(id), true, id);
+  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-003');
+  assert.equal((await page.$$('#devId, #devGo, #recBody')).length, 0);
+  assert.doesNotMatch(await page.textContent('#settingsView'), /Store record/);
+  // picking a pharmacy in Settings moves Promo preview with it
+  await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  assert.equal(await page.inputValue('#pvSel'), 'seed-pharmacy-vic-mp-001');
   await page.click('#setBtn');
-  await page.click('#playBtn');
-  await page.click('#tl button[data-i="0"]');
-  assert.match(await headline(page), /Good morning,\s*Beaumaris/);
-  await page.click('#setBtn');
-  await page.fill('#devId', 'NO-SUCH-DEVICE');
-  await page.click('#devGo');
-  await page.waitForSelector('#devErr:not([hidden])');
+  assert.equal(await page.isVisible('#dpTabs'), true);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 
@@ -212,6 +237,7 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
 test('occasions: the Occasion drop-down picks what promo=occasions plays; each occasion keeps its own copy', async () => {
   const { ctx, page, errors } = await open();
   await page.click('#dpTabs button:has-text("Occasions")');
+  await own(page);
   await page.click('#playBtn'); // pause
   // The Template drop-down is the Occasion drop-down here, Christmas by default; occasion templates have no Edit HTML.
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
@@ -247,9 +273,10 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
 
 test('scenes: add from the whole service library, reorder, durations, delete', async () => {
   const { ctx, page } = await open();
-  await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-004');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
   await page.click('#dpTabs button:has-text("Morning")');
+  await own(page);
   const before = await page.$$eval('#slotList .slot', (s) => s.length);
   await page.click('#addSlot');
   // every service in the library, for every pharmacy: no "offered by" filter or labels
@@ -288,6 +315,7 @@ test('scenes: Add promotion picker closes without adding; a new promotion can be
   const { ctx, page, errors } = await open();
   await page.click('#playBtn'); // pause
   await page.click('#dpTabs button:has-text("Afternoon")');
+  await own(page);
   const heads = await page.$$eval('#dpBody .slot-h', (h) => h.map((x) => x.textContent.trim()));
   assert.ok(heads.some((t) => t.startsWith('Top: Greeting')), heads.join('|'));
   assert.ok(heads.some((t) => t.startsWith('Tail: Walk-in close')), heads.join('|'));
@@ -324,6 +352,7 @@ test('scenes: Add promotion picker closes without adding; a new promotion can be
 
 test('preview: Copy experience URL with a live playback duration and its setup tooltip', async () => {
   const { ctx, page } = await open();
+  await own(page);
   assert.match(await page.textContent('#cpTx'), /^Copy experience URL$/);
   const total = async () => +(await page.textContent('#tlTime')).match(/ ([\d.]+)s/)[1];
   const shown = async () => +(await page.textContent('#pbSecs')).replace('s', '');
@@ -354,6 +383,7 @@ test('preview: Copy experience URL with a live playback duration and its setup t
 
 test('preview: timeline and editor highlight each other; orientation and experience URL follow', async () => {
   const { ctx, page } = await open();
+  await own(page);
   await page.click('#playBtn');
   await page.click('#tl button[data-i="2"]');
   assert.ok(await page.$eval('#slotList .slot[data-i="1"]', (e) => e.classList.contains('focus')));
@@ -362,6 +392,7 @@ test('preview: timeline and editor highlight each other; orientation and experie
   assert.match(await headline(page), /Walk in today/);
   await page.click('#dpTabs button:has-text("Closed")');
   await page.waitForFunction(() => document.querySelectorAll('#tl button').length === 3);
+  await own(page);
   await page.click('#orTabs button[data-or="landscape"]');
   await page.waitForFunction(() => document.getElementById('screen').classList.contains('land'));
   assert.match(await page.textContent('#cpTip'), /pharmacy-screen\.html\?device=\$\{UniqueDeviceID\}&promo=closed&orientation=landscape$/);
@@ -378,7 +409,9 @@ test('preview: timeline and editor highlight each other; orientation and experie
 
 test('pharmacies: add (unique store code), logo upload and remove, delete', async () => {
   const { ctx, page } = await open();
+  await page.click('#setBtn'); // adding a pharmacy, its details and branding are in Settings
   await page.click('#addBtn');
+  assert.equal(await page.isVisible('#settingsView'), true);
   await page.fill('#sName', 'Brighton Pharmacy');
   await page.fill('#sCode', 'vic-mp-001');
   assert.match(await page.textContent('#codeErr'), /already used/);
@@ -415,15 +448,18 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
     await held;
     return route.continue();
   });
+  await page.click('#setBtn');
   await page.click('#addBtn');
   await page.fill('#sName', 'Hampton Pharmacy');
   const posted = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/admin\/pharmacies$/.test(r.url()));
   await page.fill('#sCode', 'VIC-MP-007');
   const req = await posted;
   assert.equal(JSON.parse(req.postData()).name, 'Hampton Pharmacy');
-  // while the create is in flight: rename it and edit the greeting's Line 1
+  // while the create is in flight: rename it and change its accent colour (its content is the master template's,
+  // inherited, so there is no content of its own to edit yet)
+  assert.equal(await page.$eval('#dit', (e) => e.closest('[inert]') !== null), true);
   await page.fill('#sName', 'Hampton Street Pharmacy');
-  await page.fill('#dit', 'Edited during the create');
+  await page.fill('#cA', '#123456');
   await page.waitForTimeout(800); // longer than the edit debounce
   assert.match(await page.textContent('#saveState'), /Saving/);
   release();
@@ -433,13 +469,14 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
   assert.ok(created);
   const rec = (await api('GET', `/api/admin/pharmacies/${created.id}`)).body;
   assert.equal(rec.name, 'Hampton Street Pharmacy');
-  assert.equal(rec.content['seed-promotion-morning'].introTitle, 'Edited during the create');
+  assert.equal(rec.colours.accent, '#123456');
+  assert.equal(rec.detached, undefined, 'a new pharmacy inherits every section');
   // another admin sees both after a reload
   const b = await open();
-  await b.page.selectOption('#storeSel', created.id);
+  await b.page.selectOption('#pvSel', created.id);
   await b.page.waitForFunction((id) => window.pharmacyAdmin.state.cur.id === id, created.id);
   assert.equal(await b.page.inputValue('#sName'), 'Hampton Street Pharmacy');
-  assert.equal(await b.page.inputValue('#dit'), 'Edited during the create');
+  assert.equal(await b.page.inputValue('#cA'), '#123456');
   await b.ctx.close();
   // switching pharmacy while a create is in flight waits for it, so the new one is kept and listed
   await page.unroute('**/api/admin/pharmacies');
@@ -450,7 +487,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
     await held2;
     return route.continue();
   });
-  await page.click('#addBtn');
+  await page.click('#addBtn'); // still in Settings
   await page.fill('#sName', 'Sandringham Pharmacy');
   const posted2 = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/admin\/pharmacies$/.test(r.url()));
   await page.fill('#sCode', 'VIC-MP-008');
@@ -471,6 +508,81 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
     const r = (await api('GET', `/api/admin/pharmacies/${id}`)).body;
     await fetch(dev.base + `/api/admin/pharmacies/${id}`, { method: 'DELETE', headers: { Authorization: 'Bearer dev-admin', 'If-Match': `"${r.version}"` } });
   }
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('master template: every pharmacy inherits it section by section; a section can be managed separately and reverted', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  // Promo preview → Master template: the masters of the shared promotions, nothing inherited in the master itself.
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  assert.equal(await page.isVisible('#masterCard'), true);
+  assert.equal(await page.$('#dpBody .inh-bar'), null);
+  // Seeded from Beaumaris: the master's Morning greeting is Beaumaris's fixture copy.
+  const master = (await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master;
+  assert.equal(master.introSub, 'No fuss. Just ask in store.');
+  await page.fill('#dis', 'Walk in, no appointment');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master.introSub, 'Walk in, no appointment');
+  // A pharmacy that inherits everything plays the master's copy at once, with its own branding.
+  let scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introSub, 'Walk in, no appointment');
+  assert.equal(scr.name, 'North Ringwood Family Pharmacy');
+  // On that pharmacy every section says it is inherited and is read-only.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
+  assert.equal(await page.isHidden('#masterCard'), true);
+  assert.deepEqual(await page.$$eval('#dpBody .inh', (s) => s.map((x) => x.dataset.sec)), ['greeting', 'slots', 'close', 'footer']);
+  assert.ok((await page.$$eval('#dpBody .inh-pill', (p) => p.map((x) => x.textContent))).every((t) => /Inherited from master/.test(t)));
+  assert.equal(await page.inputValue('#dis'), 'Walk in, no appointment');
+  assert.equal(await page.$eval('#dis', (e) => e.closest('[inert]') !== null), true);
+  // Edit for this pharmacy: the message says the section is now managed separately; the copy is its own.
+  await page.click('.inh[data-sec="greeting"] .inh-act');
+  await settle(page);
+  assert.match(await page.textContent('.inh[data-sec="greeting"] .inh-alert'), /Greeting is now managed separately for North Ringwood Family Pharmacy\. Changes to the master template no longer reach it/);
+  assert.match(await page.textContent('.inh[data-sec="greeting"] .inh-pill'), /Managed separately/);
+  await page.fill('#dis', 'Ringwood only');
+  await settle(page);
+  assert.deepEqual((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, { 'seed-promotion-morning': ['greeting'] });
+  scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introSub, 'Ringwood only');
+  // A later master change no longer reaches it, but still reaches the sections it inherits.
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  await page.fill('#dis', 'Master again');
+  await page.fill('#cl3', 'From the master');
+  await settle(page);
+  scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introSub, 'Ringwood only');
+  assert.equal(scr.promotions.morning.content.close.line1, 'From the master');
+  // Revert to master: it inherits again.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
+  await page.click('.inh[data-sec="greeting"] .inh-act');
+  await settle(page);
+  assert.equal(await page.inputValue('#dis'), 'Master again');
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+  scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introSub, 'Master again');
+  // Settings works on pharmacies: opened from the master template it shows the first pharmacy.
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  await page.click('#setBtn');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  assert.equal(await page.inputValue('#sCode'), 'VIC-MP-001');
+  // A new pharmacy starts as the master.
+  await page.click('#addBtn');
+  assert.equal(await page.inputValue('#dis'), 'Master again');
+  assert.equal(await page.isDisabled('.inh[data-sec="greeting"] .inh-act'), true);
+  // put the master back for the other tests
+  await page.click('#setBtn');
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
+  await page.fill('#dis', master.introSub);
+  await page.fill('#cl3', master.close.line1);
+  await settle(page);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -570,5 +682,26 @@ test('layout follows the frame inside the PH shell: menu expanded or collapsed, 
   for (const p of made) {
     const r = (await api('GET', '/api/admin/promotions')).body.find((x) => x.id === p.id);
     await fetch(dev.base + `/api/admin/promotions/${p.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer dev-admin', 'If-Match': `"${r.version}"` } });
+  }
+});
+
+test('on a tablet the preview scrolls up until the orientation tabs lock to the top, and nothing below is cut off', async () => {
+  // iPad landscape sizes, the shorter ones being the visible height with Safari's bars showing
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1024, height: 620 }, { width: 1180, height: 740 }, { width: 1366, height: 940 }]) {
+    for (const or of ['portrait', 'landscape']) {
+      const { ctx, page, errors } = await open('dev-admin', { viewport });
+      if (or === 'landscape') await page.click('#orTabs [data-or="landscape"]');
+      await page.evaluate(() => scrollTo(0, 600));
+      await page.waitForFunction(() => scrollY >= 600);
+      const m = await page.evaluate(() => {
+        const r = (s) => document.querySelector(s).getBoundingClientRect();
+        return { tabsTop: Math.round(r('#orTabs').top), pvBottom: Math.round(r('.pv').bottom), copyBottom: Math.round(r('#cpUrl').bottom), vh: innerHeight };
+      });
+      const where = `${viewport.width}x${viewport.height} ${or}: ${JSON.stringify(m)}`;
+      assert.equal(m.tabsTop, 0, `the Portrait/Landscape tabs lock to the very top, ${where}`);
+      assert.ok(m.pvBottom <= m.vh && m.copyBottom <= m.vh, `the whole preview is in view, ${where}`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
   }
 });

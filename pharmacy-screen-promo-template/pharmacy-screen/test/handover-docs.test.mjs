@@ -21,6 +21,7 @@ const read = (p) => readFileSync(join(ROOT, p), 'utf8');
 const HANDOVER = [
   'README.md', 'START-HERE.md', 'AGENTS.md', 'CLAUDE.md', '.env.example', 'CHANGELOG.md',
   'docs/DEPLOYMENT.md', 'docs/CONFIGURATION.md', 'docs/DATA-CONTRACT.md', 'docs/TEST-CHECKLIST.md', 'docs/USER-GUIDE.md',
+  'docs/RELEASING.md',
 ];
 const SKIP_DIRS = new Set(['node_modules', '.deploy', '.deploy-aws', 'cdk.out', '.git']);
 

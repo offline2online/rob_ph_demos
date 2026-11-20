@@ -67,8 +67,8 @@ Firestore (`PS_FIRESTORE_ROOT`, default `pharmacyScreen`):
 
 | Path | What | Client access (rules) |
 | --- | --- | --- |
-| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}` | none |
-| `pharmacyScreen/config/promotions/{id}` | `name`, `promoId`, `templateId` | none |
+| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately) | none |
+| `pharmacyScreen/config/promotions/{id}` | `name`, `promoId`, `templateId`, `master {...}` (the master template's content; only once saved) | none |
 | `pharmacyScreen/config/templates/{id}` | custom templates: `name`, `kind`, `basedOn`, `html`, `css`, `backgrounds {portrait, landscape}` | none |
 | `pharmacyScreen/config/services/{id}` | `label`, `icon`, `category`, `headline`, `accent`, `line1`, `line2`, `offeredBy [store codes]` | none |
 | `pharmacyScreen/audit/entries/{id}` | one per write: `at`, `actorUid`, `actorEmail`, `action`, `entity`, `entityId`, `changedFields`, `before`, `after` (+ `promotionId`, `media`, `clonedFrom`, `fallbackTemplateId`, `promotionsFellBack` where relevant) | none |
@@ -79,6 +79,20 @@ Every admin record also has `version`, `createdAt`, `createdBy`,
 editor and the screen (scenes, greeting, open-today bar…): the API bounds it
 (200 KB per promotion, nesting depth 12) and refuses script-bearing markup
 in any string, but does not fix its shape.
+
+**Master template** (`src/inherit.js`) — a promotion's `master` is the
+content every pharmacy uses for it by default. Its sections are `greeting`
+(`greeting`, `introTitle`, `introSub`, `introDur`), `slots`, `close`,
+`headlines`, `address` (`showAddress`), `occasions` and `footer`. A pharmacy
+inherits each section unless `detached[<promotion id>]` lists it; then its own
+`content` for that section is used and later master changes no longer reach
+it. Fields in no section are always the pharmacy's. The published screen
+config carries the resolved content, so screens never see `master` or
+`detached`; saving a master republishes every pharmacy. Without a master, a
+pharmacy's own content is used as before. `PATCH /api/admin/promotions/{id}`
+with `master` (an object, or `null` to remove it) and
+`PATCH /api/admin/pharmacies/{id}` with `detached` (an unknown section id is a
+400) are the writes. Branding is never inherited.
 
 **Built-in templates** — `builtin-promotion-scenes` ("Promotion scenes",
 kind `promotion-scenes`) and `builtin-opening-hours` ("Opening hours", kind

@@ -15,9 +15,12 @@
 // Idempotent: a record the seed made before (same fixed id), or one with the
 // same natural key (store code, promo ID, service label), is left exactly as
 // it is, so a re-run creates no duplicates and never undoes someone's edit.
-// The one addition to an existing record: when this run creates a default
+// The additions to an existing record: when this run creates a default
 // promotion (e.g. Occasions, added after launch), each pharmacy the seed made
-// earlier gets its fixture content for that promotion, if it has none yet.
+// earlier gets its fixture content for that promotion, if it has none yet;
+// and a default promotion the seed made earlier with no master template yet
+// gets the master (the content of the pharmacy promotions.json's masterFrom
+// names, Beaumaris).
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
 // and a pharmacy's content for promotions other than the four defaults is
@@ -73,6 +76,7 @@ function loadFixtures() {
   return {
     pharmacies,
     promotions: readJson(path.join(FIXTURES, "promotions.json")).promotions,
+    masterFrom: readJson(path.join(FIXTURES, "promotions.json")).masterFrom || null,
     templates: readJson(path.join(FIXTURES, "templates.json")).templates,
     services: readJson(path.join(FIXTURES, "services.json")).services,
     campaignData: readJson(CAMPAIGN_DATA).devices,
@@ -123,8 +127,14 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
   // Promotions first: pharmacy content is stored under each promotion's record id.
   const promotionIdByPromoId = {};
   const createdPromotionIds = new Set();
+  // The master template (requirement 23): each default promotion's master is
+  // the content of the pharmacy named by masterFrom (Beaumaris), so every
+  // pharmacy inherits its page elements and keeps only its own branding.
+  const masterPharmacy = fixtures.masterFrom ? (fixtures.pharmacies || []).find((ph) => ph.storeCode === fixtures.masterFrom) : null;
+  const masterFor = (promoId) => (masterPharmacy && masterPharmacy.content && masterPharmacy.content[promoId]) || null;
   for (const p of fixtures.promotions) {
-    const fields = { name: p.name, promoId: p.promoId, templateId: p.templateId };
+    const master = masterFor(p.promoId);
+    const fields = { name: p.name, promoId: p.promoId, templateId: p.templateId, ...(master ? { master } : {}) };
     const rows = await store.list("promotions");
     const existing = rows.find((r) => r.id === ids.promotion(p.key)) || rows.find((r) => r.promoId === p.promoId);
     if (!existing) {
@@ -136,9 +146,15 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     }
     promotionIdByPromoId[p.promoId] = existing.id;
     const want = normalisePromotion(fields);
-    const have = { name: existing.name, promoId: existing.promoId, templateId: existing.templateId };
+    const have = normalisePromotion({ name: existing.name, promoId: existing.promoId, templateId: existing.templateId, master: existing.master });
     if (reset && !same(want, have)) {
       await svc.updatePromotion(SEED_ACTOR, existing.id, fields);
+      report.promotions.updated.push(p.promoId);
+    } else if (!reset && master && !existing.master && existing.id === ids.promotion(p.key)) {
+      // A promotion the seed made, with no master yet, gets the fixture's; a
+      // master saved in the editor is never replaced without --reset, and a
+      // promotion made by hand is left exactly as it is.
+      await svc.updatePromotion(SEED_ACTOR, existing.id, { master });
       report.promotions.updated.push(p.promoId);
     } else {
       report.promotions.unchanged.push(p.promoId);

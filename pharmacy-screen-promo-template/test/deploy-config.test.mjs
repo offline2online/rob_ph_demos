@@ -11,9 +11,16 @@ import { readFileSync, existsSync, readdirSync, statSync, mkdtempSync } from "no
 import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP } from "../scripts/deploy.mjs";
+import { hasGit } from "../scripts/release.mjs";
+import { ROOT, buildPlan, readTargets, urls, parseArgs, stage, stagePublic, adminConfigJs, writeAdminConfig, CODEBASES, RULES_SOURCE, STAGE_DIR, ADMIN_WEB_APP } from "../scripts/deploy.mjs";
 
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
+// A release package (scripts/release.mjs) carries this folder without the repo-root firestore.rules or our test
+// environment's .env.rob-ph-demos files, so the checks that need them run in the repo only. "In the repo" means a
+// git checkout (as test/release.test.mjs decides), not "the files are there": in the repo a missing rules or env
+// file fails these checks instead of quietly skipping them.
+const OUR_ENV = hasGit(ROOT);
+const ourEnvOnly = { skip: !OUR_ENV && "no git checkout (an unzipped release package): our Firebase test environment's rules and env files are not in it" };
 const json = (p) => JSON.parse(read(p));
 const fbJson = json("firebase.json");
 const hosting = fbJson.hosting.find((h) => h.target === "pharmacy-screen");
@@ -87,7 +94,8 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
   assert.equal(fbJson.firestore.rules, `${STAGE_DIR}/firestore.rules`);
   assert.match(read(".gitignore"), /^\.deploy\/$/m, "the staged copy is never committed");
   const out = mkdtempSync(join(tmpdir(), "ps-stage-"));
-  stage(ROOT, out);
+  if (OUR_ENV) stage(ROOT, out);
+  else stagePublic(ROOT, join(out, "public"));
   const files = [];
   (function walk(dir) {
     for (const name of readdirSync(dir)) {
@@ -106,7 +114,7 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
     assert.doesNotMatch(f, /(^|\/)(package(-lock)?\.json|README\.md)$/, `${f} must not be published`);
   }
   // The staged rules are the repo-root ruleset, byte for byte.
-  assert.equal(readFileSync(join(out, "firestore.rules"), "utf8"), read(RULES_SOURCE));
+  if (OUR_ENV) assert.equal(readFileSync(join(out, "firestore.rules"), "utf8"), read(RULES_SOURCE));
 });
 
 test("the deploy writes the admin editor's Firebase web app config into the staged copy only", () => {
@@ -116,7 +124,7 @@ test("the deploy writes the admin editor's Firebase web app config into the stag
   assert.match(js, /^\/\/ .*\nexport default \{/);
   assert.throws(() => adminConfigJs({ projectId: "p" }), /apiKey/);
   const out = mkdtempSync(join(tmpdir(), "ps-admin-cfg-"));
-  stage(ROOT, out);
+  stagePublic(ROOT, join(out, "public"));
   const file = writeAdminConfig({ apiKey: "k", authDomain: "custom.example", projectId: "p" }, out);
   assert.equal(file, join(out, "public", "admin", "config.js"));
   assert.match(readFileSync(file, "utf8"), /"authDomain": "custom\.example"/);
@@ -125,7 +133,7 @@ test("the deploy writes the admin editor's Firebase web app config into the stag
   assert.equal(ADMIN_WEB_APP, "Pharmacy Screen admin");
 });
 
-test("rules: the project's one Firestore ruleset, indexes, and Storage rules on the media bucket only", () => {
+test("rules: the project's one Firestore ruleset, indexes, and Storage rules on the media bucket only", ourEnvOnly, () => {
   assert.ok(existsSync(join(ROOT, RULES_SOURCE)), "repo-root firestore.rules exists");
   assert.ok(existsSync(join(ROOT, fbJson.firestore.indexes)));
   assert.ok(Array.isArray(fbJson.storage), "storage is a per-bucket list");
@@ -137,7 +145,7 @@ test("rules: the project's one Firestore ruleset, indexes, and Storage rules on 
   assert.doesNotMatch(rules, /match \/pharmacyScreen\/private/, "settings and token documents get no client rule");
 });
 
-test("function environments: non-secret, KMS envelope encryption, the PH default base URL", () => {
+test("function environments: non-secret, KMS envelope encryption, the PH default base URL", ourEnvOnly, () => {
   const proxy = parseEnv("pharmacy-screen/ph-proxy/.env.rob-ph-demos");
   const config = parseEnv("pharmacy-screen/config-api/.env.rob-ph-demos");
   const { site, bucket } = readTargets();

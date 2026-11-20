@@ -225,3 +225,38 @@ test("summary and arguments", () => {
   assert.match(text, /pharmacies: 2 created, 0 updated, 0 unchanged/);
   assert.match(text, /templates: 2 built-in/);
 });
+
+test("master template: each default promotion's master is Beaumaris's content, inherited by every pharmacy", async () => {
+  const { store, svc, seed } = setup();
+  await seed();
+  const f = loadFixtures();
+  assert.equal(f.masterFrom, "VIC-MP-001");
+  const beaumaris = f.pharmacies.find((p) => p.storeCode === "VIC-MP-001");
+  for (const p of await svc.listPromotions()) {
+    assert.deepEqual(p.master, beaumaris.content[p.promoId], `${p.promoId} master is Beaumaris's`);
+    for (const code of CODES) {
+      const screen = await svc.getScreenConfig(code);
+      assert.deepEqual(screen.promotions[p.promoId].content, beaumaris.content[p.promoId], `${code} plays the master's ${p.promoId}`);
+    }
+  }
+  // Branding stays each pharmacy's own.
+  const ringwood = await svc.getScreenConfig("VIC-MP-002");
+  assert.equal(ringwood.name, "North Ringwood Family Pharmacy");
+  assert.deepEqual(ringwood.colours, { primary: "#035c2f", accent: "#f39a4a" });
+
+  // A seeded promotion with no master yet (a store seeded before the master existed) gets it on a re-run; an edited
+  // master is kept without --reset and put back with it.
+  const actor = { uid: "u-admin", email: null };
+  await svc.updatePromotion(actor, ids.promotion("closed"), { master: null });
+  await svc.updatePromotion(actor, ids.promotion("morning"), { master: { ...beaumaris.content.morning, introTitle: "Edited master" } });
+  const report = await seed();
+  assert.deepEqual(report.promotions.updated, ["closed"]);
+  assert.deepEqual((await svc.getPromotion(ids.promotion("closed"))).master, beaumaris.content.closed);
+  assert.equal((await svc.getPromotion(ids.promotion("morning"))).master.introTitle, "Edited master");
+  const reset = await seed({ reset: true });
+  assert.deepEqual(reset.promotions.updated, ["morning"]);
+  assert.deepEqual((await svc.getPromotion(ids.promotion("morning"))).master, beaumaris.content.morning);
+  const after = store.dump();
+  await seed();
+  assert.deepEqual(store.dump(), after);
+});

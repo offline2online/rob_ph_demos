@@ -1,5 +1,6 @@
 {
-  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js. Occasions plays the occasion its template names (Christmas when seeded); the admin editor's Occasion drop-down changes it.",
+  "_doc": "Default promotions (requirement 9). templateId is a built-in from config-api/src/builtins.js. Occasions plays the occasion its template names (Christmas when seeded); the admin editor's Occasion drop-down changes it. masterFrom is the store code of the pharmacy whose fixture content is the promotion's master template, which every pharmacy inherits (requirement 23).",
+  "masterFrom": "VIC-MP-001",
   "promotions": [
     {
       "key": "morning",

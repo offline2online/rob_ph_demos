@@ -113,7 +113,8 @@ Check it: `curl https://<site>/api/health` answers `{"ok":true}`, and the Screen
 3. **API token**: paste the PH API key and **Save**. The field is write-only: afterwards it shows only that a
    token is set and its last 4 characters, with **Replace** and **Remove**. It is stored KMS-envelope-encrypted
    and decrypted only inside `PhApi`.
-4. Check it: Settings → look up a device ID; the store record from the Location API appears (read-only).
+4. Check it: open the campaign URL for a registered device with `&debug=1` added; the debug panel shows that
+   device's store from the Location API.
 
 Never put the token in an environment variable, a file, a ticket or the front end.
 
@@ -122,7 +123,7 @@ Never put the token in an environment variable, a file, a ticket or the front en
 1. Create the new key in Personalisation Hub.
 2. Admin → Settings → **Replace** → paste it → Save. Every proxy instance uses it within 15 s; screens need
    nothing (they never hold the token). The audit log records the change with the last 4 characters only.
-3. Revoke the old key in PH once a screen has loaded with the new one (the Settings device lookup is a quick check).
+3. Revoke the old key in PH once a screen has loaded with the new one (a campaign URL with `&debug=1` is a quick check).
 
 The KMS key rotates itself every 90 days; nothing to do.
 
@@ -149,7 +150,9 @@ The KMS key rotates itself every 90 days; nothing to do.
 
 ## Upgrade
 
-1. Get the new release (a tag, or the Shared Drive zip) and read [../CHANGELOG.md](../CHANGELOG.md).
+1. Get the new release (a tag, or the Shared Drive zip: check it with its `.sha256`, see
+   [RELEASING.md](RELEASING.md) → "Check a package") and read its `RELEASE-NOTES.md` and
+   [../CHANGELOG.md](../CHANGELOG.md).
 2. From its folder, run the same command with the same options:
    `npm run deploy:aws -- --region <region> [the options you installed with]`. CloudFormation updates in place;
    data in DynamoDB and S3 is kept.

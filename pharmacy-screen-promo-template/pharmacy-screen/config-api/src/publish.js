@@ -9,6 +9,7 @@
 // view could not carry it even if it did.
 
 const { BUILTIN_BY_ID, builtInFor } = require("./builtins");
+const { effectiveContent } = require("./inherit");
 
 const PUBLISHED_SCHEMA_VERSION = 1;
 
@@ -40,13 +41,17 @@ function resolveTemplate(templateId, templatesById) {
 function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
   const templatesById = new Map(templates.map((t) => [t.id, t]));
   const content = pharmacy.content || {};
+  const detached = pharmacy.detached || {};
   const promos = {};
   for (const p of [...promotions].sort((a, b) => a.promoId.localeCompare(b.promoId))) {
     promos[p.promoId] = {
       promoId: p.promoId,
       name: p.name,
       template: resolveTemplate(p.templateId, templatesById),
-      content: content[p.id] || {},
+      // The master template's sections, except those this pharmacy manages
+      // itself (src/inherit.js); the pharmacy's own content when the
+      // promotion has no master.
+      content: effectiveContent(p.master, content[p.id], detached[p.id]),
     };
   }
   return {

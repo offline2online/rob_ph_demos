@@ -37,6 +37,7 @@ h1{font-size:20px;font-weight:700;margin:0}
   .toolbar #resetBtn,.toolbar #setBtn[aria-pressed=false],#pmHtml{padding:4px 8px}}
 .toolbar.inSettings>:not(#setBtn){display:none!important}
 .toolbar.inSettings #setBtn{order:-1}
+.toolbar.phbar{margin-bottom:0}
 #setBtn[aria-pressed=true]{background:var(--primary-tint);border-color:var(--primary);color:var(--primary)}
 .card{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:16px;display:grid;gap:12px;min-width:0}
 .card+.card{margin-top:16px}
@@ -88,9 +89,6 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 .infowrap .ms:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
 .infotip{position:absolute;right:0;bottom:calc(100% + 8px);z-index:15;width:max-content;max-width:min(280px,80vw);background:rgba(0,0,0,.85);color:#fff;border-radius:6px;padding:6px 8px;font:14px/1.5714 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;white-space:normal;overflow-wrap:break-word;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .15s,transform .15s}
 .infowrap:hover .infotip,#pbInfo:focus-visible+.infotip{opacity:1;transform:none}
-.apicall{font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;background:var(--panel);border:1px solid var(--divider);border-radius:6px;padding:8px 10px;overflow-x:auto}
-.apicall span{color:var(--muted)}
-code.kp{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin-left:4px}
 .meta-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);gap:10px 12px;align-items:end}
 @container edcol (max-width:700px){.meta-row{grid-template-columns:minmax(0,.9fr) minmax(0,.8fr) minmax(0,1.7fr)}}
 @container (max-width:480px){.meta-row{grid-template-columns:minmax(0,1fr)}}
@@ -158,8 +156,6 @@ button:disabled{opacity:.35;cursor:default}
 .slot-h .ic{width:28px;height:28px;border-radius:6px;display:grid;place-items:center;color:#fff}
 .slot-h .ic .ms{font-variation-settings:'FILL' 1;font-size:18px}
 .hint{font-size:12px;color:var(--muted)}
-.hours{display:grid;grid-template-columns:90px minmax(0,1fr) minmax(0,1fr) 70px;gap:6px 8px;align-items:center}
-.hours .d{font-size:13px}
 .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text)}
 .chk input{width:auto;min-height:0}
 .urlbox{display:flex;gap:8px}
@@ -172,11 +168,14 @@ details summary{cursor:pointer;color:var(--primary)}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:9999px;padding:2px 10px;font-size:12px;background:var(--panel);border:1px solid var(--divider)}
 .dot{width:8px;height:8px;border-radius:50%}
 /* preview column */
-.pv{position:sticky;top:12px;display:grid;gap:10px;min-width:0;container:pv/inline-size}
+/* the preview scrolls up with the page until the Portrait/Landscape tabs reach the very top, then stays there; the
+   stage is sized to the visible height (dvh: on a tablet, 100vh counts the space under the browser bars, which cut
+   the bottom of the preview off), leaving 190px for the tabs, scene bar, controls and Copy URL row below it */
+.pv{position:sticky;top:0;display:grid;gap:10px;min-width:0;container:pv/inline-size}
 .pv>.card{padding:12px;gap:8px}
 .wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,46cqi))}
 .isLand .stage{height:auto!important;width:100%!important;aspect-ratio:16/9!important;min-height:0!important}
-.stage{height:min(calc(100vh - 250px),760px);min-height:380px;width:auto;justify-self:center;aspect-ratio:1080/1920;max-width:100%;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);background:#000}
+.stage{height:min(calc(100vh - 190px),760px);height:min(calc(100dvh - 190px),760px);min-height:240px;width:auto;justify-self:center;aspect-ratio:1080/1920;max-width:100%;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);background:#000}
 .stage>.screen{position:absolute;left:0;top:0;transform-origin:0 0}
 .controls{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
 .controls>button{flex:none;white-space:nowrap}
@@ -199,7 +198,7 @@ details summary{cursor:pointer;color:var(--primary)}
 .status{display:flex;gap:8px;flex-wrap:wrap}
 
 
-/* ---- build additions (not in the prototype): sign-in gate, save status, device lookup, read-only hours ---- */
+/* ---- build additions (not in the prototype): sign-in gate, save status ---- */
 .titlebar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .savest{font-size:12px}
 .savest.err{color:var(--err);border-color:var(--err)}
@@ -209,14 +208,24 @@ details summary{cursor:pointer;color:var(--primary)}
 .gate-card{width:min(420px,100%)}
 .help{color:var(--muted);cursor:help;font-size:16px}
 .hint.err{color:var(--err)}
-.lookup{display:flex;gap:8px;align-items:end;flex-wrap:wrap}
-.hours.ro{grid-template-columns:110px minmax(0,1fr)}
-.hours.ro span{font-size:13px;font-variant-numeric:tabular-nums}
-.hours.ro .off{color:var(--muted)}
-.ro-val{font:14px var(--ui);color:var(--text);background:var(--panel);border:1px solid var(--divider);border-radius:6px;padding:5px 10px;min-height:32px;overflow-wrap:anywhere}
-.ro-val:empty::before{content:"—";color:var(--muted)}
 .dlg-err{padding:0 16px 10px}
 [hidden]{display:none!important}
 .stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 250px,760px) * .5625))}
 div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 @container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}
+/* Master template (requirement 23): each section of a pharmacy's promotion says whether it is inherited from the
+   master template (read-only here) or managed separately, with the action to switch. Outlined pill, text button,
+   light alert (ph-designer components). */
+.inh{display:grid;gap:6px}
+.inh-bar{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:nowrap}
+.inh-pill{background:transparent;border-color:var(--border);color:var(--muted);white-space:nowrap}
+.inh-pill .ms{font-size:16px}
+.inh.own .inh-pill{border-color:var(--primary);color:var(--primary)}
+.inh-bar .inh-act{margin-left:auto;min-height:28px;padding:0 6px;white-space:nowrap}
+.inh-ro{opacity:.6}
+.inh-alert{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--primary-tint);border:1px solid var(--primary);border-radius:6px;padding:8px 10px;font-size:14px}
+.inh-alert>.ms{color:var(--primary)}
+.inh-alert>span:not(.ms){flex:1;min-width:180px}
+.inh-alert.warn{background:rgba(250,173,20,.10);border-color:var(--warn)}
+.inh-alert.warn>.ms{color:var(--warn)}
+.inh-alert select{width:auto}

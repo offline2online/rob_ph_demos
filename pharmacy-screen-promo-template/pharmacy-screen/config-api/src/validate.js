@@ -17,6 +17,7 @@ class ApiError extends Error {
 }
 
 const bad = (message, details) => new ApiError(400, "invalid-request", message, details);
+const { SECTION_IDS } = require("./inherit");
 
 const STORE_CODE_RE = /^[A-Z0-9][A-Z0-9-]{1,31}$/;
 const PROMO_ID_RE = /^[a-z0-9][a-z0-9-]{0,39}$/;
@@ -149,28 +150,55 @@ function normalisePharmacy(input, stored = {}) {
   const content = merged.content === undefined ? {} : merged.content;
   if (!isPlainObject(content)) throw bad("content must be an object keyed by promotion id");
   const cleanContent = {};
-  for (const [promotionId, value] of Object.entries(content)) {
-    if (!isPlainObject(value)) throw bad(`content.${promotionId} must be an object`);
-    const clean = safeJson(value, `content.${promotionId}`);
-    if (JSON.stringify(clean).length > LIMITS.content) throw bad(`content.${promotionId} is larger than ${LIMITS.content / 1024} KB`);
-    cleanContent[promotionId] = clean;
-  }
+  for (const [promotionId, value] of Object.entries(content)) cleanContent[promotionId] = contentValue(value, `content.${promotionId}`);
+  const detached = normaliseDetached(merged.detached);
   return {
     storeCode: normaliseStoreCode(merged.storeCode),
     name: str(merged.name, "name"),
     colours: { primary: colour(coloursIn.primary, "colours.primary"), accent: colour(coloursIn.accent, "colours.accent") },
     logo: keepMedia(stored.logo),
     content: cleanContent,
+    // Only when the pharmacy manages a section itself, so a record that
+    // inherits everything keeps its earlier shape.
+    ...(Object.keys(detached).length ? { detached } : {}),
   };
+}
+
+// One promotion's content (a pharmacy's, or a promotion's master template).
+function contentValue(value, field) {
+  if (!isPlainObject(value)) throw bad(`${field} must be an object`);
+  const clean = safeJson(value, field);
+  if (JSON.stringify(clean).length > LIMITS.content) throw bad(`${field} is larger than ${LIMITS.content / 1024} KB`);
+  return clean;
+}
+
+// {<promotion record id>: [section id, …]}: the master template sections a
+// pharmacy manages itself (src/inherit.js). Empty lists are dropped.
+function normaliseDetached(value) {
+  if (value === undefined || value === null) return {};
+  if (!isPlainObject(value)) throw bad("detached must be an object keyed by promotion id");
+  const out = {};
+  for (const [promotionId, list] of Object.entries(value)) {
+    if (promotionId === "__proto__" || promotionId === "constructor" || promotionId === "prototype") throw bad(`detached has a reserved key "${promotionId}"`);
+    if (!Array.isArray(list)) throw bad(`detached.${promotionId} must be an array of section ids`);
+    for (const s of list) if (!SECTION_IDS.includes(s)) throw bad(`detached.${promotionId} holds an unknown section "${s}" (one of ${SECTION_IDS.join(", ")})`);
+    const clean = SECTION_IDS.filter((s) => list.includes(s));
+    if (clean.length) out[promotionId] = clean;
+  }
+  return out;
 }
 
 function normalisePromotion(input, stored = {}) {
   if (!isPlainObject(input)) throw bad("Request body must be a JSON object");
   const merged = { ...stored, ...input };
+  const master = merged.master === undefined || merged.master === null ? null : contentValue(merged.master, "master");
   return {
     name: str(merged.name, "name"),
     promoId: normalisePromoId(merged.promoId),
     templateId: str(merged.templateId, "templateId", { max: 80 }),
+    // The master template's content for this promotion (src/inherit.js);
+    // left out until one is saved.
+    ...(master ? { master } : {}),
   };
 }
 

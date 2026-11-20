@@ -157,3 +157,40 @@ test('occasions: the Occasion drop-down is the promotion template, content keeps
   const cfg = M.renderConfig({ pharmacies: [], promotions: [{ id: 'p-o', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-valentines-day' }], templates: [] });
   assert.equal(cfg.promotions[0].template, 't_occ_valentines-day');
 });
+
+test('master template: the editor and the config API share one section map and resolve content the same way', async () => {
+  const { createRequire } = await import('node:module');
+  const inherit = createRequire(import.meta.url)('../config-api/src/inherit.js');
+  assert.deepEqual(M.MASTER_SECTIONS, inherit.SECTIONS);
+  for (const base of ['scenes', 'hours', 'occasion']) for (const sec of M.sectionsForBase(base)) assert.ok(M.SECTION_NAMES[sec] && M.MASTER_SECTIONS[sec], sec);
+  const master = M.newContentFor({ promoId: 'morning' }, 'scenes');
+  const own = M.clone(master);
+  own.introTitle = 'Own'; own.slots = [own.slots[0]]; own.extra = 1;
+  for (const det of [[], ['greeting'], ['greeting', 'slots'], ['footer']]) {
+    assert.deepEqual(M.effectiveContent(master, own, det), inherit.effectiveContent(master, own, det), det.join(','));
+  }
+  assert.equal(M.effectiveContent(master, own, []).introTitle, master.introTitle);
+  assert.equal(M.effectiveContent(master, own, ['greeting']).introTitle, 'Own');
+  assert.equal(M.effectiveContent(master, own, ['greeting']).slots.length, 3);
+  assert.equal(M.effectiveContent(master, own, []).extra, 1, 'a field in no section stays the pharmacy\'s');
+  assert.deepEqual(M.effectiveContent(null, own, []), own, 'no master: the pharmacy\'s own content');
+});
+
+test('master template: detaching, re-inheriting, syncing and a new pharmacy starting from the master', () => {
+  const ph = { detached: { a: ['slots'] } };
+  assert.deepEqual(M.setDetached(ph, 'a', 'greeting', true), { a: ['greeting', 'slots'] });
+  assert.deepEqual(M.setDetached(ph, 'a', 'slots', false), {});
+  assert.deepEqual(ph.detached, { a: ['slots'] }, 'returns a new object');
+  assert.deepEqual(M.detachedOf(ph, 'a'), ['slots']);
+  assert.deepEqual(M.detachedOf({}, 'a'), []);
+  const master = { greeting: 'M', introTitle: 'MT', slots: [{ label: 'M' }], footer: { show: false } };
+  const c = { greeting: 'O', introTitle: 'OT', slots: [{ label: 'O' }], close: { title: 'O' } };
+  const same = M.syncInherited(c, master, ['slots']);
+  assert.equal(same, c, 'in place');
+  assert.deepEqual([c.greeting, c.introTitle, c.slots[0].label, c.footer.show, c.close], ['M', 'MT', 'O', false, undefined]);
+  assert.notEqual(c.footer, master.footer, 'copies, never shares the master');
+  const fresh = M.newContentFor({ promoId: 'morning', master: { ...master, close: { title: 'MC' } } }, 'scenes');
+  assert.equal(fresh.greeting, 'M');
+  assert.equal(fresh.close.title, 'MC');
+  assert.equal(M.newPharmacyContent([{ id: 'p', promoId: 'x', templateId: M.BUILTIN_SCENES, master: { greeting: 'G', slots: [], close: { title: 't' } } }], templates).p.greeting, 'G');
+});

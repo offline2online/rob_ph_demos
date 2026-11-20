@@ -11,15 +11,18 @@ Spec: the project's requirements 7 and 9-19.
 
 | Area | What | Saved through |
 |---|---|---|
-| Toolbar | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
-| Pharmacy details | Name, store code (unique, checked as you type and again by the API) | `PATCH /api/admin/pharmacies/{id}` |
-| Branding | Primary and accent colours; logo (transparent PNG) upload, replace, remove | `PATCH …/{id}`, `PUT/DELETE …/{id}/logo` |
+| Toolbar | **Promo preview** drop-down (the pharmacy whose content is edited and previewed, or the **Master template** first; otherwise the same list as Settings → Pharmacies) and the Settings / Back to promotions toggle | `GET /api/admin/pharmacies/{id}` |
+| Master template | First entry of Promo preview: each promotion's default content, edited like a pharmacy's (no details or branding; preview in the default colours). A promotion with no master yet starts from a pharmacy's content (picked in the notice) until edited or **Save as master** | `PATCH /api/admin/promotions/{id}` (`master`) |
+| Inheritance (on a pharmacy) | For a promotion with a master, each section (greeting, promotion slots, walk-in close, Open today bar; headlines, address; occasion copy) shows **Inherited from master** (read-only, `inert`) or **Managed separately**. **Edit for this pharmacy** makes it the pharmacy's own and shows a message that the master no longer reaches it; **Revert to master** inherits it again. A new pharmacy starts with the masters and inherits everything | `PUT …/content/{promotionId}`, then `PATCH /api/admin/pharmacies/{id}` (`detached`) |
 | Promotions (shared by all pharmacies) | Tabs, New promotion (name, promo ID, template, including an occasion), rename, change promo ID (unique), delete (click twice) | `/api/admin/promotions` |
 | Template | Drop-down and the Edit HTML modal: built-ins read-only, Clone template, rename, delete (its promotions fall back to the built-in), portrait/landscape backgrounds, HTML with `${…}` token chips, scoped CSS, Reset to default | `/api/admin/templates` |
 | Scenes (scenes templates) | Top: Greeting, one scene per service (rich-text headline, accent line, chip label, searchable Material Symbols icon, line 1, line 2), per-scene duration, drag-and-drop and up/down reorder, delete, Add promotion from the whole service library (searchable, grouped; Close adds nothing) or blank, a just-added promotion deleted with one click, Tail: Walk-in close, Footer: Open today bar (show toggle and four messages with `${CloseTime}` / `${OpenTime}`) | `PUT /api/admin/pharmacies/{id}/content/{promotionId}` |
 | Opening hours (hours templates) | Three rich-text headlines, show address toggle | the same |
 | Occasions (occasion templates) | **Occasion** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template), then that occasion's Greeting, Message and Sign-off (rich-text headline, accent line, line 1, line 2, seconds on screen) and the Open today bar. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
-| Settings | Store record read from the Location API through the proxy for a device ID (read-only, with field paths); Personalisation Hub API base URL and write-only token (Save / Replace / Remove; only its last 4 characters are ever shown) | `GET /api/device/{id}/campaign_data`, `/api/settings/ph-api` |
+| Settings → Pharmacies | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
+| Settings → Pharmacy details | Name, store code (unique, checked as you type and again by the API) | `PATCH /api/admin/pharmacies/{id}` |
+| Settings → Branding | Primary and accent colours; logo (transparent PNG) upload, replace, remove | `PATCH …/{id}`, `PUT/DELETE …/{id}/logo` |
+| Settings → Personalisation Hub API | API base URL and write-only token (Save / Replace / Remove; only its last 4 characters are ever shown) | `/api/settings/ph-api` |
 
 Edits save as you type (debounced, about half a second), with "Saving… / All changes saved" beside the title.
 Every write carries the record's version (`If-Match`), so an edit made on top of another admin's newer save
@@ -51,6 +54,10 @@ adjusts as soon as the menu changes, with no reload:
   for screen readers); the pharmacy picker, the promo URL pill and the preview's store-data pill shorten with an
   ellipsis instead of pushing controls onto a new row.
 - Nothing is `position: fixed`.
+- The preview scrolls up with the page until its Portrait/Landscape tabs reach the very top of the frame, then
+  stays there (`position: sticky; top: 0`) while the editor scrolls on. The preview screen is sized to the visible
+  height (`100dvh`, falling back to `100vh`) less 190px for the scene bar, controls and Copy URL row, so the whole
+  preview fits on a tablet with its browser bars showing.
 
 `test/editor.e2e.mjs` checks this inside a stand-in PH shell (256px menu expanded, 70px collapsed) at 1280, 1440
 and 1920px windows, toggling the menu back and forth with six extra promotions.
