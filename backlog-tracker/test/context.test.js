@@ -70,7 +70,7 @@ const ts = (msv) => ({ toMillis: () => msv, toDate: () => new Date(msv), _ts: tr
 const ago = (days) => ts(NOW - days * DAY);
 const col = (n) => env.store.col(n);
 const P_DSP = "p-dsp", P_BT = "p-bt", P_OLD = "p-old";
-const SOURCE_COLLECTIONS = ["backlogItems", "kanbanTasks", "projects", "concepts", "conceptCritiques", "faqArticles", "leads", "prospects", "supportTickets", "projectDocs", "interfaces", "skills"];
+const SOURCE_COLLECTIONS = ["backlogItems", "kanbanTasks", "projects", "concepts", "conceptCritiques", "faqArticles", "leads", "prospects", "supportTickets", "projectDocs", "interfaces", "skills", "docArticles", "docCategories"];
 const item = (id, projectId, title, status, updatedDays, extra) => col("backlogItems").set(id, Object.assign({
   projectId, title, desc: `${title}. Described here.`, type: "feature", category: "HQ Admin", status, createdAt: ago(updatedDays + 20), updatedAt: ago(updatedDays), notes: [],
 }, extra || {}));
@@ -116,6 +116,23 @@ function seed() {
   col("supportTickets/t1/messages").set("m2", { direction: "event", text: "Triaged as a bug", at: ago(2) });
   col("supportTickets").set("t-spam", { key: "SUP-2", subject: "You won an exchange prize", status: "spam", createdAt: ago(1), updatedAt: ago(1) });
 
+  // Support › Documentation: sections, a current folder, the Archive, and
+  // documents migrated from Confluence (bodyMd is the editor's HTML).
+  col("docCategories").set("sec-feature-specifications", { name: "Feature Specifications", parentId: null, order: 2 });
+  col("docCategories").set("sec-feature-specifications--integrations", { name: "Integrations", parentId: "sec-feature-specifications", order: 0 });
+  col("docCategories").set("sec-feature-specifications--integrations--mist", { name: "MIST", parentId: "sec-feature-specifications--integrations", order: 0 });
+  col("docCategories").set("sec-archive", { name: "Archive", parentId: null, order: 9 });
+  col("docCategories").set("sec-archive--release-2-2019", { name: "Release 2 (2019)", parentId: "sec-archive", order: 0 });
+  const cf = (pageId, extra) => Object.assign({ status: "published", docType: "reference", keywords: [], summary: "", needsReview: false, projectId: null, order: 0, createdAt: ago(1), updatedAt: ago(1),
+    source: { system: "confluence", pageId, space: "Personalisation Hub (OPTUS)", path: "Personalisation Hub Platform › Tech Documentation", lastUpdated: "2025-09-18", archived: false, url: `https://wiki.example/pages/viewpage.action?pageId=${pageId}` } }, extra);
+  col("docArticles").set("cf-268075017", cf("268075017", { title: "MIST", slug: "mist", categoryId: "sec-feature-specifications--integrations--mist",
+    bodyMd: "<p><img src=\"https://storage.example/o/docAssets%2Fcf-268075017%2Fmist.png?token=zz9secrettoken\" alt=\"mist-integration.png\"></p><h2>Overview</h2><p>Juniper access points report each visitor's location.</p><h2>Geofencing</h2><p>A geofence around each store fires the welcome trigger.</p>" }));
+  col("docArticles").set("cf-274890768", cf("274890768", { title: "Webhook service", slug: "webhook-service", categoryId: "sec-feature-specifications--integrations--mist", order: 1,
+    bodyMd: "<p>Receives the location events and forwards them to the visitor feed.</p>" }));
+  col("docArticles").set("cf-258703415", cf("258703415", { title: "[Phase 2] MIST Webhook", slug: "phase-2-mist-webhook", categoryId: "sec-archive--release-2-2019",
+    bodyMd: "<p>The 2019 MIST webhook plan.</p>", source: { system: "confluence", pageId: "258703415", archived: true } }));
+  col("docArticles").set("doc-draft", { title: "Draft about MIST tuning", slug: "mist-tuning", categoryId: "sec-feature-specifications--integrations--mist", status: "draft", bodyMd: "<p>Not finished.</p>", createdAt: ago(1), updatedAt: ago(1) });
+
   col("skills").set("s1", { name: "PH Designer", slug: "ph-designer", summary: "The design system.", version: "1.0", files: [{ path: "SKILL.md", content: "# PH Designer\n\nUse Material Symbols and Roboto." }], updatedAt: ago(50) });
 }
 
@@ -127,7 +144,7 @@ function seed() {
   // ── The index ──────────────────────────────────────────────────────────
   await test("the backfill indexes every source once, and running it again writes nothing", async () => {
     const first = await ctx.backfill();
-    for (const s of ["ticket", "kanban", "project", "concept", "critique", "faq", "lead", "prospect", "support", "document", "skill"]) assert.ok(first.report[s] && first.report[s].written >= 1, `${s} was indexed (${JSON.stringify(first.report[s])})`);
+    for (const s of ["ticket", "kanban", "project", "concept", "critique", "faq", "lead", "prospect", "support", "document", "documentation", "skill"]) assert.ok(first.report[s] && first.report[s].written >= 1, `${s} was indexed (${JSON.stringify(first.report[s])})`);
     assert.strictEqual(first.report.ticket.records, 7);
     assert.strictEqual(first.report.document.written, 4, "requirements, README, a board document and an interface");
     const again = await ctx.backfill();
@@ -567,6 +584,81 @@ function seed() {
   });
 
   // ── Aidan's open tickets ───────────────────────────────────────────────
+  // ── Documentation library (Support › Documentation, from Confluence) ────
+  await test("documentation library: migrated Confluence pages are searched, read over MCP and from Code Mode, and in topic packs, on the same index and caches", async () => {
+    // search_console: the page by its title, a page by the folder it sits in, a word under a heading.
+    const r = await search(kit, { query: "MIST" });
+    const docs = r.hits.filter((h) => h.source === "documentation");
+    assert.deepStrictEqual(docs.map((h) => h.id).sort(), ["cf-268075017", "cf-274890768"], "the MIST page and the page in the MIST folder; Archive and drafts hidden by default");
+    assert.strictEqual(docs.find((h) => h.id === "cf-268075017").url, "https://console.example/#doc/cf-268075017");
+    assert.ok(r.sourcesSearched.includes("documentation") && r.sourcesHit.documentation === 2);
+    const geo = await search(kit, { query: "geofence welcome trigger", sources: ["documentation"] });
+    assert.deepStrictEqual([geo.hits[0].id, geo.hits[0].section], ["cf-268075017", "Geofencing"], "a hit names the heading it was found under");
+    assert.deepStrictEqual((await search(kit, { query: "MIST webhook", sources: ["documentation"], includeArchived: true })).hits.map((h) => h.id).includes("cf-258703415"), true, "Archive is reached with includeArchived");
+    assert.strictEqual((await search(kit, { query: "zz9secrettoken" })).matched, 0, "a Storage URL's token is not indexed");
+    // The same cache as every other source: the repeat is served hot, and no source collection is read.
+    env.store.reads.clear();
+    assert.strictEqual((await search(kit, { query: "MIST" })).cache, "hot");
+    for (const c of ["docArticles", "docCategories"]) assert.ok(!env.store.reads.get(c), `${c} was not read by a search`);
+
+    // get_documentation: the whole page as Markdown, a section, by slug; and what it is.
+    const full = await tool(kit, "get_documentation", { docId: "cf-268075017" });
+    assert.ok(!full.isError, full.text);
+    assert.deepStrictEqual([full.json.title, full.json.location, full.json.archived, full.json.origin.pageId, full.json.origin.system], ["MIST", "Feature Specifications › Integrations › MIST", false, "268075017", "confluence"]);
+    assert.ok(/## Geofencing/.test(full.json.content) && /!\[mist-integration\.png\]\(https:\/\/storage\.example/.test(full.json.content), "Markdown, images kept for a reader");
+    assert.deepStrictEqual(full.json.outline.map((h) => h.heading), ["Overview", "Geofencing"]);
+    const sec = await tool(kit, "get_documentation", { slug: "mist", section: "geofencing" });
+    assert.ok(!sec.isError && /^## Geofencing/.test(sec.json.content) && !/Juniper/.test(sec.json.content), sec.text);
+    const none = await tool(kit, "get_documentation", { docId: "cf-0" });
+    assert.ok(none.isError && /No document with that id/.test(none.text));
+
+    // list_documentation: the sections with counts, one folder, Archive on request.
+    const all = await tool(kit, "list_documentation", {});
+    assert.ok(!all.isError, all.text);
+    assert.deepStrictEqual(all.json.documents.map((d) => d.id), ["cf-268075017", "cf-274890768"]);
+    assert.strictEqual(all.json.sections.find((c) => c.id === "sec-feature-specifications--integrations--mist").documents, 3);
+    const archive = await tool(kit, "list_documentation", { categoryId: "sec-archive", includeArchived: true });
+    assert.deepStrictEqual([archive.json.documents.map((d) => d.id), archive.json.documents[0].location], [["cf-258703415"], "Archive › Release 2 (2019)"]);
+
+    // get_topic_context includes them.
+    ctx._hot.clear();
+    const pack = await topic(kit, { topic: "MIST", refresh: true });
+    assert.ok(pack.records.documentation && pack.records.documentation.shown.some((x) => x.id === "cf-268075017"), JSON.stringify(pack.records).slice(0, 400));
+
+    // Code Mode: search, list and read the same page from a script.
+    for (const n of ["list_documentation", "get_documentation"]) assert.ok(codeMode.SCRIPT_TOOL_NAMES.includes(n), `${n} is a script tool`);
+    const run = await tool(kit, "run_script", { code: `
+      const hit = (await tools.search_console({ query: "MIST", sources: ["documentation"], limit: 5 })).hits[0];
+      const doc = await tools.get_documentation({ docId: hit.id, section: "Overview" });
+      const list = await tools.list_documentation({ categoryId: "sec-feature-specifications--integrations--mist" });
+      return { id: hit.id, overview: doc.content.split("\\n")[2], titles: list.documents.map((d) => d.title) };` });
+    assert.ok(!run.isError, run.text);
+    assert.deepStrictEqual(run.json.result, { id: "cf-268075017", overview: "Juniper access points report each visitor's location.", titles: ["MIST", "Webhook service"] });
+  });
+
+  await test("documentation library: a new or edited page is indexed by its trigger, and renaming a folder re-indexes the pages under it", async () => {
+    const t = trigger("contextIndexDocArticle");
+    const page = { title: "Access point inventory", slug: "ap-inventory", categoryId: "sec-feature-specifications--integrations--mist", status: "published", docType: "reference", bodyMd: "<p>Every okapi access point by store.</p>", createdAt: ago(0), updatedAt: ago(0) };
+    col("docArticles").set("doc-new", page);
+    assert.strictEqual((await t.run({ id: "doc-new" }, null, page)).changed, true);
+    assert.deepStrictEqual((await search(kit, { query: "okapi" })).hits.map((h) => [h.source, h.id]), [["documentation", "doc-new"]]);
+    // Renaming the folder: the page is found by the new name.
+    const before = col("docCategories").get("sec-feature-specifications--integrations--mist");
+    const after = Object.assign({}, before, { name: "Juniper Mist Cloud" });
+    col("docCategories").set("sec-feature-specifications--integrations--mist", after);
+    assert.strictEqual((await trigger("contextIndexDocCategory").run({ id: "sec-feature-specifications--integrations--mist" }, before, after)).changed, true);
+    const renamed = await search(kit, { query: "Juniper Mist Cloud okapi" });
+    assert.strictEqual(renamed.hits[0].id, "doc-new");
+    assert.strictEqual(env.store.col("searchIndex").get("documentation:doc-new").meta.location, "Feature Specifications › Integrations › Juniper Mist Cloud");
+    // An unchanged write of the section costs nothing; deleting the page removes it.
+    assert.strictEqual((await trigger("contextIndexDocCategory").run({ id: "sec-feature-specifications--integrations--mist" }, after, Object.assign({}, after, { order: 5 }))).changed, false);
+    col("docCategories").set("sec-feature-specifications--integrations--mist", before);
+    await trigger("contextIndexDocCategory").run({ id: "sec-feature-specifications--integrations--mist" }, after, before);
+    col("docArticles").delete("doc-new");
+    assert.strictEqual((await t.run({ id: "doc-new" }, page, null)).changed, true);
+    assert.strictEqual((await search(kit, { query: "okapi" })).matched, 0);
+  });
+
   await test("open tickets of one project come from an indexed query on the index, not from reading every ticket of the project", async () => {
     const imp = mcp.aidanImprovements();
     col("backlogItems").set("i-gap", { projectId: P_BT, title: "Aidan: answer release questions", desc: "x", status: "backlog", type: "feature", aidanImprovementKey: "k1", aidanImprovement: { category: "missing-data", gap: "No release data." }, createdAt: ago(1), updatedAt: ago(1), notes: [] });
