@@ -96,12 +96,12 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
       else files.push(relative(join(out, "public"), p).split("\\").join("/"));
     }
   })(join(out, "public"));
-  for (const want of ["pharmacy-screen.html", "admin/index.html", "admin/config.js", "admin/css/admin.css", "admin/js/editor.js", "admin/js/auth.js",
+  for (const want of ["pharmacy-screen.html", "sw.js", "admin/index.html", "admin/config.js", "admin/css/admin.css", "admin/js/editor.js", "admin/js/auth.js",
     "css/screen.css", "js/player.js", "fixtures/campaign-data.json", "seed/fixtures/pharmacies.json"]) {
     assert.ok(files.includes(want), `${want} is published`);
   }
   for (const f of files) {
-    assert.match(f, /^(pharmacy-screen\.html|(css|js|fixtures)\/[^/]+|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
+    assert.match(f, /^(pharmacy-screen\.html|sw\.js|(css|js|fixtures)\/[^/]+|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
     assert.ok(!f.split("/").some((seg) => seg.startsWith(".") || ["test", "tools", "node_modules"].includes(seg)), `${f} must not be published`);
     assert.doesNotMatch(f, /(^|\/)(package(-lock)?\.json|README\.md)$/, `${f} must not be published`);
   }

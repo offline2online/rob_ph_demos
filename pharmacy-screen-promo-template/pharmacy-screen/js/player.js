@@ -32,6 +32,30 @@ const params = {
 // An unswapped ${UniqueDeviceID} is not a device ID.
 if (params.device.includes('${')) params.device = '';
 
+// Keep the screen on the device (sw.js): it starts from the device's copy, even with no network, and downloads the
+// page, scripts, fonts and icons again only after a deploy changed them. How often the player asks whether one did
+// (a request for sw.js, answered 304 while nothing changed); the browser also asks on every page load.
+const UPDATE_CHECK_MS = 30 * 60 * 1000;
+function keepOnDevice() {
+  if (!('serviceWorker' in navigator)) return;
+  // Off on a local server unless sw=1 (the tests route requests a service worker would hide); nosw=1 turns it off.
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (flag('nosw') || (local && !flag('sw'))) return;
+  // A new version takes over the page: reload once so it runs the new code. Not when the first install takes over
+  // an uncontrolled page, which already runs the current code.
+  let controlled = !!navigator.serviceWorker.controller, reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!controlled) { controlled = true; return; }
+    if (reloading) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('sw.js', { scope: './pharmacy-screen.html' })
+    .then((reg) => setInterval(() => reg.update().catch(() => {}), UPDATE_CHECK_MS))
+    .catch(() => {}); // no service worker (an old player, a blocked one): the screen still plays, only uncached
+}
+keepOnDevice();
+
 const stage = document.getElementById('stage');
 const el = document.getElementById('screen');
 const meta = document.querySelector('meta[name="pharmacy-screen-api"]');

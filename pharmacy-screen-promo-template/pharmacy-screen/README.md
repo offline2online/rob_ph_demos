@@ -38,6 +38,27 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 | Every server fails but data is cached | The last good screen, unchanged (the debug panel shows the failures) |
 | `promo=` names no promotion | "Promotion not found" |
 
+## Kept on the device (service worker)
+
+`sw.js` keeps the screen on the player, so it starts from the device's own copy, also with no network, and downloads
+it again only after a deploy has changed it. `js/player.js` registers it for `pharmacy-screen.html` only (the admin
+editor is never touched).
+
+- **The shell** (the page, `js/`, `css/`, about 700 KB with the self-hosted fonts and icons) is downloaded once into a
+  cache named after the build and then served from it with no request. The deploy stamps `BUILD` in the published
+  `sw.js` with a hash of exactly those files (`stampServiceWorker` in `../scripts/deploy.mjs`), so a deploy that
+  changes none of them leaves `sw.js` byte-identical and the players download nothing.
+- **Updates**: the browser checks `sw.js` on every page load and the player asks again every 30 minutes (one small
+  request, 304 while nothing changed). A new build is downloaded once, takes over, the old cache is deleted and the
+  page reloads itself onto it (the last good data comes straight back from localStorage).
+- **Images** (store logos, backgrounds) are kept after their first download (up to 100). **Data** (`/api/**`) is
+  never cached by the worker: `live-data.js` polls it and keeps the last good copy in localStorage. The fixtures
+  (`mockapi=1`) are network first with the last copy as a fallback.
+- Unstamped (a local server), the shell is network first, so an edit shows on the next reload.
+- Tested by `test/ui/offline-cache.test.mjs` (second start downloads none of the shell; an unchanged deploy downloads
+  nothing; a changed stylesheet is picked up by the update check and the page reloads onto it; the screen still plays
+  with the server stopped) and `../test/offline-cache.test.mjs` (staging, stamping, the shell list).
+
 ## Run it locally
 
 ```bash
@@ -85,6 +106,7 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `now` | Testing only: the store's local time, e.g. `now=fri-18:45`, to see each "Open today" bar message. |
 | `mockapi` | Testing only: `mockapi=1` uses the fixtures instead of the proxy and the config read. |
 | `debug` | Testing only: `debug=1` shows the debug panel (device, store code, source, last fetch of store data and config, server used, store time, bar state) with a test time override (day and time, Apply / Real time). |
+| `sw` / `nosw` | `nosw=1` turns off keeping the screen on the device (below). On `localhost` it is off unless `sw=1`. |
 
 ## Modules (`js/`)
 
