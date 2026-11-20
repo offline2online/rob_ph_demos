@@ -22,6 +22,8 @@ function resolveTemplate(templateId, templatesById) {
     id: t.id,
     name: t.name,
     kind: t.kind,
+    // Occasion templates say which occasion the screen plays (js/render.js OCCASIONS).
+    ...(t.kind === "occasion" ? { occasion: t.occasion } : {}),
     builtIn: Boolean(t.builtIn),
     html: t.html || "",
     css: t.css || "",

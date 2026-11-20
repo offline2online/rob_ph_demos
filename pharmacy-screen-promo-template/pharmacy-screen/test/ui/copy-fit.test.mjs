@@ -1,4 +1,5 @@
-// Copy-fit audit as a test: every seeded pharmacy x promotion x scene, portrait and landscape, at each "Open today"
+// Copy-fit audit as a test: every seeded pharmacy x promotion x scene (every occasion of the Occasions promotion),
+// portrait and landscape, at each "Open today"
 // bar state, rendered headlessly; fails if any headline or content line leaves the brand panel or content area
 // (tools/overflow-audit.mjs, the port of the prototype's audit). A self-test proves an over-long headline fails and
 // that the failure names the scene.
@@ -33,6 +34,16 @@ test('every seeded pharmacy x promotion x scene fits, in portrait and landscape'
     for (const promo of ['morning', 'afternoon', 'closed']) {
       for (const orientation of ['portrait', 'landscape']) {
         assert.ok(r.scenes.some((s) => s.store === store && s.promo === promo && s.orientation === orientation), `${store} ${promo} ${orientation} not audited`);
+      }
+    }
+  }
+  // Occasions: every occasion, for every seeded store and orientation (and the no-suburb store), all three scenes.
+  const OCC = ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day'];
+  for (const device of [...seeded.map((c) => 'DEVICE-' + c), 'TEST-NO-SUBURB']) {
+    for (const occasion of OCC) {
+      for (const orientation of ['portrait', 'landscape']) {
+        const n = r.scenes.filter((s) => s.device === device && s.promo === 'occasions' && s.occasion === occasion && s.orientation === orientation && s.bar === 'open').length;
+        assert.equal(n, 3, `${device} occasions/${occasion} ${orientation}: ${n} scenes audited`);
       }
     }
   }

@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, OCCASION_SCENES } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 import { parseOpeningHours, weeklyRows } from '../../js/hours.js';
@@ -57,6 +57,7 @@ addEventListener('beforeunload', (e) => { if (Save.pending()) { e.preventDefault
 const promo = (id = S.dpTab) => S.promotions.find((p) => p.id === id) || S.promotions[0];
 const baseOf = (id = S.dpTab) => (promo(id) ? M.baseOfTemplate(S.templates, promo(id).templateId) : 'scenes');
 const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
+const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
 
@@ -65,7 +66,8 @@ function content(id = S.dpTab) {
   const p = promo(id);
   const all = S.cur.content || (S.cur.content = {});
   const b = baseOf(id), c = all[p.id];
-  const fits = b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
+  const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].scenes) && c.occasions[o.id].scenes.length === 3)
+    : b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
   if (!fits) all[p.id] = c ? M.ensureContent(c, b) : M.newContentFor(p, b);
   return all[p.id];
 }
@@ -121,6 +123,7 @@ const secs = (t) => (Math.round(t * 10) / 10).toFixed(1) + 's';
 function setPlaying(v) { playing = v; $('playIc').textContent = v ? 'pause' : 'play_arrow'; $('playTx').textContent = v ? 'Pause' : 'Play'; }
 
 function editorTarget(i) {
+  if (isOcc()) return document.querySelector(`#occList .slot[data-o="${i}"]`);
   if (isHours()) { const ed = $('ch' + i); return ed && ed.closest('.rtf'); }
   const s = seq()[i];
   if (!s) return null;
@@ -148,7 +151,8 @@ $('dpBody').addEventListener('focusin', (e) => {
   if (e.target.closest('.icp-pop')) return;
   let i = -1;
   const r = e.target.closest('.rtf'), sl = e.target.closest('.slot');
-  if (isHours() && r) { const ed = r.querySelector('.rt'); if (ed) i = +ed.id.slice(2); }
+  if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
+  else if (isHours() && r) { const ed = r.querySelector('.rt'); if (ed) i = +ed.id.slice(2); }
   else if (sl) { if (sl.dataset.i !== undefined) i = +sl.dataset.i + 1; else if (sl.querySelector('#dg')) i = 0; else if (sl.querySelector('#cdur')) i = content().slots.length + 1; }
   if (i < 0) return;
   if (i !== scene || playing) goScene(i, false);
@@ -163,6 +167,7 @@ function loop(now) {
   const tot = s.reduce((a, b) => a + b.t, 0), pos = s.slice(0, scene).reduce((a, b) => a + b.t, 0) + Math.min(elapsed, (s[scene] && s[scene].t) || 0);
   $('tl').querySelectorAll('.bar i').forEach((f, i) => { f.style.width = (i < scene ? 100 : i > scene ? 0 : Math.min(1, elapsed / ((s[scene] && s[scene].t) || 1)) * 100) + '%'; });
   $('tlTime').innerHTML = `<b>${secs(pos)}</b> / ${secs(tot)} · ${s.length} scenes`;
+  renderPlayback(tot);
   requestAnimationFrame(loop);
 }
 
@@ -196,6 +201,15 @@ function changed() {
 }
 
 function renderUrl() { $('cpTip').textContent = urlText(); }
+/** "Playback duration: Ns" beside Copy experience URL, and its setup tooltip (runs every frame; writes on change). */
+let pbLast = -1;
+function renderPlayback(tot) {
+  const n = M.playbackSeconds(tot);
+  if (n === pbLast) return;
+  pbLast = n;
+  $('pbSecs').textContent = `${n}s`;
+  $('pbTip').textContent = M.playbackHelp(n);
+}
 function screenPage() { return CONFIG.screenPage || new URL('../pharmacy-screen.html', location.href).href; }
 function urlText() { return M.templateUrl(screenPage(), promo() ? promo().promoId : '', orient); }
 function renderJson() {
@@ -212,6 +226,9 @@ const bindRt = (id, set) => bindRichText(id, set, changed);
 
 // icon picker: searchable Material Symbols, icon-picker.js
 
+// Promotion slots added since the page loaded: deleting one of these needs no confirmation.
+const justAdded = new WeakSet();
+
 function renderDp() {
   closePicker(); setTimeout(() => markEditor());
   renderPromoTabs(); renderPromoMeta();
@@ -225,9 +242,10 @@ function renderDp() {
     $('cAddr').onchange = (e) => { d.showAddress = e.target.checked; changed(); };
     return;
   }
+  if (isOcc()) { renderOccasion(B, d); return; }
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const F = footerConfig(d);
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
    <div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
       <span style="margin-left:auto;display:flex;gap:2px;align-items:center"><label class="dur" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="s${i}dur" min="1" max="60" step="0.5" value="${+x.dur || 2}" aria-label="Seconds on screen">s</label><button type="button" class="text mv" data-mv="-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up"><span class="ms">arrow_upward</span></button><button type="button" class="text mv" data-mv="1" ${i < d.slots.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down"><span class="ms">arrow_downward</span></button>
       <button type="button" class="text del" ${d.slots.length > 1 ? '' : 'disabled'} style="color:var(--err)" title="Delete promotion" aria-label="Delete promotion ${i + 1}"><span class="ms">delete</span><span class="delt"></span></button></span></div>
@@ -239,11 +257,11 @@ function renderDp() {
    <button type="button" id="addSlot" ${d.slots.length >= 6 ? 'disabled' : ''} style="justify-self:start" aria-expanded="false"><span class="ms">add</span>Add promotion</button>
    <div class="svcpick" id="svcPick" hidden>
      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="svcQ" placeholder="Search ${S.services.length} services" style="flex:1;min-width:180px" autocomplete="off">
-       <label class="chk"><input type="checkbox" id="svcMine" checked>Offered by ${esc(s.name || 'this pharmacy')}</label>
-       <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button></div>
+       <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button>
+       <button type="button" class="text" id="svcClose" title="Close without adding" aria-label="Close without adding"><span class="ms">close</span>Close</button></div>
      <div class="svclist" id="svcList"></div></div>
-   <div class="slot"><div class="slot-h">Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
-   <div class="slot" id="footSlot"><div class="slot-h">Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
+   <div class="slot"><div class="slot-h">Tail: Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
+   <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
      <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
      <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
   const on = (id, fn) => { $(id).oninput = (e) => { fn(e.target.value); changed(); }; };
@@ -256,18 +274,23 @@ function renderDp() {
   const reflow = () => { scene = 0; elapsed = 0; lastKey = ''; changed(); renderDp(); };
   const drawSvc = () => {
     const used = new Set(d.slots.map((x) => x.svc));
-    const groups = M.filterServices(S.services, { q: $('svcQ').value, storeCode: s.storeCode, mine: $('svcMine').checked });
-    const names = (codes) => (codes || []).map((c) => esc((S.pharmacies.find((p) => p.storeCode === c) || {}).name || c)).join(' · ');
+    // Every service in the library, whatever the pharmacy: its own service list may be out of date.
+    const groups = M.filterServices(S.services, { q: $('svcQ').value, mine: false });
     $('svcList').innerHTML = groups.length ? groups.map((g) => `<div class="svccat">${esc(g.category)}</div>` + g.services.map((v) => `<button type="button" class="svc" data-id="${esc(v.id)}" ${used.has(v.id) ? 'aria-pressed="true"' : ''}>
       <span class="ic" style="background:linear-gradient(145deg,${tileTop(s.colours.primary)},${esc(s.colours.primary)})"><span class="ms">${esc(v.icon)}</span></span>
-      <span class="svct"><b>${esc(v.headline || v.label)}</b><span>${esc(v.accent)}</span><span class="svcat">${names(v.offeredBy)}</span></span>
+      <span class="svct"><b>${esc(v.headline || v.label)}</b><span>${esc(v.accent)}</span></span>
       ${used.has(v.id) ? '<span class="hint">Added</span>' : ''}</button>`).join('')).join('')
-      : `<div class="hint">No services match. Clear the search${$('svcMine').checked ? ' or untick the filter' : ''}.</div>`;
+      : '<div class="hint">No services match. Clear the search.</div>';
   };
-  $('addSlot').onclick = () => { const p = $('svcPick'); p.hidden = !p.hidden; $('addSlot').setAttribute('aria-expanded', !p.hidden); if (!p.hidden) { drawSvc(); $('svcQ').focus(); } };
-  $('svcQ').oninput = drawSvc; $('svcMine').onchange = drawSvc;
-  $('svcBlank').onclick = () => { d.slots.push(M.blankSlot()); reflow(); };
-  $('svcList').onclick = (e) => { const b = e.target.closest('.svc'); if (!b) return; const v = S.services.find((x) => x.id === b.dataset.id); if (v) { d.slots.push(M.serviceToSlot(v)); reflow(); } };
+  const showPick = (open) => { $('svcPick').hidden = !open; $('addSlot').setAttribute('aria-expanded', open); if (open) { $('svcQ').value = ''; drawSvc(); $('svcQ').focus(); } };
+  $('addSlot').onclick = () => showPick($('svcPick').hidden);
+  // Closing the picker adds nothing.
+  $('svcClose').onclick = () => { showPick(false); $('addSlot').focus(); };
+  $('svcPick').onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); showPick(false); $('addSlot').focus(); } };
+  $('svcQ').oninput = drawSvc;
+  const addSlot = (x) => { justAdded.add(x); d.slots.push(x); reflow(); };
+  $('svcBlank').onclick = () => addSlot(M.blankSlot());
+  $('svcList').onclick = (e) => { const b = e.target.closest('.svc'); if (!b) return; const v = S.services.find((x) => x.id === b.dataset.id); if (v) addSlot(M.serviceToSlot(v)); };
   const SL = $('slotList'); let dragFrom = null;
   SL.querySelectorAll('.slot').forEach((el) => {
     const i = +el.dataset.i, h = el.querySelector('.drag');
@@ -279,7 +302,8 @@ function renderDp() {
     el.querySelectorAll('.mv').forEach((b) => { b.onclick = () => { const j = i + +b.dataset.mv; [d.slots[i], d.slots[j]] = [d.slots[j], d.slots[i]]; reflow(); }; });
     const del = el.querySelector('.del'); let armed = false;
     del.onclick = () => {
-      if (!armed) { armed = true; del.querySelector('.delt').textContent = 'Confirm'; setTimeout(() => { armed = false; if (del.isConnected) del.querySelector('.delt').textContent = ''; }, 3000); return; }
+      // A slot added in this session is discarded with one click; an existing one asks to confirm.
+      if (!armed && !justAdded.has(d.slots[i])) { armed = true; del.querySelector('.delt').textContent = 'Confirm'; setTimeout(() => { armed = false; if (del.isConnected) del.querySelector('.delt').textContent = ''; }, 3000); return; }
       d.slots.splice(i, 1); reflow();
     };
   });
@@ -294,6 +318,35 @@ function renderDp() {
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
 }
 
+/**
+ * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to (greeting, message,
+ * sign-off: headline, accent line, line 1, line 2, seconds on screen) and the Open today bar. The occasion
+ * itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion keeps its own copy.
+ */
+function renderOccasion(B, d) {
+  const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
+  const o = d.occasions[occ.id], F = footerConfig(d), s = S.cur;
+  const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
+  const icon = (i) => { const n = i ? occ.icons[i - 1] : occ.tiles[0]; return n === 'poppy' ? 'local_florist' : n; };
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span>
+   <div id="occList" style="display:grid;gap:12px">${o.scenes.map((x, i) => `<div class="slot" data-o="${i}"><div class="slot-h"><span class="ic" style="background:linear-gradient(145deg,${tileTop(s.colours.primary)},${esc(s.colours.primary)})"><span class="ms">${esc(icon(i))}</span></span>${['Top: ', '', 'Tail: '][i]}${OCCASION_SCENES[i]}
+     <label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="o${i}dur" min="1" max="60" step="0.5" value="${+x.dur || [3, 3, 4][i]}" aria-label="Seconds on screen">s</label></div>
+     <div class="stack">${rt(`o${i}title`, 'Headline', x.title)}${f(`o${i}sub`, 'Accent line', x.sub)}${f(`o${i}line1`, 'Line 1', x.line1)}${f(`o${i}line2`, 'Line 2', x.line2)}</div></div>`).join('')}</div>
+   <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
+     <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
+     <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
+  const total = () => { const t = M.loopSeconds(o); $('loopLen').textContent = `Loop ${t % 1 ? t.toFixed(1) : t}s`; };
+  o.scenes.forEach((x, i) => {
+    $(`o${i}dur`).oninput = (e) => { x.dur = M.clampDur(e.target.value); changed(); total(); };
+    bindRt(`o${i}title`, (v) => { x.title = v; });
+    ['sub', 'line1', 'line2'].forEach((k) => { $(`o${i}${k}`).oninput = (e) => { x[k] = e.target.value; changed(); }; });
+  });
+  total();
+  const fset = (k, v) => { d.footer = Object.assign({}, footerConfig(d), { [k]: v }); };
+  bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
+  $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
+}
+
 // ───────────────────────── promotions (shared) ─────────────────────────
 
 function selectPromo(id) {
@@ -302,18 +355,56 @@ function selectPromo(id) {
 }
 $('dpTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) selectPromo(b.dataset.dp); };
 function renderPromoTabs() {
-  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
+  $('dpTabs').innerHTML = S.promotions.map((x) => `<button role="tab" data-dp="${esc(x.id)}" aria-selected="${x.id === S.dpTab}" title="promo=${esc(x.promoId)}"><span class="ms" style="font-size:16px">${isHours(x.id) ? 'schedule' : isOcc(x.id) ? 'celebration' : 'campaign'}</span>${esc(x.name)}</button>`).join('');
+  tabsActiveIntoView();
 }
-function tplOptions(sel) {
+
+// The promotion tabs stay on one line whatever the width of the frame (Personalisation Hub's left menu expanded or
+// collapsed): when they don't fit they scroll sideways, the arrows appear, and the selected tab is kept in view,
+// including when the frame is resized.
+function tabsSync() {
+  const el = $('dpTabs'), max = el.scrollWidth - el.clientWidth, over = max > 1;
+  $('dpScroll').classList.toggle('over', over);
+  $('dpPrev').hidden = !over; $('dpNext').hidden = !over;
+  $('dpPrev').disabled = el.scrollLeft <= 1; $('dpNext').disabled = el.scrollLeft >= max - 1;
+}
+function tabsActiveIntoView() {
+  const el = $('dpTabs');
+  tabsSync();
+  const b = el.querySelector('[aria-selected="true"]');
+  if (b) {
+    const r = b.getBoundingClientRect(), c = el.getBoundingClientRect(), pad = 16;
+    if (r.left < c.left + pad) el.scrollLeft -= c.left + pad - r.left;
+    else if (r.right > c.right - pad) el.scrollLeft += r.right - (c.right - pad);
+  }
+  tabsSync();
+}
+const tabsStep = (dir) => { const el = $('dpTabs'); el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.7) }); };
+$('dpPrev').onclick = () => tabsStep(-1);
+$('dpNext').onclick = () => tabsStep(1);
+$('dpTabs').addEventListener('scroll', tabsSync, { passive: true });
+new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
+// The template drop-down: built-ins and custom templates. Occasion templates are picked in the Occasion
+// drop-down of an occasion promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
+function tplOptions(sel, withOccasions) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
-  return g('Built-in', S.templates.filter((t) => t.builtIn)) + g('Custom', S.templates.filter((t) => !t.builtIn));
+  const occ = (t) => t.kind === 'occasion';
+  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Occasion', S.templates.filter(occ)) : '');
+}
+function occasionOptions(sel) {
+  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
 }
 let pmArm = false;
 function renderPromoMeta() {
   const x = promo();
   $('promoMeta').hidden = !x;
   if (!x) return;
-  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = tplOptions(x.templateId);
+  const occ = isOcc(x.id);
+  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
+  // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
+  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
+  $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
+  $('pmHtml').hidden = occ;
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
 }
@@ -364,7 +455,7 @@ $('pmDel').onclick = async () => {
   } catch (e) { showPmErr(e.message); }
 };
 let npTouched = false;
-$('newPromoBtn').onclick = () => { $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
+$('newPromoBtn').onclick = () => { $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
 $('npCancel').onclick = () => { $('newPromo').hidden = true; };
 $('npName').oninput = (e) => { if (!npTouched) $('npToken').value = M.slug(e.target.value); };
 $('npToken').oninput = () => { npTouched = true; };
@@ -776,7 +867,7 @@ $('cpUrl').onclick = async () => {
   const t = urlText(); let ok = false;
   try { await navigator.clipboard.writeText(t); ok = true; } catch (e) {}
   $('cpTx').textContent = ok ? 'Copied' : 'Copy failed, select it from the tooltip';
-  setTimeout(() => { $('cpTx').textContent = 'Copy template URL'; }, 1600);
+  setTimeout(() => { $('cpTx').textContent = 'Copy experience URL'; }, 1600);
 };
 
 // ───────────────────────── start ─────────────────────────

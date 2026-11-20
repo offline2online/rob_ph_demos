@@ -49,7 +49,7 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
   const opts = await page.$$eval('#storeSel option', (o) => o.map((x) => x.textContent));
   assert.equal(opts.length, 5);
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule)/, ''))), ['Morning', 'Afternoon', 'Closed']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Occasions']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -209,18 +209,55 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
   await ctx.close();
 });
 
-test('scenes: add from the service library (this pharmacy\'s services), reorder, durations, delete', async () => {
+test('occasions: the Occasion drop-down picks what promo=occasions plays; each occasion keeps its own copy', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#dpTabs button:has-text("Occasions")');
+  await page.click('#playBtn'); // pause
+  // The Template drop-down is the Occasion drop-down here, Christmas by default; occasion templates have no Edit HTML.
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
+  assert.deepEqual(await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent)), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
+  assert.equal(await page.isHidden('#pmHtml'), true);
+  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Greeting', '2Message', '3Sign-off']);
+  await page.click('#tl button[data-i="2"]');
+  await page.waitForFunction(() => document.querySelector('#screen .s-body') && /team\.$/.test(document.querySelector('#screen .s-body').textContent.trim()));
+  // ${StoreName} is the pharmacy's name as saved (an earlier test may have renamed it).
+  const name = await page.evaluate(() => window.pharmacyAdmin.state.cur.name);
+  assert.ok((await page.$eval('#screen .s-title', (e) => e.textContent)) === `Merry Christmas from the whole ${name} team.`);
+  // Edit Christmas's sign-off, then switch to Easter and save.
+  await page.fill('#o2line1', 'Merry Christmas from all of us at ${StoreName}.');
+  await page.selectOption('#pmTpl', 'builtin-occasion-easter');
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => /Happy Easter/.test(document.querySelector('#screen .s-head h2').textContent));
+  await page.fill('#o1line2', 'Have a safe long weekend, everyone');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
+  const screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
+  assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
+  assert.equal(screen.content.occasions.easter.scenes[1].line2, 'Have a safe long weekend, everyone');
+  assert.equal(screen.content.occasions.christmas.scenes[2].line1, 'Merry Christmas from all of us at ${StoreName}.', 'Christmas copy kept');
+  assert.ok(!/StoreName/.test(JSON.stringify(screen.content.occasions.easter)), 'Easter: suburb only, no store-name sign-off');
+  // Back to Christmas for the other tests.
+  await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('scenes: add from the whole service library, reorder, durations, delete', async () => {
   const { ctx, page } = await open();
   await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
   await page.click('#dpTabs button:has-text("Morning")');
   const before = await page.$$eval('#slotList .slot', (s) => s.length);
   await page.click('#addSlot');
-  const shown = await page.$$eval('#svcList .svc', (b) => b.map((x) => x.dataset.id));
+  // every service in the library, for every pharmacy: no "offered by" filter or labels
   const services = (await api('GET', '/api/admin/services')).body;
-  assert.ok(shown.length > 0 && shown.every((id) => services.find((s) => s.id === id).offeredBy.includes('VIC-MP-004')));
-  await page.uncheck('#svcMine');
+  assert.ok(services.some((s) => !s.offeredBy.includes('VIC-MP-004')));
   assert.equal(await page.$$eval('#svcList .svc', (b) => b.length), services.length);
+  assert.equal(await page.$('#svcMine'), null);
+  assert.doesNotMatch(await page.textContent('#svcPick'), /offered by/i);
   await page.fill('#svcQ', 'first aid');
   await page.click('#svcList .svc');
   assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before + 1);
@@ -234,16 +271,88 @@ test('scenes: add from the service library (this pharmacy\'s services), reorder,
   let c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-morning'];
   assert.equal(c.slots[last - 1].label, 'First aid');
   assert.equal(c.slots[last - 1].dur, 4);
-  await page.click(`#slotList .slot[data-i="${last - 1}"] .del`);
+  // a just-added promotion is deleted with one click
   await page.click(`#slotList .slot[data-i="${last - 1}"] .del`);
   assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
   await settle(page);
   c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-morning'];
   assert.ok(!c.slots.some((s) => s.label === 'First aid'));
+  // an existing promotion still asks to confirm
+  await page.click('#slotList .slot[data-i="0"] .del');
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  assert.match(await page.textContent('#slotList .slot[data-i="0"] .del'), /Confirm/);
   await ctx.close();
 });
 
-test('preview: timeline and editor highlight each other; orientation and template URL follow', async () => {
+test('scenes: Add promotion picker closes without adding; a new promotion can be removed at once', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  await page.click('#dpTabs button:has-text("Afternoon")');
+  const heads = await page.$$eval('#dpBody .slot-h', (h) => h.map((x) => x.textContent.trim()));
+  assert.ok(heads.some((t) => t.startsWith('Top: Greeting')), heads.join('|'));
+  assert.ok(heads.some((t) => t.startsWith('Tail: Walk-in close')), heads.join('|'));
+  assert.ok(heads.some((t) => t.startsWith('Footer: Open today bar')), heads.join('|'));
+  assert.equal(await page.isChecked('#ftShow'), true);
+  const before = await page.$$eval('#slotList .slot', (s) => s.length);
+  const scenes = await page.$$eval('#tl button', (b) => b.length);
+  // Close button: nothing added
+  await page.click('#addSlot');
+  assert.equal(await page.isVisible('#svcPick'), true);
+  await page.click('#svcClose');
+  assert.equal(await page.isHidden('#svcPick'), true);
+  assert.equal(await page.getAttribute('#addSlot', 'aria-expanded'), 'false');
+  // Escape: nothing added
+  await page.click('#addSlot');
+  await page.press('#svcQ', 'Escape');
+  assert.equal(await page.isHidden('#svcPick'), true);
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  assert.equal(await page.$$eval('#tl button', (b) => b.length), scenes);
+  // add a blank promotion, then delete it straight away: preview timeline follows
+  await page.click('#addSlot');
+  await page.click('#svcBlank');
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before + 1);
+  await page.waitForFunction((n) => document.querySelectorAll('#tl button').length === n, scenes + 1);
+  await page.click(`#slotList .slot[data-i="${before}"] .del`);
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  await page.waitForFunction((n) => document.querySelectorAll('#tl button').length === n, scenes);
+  await settle(page);
+  const c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-afternoon'];
+  assert.equal(c.slots.length, before);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('preview: Copy experience URL with a live playback duration and its setup tooltip', async () => {
+  const { ctx, page } = await open();
+  assert.match(await page.textContent('#cpTx'), /^Copy experience URL$/);
+  const total = async () => +(await page.textContent('#tlTime')).match(/ ([\d.]+)s/)[1];
+  const shown = async () => +(await page.textContent('#pbSecs')).replace('s', '');
+  const t0 = await total();
+  assert.equal(await shown(), Math.ceil(t0 + 1));
+  assert.match(await page.textContent('#pbDur'), /^Playback duration: \d+s/);
+  // retime the first scene by +3s: the number follows at once
+  const d0 = +(await page.inputValue('#s0dur'));
+  await page.fill('#s0dur', String(d0 + 3));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 3 + 1));
+  await page.fill('#s0dur', String(d0 + 2.5));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 2.5 + 1));
+  await page.fill('#s0dur', String(d0));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 1));
+  // the info tooltip names the same N and wraps
+  const n = await shown();
+  assert.equal(await page.textContent('#pbTip'), `To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in. Set the playback duration to ${n} seconds, which is one second longer than the promotion so the last scene finishes. Then save and activate the campaign to put it live.`);
+  await page.hover('#pbInfo');
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('pbTip')).opacity === '1');
+  const box = await page.$eval('#pbTip', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, l: r.left, vw: innerWidth }; });
+  assert.ok(box.h > 40 && box.w <= 281 && box.l >= 0, JSON.stringify(box));
+  // another promotion carries its own length
+  await page.click('#dpTabs button:has-text("Closed")');
+  await page.waitForFunction(() => document.querySelectorAll('#tl button').length === 3);
+  await page.waitForFunction(() => { const m = document.getElementById('tlTime').textContent.match(/ ([\d.]+)s/); return m && document.getElementById('pbSecs').textContent === `${Math.ceil(+m[1] + 1)}s`; });
+  await ctx.close();
+});
+
+test('preview: timeline and editor highlight each other; orientation and experience URL follow', async () => {
   const { ctx, page } = await open();
   await page.click('#playBtn');
   await page.click('#tl button[data-i="2"]');
@@ -281,7 +390,7 @@ test('pharmacies: add (unique store code), logo upload and remove, delete', asyn
   const list = (await api('GET', '/api/admin/pharmacies')).body;
   const created = list.find((p) => p.storeCode === 'VIC-MP-006');
   assert.ok(created);
-  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning']);
+  assert.deepEqual(created.promotionsWithContent.sort(), ['seed-promotion-afternoon', 'seed-promotion-closed', 'seed-promotion-morning', 'seed-promotion-occasions']);
   // a 1x1 transparent PNG
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
   await page.setInputFiles('#logoIn', { name: 'logo.png', mimeType: 'image/png', buffer: png });
@@ -371,4 +480,95 @@ test('every save is audit-logged with the admin who made it', async () => {
   const byEditor = audit.filter((e) => e.actorUid === 'dev-admin');
   for (const entity of ['pharmacy', 'promotion', 'template']) assert.ok(byEditor.some((e) => e.entity === entity), entity);
   assert.ok(dev.phAudit.entries.some((e) => e.action === 'ph-api.token.set' && e.actorUid === 'dev-admin'));
+});
+
+test('layout follows the frame inside the PH shell: menu expanded or collapsed, nothing wraps, tabs scroll', async () => {
+  // Personalisation Hub shows the editor in an iframe beside its left menu (256px expanded, 70px collapsed).
+  // Extra promotions so the tabs cannot fit on one line at the narrow width.
+  const promos = (await api('GET', '/api/admin/promotions')).body;
+  const templateId = promos[0].templateId;
+  const made = [];
+  for (let i = 1; i <= 6; i++) {
+    const r = await api('POST', '/api/admin/promotions', { body: { name: `Layout check promotion ${i}`, promoId: `layout-${i}`, templateId } });
+    assert.equal(r.status < 300, true, JSON.stringify(r.body));
+    made.push(r.body);
+  }
+  const shell = `<!doctype html><html><head><style>html,body{margin:0;height:100%}body{display:flex}
+    aside{width:256px;flex:none;background:#333}body.collapsed aside{width:70px}
+    main{flex:1;min-width:0;display:flex}iframe{border:0;flex:1;min-width:0;height:100%}</style></head>
+    <body><aside></aside><main><iframe src="/admin/"></iframe></main></body></html>`;
+  const lines = (sel) => { // how many lines the visible children of `sel` sit on
+    const el = document.querySelector(sel);
+    let n = 0, bottom = -1e9;
+    for (const c of el.children) {
+      if (!c.offsetParent || getComputedStyle(c).position === 'absolute') continue;
+      const b = c.getBoundingClientRect();
+      if (b.top >= bottom - 1) n++;
+      bottom = Math.max(bottom, b.bottom);
+    }
+    return n;
+  };
+  for (const width of [1280, 1440, 1920]) {
+    const ctx = await browser.newContext({ viewport: { width, height: 900 } });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/ph-shell.html', (r) => r.fulfill({ contentType: 'text/html', body: shell }));
+    await page.goto(dev.base + '/ph-shell.html');
+    const fr = page.frame({ url: /\/admin\/$/ });
+    await fr.fill('#gateTokenIn', 'dev-admin');
+    await fr.click('#gateToken button[type=submit]');
+    await fr.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+    await fr.click(`#dpTabs button[data-dp="${made[5].id}"]`); // the last tab, selected
+    const seen = {};
+    for (const state of ['expanded', 'collapsed', 'expanded', 'collapsed']) {
+      await page.evaluate((s) => document.body.classList.toggle('collapsed', s === 'collapsed'), state);
+      await fr.waitForFunction((w) => innerWidth === w, width - (state === 'collapsed' ? 70 : 256));
+      await fr.waitForTimeout(400); // the tab strip's smooth scroll
+      const m = await fr.evaluate((linesSrc) => {
+        const lines = eval(linesSrc);
+        const t = document.getElementById('dpTabs'), a = t.querySelector('[aria-selected="true"]').getBoundingClientRect(), c = t.getBoundingClientRect();
+        return {
+          editor: Math.round(document.querySelector('.edcol').getBoundingClientRect().width),
+          preview: Math.round(document.querySelector('.pv').getBoundingClientRect().width),
+          tabLines: lines('#dpTabs'), barLines: lines('.promo-bar'), toolbarLines: lines('#toolbar'), controlsLines: lines('.controls'),
+          pmLines: lines('.pm-row'), metaLines: lines('.meta-row'), copyRowLines: lines('.cprow'),
+          activeInView: a.left >= c.left - 1 && a.right <= c.right + 1,
+          scrolls: t.scrollWidth > t.clientWidth, arrows: !document.getElementById('dpPrev').hidden && !document.getElementById('dpNext').hidden,
+          pageOverflow: document.documentElement.scrollWidth - innerWidth,
+          fixed: [...document.querySelectorAll('*')].filter((e) => getComputedStyle(e).position === 'fixed').length,
+        };
+      }, lines.toString());
+      const where = `${width}px, menu ${state}: ${JSON.stringify(m)}`;
+      for (const k of ['tabLines', 'barLines', 'toolbarLines', 'controlsLines', 'pmLines', 'metaLines', 'copyRowLines']) assert.equal(m[k], 1, `${k} at ${where}`);
+      assert.equal(m.activeInView, true, where);
+      assert.equal(m.pageOverflow, 0, where);
+      assert.equal(m.fixed, 0, where);
+      if (m.scrolls) assert.equal(m.arrows, true, where);
+      if (seen[state]) assert.deepEqual([m.editor, m.preview], seen[state], `same layout after toggling back, ${where}`);
+      seen[state] = [m.editor, m.preview];
+    }
+    assert.ok(seen.collapsed[0] > seen.expanded[0], 'the editor widens when the menu collapses, without a reload');
+    if (width === 1280) {
+      // the narrowest frame: the tabs scroll, and the arrows move them
+      await page.evaluate(() => document.body.classList.remove('collapsed'));
+      await fr.waitForFunction((w) => innerWidth === w, width - 256);
+      await fr.waitForFunction(() => document.getElementById('dpTabs').scrollLeft > 0);
+      const before = await fr.$eval('#dpTabs', (t) => t.scrollLeft);
+      assert.equal(await fr.isDisabled('#dpPrev'), false);
+      await fr.click('#dpPrev');
+      await fr.waitForFunction((x) => document.getElementById('dpTabs').scrollLeft < x - 50, before);
+      await fr.waitForFunction(() => !document.getElementById('dpNext').disabled);
+      // picking a tab that is scrolled out of view brings it back
+      await fr.click('#dpTabs button[data-dp="seed-promotion-morning"]');
+      await fr.click(`#dpTabs button[data-dp="${made[5].id}"]`);
+      await fr.waitForFunction(() => { const t = document.getElementById('dpTabs'), a = t.querySelector('[aria-selected="true"]').getBoundingClientRect(), c = t.getBoundingClientRect(); return a.right <= c.right + 1 && a.left >= c.left - 1; });
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+  for (const p of made) {
+    const r = (await api('GET', '/api/admin/promotions')).body.find((x) => x.id === p.id);
+    await fetch(dev.base + `/api/admin/promotions/${p.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer dev-admin', 'If-Match': `"${r.version}"` } });
+  }
 });

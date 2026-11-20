@@ -46,16 +46,16 @@ menu-board demo). Its `pharmacyScreen` block is the one for this project.
 ## Adapters (how an AWS deployment slots in)
 
 `createConfigApi({ store, blobs, auth, allowedOrigins, now, log })` takes
-three small adapters and knows nothing about Firebase. To deploy on AWS for
-miPharmacy, write the three adapters (e.g. DynamoDB, S3, Cognito/OIDC) and a
-Lambda entry that maps API Gateway events to `api.handle(...)` — the routes,
+three small adapters and knows nothing about Firebase. The AWS deployment for
+miPharmacy (`../../aws/`) supplies DynamoDB, S3 and OIDC adapters and a Lambda
+entry that maps API Gateway events to `api.handle(...)` — the routes,
 validation, publishing and audit stay as they are.
 
-| Adapter | Methods | Firebase | Local / tests |
-| --- | --- | --- | --- |
-| store | `transaction(fn)` with `tx.get / tx.list / tx.set / tx.delete`; `get`, `list(coll, {orderBy, desc, limit})`, `newId()` | `firestore-store.js` | `memory-store.js` |
-| blobs | `put(path, buffer, contentType) -> {path, url}`, `delete(path)` | `createGcsBlobs` | `createMemoryBlobs` |
-| auth | `identify(authorizationHeader) -> {uid, email, admin} \| null` | `createFirebaseAuth` | `createStaticAuth` |
+| Adapter | Methods | Firebase | AWS (`../../aws/adapters/`) | Local / tests |
+| --- | --- | --- | --- | --- |
+| store | `transaction(fn)` with `tx.get / tx.list / tx.set / tx.delete`; `get`, `list(coll, {orderBy, desc, limit})`, `newId()` | `firestore-store.js` | `dynamodb-store.js` | `memory-store.js` |
+| blobs | `put(path, buffer, contentType) -> {path, url}`, `delete(path)` | `createGcsBlobs` | `s3-blobs.js` | `createMemoryBlobs` |
+| auth | `identify(authorizationHeader) -> {uid, email, admin} \| null` | `createFirebaseAuth` | `oidc-auth.js` (Cognito or the retailer's IdP) | `createStaticAuth` |
 
 A store transaction must be all-or-nothing and serialisable (reads before
 writes); that is what makes store codes and promo IDs unique under concurrent
@@ -87,6 +87,19 @@ templates returns them first. They cannot be changed, deleted or given
 backgrounds (403); clone one to edit. A custom template keeps the `kind` of
 what it was cloned from, and deleting it moves every promotion that used it
 to the built-in of that kind.
+
+**Occasion templates** — six more built-ins, kind `occasion`, one per
+occasion: `builtin-occasion-christmas`, `-new-year`, `-australia-day`,
+`-valentines-day`, `-easter`, `-anzac-day`. Each carries `occasion` (the
+part after `builtin-occasion-`), which the published config passes on so the
+screen draws that occasion (`../js/render.js` → `OCCASIONS`). The seeded
+Occasions promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
+the admin editor's Occasion drop-down sets its `templateId` to another one.
+They can't be cloned (400: there is no editable HTML version of an
+occasion). A pharmacy's content for an occasion promotion keeps every
+occasion's copy, `content.occasions.<occasion>.scenes[3]` (greeting, message,
+sign-off: `title`, `sub`, `line1`, `line2`, `dur`), plus the promotion's
+`footer`.
 
 **Media** goes to the bucket `PS_MEDIA_BUCKET` (default
 `<project>-pharmacy-screen-media`) under `pharmacyScreen/media/logos/{pharmacyId}/…`
@@ -159,7 +172,7 @@ code.
 | GET, PATCH, PUT, DELETE | `/api/admin/promotions/{id}` | read / update / delete |
 | GET, POST | `/api/admin/templates` | list (built-ins first) / create a custom `{name, kind, html?, css?}` |
 | GET, PATCH, PUT, DELETE | `/api/admin/templates/{id}` | read / update / delete (custom only; delete falls back) |
-| POST | `/api/admin/templates/{id}/clone` | clone a built-in or custom `{name?}` |
+| POST | `/api/admin/templates/{id}/clone` | clone a built-in or custom `{name?}` (not an occasion template: 400) |
 | PUT, DELETE | `/api/admin/templates/{id}/backgrounds/{portrait\|landscape}` | upload (raw image body) / remove |
 | GET, POST | `/api/admin/services` | list / create |
 | GET, PATCH, PUT, DELETE | `/api/admin/services/{id}` | read / update / delete |
@@ -220,6 +233,7 @@ HTTP API never passes it).
 
 ```
 npm test               # API and validators against the in-memory adapters (no network)
+                       # (PS_TEST_STORE=<module> runs the API suite on another store; aws/test/ uses it for DynamoDB)
 npm run test:emulator  # Firestore + Storage rules and the Firestore adapter, on the emulators (needs Java)
 ```
 
@@ -248,7 +262,8 @@ bucket (the menu-board demo uses it).
 **The screen reads this** through `fromPublishedConfig()` in
 `../js/live-data.js`, which maps it onto the render engine's
 `fixtures/config.json` shape: a promotion's `template.kind` is the fixture's
-`base` (`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`),
+`base` (`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`,
+`occasion` → `t_occ_<occasion>`),
 `colours` is `brand`, `logo` is a URL, and `promotions` is keyed by promo ID
 with that pharmacy's `content` inside. `../test/live-data.test.mjs` builds a
 published config with `src/publish.js` and checks the mapping, so a change to

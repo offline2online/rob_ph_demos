@@ -1,7 +1,7 @@
 {
   "name": "pharmacy-screen-promo-template",
   "private": true,
-  "description": "Pharmacy Screen Promo Template: one-command deploy to our Firebase test environment (rob-ph-demos) and the deploy checks.",
+  "description": "Pharmacy Screen Promo Template: one-command deploy to our Firebase test environment (rob-ph-demos) or to the retailer's AWS account (aws/), and the deploy checks.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -11,6 +11,12 @@
     "deploy:plan": "node scripts/deploy.mjs --dry-run",
     "check": "node --test test/*.test.mjs",
     "check:all": "node --test test/*.test.mjs && npm --prefix pharmacy-screen test && npm --prefix pharmacy-screen/config-api test && npm --prefix pharmacy-screen/ph-proxy test && npm --prefix pharmacy-screen/seed test",
-    "check:admin": "node --test test/ui/admin-gate.test.mjs && npm --prefix pharmacy-screen/admin test"
+    "check:docs": "node --test pharmacy-screen/test/handover-docs.test.mjs",
+    "check:admin": "node --test test/ui/admin-gate.test.mjs && npm --prefix pharmacy-screen/admin test",
+    "deploy:aws": "node aws/scripts/deploy.mjs deploy",
+    "plan:aws": "node aws/scripts/deploy.mjs deploy --dry-run",
+    "destroy:aws": "node aws/scripts/deploy.mjs destroy",
+    "seed:aws": "node aws/scripts/seed.js",
+    "check:aws": "npm --prefix aws ci --no-audit --no-fund && npm --prefix aws test && npm --prefix aws run test:ui"
   }
 }

@@ -1,0 +1,291 @@
+# Data contract
+
+What the Pharmacy Screen reads from Personalisation Hub, what it stores, and what each screen shows when
+something is missing. The code wins over this file; `pharmacy-screen/test/handover-docs.test.mjs` checks the
+template token list below against `pharmacy-screen/js/tokens.js`.
+
+```
+PH player ──GET pharmacy-screen.html?device=${UniqueDeviceID}&promo=…&orientation=…──▶ static site
+screen    ──GET /api/device/{device}/campaign_data──▶ PH API proxy ──GET {baseUrl}/location-api/device/{device}/campaign_data (x-api-key)──▶ PH
+screen    ──GET /api/screens/{store_code}──▶ config API (published config, public, no secrets)
+```
+
+## 1. Location API (Personalisation Hub)
+
+### Request (made by the proxy only)
+
+```http
+GET {baseUrl}/location-api/device/{UniqueDeviceID}/campaign_data
+x-api-key: <PH API token, decrypted in the proxy's memory>
+Accept: application/json
+```
+
+- `{baseUrl}`: each saved base URL in turn (Admin → Settings; default `https://ph.mipharmacy.net`), the last
+  one that answered first, one request at a time, `PH_PROXY_TIMEOUT_MS` (8 s) each.
+- `{UniqueDeviceID}`: the `device=` value of the campaign URL, which the PH player fills with the screen's own
+  ID. The proxy accepts `[A-Za-z0-9._:-]`, 1–128 characters, and refuses an unswapped `${UniqueDeviceID}`
+  without calling PH.
+- PH maps the device to its display and store. The URL never carries a store code.
+
+### Fields used
+
+Only these are kept; the proxy drops everything else before answering the screen
+(`pharmacy-screen/ph-proxy/src/location-proxy.js` → `trimCampaignData`).
+
+| Field (under `data`) | Type | Used for |
+|---|---|---|
+| `store_location.store_code` | string | Which pharmacy's config to load (`/api/screens/{store_code}`) |
+| `store_location.store_name` | string | Fallback store name (the config's pharmacy name wins) |
+| `store_location.store_timezone` | IANA zone, e.g. `Australia/Melbourne` | Store time for the "Open today" bar and today's hours (default `Australia/Melbourne` if empty) |
+| `store_info.opening_hours[]` | array | Weekly hours and the bar state |
+| `…opening_hours[].open_day` / `close_day` | `MONDAY` … `SUNDAY` | A session may close the next day (crossing midnight) |
+| `…opening_hours[].open_time` / `close_time` | `HH:MM:SS`, store local time | |
+| `…opening_hours[].is_active` | boolean | `false` sessions are ignored |
+| `store_info.address_info.suburb` | string | `${Suburb}`; blank removes the token with its leading comma or line break |
+| `store_info.address_info.address` | string | Opening hours template ("show address") |
+| `store_info.address_info.postcode`, `state` | string | Passed through; not drawn today |
+| `store_info.address_info.phone_number` | string | `${Phone}`, the opening hours contact line |
+| store logo | https or `data:image/…` URL | Returned as `store_info.logo_url` once the Location API provides one (PH-181): the first of `store_info.logo_url \| logo \| store_logo`, `store_location.logo_url \| logo \| store_logo`, `data.logo_url \| logo`. Until then the logo uploaded in the editor is used |
+
+### Full sample response
+
+Upstream (PH), for device `DEVICE-VIC-MP-001` (the mock data in `pharmacy-screen/fixtures/campaign-data.json`;
+PH may send more fields, which are ignored):
+
+```json
+{
+  "data": {
+    "store_location": {
+      "store_code": "VIC-MP-001",
+      "store_name": "Beaumaris Pharmacy",
+      "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+      "opening_hours": [
+        { "open_day": "MONDAY",    "open_time": "08:30:00", "close_day": "MONDAY",    "close_time": "19:00:00", "is_active": true },
+        { "open_day": "TUESDAY",   "open_time": "08:30:00", "close_day": "TUESDAY",   "close_time": "19:00:00", "is_active": true },
+        { "open_day": "WEDNESDAY", "open_time": "08:30:00", "close_day": "WEDNESDAY", "close_time": "19:00:00", "is_active": true },
+        { "open_day": "THURSDAY",  "open_time": "08:30:00", "close_day": "THURSDAY",  "close_time": "19:00:00", "is_active": true },
+        { "open_day": "FRIDAY",    "open_time": "08:30:00", "close_day": "FRIDAY",    "close_time": "19:00:00", "is_active": true },
+        { "open_day": "SATURDAY",  "open_time": "09:00:00", "close_day": "SATURDAY",  "close_time": "13:30:00", "is_active": true }
+      ],
+      "address_info": {
+        "address": "1A East Concourse, Beaumaris",
+        "suburb": "Beaumaris",
+        "postcode": "",
+        "state": "Victoria",
+        "phone_number": "03 9589 2676"
+      }
+    }
+  }
+}
+```
+
+What the proxy returns to the screen (`GET /api/device/DEVICE-VIC-MP-001/campaign_data`):
+
+```json
+{
+  "ok": true,
+  "data": {
+    "store_location": { "store_code": "VIC-MP-001", "store_name": "Beaumaris Pharmacy", "store_timezone": "Australia/Melbourne" },
+    "store_info": {
+      "opening_hours": [ { "open_day": "MONDAY", "open_time": "08:30:00", "close_day": "MONDAY", "close_time": "19:00:00", "is_active": true } ],
+      "address_info": { "suburb": "Beaumaris", "address": "1A East Concourse, Beaumaris", "postcode": "", "state": "Victoria", "phone_number": "03 9589 2676" },
+      "logo_url": null
+    }
+  },
+  "meta": { "server": "https://ph.mipharmacy.net", "fetchedAt": "2026-11-20T01:00:00.000Z", "cached": false }
+}
+```
+
+(`opening_hours` shortened here; every active session is returned.) A session crossing midnight looks like
+`{"open_day": "FRIDAY", "open_time": "18:00:00", "close_day": "SATURDAY", "close_time": "02:00:00"}`; fixture
+device `TEST-LATE-NIGHT` has one, and `TEST-NO-SUBURB` has no suburb.
+
+Mock devices in `fixtures/campaign-data.json` (used with `mockapi=1`, by the local dev server and by the
+tests): `TEST`, `DEVICE-VIC-MP-001` … `DEVICE-VIC-MP-005`, `TEST-NO-SUBURB`, `TEST-LATE-NIGHT`.
+
+## 2. Promo IDs
+
+A promotion is shared by every pharmacy: a name, a promo ID (the `promo=` value) and a template. Promo IDs
+are 1–40 lower-case letters, digits and hyphens, unique across promotions.
+
+| Promo ID | Name | Template | Plays |
+|---|---|---|---|
+| `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
+| `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
+| `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
+| `occasions` | Occasions | One of the six occasion templates (seeded Christmas) | Greeting, message and sign-off for the chosen occasion; "Open today" bar |
+
+Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
+Core, not here.
+
+## 3. Template tokens
+
+Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
+
+**In copy** (headlines, accent lines, lines 1 and 2, bar messages):
+
+| Token | Value |
+|---|---|
+| `${Suburb}` | `store_info.address_info.suburb`. With no suburb it is removed together with its leading comma and/or line break ("Good morning,<br>${Suburb}" → "Good morning") |
+| `${StoreName}` | The pharmacy's name from the editor (Christmas and New Year's sign-offs) |
+| `${CloseTime}` | Close time of today's current or next session, e.g. `7PM` ("Open today" bar) |
+| `${OpenTime}` | Open time of today's next session, e.g. `8.30AM` ("Open today" bar) |
+
+**In a custom template's HTML** (Admin → Edit HTML shows these as chips; `TEMPLATE_TOKENS` in
+`pharmacy-screen/js/tokens.js`):
+
+| Token | Templates | Value |
+|---|---|---|
+| `${Logo}` | all | The pharmacy logo (Location API logo, else the uploaded one) |
+| `${Headline}` | all | The scene's headline, sized to fit the brand panel |
+| `${AccentLine}` | scenes, occasion | The accent line under the headline |
+| `${Content}` | scenes, occasion | The scene body (tiles or icon, line 1, line 2) as the built-in draws it |
+| `${Icon}` | scenes, occasion | The scene's large icon tile |
+| `${ServiceLabel}` | scenes | The service chip label |
+| `${Line1}` | scenes, occasion | Line 1 |
+| `${Line2}` | scenes, occasion | Line 2 |
+| `${Tiles}` | scenes, occasion | The row of icon tiles (greeting and close scenes) |
+| `${Decor}` | occasion | The occasion's seasonal symbols |
+| `${Footer}` | scenes, occasion | The "Open today" bar, or nothing when it is hidden |
+| `${OpenToday}` | scenes, occasion | The bar's message text only |
+| `${HoursCard}` | hours | The weekly opening hours card |
+| `${HolidayNote}` | hours, occasion | "Public Holidays: Please call to confirm" |
+| `${ContactLine}` | hours | Phone (and address when "show address" is on) |
+| `${Chevron}` | all | The brand chevron graphic |
+| `${ViewBox}` | all | SVG view box of the screen (`0 0 1080 1920` or `0 0 1920 1080`) |
+| `${EdgePath}` | all | SVG path of the brand panel's edge (triangle or arrow) |
+| `${Suburb}` | all | As above |
+| `${StoreName}` | all | As above |
+| `${Phone}` | all | `store_info.address_info.phone_number` |
+
+Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,
+`<link>`, inline event handlers or `javascript:` URLs; template CSS may not contain `</style>`, `@import`,
+`expression()` or `javascript:`. The API refuses them (they render on unattended public screens).
+
+## 4. Per-pharmacy config schema
+
+Stored by the config API (Firestore `pharmacyScreen/config/…` on Firebase, DynamoDB on AWS); every admin
+record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. Full API:
+`pharmacy-screen/config-api/README.md`.
+
+```jsonc
+// pharmacy
+{
+  "storeCode": "VIC-MP-001",              // 2-32 letters, digits, hyphens; stored upper-case; unique; must equal PH's store_code
+  "name": "Beaumaris Pharmacy",           // ${StoreName}
+  "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
+  "logo": { "path": "…", "url": "https://…", "contentType": "image/webp" },   // or null; set by the upload endpoint
+  "content": {                            // keyed by promotion record id
+    "<promotion id, scenes template>": {
+      "greeting": "Good morning,<br>${Suburb}", "introTitle": "Three reasons to walk in", "introSub": "No fuss. Just ask in store.",
+      "introDur": 3,
+      "slots": [ { "label": "Blood pressure", "icon": "monitor_heart", "title": "Blood pressure checks",
+                   "sub": "Free, as often as you like", "line1": "Know your numbers", "line2": "Pop in this morning", "dur": 2 } ],
+      "close": { "title": "Walk in today", "sub": "Speak directly with a pharmacist", "line1": "…", "line2": "…", "dur": 2 },
+      "footer": { "show": true,
+                  "open": "Open today until <span class=\"acc\">${CloseTime}</span>",
+                  "closing": "Closing soon · <span class=\"acc\">${CloseTime}</span>",
+                  "before": "Opens today at <span class=\"acc\">${OpenTime}</span>",
+                  "closed": "Closed now" }
+    },
+    "<promotion id, opening hours template>": {
+      "headlines": ["Sorry, we're closed", "Serving ${Suburb}", "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"],
+      "showAddress": false
+    },
+    "<promotion id, occasion template>": {
+      "occasions": { "christmas": { "scenes": [ { "title": "Merry Christmas,<br>${Suburb}", "sub": "", "line1": "…", "line2": "…", "dur": 3 } /* 3 scenes */ ] } /* one per occasion */ },
+      "footer": { "show": true }
+    }
+  }
+}
+```
+
+- Scene durations (`dur`, `introDur`) are 1–60 seconds; missing ones use the defaults (greeting 3 s, service 2 s,
+  close 2 s; occasion scenes 3, 3 and 4 s).
+- Rich text (headlines, bar messages) keeps only bold, italic, line breaks and `<span class="reg">` /
+  `<span class="acc">`; everything else is stripped.
+- Content is bounded at 200 KB per promotion.
+- Occasion keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+
+Promotion: `{ "name", "promoId", "templateId" }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
+"backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
+"headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
+
+### Published screen config (what a screen reads)
+
+`GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 15 s. Rebuilt in the same transaction
+as every write that affects it, copied field by field (`config-api/src/publish.js`):
+
+```json
+{
+  "schemaVersion": 1,
+  "storeCode": "VIC-MP-001",
+  "name": "Beaumaris Pharmacy",
+  "colours": { "primary": "#0f1050", "accent": "#5ee6b0" },
+  "logo": "https://…/pharmacyScreen/media/logos/…webp",
+  "promotions": {
+    "morning": {
+      "promoId": "morning",
+      "name": "Morning",
+      "template": { "id": "builtin-promotion-scenes", "name": "Promotion scenes", "kind": "promotion-scenes", "builtIn": true,
+                    "html": "", "css": "", "backgrounds": { "portrait": null, "landscape": null } },
+      "content": { "greeting": "Good morning,<br>${Suburb}", "slots": [], "close": {}, "footer": {} }
+    }
+  },
+  "publishedAt": "2026-11-20T01:00:00.000Z"
+}
+```
+
+## 5. PH API token
+
+| | |
+|---|---|
+| Set | Admin → Settings → Personalisation Hub API → API token (admin role) |
+| Read back | Never. `GET /api/settings/ph-api` returns `token: {set, last4, setAt, setBy}` only |
+| At rest | AES-256-GCM with a fresh data key; the data key wrapped by KMS (Cloud KMS on Firebase, AWS KMS on AWS); the record holds `{ciphertext, iv, tag, wrappedKey, keyId, keyVersion}` and `last4` |
+| Decrypted | Only in the proxy function, in memory, cached up to 15 s |
+| Sent | Only to PH as `x-api-key`, never to a screen, a browser or a log |
+| Audit | Every save, replace and remove: actor and last 4 only |
+
+## 6. Error states
+
+### What each screen shows
+
+| Situation | Proxy / API answer | Screen shows |
+|---|---|---|
+| No `device`, or an unswapped `${UniqueDeviceID}`, or a malformed ID | `400 INVALID_DEVICE_ID` | "Invalid screen URL" |
+| PH does not know the device | `404 DEVICE_NOT_FOUND` | "Screen not set up" in the brand panel, with the device ID at the bottom (register the device in PH) |
+| The store has no config (no pharmacy with that store code) | `/api/screens/{code}` 404 | "Screen not set up" ("Store VIC-MP-00X has no screen content yet.") |
+| `promo=` names no promotion | | "Promotion not found" |
+| Every server fails and nothing is cached | `502 UPSTREAM_UNAVAILABLE`, network errors | "Screen data could not load" with a red "Offline · retrying" badge; it keeps polling |
+| Every server fails but the screen has data | | The last good screen, unchanged (kept in memory and `localStorage`); the debug panel shows the failures |
+| No token saved | `503 NOT_CONFIGURED` | "Screen data could not load" (or the last good screen) |
+| PH refuses the token on every server | `502 UPSTREAM_AUTH_FAILED` | The same; replace the token in Settings |
+| Token can't be decrypted | `503 TOKEN_UNREADABLE` | The same; save the token again |
+| Rate limit with a recent answer | `200`, `meta.stale: true` | The store as last known |
+| Rate limit with no recent answer | `429 RATE_LIMITED` + `Retry-After` | The last good screen, or "Screen data could not load" |
+
+### Proxy errors (`{ "ok": false, "error": { "code", "message" } }`)
+
+| Status | Code | Meaning |
+|---|---|---|
+| 400 | `INVALID_DEVICE_ID` | Missing or malformed device ID |
+| 400 | `INVALID_BASE_URL`, `INVALID_TOKEN`, `INVALID_BODY` | Settings input refused (https only, at most 5 URLs; token 8–4096 characters, no spaces) |
+| 401 | `UNAUTHENTICATED` | Settings call without a valid sign-in |
+| 403 | `FORBIDDEN` | Signed in without the admin role |
+| 404 | `DEVICE_NOT_FOUND` | PH does not map this device to a store |
+| 429 | `RATE_LIMITED` | Over a rate limit with no recent answer |
+| 502 | `UPSTREAM_AUTH_FAILED` | Every PH server refused the token |
+| 502 | `UPSTREAM_UNAVAILABLE` | No PH server answered |
+| 503 | `NOT_CONFIGURED` | No token saved |
+| 503 | `SECRET_STORE_NOT_CONFIGURED` | No KMS key configured (`PH_TOKEN_KMS_KEY`) |
+| 503 | `TOKEN_UNREADABLE` | The stored token could not be decrypted |
+
+### Config API errors (`{ "error": { "code", "message" } }`)
+
+400 `invalid-request`, 401 `unauthenticated`, 403 `forbidden` / `read-only` (built-in templates), 404
+`not-found` / `unknown-promo`, 405, 409 `duplicate-store-code` / `duplicate-promo-id` / `version-conflict`,
+413 `too-large`, 415 `unsupported-media-type`. On AWS, a promotion or template edit that would republish more
+than about 90 pharmacies in one transaction is refused with `too-many-writes` before anything is written.

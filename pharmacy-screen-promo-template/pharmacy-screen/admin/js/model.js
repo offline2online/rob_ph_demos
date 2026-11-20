@@ -3,25 +3,32 @@
 // The editor works on the config API's records (config-api/README.md → "Data model"):
 //   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}}, version}
 //   promotion {id, name, promoId, templateId, version}
-//   template  {id, name, kind 'promotion-scenes' | 'opening-hours', builtIn, html, css, backgrounds {portrait, landscape}}
+//   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
 //   service   {id, label, icon, category, headline, accent, line1, line2, offeredBy [store codes]}
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent } from '../../js/render.js';
+import { defaultContent, defaultOccasion, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION } from '../../js/render.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
 export const BUILTIN_HOURS = 'builtin-opening-hours';
-const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours' };
+// The six occasion templates (config-api/src/builtins.js), picked by the Occasions promotion's Occasion drop-down.
+export const occasionTemplateId = (occasion) => 'builtin-occasion-' + occasion;
+export const BUILTIN_OCCASION = occasionTemplateId(DEFAULT_OCCASION);
+export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, templateId: occasionTemplateId(o.id), signOff: /\$\{StoreName\}/.test(o.scenes.map((x) => x.line1).join(' ')) }));
+const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours', ...Object.fromEntries(OCCASION_IDS.map((id) => [occasionTemplateId(id), 't_occ_' + id])) };
 
-/** 'scenes' or 'hours' for a template kind. */
-export const baseOfKind = (kind) => (kind === 'opening-hours' ? 'hours' : 'scenes');
-export const kindOfBase = (base) => (base === 'hours' ? 'opening-hours' : 'promotion-scenes');
-export const builtInForKind = (kind) => (kind === 'opening-hours' ? BUILTIN_HOURS : BUILTIN_SCENES);
+/** 'scenes', 'hours' or 'occasion' for a template kind. */
+export const baseOfKind = (kind) => (kind === 'opening-hours' ? 'hours' : kind === 'occasion' ? 'occasion' : 'scenes');
+export const kindOfBase = (base) => (base === 'hours' ? 'opening-hours' : base === 'occasion' ? 'occasion' : 'promotion-scenes');
+export const builtInForKind = (kind) => (kind === 'opening-hours' ? BUILTIN_HOURS : kind === 'occasion' ? BUILTIN_OCCASION : BUILTIN_SCENES);
+/** The occasion an occasion template plays ('christmas', …), or '' for any other template. */
+export const occasionOfTemplate = (id) => (OCCASION_IDS.find((o) => occasionTemplateId(o) === id) || '');
 
 export const findTemplate = (templates, id) => (templates || []).find((t) => t.id === id) || (templates || []).find((t) => t.id === BUILTIN_SCENES) || null;
 export const baseOfTemplate = (templates, id) => {
   if (id === BUILTIN_HOURS) return 'hours';
+  if (occasionOfTemplate(id)) return 'occasion';
   const t = (templates || []).find((x) => x.id === id);
   return t ? baseOfKind(t.kind) : 'scenes';
 };
@@ -42,6 +49,7 @@ const NEW_CONTENT = {
     S('Scripts', 'prescriptions', 'Script on File', 'Reorder without the paper', 'We keep your scripts safe', 'Ask us how'),
     S('Advice', 'medical_services', 'Ask a pharmacist', 'Free health advice', 'No appointment needed', 'Talk to us on your way home')], close: CLOSE() }),
   closed: () => ({ headlines: ["Sorry, we're closed", 'Serving ${Suburb}', 'Public Holidays:<br><span class="reg">Please call to confirm</span>'], showAddress: false }),
+  occasions: () => defaultContent('occasion'),
 };
 
 /** Starting content for one promotion of a new pharmacy. */
@@ -59,7 +67,19 @@ export function newContentFor(promotion, base) {
 export function ensureContent(content, base) {
   const c = content && typeof content === 'object' ? clone(content) : {};
   const def = defaultContent(base);
-  if (base === 'hours') {
+  if (base === 'occasion') {
+    // Every occasion's copy is kept, so switching occasion and back loses nothing.
+    if (!c.occasions || typeof c.occasions !== 'object' || Array.isArray(c.occasions)) c.occasions = {};
+    for (const id of OCCASION_IDS) {
+      const o = c.occasions[id];
+      if (!o || !Array.isArray(o.scenes) || o.scenes.length !== 3) { c.occasions[id] = defaultOccasion(id); continue; }
+      o.scenes = o.scenes.map((x, i) => {
+        const d = def.occasions[id].scenes[i], v = x && typeof x === 'object' ? x : {};
+        for (const k of ['title', 'sub', 'line1', 'line2']) if (typeof v[k] !== 'string') v[k] = d[k];
+        return v;
+      });
+    }
+  } else if (base === 'hours') {
     if (!Array.isArray(c.headlines) || !c.headlines.length) c.headlines = def.headlines;
     while (c.headlines.length < 3) c.headlines.push('');
     if (typeof c.showAddress !== 'boolean') c.showAddress = false;
@@ -78,9 +98,9 @@ export function newPharmacyContent(promotions, templates) {
   return out;
 }
 
-/** Promotions in the order the editor shows them: the three defaults first, then by creation. */
+/** Promotions in the order the editor shows them: the four defaults first, then by creation. */
 export function orderPromotions(promotions) {
-  const rank = { morning: 0, afternoon: 1, closed: 2 };
+  const rank = { morning: 0, afternoon: 1, closed: 2, occasions: 3 };
   return [...(promotions || [])].sort((a, b) => (rank[a.promoId] ?? 9) - (rank[b.promoId] ?? 9) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.name).localeCompare(String(b.name)));
 }
 
@@ -176,10 +196,16 @@ export function filterServices(services, { q = '', storeCode = '', mine = true }
 /** The campaign URL Personalisation Hub plays. The player swaps ${UniqueDeviceID} for each screen's ID. */
 export const templateUrl = (screenPage, promoId, orientation) => `${screenPage}?device=\${UniqueDeviceID}&promo=${promoId}&orientation=${orientation === 'landscape' ? 'landscape' : 'portrait'}`;
 
-/** Total loop length (seconds) of a scenes promotion's content. */
-export const loopSeconds = (d) => (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2);
+/** Total loop length (seconds) of a scenes promotion's content, or of one occasion's copy ({scenes}). */
+export const loopSeconds = (d) => (Array.isArray(d.scenes) ? d.scenes.reduce((a, x, i) => a + (+(x && x.dur) || [3, 3, 4][i] || 3), 0)
+  : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
 
 /** Scene durations are 1-60 seconds; anything else falls back to the default. */
+/** Seconds to enter as the campaign's playback duration: the promotion's length plus one second, rounded up, so
+ *  the last scene finishes before the player moves on. */
+export const playbackSeconds = (total) => Math.ceil(Math.round(((+total || 0) + 1) * 1000) / 1000);
+/** The setup tooltip beside "Playback duration". */
+export const playbackHelp = (n) => `To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in. Set the playback duration to ${n} seconds, which is one second longer than the promotion so the last scene finishes. Then save and activate the campaign to put it live.`;
 export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? Math.max(1, Math.min(60, n)) : undefined; };
 
 /**

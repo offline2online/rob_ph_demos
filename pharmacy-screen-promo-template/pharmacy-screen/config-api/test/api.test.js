@@ -19,8 +19,10 @@ const { createStaticAuth } = require("../src/adapters/auth");
 const ADMIN = "Bearer admin-token";
 const VIEWER = "Bearer viewer-token";
 
+// PS_TEST_STORE: a module whose createTestStore() returns another store with the same contract, to run this
+// whole suite against it (aws/test/ runs it against the DynamoDB store). Default: the in-memory store.
 function setup() {
-  const store = createMemoryStore();
+  const store = process.env.PS_TEST_STORE ? require(process.env.PS_TEST_STORE).createTestStore() : createMemoryStore();
   const blobs = createMemoryBlobs();
   let tick = 0;
   const api = createConfigApi({
@@ -112,7 +114,15 @@ test("promotions: create, read, list, update, delete", async () => {
 test("templates: built-ins listed and read-only; custom clone, edit, delete", async () => {
   const { call } = setup();
   const list = (await call("GET", "/api/admin/templates")).body;
-  assert.deepEqual(list.map((t) => [t.id, t.builtIn]), [["builtin-promotion-scenes", true], ["builtin-opening-hours", true]]);
+  assert.deepEqual(list.map((t) => [t.id, t.builtIn]), [["builtin-promotion-scenes", true], ["builtin-opening-hours", true],
+    ...["christmas", "new-year", "australia-day", "valentines-day", "easter", "anzac-day"].map((o) => [`builtin-occasion-${o}`, true])]);
+  assert.deepEqual(list.filter((t) => t.kind === "occasion").map((t) => [t.name, t.occasion]), [
+    ["Christmas", "christmas"], ["New Year's", "new-year"], ["Australia Day", "australia-day"], ["Valentine's Day", "valentines-day"], ["Easter", "easter"], ["Anzac Day", "anzac-day"]]);
+  // Occasion templates are read-only and can't be cloned (there is no HTML version of an occasion).
+  assert.equal((await call("PATCH", "/api/admin/templates/builtin-occasion-easter", { body: { name: "Mine" } })).status, 403);
+  const occClone = await call("POST", "/api/admin/templates/builtin-occasion-easter/clone", { body: { name: "Easter copy" } });
+  assert.equal(occClone.status, 400);
+  assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /occasion template/);
 
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-promotion-scenes", { body: { name: "Mine" } })).status, 403);
   assert.equal((await call("DELETE", "/api/admin/templates/builtin-opening-hours")).status, 403);
@@ -141,7 +151,7 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
 
   assert.equal((await call("DELETE", `/api/admin/templates/${tid}`)).status, 200);
   assert.equal((await call("GET", `/api/admin/templates/${tid}`)).status, 404);
-  assert.equal((await call("GET", "/api/admin/templates")).body.length, 4);
+  assert.equal((await call("GET", "/api/admin/templates")).body.length, 10, "eight built-ins and the two customs left");
 });
 
 test("services: create, read, list, update, delete", async () => {
@@ -448,4 +458,20 @@ test("a function URL without the /api prefix routes the same", async () => {
   await seedBasics(call);
   assert.equal((await call("GET", "/screens/VIC-MP-001", { auth: null })).status, 200);
   assert.equal((await call("GET", "/admin/pharmacies")).status, 200);
+});
+
+test("an Occasions promotion: picking an occasion is its template, and the published config says which", async () => {
+  const { call } = setup();
+  const { ph } = await seedBasics(call);
+  const occ = (await call("POST", "/api/admin/promotions", { body: { name: "Occasions", promoId: "occasions", templateId: "builtin-occasion-christmas" } })).body;
+  const copy = { occasions: { easter: { scenes: [{ title: "Happy Easter,<br>${Suburb}" }, { title: "M" }, { title: "S" }] } } };
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: copy })).status, 200);
+  let cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.kind, cfg.promotions.occasions.template.occasion], ["builtin-occasion-christmas", "occasion", "christmas"]);
+  // The editor's Occasion drop-down: switch to Easter and save.
+  const upd = await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-easter" } });
+  assert.equal(upd.status, 200);
+  cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.equal(cfg.promotions.occasions.template.occasion, "easter");
+  assert.equal(cfg.promotions.occasions.content.occasions.easter.scenes[0].title, "Happy Easter,<br>${Suburb}");
 });

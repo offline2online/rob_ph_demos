@@ -1,5 +1,6 @@
 // Overflow audit (copy fit): renders every store x promotion x scene x orientation from the fixtures in headless
-// Chromium, at each "Open today" bar state, and fails if any copy leaves the brand panel, its content box or the
+// Chromium (an occasion promotion once per occasion: Christmas, New Year's, Australia Day, Valentine's Day, Easter,
+// Anzac Day, each with this store's copy for it), at each "Open today" bar state, and fails if any copy leaves the brand panel, its content box or the
 // screen. Usage: node tools/overflow-audit.mjs   (exit 1 on any problem)
 // Uses the sandbox's preinstalled Playwright/Chromium; set CHROMIUM_PATH to use another browser binary.
 //
@@ -21,7 +22,7 @@ export const ORIENTATIONS = ['portrait', 'landscape'];
 export const TIMES = { open: 'wed-12:00', closing: 'wed-18:45', before: 'wed-07:00', closed: 'wed-22:00' };
 
 /**
- * Runs the audit. Returns { checked, scenes: [{device, store, promo, orientation, scene, name, bar}], failures: [string] }.
+ * Runs the audit. Returns { checked, scenes: [{device, store, promo, occasion, orientation, scene, name, bar}], failures: [string] }.
  * Each failure names the device, store, promo, orientation, scene number (and name) and bar state.
  *   config   - optional replacement for fixtures/config.json (the screen reads it with mockapi=1)
  *   browser  - optional Playwright browser to reuse (left open); otherwise one is launched and closed
@@ -54,10 +55,15 @@ export async function runAudit({ devices = DEVICES, orientations = ORIENTATIONS,
           for (const promo of promos) {
             const info = await page.evaluate((p) => window.pharmacyScreen.show(p, 0), promo);
             if (label !== 'open' && info.base === 'hours') continue; // no bar on the hours template
-            for (let i = 0; i < info.scenes.length; i++) {
-              const r = await page.evaluate(([p, n]) => { const inf = window.pharmacyScreen.show(p, n); return { inf, problems: window.pharmacyScreen.audit() }; }, [promo, i]);
-              scenes.push({ device, store: r.inf.store, promo, orientation, scene: i + 1, name: r.inf.scenes[i], bar: label });
-              for (const pr of r.problems) failures.push(`${device} ${r.inf.store} ${promo} ${orientation} scene ${i + 1} (${r.inf.scenes[i]}) bar=${label}: ${pr}`);
+            const occasions = info.base === 'occasion' ? await page.evaluate(() => window.pharmacyScreen.occasions()) : [null];
+            for (const occasion of occasions) {
+              const nScenes = occasion ? (await page.evaluate(([p, o]) => window.pharmacyScreen.show(p, 0, o), [promo, occasion])).scenes.length : info.scenes.length;
+              const tag = occasion ? `${promo}/${occasion}` : promo;
+              for (let i = 0; i < nScenes; i++) {
+                const r = await page.evaluate(([p, n, o]) => { const inf = window.pharmacyScreen.show(p, n, o || undefined); return { inf, problems: window.pharmacyScreen.audit() }; }, [promo, i, occasion]);
+                scenes.push({ device, store: r.inf.store, promo, occasion: r.inf.occasion, orientation, scene: i + 1, name: r.inf.scenes[i], bar: label });
+                for (const pr of r.problems) failures.push(`${device} ${r.inf.store} ${tag} ${orientation} scene ${i + 1} (${r.inf.scenes[i]}) bar=${label}: ${pr}`);
+              }
             }
           }
         }

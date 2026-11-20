@@ -1,5 +1,5 @@
 {
-  "_doc": "Built-in templates (requirement 11). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
+  "_doc": "Built-in templates (requirement 11): Promotion scenes, Opening hours and one per occasion (the Occasions promotion). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
   "templates": [
     {
       "id": "builtin-promotion-scenes",
@@ -11,6 +11,48 @@
       "id": "builtin-opening-hours",
       "name": "Opening hours",
       "kind": "opening-hours",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-christmas",
+      "name": "Christmas",
+      "kind": "occasion",
+      "occasion": "christmas",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-new-year",
+      "name": "New Year's",
+      "kind": "occasion",
+      "occasion": "new-year",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-australia-day",
+      "name": "Australia Day",
+      "kind": "occasion",
+      "occasion": "australia-day",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-valentines-day",
+      "name": "Valentine's Day",
+      "kind": "occasion",
+      "occasion": "valentines-day",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-easter",
+      "name": "Easter",
+      "kind": "occasion",
+      "occasion": "easter",
+      "builtIn": true
+    },
+    {
+      "id": "builtin-occasion-anzac-day",
+      "name": "Anzac Day",
+      "kind": "occasion",
+      "occasion": "anzac-day",
       "builtIn": true
     }
   ]

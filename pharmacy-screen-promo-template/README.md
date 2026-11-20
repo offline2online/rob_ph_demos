@@ -5,6 +5,32 @@ app to configure pharmacies, promotions and templates, and the back end behind t
 API token, Location API proxy). Requirements and the concept README are on the board (project "Pharmacy Screen
 Promo Template").
 
+## Handover package
+
+New here? **[START-HERE.md](START-HERE.md)** is one page: deploy to AWS in one command, connect PH, test.
+
+| Document | For |
+|---|---|
+| [START-HERE.md](START-HERE.md) | The one-page quick start |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Architecture, prerequisites, install, PH token and rotation, registering screens and the campaign URL, upgrade, rollback, uninstall |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) + [.env.example](.env.example) | Every setting, deploy option, environment variable and query parameter |
+| [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) | The Location API request and fields used, a full sample, promo IDs, template tokens, config schema, error states |
+| [docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md) | Our environment first, then miPharmacy sign-off |
+| [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | The admin editor: pharmacies, branding, promotions, service library, copy and timings, templates |
+| [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) | Instructions for coding and deployment agents |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, per release |
+
+Mock data for running with no PH instance is in `pharmacy-screen/fixtures/` (`mockapi=1`) and the seed in
+`pharmacy-screen/seed/`. `npm run check:docs` (part of `check:all`) fails when an environment variable or query
+parameter in the code is missing from `docs/CONFIGURATION.md`, or the other way round.
+
+Quick start (AWS):
+
+```bash
+cd pharmacy-screen-promo-template
+npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in address>
+```
+
 | Folder | What it is |
 |---|---|
 | `pharmacy-screen/` | The screen page and its render modules ([README](pharmacy-screen/README.md)) |
@@ -16,6 +42,8 @@ Promo Template").
 | `scripts/deploy.mjs` | The one-command deploy |
 | `ci/deploy-pharmacy-screen.yml` | GitHub Actions workflow to install (see "Continuous deploy") |
 | `test/` | Deploy config checks and the deployed admin sign-in gate (`test/ui/admin-gate.test.mjs`) |
+| `aws/` | The deployment target for the retailer's own AWS account: AWS adapters, Lambda entries, CDK stack, one-command install and teardown ([README](aws/README.md)) |
+| `docs/`, `START-HERE.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `CHANGELOG.md` | The handover package (above); not published |
 
 ## Our test environment (Firebase project `rob-ph-demos`)
 
@@ -48,8 +76,28 @@ What runs where:
 
 Function settings are non-secret and live beside each function in `.env.rob-ph-demos` (the Firebase CLI loads
 them for this project). Everything a back end needs from the cloud goes through small adapters (store, blobs,
-auth, secret store; see each function's README), so an AWS deployment for miPharmacy adds adapters and an
-entry point without changing the API.
+auth, secret store; see each function's README), so the AWS deployment below adds adapters and an entry point
+without changing the API.
+
+The screen polls its store data (the Location API through `/api/device/…`) every 30 s and its published config
+(`/api/screens/{store_code}`) every 60 s, one request in flight per endpoint, re-rendering only on change
+(`pharmacy-screen/README.md` → "How the screen gets its data (live)").
+
+## Security
+
+The same code runs in both environments; only the adapters behind it differ.
+
+| | Our test environment (`rob-ph-demos`) | miPharmacy's environment |
+|---|---|---|
+| PH API token at rest | Envelope-encrypted (AES-256-GCM data key) in Firestore `pharmacyScreen/private/settings/phApi`, the data key wrapped by Cloud KMS key `ph-api-token` | The same envelope (AES-256-GCM data key) in DynamoDB item `pharmacyScreen#private`, the data key wrapped by a customer-managed AWS KMS key (90-day rotation, encryption context = the envelope's AAD), in the retailer's AWS account; the Lambdas can run inside their VPC (`aws/README.md`). AWS Secrets Manager holds only CloudFront's origin header, not the token |
+| Who can decrypt | Only `pharmacyScreenPhApi`; the key can be used only by the functions' service account | Only the proxy, by its IAM role |
+| Admin sign-in | Firebase Auth, custom claim `admin` | Cognito or miPharmacy's identity provider (OIDC), same admin role check |
+
+In both, the token is write-only in Admin → Settings (only its last 4 characters are shown), never in plain text,
+browser storage or page source, and never sent to a screen: the proxy adds `x-api-key` to Location API calls
+itself. Saving, replacing and removing it need the admin role and are audit-logged. The adapters are described in
+`pharmacy-screen/ph-proxy/README.md` ("How the token is protected", and "Deploying to miPharmacy's AWS
+environment"), `pharmacy-screen/config-api/README.md` ("Adapters") and `aws/README.md` (the AWS deployment).
 
 ## Deploy (one command)
 
@@ -96,13 +144,30 @@ Service Account User and Cloud Build Editor roles.
 
 Cloud Functions are always deployed by the command above or CI, never by hand.
 
+## miPharmacy's environment (AWS)
+
+miPharmacy deploys the same build into their own AWS account, next to their Personalisation Hub instance:
+CloudFront and S3 for the pages, API Gateway and Lambda (optionally in their VPC) for the two back ends,
+DynamoDB for the config, S3 for media, a KMS key wrapping the PH API token's data key, and Cognito or their own
+OIDC provider for admin sign-in. One command each, parameterised for account (credentials), region, VPC and
+domain:
+
+```bash
+npm run deploy:aws  -- --region ap-southeast-2 [--domain-name … --certificate-arn …] [--vpc-id …] [--oidc-issuer …]
+npm run destroy:aws -- --region ap-southeast-2
+```
+
+Everything about it (options, first-run steps, the test checklist on AWS, limits) is in [aws/README.md](aws/README.md).
+
 ## Tests
 
 ```bash
 cd pharmacy-screen-promo-template
 npm run check          # deploy config, staging allow-list, plan, URLs (offline)
-npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests
+npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests, and the handover docs check
+npm run check:docs     # the handover docs check alone: env vars and query parameters in code = docs/CONFIGURATION.md
 npm run check:admin    # the deployed admin sign-in gate, then the editor's end-to-end tests (Playwright + Chromium)
+npm run check:aws      # the AWS target: adapters, Lambda entries, CDK template, deploy plan, OIDC sign-in (aws/README.md)
 cd pharmacy-screen/config-api && npm install && npm run test:emulator   # Firestore + Storage rules (needs Java)
 ```
 

@@ -1,0 +1,122 @@
+# Admin user guide
+
+For the people who set up pharmacies and their screen content. The editor is at `https://<site>/admin/`
+(it can also be shown inside Personalisation Hub's HQ Admin). Sign in with your work account; you need the
+admin role, or you see "Admin role required".
+
+Edits **save as you type**: "Saving…" then "All changes saved" beside the title. If someone else saved the same
+record after you opened it, the editor asks you to reload instead of overwriting their change. Every save is
+recorded in the audit log.
+
+The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
+scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
+show its scene.
+
+## Add a pharmacy
+
+1. Click **Add pharmacy** in the toolbar.
+2. Enter the **Pharmacy name** (shown on screens as `${StoreName}`) and the **Store code**. The store code
+   must be exactly the store's `store_code` in Personalisation Hub (e.g. `VIC-MP-006`): that is how a screen
+   finds its pharmacy. It is checked as you type and must be unique.
+3. The pharmacy is created as soon as both are valid. Carry on editing; nothing is lost.
+4. In Personalisation Hub, register the pharmacy's screens to that store and add them to the campaign
+   ([DEPLOYMENT.md](DEPLOYMENT.md) → "Register screens in PH"). Nothing else is needed: the campaign URL is the
+   same for every pharmacy.
+
+Switch pharmacies with the picker at the top. **Delete** asks you to click again to confirm. **Reset** puts a
+launch pharmacy (VIC-MP-001 to 005) back to its sample content.
+
+## Branding and logo
+
+- **Primary** and **Accent** colours: the brand panel, text and highlights. Icon tiles use a brighter version
+  of the primary automatically.
+- **Upload logo**: a transparent PNG (or WebP), up to 2 MB.
+  **Replace logo** or remove it the same way. Once Personalisation Hub's Location API returns a store logo,
+  screens use that one instead.
+
+## Promotions
+
+Promotions are **shared by all pharmacies**: the tabs across the top. Each has a name, a **promo ID** (what the
+campaign URL's `promo=` names) and a template. The defaults are Morning (`morning`), Afternoon (`afternoon`),
+Closed (`closed`) and Occasions (`occasions`). Each pharmacy fills in its own copy for each one.
+
+- **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template → **Create
+  promotion**. It appears for every pharmacy.
+- Rename it or change its promo ID in **Promotion name** / **Promo ID**. Changing a promo ID means changing
+  the campaign URL in PH too.
+- **Delete promotion** (click again to delete for all pharmacies).
+- **Copy experience URL** beside the preview gives the exact campaign URL for this promotion and orientation;
+  **Playback duration** is the number of seconds to enter in the campaign.
+
+Which promotion plays when is set in Personalisation Hub's scheduling, not here.
+
+## Promotion scenes (Morning, Afternoon and similar)
+
+The scenes play in order:
+
+| Part | What you edit |
+|---|---|
+| **Top: Greeting** | Headline (e.g. "Good morning,&lt;br&gt;${Suburb}"), the chips row title and subtitle, seconds |
+| One scene per service | Headline, accent line, chip label, icon (searchable), line 1, line 2, seconds on screen |
+| **Tail: Walk-in close** | Headline ("Walk in today"), accent line, line 1, line 2, seconds |
+| **Footer: Open today bar** | Show or hide it, and its four messages: open, last 30 minutes, before opening, after closing |
+
+**Add promotions from the service library**: click **Add promotion** under the scenes. The picker lists all 28
+ready-made services (vaccinations, blood pressure checks, …), grouped by category and searchable. Pick one to
+add it with its copy and icon, then adjust the copy for this pharmacy. **Blank promotion** adds an empty scene.
+Service copy needs TGA advertising review before go-live.
+
+- **Reorder** scenes by dragging, or with the up/down buttons.
+- **Delete** a scene (click again to confirm; one you have just added deletes with one click).
+- **Timings**: each scene has its own seconds on screen (1–60). The timeline and Playback duration update as
+  you change them.
+
+**Copy tips**
+
+- Headlines are rich text: bold, italic, regular weight, accent colour and line breaks.
+- `${Suburb}` becomes the store's suburb from Personalisation Hub. If a store has no suburb it disappears with
+  the comma or line break before it.
+- Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
+  ${CloseTime}".
+- Long headlines shrink automatically to stay inside the brand panel; if one becomes very small, shorten it.
+- "Public Holidays: Please call to confirm" is always shown; you don't need to write it.
+
+## Opening hours (Closed)
+
+Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}") and **Show address under phone**.
+The weekly hours, the public holiday line and the phone number come from Personalisation Hub.
+
+## Occasions
+
+In place of Template, the Occasions promotion has an **Occasion** drop-down: Christmas, New Year's, Australia
+Day, Valentine's Day, Easter, Anzac Day. It applies to all pharmacies and plays until you change it; nothing
+switches by date. For each occasion each pharmacy has three scenes (Greeting, Message, Sign-off: headline,
+accent line, line 1, line 2, seconds on screen) and the Open today bar. Every occasion keeps its own copy, so
+switching back and forth loses nothing. Christmas and New Year's sign off with `${StoreName}`. Anzac Day is
+commemorative and plays without decoration.
+
+## Templates
+
+A template is the layout a promotion uses. Built-ins: **Promotion scenes**, **Opening hours** and the six
+occasion templates. Built-ins are read-only; occasion templates can't be cloned.
+
+1. Select the promotion and click **Edit HTML** beside its Template.
+2. On a built-in, click **Clone template**, and give the copy a **Template name**.
+3. Edit its **HTML**: click a token chip to insert it (`${Headline}`, `${Logo}`, `${Footer}`, …; the full list is in
+   [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Template tokens") and its **CSS** (applies only inside the screen).
+   Scripts, frames and external styles are refused.
+4. **Background**: upload a portrait and a landscape image (PNG, JPEG or WebP, up to 5 MB; 4 MB on AWS).
+5. **Done**. **Reset to default** puts the HTML back to the built-in's.
+6. Pick the template for any promotion in the Template drop-down: templates are reusable across promotions.
+
+Deleting a custom template moves the promotions that used it back to the built-in of the same kind.
+
+## Settings
+
+**Settings** (toolbar) shows:
+
+- **Store record** for a device ID: what Personalisation Hub returns for that screen (read-only), useful to
+  check a screen is registered to the right store.
+- **Personalisation Hub API**: the **API base URL** and the **API token (x-api-key)**. The token is write-only;
+  after saving you see only that it is set and its last 4 characters, with Replace and Remove. Usually set once
+  by IT ([DEPLOYMENT.md](DEPLOYMENT.md) → "Set the PH API base URL and token").

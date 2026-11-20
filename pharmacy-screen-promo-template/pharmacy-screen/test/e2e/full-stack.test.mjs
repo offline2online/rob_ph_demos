@@ -76,7 +76,7 @@ test('the screen on a mock device plays every promotion in both orientations, ea
     assert.equal(d.storeCode, 'VIC-MP-002');
     assert.equal(d.view, 'ready');
     const promos = await page.evaluate(() => window.pharmacyScreen.promotions());
-    assert.deepEqual([...promos].sort(), ['afternoon', 'closed', 'morning']);
+    assert.deepEqual([...promos].sort(), ['afternoon', 'closed', 'morning', 'occasions']);
     for (const promo of promos) {
       const info = await page.evaluate((p) => window.pharmacyScreen.show(p, 0), promo);
       assert.equal(info.store, 'VIC-MP-002');
@@ -94,6 +94,37 @@ test('the screen on a mock device plays every promotion in both orientations, ea
   }
   assert.ok(scenes >= 6);
   assert.ok(dev.upstreamCalls.length > 0 && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token upstream');
+});
+
+test('Occasions: promo=occasions plays Christmas, signing off with the store name; the admin picks Easter and the same URL plays Easter', async () => {
+  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=2&now=wed-12:00';
+  let s = await screen(url);
+  let info = await s.page.evaluate(() => window.pharmacyScreen.info);
+  assert.deepEqual([info.promo, info.occasion, info.scenes], ['occasions', 'christmas', ['Greeting', 'Message', 'Sign-off']]);
+  const name = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.name;
+  assert.match(await screenText(s.page), new RegExp(`from the whole ${name} team\\.`));
+  assert.deepEqual(await s.page.evaluate(() => window.pharmacyScreen.audit()), []);
+  await s.ctx.close();
+
+  const promo = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
+  assert.equal((await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-easter', expectedVersion: promo.version } })).status, 200);
+  try {
+    for (const orientation of ['portrait', 'landscape']) {
+      s = await screen(url.replace('portrait', orientation).replace('scene=2', 'scene=0'), { landscape: orientation === 'landscape' });
+      info = await s.page.evaluate(() => window.pharmacyScreen.info);
+      assert.equal(info.occasion, 'easter');
+      assert.match(await screenText(s.page), /Happy Easter/);
+      for (let i = 0; i < 3; i++) {
+        const t = await s.page.evaluate((n) => { window.pharmacyScreen.show('occasions', n); return document.getElementById('screen').innerText; }, i);
+        assert.ok(!t.includes(name), `Easter scene ${i + 1} has no store-name sign-off`);
+        assert.deepEqual(await s.page.evaluate(() => window.pharmacyScreen.audit()), [], `Easter ${orientation} scene ${i + 1}`);
+      }
+      await s.ctx.close();
+    }
+  } finally {
+    const now = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
+    await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-christmas', expectedVersion: now.version } });
+  }
 });
 
 test('an admin edit in the editor reaches a running screen at its next config poll, without a reload', async () => {

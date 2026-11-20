@@ -107,6 +107,15 @@ test('orderPromotions puts the defaults first, then by creation; durations clamp
   assert.equal(M.loopSeconds({ slots: [{ dur: 4 }, {}], close: {} }), 3 + 4 + 2 + 2);
 });
 
+test('playback duration is the promotion length plus one second, rounded up, and the tooltip names it', () => {
+  assert.equal(M.playbackSeconds(14), 15);
+  assert.equal(M.playbackSeconds(13.5), 15);
+  assert.equal(M.playbackSeconds(12.1), 14);
+  assert.equal(M.playbackSeconds(0.1 + 0.2 + 2.7), 4);
+  assert.equal(M.playbackSeconds(0), 1);
+  assert.match(M.playbackHelp(15), /^To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in\. Set the playback duration to 15 seconds, which is one second longer than the promotion so the last scene finishes\. Then save and activate the campaign to put it live\.$/);
+});
+
 test('editsSince finds the edits made while a new pharmacy was being created', () => {
   const draft = { name: 'New', storeCode: 'NEW-1', colours: { primary: '#000000', accent: '#ffffff' }, content: M.newPharmacyContent(promotions, templates) };
   const sent = M.clone(draft);
@@ -119,4 +128,32 @@ test('editsSince finds the edits made while a new pharmacy was being created', (
   // content added for a promotion after the create was posted counts too
   draft.content['p-new'] = { greeting: 'Hi', slots: [], close: {} };
   assert.deepEqual(M.editsSince(sent, draft).content, ['p-m', 'p-new']);
+});
+
+test('occasions: the Occasion drop-down is the promotion template, content keeps every occasion, defaults follow the sign-off rule', () => {
+  assert.deepEqual(M.OCCASION_CHOICES.map((o) => o.name), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
+  assert.equal(M.BUILTIN_OCCASION, 'builtin-occasion-christmas');
+  assert.equal(M.baseOfTemplate([], 'builtin-occasion-easter'), 'occasion');
+  assert.equal(M.occasionOfTemplate('builtin-occasion-anzac-day'), 'anzac-day');
+  assert.equal(M.occasionOfTemplate(M.BUILTIN_SCENES), '');
+  // Christmas and New Year's sign off with ${StoreName}; the rest use ${Suburb} only.
+  assert.deepEqual(M.OCCASION_CHOICES.filter((o) => o.signOff).map((o) => o.id), ['christmas', 'new-year']);
+  const c = M.newContentFor({ promoId: 'occasions' }, 'occasion');
+  assert.deepEqual(Object.keys(c.occasions), ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']);
+  for (const [id, o] of Object.entries(c.occasions)) {
+    assert.equal(o.scenes.length, 3, id);
+    assert.ok(o.scenes.some((x) => /\$\{Suburb\}/.test(x.title)), `${id} uses \${Suburb}`);
+    assert.equal(/StoreName/.test(JSON.stringify(o)), ['christmas', 'new-year'].includes(id), `${id} store-name rule`);
+  }
+  // Switching template kind and back keeps the other kind's fields; a broken occasion is refilled.
+  const mixed = M.ensureContent({ slots: [], greeting: 'G', occasions: { easter: { scenes: [{ title: 'Mine' }, {}, {}] } } }, 'occasion');
+  assert.equal(mixed.greeting, 'G');
+  assert.equal(mixed.occasions.easter.scenes[0].title, 'Mine');
+  assert.equal(typeof mixed.occasions.easter.scenes[1].line1, 'string');
+  assert.ok(mixed.occasions.christmas.scenes.length === 3);
+  assert.equal(M.loopSeconds(mixed.occasions.easter), 10);
+  assert.deepEqual(M.orderPromotions([{ promoId: 'occasions', name: 'O' }, { promoId: 'closed', name: 'C' }, { promoId: 'x', name: 'X' }]).map((p) => p.promoId), ['closed', 'occasions', 'x']);
+  // The preview's render config maps the occasion template onto the render engine's built-in.
+  const cfg = M.renderConfig({ pharmacies: [], promotions: [{ id: 'p-o', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-valentines-day' }], templates: [] });
+  assert.equal(cfg.promotions[0].template, 't_occ_valentines-day');
 });
