@@ -172,11 +172,14 @@ details summary{cursor:pointer;color:var(--primary)}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:9999px;padding:2px 10px;font-size:12px;background:var(--panel);border:1px solid var(--divider)}
 .dot{width:8px;height:8px;border-radius:50%}
 /* preview column */
-.pv{position:sticky;top:12px;display:grid;gap:10px;min-width:0;container:pv/inline-size}
+/* the preview scrolls up with the page until the Portrait/Landscape tabs reach the very top, then stays there; the
+   stage is sized to the visible height (dvh: on a tablet, 100vh counts the space under the browser bars, which cut
+   the bottom of the preview off), leaving 190px for the tabs, scene bar, controls and Copy URL row below it */
+.pv{position:sticky;top:0;display:grid;gap:10px;min-width:0;container:pv/inline-size}
 .pv>.card{padding:12px;gap:8px}
 .wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,46cqi))}
 .isLand .stage{height:auto!important;width:100%!important;aspect-ratio:16/9!important;min-height:0!important}
-.stage{height:min(calc(100vh - 250px),760px);min-height:380px;width:auto;justify-self:center;aspect-ratio:1080/1920;max-width:100%;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);background:#000}
+.stage{height:min(calc(100vh - 190px),760px);height:min(calc(100dvh - 190px),760px);min-height:240px;width:auto;justify-self:center;aspect-ratio:1080/1920;max-width:100%;border-radius:8px;overflow:hidden;position:relative;box-shadow:0 1px 2px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.12);background:#000}
 .stage>.screen{position:absolute;left:0;top:0;transform-origin:0 0}
 .controls{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
 .controls>button{flex:none;white-space:nowrap}

@@ -51,6 +51,10 @@ adjusts as soon as the menu changes, with no reload:
   for screen readers); the pharmacy picker, the promo URL pill and the preview's store-data pill shorten with an
   ellipsis instead of pushing controls onto a new row.
 - Nothing is `position: fixed`.
+- The preview scrolls up with the page until its Portrait/Landscape tabs reach the very top of the frame, then
+  stays there (`position: sticky; top: 0`) while the editor scrolls on. The preview screen is sized to the visible
+  height (`100dvh`, falling back to `100vh`) less 190px for the scene bar, controls and Copy URL row, so the whole
+  preview fits on a tablet with its browser bars showing.
 
 `test/editor.e2e.mjs` checks this inside a stand-in PH shell (256px menu expanded, 70px collapsed) at 1280, 1440
 and 1920px windows, toggling the menu back and forth with six extra promotions.

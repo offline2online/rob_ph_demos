@@ -51,6 +51,12 @@ Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharm
   AWS stack.
 - **One-command deploy** to our Firebase test environment, with CI.
 
+### Fixed
+
+- **Editor preview on tablets**: the preview column now scrolls up with the page until the Portrait/Landscape
+  tabs lock to the very top, and the preview screen is sized to the visible height, so the bottom of the preview
+  (scene bar, Play/Pause, Copy experience URL) is no longer cut off on a tablet.
+
 ### Notes
 
 - Service library copy needs TGA advertising review before go-live.

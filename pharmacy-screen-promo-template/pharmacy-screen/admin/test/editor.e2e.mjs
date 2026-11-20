@@ -572,3 +572,24 @@ test('layout follows the frame inside the PH shell: menu expanded or collapsed, 
     await fetch(dev.base + `/api/admin/promotions/${p.id}`, { method: 'DELETE', headers: { Authorization: 'Bearer dev-admin', 'If-Match': `"${r.version}"` } });
   }
 });
+
+test('on a tablet the preview scrolls up until the orientation tabs lock to the top, and nothing below is cut off', async () => {
+  // iPad landscape sizes, the shorter ones being the visible height with Safari's bars showing
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1024, height: 620 }, { width: 1180, height: 740 }, { width: 1366, height: 940 }]) {
+    for (const or of ['portrait', 'landscape']) {
+      const { ctx, page, errors } = await open('dev-admin', { viewport });
+      if (or === 'landscape') await page.click('#orTabs [data-or="landscape"]');
+      await page.evaluate(() => scrollTo(0, 600));
+      await page.waitForFunction(() => scrollY >= 600);
+      const m = await page.evaluate(() => {
+        const r = (s) => document.querySelector(s).getBoundingClientRect();
+        return { tabsTop: Math.round(r('#orTabs').top), pvBottom: Math.round(r('.pv').bottom), copyBottom: Math.round(r('#cpUrl').bottom), vh: innerHeight };
+      });
+      const where = `${viewport.width}x${viewport.height} ${or}: ${JSON.stringify(m)}`;
+      assert.equal(m.tabsTop, 0, `the Portrait/Landscape tabs lock to the very top, ${where}`);
+      assert.ok(m.pvBottom <= m.vh && m.copyBottom <= m.vh, `the whole preview is in view, ${where}`);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
+});
