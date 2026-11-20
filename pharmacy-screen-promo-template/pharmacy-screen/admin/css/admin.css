@@ -55,6 +55,15 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 .cpwrap{position:relative;min-width:0}
 .cptip{position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:15;background:#262626;color:#fff;border-radius:6px;padding:6px 10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;overflow-wrap:anywhere;word-break:break-all;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .15s,transform .15s}
 .cpwrap:hover .cptip,#cpUrl:focus-visible+.cptip{opacity:1;transform:none}
+.cprow{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;min-width:0}
+.cprow .cpwrap{flex:1 1 auto}
+.pbdur{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.pbdur b{color:var(--text);font-weight:500}
+.infowrap{position:relative;display:inline-flex}
+.infowrap .ms{font-size:16px;cursor:help;color:var(--muted);border-radius:50%}
+.infowrap .ms:focus-visible{outline:2px solid var(--primary);outline-offset:1px}
+.infotip{position:absolute;right:0;bottom:calc(100% + 8px);z-index:15;width:max-content;max-width:min(280px,80vw);background:rgba(0,0,0,.85);color:#fff;border-radius:6px;padding:6px 8px;font:14px/1.5714 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;white-space:normal;overflow-wrap:break-word;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .15s,transform .15s}
+.infowrap:hover .infotip,#pbInfo:focus-visible+.infotip{opacity:1;transform:none}
 .apicall{font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;background:var(--panel);border:1px solid var(--divider);border-radius:6px;padding:8px 10px;overflow-x:auto}
 .apicall span{color:var(--muted)}
 code.kp{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margin-left:4px}

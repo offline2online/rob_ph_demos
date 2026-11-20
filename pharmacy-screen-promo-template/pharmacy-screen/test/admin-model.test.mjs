@@ -107,6 +107,15 @@ test('orderPromotions puts the defaults first, then by creation; durations clamp
   assert.equal(M.loopSeconds({ slots: [{ dur: 4 }, {}], close: {} }), 3 + 4 + 2 + 2);
 });
 
+test('playback duration is the promotion length plus one second, rounded up, and the tooltip names it', () => {
+  assert.equal(M.playbackSeconds(14), 15);
+  assert.equal(M.playbackSeconds(13.5), 15);
+  assert.equal(M.playbackSeconds(12.1), 14);
+  assert.equal(M.playbackSeconds(0.1 + 0.2 + 2.7), 4);
+  assert.equal(M.playbackSeconds(0), 1);
+  assert.match(M.playbackHelp(15), /^To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in\. Set the playback duration to 15 seconds, which is one second longer than the promotion so the last scene finishes\. Then save and activate the campaign to put it live\.$/);
+});
+
 test('editsSince finds the edits made while a new pharmacy was being created', () => {
   const draft = { name: 'New', storeCode: 'NEW-1', colours: { primary: '#000000', accent: '#ffffff' }, content: M.newPharmacyContent(promotions, templates) };
   const sent = M.clone(draft);

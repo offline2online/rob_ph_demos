@@ -2,7 +2,7 @@
 //
 //   apiBase     where /api/** is served. '' = this site (Hosting rewrites /api/admin/**, /api/settings/** and
 //               /api/device/** to the config API and the PH API proxy).
-//   screenPage  the screen page URL that "Copy template URL" builds on. '' = ../pharmacy-screen.html beside
+//   screenPage  the screen page URL that "Copy experience URL" builds on. '' = ../pharmacy-screen.html beside
 //               this editor.
 //   auth.mode   'firebase': sign in with Firebase Auth; admins carry the `admin` custom claim
 //               (config-api/scripts/set-admin-claim.js). auth.firebase is the web app config

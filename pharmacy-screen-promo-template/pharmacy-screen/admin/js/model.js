@@ -180,6 +180,11 @@ export const templateUrl = (screenPage, promoId, orientation) => `${screenPage}?
 export const loopSeconds = (d) => (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2);
 
 /** Scene durations are 1-60 seconds; anything else falls back to the default. */
+/** Seconds to enter as the campaign's playback duration: the promotion's length plus one second, rounded up, so
+ *  the last scene finishes before the player moves on. */
+export const playbackSeconds = (total) => Math.ceil(Math.round(((+total || 0) + 1) * 1000) / 1000);
+/** The setup tooltip beside "Playback duration". */
+export const playbackHelp = (n) => `To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in. Set the playback duration to ${n} seconds, which is one second longer than the promotion so the last scene finishes. Then save and activate the campaign to put it live.`;
 export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? Math.max(1, Math.min(60, n)) : undefined; };
 
 /**

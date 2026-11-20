@@ -163,6 +163,7 @@ function loop(now) {
   const tot = s.reduce((a, b) => a + b.t, 0), pos = s.slice(0, scene).reduce((a, b) => a + b.t, 0) + Math.min(elapsed, (s[scene] && s[scene].t) || 0);
   $('tl').querySelectorAll('.bar i').forEach((f, i) => { f.style.width = (i < scene ? 100 : i > scene ? 0 : Math.min(1, elapsed / ((s[scene] && s[scene].t) || 1)) * 100) + '%'; });
   $('tlTime').innerHTML = `<b>${secs(pos)}</b> / ${secs(tot)} · ${s.length} scenes`;
+  renderPlayback(tot);
   requestAnimationFrame(loop);
 }
 
@@ -196,6 +197,15 @@ function changed() {
 }
 
 function renderUrl() { $('cpTip').textContent = urlText(); }
+/** "Playback duration: Ns" beside Copy experience URL, and its setup tooltip (runs every frame; writes on change). */
+let pbLast = -1;
+function renderPlayback(tot) {
+  const n = M.playbackSeconds(tot);
+  if (n === pbLast) return;
+  pbLast = n;
+  $('pbSecs').textContent = `${n}s`;
+  $('pbTip').textContent = M.playbackHelp(n);
+}
 function screenPage() { return CONFIG.screenPage || new URL('../pharmacy-screen.html', location.href).href; }
 function urlText() { return M.templateUrl(screenPage(), promo() ? promo().promoId : '', orient); }
 function renderJson() {
@@ -785,7 +795,7 @@ $('cpUrl').onclick = async () => {
   const t = urlText(); let ok = false;
   try { await navigator.clipboard.writeText(t); ok = true; } catch (e) {}
   $('cpTx').textContent = ok ? 'Copied' : 'Copy failed, select it from the tooltip';
-  setTimeout(() => { $('cpTx').textContent = 'Copy template URL'; }, 1600);
+  setTimeout(() => { $('cpTx').textContent = 'Copy experience URL'; }, 1600);
 };
 
 // ───────────────────────── start ─────────────────────────

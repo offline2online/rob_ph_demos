@@ -286,7 +286,37 @@ test('scenes: Add promotion picker closes without adding; a new promotion can be
   await ctx.close();
 });
 
-test('preview: timeline and editor highlight each other; orientation and template URL follow', async () => {
+test('preview: Copy experience URL with a live playback duration and its setup tooltip', async () => {
+  const { ctx, page } = await open();
+  assert.match(await page.textContent('#cpTx'), /^Copy experience URL$/);
+  const total = async () => +(await page.textContent('#tlTime')).match(/ ([\d.]+)s/)[1];
+  const shown = async () => +(await page.textContent('#pbSecs')).replace('s', '');
+  const t0 = await total();
+  assert.equal(await shown(), Math.ceil(t0 + 1));
+  assert.match(await page.textContent('#pbDur'), /^Playback duration: \d+s/);
+  // retime the first scene by +3s: the number follows at once
+  const d0 = +(await page.inputValue('#s0dur'));
+  await page.fill('#s0dur', String(d0 + 3));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 3 + 1));
+  await page.fill('#s0dur', String(d0 + 2.5));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 2.5 + 1));
+  await page.fill('#s0dur', String(d0));
+  await page.waitForFunction((n) => document.getElementById('pbSecs').textContent === `${n}s`, Math.ceil(t0 + 1));
+  // the info tooltip names the same N and wraps
+  const n = await shown();
+  assert.equal(await page.textContent('#pbTip'), `To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in. Set the playback duration to ${n} seconds, which is one second longer than the promotion so the last scene finishes. Then save and activate the campaign to put it live.`);
+  await page.hover('#pbInfo');
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('pbTip')).opacity === '1');
+  const box = await page.$eval('#pbTip', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, h: r.height, l: r.left, vw: innerWidth }; });
+  assert.ok(box.h > 40 && box.w <= 281 && box.l >= 0, JSON.stringify(box));
+  // another promotion carries its own length
+  await page.click('#dpTabs button:has-text("Closed")');
+  await page.waitForFunction(() => document.querySelectorAll('#tl button').length === 3);
+  await page.waitForFunction(() => { const m = document.getElementById('tlTime').textContent.match(/ ([\d.]+)s/); return m && document.getElementById('pbSecs').textContent === `${Math.ceil(+m[1] + 1)}s`; });
+  await ctx.close();
+});
+
+test('preview: timeline and editor highlight each other; orientation and experience URL follow', async () => {
   const { ctx, page } = await open();
   await page.click('#playBtn');
   await page.click('#tl button[data-i="2"]');

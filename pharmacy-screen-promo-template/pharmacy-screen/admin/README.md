@@ -40,8 +40,11 @@ nothing.
 `../js/render.js` (the screen's own render engine) draws the selected promotion, fed the same config a screen
 gets (`js/model.js` → `renderConfig()` maps the admin records). Portrait/Landscape tabs, the scene timeline
 with total time, Play/Pause, click a scene to jump to its editor and focus an editor to show its scene, and
-Copy template URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&orientation=<o>`, the full URL
-in a wrapping tooltip on hover). Store data comes from the device looked up in Settings; until one is, the
+Copy experience URL (`pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&orientation=<o>`, the full URL
+in a wrapping tooltip on hover). Beside it, "Playback duration: Ns" is the number to enter in the campaign: the
+promotion's total length plus one second, rounded up (`playbackSeconds()` in `js/model.js`), so the last scene
+finishes. It updates live as scenes are added, removed or retimed, and its info icon's tooltip gives the campaign
+setup steps (Creative tab → Experience URL → paste the URL, set the playback duration, save and activate). Store data comes from the device looked up in Settings; until one is, the
 preview uses sample hours and no suburb, and says so.
 
 ## Files
@@ -55,7 +58,7 @@ preview uses sample hours and no suburb, and says so.
 | `js/save-queue.js` | The write queue: one chain of writes per record, debounced edits, the save-status pill's state, and `flush()` (waits for every write, including follow-ups, before the editor switches or deletes a pharmacy). |
 | `js/rich-text.js` | Rich-text fields (headlines, bar messages): bold, regular, italic, accent, line break. |
 | `js/icon-picker.js` | The searchable Material Symbols picker for a service chip. |
-| `js/model.js` | No DOM: admin records → render config, content defaults, validation, service filter, template URL, `editsSince()` (what changed while a create was in flight). Unit-tested in `../test/admin-model.test.mjs`. |
+| `js/model.js` | No DOM: admin records → render config, content defaults, validation, service filter, experience URL, playback duration, `editsSince()` (what changed while a create was in flight). Unit-tested in `../test/admin-model.test.mjs`. |
 | `js/api.js` | API client for the config API and the PH API proxy. |
 | `js/auth.js` | Sign-in: Firebase Auth (Google or email and password), or a pasted token for local development. |
 | `js/icons.js` | The Material Symbols names for the icon picker. |
