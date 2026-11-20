@@ -7,7 +7,7 @@
 //   renderScene(screenEl, { store, play, orientation: 'portrait', scene: 0, now, enter: true })
 
 import { DAYS, parseOpeningHours, storeNow, storeState, fmtShort, weeklyRows } from './hours.js';
-import { esc, rich, fill, timeTokens, fillTemplate, applyStoreName } from './tokens.js';
+import { esc, rich, fill, timeTokens, fillTemplate, applyStoreName, cleanTokens, applyTokens, DATA_TOKENS } from './tokens.js';
 import { geom, ptsPath, ptsClip, fitText } from './fit-text.js';
 
 // ---------- occasions ----------
@@ -154,18 +154,21 @@ export function storeModel(campaignData, config) {
   const code = String(loc.store_code || '').trim();
   const ph = ((config && config.pharmacies) || []).find((x) => String(x.storeCode || '').trim().toUpperCase() === code.toUpperCase());
   if (!code || !ph) throw new ScreenError('not-set-up', 'Screen not set up', code ? `Store ${code} has no screen content yet.` : 'No store is linked to this screen.');
+  // Token values set by hand on the pharmacy (Admin → Settings → Tokens) win over the store's data.
+  const tokens = cleanTokens(ph.tokens);
   return {
     code,
-    name: ph.name || loc.store_name || '',
-    suburb: String(addr.suburb || '').trim(),
+    name: tokens.StoreName || ph.name || loc.store_name || '',
+    suburb: tokens.Suburb || String(addr.suburb || '').trim(),
     tz: loc.store_timezone || 'Australia/Melbourne',
-    phone: addr.phone_number || '',
+    phone: tokens.Phone || addr.phone_number || '',
     address: addr.address || '',
     sessions: parseOpeningHours(info.opening_hours),
     brand: { p: (ph.brand && ph.brand.p) || '#0f1050', a: (ph.brand && ph.brand.a) || '#5ee6b0' },
     // The store logo from the Location API (PH-181; the proxy returns it at store_info.logo_url) wins over the config logo.
     logo: safeUrl(info.logo_url) || safeUrl(data.logo_url) || ph.logo || null,
     content: ph.content || {},
+    tokens,
   };
 }
 
@@ -276,7 +279,8 @@ function logoHtml(store) {
 export function footerMessage(store, content, state) {
   const F = footerConfig(content);
   const key = state.state === 'open' ? 'open' : state.state === 'closing' ? 'closing' : state.state === 'before' ? 'before' : 'closed';
-  return timeTokens(rich(F[key], store.suburb), fmtShort(state.closeTime, true), fmtShort(state.openTime, true));
+  const tok = store.tokens || {};
+  return timeTokens(rich(F[key], store.suburb), tok.CloseTime || fmtShort(state.closeTime, true), tok.OpenTime || fmtShort(state.openTime, true));
 }
 
 /**
@@ -363,8 +367,12 @@ export function renderScene(el, opts) {
     Chevron: `<svg class="s-chev" viewBox="0 0 90 50" style="${G.chev}"><path d="M8 8 L45 42 L82 8"/></svg>`,
     Suburb: esc(sub), StoreName: esc(s.name), Phone: esc(s.phone || ''),
   });
+  // Any other token the pharmacy has set by hand: in template HTML as a slot, and in copy (with ${StoreName} and
+  // ${Phone}, which copy otherwise leaves as written outside occasions).
+  const custom = Object.fromEntries(Object.entries(s.tokens || {}).filter(([k]) => !DATA_TOKENS.includes(k) && !(k in T)));
+  for (const [k, v] of Object.entries(custom)) T[k] = esc(v);
   const P = play.template;
-  const html = fillTemplate(P.html || DEFAULT_HTML[play.base], T);
+  const html = applyTokens(fillTemplate(P.html || DEFAULT_HTML[play.base], T), { ...custom, StoreName: s.name, Phone: s.phone || '' });
   const css = P.css ? scopeCss(P.css, '#' + (el.id || 'screen')) : '';
   el.innerHTML = (css ? `<style>${css}</style>` : '') + html;
   const top = el.querySelector('.s-top');

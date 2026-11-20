@@ -8,6 +8,15 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Settings → Tokens: set any token's value by hand, per pharmacy.** Settings lists every `${…}` token the
+  pharmacy's promotions and templates use (the master template's inherited sections included), with the
+  promotions that use each. A value typed there shows on that pharmacy's screens instead of the store's data
+  (`${Suburb}`, `${StoreName}`, `${Phone}`, `${CloseTime}`, `${OpenTime}`), or instead of nothing for any other
+  token a custom template or copy uses; blank goes back to the store's data. Stored as the pharmacy's `tokens`
+  and published with its screen config ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "Template tokens").
+
 ### Changed
 
 - **Admin editor: pharmacies are managed in Settings.** Adding a pharmacy, its details (name, store code) and

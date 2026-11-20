@@ -130,7 +130,7 @@ Split so the admin editor's live preview can reuse the same code:
 | Module | What it does |
 |---|---|
 | `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight), store time in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing), time formats, the weekly hours rows. No DOM. |
-| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
+| `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
 | `fit-text.js` | Panel geometry (triangle / arrow), `fitText()` (headline and content shrink to stay inside the panel) and `auditScene()` (the overflow check). |
 | `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
@@ -172,12 +172,14 @@ run holds the train's deploy; see "CI" below.
   (Melbourne, Perth, Brisbane; Melbourne's daylight-saving change), `${CloseTime}` / `${OpenTime}` for a session
   crossing midnight, time formats.
 - `test/tokens.test.mjs`: `${Suburb}` replaced, and blanked with its comma or line break; the rich-text
-  sanitiser; template slots.
+  sanitiser; template slots; token values set by hand (settable names, cleaning, winning over the store data,
+  and the config API refusing the same slots).
 - `test/live-data.test.mjs`: failover, 30 s / 60 s polling, one request in flight, re-render only on change,
   network drop and restart from the cache, the error states, a device moving store, the published-config mapping
   (built with `config-api/src/publish.js`) and the proxy's `store_info.logo_url` (built with
   `ph-proxy/src/location-proxy.js`).
-- `test/admin-model.test.mjs`: the editor's model, including promo ID and store code validation and uniqueness.
+- `test/admin-model.test.mjs`: the editor's model, including promo ID and store code validation and uniqueness,
+  and the tokens Settings → Tokens lists for a pharmacy (master template included).
 - `test/handover-docs.test.mjs`: the handover docs (`../docs/`) list exactly the environment variables and query
   parameters the code reads, `.env.example` holds placeholders only, links resolve, and the template token list
   matches `js/tokens.js`.

@@ -784,7 +784,7 @@ async function createPharmacy() {
     const rec = await api.createPharmacy(sent);
     draft.id = rec.id; draft.version = rec.version;
     S.pharmacies.push({ ...rec, content: undefined });
-    if (S.cur === draft) { pref.set('pharmacy', rec.id); renderStoreSel(); renderLogo(); lastKey = ''; }
+    if (S.cur === draft) { pref.set('pharmacy', rec.id); renderStoreSel(); renderLogo(); renderTokens(); lastKey = ''; }
     saveEditsMadeDuring(draft, sent);
   } catch (e) {
     if (e.code === 'duplicate-store-code' || e.status === 400) { showCodeErr(e.message); return; }
@@ -809,8 +809,32 @@ function loadStore() {
   bindVal('cA', () => s.colours.accent, (v) => { s.colours.accent = v.toLowerCase(); });
   showCodeErr(s.id ? '' : detailsError());
   $('logoIn').value = ''; $('logoErr').hidden = true;
-  renderLogo(); renderDp(); renderUrl(); renderJson();
+  renderLogo(); renderTokens(); renderDp(); renderUrl(); renderJson();
   scene = 0; elapsed = 0; lastKey = '';
+}
+// Tokens set by hand: every token this pharmacy's promotions and templates use (master template included), each
+// with a value that, when set, shows on its screens instead of the store's data.
+function renderTokens() {
+  const s = S.cur, list = M.usedTokens(s, S.promotions, S.templates);
+  $('tokEmpty').hidden = list.length > 0;
+  $('tokList').innerHTML = list.map((t) => {
+    const ph = t.data ? M.TOKEN_SOURCES[t.name] : 'Not set, shows nothing';
+    const used = t.promotions.length ? `Used in ${t.promotions.join(', ')}` : 'Not used by any promotion';
+    return `<label class="f"><span>\${${esc(t.name)}}</span><input data-token="${esc(t.name)}" value="${esc(t.value)}" placeholder="${esc(ph)}" maxlength="200" autocomplete="off"${s.id ? '' : ' disabled title="Add the pharmacy name and store code first"'}><span class="hint">${esc(used)}</span></label>`;
+  }).join('');
+  for (const e of $('tokList').querySelectorAll('input[data-token]')) e.oninput = () => {
+    s.tokens = M.setToken(s, e.dataset.token, e.value);
+    ver++; lastKey = ''; renderJson(); saveTokens(s);
+  };
+}
+/** Save pharmacy `ph`'s hand-set token values. */
+function saveTokens(ph) {
+  const id = ph.id; if (!id) return;
+  Save.later(`ph:${id}:tokens`, `ph:${id}`, async () => {
+    const res = await api.updatePharmacy(id, { tokens: ph.tokens || {} }, ph.version);
+    ph.version = res.version;
+    if (S.cur === ph) syncListRow();
+  });
 }
 function renderLogo() {
   const s = S.cur, url = s.logo && s.logo.url;
@@ -906,7 +930,7 @@ $('setBtn').onclick = () => {
   $('settingsView').hidden = !on; $('contentView').hidden = on; $('toolbar').classList.toggle('inSettings', on);
   $('setBtn').setAttribute('aria-pressed', on); $('setTx').textContent = on ? 'Back to promotions' : 'Settings';
   $('setBtn').firstChild.textContent = on ? 'arrow_back' : 'settings';
-  if (on) loadPhApi();
+  if (on) { loadPhApi(); if (!S.cur.isMaster) renderTokens(); }
   // Settings works on pharmacies, never the master template: show the first pharmacy there.
   if (on && S.cur && S.cur.isMaster && S.pharmacies[0]) selectPharmacy(S.pharmacies[0].id).catch(Save.fail);
 };

@@ -160,6 +160,15 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 | `${StoreName}` | all | As above |
 | `${Phone}` | all | `store_info.address_info.phone_number` |
 
+**Set by hand.** A pharmacy can give any token a value of its own (Admin → Settings → **Tokens**, stored as
+the pharmacy's `tokens`). A value set there wins over the store's data: `${Suburb}`, `${StoreName}`, `${Phone}`,
+`${CloseTime}` and `${OpenTime}` show it instead of the Location API's or the editor's value, and any other token
+name (letters, digits and underscores, starting with a letter, e.g. `${Website}`) used in copy or template HTML
+shows it instead of nothing. With a value set, `${StoreName}` and `${Phone}` also resolve in promotion copy. The
+layout slots (`${Headline}`, `${Logo}`, `${Content}` and the rest of the table above, other than `${Suburb}`,
+`${StoreName}` and `${Phone}`) cannot be set. Values are plain text, at most 200 characters, and at most 50 per
+pharmacy.
+
 Template HTML may not contain `<script>`, `<iframe>`, `<object>`, `<embed>`, `<frame>`, `<base>`, `<meta>`,
 `<link>`, inline event handlers or `javascript:` URLs; template CSS may not contain `</style>`, `@import`,
 `expression()` or `javascript:`. The API refuses them (they render on unattended public screens).
@@ -215,6 +224,10 @@ Master template: a promotion's optional `master` holds the default content (the 
 lists the sections it manages itself (its own `content` is used for those). Branding is never inherited. The
 published screen config below carries the resolved content only.
 
+Tokens set by hand: a pharmacy's optional `"tokens": { "<token name>": "<text>" }` (section 3, "Set by hand");
+blank values are dropped and the field is left out when none are set. The published screen config carries it
+as it is.
+
 Promotion: `{ "name", "promoId", "templateId", "master"? }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
@@ -240,9 +253,12 @@ as every write that affects it, copied field by field (`config-api/src/publish.j
       "content": { "greeting": "Good morning,<br>${Suburb}", "slots": [], "close": {}, "footer": {} }
     }
   },
+  "tokens": { "Suburb": "Beaumaris" },
   "publishedAt": "2026-11-20T01:00:00.000Z"
 }
 ```
+
+`tokens` is present only when the pharmacy has set a token by hand.
 
 ## 5. PH API token
 

@@ -166,6 +166,51 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await ctx.close();
 });
 
+test('Settings → Tokens: lists the tokens the pharmacy uses (master included); a value set by hand shows and is published', async () => {
+  const { ctx, page, errors } = await open();
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-001');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#setBtn');
+  assert.equal(await page.isVisible('#tokensCard'), true);
+  const names = await page.$$eval('#tokList input[data-token]', (l) => l.map((e) => e.dataset.token));
+  for (const n of ['Suburb', 'StoreName', 'CloseTime', 'OpenTime']) assert.ok(names.includes(n), `${n} in ${names}`);
+  assert.ok(!names.some((n) => ['Headline', 'Logo', 'Content', 'Footer'].includes(n)), 'layout slots are not listed');
+  assert.equal(await page.getAttribute('#tokList input[data-token="Suburb"]', 'placeholder'), 'Suburb from Personalisation Hub');
+  assert.match(await page.textContent('#tokList'), /Used in Morning/);
+  // The preview has no store data, so ${Suburb} is blank until a value is set by hand.
+  assert.doesNotMatch(await headline(page), /Testville/);
+  await page.fill('#tokList input[data-token="Suburb"]', 'Testville');
+  await page.waitForFunction(() => /Testville/.test(document.querySelector('#screen .s-head h2').textContent));
+  await settle(page);
+  assert.deepEqual((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.tokens, { Suburb: 'Testville' });
+  assert.deepEqual((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.tokens, { Suburb: 'Testville' });
+  // Kept after a reload; clearing it shows the store's data again and removes it from the record.
+  await page.reload();
+  await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-001');
+  await page.click('#setBtn');
+  assert.equal(await page.inputValue('#tokList input[data-token="Suburb"]'), 'Testville');
+  await page.fill('#tokList input[data-token="Suburb"]', '');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.tokens, undefined);
+  // A token used only in a custom template, and ${StoreName} in copy, render from the values set by hand.
+  const html = await page.evaluate(async () => {
+    const R = await import('/js/render.js');
+    const el = document.createElement('div'); el.id = 'tokTest'; el.className = 'screen'; document.body.append(el);
+    const cfg = { promotions: [{ id: 'x', promoId: 'x', template: 'c1' }], templates: [{ id: 'c1', base: 'scenes', html: '<div class="s-head">${Headline}</div><p class="w">${Website}</p><div class="s-body">${Content}</div>' }],
+      pharmacies: [{ storeCode: 'T1', name: 'Own Name', brand: { p: '#0f1050', a: '#5ee6b0' }, tokens: { Website: 'mi.example', StoreName: 'Set Name' },
+        content: { x: { greeting: 'Hi', introTitle: 'From ${StoreName}', introSub: 'Visit ${Website}', slots: [], close: { title: 'Bye' } } } }] };
+    const store = R.storeModel({ data: { store_location: { store_code: 'T1' } } }, cfg);
+    R.renderScene(el, { store, play: R.resolvePromotion(cfg, store, 'x'), orientation: 'portrait', scene: 0 });
+    const out = el.innerHTML; el.remove(); return out;
+  });
+  assert.match(html, /<p class="w">mi\.example<\/p>/);
+  assert.match(html, /From Set Name/);
+  assert.match(html, /Visit mi\.example/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('promotions: create, unique promo ID, rename, delete with confirm', async () => {
   const { ctx, page } = await open();
   await page.click('#newPromoBtn');

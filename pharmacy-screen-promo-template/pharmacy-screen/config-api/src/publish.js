@@ -17,6 +17,14 @@ function mediaUrl(m) {
   return m && typeof m.url === "string" ? m.url : null;
 }
 
+function tokensOf(pharmacy) {
+  const t = pharmacy.tokens;
+  if (!t || typeof t !== "object" || Array.isArray(t)) return null;
+  const out = {};
+  for (const [k, v] of Object.entries(t)) if (typeof v === "string" && v) out[k] = v;
+  return Object.keys(out).length ? out : null;
+}
+
 function resolveTemplate(templateId, templatesById) {
   const t = templatesById.get(templateId) || BUILTIN_BY_ID.get(templateId) || builtInFor("promotion-scenes");
   return {
@@ -60,6 +68,8 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
     name: pharmacy.name,
     colours: { primary: pharmacy.colours.primary, accent: pharmacy.colours.accent },
     logo: mediaUrl(pharmacy.logo),
+    // Token values set by hand on the pharmacy (Admin → Settings → Tokens): text only, by name.
+    ...(tokensOf(pharmacy) ? { tokens: tokensOf(pharmacy) } : {}),
     promotions: promos,
     publishedAt,
   };

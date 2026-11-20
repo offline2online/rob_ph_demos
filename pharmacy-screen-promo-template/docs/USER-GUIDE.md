@@ -143,6 +143,13 @@ Deleting a custom template moves the promotions that used it back to the built-i
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
 - **Pharmacy details**: name and store code.
+- **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
+  sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
+  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub, the pharmacy
+  name, today's opening or closing time). Type a value to show it on this pharmacy's screens instead, for
+  example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses
+  (e.g. `${Website}`) shows nothing until it has a value here. Changes save as you type and show in the
+  preview; clear the field to go back to the store's data. Available once the pharmacy is created.
 - **Branding**: colours and logo ("Branding and logo" above).
 - **Personalisation Hub API**: the **API base URL** and the **API token (x-api-key)**. The token is write-only;
   after saving you see only that it is set and its last 4 characters, with Replace and Remove. Usually set once

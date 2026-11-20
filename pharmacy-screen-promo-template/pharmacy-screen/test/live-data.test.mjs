@@ -315,3 +315,15 @@ test('published config: an occasion template plays its occasion (t_occ_<occasion
   assert.equal(xmas.occasion, 'christmas');
   assert.match(xmas.content.scenes[2].line1, /from the whole \$\{StoreName\} team\.$/);
 });
+
+test('published config: tokens set by hand reach the screen and win over the store data', () => {
+  const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: {}, tokens: { Suburb: 'Beaumaris', Website: 'mi.example' } };
+  const cfg = fromPublishedConfig(buildScreenConfig(ph, [], [], '2026-11-20T00:00:00.000Z'));
+  assert.deepEqual(cfg.pharmacies[0].tokens, { Suburb: 'Beaumaris', Website: 'mi.example' });
+  const store = storeModel({ data: { store_location: { store_code: 'VIC-MP-001' }, store_info: { address_info: { suburb: 'Black Rock' } } } }, cfg);
+  assert.equal(store.suburb, 'Beaumaris');
+  // Without any, the published config has no tokens field and the store's own suburb shows.
+  const plain = fromPublishedConfig(buildScreenConfig({ ...ph, tokens: undefined }, [], [], '2026-11-20T00:00:00.000Z'));
+  assert.deepEqual(plain.pharmacies[0].tokens, {});
+  assert.equal(storeModel({ data: { store_location: { store_code: 'VIC-MP-001' }, store_info: { address_info: { suburb: 'Black Rock' } } } }, plain).suburb, 'Black Rock');
+});

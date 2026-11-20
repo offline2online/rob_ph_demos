@@ -194,3 +194,32 @@ test('master template: detaching, re-inheriting, syncing and a new pharmacy star
   assert.equal(fresh.close.title, 'MC');
   assert.equal(M.newPharmacyContent([{ id: 'p', promoId: 'x', templateId: M.BUILTIN_SCENES, master: { greeting: 'G', slots: [], close: { title: 't' } } }], templates).p.greeting, 'G');
 });
+
+test('tokens set by hand: every token the pharmacy uses, master template included, and setting one', () => {
+  const tpls = [...templates, { id: 'tpl2', name: 'Scenes, custom', kind: 'promotion-scenes', builtIn: false, html: '<div>${Headline}${Website}</div>' }];
+  const promos = [
+    { id: 'p-m', name: 'Morning', promoId: 'morning', templateId: M.BUILTIN_SCENES, master: { greeting: 'Good morning,<br>${Suburb}', introTitle: 'Call ${Phone}', introSub: '', slots: [], close: { title: 'Bye' }, footer: { show: false } } },
+    { id: 'p-o', name: 'Occasions', promoId: 'occasions', templateId: M.occasionTemplateId('christmas') },
+    { id: 'p-x', name: 'Extra', promoId: 'extra', templateId: 'tpl2' },
+  ];
+  const ph = { id: 'ph1', content: { 'p-x': { greeting: 'Hello', introTitle: '${Unused', introSub: '', slots: [], close: { title: '${Offer}' } } }, tokens: { Suburb: 'Beaumaris', Old: 'left over' } };
+  const list = M.usedTokens(ph, promos, tpls);
+  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime', 'Offer', 'Old', 'Website']);
+  const by = Object.fromEntries(list.map((t) => [t.name, t]));
+  assert.deepEqual(by.Suburb, { name: 'Suburb', data: true, value: 'Beaumaris', promotions: ['Morning', 'Occasions'] });
+  assert.deepEqual(by.Phone.promotions, ['Morning'], 'from the master template');
+  assert.deepEqual(by.StoreName.promotions, ['Occasions'], 'the occasion sign-off');
+  assert.deepEqual(by.CloseTime.promotions, ['Occasions', 'Extra'], 'the Open today bar, unless hidden');
+  assert.deepEqual(by.Website.promotions, ['Extra'], 'custom template HTML; its layout slots are not listed');
+  assert.deepEqual(by.Old, { name: 'Old', data: false, value: 'left over', promotions: [] });
+  // Detaching a section uses the pharmacy's own copy instead of the master's.
+  const det = { ...ph, content: { ...ph.content, 'p-m': { introTitle: 'Plain' } }, detached: { 'p-m': ['greeting'] } };
+  const detList = M.usedTokens(det, promos, tpls);
+  assert.ok(!detList.some((t) => t.name === 'Phone'), 'the master greeting section no longer plays');
+  assert.deepEqual(detList.find((t) => t.name === 'Suburb').promotions, ['Occasions']);
+  // setToken: blank removes.
+  assert.deepEqual(M.setToken(ph, 'Phone', '03 1234'), { Suburb: 'Beaumaris', Old: 'left over', Phone: '03 1234' });
+  assert.deepEqual(M.setToken(ph, 'Old', '  '), { Suburb: 'Beaumaris' });
+  // renderConfig passes them to the render engine.
+  assert.deepEqual(M.renderConfig({ pharmacies: [{ ...ph, storeCode: 'A1', colours: {} }], promotions: promos, templates: tpls }).pharmacies[0].tokens, { Suburb: 'Beaumaris', Old: 'left over' });
+});
