@@ -5,7 +5,7 @@ saving to the config API instead of browser storage. Static ES modules, no build
 (Roboto, Material Symbols, `#169bc2`). It renders the content frame only, with nothing `position: fixed`, so
 it can be iframed into HQ Admin.
 
-Spec: the project's requirements 7 and 9-19.
+Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 
 ## What it edits
 
