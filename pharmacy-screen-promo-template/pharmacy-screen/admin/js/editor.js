@@ -625,6 +625,7 @@ function renderOccasion(B, d) {
     const setDates = () => {
       o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
       $('occWhen').textContent = span(o.from, o.to);
+      relabelSeasons();
       changed();
     };
     ['occFromd', 'occFromm', 'occTod', 'occTom'].forEach((id) => { $(id).onchange = setDates; });
@@ -685,8 +686,16 @@ function tplOptions(sel, withOccasions) {
   const occ = (t) => t.kind === 'occasion';
   return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Seasonal', S.templates.filter(occ)) : '');
 }
+// Each season shows its start and end dates after its name ("Christmas (15 Dec – 27 Dec)"), in both views: the dates
+// of the pharmacy (or master template) on screen, the same ones as its Dates card, so they follow a change there.
+const seasonOccasions = () => (S.cur && isOcc() ? content().occasions : null);
 function occasionOptions(sel) {
-  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
+  const occs = seasonOccasions();
+  return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(M.seasonOptionLabel(o.id, occs))}</option>`).join('');
+}
+function relabelSeasons() {
+  const occs = seasonOccasions();
+  for (const opt of $('pmTpl').options) { const id = M.occasionOfTemplate(opt.value); if (id) opt.textContent = M.seasonOptionLabel(id, occs); }
 }
 let pmArm = false;
 function renderPromoMeta() {

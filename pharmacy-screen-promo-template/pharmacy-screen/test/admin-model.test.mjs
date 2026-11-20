@@ -331,3 +331,23 @@ test('master template preview: ${Suburb}, ${StoreName} and ${Phone} show as writ
   assert.equal(rich('Good morning,<br>${Suburb}', s2.suburb), 'Good morning');
   assert.equal(s2.name, 'North Ringwood');
 });
+
+test('seasons: each Season drop-down line shows its start and end dates after the name', () => {
+  // The defaults (render.js OCCASIONS): a range, a range over New Year, and one-day seasons as a single date.
+  assert.equal(M.seasonOptionLabel('christmas', null, 2026), 'Christmas (15 Dec – 27 Dec)');
+  assert.equal(M.seasonOptionLabel('new-year', {}, 2026), "New Year's (28 Dec – 5 Jan)");
+  assert.equal(M.seasonOptionLabel('australia-day', {}, 2026), 'Australia Day (26 Jan)');
+  assert.equal(M.seasonOptionLabel('valentines-day', {}, 2026), "Valentine's Day (14 Feb)");
+  assert.equal(M.seasonOptionLabel('anzac-day', {}, 2026), 'Anzac Day (25 Apr)');
+  // Easter is worked out for the year: Good Friday to Easter Monday.
+  assert.equal(M.seasonOptionLabel('easter', {}, 2026), 'Easter (3 Apr – 6 Apr)');
+  assert.equal(M.seasonOptionLabel('easter', {}, 2027), 'Easter (26 Mar – 29 Mar)');
+  // Dates saved on the season's copy (its Dates card) win, for Easter too; invalid ones fall back to the defaults.
+  const occs = { christmas: { from: '12-01', to: '12-26' }, easter: { from: '04-01', to: '04-10' }, 'anzac-day': { from: '13-40', to: '04-25' } };
+  assert.equal(M.seasonOptionLabel('christmas', occs, 2026), 'Christmas (1 Dec – 26 Dec)');
+  assert.equal(M.seasonOptionLabel('easter', occs, 2026), 'Easter (1 Apr – 10 Apr)');
+  assert.equal(M.seasonOptionLabel('anzac-day', occs, 2026), 'Anzac Day (25 Apr)');
+  assert.equal(M.seasonOptionLabel('nope', occs, 2026), '');
+  // Every line of the drop-down, in order, ends in its dates in brackets.
+  for (const o of M.OCCASION_CHOICES) assert.match(M.seasonOptionLabel(o.id, {}, 2026), /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, o.id);
+});

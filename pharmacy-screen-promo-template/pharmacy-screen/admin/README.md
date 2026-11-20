@@ -32,7 +32,7 @@ sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`, `applyLo
 pharmacy's details, tokens and branding, Settings → Pharmacies and Personalisation Hub API are not reachable; its
 content is edited as in the admin view. The grey promotion section (promotion name, promo ID, template, Edit HTML
 and the `promo=` line) is not shown on Morning, Afternoon, Closed or any other non-occasion promotion
-(`renderPromoMeta` hides `#promoMeta`); on the Seasonal promotion only the Season drop-down shows, the season's Dates card is read-only (Every year: start to end), and the drop-down can be
+(`renderPromoMeta` hides `#promoMeta`); on the Seasonal promotion only the Season drop-down shows (each option is the season's name and its dates in brackets, "Christmas (15 Dec – 27 Dec)", in both views: `model.js` `seasonOptionLabel`, from the same `seasonDates` as the Dates card; `relabelSeasons` in `editor.js` updates them when a date changes), the season's Dates card is read-only (Every year: start to end), and the drop-down can be
 changed (it sets the shared promotion's season, as in the admin view). New / Delete promotion and the master template
 are hidden, and every write handler for them returns early. Each inherited section's action reads "Edit"; every
 scene's seconds-on-screen control is hidden (`hideTimings`: timings are set by an administrator); Add promotion is

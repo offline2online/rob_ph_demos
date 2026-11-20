@@ -10,6 +10,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Season drop-down shows each season's dates.** On the Seasonal promotion, every line of the **Season**
+  drop-down has the season's start and end dates in brackets after its name, for example
+  "Christmas (15 Dec – 27 Dec)" and "New Year's (28 Dec – 5 Jan)"; a one-day season shows one date
+  ("Australia Day (26 Jan)") and Easter shows this year's Good Friday to Easter Monday. In the admin editor and
+  the pharmacy view (`admin/?store=<code>`). The dates are the ones in each season's **Dates** card, so the
+  drop-down changes as soon as a date is changed ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Seasonal").
 - **Master template preview shows its tokens as written.** In Promo preview → **Master template**, the preview
   prints `${Suburb}`, `${StoreName}` and `${Phone}` as typed ("Good morning, ${Suburb}", "Serving ${Suburb}",
   "Phone ${Phone}", "from the whole ${StoreName} team") instead of blanking them, so it is clear the master's copy
