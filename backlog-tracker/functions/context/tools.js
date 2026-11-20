@@ -219,7 +219,9 @@ function contextTools({ ctx, db, textResult, toolError }) {
             const d = doc.data() || {};
             cursor = d.at;
             if (since != null && ms(d.at) < since) { done = true; break; }
-            const isAidan = d.email === "aidan";
+            // The mailbox's runs carry the stand-in "aidan"; the console chat's
+            // carry the member who asked, with Aidan's own run kinds.
+            const isAidan = d.email === "aidan" || /^aidan_/.test(String(d.kind || ""));
             if (a.kind && d.kind !== a.kind) continue;
             if (a.outcome && d.outcome !== a.outcome) continue;
             if (typeof a.aidan === "boolean" && a.aidan !== isAidan) continue;

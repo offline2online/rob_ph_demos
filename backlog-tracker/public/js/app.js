@@ -35,6 +35,7 @@ import { trainTestChipHTML, approvalWarningLines, APPROVAL_WARNING_TITLE, APPROV
 import { sharedWithChipsHTML, foreignPathsChipsHTML, sharedFilesHeaderHTML, deployQueuedHintHTML, parseOwnedPaths } from "./train-overlap.js";
 import { isMirror, orderProjectDocs, mirrorEditRefusal, mirrorDeleteWarning, mirrorChipHTML, openInGithubHTML, startHereChipHTML, projectDocRowHTML, interfaceActionsHTML } from "./docs-view.js";
 import { initNavShell } from "./nav-shell.js";
+import { initAidanChat } from "./aidan-chat.js";
 import { ROUTINE_SETUP_HASH, ticketOwner, ownerFireBlock, deployOwnerBlock, groomOwnerBlock } from "./owner-fire.js";
 import { renderMarkdown } from "./docs-markdown.js";
 import { promotePageFromHash, promoteHash, promoteDocsFor, PROMOTE_PAGES, teamFacingMd, brandHeaderHtml, promotePartnerFromHash, partnerHash, partnersFrom, partnersListHtml, partnerLockupHtml, promoteMarketFromHash, marketHash, marketsFrom, marketsListHtml } from "./promote-section.js";
@@ -10734,6 +10735,23 @@ const conceptDictation = createDictationController({
   micBtn: document.getElementById("concept-mic-btn"),
   hintEl: document.getElementById("concept-listening-hint"),
   errorEl: document.getElementById("concept-mic-error"),
+});
+// Aidan's chat panel (yvnAPPAW9ROLrNwJceyn, js/aidan-chat.js): the same
+// dictation as every other mic here. When the member stops, what they said
+// is sent to Aidan (a stop by closing the panel sends nothing).
+let aidanChat = null;
+const aidanChatDictation = createDictationController({
+  textareaEl: document.getElementById("aidan-chat-input"),
+  micBtn: document.getElementById("aidan-chat-mic"),
+  customMic: true,
+  hintEl: document.getElementById("aidan-chat-listening-hint"),
+  errorEl: document.getElementById("aidan-chat-mic-error"),
+  onStop: (text, info) => { if (!(info && info.halted) && aidanChat) aidanChat.sendFromVoice(text); },
+});
+aidanChat = initAidanChat({
+  apiHeaders: consoleApiHeaders,
+  dictation: aidanChatDictation,
+  member: () => (auth.currentUser && auth.currentUser.email) || "",
 });
 niEls.desc.addEventListener("input", (e) => {
   autoGrow(e.target);

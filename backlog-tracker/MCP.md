@@ -1411,3 +1411,34 @@ until then search runs on keywords and local vectors.
 
 Tests: `node context-core.test.js` and `node context.test.js`, both in
 `npm run test:mcp`.
+
+## Aidan in the console: the chat panel
+
+19 Nov 2026, ticket yvnAPPAW9ROLrNwJceyn. Aidan, the agent mailbox, also
+answers in a chat panel on every page of the console. It is not an MCP
+tool: the panel calls `POST /mcp/aidan/chat` on the same function with the
+member's Firebase ID token (`X-Firebase-ID-Token`, like `/mcp/me/connections`),
+and a turn reads through the MCP server's own read tools as that member:
+
+- **The session is the caller's**, not the mailbox's stand-in:
+  `{email, role, scopes: ["board.read"], via: "aidan-chat"}`
+  (`functions/aidan-chat-core.js → chatSession`). `consoleReader(names,
+  session)` offers a tool that names a role only when the member's role
+  reaches it, exactly the `tools/call` test; `search_console`,
+  `get_topic_context` and Code Mode scope their sources and tools by the
+  same session. Without a session (the mailbox) nothing changes: no tool
+  with a role is offered.
+- **PH Agent Context first, then one Code Mode run**, as by email. Every
+  search and pack a chat turn runs is in `searchRuns` with `via:
+  "aidan-chat"` (`list_search_runs`), and its Code Mode run in `scriptRuns`
+  with the member's email and role.
+- **Read-only.** `board.read` only, and a request to change anything is
+  answered with where to do it on the board. Nothing a chat turn reaches
+  writes to the console; the only write is Aidan's own self-improvement
+  ticket or comment (`aidanImprovements`), narrower than from an email: it
+  comments only on a ticket Aidan filed himself, has its own five a day, is
+  never made from a viewer's turn, and at most once a member an hour.
+- **Inside Hosting's 60 s.** The work stops at 45 s and the endpoint answers
+  by 50 s; a member has at most two turns running at once.
+- Each turn is audited in `aidanChatRuns` (admins read it), without the
+  message text. Rules in `REQUIREMENTS.md` → SUP-AID-54 to 66.

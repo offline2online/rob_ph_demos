@@ -167,6 +167,9 @@ try {
     for (const [what, start, kind, sel, openSel, close] of [
       ["Search", "", "sidebar", "#cmdk-open-btn", "#cmdk-backdrop", "#cmdk-close"],
       ["a Leads tile", "#promote/leads", "page", '.lead-card[data-lead-id="l1"]', "#lead-summary-backdrop", "#lead-sum-close"],
+      // Aidan's chat launcher (yvnAPPAW9ROLrNwJceyn): on every page, opens the panel; its own close button shuts it.
+      ["Aidan's chat launcher", "", "page", "#aidan-chat-launcher", "#aidan-chat-panel", "#aidan-chat-close"],
+      ["Aidan's chat launcher on Settings", "#settings", "page", "#aidan-chat-launcher", "#aidan-chat-panel", "#aidan-chat-close"],
     ]) {
       await go(start, kind);
       try { await until(() => page.evaluate((q) => !!document.querySelector(q) && document.querySelector(q).getClientRects().length > 0, sel), `${what} on screen`, 5000); }

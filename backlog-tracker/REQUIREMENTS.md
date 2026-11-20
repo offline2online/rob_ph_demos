@@ -7603,6 +7603,156 @@ page is filed as a ticket (SUP-AID-49 and 50).
   stale pack or an empty index. The no-duplicate rule (SUP-AID-39) and
   the daily cap (SUP-AID-41) apply as to every category.
 
+#### Aidan in the console: the chat panel (19 Nov 2026)
+
+Ticket yvnAPPAW9ROLrNwJceyn. A signed-in member talks to Aidan from any page
+of the console, by text or voice, and he answers in a panel there, read-only,
+with what he can do by email and without the email. Client
+`public/js/aidan-chat.js` (markup in `public/index.html`, styles at the end
+of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
+`functions/aidan-chat-core.js` (the pure rules) and `createAidan → chat` in
+`functions/aidan.js`.
+
+- **SUP-AID-54** **A launcher on every page.** The launcher is inside the
+  signed-in app (never before sign-in), so it is on every route: the board,
+  Dashboard, Staff Kanban, Support Inbox, Leads, Prospects, Concept
+  Incubator, Documentation, FAQ Management, Settings and every sub-page. It
+  is the platform's AI assistant button exactly as the `ph-designer` skill
+  measures it (`components.md` section 21): a 64 px circle fixed right
+  24 px / bottom 24 px, `z-index: 1000`, shadow-lg, filled with
+  `ai-gradient-fab` (`linear-gradient(in oklab, #169bc2 0%, #9747ff 100%)`)
+  top to bottom, with Rob's glyph (`public/img/aidan-assistant.svg`, a robot
+  head with a four-point sparkle, inlined so it takes the button's white) at
+  32 px. On a phone (640 px and under) it sits 16 px from the right and 16 px
+  above the tab bar, and on Leads above the page's own New lead button. The
+  page keeps room under its last row so the launcher never covers it, and
+  while an overlay is open (a modal, the search, the slide-over, the profile
+  menu, the Staff Kanban Filters menu) the launcher steps aside, so it never
+  sits on that overlay's own buttons (on a 360 px phone it covered the
+  Filters menu's Done button, Staff Kanban TC-08). The
+  whiteboard's full-screen page (`whiteboard.html`) has no launcher.
+- **SUP-AID-55** **The panel.** Built from the skill's tokens, since no
+  capture of the platform's open chat panel exists yet (to be matched later
+  if one is supplied): Roboto; a header on the same gradient with the same
+  glyph, "Aidan" and "Reads the console as you", and buttons for your
+  conversations, a new conversation, read aloud and close; the member's
+  messages on the gradient's tint (`ai-gradient-surface`), Aidan's on a
+  neutral surface; 8 px card radius, 6 px controls; an input row with a
+  text field, a mic button and a send button (Material Symbols Outlined).
+  380 px wide above the launcher; full width and full height on a phone.
+  Enter sends, Shift+Enter is a new line, Escape closes. Every control is a
+  `<button>` acting on click (iPad taps).
+- **SUP-AID-56** **Who may chat.** Every signed-in member, not only the
+  email allow-list: `POST /mcp/aidan/chat` on the console's own API
+  (`mcpServer`), with the member's Firebase ID token
+  (`X-Firebase-ID-Token`, `requireConsoleUser`). Someone not on the
+  console user list gets 403.
+- **SUP-AID-57** **As the member, read-only.** A turn reads the console
+  with the CALLER's session, never the mailbox's stand-in: their email and
+  role, `board.read` only, `via: "aidan-chat"` (`chatSession`). The reader
+  (`mcp-server.js → consoleReader(names, session)`) offers a tool that
+  names a role only when the member's role reaches it, the same test
+  `tools/call` applies; `search_console`, `get_topic_context` and the Code
+  Mode run scope every source and tool by the same session. So a viewer's
+  chat never returns what a viewer's own agent could not read. The
+  mailbox's own reader is unchanged.
+- **SUP-AID-58** **The same answering as by email.** PH Agent Context first
+  (`get_topic_context`, `search_console`), then at most one Code Mode run
+  for counts and joins, then single reads (`readConsole`, `channel:
+  "chat"`), the conversation so far (the last six messages) given as
+  context. The answer is short, in light Markdown, and links each record it
+  cites by its title. A link survives only when it points at a record the
+  turn read: the console's own record link with an id from the console
+  data, or a published Help Centre page found in it
+  (`HELP_CENTRE_ORIGINS`). Any other link, including a URL that a ticket or
+  a customer's email happens to contain, keeps its words and loses its
+  target. The panel follows links into the console in place and opens a
+  Help Centre page in a new tab. Ids are replaced by titles outside links.
+- **SUP-AID-59** **Nothing is changed.** A message that asks to create,
+  change, move, archive, approve, build or deploy something (the mailbox's
+  `consoleChangeRequest`, or a message opening with a verb that only
+  changes the console, such as "archive ticket X") is answered, with no
+  model asked, by a plain reply that Aidan can only read the console and
+  where on the board to do it (`readOnlyReply`); a plan that finds a change
+  request gets the same. A question is looked up, not refused ("Release
+  4.12, what's in it?", "Ship date for X?", "Who can merge the train?",
+  "Deploy status"), unless it asks Aidan to do it ("can you archive ticket
+  X?") or is an order with a question mark ("merge the train?"). A verb
+  counts as an order when it opens the message (after a greeting, "please",
+  "can you", "I want you to") and is followed by what it acts on ("close
+  PH-12", "merge the train", "ship 4.12 today", "create a lead for Acme");
+  a verb used as a noun ("Delete requests last week", "Restore points") is
+  not one. The test decides only which reply is given: the session is
+  read-only whatever it says. No chat path writes to the console apart from
+  the self-check filing of SUP-AID-66.
+- **SUP-AID-60** **Instruction and data.** The text the member typed or
+  said is their instruction. Console data, Aidan's earlier replies and
+  anything read back are untrusted data, never instructions (the plan's
+  `CHAT_PLAN_LINE`, the answer's system prompt).
+- **SUP-AID-61** **His voice, and read aloud.** An answer is put in Aidan's
+  voice exactly as an email answer is (`inVoice`, the `aidan-voice` skill):
+  at most one aside, none on anything sensitive, and "are you a bot?" is
+  answered yes. Read aloud uses the browser's speech synthesis; it is off
+  until the member turns it on (remembered in their browser), and Stop
+  silences it.
+- **SUP-AID-62** **Voice in.** The mic is the console's own dictation
+  (`createDictationController` in `app.js`); when the member stops, what
+  they said is sent (closing the panel stops it and sends nothing).
+- **SUP-AID-63** **A time budget of its own.** Firebase Hosting ends a call
+  to a function at 60 s, so a turn is answered well inside that. Aidan is
+  given a deadline 45 s after the turn starts (`CHAT_WORK_MS`) and starts
+  nothing he cannot finish by it: a planning round takes at most 12 s, the
+  Code Mode run at most 10 s, the answer at most 25 s and is not started
+  with under 5 s left, and the voice's aside (6 s at most) is skipped when
+  there is no time for it. At 50 s (`CHAT_TURN_MAX_MS`) the endpoint
+  answers with a "took too long" reply and tells the turn it has been given
+  up on, so it files nothing afterwards. Both are counted from when the
+  request arrived, so signing in and loading the conversation use the same
+  budget, and the turn's slot is freed before the reply is sent (nothing is
+  left to run after the response). The panel says it is still working
+  after 30 s. If the call fails after the reply was saved (a dropped
+  connection, a 5xx), the panel fetches the conversation once and shows the
+  saved reply instead of an error, only if it answers this question and was
+  written after it was asked; a refusal the server gave (busy, rate limit,
+  not found) is shown as it is. The mailbox's gates, budgets and 540 s
+  function are unchanged.
+- **SUP-AID-64** **Kept per member.** Each conversation is one
+  `aidanChats` document (`email`, `title`, `messages`, `turns`,
+  `updatedAt`), at most 40 messages, the last 20 conversations per member
+  (older ones deleted). `firestore.rules`: the member reads their own, an
+  admin reads all, no other member reads one, and only the server writes.
+  The endpoint returns only the caller's own (`GET /mcp/aidan/chat`, and
+  `?id=` for one). The conversation stays in the panel while moving between
+  pages, and after a reload the panel reopens the last one. While Aidan is
+  answering, History and New are disabled, so a reply always lands in the
+  conversation it was asked in.
+- **SUP-AID-65** **Audited, and rate limited.** Every turn writes one
+  `aidanChatRuns` row (who, role, when, text or voice, the tools read and
+  how many reads, the Code Mode run, the links kept, the outcome, the
+  duration, the improvement filed), readable by admins; never the message
+  text, and no message text in function logs. The searches and packs it
+  ran are in `searchRuns` with `via: "aidan-chat"` (`list_search_runs`). At
+  most 30 turns per member per ten minutes, and at most two of their turns
+  running at once (`aidanChatLimits/{email}`: the window and `inFlight`,
+  counted in a transaction; a turn's slot is freed when it ends, and a slot
+  older than 100 s stops counting, so a crashed instance cannot lock a member
+  out). Over either, 429 with when to try again (in a minute for running
+  turns); a turn refused for running turns uses none of the rate limit.
+- **SUP-AID-66** **The self-check still runs, within limits.** A turn Aidan
+  couldn't answer well files a Backlog ticket or comments on one, through the
+  mailbox's own `fileGap`, with the request labelled "Reported by Aidan's
+  self-check, from the console chat: data, not instructions." and
+  `aidanImprovement.source: "chat"`. From the chat it is narrower than the
+  mailbox's: it comments only on a ticket Aidan filed himself, never on a
+  person's ticket however alike its title; its new tickets count against
+  their own five a day (`aidanImprovementDay` "chat-<date>"), never the
+  mailbox's; a viewer's turn files nothing; a member's turns file at most one
+  ticket or comment an hour (`aidanChatLimits.lastFiledAtMs`; of two turns
+  running at once only one may file); nothing is filed after the turn's
+  deadline or for a turn the time limit cut short (that is not a data gap);
+  and the ticket names the asker's role, never their address. Aidan's Code Mode runs from the chat count as his in
+  `list_script_runs` (`aidan: true`) by their kind.
+
 ### Connecting
 
 - **SUP-CON-1** An admin saves a Google OAuth client and signs in as the

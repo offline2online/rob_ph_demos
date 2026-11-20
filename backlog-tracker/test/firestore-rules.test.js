@@ -118,6 +118,9 @@ async function reset() {
     await setDoc(doc(db, "docRevisions/r1"), { target: "project.requirementsMd", projectId: "p1", contentMd: "the text that was replaced", replacedByEmail: "sam@ph.example" });
     await setDoc(doc(db, "mcpAuditLog/e1"), { email: "sam@ph.example", tool: "create_backlog_item" });
     await setDoc(doc(db, "scriptRuns/r1"), { email: "sam@ph.example", kind: "run_script", scriptSource: "return 1;", outcome: "ok" });
+    await setDoc(doc(db, "aidanChats/cSam"), { email: "sam@ph.example", title: "where are we?", messages: [{ role: "member", text: "where are we?" }], turns: 1 });
+    await setDoc(doc(db, "aidanChatRuns/t1"), { email: "sam@ph.example", role: "editor", outcome: "answered", durationMs: 1200 });
+    await setDoc(doc(db, "aidanChatLimits/sam@ph.example"), { windowStart: 1, count: 1 });
     await setDoc(doc(db, "releases/rDraft"), { name: "October", version: "2.4.0", status: "draft", order: 1 });
     await setDoc(doc(db, "releases/rLive"), { name: "September", status: "live", order: 0 });
     await setDoc(doc(db, "concepts/cActive"), { name: "Store staff shift handover", status: "active", readmeMd: "", requirementsMd: "", comments: [] });
@@ -353,6 +356,24 @@ async function main() {
   await check("A member may NOT add a script execution log entry", "deny", () =>
     setDoc(doc(as(MEMBER), "scriptRuns/r2"), { email: "x@ph.example", kind: "run_script" }));
   await check("An admin may NOT delete a script execution log entry", "deny", () => deleteDoc(doc(as(TEAM_ADMIN), "scriptRuns/r1")));
+  // Aidan's chat panel (functions/aidan-chat.js): a member reads their own
+  // conversations, an admin reads all, no other member reads one; only the
+  // server writes. The turn audit is admin-only; the rate limit is closed.
+  await check("A member may read their own Aidan conversation", "allow", () => getDoc(doc(as(MEMBER), "aidanChats/cSam")));
+  await check("Another member may NOT read someone's Aidan conversation", "deny", () => getDoc(doc(as(VIEWER), "aidanChats/cSam")));
+  await check("An admin may read any Aidan conversation", "allow", () => getDoc(doc(as(TEAM_ADMIN), "aidanChats/cSam")));
+  await check("A signed-in non-member may NOT read an Aidan conversation", "deny", () => getDoc(doc(as(STRANGER), "aidanChats/cSam")));
+  await check("A member may NOT write their own Aidan conversation", "deny", () =>
+    setDoc(doc(as(MEMBER), "aidanChats/cSam"), { title: "changed" }, { merge: true }));
+  await check("A member may NOT start an Aidan conversation from the browser", "deny", () =>
+    setDoc(doc(as(MEMBER), "aidanChats/cNew"), { email: "sam@ph.example", title: "x", messages: [] }));
+  await check("An admin may read the Aidan chat audit", "allow", () => getDoc(doc(as(TEAM_ADMIN), "aidanChatRuns/t1")));
+  await check("A non-admin member may NOT read the Aidan chat audit", "deny", () => getDoc(doc(as(MEMBER), "aidanChatRuns/t1")));
+  await check("An admin may NOT edit the Aidan chat audit", "deny", () =>
+    setDoc(doc(as(TEAM_ADMIN), "aidanChatRuns/t1"), { outcome: "x" }, { merge: true }));
+  await check("Nobody reads the Aidan chat rate limit", "deny", () => getDoc(doc(as(TEAM_ADMIN), "aidanChatLimits/sam@ph.example")));
+  await check("A member may NOT reset their own Aidan chat rate limit", "deny", () =>
+    setDoc(doc(as(MEMBER), "aidanChatLimits/sam@ph.example"), { windowStart: 0, count: 0 }));
   await check("Nobody can edit the agent audit log", "deny", () =>
     setDoc(doc(as(TEAM_ADMIN), "mcpAuditLog/e1"), { tool: "something else" }, { merge: true }));
 

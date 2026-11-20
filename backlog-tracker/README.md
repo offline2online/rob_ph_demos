@@ -3315,6 +3315,8 @@ Gmail. Requirements: `REQUIREMENTS.md` → "Support Inbox".
 | `functions/support-mail.js` | The `supportMail` function (`/supportMail/**`): Google OAuth, the sync, triage with Claude, replies, a new email (`/v1/compose`), spam, notes, assignment, Staff Kanban escalation |
 | `functions/aidan-core.js` | Aidan's rules, pure: the quote markers as data (`QUOTE_MARKERS`), the new text of each body (`splitQuoted`, `splitQuotedHtml`), the `@Aidan` tag (`readTag`, `readTagAcross`), the defence in depth (`echoedIn`, `untrustedThreadText`, `mailFacts`), answer, write or store (`kindOf`), `decideAidan`, the sender check (`parseAuthResults` then `authVerdict`, on Gmail's topmost Authentication-Results only), reply-all recipients (From, To, Cc; never Reply-To), the email with the document attached, the answer written in the email itself (`ANSWER_SYSTEM`, `cleanAnswer`); reading the console: the read tools allowed (`CONSOLE_READ_TOOLS`), a request to change the console (`consoleChangeRequest`), the plan with its one Code Mode run (`cleanConsolePlan`, `AIDAN_INSIGHTS`), ids to titles (`stripIds`), a long answer attached (`shapeConsoleAnswer`), allowed senders only (`consoleRecipients`); the self-check (`assessRun`, `improvementKey`, `matchImprovement`, `improvementDesc`, the project a run was about by id or name: `resolveProjectRef`) |
 | `functions/aidan.js` | Aidan's runs inside the sync: queueing a tagged request once (transaction), claiming it (transaction), choosing the skill, reading attachments, writing the document and replying to everyone (`generateAndReply`), answering in the email itself with no attachment (`answerInline`), or keeping the email for a skill (`keepReference`, `skillReferences`); reading the console read-only (`readConsole`, one Code Mode run first) and the read-only reply (`readOnlyReply`); the self-check that files or comments on a Backlog ticket (`reflect`); sweeping a cut-off run to a person (`sweepStale`); `POST /v1/aidan` for the allowed senders |
+| `functions/aidan-chat.js`, `functions/aidan-chat-core.js` | Aidan in the console's chat panel: `POST`/`GET /mcp/aidan/chat` on `mcpServer` (any signed-in member, read as themselves, read-only), the conversations kept per member (`aidanChats`, last 20), the turn's audit (`aidanChatRuns`, no text) and rate limit (`aidanChatLimits`); and its pure rules: the member's text, the conversation block, the answer's prompt and schema, the read-only reply (questions are never refused), links only to console records and published Help Centre pages, the time budget, the keep, rate, running-turns and filing rules (`test/aidan-chat.test.js`). The turn itself is `createAidan → chat` in `functions/aidan.js` |
+| `public/js/aidan-chat.js` | The launcher and the panel (markup in `index.html`, styles at the end of `css/styles.css`): send, dictation, read aloud, your conversations, links into the console (`test/ui/console-click.test.mjs`, `test/ui/nav-touch.test.mjs`) |
 | `functions/aidan-voice.js` | Aidan's voice, pure: the `aidan-voice` skill as first written (`DEFAULT_SKILL_MD`, the same text as `skill-sources/aidan-voice.md`), no quirk on anything sensitive (`sensitiveReason`), "are you a bot?" (`asksIfAi`, `ensureAiDisclosure`), the one aside made safe and added after the reply (`cleanQuirk`, `withQuirk`) (`test/aidan-voice.test.js`) |
 | `functions/collateral-core.js` | Aidan's branded sales collateral, pure: which collateral an instruction names (`collateralFormat`: one-pager, platform overview, feature deep-dive, deck), the prospect's industry and country only (`prospectFor`, `industryFor`), the published Help Centre as source (`helpCentreBlock`), the prompt lines (`collateralSystem`), the clean-up (`guardCollateral`: no sentence naming Sydney or Australia, no internal names, no long dash of any kind), the page count and file names (`test/collateral-core.test.js`) |
 | `functions/collateral-layout.js` | The branded page the collateral is printed from, pure: Markdown to safe HTML (`markdownToHtml`), the page laid out by the brand skill (`collateralHtml`, `brandAssets`), the page footer and the print options (`test/collateral-layout.test.js`) |
@@ -3866,6 +3868,30 @@ No email is sent and no ticket is filed; the mailbox needn't be connected.
   email); only the function writes them (`firestore.rules`). A view-only
   member sees the set, the runs and each case, with no Ask, Save, Delete or
   Run. Requirements: SUP-LAB-1 to 14.
+
+**Aidan in the console (19 Nov 2026, ticket yvnAPPAW9ROLrNwJceyn).** Every
+page of the console has Aidan's launcher at the bottom right (the
+platform's AI assistant button: 64 px, the teal-to-violet gradient, Rob's
+robot-and-sparkle glyph in `public/img/aidan-assistant.svg`; above the tab
+bar on a phone). It opens a chat panel where any signed-in member types or
+speaks a question and Aidan answers in the panel, in his own voice, with
+links to the records he cites, and can read the answer aloud (off until
+turned on, with Stop). He reads the console as THAT member
+(`consoleReader(names, session)`: their role, `board.read` only,
+`via: "aidan-chat"`), so a viewer's chat never shows what a viewer's agent
+couldn't read, and he changes nothing: "archive ticket X" gets a plain reply
+saying where to do it. Same planning as by email (PH Agent Context, then one
+Code Mode run), his own time budget inside Hosting's 60 s (work stops at
+45 s, the reply goes by 50 s; still working is shown after 30 s; a reply
+saved after a dropped call is still shown). The self-check still files, but
+narrower than from email: only on tickets Aidan filed himself, its own five
+a day, none from a viewer, at most one per member an hour. The conversation
+survives moving between pages and a reload; each member's last 20 are kept
+in `aidanChats` (their own and admins only), every turn is audited in
+`aidanChatRuns` without its text, and a member may ask 30 times in ten
+minutes, with at most two turns running at once. The panel follows the design system's tokens; no capture of
+the platform's own open panel exists yet. See `REQUIREMENTS.md` →
+SUP-AID-54 to 66.
 
 ### Connecting the mailbox (once, by an admin)
 

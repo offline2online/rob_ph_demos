@@ -6119,7 +6119,7 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
   const path = routePath(req);
   // The console-only endpoints are called from the console's own origin
   // with a Firebase ID token; nothing cross-origin has any business here.
-  if (path === "/claims/sync" || path === "/me/connections" || path === "/me/routine-binding" || path === "/admin/provision" || path.startsWith("/kanban/")) {
+  if (path === "/claims/sync" || path === "/me/connections" || path === "/me/routine-binding" || path === "/admin/provision" || path.startsWith("/kanban/") || path === "/aidan/chat") {
     res.set("Access-Control-Allow-Origin", PUBLIC_ORIGIN);
   }
   if (req.method === "OPTIONS") { res.status(204).send(""); return; }
@@ -6150,6 +6150,8 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
       case "/kanban/backfill": return await kanban.handleBackfill(req, res, kanbanHelpers);
       case "/kanban/backfill-links": return await kanban.handleBackfillLinks(req, res, kanbanHelpers);
       case "/kanban/send-to-agent": return await kanbanAgent.handleSendToAgent(req, res, kanbanHelpers);
+      // Aidan in the console's chat panel (functions/aidan-chat.js): any signed-in member, read-only, as themselves.
+      case "/aidan/chat": return await aidanChat().handle(req, res);
       default:
         res.status(404).json({ error: "not_found", error_description: `no endpoint at ${path}` });
     }
@@ -6168,15 +6170,26 @@ exports.mcpServer = onRequest({ cors: false, timeoutSeconds: 300, memory: "1GiB"
 // schema; the result is the tool's own text. The session is a read-only
 // stand-in (none of the read tools act on who is asking).
 const AIDAN_READ_SESSION = Object.freeze({ email: "aidan", role: "viewer", scopes: Object.freeze(["board.read"]), via: "aidan-email" });
-function consoleReader(names) {
-  const allowed = new Set((names || []).filter((n) => {
-    const t = TOOLS_BY_NAME.get(String(n));
-    return Boolean(t) && t.scope === "board.read" && !t.role && t.destructive !== true;
-  }));
+// `session` (yvnAPPAW9ROLrNwJceyn, the console's chat panel): read as the
+// signed-in member who asked (aidan-chat-core.js → chatSession: their email
+// and role, board.read only, via "aidan-chat"). A tool that names a role is
+// then offered only when that member's role reaches it, the same test
+// tools/call applies to their own agent; search_console, get_topic_context
+// and Code Mode scope each source and tool by the same session. Without a
+// session the mailbox's stand-in reads, and no tool with a role is offered.
+function consoleReader(names, session = null) {
+  const who = session && typeof session === "object" && session.email ? Object.freeze({
+    email: String(session.email), role: ROLE_RANK[session.role] ? String(session.role) : "viewer",
+    scopes: Object.freeze(["board.read"]), via: String(session.via || "aidan-chat"),
+  }) : AIDAN_READ_SESSION;
+  const AIDAN_READ_SESSION_FOR = who; // the session every read, script and topic below runs as
+  const offered = (t) => Boolean(t) && t.scope === "board.read" && t.destructive !== true
+    && (!t.role || (who !== AIDAN_READ_SESSION && atLeast(who.role, t.role)));
+  const allowed = new Set((names || []).filter((n) => offered(TOOLS_BY_NAME.get(String(n)))));
   return {
     tools: () => [...allowed].map((n) => { const t = TOOLS_BY_NAME.get(n); return { name: t.name, description: t.description, inputSchema: t.inputSchema }; }),
     async read(name, args) {
-      const tool = allowed.has(String(name)) ? TOOLS_BY_NAME.get(String(name)) : null;
+      const tool = allowed.has(String(name)) && offered(TOOLS_BY_NAME.get(String(name))) ? TOOLS_BY_NAME.get(String(name)) : null;
       if (!tool) return { ok: false, error: `${name} is not a read-only console tool Aidan may use.` };
       const props = (tool.inputSchema && tool.inputSchema.properties) || {};
       const clean = {};
@@ -6185,7 +6198,7 @@ function consoleReader(names) {
       }
       const missing = ((tool.inputSchema && tool.inputSchema.required) || []).filter((k) => clean[k] === undefined);
       if (missing.length) return { ok: false, error: `${tool.name} needs ${missing.join(", ")}.` };
-      const out = await tool.run(clean, AIDAN_READ_SESSION);
+      const out = await tool.run(clean, AIDAN_READ_SESSION_FOR);
       const text = ((out && out.content) || []).filter((b) => b && b.type === "text").map((b) => b.text).join("\n");
       return out && out.isError ? { ok: false, error: text } : { ok: true, text };
     },
@@ -6194,19 +6207,19 @@ function consoleReader(names) {
     // (or an insight from the library) calls only the tools that are both on
     // Aidan's list and on Code Mode's own read-only allow-list, with the same
     // read-only stand-in session; each run is audited in scriptRuns.
-    scriptTools: () => aidanScripts.toolNames(AIDAN_READ_SESSION, [...allowed]),
-    describeScriptTools: () => aidanScripts.describe(AIDAN_READ_SESSION, [...allowed]),
+    scriptTools: () => aidanScripts.toolNames(AIDAN_READ_SESSION_FOR, [...allowed]),
+    describeScriptTools: () => aidanScripts.describe(AIDAN_READ_SESSION_FOR, [...allowed]),
     insights: () => aidanScripts.insights(),
     // Each result also reports `projectRefs`: the project ids or names the
     // run's tool calls were given (an insight's own resolved id among them),
     // so Aidan files a gap on the project the run was about.
     async script(code, { timeoutMs } = {}) {
       const refs = projectRefCollector();
-      return codeModeOutcome(await aidanScripts.run(AIDAN_READ_SESSION, code, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
+      return codeModeOutcome(await aidanScripts.run(AIDAN_READ_SESSION_FOR, code, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
     },
     async insight(name, params, { timeoutMs } = {}) {
       const refs = projectRefCollector();
-      return codeModeOutcome(await aidanScripts.insight(AIDAN_READ_SESSION, name, params, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
+      return codeModeOutcome(await aidanScripts.insight(AIDAN_READ_SESSION_FOR, name, params, { allow: [...allowed], timeoutMs, onCall: refs.onCall }), refs.list());
     },
     // PH Agent Context: the topics a thread was about are written back to the
     // topic cache after each run (functions/context → touchTopic), so the pack
@@ -6216,7 +6229,7 @@ function consoleReader(names) {
       if (!allowed.has("get_topic_context")) return 0;
       let n = 0;
       for (const t of [...new Set((topics || []).filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, 300)))].slice(0, 5)) {
-        await context.touchTopic(AIDAN_READ_SESSION, t);
+        await context.touchTopic(AIDAN_READ_SESSION_FOR, t);
         n += 1;
       }
       return n;
@@ -6317,6 +6330,42 @@ function aidanImprovements() {
 }
 exports.aidanImprovements = aidanImprovements;
 
+// Aidan in the console (yvnAPPAW9ROLrNwJceyn): the chat panel's endpoint.
+// The same Aidan as the mailbox (functions/aidan.js → createAidan), with
+// only what a chat turn uses: the model (this function's ANTHROPIC_API_KEY),
+// the skills library for his voice, and his self-improvement tickets. Each
+// turn reads through consoleReader(names, session) as the member who asked.
+// `aidanChatRun`: the tests' stand-in for the model ({ plan, answer, voice }).
+let aidanChatRun = null;
+let aidanChatApi = null;
+let aidanChatAidan = null;   // the chat's own Aidan instance, for the tests
+function aidanChat() {
+  if (aidanChatApi) return aidanChatApi;
+  const { createAidan } = require("./aidan");
+  const { createAidanChat } = require("./aidan-chat");
+  const names = require("./aidan-core").CONSOLE_READ_TOOLS;
+  let aidan = null;
+  aidanChatApi = createAidanChat({
+    db, logger, now: () => new Date(), origin: PUBLIC_ORIGIN,
+    requireConsoleUser: (req) => requireConsoleUser(req),
+    rateLimited: (req, bucket, max) => rateLimited(req, bucket, max),
+    tooMany: (res) => tooMany(res),
+    readerFor: (session) => consoleReader(names, session),
+    aidan: aidanChatAidan = () => {
+      if (aidan) return aidan;
+      aidan = createAidan({
+        db: db(), tickets: () => db().collection("supportTickets"), secretsRef: (n) => db().collection("supportSecrets").doc(n),
+        gmail: null, readSettings: async () => ({}), logEvent: async () => {}, now: () => new Date(), logger,
+        callJson: (opts) => require("./support-mail").callJson(opts),
+        apiKey: () => kanbanHelpers.anthropicKey(), workspaceId: () => kanbanHelpers.anthropicWorkspace(),
+        run: aidanChatRun, consoleReader: null, improvements: aidanImprovements(),
+      });
+      return aidan;
+    },
+  });
+  return aidanChatApi;
+}
+
 // The same member lookup the console endpoints use, for functions/index.js's
 // mediaKeys endpoint (media-keys.js), so both answer "who is this, and what
 // role" identically.
@@ -6331,4 +6380,7 @@ exports.__test = {
   MCP_APP_MIME, UI_META, BOARD_VIEWS, safeHref,
   PROJECT_WRITABLE_FIELDS, pagesRepoPath, setMainShaFetcher: (f) => { mainShaFetcher = f || defaultMainSha; }, PROJECT_MD_MAX, DOC_MD_MAX, CONCEPT_MD_MAX, updateProjectFields,
   FAQ_TITLE_MAX, FAQ_SUMMARY_MAX, FAQ_BODY_MAX, FAQ_KEYWORDS_MAX, FAQ_REASON_MAX, FAQ_DOC_TYPES,
+  // Aidan's chat panel: the model stand-in for a test ({ plan, answer, voice }), and the tools by name.
+  setAidanChatRun: (run) => { aidanChatRun = run || null; aidanChatApi = null; }, TOOLS_BY_NAME,
+  aidanForChat: () => { aidanChat(); return aidanChatAidan(); },
 };
