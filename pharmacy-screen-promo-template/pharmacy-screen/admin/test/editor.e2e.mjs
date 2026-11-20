@@ -427,6 +427,8 @@ test('scenes: Add promotion picker closes without adding; a new promotion can be
 test('preview: Copy experience URL with a live playback duration and its setup tooltip', async () => {
   const { ctx, page } = await open();
   await own(page);
+  // The admin view keeps the ${Suburb} hint, the remote config and this row (the pharmacy view hides them).
+  for (const id of ['#dpHint', '#cfgBox', '#cpRow', '#pbInfo']) assert.equal(await page.isVisible(id), true, id);
   assert.match(await page.textContent('#cpTx'), /^Copy experience URL$/);
   const total = async () => +(await page.textContent('#tlTime')).match(/ ([\d.]+)s/)[1];
   const shown = async () => +(await page.textContent('#pbSecs')).replace('s', '');
@@ -848,6 +850,11 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.title(), 'Display Promotions');
   assert.equal(await page.isHidden('#toolbar'), true);
   for (const id of ['#pvSel', '#setBtn', '#settingsView']) assert.equal(await page.isHidden(id), true, id);
+  // No ${Suburb} hint, no remote config, and no Copy experience URL or playback duration (with its tooltip) under
+  // the preview: an administrator sets up the campaign in the full editor.
+  for (const id of ['#dpHint', '#cfgBox', '#cfgJson', '#cpRow', '#cpUrl', '#pbDur', '#pbInfo']) assert.equal(await page.isHidden(id), true, id);
+  assert.equal(await page.isVisible('#stage'), true);
+  assert.equal(await page.isVisible('#playBtn'), true);
   assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.cur.id), 'seed-pharmacy-vic-mp-005');
   // The grey promotion section (name, promo ID, template, promo= line) is not shown on Morning, Afternoon or Closed;
   // the fields stay read-only underneath. Creating or deleting a promotion is not offered.

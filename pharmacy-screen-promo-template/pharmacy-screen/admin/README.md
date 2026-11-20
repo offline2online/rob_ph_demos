@@ -35,7 +35,9 @@ and the `promo=` line) is not shown on Morning, Afternoon, Closed or any other n
 changed (it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
 are hidden, and every write handler for them returns early. Each inherited section's action reads "Edit"; every
 scene's seconds-on-screen control is hidden (`hideTimings`: timings are set by an administrator); Add promotion is
-hidden once a promotion has 3 slots (`PHARMACY_MAX_SLOTS`; the admin view allows 6); and "Restore to default"
+hidden once a promotion has 3 slots (`PHARMACY_MAX_SLOTS`; the admin view allows 6); the `${Suburb}` hint
+(`#dpHint`), "Remote config for this pharmacy" (`#cfgBox`) and the Copy experience URL / Playback duration row
+under the preview (`#cpRow`, with its tooltip) are hidden; and "Restore to default"
 replaces the "shared by all pharmacies" tag (`renderRestore` / `restoreDefaults`: two clicks, then the pharmacy's
 content takes each master's copy and `detached` is cleared, so every section inherits again). An unknown store code shows "Pharmacy not found". It never writes the
 remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).

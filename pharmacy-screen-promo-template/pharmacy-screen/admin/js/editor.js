@@ -1110,13 +1110,17 @@ async function main() {
 
 /** Pharmacy view: titled "Display Promotions" and showing only the promotions. The administrator's controls are
  *  hidden: the Promo preview drop-down, Settings (other pharmacies, details, tokens, branding, the PH API), the
- *  master template, creating or deleting promotions, and every scene timing (hideTimings). "Restore to default"
+ *  master template, creating or deleting promotions, every scene timing (hideTimings), the ${Suburb} hint, the
+ *  remote config, and Copy experience URL with the playback duration. "Restore to default"
  *  replaces "shared by all pharmacies" (renderRestore), and Add promotion stops at 3 slots (maxSlots). Every write
  *  handler checks S.lock as well. */
 function applyLock() {
   document.title = $('pageTitle').textContent = 'Display Promotions';
   $('toolbar').hidden = true; // Promo preview, the lock pill and Settings
   for (const id of ['newPromoBtn', 'newPromo', 'settingsView']) $(id).hidden = true;
+  // Administrator-only page furniture: the ${Suburb} hint, the remote config, and Copy experience URL with the
+  // playback duration and its tooltip (the campaign is set up by an administrator in the full editor).
+  for (const id of ['dpHint', 'cfgBox', 'cpRow']) $(id).hidden = true;
 }
 
 // Hook for the editor's end-to-end tests.

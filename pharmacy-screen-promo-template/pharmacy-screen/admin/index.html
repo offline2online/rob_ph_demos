@@ -114,8 +114,8 @@
           <button type="button" class="text" id="pmDel" style="color:var(--err);margin-left:auto"><span class="ms">delete</span><span id="pmDelTx">Delete promotion</span></button></div>
       </div>
       <div id="dpBody" style="display:grid;gap:12px"></div>
-      <span class="hint">Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.</span>
-      <details><summary>Remote config for this pharmacy</summary><pre class="json" id="cfgJson"></pre></details>
+      <span class="hint" id="dpHint">Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.</span>
+      <details id="cfgBox"><summary>Remote config for this pharmacy</summary><pre class="json" id="cfgJson"></pre></details>
     </div>
     </div>
 
@@ -184,7 +184,7 @@
       <span class="pill" id="pvData" title="The preview uses sample store details (suburb, hours, phone). Each screen shows its own store's details from Personalisation Hub.">Sample store data</span>
       <span class="tltime" id="tlTime"></span>
     </div>
-    <div class="cprow">
+    <div class="cprow" id="cpRow">
       <div class="cpwrap"><button type="button" id="cpUrl" aria-describedby="cpTip"><span class="ms">link</span><span id="cpTx">Copy experience URL</span></button>
         <div class="cptip" id="cpTip" role="tooltip"></div></div>
       <span class="pbdur" id="pbDur">Playback duration: <b id="pbSecs">0s</b>
