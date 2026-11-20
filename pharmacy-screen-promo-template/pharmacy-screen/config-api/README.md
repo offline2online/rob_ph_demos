@@ -235,15 +235,13 @@ public.
 
 ## Deploying
 
-Deployed to our test environment (Firebase project rob-ph-demos) by the
-one-command deploy, `npm run deploy` in `pharmacy-screen-promo-template/`
-(see that folder's README for the URLs). It deploys this folder as the
-functions codebase `pharmacy-screen-config-api`, with the settings in
-`.env.rob-ph-demos` (non-secret), rewrites `/api/screens/**`, `/api/admin/**`
-and `/api/health` on the Hosting site to `pharmacyScreenConfigApi`, creates
-the media bucket `rob-ph-demos-pharmacy-screen-media` and deploys
-`rules/storage.rules` to that bucket only, never to the project's default
-bucket (the menu-board demo uses it).
+Wiring this into Firebase Hosting/Functions for rob-ph-demos (the hosting
+rewrite of `/api/**` to `pharmacyScreenConfigApi`, creating the media
+bucket, deploying the rules, CI) is the "Deploy to our test environment"
+ticket. Its Hosting rewrites: `/api/screens/**`, `/api/admin/**` and
+`/api/health` to `pharmacyScreenConfigApi`. Deploy `rules/storage.rules`
+only to the media bucket, never to the project's default bucket (the
+menu-board demo uses it).
 
 **The screen reads this** through `fromPublishedConfig()` in
 `../js/live-data.js`, which maps it onto the render engine's

@@ -100,12 +100,6 @@ videos (content fades out at scene end, headline fades in, icon tiles pop in one
 after, copy fades up, icons float with the outer and middle tiles in opposite phase), all off under
 `prefers-reduced-motion`.
 
-## Deploy
-
-The screen page, the admin app (`admin/`) and both back-end functions deploy together to our test
-environment with one command, `npm run deploy` in `pharmacy-screen-promo-template/`; the URLs are in
-that folder's README.
-
 ## Tools
 
 - `tools/serve.mjs`: a static server for local runs, the audit and the UI tests.

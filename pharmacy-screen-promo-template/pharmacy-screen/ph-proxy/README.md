@@ -102,21 +102,21 @@ and `pharmacyScreen/private/auditLog`.
 
 ## Deploying to our test environment (Firebase `rob-ph-demos`)
 
-`npm run deploy` in `pharmacy-screen-promo-template/` does all of it (that
-folder's README has the URLs and the first-deploy steps):
+Wiring this into the one-command deploy is the "Deploy to our test
+environment" ticket. What it needs:
 
-1. **KMS key** (once, idempotent): key ring `pharmacy-screen`, key `ph-api-token`
-   (`global`, 90-day rotation), and `roles/cloudkms.cryptoKeyEncrypterDecrypter`
-   on that key only for the functions' runtime service account (the default
-   compute service account).
-2. **Functions codebase** `pharmacy-screen-ph-proxy` (this folder), with the
-   non-secret settings in `.env.rob-ph-demos`, including
-   `PH_TOKEN_KMS_KEY=projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token`
-   and `PH_API_DEFAULT_BASE_URL=https://ph.mipharmacy.net`.
-3. **Hosting rewrites** on the pharmacy-screen site, with no broader `/api/**` rule:
-   `/api/settings/ph-api`, `/api/settings/ph-api/**` and `/api/device/**` to `pharmacyScreenPhApi`.
-4. **Admin claim**: `config-api/scripts/set-admin-claim.js` gives an account the `admin` claim.
-5. After the first deploy, the account owner enters the token in Admin → Settings.
+1. **KMS key** (once):
+   ```bash
+   gcloud kms keyrings create pharmacy-screen --location=global --project=rob-ph-demos
+   gcloud kms keys create ph-api-token --keyring=pharmacy-screen --location=global --purpose=encryption --rotation-period=90d --next-rotation-time=$(date -u -d '+90 days' +%Y-%m-%dT%H:%M:%SZ) --project=rob-ph-demos
+   ```
+   Grant the function's runtime service account `roles/cloudkms.cryptoKeyEncrypterDecrypter` on that key only.
+2. **Functions codebase** in `firebase.json`: `{ "source": "pharmacy-screen-promo-template/pharmacy-screen/ph-proxy", "codebase": "pharmacy-screen-ph-proxy" }`, with `PH_TOKEN_KMS_KEY=projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token` in its `.env` (not a secret).
+3. **Hosting rewrites** on the pharmacy-screen site, before any broader `/api/**` rule:
+   `{ "source": "/api/settings/ph-api{,/**}", "function": { "functionId": "pharmacyScreenPhApi" } }` and
+   `{ "source": "/api/device/**", "function": { "functionId": "pharmacyScreenPhApi" } }`.
+4. **Admin claim**: give admins the `admin` custom claim (or set `PH_ADMIN_CLAIM`).
+5. After the first deploy, the account owner enters the token in admin Settings.
 
 For miPharmacy's AWS environment, implement a KMS provider over AWS KMS (or
 Secrets Manager) with the four members documented at the top of
