@@ -193,7 +193,8 @@ details summary{cursor:pointer;color:var(--primary)}
 /* preview column */
 /* the preview scrolls up with the page until the Portrait/Landscape tabs reach the very top, then stays there; the
    stage is sized to the visible height (dvh: on a tablet, 100vh counts the space under the browser bars, which cut
-   the bottom of the preview off), leaving 190px for the tabs, scene bar, controls and Copy URL row below it */
+   the bottom of the preview off), leaving 284px (set at the end of this file) for the tabs, the sample-hours row, scene bar, controls and Copy URL
+   row around it */
 .pv{position:sticky;top:0;display:grid;gap:10px;min-width:0;container:pv/inline-size}
 .pv>.card{padding:12px;gap:8px}
 .wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,46cqi))}
@@ -202,12 +203,14 @@ details summary{cursor:pointer;color:var(--primary)}
 .stage>.screen{position:absolute;left:0;top:0;transform-origin:0 0}
 .controls{display:flex;flex-wrap:nowrap;gap:8px;align-items:center;min-width:0}
 .controls>button{flex:none;white-space:nowrap}
-.controls>.pill{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* The sample-hours info tooltip opens from the controls row's left edge and is no wider than the row, so it is never
-   clipped by the preview column however narrow it is. */
-.controls{position:relative}
-.controls>.infowrap{position:static;flex:none;margin-left:-4px}
-.controls .infotip{left:0;right:auto;max-width:100%}
+/* "Sample opening hours" has a row of its own under the Portrait/Landscape tabs, so the label always shows in full:
+   centred, and wrapping onto a second line (never cut short) when the preview column is narrower than the label.
+   Its info tooltip opens below the row, from the row's left edge and no wider than it, so it is never clipped by the
+   preview column or by the top of the frame once the preview has stuck there. */
+.pvnote{position:relative;display:flex;justify-content:center;align-items:center;gap:4px;min-width:0}
+.pvnote>.pill{display:block;flex:0 1 auto;min-width:0;text-align:center;white-space:normal;overflow-wrap:anywhere;border-radius:12px}
+.pvnote>.infowrap{position:static;flex:none}
+.pvnote .infotip{left:0;right:auto;top:calc(100% + 8px);bottom:auto;max-width:100%}
 .tl{display:flex;gap:4px;min-width:0}
 .tl button{flex-grow:var(--w);flex-basis:0;min-width:0;display:grid;gap:4px;padding:0;border:none;background:none;min-height:0;cursor:pointer;text-align:left}
 .tl .bar{height:8px;border-radius:4px;background:var(--primary-tint);overflow:hidden;display:block}
@@ -238,7 +241,7 @@ details summary{cursor:pointer;color:var(--primary)}
 .hint.err{color:var(--err)}
 .dlg-err{padding:0 16px 10px}
 [hidden]{display:none!important}
-.stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 250px,760px) * .5625))}
+.stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 284px,760px) * .5625))}
 div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 @container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,44cqi))}}
 @container frame (max-width:600px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}

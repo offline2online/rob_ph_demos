@@ -75,16 +75,17 @@
 @keyframes riseIn{from{opacity:0;transform:translateY(70px) scale(.92)}to{opacity:1;transform:none}}
 .s-title,.s-sub{font-size:calc(var(--fs)*var(--kb,1))!important}
 .s-title{--fs:58px}.s-sub{--fs:38px}
-/* landscape 1920x1080: a narrow brand arrow on the left (js/fit-text.js geom(): 580px, tip at x=780), the headline
-   wrapping inside it, and the content (tiles, opening hours) filling the rest of the screen */
+/* landscape 1920x1080: a narrow brand arrow on the left (js/fit-text.js geom(): 580px, tip at x=780), the logo and
+   the headline centred in its straight-sided part (the headline on the arrow tip's line, wrapping inside the panel),
+   and the content (tiles, opening hours) filling the rest of the screen */
 .screen.land{width:1920px;height:1080px}
-.land .s-logo{left:80px;right:auto;top:48px;justify-items:start}
-.land .s-logo img{height:140px;max-width:440px;object-position:left center}
+.land .s-logo{left:24px;right:auto;width:532px;top:48px;justify-items:center}
+.land .s-logo img{height:140px;max-width:440px}
 .land .s-mark{width:420px;height:140px}
-.land .s-head{left:72px;right:auto;width:476px;top:220px;bottom:160px;align-content:center;justify-items:start;text-align:left}
-.land.closed .s-head{bottom:60px}
-.land .s-head h2{font-size:calc(84px*var(--k,1))}
-.land .s-head p{font-size:calc(36px*var(--k,1))}
+.land .s-head{left:24px;right:auto;width:532px;top:220px;bottom:340px;align-content:center;justify-items:center;text-align:center}
+.land.closed .s-head{bottom:220px}
+.land .s-head h2{font-size:calc(96px*var(--k,1))}
+.land .s-head p{font-size:calc(40px*var(--k,1))}
 .land .s-chev{left:auto;margin-left:0}
 .land .s-body{left:850px;right:70px;top:40px;bottom:150px;gap:34px}
 .land .s-tiles{gap:calc(48px*var(--tz))}
@@ -97,13 +98,17 @@
 .land .s-title{--fs:66px}.land .s-sub{--fs:42px}
 .land .s-foot{height:120px;gap:0}
 .land .s-foot .f1{font-size:44px}
-.land .s-card{left:880px;right:90px;top:60px;padding:28px 24px 16px;border-radius:36px}
-.land .s-card .ch{padding-bottom:14px;margin:0 30px 10px}
-.land .s-card .ch h3{font-size:52px}
-.land .s-badge{font-size:28px;padding:8px 24px}
-.land .s-row{height:72px;font-size:40px;padding:0 30px}
-.land .s-note{left:880px;right:90px;top:auto;bottom:40px;gap:10px}
-.land .s-note .n1{font-size:38px}.land .s-note .n2{font-size:30px}
+/* landscape opening hours: the card and the note under it fill the screen right of the arrow (50px clear of its tip
+   and of the screen edge), with rows large enough to read from across the store (a day with two sessions keeps its
+   times on one line, smaller) */
+.land .s-card{left:830px;right:50px;top:36px;padding:30px 28px 18px;border-radius:40px}
+.land .s-card .ch{padding-bottom:16px;margin:0 36px 12px}
+.land .s-card .ch h3{font-size:68px}
+.land .s-badge{font-size:36px;padding:10px 30px}
+.land .s-row{height:100px;font-size:58px;padding:0 36px;border-radius:18px}
+.land .s-row.multi>span:last-child{font-size:38px;white-space:nowrap}
+.land .s-note{left:830px;right:50px;top:auto;bottom:30px;gap:8px}
+.land .s-note .n1{font-size:46px}.land .s-note .n2{font-size:34px}
 /* Occasions (promo=occasions): a standalone, full-screen animation per occasion, drawn by js/render.js
    renderOccasion() with the designs' own CSS (js/occasions.js, injected once), fonts (css/occasion-fonts.css) and
    media (css/occasion-media.css). The screen element only frames it; its beats keep playing under reduced motion

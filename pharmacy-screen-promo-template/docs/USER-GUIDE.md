@@ -10,7 +10,7 @@ recorded in the audit log.
 
 The right-hand side is a **live preview** drawn by the screen's own code: Portrait and Landscape tabs, the
 scene timeline with its total time, Play and Pause. Click a scene to jump to its fields; click into a field to
-show its scene. The **Sample opening hours** label beside Play says the preview's hours are sample ones (Monday to
+show its scene. The **Sample opening hours** label, on its own row under the Portrait and Landscape tabs, says the preview's hours are sample ones (Monday to
 Friday 9:00 am to 5:30 pm, Saturday 9:00 am to 1:00 pm); its info tooltip explains that each screen uses its own
 store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays.
 It stays beside the editor when Personalisation Hub's left menu is expanded (it just gets narrower), so you can
@@ -146,7 +146,10 @@ Easter Monday).
 
 In place of Template, the Seasonal promotion has a **Season** drop-down: Christmas, New Year's, Australia
 Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and previewing, and the season the
-screens play outside every season's dates. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
+screens play outside every season's dates. Each line shows the season's start and end dates in brackets after its
+name, for example **Christmas (15 Dec – 27 Dec)** (one date for a one-day season: **Australia Day (26 Jan)**;
+Easter shows this year's Good Friday to Easter Monday). They are the dates in the season's **Dates** card, and
+change as soon as you change them there. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
 three), by default on a 12-second loop: for each beat each pharmacy edits its seconds on screen (1–60), the **Main
@@ -191,7 +194,8 @@ In the pharmacy view:
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
 - **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
-  there; there is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
+  there; each line shows the season's start and end dates after its name, as in the full editor
+  ("Christmas (15 Dec – 27 Dec)"). There is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
   end dates, read-only, as **Every year: <start> to <end>** (an administrator sets the dates in the full editor).
   The season is the Seasonal promotion's, so the change reaches every pharmacy's
   screens, as it does in the full editor.

@@ -44,12 +44,26 @@ function normaliseBaseUrl(raw) {
   return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
-function validateBaseUrls(list) {
+// The proxy sends the PH API token to every base URL, so which hosts an admin
+// may save is fixed by the deployment (PH_API_ALLOWED_HOSTS), not by whoever
+// is signed in: a stolen admin session cannot point the token at its own
+// server. "ph.example.com" is that host; ".example.com" is any host under it.
+function hostAllowed(hostname, allowed) {
+  const h = String(hostname).toLowerCase();
+  return allowed.some((a) => (a.startsWith(".") ? h.endsWith(a) && h.length > a.length : h === a));
+}
+
+function validateBaseUrls(list, allowedHosts) {
   if (!Array.isArray(list) || !list.length) throw new SettingsError(400, "INVALID_BASE_URL", "At least one base URL is required");
   if (list.length > MAX_BASE_URLS) throw new SettingsError(400, "INVALID_BASE_URL", `At most ${MAX_BASE_URLS} base URLs`);
   const out = [];
   for (const raw of list) {
     const u = normaliseBaseUrl(raw);
+    const host = new URL(u).hostname;
+    const local = host === "localhost" || host === "127.0.0.1";
+    if (allowedHosts && allowedHosts.length && !local && !hostAllowed(host, allowedHosts)) {
+      throw new SettingsError(400, "BASE_URL_HOST_NOT_ALLOWED", `${host} is not a Personalisation Hub server this deployment may call (PH_API_ALLOWED_HOSTS)`);
+    }
     if (!out.includes(u)) out.push(u);
   }
   return out;
@@ -63,7 +77,11 @@ function validateToken(token) {
   return t;
 }
 
-function createSettingsService({ store, secretStore, audit, logger, defaultBaseUrls = ["https://ph.mipharmacy.net"], now = () => new Date(), cacheMs = 15000 }) {
+function createSettingsService({ store, secretStore, audit, logger, defaultBaseUrls = ["https://ph.mipharmacy.net"], allowedHosts = null, now = () => new Date(), cacheMs = 15000 }) {
+  // Default: the hosts of the default base URLs, and nothing else.
+  const hosts = (allowedHosts && allowedHosts.length ? allowedHosts : defaultBaseUrls.map((u) => { try { return new URL(u).hostname; } catch { return ""; } }))
+    .map((h) => String(h).trim().toLowerCase())
+    .filter(Boolean);
   // Proxy-side cache of the decrypted credentials, keyed by the settings
   // version, so a save/replace/remove is picked up within cacheMs on every
   // instance (rotation without redeploying anything).
@@ -105,7 +123,7 @@ function createSettingsService({ store, secretStore, audit, logger, defaultBaseU
         if (!allowed.has(k)) throw new SettingsError(400, "INVALID_BODY", `Unknown field: ${String(k).slice(0, 50)}`);
       }
       if (body.baseUrls === undefined && body.token === undefined) throw new SettingsError(400, "INVALID_BODY", "Nothing to save");
-      const baseUrls = body.baseUrls === undefined ? undefined : validateBaseUrls(body.baseUrls);
+      const baseUrls = body.baseUrls === undefined ? undefined : validateBaseUrls(body.baseUrls, hosts.includes("*") ? null : hosts);
       let sealed = null;
       if (body.token !== undefined) {
         const token = validateToken(body.token);

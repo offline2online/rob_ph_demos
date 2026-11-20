@@ -1,5 +1,12 @@
 // Sign-in for the admin editor. Returns { getToken(), signOut(), user } once someone is signed in.
 //
+// mode 'ph': the Personalisation Hub session of the page that embeds the editor (HQ Admin or Retail Admin).
+//   No sign-in of its own: the editor tells its parent it is ready, the parent posts the signed-in user's PH
+//   session token (window.postMessage, only ever from an origin in auth.ph.parentOrigins), and the server
+//   swaps it for a short editor session that carries the user's role and stores (ph-proxy/src/ph-session.js).
+//   The PH token is held in memory only: never in storage, a URL or a log. docs/PH-EMBED.md is the contract
+//   the PH pages implement. Opened outside Personalisation Hub it shows "Access denied", unless
+//   auth.ph.fallback is 'firebase' (while the PH pages are being updated), which then offers that sign-in.
 // mode 'firebase': Firebase Auth (Google or email and password). The ID token goes to the API as a Bearer
 //   token; the API checks the `admin` custom claim on every call, so signing in is not enough on its own.
 // mode 'oidc': OpenID Connect, authorization code with PKCE (the AWS deployment: Amazon Cognito, or the
@@ -47,6 +54,126 @@ async function tokenMode() {
   }
   const signOut = async () => { try { sessionStorage.removeItem(TOKEN_KEY); } catch {} };
   return { getToken: async () => token, signOut, user: { email: null } };
+}
+
+// ── Personalisation Hub session ───────────────────────────────────────────
+
+export const PH_READY = 'ph-pharmacy-screen:ready';
+export const PH_SESSION = 'ph-pharmacy-screen:session';
+export const PH_SIGNED_OUT = 'ph-pharmacy-screen:signed-out';
+const PH_DENIED = ['Access denied', 'Open this page from Personalisation Hub, signed in. It cannot be used on its own.'];
+
+/** The parent page's messages, filtered to the PH origins and to this page's own parent window. */
+function phChannel(origins) {
+  const allowed = new Set(origins);
+  const waiting = new Set();
+  let onSignedOut = null;
+  window.addEventListener('message', (e) => {
+    if (e.source !== window.parent || !allowed.has(e.origin)) return;
+    const d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === PH_SIGNED_OUT) { if (onSignedOut) onSignedOut(); return; }
+    if (d.type !== PH_SESSION || typeof d.token !== 'string' || !d.token) return;
+    const msg = { token: d.token, host: d.host === 'retail-admin' ? 'retail-admin' : d.host === 'hq-admin' ? 'hq-admin' : null };
+    for (const w of [...waiting]) w(msg);
+    if (!waiting.size && channel.onPush) channel.onPush(msg);
+  });
+  const channel = {
+    onPush: null,
+    set onSignedOut(fn) { onSignedOut = fn; },
+    /** Ask the parent for the session; resolves null if it does not answer in time. Asked of each PH origin by
+     *  name, so no other page that happens to frame the editor ever sees the request. */
+    request(timeoutMs) {
+      return new Promise((resolve) => {
+        let done = false;
+        const finish = (v) => { if (done) return; done = true; waiting.delete(finish); clearInterval(again); clearTimeout(giveUp); resolve(v); };
+        const ask = () => { for (const o of allowed) { try { window.parent.postMessage({ type: PH_READY, version: 1 }, o); } catch {} } };
+        waiting.add(finish);
+        const again = setInterval(ask, 500); // the parent may attach its listener after the frame loads
+        const giveUp = setTimeout(() => finish(null), timeoutMs);
+        ask();
+      });
+    },
+  };
+  return channel;
+}
+
+async function phMode(authCfg) {
+  const cfg = (authCfg && authCfg.ph) || {};
+  const origins = (Array.isArray(cfg.parentOrigins) ? cfg.parentOrigins : []).filter((o) => /^https?:\/\/[^/]+$/.test(o));
+  const fallback = async () => {
+    if (cfg.fallback === 'firebase') return firebaseMode(authCfg.firebase);
+    showBlocked(...PH_DENIED);
+    return new Promise(() => {});
+  };
+  if (window.parent === window || !origins.length) return fallback();
+  show('gateLoading');
+  const channel = phChannel(origins);
+  const first = await channel.request(cfg.fallback === 'firebase' ? 2500 : 8000);
+  if (!first) return fallback();
+
+  const base = String(authCfg.apiBase || '').replace(/\/+$/, '');
+  /** PH session token -> { token (Firebase custom token), expiresAt, role, admin, stores }. Throws with .status. */
+  const exchange = async (msg) => {
+    const res = await fetch(`${base}/api/auth/ph-session`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(msg), cache: 'no-store', credentials: 'omit' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.session) { const e = new Error((data && data.error && data.error.message) || `The server answered ${res.status}.`); e.status = res.status; throw e; }
+    return data.session;
+  };
+
+  let granted;
+  try { granted = await exchange(first); }
+  catch (e) {
+    if (e.status === 401 || e.status === 403) showBlocked('Access denied', e.status === 403 ? e.message : 'Your Personalisation Hub session was not accepted. Sign in to Personalisation Hub again.');
+    else showBlocked('The editor could not load', e.message);
+    return new Promise(() => {});
+  }
+
+  // The editor session itself: the server's token swapped for a one-hour ID token (Identity Toolkit, one request,
+  // no SDK). Nothing is stored and there is no refresh token: when it runs low the editor asks its parent for the
+  // PH session again and the server re-checks it with Personalisation Hub, so a PH sign-out ends it.
+  const fb = authCfg.firebase || {};
+  const identityUrl = cfg.identityUrl || `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(fb.apiKey || '')}`;
+  const idTokenFor = async (customToken) => {
+    const res = await fetch(identityUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: customToken, returnSecureToken: true }), cache: 'no-store', credentials: 'omit' });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.idToken) { const e = new Error('The sign-in service did not start a session.'); e.status = res.status === 400 ? 401 : 0; throw e; }
+    return { idToken: data.idToken, until: Date.now() + (Number(data.expiresIn) || 3600) * 1000 };
+  };
+  const open = async (msg, already) => {
+    const g = already || await exchange(msg);
+    const t = await idTokenFor(g.token);
+    return { idToken: t.idToken, until: Math.min(t.until, Date.parse(g.expiresAt) || t.until) };
+  };
+
+  let live;
+  try { live = await open(first, granted); }
+  catch (e) {
+    showBlocked('The editor could not load', 'The sign-in service could not be reached. Check your connection and reload.');
+    return new Promise(() => {});
+  }
+
+  let ended = false;
+  const end = () => { ended = true; live = null; showBlocked('Signed out', 'You are signed out of Personalisation Hub. Sign in again to keep editing.'); };
+  channel.onSignedOut = end;
+  // One renewal at a time. A renewal that fails for a passing reason keeps the current session until it ends.
+  let renewing = null;
+  const renew = (msg) => (renewing = renewing || (async () => {
+    try { live = await open(msg); return true; }
+    catch (e) { if (e.status === 401 || e.status === 403) end(); return false; }
+  })().finally(() => { renewing = null; }));
+  channel.onPush = (msg) => { if (!ended) renew(msg); }; // the parent refreshed its session and posted the new one
+
+  const getToken = async () => {
+    if (!ended && live.until - Date.now() < 300000) {
+      const msg = await channel.request(5000);
+      if (msg) await renew(msg);
+      if (!ended && live.until <= Date.now()) end(); // the parent no longer answers and the session is over
+    }
+    if (ended) return new Promise(() => {});
+    return live.idToken;
+  };
+  return { getToken, signOut: null, user: { email: null }, ph: { role: granted.role, admin: granted.admin, stores: granted.stores } };
 }
 
 async function firebaseMode(cfg) {
@@ -211,7 +338,7 @@ async function oidcMode(cfg) {
 
 export async function signIn(authCfg) {
   const mode = (authCfg && authCfg.mode) || 'firebase';
-  const session = mode === 'token' ? await tokenMode() : mode === 'oidc' ? await oidcMode(authCfg && authCfg.oidc) : await firebaseMode(authCfg && authCfg.firebase);
+  const session = mode === 'token' ? await tokenMode() : mode === 'oidc' ? await oidcMode(authCfg && authCfg.oidc) : mode === 'ph' ? await phMode(authCfg) : await firebaseMode(authCfg && authCfg.firebase);
   show('gateLoading');
   return session;
 }

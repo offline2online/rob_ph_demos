@@ -8,8 +8,48 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Changed
+
+- **Edits reach screens sooner, with less traffic.** A running screen now checks its published config every 15 s
+  (was 60 s) and the config API answers `304` with no body while nothing changed (`ETag`); the CDN holds the config
+  5 s (was 15 s). An edit in the editor is on screen within about 20 s (was up to 76 s). Store data from PH's
+  Location API is checked every 20 s (was 30 s), so changed hours show within about 35 s. A screen also checks at
+  once when its page is shown again or its network returns, and writes its last good copy to storage only when it
+  changed ([docs/CONFIGURATION.md](docs/CONFIGURATION.md) → "Fixed behaviour").
+- **Images on the player.** Our own logos and backgrounds (content-hashed URLs) are downloaded once and never
+  asked for again. A logo URL that comes from PH, which can be replaced in place, is shown from the player's copy
+  and re-checked in the background, so a replaced logo shows on the next play. A failed image download is no longer
+  kept, and the screen asks the browser to keep its storage (`navigator.storage.persist`).
+
+### Security
+
+- **Template HTML cannot run script.** Template markup is cleaned in the page before it is shown on a screen or in
+  the editor preview (event handlers, script URLs and elements that load or run something are removed), and the
+  config API's check now reads tags the way a browser does: `<img title=">" onerror=…>` was accepted before.
+- **The PH API token can only be sent to allowed hosts.** Base URLs saved in Admin → Settings must be on a host in
+  `PH_API_ALLOWED_HOSTS` (default: the host of `PH_API_DEFAULT_BASE_URL`), so a stolen administrator session cannot
+  point the token at another server.
+- **Published screen configs can no longer be listed** through Firestore (one store's config can still be read),
+  and every Hosting response carries `X-Content-Type-Options`, `Referrer-Policy` and `Permissions-Policy`.
+
 ### Added
 
+- **Sign-in from Personalisation Hub; no separate login.** Embedded in HQ Admin (Pharmacy Promos) or Retail
+  Admin (Display Promotions), the editor uses the PH session of the person looking at it: the PH page hands the
+  session to the editor's frame, the server checks it with PH and issues a short editor session
+  ([docs/PH-EMBED.md](docs/PH-EMBED.md)). An HQ Admin user is an administrator. A Retail Admin user sees and edits
+  only their own store's promotions and **Restore to default**; this is enforced by the server, and a store code
+  in the URL that is not theirs shows "Access denied". The editor can only be framed by PH. `PS_ADMIN_AUTH`
+  chooses `ph`, `ph+firebase` (the changeover default) or `firebase`
+  ([docs/CONFIGURATION.md](docs/CONFIGURATION.md)). **The PH pages must send the session for this to take
+  effect** (the snippet is in docs/PH-EMBED.md); until they do, `ph+firebase` keeps the previous sign-in.
+
+- **Season drop-down shows each season's dates.** On the Seasonal promotion, every line of the **Season**
+  drop-down has the season's start and end dates in brackets after its name, for example
+  "Christmas (15 Dec – 27 Dec)" and "New Year's (28 Dec – 5 Jan)"; a one-day season shows one date
+  ("Australia Day (26 Jan)") and Easter shows this year's Good Friday to Easter Monday. In the admin editor and
+  the pharmacy view (`admin/?store=<code>`). The dates are the ones in each season's **Dates** card, so the
+  drop-down changes as soon as a date is changed ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Seasonal").
 - **Master template preview shows its tokens as written.** In Promo preview → **Master template**, the preview
   prints `${Suburb}`, `${StoreName}` and `${Phone}` as typed ("Good morning, ${Suburb}", "Serving ${Suburb}",
   "Phone ${Phone}", "from the whole ${StoreName} team") instead of blanking them, so it is clear the master's copy
@@ -72,6 +112,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   (service tiles, the large service icon, the copy under them, the opening hours card and holiday note) starts
   about 340px further left and is drawn larger. Portrait and Seasonal are unchanged; the "Screen
   not set up" page in landscape follows the same narrower panel.
+- **Preview: "Sample opening hours" has its own row and always shows in full.** The pill was cut off with an
+  ellipsis beside Play in a normal-width preview column. It now sits on a row of its own under the Portrait and
+  Landscape tabs, centred, with its info tooltip beside it, and wraps onto two lines in a very narrow column instead
+  of being shortened. The tooltip opens below the row. The preview screen is 34px shorter to make room, so the whole
+  preview still fits the visible height ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
 - **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
   the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
   store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
@@ -122,6 +167,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   The promotions page now has only a **Promo preview** drop-down to pick the pharmacy whose copy is edited and
   previewed. Settings' button back reads **Back to promotions**.
 
+- **Landscape opening hours: a much larger card.** On a landscape screen the opening hours card (Closed, or any
+  promotion on the Opening hours template) now fills most of the screen right of the brand arrow: 1040px wide and
+  about 860px tall (was 950px by about 640px), with the day names and times at 58px (was 40px) in 100px rows, the
+  "Opening hours" title at 68px, a larger "CLOSED NOW" badge and a larger public holiday note and phone line under
+  it, so the hours read from across the store. A day with two sessions keeps both on one line, set smaller. Portrait
+  is unchanged.
+
 ### Removed
 
 - **Settings → Store record** (the device ID lookup of the Location API record). The preview always uses sample
@@ -130,6 +182,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Landscape Morning, Afternoon and Closed: the brand panel's headline is centred and larger.** After the panel
+  was narrowed, its headline sat left-aligned, below the arrow's centre line, at 84px. The headline and its accent
+  line are now centred in the panel, across its width and on the arrow tip's line, and drawn at 96px and 40px (were
+  84px and 36px); a headline too wide for the panel still shrinks to fit inside it. The logo above is centred in
+  the panel too. Portrait and Seasonal are unchanged.
 - **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
   the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
   of the page jumping.

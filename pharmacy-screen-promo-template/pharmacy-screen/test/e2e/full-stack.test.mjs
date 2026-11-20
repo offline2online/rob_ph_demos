@@ -67,6 +67,15 @@ async function until(page, fn, arg) {
 }
 const screenText = (page) => page.evaluate(() => document.getElementById('screen').innerText.replace(/\s+/g, ' '));
 
+// Fake time in small steps with real time between them, so a poll that fires part-way through gets its (real,
+// routed) answer before the page's own request timeout, which runs on the fake clock, can pass.
+async function pass(page, ms) {
+  for (let t = 0; t < ms; t += 2000) {
+    await page.clock.runFor(Math.min(2000, ms - t));
+    await new Promise((r) => setTimeout(r, 40));
+  }
+}
+
 test('the screen on a mock device plays every promotion in both orientations, each scene fitting', async () => {
   let scenes = 0;
   for (const landscape of [false, true]) {
@@ -201,7 +210,7 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
     await cpage.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.info, null, { timeout: 20000 });
     assert.equal(await cpage.evaluate(() => window.pharmacyScreen.info.occasion), 'easter');
     await cpage.evaluate(() => { window.__marker = 1; });
-    await cpage.clock.runFor(3 * 60 * 1000);
+    await pass(cpage, 3 * 60 * 1000);
     assert.deepEqual(await cpage.evaluate(() => [window.pharmacyScreen.info.occasion, window.pharmacyScreen.info.auto, window.__marker]), ['christmas', true, 1]);
     await cctx.close();
   } finally {
@@ -232,7 +241,7 @@ test('an admin edit in the editor reaches a running screen at its next config po
   assert.match(await admin.textContent('#saveState'), /All changes saved/);
   await actx.close();
 
-  await s.page.clock.runFor(60000);
+  await pass(s.page, 60000);
   await until(s.page, () => /Four reasons to walk in/.test(document.getElementById('screen').innerText));
   assert.equal(await s.page.evaluate(() => window.__marker), 1, 'same page, no reload');
   assert.deepEqual(s.errors, []);
@@ -278,7 +287,7 @@ test('offline: the screen keeps its last good data, restarts from the cache, and
   const s = await screen(`device=${DEVICE}&promo=afternoon&scene=0&now=wed-15:00`, { ctx, clock: true });
   const shown = await screenText(s.page);
   offline = true;
-  await s.page.clock.runFor(60000);
+  await pass(s.page, 60000);
   await until(s.page, () => window.pharmacyScreen.data.lastStore && window.pharmacyScreen.data.lastStore.kind === 'down');
   assert.equal(await s.page.evaluate(() => window.pharmacyScreen.data.view), 'ready');
   assert.equal(await screenText(s.page), shown, 'same scene, unchanged');
@@ -290,7 +299,7 @@ test('offline: the screen keeps its last good data, restarts from the cache, and
   assert.equal(await r.page.evaluate(() => window.pharmacyScreen.data.fromCache), true);
   assert.equal(await screenText(r.page), shown);
   offline = false;
-  await r.page.clock.runFor(30000);
+  await pass(r.page, 30000);
   await until(r.page, () => window.pharmacyScreen.data.lastStore && window.pharmacyScreen.data.lastStore.kind === 'ok');
   assert.equal(await r.page.evaluate(() => window.pharmacyScreen.data.fromCache), false);
   await ctx.close();

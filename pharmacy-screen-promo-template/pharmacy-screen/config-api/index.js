@@ -8,6 +8,8 @@
 //
 // Configuration (all non-secret; see README.md → "Configuration"):
 //   PS_ADMIN_CLAIM       custom claim that marks an admin        (default "admin")
+//   PS_REQUIRE_PH_SESSION  "true": accept only sessions started from Personalisation Hub
+//                        (ph-proxy/src/ph-session.js); every other sign-in gets 401 (default off)
 //   PS_ALLOWED_ORIGINS   comma-separated origins for admin CORS  (default none)
 //   PS_MEDIA_BUCKET      Cloud Storage bucket for logos/backgrounds, its own
 //                        bucket so rules/storage.rules never replaces the
@@ -38,7 +40,7 @@ function getHandler() {
   const api = createConfigApi({
     store: createFirestoreStore(getFirestore(), { root: env.PS_FIRESTORE_ROOT || "pharmacyScreen" }),
     blobs: createGcsBlobs(bucket),
-    auth: createFirebaseAuth(getAuth(), { claim: env.PS_ADMIN_CLAIM || "admin" }),
+    auth: createFirebaseAuth(getAuth(), { claim: env.PS_ADMIN_CLAIM || "admin", requirePhSession: /^(1|true|yes)$/i.test(env.PS_REQUIRE_PH_SESSION || "") }),
     allowedOrigins: String(env.PS_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()),
     // Never log request bodies or headers: an Authorization header is a
     // credential. Only the route and the error.

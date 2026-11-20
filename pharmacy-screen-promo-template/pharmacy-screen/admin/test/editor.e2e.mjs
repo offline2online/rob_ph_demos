@@ -149,16 +149,40 @@ test('Settings holds the pharmacies, their details and branding, and the API; pr
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
   assert.equal(await page.inputValue('#storeSel'), 'seed-pharmacy-vic-mp-003');
-  // The pill under the preview says the hours are sample ones; its info tooltip says each screen uses its store's
-  // actual hours for the day and time the promotion plays, opens on hover and keyboard focus, and is not clipped.
+  // The pill says the hours are sample ones. It has a row of its own under the Portrait/Landscape tabs, above the
+  // preview screen, so the label shows in full; its info tooltip says each screen uses its store's actual hours for
+  // the day and time the promotion plays, opens on hover and keyboard focus, and is not clipped.
   assert.equal(await page.textContent('#pvData'), 'Sample opening hours');
+  const pvRow = await page.evaluate(() => {
+    const r = (s) => document.querySelector(s).getBoundingClientRect();
+    const p = document.getElementById('pvData'), row = p.parentElement, b = p.getBoundingClientRect();
+    return { cls: row.className, kids: [...row.children].map((e) => e.id || e.className), cut: p.scrollWidth > p.clientWidth, h: b.height, top: b.top, bottom: b.bottom,
+      tabsBottom: r('#orTabs').bottom, stageTop: r('#stage').top, inControls: !!document.querySelector('.controls #pvData, .controls #pvInfo') };
+  });
+  assert.equal(pvRow.cls, 'pvnote', JSON.stringify(pvRow));
+  assert.deepEqual(pvRow.kids, ['pvData', 'infowrap'], 'the row holds only the pill and its info icon');
+  assert.equal(pvRow.inControls, false, 'not beside Play any more');
+  assert.equal(pvRow.cut, false, 'the label is not cut off');
+  assert.ok(pvRow.top >= pvRow.tabsBottom && pvRow.bottom <= pvRow.stageTop, `under the tabs, above the screen: ${JSON.stringify(pvRow)}`);
+  // In a preview column narrower than the label, it wraps onto a second line instead of being cut short.
+  const pvNarrow = await page.evaluate(() => {
+    const row = document.querySelector('.pvnote'), p = document.getElementById('pvData');
+    row.style.width = '150px';
+    const out = { h: p.getBoundingClientRect().height, cut: p.scrollWidth > p.clientWidth, right: p.getBoundingClientRect().right <= row.getBoundingClientRect().right + 0.5, text: p.innerText.replace(/\s+/g, ' ') };
+    row.style.width = '';
+    return out;
+  });
+  assert.ok(pvNarrow.h > pvRow.h * 1.5 && pvNarrow.h < pvRow.h * 2.5, `two lines when narrow: ${JSON.stringify(pvNarrow)} vs ${pvRow.h}`);
+  assert.equal(pvNarrow.cut, false);
+  assert.equal(pvNarrow.right, true);
+  assert.equal(pvNarrow.text, 'Sample opening hours');
   assert.match(await page.textContent('#pvTip'), /sample opening hours .*Each screen uses its own store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays\.$/);
   await page.hover('#pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
-  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.controls').getBoundingClientRect(); return { l: r.left, r: r.right, cl: c.left, cr: c.right, h: r.height }; });
-  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.h > 40, JSON.stringify(pvTip));
+  const pvTip = await page.$eval('#pvTip', (e) => { const r = e.getBoundingClientRect(), c = e.closest('.pvnote').getBoundingClientRect(); return { l: r.left, r: r.right, t: r.top, cl: c.left, cr: c.right, cb: c.bottom, h: r.height }; });
+  assert.ok(pvTip.l >= pvTip.cl - 0.5 && pvTip.r <= pvTip.cr + 0.5 && pvTip.t >= pvTip.cb && pvTip.h > 40, JSON.stringify(pvTip));
   await page.mouse.move(0, 0);
-  await page.focus('#playBtn');
+  await page.focus('#orTabs [data-or="landscape"]');
   await page.keyboard.press('Tab');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'pvInfo');
   await page.waitForFunction(() => getComputedStyle(document.getElementById('pvTip')).opacity === '1');
@@ -325,7 +349,11 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   await page.click('#playBtn'); // pause
   // The Template drop-down is the Season drop-down here, Christmas by default; seasonal templates have no Edit HTML.
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
-  assert.deepEqual(await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent)), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
+  // Each season shows its start and end dates after its name (one date for a one-day season; Easter's are this year's).
+  const seasonOpts = () => page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent));
+  const easterOpt = (await seasonOpts())[4];
+  assert.match(easterOpt, /^Easter \(\d{1,2} (Mar|Apr) – \d{1,2} (Mar|Apr)\)$/);
+  assert.deepEqual(await seasonOpts(), ['Christmas (15 Dec – 27 Dec)', "New Year's (28 Dec – 5 Jan)", 'Australia Day (26 Jan)', "Valentine's Day (14 Feb)", easterOpt, 'Anzac Day (25 Apr)']);
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#pmHtml'), true);
   // Christmas: two beats, each a card of its lines; the preview draws the standalone design (no brand panel).
@@ -342,11 +370,15 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.deepEqual([await page.inputValue('#occFromd'), await page.inputValue('#occFromm'), await page.inputValue('#occTod'), await page.inputValue('#occTom')], ['15', '12', '27', '12']);
   await page.selectOption('#occTod', '24');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
+  // The Season drop-down follows the change straight away, and keeps Christmas selected.
+  assert.equal((await seasonOpts())[0], 'Christmas (15 Dec – 24 Dec)');
+  assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
   await settle(page);
   const xmasDates = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas;
   assert.deepEqual([xmasDates.from, xmasDates.to], ['12-15', '12-24']);
   await page.selectOption('#occTod', '27');
   assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
+  assert.equal((await seasonOpts())[0], 'Christmas (15 Dec – 27 Dec)');
   // Each beat has its own seconds on screen: the loop, the timeline and the playback duration follow, and the playing
   // preview runs the beats on keyframes of that length.
   assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['6', '6']);
@@ -997,6 +1029,11 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.$$eval('#occDates select', (e) => e.length), 0, 'no date pickers in the pharmacy view');
   for (const id of ['#occFromRo', '#occToRo']) assert.equal(await page.$eval(id, (e) => e.readOnly), true, id);
   assert.equal(await page.textContent('#occWhen'), `${await page.inputValue('#occFromRo')} to ${await page.inputValue('#occToRo')}`);
+  // The Season drop-down shows each season's dates after its name here too; the selected season's match its Dates card.
+  const lockOpts = await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent));
+  assert.equal(lockOpts.length, 6);
+  for (const t of lockOpts) assert.match(t, /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, t);
+  assert.equal(lockOpts[0], `Christmas (${await page.inputValue('#occFromRo')} – ${await page.inputValue('#occToRo')})`);
   await page.click('#dpTabs button:has-text("Morning")');
   assert.equal(await page.isHidden('#promoMeta'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.

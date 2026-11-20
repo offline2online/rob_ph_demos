@@ -379,6 +379,34 @@ export function footerMessage(store, content, state) {
   return timeTokens(rich(F[key], store.suburb), fmtShort(state.closeTime, true), fmtShort(state.openTime, true));
 }
 
+// Template HTML is written by an administrator, and it plays on unattended screens and in the editor's preview,
+// so nothing in it may run: the config API refuses unsafe markup when it is saved (config-api/src/validate.js)
+// and this is the screen's own half. The markup is parsed inertly, every element that can load or run something
+// and every event handler or script URL is removed, and only then does it enter the page.
+const BLOCKED_TAGS = new Set(['script', 'iframe', 'object', 'embed', 'frame', 'frameset', 'base', 'meta', 'link', 'form', 'foreignobject', 'animate', 'set', 'animatemotion', 'animatetransform', 'handler', 'listener']);
+const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'poster', 'background', 'data', 'srcset', 'ping']);
+const BAD_URL = /^[\s\u0000-\u001f]*(javascript|vbscript|data\s*:\s*text\/html)\s*:?/i;
+export function cleanTemplateDom(root) {
+  for (const node of [...root.querySelectorAll('*')]) {
+    if (BLOCKED_TAGS.has(node.localName.toLowerCase())) { node.remove(); continue; }
+    for (const a of [...node.attributes]) {
+      const name = a.name.toLowerCase();
+      if (name.startsWith('on') || name === 'srcdoc' || (URL_ATTRS.has(name) && BAD_URL.test(a.value)) || (name === 'style' && /expression\s*\(|javascript\s*:|@import/i.test(a.value))) node.removeAttribute(a.name);
+    }
+  }
+  return root;
+}
+function writeTemplate(el, markup) {
+  const doc = el.ownerDocument;
+  const tpl = doc && doc.createElement ? doc.createElement('template') : null;
+  if (!tpl || !tpl.content) { el.innerHTML = markup; return; }
+  tpl.innerHTML = markup;
+  cleanTemplateDom(tpl.content);
+  if (el.replaceChildren) el.replaceChildren(tpl.content);
+  else { el.textContent = ''; el.appendChild(tpl.content); } // an older WebView
+}
+
+
 /**
  * Render one scene into `el` (the 1080x1920 / 1920x1080 .screen element, id "screen").
  * opts: { store, play, orientation, scene, now: {day, min} | undefined, enter: boolean, loop: boolean }
@@ -410,7 +438,8 @@ export function renderScene(el, opts) {
   const T = {};
   if (hours) {
     hl = `<h2>${rich((d.headlines || [])[seq[scene].k], sub)}</h2>`;
-    const rows = weeklyRows(s.sessions).map((r) => `<div class="s-row"><span>${r.name}</span>${r.text ? `<span>${esc(r.text)}</span>` : '<span class="closed">Closed</span>'}</div>`).join('');
+    // .multi: a day with more than one session, whose longer line the landscape card sets smaller (css/screen.css)
+    const rows = weeklyRows(s.sessions).map((r) => `<div class="s-row${r.text && r.text.includes(', ') ? ' multi' : ''}"><span>${r.name}</span>${r.text ? `<span>${esc(r.text)}</span>` : '<span class="closed">Closed</span>'}</div>`).join('');
     T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">CLOSED NOW</span></div>${rows}</div>`;
     const bits = [s.phone ? `Phone ${esc(s.phone)}` : '', d.showAddress && s.address ? esc(s.address) : ''].filter(Boolean).join(' · ');
     T.HolidayNote = `<span class="n1">${HOLIDAY_NOTE}</span>`;
@@ -454,7 +483,7 @@ export function renderScene(el, opts) {
   const P = play.template;
   const html = applyTokens(fillTemplate(P.html || DEFAULT_HTML[play.base], T), { ...custom, StoreName: s.name, Phone: s.phone || '', State: s.state || '', StoreCode: s.storeCode || '' });
   const css = P.css ? scopeCss(P.css, '#' + (el.id || 'screen')) : '';
-  el.innerHTML = (css ? `<style>${css}</style>` : '') + html;
+  writeTemplate(el, (css ? `<style>${css}</style>` : '') + html);
   const top = el.querySelector('.s-top');
   if (top) top.style.clipPath = ptsClip(G.pts);
   const ep = el.querySelector('.s-edge path');

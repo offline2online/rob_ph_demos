@@ -4,7 +4,7 @@
 //
 // Store data comes from the back-end proxy (GET /api/device/{device}/campaign_data, ph-proxy/), config from
 // the public config read (GET /api/screens/{store_code}, config-api/), both through js/live-data.js: polled
-// every 30 s / 60 s, last good server first, re-rendered only on change, last good result kept in
+// every 20 s / 15 s, last good server first, re-rendered only on change, last good result kept in
 // localStorage. The servers are the page's <meta name="pharmacy-screen-api"> (empty: this page's origin).
 //
 // Testing parameters (not used by the PH player):
@@ -223,6 +223,14 @@ function start() {
     },
   });
   data.start();
+  // A player that hid the page between playlist slots, or lost its network, catches up at once instead of waiting
+  // for the next poll.
+  const catchUp = () => { if (document.visibilityState !== 'hidden') data.refresh(); };
+  document.addEventListener('visibilitychange', catchUp);
+  window.addEventListener('online', catchUp);
+  window.addEventListener('pageshow', (e) => { if (e.persisted) catchUp(); });
+  // Ask the browser not to evict the screen's copy (the shell, images and last good data) under storage pressure.
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch (e) {}
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }
 

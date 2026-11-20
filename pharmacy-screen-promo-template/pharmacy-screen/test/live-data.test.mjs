@@ -141,23 +141,23 @@ test('the device is looked up through the proxy and the config by the store code
   data.stop();
 });
 
-test('polls store data every 30 s and config every 60 s, re-rendering only when something changed', async () => {
+test('polls store data every 20 s and config every 15 s, re-rendering only when something changed', async () => {
   let hours = raw('DEVICE-VIC-MP-001');
   const { data, updates, fetchImpl, c } = rig({ servers: { '': (p) => (p.startsWith('/api/device/') ? proxyOk(hours) : { status: 200, body: published('VIC-MP-001') }) } });
   data.start();
   await settle();
-  assert.deepEqual(c.pending(), [STORE_POLL_MS, CONFIG_POLL_MS]);
+  assert.deepEqual(c.pending().slice().sort((a, b) => a - b), [CONFIG_POLL_MS, STORE_POLL_MS].sort((a, b) => a - b));
   const firstChanged = updates.filter((u) => u.changed).length;
   await c.advance(STORE_POLL_MS);
   assert.equal(fetchImpl.calls.filter((u) => u.includes('/api/device/')).length, 2);
   assert.equal(updates.at(-1).changed, false, 'same data: no re-render');
-  // Change the store's hours in PH: the next poll (within 30 s) carries it, and it is a change.
+  // Change the store's hours in PH: the next poll (within 20 s) carries it, and it is a change.
   hours = JSON.parse(JSON.stringify(hours));
   hours.store_info.opening_hours[0].close_time = '20:00:00';
   await c.advance(STORE_POLL_MS);
   assert.equal(updates.at(-1).changed, true);
   assert.equal(updates.at(-1).s.campaign.store_info.opening_hours[0].close_time, '20:00:00');
-  assert.equal(fetchImpl.calls.filter((u) => u.includes('/api/screens/')).length, 2, 'config polled at 60 s');
+  assert.equal(fetchImpl.calls.filter((u) => u.includes('/api/screens/')).length, 1 + Math.floor((2 * STORE_POLL_MS) / CONFIG_POLL_MS), 'config polled on its own interval');
   assert.equal(updates.filter((u) => u.changed).length, firstChanged + 1);
   data.stop();
 });
@@ -189,7 +189,7 @@ test('network drop: the screen keeps its last good data, then resumes; a restart
   await settle();
   assert.equal(a.updates.at(-1).view, 'ready');
   up = false;
-  await a.c.advance(CONFIG_POLL_MS);
+  await a.c.advance(Math.max(CONFIG_POLL_MS, STORE_POLL_MS));
   const dropped = a.updates.at(-1);
   assert.equal(dropped.view, 'ready', 'still showing the store');
   assert.equal(dropped.changed, false, 'nothing re-rendered');

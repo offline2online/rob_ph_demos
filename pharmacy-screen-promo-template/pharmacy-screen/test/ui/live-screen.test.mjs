@@ -73,6 +73,14 @@ async function open(query, api, { viewport = { width: 540, height: 960 }, clock 
   return { page, ctx, external, errors };
 }
 
+// Fake time in small steps with real time between them, so a poll that fires part-way through gets its (real,
+// routed) answer before the page's own request timeout, which runs on the fake clock, can pass.
+async function pass(page, ms) {
+  for (let t = 0; t < ms; t += 2000) {
+    await page.clock.runFor(Math.min(2000, ms - t));
+    await new Promise((r) => setTimeout(r, 40));
+  }
+}
 const copy = (d) => JSON.parse(JSON.stringify(d));
 // waitForFunction polls on the page's own timers, which page.clock fakes: poll from here instead, with real
 // time passing for the routed fetches and a little fake time for the page's own timers.
@@ -118,7 +126,7 @@ test('2. hours changed in PH reach the screen within 30 s, without a reload', as
   next.store_info.opening_hours[0].close_time = '21:00:00';
   api.devices.D1 = next;
   await page.evaluate(() => { window.__marker = 1; });
-  await page.clock.runFor(30000);
+  await pass(page, 30000);
   await until(page, () => /Monday\s+8\.30am – 9\.00pm/.test(document.getElementById('screen').innerText));
   assert.equal(await page.evaluate(() => window.__marker), 1, 'same page, no reload');
   await ctx.close();
@@ -130,7 +138,7 @@ test('3. network killed: the screen keeps the last good data; restored, it resum
   const { page, ctx } = await open('device=D3&promo=morning&scene=0&now=wed-12:00', api, { clock: true });
   const before = await screenText(page);
   api.down = true;
-  await page.clock.runFor(60000);
+  await pass(page, 60000);
   await until(page, () => window.pharmacyScreen.data.lastStore && window.pharmacyScreen.data.lastStore.kind === 'down');
   assert.equal(await page.evaluate(() => window.pharmacyScreen.data.view), 'ready');
   assert.equal(await screenText(page), before, 'still the same scene');
@@ -141,7 +149,7 @@ test('3. network killed: the screen keeps the last good data; restored, it resum
   assert.equal(await page.evaluate(() => window.pharmacyScreen.info.store), 'VIC-MP-003');
   assert.equal(await page.evaluate(() => window.pharmacyScreen.data.fromCache), true);
   api.down = false;
-  await page.clock.runFor(30000);
+  await pass(page, 30000);
   await until(page, () => window.pharmacyScreen.data.lastStore && window.pharmacyScreen.data.lastStore.kind === 'ok');
   assert.equal(await page.evaluate(() => window.pharmacyScreen.data.fromCache), false);
   await ctx.close();

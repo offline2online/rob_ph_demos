@@ -115,17 +115,35 @@ export function stampServiceWorker(pub) {
 // not secrets). The committed admin/config.js keeps firebase: null, so a copy
 // served without this deploy shows "Sign-in is not set up" instead of signing
 // in to the wrong project.
-export function adminConfigJs({ apiKey, authDomain, projectId, appId }) {
+//
+// adminAuth says how people sign in to the editor (PS_ADMIN_AUTH, default
+// ADMIN_AUTH_DEFAULT):
+//   "ph"           only from Personalisation Hub: the page that embeds the
+//                  editor hands over the signed-in user's session
+//                  (docs/PH-EMBED.md). Opened any other way: "Access denied".
+//                  Set PS_REQUIRE_PH_SESSION and PH_REQUIRE_PH_SESSION to true
+//                  in the functions' .env.<project> files with it, so the
+//                  APIs refuse every other sign-in too.
+//   "ph+firebase"  the same, but where the embedding page does not hand a
+//                  session over (yet), the Firebase sign-in is offered. For
+//                  the changeover only.
+//   "firebase"     Firebase sign-in only (as before PH sign-in existed).
+export const ADMIN_AUTH_MODES = ["ph", "ph+firebase", "firebase"];
+export const ADMIN_AUTH_DEFAULT = "ph+firebase";
+export const PH_PARENT_ORIGINS = ["https://ph.mipharmacy.net"];
+export function adminConfigJs({ apiKey, authDomain, projectId, appId }, { adminAuth = ADMIN_AUTH_DEFAULT, parentOrigins = PH_PARENT_ORIGINS } = {}) {
   if (!apiKey || !projectId) throw new Error("the admin web app config has no apiKey/projectId");
+  if (!ADMIN_AUTH_MODES.includes(adminAuth)) throw new Error(`PS_ADMIN_AUTH must be one of ${ADMIN_AUTH_MODES.join(", ")}`);
   const firebase = { apiKey, authDomain: authDomain || `${projectId}.firebaseapp.com`, projectId };
   if (appId) firebase.appId = appId;
-  const cfg = { apiBase: "", screenPage: "", auth: { mode: "firebase", firebase } };
+  const auth = adminAuth === "firebase" ? { mode: "firebase", firebase } : { mode: "ph", firebase, ph: { parentOrigins, ...(adminAuth === "ph+firebase" ? { fallback: "firebase" } : {}) } };
+  const cfg = { apiBase: "", screenPage: "", auth };
   return `// Written by scripts/deploy.mjs for this deploy (see pharmacy-screen/admin/config.js). Non-secret.\nexport default ${JSON.stringify(cfg, null, 2)};\n`;
 }
 
-export function writeAdminConfig(web, out = join(ROOT, STAGE_DIR)) {
+export function writeAdminConfig(web, out = join(ROOT, STAGE_DIR), opts = { adminAuth: process.env.PS_ADMIN_AUTH || ADMIN_AUTH_DEFAULT }) {
   const file = join(out, "public", "admin", "config.js");
-  writeFileSync(file, adminConfigJs(web));
+  writeFileSync(file, adminConfigJs(web, opts));
   return file;
 }
 

@@ -38,12 +38,12 @@ Saving, replacing and removing the token need the admin role and are audit-logge
 
 | Behaviour | Value | Where |
 |---|---|---|
-| Store data poll (Location API through the proxy) | Every 30 s, one request in flight | `pharmacy-screen/js/live-data.js` `STORE_POLL_MS` |
-| Config poll (published screen config) | Every 60 s, one request in flight | `live-data.js` `CONFIG_POLL_MS` |
+| Store data poll (Location API through the proxy) | Every 20 s, one request in flight; at once when the page is shown again or the network returns | `pharmacy-screen/js/live-data.js` `STORE_POLL_MS` |
+| Config poll (published screen config) | Every 15 s, one request in flight, answered `304` with no body while nothing changed | `live-data.js` `CONFIG_POLL_MS` |
 | Request timeout per server (screen) | 8 s | `live-data.js` |
 | "Last 30 minutes" bar state | 30 minutes before close | `pharmacy-screen/js/hours.js` `LAST_MINUTES` |
 | Screen update check (service worker) | Every 30 minutes, and on every page load | `pharmacy-screen/js/player.js` |
-| Public config cache | 15 s (`Cache-Control: public, max-age=15`) | `config-api/src/api.js` |
+| Public config cache | 5 s (`Cache-Control: public, max-age=5`, with an `ETag`) | `config-api/src/api.js` |
 | Upload limits | Logos PNG/WebP ≤ 2 MB; backgrounds PNG/JPEG/WebP ≤ 5 MB (≤ 4 MB on AWS) | `config-api/src/service.js` |
 
 ## AWS deploy options
@@ -87,6 +87,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PS_ADMIN_CLAIM` | ID token claim name | `admin` (Firebase custom claim); `cognito:groups` on AWS | `cognito:groups` | No | `.env.rob-ph-demos`; the CDK stack (`--admin-claim`). On AWS also used by `PhApi` |
 | `PS_ADMIN_VALUE` | Claim value meaning admin (AWS/OIDC only) | `admin` | `admin` | No | The CDK stack (`--admin-value`) |
 | `PS_ALLOWED_ORIGINS` | Comma-separated origins allowed to call admin endpoints from a browser | None (same-origin only) | `https://screens.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack (the site URL). Local dev server default `http://localhost:5173,http://localhost:8080` |
+| `PS_REQUIRE_PH_SESSION` | `true`: accept only editor sessions started from Personalisation Hub ([PH-EMBED.md](PH-EMBED.md)); every other sign-in gets 401 (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PH_REQUIRE_PH_SESSION` and `PS_ADMIN_AUTH=ph` |
 | `PS_MEDIA_BUCKET` | Bucket for logos and backgrounds | `<project>-pharmacy-screen-media` (Firebase) | `pharmacyscreen-media-…` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PS_MEDIA_BASE_URL` | Public base URL media is served from (AWS) | None | `https://screens.mipharmacy.net` | No | The CDK stack (the site URL; CloudFront serves `/pharmacyScreen/media/*`) |
 | `PS_FIRESTORE_ROOT` | Top-level Firestore collection (Firebase) | `pharmacyScreen` | `pharmacyScreen` | No | `.env.rob-ph-demos` |
@@ -105,6 +106,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_TOKEN_KMS_KEY` | KMS key that wraps the token's data key: Cloud KMS key name, or AWS KMS key ARN | None: saving a token answers `SECRET_STORE_NOT_CONFIGURED` | `arn:aws:kms:ap-southeast-2:111122223333:key/…` | No (a key reference; only the function's role may use the key) | `.env.rob-ph-demos`; the CDK stack |
 | `PH_LOCAL_KMS_KEY` | Base64 of 32 random bytes, for `PH_SECRET_STORE=local` | None | `<base64 32 bytes>` | **Yes**. Emulators and tests only: refused on Cloud Functions/Run and Lambda | Never in a deployment |
 | `PH_API_DEFAULT_BASE_URL` | Comma-separated https URLs used until an admin saves a list | `https://ph.mipharmacy.net` | `https://ph.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack (`--ph-api-base-url`) |
+| `PH_API_ALLOWED_HOSTS` | Comma-separated hosts an admin may save as a PH API base URL (the token is sent to them). `.example.com` allows any host under it; `*` any https host | The hosts of `PH_API_DEFAULT_BASE_URL` | `ph.mipharmacy.net,.personalisationhub.com` | No | Default |
 | `PH_ADMIN_CLAIM` | Firebase custom claim marking an admin (Firebase) | `admin` | `admin` | No | `.env.rob-ph-demos` (on AWS `PS_ADMIN_CLAIM` is used) |
 | `PH_ALLOWED_ORIGINS` | Comma-separated origins allowed to call the settings endpoints from a browser | None | `https://screens.mipharmacy.net` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PH_SETTINGS_DOC` | Firestore document for the settings and encrypted token (Firebase) | `pharmacyScreen/private/settings/phApi` | | No | `.env.rob-ph-demos` |
@@ -118,6 +120,11 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `PH_RATE_LIMIT_PER_DEVICE_PER_MIN` | Cache misses per device per minute, per instance | `12` | `12` | No | Default |
 | `PH_RATE_LIMIT_PER_IP_PER_MIN` | Cache misses per client address per minute, per instance | `600` | `600` | No | Default |
 | `PH_UPSTREAM_CALLS_PER_MIN` | Calls to PH per minute, per instance | `1200` | `1200` | No | Default |
+| `PH_SESSION_AUTH` | `on` or `off`: whether `POST /api/auth/ph-session` (sign-in from Personalisation Hub) exists (Firebase) | `on` | `on` | No | Default |
+| `PH_REQUIRE_PH_SESSION` | `true`: the settings endpoints accept only sessions started from Personalisation Hub (Firebase) | `false` | `true` | No | `.env.rob-ph-demos`, together with `PS_REQUIRE_PH_SESSION` |
+| `PH_SESSION_HQ_ROLES` | Comma-separated HQ Admin roles that open the editor as an administrator | `ADMIN` | `ADMIN,HELP_DESK` | No | Default |
+| `PH_SESSION_MAX_HOURS` | Longest an editor session lasts before Personalisation Hub is asked again | `8` | `8` | No | Default |
+| `PH_SESSION_RATE_LIMIT_PER_IP_PER_MIN` | Sign-in attempts per client address per minute, per instance | `30` | `30` | No | Default |
 | `PH_TRUSTED_PROXY_HOPS` | `X-Forwarded-For` entries, from the right, added by our own platform | `1` (Firebase); `2` on AWS | `1` | No | `.env.rob-ph-demos`; the CDK stack |
 | `PS_ORIGIN_VERIFY` | Value CloudFront adds to every API request, so the proxy trusts the viewer address only behind CloudFront (AWS) | None | `<generated>` | **Yes** (generated into Secrets Manager by the stack; never set by hand) | The CDK stack |
 
@@ -137,6 +144,7 @@ Function settings are written by the deploy; you only set them yourself to run a
 | `AWS_REGION` | Region when `--region` is not given (`deploy:aws`, `seed:aws`) | None | `ap-southeast-2` | No |
 | `AWS_PROFILE` | AWS named profile (set from `--profile`) | Default credentials | `mipharmacy-prod` | No |
 | `CDK_DEFAULT_ACCOUNT` | Account the CDK app deploys to (set by the CDK CLI from your credentials) | From credentials | `111122223333` | No |
+| `PS_ADMIN_AUTH` | How people sign in to the editor on Firebase (`npm run deploy`): `ph` (only from Personalisation Hub), `ph+firebase` (the same, with the Firebase sign-in where the embedding page hands no session over) or `firebase` | `ph+firebase` | `ph` | No |
 | `CDK_DEFAULT_REGION` | Region the CDK app deploys to (set by `deploy:aws`) | `--region` | `ap-southeast-2` | No |
 
 ### Local development and tests
@@ -221,6 +229,7 @@ answered first, then the rest in order.
 |---|---|---|
 | `apiBase` | Where `/api/**` is served | `''` (this site) |
 | `screenPage` | Screen page URL that "Copy experience URL" builds on | `''` (`../pharmacy-screen.html`) |
-| `auth.mode` | `firebase`, `oidc` (AWS) or `token` (local development only, never deployed) | `firebase` |
+| `auth.mode` | `ph` (the Personalisation Hub session of the page that embeds the editor, [PH-EMBED.md](PH-EMBED.md)), `firebase`, `oidc` (AWS) or `token` (local development only, never deployed) | `firebase` in the repo; the Firebase deploy writes `ph` (`PS_ADMIN_AUTH`) |
+| `auth.ph` | `{parentOrigins, fallback}`: the origins allowed to hand a PH session to the editor (`https://ph.mipharmacy.net`), and `fallback: 'firebase'` to offer the Firebase sign-in when none does | Written by the Firebase deploy |
 | `auth.firebase` | Firebase web app config `{apiKey, authDomain, projectId}` (public by design) | `null` in the repo, so an undeployed copy refuses to sign in |
 | `auth.oidc` | `{clientId, authorizeUrl, tokenUrl, logoutUrl, logoutParam, scopes}` | Written by the AWS deploy |

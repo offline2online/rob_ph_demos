@@ -9,7 +9,7 @@
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay } from '../../js/render.js';
+import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds, fmtMonthDay, seasonDates } from '../../js/render.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -19,6 +19,18 @@ export const BUILTIN_HOURS = 'builtin-opening-hours';
 export const occasionTemplateId = (occasion) => 'builtin-occasion-' + occasion;
 export const BUILTIN_OCCASION = occasionTemplateId(DEFAULT_OCCASION);
 export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, templateId: occasionTemplateId(o.id), signOff: o.beats.some((b) => /\$\{StoreName\}/.test(b.text)) }));
+/**
+ * A season's line in the Season drop-down: its name, then its start and end dates this year in brackets, as in
+ * "Christmas (15 Dec – 27 Dec)" (one date when it starts and ends on the same day: "Australia Day (26 Jan)").
+ * The dates are the ones the screen uses (seasonDates): those saved on the season's copy in `occasions`
+ * (content.occasions), else its defaults; Easter's are worked out for `year`.
+ */
+export function seasonOptionLabel(id, occasions, year = new Date().getFullYear()) {
+  const o = OCCASIONS.find((x) => x.id === id);
+  if (!o) return '';
+  const r = seasonDates(id, occasions && occasions[id], year), from = fmtMonthDay(r.from), to = fmtMonthDay(r.to);
+  return from && to ? `${o.name} (${from}${to !== from ? ' – ' + to : ''})` : o.name;
+}
 const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours', ...Object.fromEntries(OCCASION_IDS.map((id) => [occasionTemplateId(id), 't_occ_' + id])) };
 
 /** 'scenes', 'hours' or 'occasion' for a template kind. */

@@ -7,20 +7,23 @@
 //   PUT    /api/settings/ph-api   {baseUrls?, token?}  admin  -> save / replace (audit-logged)
 //   DELETE /api/settings/ph-api/token                  admin  -> remove the token (audit-logged)
 //   GET    /api/device/{UniqueDeviceID}/campaign_data  public -> trimmed store data via the proxy
+//   POST   /api/auth/ph-session   {token, host?}        PH session -> editor session (src/ph-session.js)
 //
 // Error bodies are always { ok: false, error: { code, message } }.
 
 const { SettingsError } = require("./settings-service");
+const { SessionError } = require("./ph-session");
 
 const SETTINGS_PATH = "/api/settings/ph-api";
 const TOKEN_PATH = "/api/settings/ph-api/token";
+const SESSION_PATH = "/api/auth/ph-session";
 const DEVICE_PATH = /^\/api\/device\/([^/]*)\/campaign_data\/?$/;
 
 function err(status, code, message, headers) {
   return { status, headers: headers || {}, body: { ok: false, error: { code, message } } };
 }
 
-function createHttpHandler({ settings, proxy, auth, logger, allowedOrigins = [] }) {
+function createHttpHandler({ settings, proxy, auth, logger, allowedOrigins = [], phSession = null }) {
   const origins = new Set(allowedOrigins.filter(Boolean));
 
   const cors = (origin, isPublic) => {
@@ -50,6 +53,25 @@ function createHttpHandler({ settings, proxy, auth, logger, allowedOrigins = [] 
         udid = "";
       }
       return proxy.getCampaignData(udid, { clientKey: ip || "unknown" });
+    }
+    if (p === SESSION_PATH) {
+      if (!phSession) return err(404, "NOT_FOUND", "No such endpoint");
+      if (method !== "POST") return err(405, "METHOD_NOT_ALLOWED", "Use POST");
+      let json = body;
+      if (Buffer.isBuffer(json)) json = json.toString("utf8");
+      if (typeof json === "string") {
+        try {
+          json = JSON.parse(json);
+        } catch {
+          json = null;
+        }
+      }
+      try {
+        return { status: 200, body: { ok: true, session: await phSession.exchange(json, { clientKey: ip || "unknown" }) } };
+      } catch (e) {
+        if (e instanceof SessionError) return err(e.status, e.code, e.message, e.headers);
+        throw e;
+      }
     }
     if (p === SETTINGS_PATH || p === TOKEN_PATH) {
       const gate = await requireAdmin(headers);

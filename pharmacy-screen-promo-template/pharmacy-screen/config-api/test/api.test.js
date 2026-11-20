@@ -586,3 +586,41 @@ test("tokens set by hand: saved on the pharmacy, published to its screens, blank
   assert.equal(back.body.tokens, undefined);
   assert.ok(!("tokens" in (await pub())));
 });
+
+test("screen read endpoint: an ETag lets a poll that finds nothing new cost a 304 with no body", async () => {
+  const { call } = setup();
+  const { ph } = await seedBasics(call);
+  const first = await call("GET", "/api/screens/VIC-MP-001", { auth: null });
+  assert.equal(first.status, 200);
+  assert.match(first.headers.ETag, /^"[A-Za-z0-9_-]{27}"$/);
+  assert.equal(first.headers["Cache-Control"], "public, max-age=5");
+  const same = await call("GET", "/api/screens/VIC-MP-001", { auth: null, headers: { "if-none-match": first.headers.ETag } });
+  assert.equal(same.status, 304);
+  assert.equal(same.body, null);
+  assert.equal(same.headers.ETag, first.headers.ETag);
+  // A CDN's weak form of the same tag matches too.
+  assert.equal((await call("GET", "/api/screens/VIC-MP-001", { auth: null, headers: { "if-none-match": `W/${first.headers.ETag}, "other"` } })).status, 304);
+  // An edit changes the tag, so the next poll gets the new config.
+  await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { name: "Beaumaris Chemist" } });
+  const after = await call("GET", "/api/screens/VIC-MP-001", { auth: null, headers: { "if-none-match": first.headers.ETag } });
+  assert.equal(after.status, 200);
+  assert.notEqual(after.headers.ETag, first.headers.ETag);
+  assert.equal(after.body.name, "Beaumaris Chemist");
+  // Admin answers are never cacheable and carry no tag.
+  const admin = await call("GET", "/api/admin/pharmacies");
+  assert.equal(admin.headers["Cache-Control"], "no-store");
+  assert.equal(admin.headers.ETag, undefined);
+});
+
+test("template HTML: an event handler hidden behind a quoted '>' is refused; ordinary copy and markup are not", async () => {
+  const { call } = setup();
+  const clone = (await call("POST", "/api/admin/templates/builtin-promotion-scenes/clone", { body: { name: "Mine" } })).body;
+  for (const html of ['<img title=">" src=x onerror=alert(1)>', "<div title='>' onclick=x()>a</div>", '<svg><a title=">"\nonmouseover=x()>', '<p title="a" ONLOAD = "x">']) {
+    const res = await call("PATCH", `/api/admin/templates/${clone.id}`, { body: { html } });
+    assert.equal(res.status, 400, html);
+  }
+  for (const html of ['<div class="s-top"><h2>Buy one = get one</h2><p title="a > b">only = this</p></div>', '<svg viewBox="0 0 10 10"><path d="M0 0"/></svg>']) {
+    const res = await call("PATCH", `/api/admin/templates/${clone.id}`, { body: { html } });
+    assert.equal(res.status, 200, html);
+  }
+});

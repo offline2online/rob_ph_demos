@@ -54,7 +54,8 @@ const { normalisePharmacy, normalisePromotion, normaliseService } = require(path
 const FIXTURES = path.join(__dirname, "fixtures");
 const CAMPAIGN_DATA = path.join(__dirname, "..", "fixtures", "campaign-data.json");
 
-const SEED_ACTOR = Object.freeze({ uid: "seed", email: null });
+// admin: the service narrows any actor without the admin role to its own stores (config-api/src/service.js).
+const SEED_ACTOR = Object.freeze({ uid: "seed", email: null, admin: true });
 
 // Fixed record ids, so a re-run finds what an earlier run made.
 const ids = {

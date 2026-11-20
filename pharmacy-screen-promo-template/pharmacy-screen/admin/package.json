@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node tools/dev-server.mjs 8790",
-    "test": "node --test --test-concurrency=1 test/editor.e2e.mjs"
+    "test": "node --test --test-concurrency=1 test/editor.e2e.mjs test/ph-embed.e2e.mjs",
+    "test:ph": "node --test --test-concurrency=1 test/ph-embed.e2e.mjs",
+    "dev:ph": "node tools/dev-server.mjs 8790 ph"
   }
 }

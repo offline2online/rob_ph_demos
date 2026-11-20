@@ -23,7 +23,8 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 3. **Servers**: `<meta name="pharmacy-screen-api" content="">` in `pharmacy-screen.html` lists the base URLs, each
    serving both paths (comma-separated; empty means the page's own origin, through the Hosting rewrites). The
    last server that answered is tried first, then the others in order, one request at a time (8 s timeout each).
-4. **Polling**: store data every 30 s, config every 60 s, one request in flight per endpoint. The screen re-renders
+4. **Polling**: store data every 20 s, config every 15 s (answered `304` with no body while nothing changed), one
+   request in flight per endpoint, and both at once when the page is shown again or the network returns. The screen re-renders
    only when what it shows changed (new hours reach it within 30 s, no reload), and re-checks the "Open today" bar
    at the turn of every minute in `store_timezone`.
 5. **Resilience**: the last good result is kept in memory and in `localStorage`
@@ -215,7 +216,7 @@ run holds the train's deploy; see "CI" below.
 - `test/tokens.test.mjs`: `${Suburb}` replaced, and blanked with its comma or line break; the rich-text
   sanitiser; template slots; token values set by hand (settable names, cleaning, winning over the store data,
   and the config API refusing the same slots).
-- `test/live-data.test.mjs`: failover, 30 s / 60 s polling, one request in flight, re-render only on change,
+- `test/live-data.test.mjs`: failover, 20 s / 15 s polling, one request in flight, re-render only on change,
   network drop and restart from the cache, the error states, a device moving store, the published-config mapping
   (built with `config-api/src/publish.js`) and the proxy's `store_info.logo_url` (built with
   `ph-proxy/src/location-proxy.js`).
@@ -237,6 +238,9 @@ run holds the train's deploy; see "CI" below.
   occasion line leaves the occasion's text box, and each failure names the device, store, promo, orientation,
   scene and bar state. Self-tests make one headline far too long and check that exactly that scene is named, and
   show that a long occasion line is shrunk to fit while far too much copy fails, naming the beat.
+- `test/ui/landscape-hours.test.mjs`: the landscape opening hours screen: the hours card fills most of the screen
+  right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
+  the holiday note sits under the card, and portrait is unchanged.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
   suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
