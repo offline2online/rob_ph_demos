@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pharmacy Screen</title>
+<!-- Campaign URL (the PH player swaps ${UniqueDeviceID} for the screen's own ID; the URL never carries a store code):
+     pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&orientation=<portrait|landscape> -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block">
+<link rel="stylesheet" href="css/screen.css">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  /* the screen is drawn at its real size (1080x1920 or 1920x1080) and scaled to fit the player's viewport */
+  #stage{position:absolute;left:0;top:0;transform-origin:0 0}
+</style>
+</head>
+<body>
+<div id="stage"><div class="screen" id="screen" aria-live="off"></div></div>
+<script type="module" src="js/player.js"></script>
+</body>
+</html>

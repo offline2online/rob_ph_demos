@@ -1,0 +1,12 @@
+{
+  "name": "pharmacy-screen",
+  "private": true,
+  "description": "Pharmacy Screen Promo Template: the in-store screen page and its shared render modules.",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs 8080",
+    "test": "node --test test/*.test.mjs",
+    "audit": "node tools/overflow-audit.mjs",
+    "check": "node --test test/*.test.mjs && node tools/overflow-audit.mjs"
+  }
+}

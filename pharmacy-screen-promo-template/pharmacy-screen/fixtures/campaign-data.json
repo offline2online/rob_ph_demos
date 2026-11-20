@@ -1,0 +1,535 @@
+{
+ "devices": {
+  "DEVICE-VIC-MP-001": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-001",
+     "store_name": "Beaumaris Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "08:30:00",
+       "close_day": "MONDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "08:30:00",
+       "close_day": "TUESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "08:30:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "08:30:00",
+       "close_day": "THURSDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "08:30:00",
+       "close_day": "FRIDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "13:30:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "1A East Concourse, Beaumaris",
+      "suburb": "Beaumaris",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": "03 9589 2676"
+     }
+    }
+   }
+  },
+  "TEST": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-001",
+     "store_name": "Beaumaris Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "08:30:00",
+       "close_day": "MONDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "08:30:00",
+       "close_day": "TUESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "08:30:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "08:30:00",
+       "close_day": "THURSDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "08:30:00",
+       "close_day": "FRIDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "13:30:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "1A East Concourse, Beaumaris",
+      "suburb": "Beaumaris",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": "03 9589 2676"
+     }
+    }
+   }
+  },
+  "DEVICE-VIC-MP-002": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-002",
+     "store_name": "North Ringwood Family Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "09:00:00",
+       "close_day": "MONDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "09:00:00",
+       "close_day": "TUESDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "09:00:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "09:00:00",
+       "close_day": "THURSDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "09:00:00",
+       "close_day": "FRIDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SUNDAY",
+       "open_time": "09:00:00",
+       "close_day": "SUNDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "196-198 Warrandyte Road, Ringwood North",
+      "suburb": "North Ringwood",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": "03 8820 8001"
+     }
+    }
+   }
+  },
+  "DEVICE-VIC-MP-003": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-003",
+     "store_name": "Ocean Grove Terrace Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "08:45:00",
+       "close_day": "MONDAY",
+       "close_time": "17:30:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "08:45:00",
+       "close_day": "TUESDAY",
+       "close_time": "17:30:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "08:45:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "17:30:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "08:45:00",
+       "close_day": "THURSDAY",
+       "close_time": "17:30:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "08:45:00",
+       "close_day": "FRIDAY",
+       "close_time": "17:30:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "14:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "The Terrace, Ocean Grove",
+      "suburb": "Ocean Grove",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": "03 5255 1331"
+     }
+    }
+   }
+  },
+  "DEVICE-VIC-MP-004": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-004",
+     "store_name": "Vermont South Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "08:30:00",
+       "close_day": "MONDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "08:30:00",
+       "close_day": "TUESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "08:30:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "08:30:00",
+       "close_day": "THURSDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "08:30:00",
+       "close_day": "FRIDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SUNDAY",
+       "open_time": "10:00:00",
+       "close_day": "SUNDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "",
+      "suburb": "Vermont South",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": ""
+     }
+    }
+   }
+  },
+  "DEVICE-VIC-MP-005": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-005",
+     "store_name": "O'Brien's Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "09:00:00",
+       "close_day": "MONDAY",
+       "close_time": "18:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "09:00:00",
+       "close_day": "TUESDAY",
+       "close_time": "18:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "09:00:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "18:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "09:00:00",
+       "close_day": "THURSDAY",
+       "close_time": "18:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "09:00:00",
+       "close_day": "FRIDAY",
+       "close_time": "18:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "13:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "",
+      "suburb": "Springvale South",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": ""
+     }
+    }
+   }
+  },
+  "TEST-NO-SUBURB": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-002",
+     "store_name": "North Ringwood Family Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "09:00:00",
+       "close_day": "MONDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "09:00:00",
+       "close_day": "TUESDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "09:00:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "09:00:00",
+       "close_day": "THURSDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "09:00:00",
+       "close_day": "FRIDAY",
+       "close_time": "21:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SUNDAY",
+       "open_time": "09:00:00",
+       "close_day": "SUNDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "196-198 Warrandyte Road, Ringwood North",
+      "suburb": "",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": "03 8820 8001"
+     }
+    }
+   }
+  },
+  "TEST-LATE-NIGHT": {
+   "data": {
+    "store_location": {
+     "store_code": "VIC-MP-004",
+     "store_name": "Vermont South Pharmacy",
+     "store_timezone": "Australia/Melbourne"
+    },
+    "store_info": {
+     "opening_hours": [
+      {
+       "open_day": "MONDAY",
+       "open_time": "08:30:00",
+       "close_day": "MONDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "TUESDAY",
+       "open_time": "08:30:00",
+       "close_day": "TUESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "WEDNESDAY",
+       "open_time": "08:30:00",
+       "close_day": "WEDNESDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "THURSDAY",
+       "open_time": "08:30:00",
+       "close_day": "THURSDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "FRIDAY",
+       "open_time": "08:30:00",
+       "close_day": "FRIDAY",
+       "close_time": "19:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "09:00:00",
+       "close_day": "SATURDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SUNDAY",
+       "open_time": "10:00:00",
+       "close_day": "SUNDAY",
+       "close_time": "17:00:00",
+       "is_active": true
+      },
+      {
+       "open_day": "SATURDAY",
+       "open_time": "20:00:00",
+       "close_day": "SUNDAY",
+       "close_time": "02:00:00",
+       "is_active": true
+      }
+     ],
+     "address_info": {
+      "address": "",
+      "suburb": "Vermont South",
+      "postcode": "",
+      "state": "Victoria",
+      "phone_number": ""
+     }
+    }
+   }
+  }
+ }
+}
