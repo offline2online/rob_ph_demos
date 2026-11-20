@@ -1,0 +1,94 @@
+name: Pharmacy Screen tests
+
+# READY TO INSTALL, NOT YET ACTIVE. The backlog pipeline refuses new files under .github/workflows/, so this ships
+# beside the code it tests. To make the suite gate deployment, a person with push access, in one commit:
+#   1. copies this file to .github/workflows/pharmacy-screen-tests.yml, and
+#   2. adds to TRAIN_TEST_WORKFLOWS in backlog-tracker/scripts/run-backlog-automation.js:
+#        { workflow: "pharmacy-screen-tests.yml", prefix: "pharmacy-screen-promo-template/", label: "Pharmacy Screen tests" }
+#
+# Runs pharmacy-screen-promo-template/pharmacy-screen's whole suite (npm run test:ci): the unit tests (opening
+# hours, tokens, live data, admin model, the PH API proxy, the config API, the seed), the browser tests (the screen
+# on live data and the copy-fit audit of every seeded pharmacy x promotion x scene in both orientations) and the
+# end-to-end tests on the local stack (screen, admin editor, config API and proxy: failover, offline, security).
+#
+# On a pull request it is a status check, which processDeployTrain waits on before it merges a train, so a red
+# suite holds the Pharmacy Screen deploy PR. It also runs on the train branch each time a ticket lands there
+# (dispatched by run-backlog-automation.js once it is in TRAIN_TEST_WORKFLOWS), so a failure reaches the cards in
+# Ready for Testing and the ticket that caused it is sent back by itself.
+on:
+  pull_request:
+    paths:
+      - 'pharmacy-screen-promo-template/**'
+      - '.github/workflows/pharmacy-screen-tests.yml'
+  push:
+    branches: [deploy/pharmacy-screen-promo-template]
+    paths:
+      - 'pharmacy-screen-promo-template/**'
+  workflow_dispatch:
+
+# A dispatch is grouped by commit, so landing the next ticket doesn't cancel the previous ticket's verdict; push
+# and PR runs still cancel their superseded predecessors.
+concurrency:
+  group: pharmacy-screen-tests-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pharmacy-screen-tests
+    # Pinned: Playwright 1.56.1 cannot install Chromium on Ubuntu 26.04 (ubuntu-latest).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: pharmacy-screen-promo-template/pharmacy-screen
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Is there a screen to test?
+        id: scope
+        working-directory: .
+        run: |
+          if [ -f pharmacy-screen-promo-template/pharmacy-screen/package.json ]; then echo "run=true" >> "$GITHUB_OUTPUT"
+          else echo "run=false" >> "$GITHUB_OUTPUT"; echo "No pharmacy-screen/package.json on this ref: nothing to test."; fi
+
+      - name: Unit tests
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:units
+
+      - name: Install Playwright and Chromium
+        if: steps.scope.outputs.run == 'true'
+        # Pinned: the folder has no lockfile. Installed at the folder root so every test (and admin/) resolves it.
+        run: |
+          npm install --no-save --no-audit --no-fund --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      - name: Browser tests (live screen, copy-fit audit)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:ui
+
+      - name: End-to-end tests (screen, admin editor, config API, proxy)
+        if: steps.scope.outputs.run == 'true'
+        run: npm run test:e2e
+
+  # The backlog automation acts on this run's result (a train ticket's verdict), so a finished run starts it
+  # straight away. Pull request runs judge no ticket. Its own job, so the tests never hold a token that can start
+  # workflows.
+  wake-automation:
+    needs: test
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the backlog automation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run backlog-automation.yml --repo "$GITHUB_REPOSITORY" --ref main || echo "::warning::Couldn't start the backlog automation; its schedule picks this run up instead."

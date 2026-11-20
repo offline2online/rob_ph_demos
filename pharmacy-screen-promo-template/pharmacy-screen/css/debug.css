@@ -1,0 +1,22 @@
+/* The ?debug=1 panel on the player page (js/debug-panel.js). Personalisation Hub tokens: Roboto, #333 text,
+   #169bc2 primary, 6px controls, 8px card, status dots green/amber/red. Absolute over the stage, never fixed. */
+.dbg{position:absolute;top:12px;right:12px;z-index:10;width:300px;max-width:calc(100vw - 24px);box-sizing:border-box;padding:12px 16px 14px;background:#fff;color:#333;border:1px solid #d9d9d9;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12);font:14px/1.5715 Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif}
+.dbg *{box-sizing:border-box}
+.dbg-h{display:flex;align-items:center;gap:8px;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid rgba(5,5,5,.06)}
+.dbg-h b{font-weight:700}
+.dbg-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#d9d9d9}
+.dbg-dot[data-health="ok"]{background:#52c41a}.dbg-dot[data-health="warn"]{background:#faad14}.dbg-dot[data-health="bad"]{background:#ff4d4f}
+.dbg-rows{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+.dbg-rows dt{color:rgba(0,0,0,.45)}
+.dbg-rows dd{margin:0;overflow-wrap:anywhere}
+.dbg-rows code{font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.dbg-muted{color:rgba(0,0,0,.45)}
+.dbg-tag{display:inline-block;margin-left:4px;padding:0 8px;border:1px solid #d9d9d9;border-radius:9999px;font-size:12px;line-height:20px}
+.dbg-sec{margin:12px 0 6px;font-size:12px;font-weight:500;letter-spacing:.04em;color:rgba(0,0,0,.45)}
+.dbg-tt{display:flex;flex-wrap:wrap;gap:8px}
+.dbg-tt select,.dbg-tt input{height:32px;padding:4px 8px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;color:#333;font:inherit}
+.dbg-tt select{flex:1 1 110px}.dbg-tt input{flex:1 1 100px}
+.dbg-tt select:focus,.dbg-tt input:focus{outline:none;border-color:#169bc2;box-shadow:0 0 0 2px rgba(22,155,194,.1)}
+.dbg-btn{height:32px;padding:4px 15px;border-radius:6px;border:1px solid transparent;font:inherit;cursor:pointer}
+.dbg-primary{background:#169bc2;color:#fff}.dbg-primary:hover{background:#38b0cf}
+.dbg-text{background:transparent;color:#333}.dbg-text:hover{background:rgba(0,0,0,.04)}

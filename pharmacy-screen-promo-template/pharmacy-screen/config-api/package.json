@@ -1,0 +1,24 @@
+{
+  "name": "pharmacy-screen-config-api",
+  "description": "Pharmacy Screen Promo Template back end: config store and REST API for pharmacies, promotions, templates and the service library",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "test": "node --test test/api.test.js test/validate.test.js",
+    "test:emulator": "npx --yes firebase-tools@14.27.0 emulators:exec --config firebase.test.json --only firestore,storage --project demo-pharmacy-screen 'node --test test/rules.test.js test/firestore-store.test.js'",
+    "test:all": "npm test && npm run test:emulator",
+    "dev": "node scripts/dev-server.js",
+    "dev:seed": "node scripts/dev-server.js --seed"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^6.6.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase": "^12.19.0"
+  }
+}

@@ -1,0 +1,54 @@
+# Deploys the Pharmacy Screen Promo Template to our test environment
+# (Firebase project rob-ph-demos) whenever a ticket lands on its deployment
+# train, and again when the train merges to main.
+#
+# This file is a template: the pipeline never adds new workflow files, so a
+# person installs it once (pharmacy-screen-promo-template/README.md →
+# "Continuous deploy"):
+#   1. copy it to .github/workflows/deploy-pharmacy-screen.yml on main;
+#   2. add the repository secret FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS, a JSON
+#      key for a rob-ph-demos service account with Firebase Admin, Cloud
+#      Functions Admin, Service Account User and Cloud Build Editor roles.
+# One-time infrastructure (KMS key, bucket, Hosting site) is set up by the
+# first `npm run deploy` run by the project owner; CI skips it (--skip-setup).
+name: Deploy Pharmacy Screen (rob-ph-demos)
+
+on:
+  push:
+    branches:
+      - deploy/pharmacy-screen-promo-template
+      - main
+    paths:
+      - "pharmacy-screen-promo-template/**"
+      - "firestore.rules"
+      - ".github/workflows/deploy-pharmacy-screen.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pharmacy-screen
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: pharmacy-screen-promo-template
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Tests (deploy config, screen, config API, PH API proxy, seed)
+        run: npm run check:all
+      - name: Google credentials
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_ROB_PH_DEMOS }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy (hosting, functions, rules, indexes)
+        run: npm run deploy -- --skip-setup

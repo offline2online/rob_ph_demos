@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pharmacy Screen</title>
+<!-- Campaign URL (the PH player swaps ${UniqueDeviceID} for the screen's own ID; the URL never carries a store code):
+     pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&orientation=<portrait|landscape> -->
+<!-- Where the screen's data comes from: base URLs, comma-separated, each serving /api/device/** (the back-end
+     proxy) and /api/screens/** (the public config read). Tried last-good first, then in this order.
+     Empty: this page's own origin (the Hosting rewrites). -->
+<meta name="pharmacy-screen-api" content="">
+<!-- Fonts and icons are self-hosted (tools/fetch-fonts.mjs), so a screen behind a firewall never calls Google. -->
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/material-symbols.css">
+<link rel="stylesheet" href="css/screen.css">
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  /* the screen is drawn at its real size (1080x1920 or 1920x1080) and scaled to fit the player's viewport */
+  #stage{position:absolute;left:0;top:0;transform-origin:0 0}
+</style>
+</head>
+<body>
+<div id="stage"><div class="screen" id="screen" aria-live="off"></div></div>
+<script type="module" src="js/player.js"></script>
+</body>
+</html>

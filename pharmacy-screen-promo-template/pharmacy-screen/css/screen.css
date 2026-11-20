@@ -1,0 +1,130 @@
+/* Pharmacy screen styles: the in-store screen at 1080x1920 (portrait) and 1920x1080 (landscape, .land).
+   Ported unchanged from the concept prototype (v41). Colours come from the pharmacy's brand
+   (--s-p primary, --s-a accent; --s-p2/--s-p3/--s-p4 derived in js/render.js), not from any viewer theme.
+   Shared with the admin editor's preview. */
+:root{--screen:Figtree,Roboto,"Helvetica Neue",Arial,sans-serif}
+.ms{font-family:"Material Symbols Outlined";font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;text-transform:none;white-space:nowrap;direction:ltr;-webkit-font-feature-settings:"liga";font-feature-settings:"liga";font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;font-size:20px;vertical-align:middle}
+.screen,.screen *{box-sizing:border-box}
+
+.screen{width:1080px;height:1920px;position:relative;font-family:var(--screen);background:linear-gradient(180deg,var(--s-bg) 0%,var(--s-bg2) 100%);color:var(--s-ink);overflow:hidden}
+.s-top{position:absolute;inset:0;background:linear-gradient(180deg,var(--s-p) 0%,var(--s-p2) 45%);transition:clip-path .7s cubic-bezier(.6,0,.2,1)}
+.s-edge{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;filter:drop-shadow(0 18px 30px rgba(10,12,60,.25))}
+.s-edge path{fill:none;stroke:var(--s-a);stroke-width:6;transition:d .7s cubic-bezier(.6,0,.2,1)}
+.s-logo{position:absolute;top:48px;left:0;right:0;display:grid;justify-items:center;gap:10px}
+.s-logo img{height:180px;width:auto;max-width:640px;object-fit:contain}
+.s-mark{width:520px;height:190px;border:4px dashed rgba(255,255,255,.35);border-radius:24px;display:grid;place-items:center;color:rgba(255,255,255,.6);font-size:36px;font-weight:600}
+.s-head{position:absolute;top:325px;left:110px;right:110px;text-align:center;color:#fff;display:grid;gap:22px;justify-items:center}
+.s-head h2{margin:0;font-size:calc(104px*var(--k,1));line-height:1.04;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+.s-head h2 .reg{font-weight:400;font-size:.78em}.s-head h2 .acc{color:var(--s-a)}.s-head h2 i{font-style:italic}
+.s-head p{margin:0;font-size:calc(44px*var(--k,1));font-weight:600;color:var(--s-a)}
+.s-chev{position:absolute;left:50%;width:90px;height:50px;margin-left:-45px;transition:top .7s cubic-bezier(.6,0,.2,1)}
+.s-chev path{fill:none;stroke:var(--s-a);stroke-width:9;stroke-linecap:round;stroke-linejoin:round}
+.s-body{position:absolute;left:60px;right:60px;top:1020px;bottom:240px;display:grid;align-content:center;justify-items:center;gap:40px;text-align:center}
+.s-tiles{display:flex;gap:calc(56px*var(--tz,1));justify-content:center;--tz:1}
+.s-tile{display:grid;justify-items:center;gap:22px;width:calc(250px*var(--tz))}
+.s-tiles .s-ico{width:calc(220px*var(--tz));height:calc(220px*var(--tz));border-radius:calc(44px*var(--tz))}
+.s-tiles .s-ico .ms{font-size:calc(120px*var(--tz))}
+.s-tiles .lbl{font-size:calc(30px*max(var(--tz),.8))!important;text-align:center;line-height:1.2}
+.s-ico{width:220px;height:220px;border-radius:44px;background:linear-gradient(145deg,var(--s-p3) 0%,var(--s-p4) 100%);display:grid;place-items:center;box-shadow:0 18px 40px rgba(20,20,90,.28);color:#fff}
+.s-ico .ms{font-size:120px;font-variation-settings:'FILL' 1,'wght' 500;color:#fff}
+.s-ico.big{width:370px;height:370px;border-radius:70px}
+.s-ico.big .ms{font-size:210px}
+.s-tile span.lbl{font-size:30px;font-weight:600;color:var(--s-p)}
+.s-title{margin:0;font-size:58px;font-weight:700;color:var(--s-p)}
+.s-sub{margin:-24px 0 0;font-size:38px;color:#6b7280}
+.s-foot{position:absolute;left:0;right:0;bottom:0;height:170px;background:var(--s-p);border-top:4px solid var(--s-a);display:grid;align-content:center;justify-items:center;gap:6px;color:#fff;text-transform:uppercase}
+.s-foot .f1{font-size:48px;font-weight:600;letter-spacing:.01em}
+.s-foot .f2{font-size:38px;font-weight:600;color:var(--s-a)}
+.s-foot .f1 b,.s-foot .acc{color:var(--s-a)}
+.s-card{position:absolute;left:64px;right:64px;top:930px;background:#fff;border-radius:40px;box-shadow:0 24px 60px rgba(20,20,90,.16);padding:34px 24px 22px;display:grid}
+.s-card .ch{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #dfe3ee;padding:0 34px 20px;margin:0 34px 14px;padding-left:0;padding-right:0}
+.s-card .ch h3{margin:0;font-size:56px;font-weight:700;color:var(--s-p)}
+.s-badge{background:var(--s-p);color:var(--s-a);border-radius:9999px;padding:10px 28px;font-size:32px;font-weight:700}
+.s-row{display:flex;justify-content:space-between;align-items:center;font-size:44px;font-weight:500;color:var(--s-p);padding:0 34px;height:86px;border-radius:16px;font-variant-numeric:tabular-nums}
+.s-row>span:first-child{font-weight:700}
+.s-row:nth-child(odd){background:#eef1f8}
+.s-row .closed{font-weight:700;color:var(--s-p2)}
+.s-note{position:absolute;left:60px;right:60px;top:1738px;text-align:center;display:grid;gap:22px}
+.s-note .n1{font-size:46px;font-weight:700;color:var(--s-p)}
+.s-note .n2{font-size:36px;color:#6b7280}
+.measure,.measure *{animation:none!important;transition:none!important}
+/* scene animations, matched to the Beaumaris videos: content fades out at the end of a scene, then the headline fades in,
+   icons rise and pop in one after another, and the copy below fades up after them */
+.enter .s-head h2{animation:fIn .4s ease-out both}
+.enter .s-head p{animation:fIn .4s .15s ease-out both}
+.enter .s-tile{animation:popIn .5s cubic-bezier(.2,.8,.25,1.15) both}
+.enter .s-tile:nth-child(1){animation-delay:.05s}.enter .s-tile:nth-child(2){animation-delay:.15s}.enter .s-tile:nth-child(3){animation-delay:.25s}
+.enter .s-tile:nth-child(4){animation-delay:.35s}.enter .s-tile:nth-child(5){animation-delay:.45s}.enter .s-tile:nth-child(6){animation-delay:.55s}
+.enter .s-tile .lbl{animation:fIn .35s both;animation-delay:inherit}
+.enter .s-tile:nth-child(1) .lbl{animation-delay:.3s}.enter .s-tile:nth-child(2) .lbl{animation-delay:.4s}.enter .s-tile:nth-child(3) .lbl{animation-delay:.5s}
+.enter .s-tile:nth-child(4) .lbl{animation-delay:.6s}.enter .s-tile:nth-child(5) .lbl{animation-delay:.7s}.enter .s-tile:nth-child(6) .lbl{animation-delay:.8s}
+.enter .s-tiles~.s-title{animation:upIn .45s .35s ease-out both}.enter .s-tiles~.s-sub{animation:upIn .45s .5s ease-out both}
+.enter .bigwrap{animation:riseIn .55s .1s cubic-bezier(.2,.8,.25,1.1) both}
+.enter .bigwrap~.s-title{animation:upIn .45s .3s ease-out both}.enter .bigwrap~.s-sub{animation:upIn .45s .42s ease-out both}
+.s-head,.s-body,.s-note{transition:opacity .22s ease-in}
+.leaving .s-head,.leaving .s-body{opacity:0}
+.closed.leaving .s-note{opacity:1}
+@keyframes fIn{from{opacity:0}to{opacity:1}}
+/* gentle idle float, as in the videos: outer icons move together, the middle one moves the opposite way */
+.s-tiles .s-ico{animation:bob 2.8s ease-in-out infinite}
+.s-tiles .s-tile:nth-child(even) .s-ico{animation-delay:-1.4s}
+.bigwrap .s-ico{animation:bob 2.8s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(5px)}50%{transform:translateY(-5px)}}
+@keyframes upIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes popIn{from{opacity:0;transform:translateY(26px) scale(.86)}to{opacity:1;transform:none}}
+@keyframes riseIn{from{opacity:0;transform:translateY(70px) scale(.92)}to{opacity:1;transform:none}}
+.s-title,.s-sub{font-size:calc(var(--fs)*var(--kb,1))!important}
+.s-title{--fs:58px}.s-sub{--fs:38px}
+/* landscape 1920x1080 */
+.screen.land{width:1920px;height:1080px}
+.land .s-logo{left:80px;right:auto;top:48px;justify-items:start}
+.land .s-logo img{height:140px;max-width:560px;object-position:left center}
+.land .s-mark{width:420px;height:140px}
+.land .s-head{left:80px;right:auto;width:860px;top:220px;bottom:160px;align-content:center;justify-items:start;text-align:left}
+.land.closed .s-head{bottom:60px}
+.land .s-head h2{font-size:calc(96px*var(--k,1))}
+.land .s-head p{font-size:calc(40px*var(--k,1))}
+.land .s-chev{left:auto;margin-left:0}
+.land .s-body{left:1190px;right:60px;top:40px;bottom:150px;gap:30px}
+.land .s-tiles{gap:calc(30px*var(--tz))}
+.land .s-tiles .s-ico{width:calc(170px*var(--tz)*var(--kb,1));height:calc(170px*var(--tz)*var(--kb,1));border-radius:calc(36px*var(--tz))}
+.land .s-tiles .s-ico .ms{font-size:calc(96px*var(--tz)*var(--kb,1))}
+.land .s-tile{width:calc(190px*var(--tz)*var(--kb,1));gap:16px}
+.land .s-tiles .lbl{font-size:calc(26px*max(var(--tz),.8))!important}
+.land .s-ico.big{width:300px;height:300px;border-radius:58px}
+.land .s-ico.big .ms{font-size:170px}
+.land .s-title{--fs:54px}.land .s-sub{--fs:36px}
+.land .s-foot{height:120px;gap:0}
+.land .s-foot .f1{font-size:44px}
+.land .s-card{left:1180px;right:70px;top:70px;padding:26px 20px 14px;border-radius:32px}
+.land .s-card .ch{padding-bottom:14px;margin:0 30px 10px}
+.land .s-card .ch h3{font-size:46px}
+.land .s-badge{font-size:26px;padding:8px 22px}
+.land .s-row{height:68px;font-size:36px;padding:0 30px}
+.land .s-note{left:1180px;right:70px;top:auto;bottom:46px;gap:10px}
+.land .s-note .n1{font-size:36px}.land .s-note .n2{font-size:28px}
+@media (prefers-reduced-motion:reduce){.screen *{animation:none!important;transition:none!important}}
+
+/* messages in place of a screen: invalid URL, not set up, data could not load */
+.screen.msg{background:#1d2125;color:#fff;display:grid;place-items:center}
+.s-msg{display:grid;justify-items:center;gap:28px;text-align:center;padding:0 120px}
+.s-msg .ms{font-size:160px;color:rgba(255,255,255,.5)}
+.s-msg h2{margin:0;font-size:72px;font-weight:700}
+.s-msg p{margin:0;font-size:36px;color:rgba(255,255,255,.7);overflow-wrap:anywhere}
+
+/* "Screen not set up": the brand panel (default colours, or the store's logo) with the device ID small at the
+   bottom; and the red badge on "Screen data could not load" when every server fails with nothing cached */
+.setup .s-setup-mark{position:absolute;left:0;right:0;top:150px;display:grid;justify-items:center}
+.setup .s-setup-mark .ms{font-size:240px;color:rgba(255,255,255,.6);font-variation-settings:'FILL' 1,'wght' 500}
+.s-setup-body{position:absolute;left:80px;right:80px;top:960px;display:grid;gap:28px;justify-items:center;text-align:center}
+.s-setup-body h2{margin:0;font-size:84px;line-height:1.05;font-weight:800;color:var(--s-p);text-wrap:balance}
+.s-setup-body p{margin:0;font-size:40px;line-height:1.3;color:#6b7280;overflow-wrap:anywhere;text-wrap:balance}
+.s-devid{position:absolute;left:80px;right:80px;bottom:64px;text-align:center;font-size:28px;color:#6b7280;overflow-wrap:anywhere}
+.s-devid b{font-weight:600;color:var(--s-p);font-variant-numeric:tabular-nums}
+.land .s-setup-mark{right:auto;width:820px;top:0;bottom:0;align-content:center}
+.land .s-setup-body{left:1190px;right:70px;top:0;bottom:120px;align-content:center}
+.land .s-setup-body h2{font-size:72px}
+.land .s-setup-body p{font-size:34px}
+.land .s-devid{left:1190px;right:70px;bottom:46px;font-size:24px}
+.s-errbadge{display:inline-flex;align-items:center;gap:16px;margin-top:12px;padding:12px 32px;border-radius:9999px;border:2px solid #ff4d4f;background:rgba(255,77,79,.14);color:#fff;font-size:32px;font-weight:600}
+.s-errbadge i{width:18px;height:18px;border-radius:50%;background:#ff4d4f}
