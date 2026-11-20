@@ -35,7 +35,8 @@
 // first deploy (pharmacy-screen/ph-proxy/README.md).
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync, rmSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -54,7 +55,7 @@ export const FUNCTION_SOURCES = ["pharmacy-screen/config-api", "pharmacy-screen/
 // STAGE_SKIP drops dotfiles, node_modules and the editor's own tests, tools
 // and package files.
 export const PUBLIC_SOURCE = "pharmacy-screen";
-export const PUBLIC_ENTRIES = ["pharmacy-screen.html", "css", "js", "fixtures", "admin", "seed/fixtures"];
+export const PUBLIC_ENTRIES = ["pharmacy-screen.html", "sw.js", "css", "js", "fixtures", "admin", "seed/fixtures"];
 export const STAGE_SKIP = /(^|[\\/])(\.[^\\/]*|node_modules|test|tools|package\.json|package-lock\.json|README\.md)$/;
 // The Firebase web app the admin editor signs in with; the deploy writes its
 // (non-secret) config into the staged admin/config.js.
@@ -78,7 +79,30 @@ export function stage(root = ROOT, out = join(root, STAGE_DIR)) {
     });
   }
   copyFileSync(join(root, RULES_SOURCE), join(out, "firestore.rules"));
-  return `staged ${PUBLIC_ENTRIES.join(", ")} and ${RULES_SOURCE} in ${STAGE_DIR}/`;
+  const build = stampServiceWorker(pub);
+  return `staged ${PUBLIC_ENTRIES.join(", ")} and ${RULES_SOURCE} in ${STAGE_DIR}/ (screen build ${build})`;
+}
+
+// The screen's service worker (pharmacy-screen/sw.js) keeps the page, its scripts and stylesheets on the device and
+// downloads them again only when its BUILD changes. BUILD is a hash of exactly those files, so a deploy that changes
+// none of them leaves sw.js byte-identical and the players download nothing; one that changes any of them makes
+// every player fetch the new shell once. Returns the build id.
+export const SW_FILE = "sw.js";
+export const SW_PLACEHOLDER = "__PHARMACY_SCREEN_BUILD__";
+export const SHELL_DIRS = ["css", "js"];
+export function shellBuildId(pub) {
+  const files = ["pharmacy-screen.html", ...SHELL_DIRS.flatMap((d) => readdirSync(join(pub, d)).sort().map((f) => `${d}/${f}`))];
+  const hash = createHash("sha256");
+  for (const f of files) hash.update(f).update("\0").update(readFileSync(join(pub, f))).update("\0");
+  return hash.digest("hex").slice(0, 16);
+}
+export function stampServiceWorker(pub) {
+  const file = join(pub, SW_FILE);
+  const src = readFileSync(file, "utf8");
+  if (!src.includes(SW_PLACEHOLDER)) throw new Error(`${SW_FILE} has no ${SW_PLACEHOLDER} to stamp`);
+  const build = shellBuildId(pub);
+  writeFileSync(file, src.split(SW_PLACEHOLDER).join(build));
+  return build;
 }
 
 // The admin editor's deployed config.js: Firebase sign-in with this project's

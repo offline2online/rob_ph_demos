@@ -39,7 +39,7 @@ What runs where:
 
 | Part | Where | Notes |
 |---|---|---|
-| Screen and admin pages | Hosting site `rob-ph-demos-pharmacy-screen` (HTTPS) | Static files from `pharmacy-screen/` by allow-list (the screen, `admin/`, and `seed/fixtures/` for the editor's Reset); server code, tests, tools, package files and env files are never published |
+| Screen and admin pages | Hosting site `rob-ph-demos-pharmacy-screen` (HTTPS) | Static files from `pharmacy-screen/` by allow-list (the screen and its service worker `sw.js`, `admin/`, and `seed/fixtures/` for the editor's Reset); server code, tests, tools, package files and env files are never published. The screen is kept on each player by `sw.js` and downloaded again only when a deploy changes it (`pharmacy-screen/README.md` → "Kept on the device") |
 | Config store | Firestore `pharmacyScreen/` | Rules (repo-root `firestore.rules`): no client writes anywhere; public reads only of `pharmacyScreen/published/screens/*`; settings and token documents (`pharmacyScreen/private/**`) unreadable |
 | Logos and backgrounds | Bucket `rob-ph-demos-pharmacy-screen-media` | Its own bucket, so its rules (`config-api/rules/storage.rules`) never replace the default bucket's (the menu-board demo's) |
 | PH API token | Firestore `pharmacyScreen/private/settings/phApi`, envelope-encrypted | Data key wrapped by Cloud KMS `projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token` (90-day rotation); decrypted only inside `pharmacyScreenPhApi` |
