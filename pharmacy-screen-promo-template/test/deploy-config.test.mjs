@@ -67,6 +67,8 @@ test("Hosting rewrites send each /api path to the function that serves it", () =
 });
 
 test("every rewritten function is exported by its codebase's entry point", () => {
+  // Each codebase also sets the same runtime in firebase.json.
+  for (const f of fbJson.functions) assert.equal(f.runtime, "nodejs22", `${f.codebase} deploys on nodejs22`);
   const byCodebase = Object.fromEntries(fbJson.functions.map((f) => [f.codebase, f.source]));
   assert.deepEqual(Object.keys(byCodebase).sort(), [...CODEBASES].sort());
   const exported = {};
@@ -74,7 +76,7 @@ test("every rewritten function is exported by its codebase's entry point", () =>
     const index = read(join(src, "index.js"));
     for (const m of index.matchAll(/exports\.(\w+)\s*=\s*onRequest/g)) exported[m[1]] = codebase;
     const pkg = json(join(src, "package.json"));
-    assert.equal(pkg.engines.node, "20", `${src} runs on Node 20`);
+    assert.equal(pkg.engines.node, "22", `${src} runs on Node 22 (Node 20 was decommissioned on 30 Oct 2026)`);
     assert.ok(pkg.dependencies["firebase-functions"], `${src} depends on firebase-functions`);
   }
   for (const rw of hosting.rewrites) assert.ok(exported[rw.function.functionId], `${rw.function.functionId} is exported`);
