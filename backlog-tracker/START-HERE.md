@@ -206,8 +206,8 @@ how to confirm it is live. A merge alone is never proof: look at the run.
 | `kanban-staff-board/` (Staff Kanban project `New5VKTF2QBqT3T4YEla`: spec, prototype, E2E suite; the production build is in `backlog-tracker/public/js/kanban/` and `backlog-tracker/functions/kanban.js`, and ships with the console) | GitHub Pages (prototype) | On merge | The URL |
 | `ph-website/` (PH Website project: PHP snippets for the WordPress site personalisationhub.com, tests in `ph-website/tests/`) | Not GitHub Pages: the PH Website session publishes snippets as Angie code snippets through the personalisationhub.com WordPress MCP as `ph-mcp` (never offline2online.com) | After Deploy to Main, by that session | The live site; before/after snapshots on the ticket |
 | `media-studio/` (image and video generation: Nano Banana Pro, Veo 3.1, LTX 2.5; its keys are stored encrypted by the console's `backlog-tracker/functions/media-keys.js`) | Not deployed: a local server and CLI, or `.github/workflows/media-studio.yml` on demand (output is the run's artifact, or the WordPress media library) | When someone generates media | The run's artifact; `npm test` in `media-studio/` |
-| `shared/`, `docs/` | Not deployed: documents only | | |
-| `tools/` | Not deployed: repo checks (`check-personal-emails.js`, run by `personal-email-check.yml` and the `tools/hooks/pre-commit` hook) | | |
+| `pharmacy-screen-promo-template/` | Not yet | | |
+| `shared/`, `docs/`, `tools/` | Not deployed: docs; repo checks (`check-personal-emails.js`, `personal-email-check.yml`, `tools/hooks/pre-commit`) | | |
 
 A change to anything under `.github/workflows/` cannot be merged by the
 pipeline: a person merges the train PR.
