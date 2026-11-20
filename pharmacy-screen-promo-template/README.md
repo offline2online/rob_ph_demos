@@ -16,7 +16,6 @@ Promo Template").
 | `scripts/deploy.mjs` | The one-command deploy |
 | `ci/deploy-pharmacy-screen.yml` | GitHub Actions workflow to install (see "Continuous deploy") |
 | `test/` | Deploy config checks and the deployed admin sign-in gate (`test/ui/admin-gate.test.mjs`) |
-| `aws/` | The deployment target for the retailer's own AWS account: AWS adapters, Lambda entries, CDK stack, one-command install and teardown ([README](aws/README.md)) |
 
 ## Our test environment (Firebase project `rob-ph-demos`)
 
@@ -49,8 +48,8 @@ What runs where:
 
 Function settings are non-secret and live beside each function in `.env.rob-ph-demos` (the Firebase CLI loads
 them for this project). Everything a back end needs from the cloud goes through small adapters (store, blobs,
-auth, secret store; see each function's README), so the AWS deployment below adds adapters and an entry point
-without changing the API.
+auth, secret store; see each function's README), so an AWS deployment for miPharmacy adds adapters and an
+entry point without changing the API.
 
 The screen polls its store data (the Location API through `/api/device/…`) every 30 s and its published config
 (`/api/screens/{store_code}`) every 60 s, one request in flight per endpoint, re-rendering only on change
@@ -117,21 +116,6 @@ Service Account User and Cloud Build Editor roles.
 
 Cloud Functions are always deployed by the command above or CI, never by hand.
 
-## miPharmacy's environment (AWS)
-
-miPharmacy deploys the same build into their own AWS account, next to their Personalisation Hub instance:
-CloudFront and S3 for the pages, API Gateway and Lambda (optionally in their VPC) for the two back ends,
-DynamoDB for the config, S3 for media, a KMS key wrapping the PH API token's data key, and Cognito or their own
-OIDC provider for admin sign-in. One command each, parameterised for account (credentials), region, VPC and
-domain:
-
-```bash
-npm run deploy:aws  -- --region ap-southeast-2 [--domain-name … --certificate-arn …] [--vpc-id …] [--oidc-issuer …]
-npm run destroy:aws -- --region ap-southeast-2
-```
-
-Everything about it (options, first-run steps, the test checklist on AWS, limits) is in [aws/README.md](aws/README.md).
-
 ## Tests
 
 ```bash
@@ -139,7 +123,6 @@ cd pharmacy-screen-promo-template
 npm run check          # deploy config, staging allow-list, plan, URLs (offline)
 npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests
 npm run check:admin    # the deployed admin sign-in gate, then the editor's end-to-end tests (Playwright + Chromium)
-npm run check:aws      # the AWS target: adapters, Lambda entries, CDK template, deploy plan, OIDC sign-in (aws/README.md)
 cd pharmacy-screen/config-api && npm install && npm run test:emulator   # Firestore + Storage rules (needs Java)
 ```
 

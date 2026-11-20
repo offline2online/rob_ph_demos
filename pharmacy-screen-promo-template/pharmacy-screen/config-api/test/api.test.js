@@ -19,10 +19,8 @@ const { createStaticAuth } = require("../src/adapters/auth");
 const ADMIN = "Bearer admin-token";
 const VIEWER = "Bearer viewer-token";
 
-// PS_TEST_STORE: a module whose createTestStore() returns another store with the same contract, to run this
-// whole suite against it (aws/test/ runs it against the DynamoDB store). Default: the in-memory store.
 function setup() {
-  const store = process.env.PS_TEST_STORE ? require(process.env.PS_TEST_STORE).createTestStore() : createMemoryStore();
+  const store = createMemoryStore();
   const blobs = createMemoryBlobs();
   let tick = 0;
   const api = createConfigApi({

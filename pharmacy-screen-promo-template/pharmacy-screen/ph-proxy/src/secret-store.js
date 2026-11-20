@@ -14,9 +14,9 @@
 //   unwrapKey(wrapped: Buffer, aad: Buffer, keyVersion?: string) -> Promise<Buffer>
 //
 // Providers here: gcpKmsProvider (Cloud KMS, our Firebase test environment)
-// and localKmsProvider (emulator and tests only). The AWS deployment's
-// provider, over AWS KMS Encrypt/Decrypt with an EncryptionContext built from
-// `aad`, is ../../../aws/adapters/aws-kms-provider.js; nothing else changes.
+// and localKmsProvider (emulator and tests only). An AWS KMS provider for
+// miPharmacy implements the same four members with KMS Encrypt/Decrypt and
+// an EncryptionContext built from `aad`; nothing else changes.
 
 const crypto = require("node:crypto");
 
@@ -118,11 +118,10 @@ function gcpKmsProvider({ keyName, client }) {
 
 // A KMS stand-in that wraps the DEK with a local AES key. For the Firebase
 // emulator, local runs and tests ONLY: it refuses to start on Cloud
-// Functions / Cloud Run (K_SERVICE is set there) and on AWS Lambda
-// (AWS_LAMBDA_FUNCTION_NAME), where the real KMS must be used. There is
-// deliberately no override.
+// Functions / Cloud Run (K_SERVICE is set there), where the real KMS must be
+// used. There is deliberately no override.
 function localKmsProvider({ keyBase64, env = process.env } = {}) {
-  if (env.K_SERVICE || env.AWS_LAMBDA_FUNCTION_NAME) {
+  if (env.K_SERVICE) {
     throw new SecretStoreError("SECRET_STORE_NOT_CONFIGURED", "The local secret store is for emulators and tests only");
   }
   const key = Buffer.from(String(keyBase64 || ""), "base64");

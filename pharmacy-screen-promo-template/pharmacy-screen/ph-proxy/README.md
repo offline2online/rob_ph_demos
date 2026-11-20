@@ -118,18 +118,11 @@ folder's README has the URLs and the first-deploy steps):
 4. **Admin claim**: `config-api/scripts/set-admin-claim.js` gives an account the `admin` claim.
 5. After the first deploy, the account owner enters the token in Admin → Settings.
 
-## Deploying to miPharmacy's AWS environment
-
-`../../aws/` deploys this proxy as the Lambda function `PhApi` with the same
-`createApi()`: an AWS KMS provider (`aws/adapters/aws-kms-provider.js`, the
-four members documented at the top of `src/secret-store.js`, with the AAD as
-KMS encryption context), a DynamoDB settings store and audit log
-(`aws/adapters/dynamodb-settings.js`, the shapes in `src/stores.js`) and an OIDC
-auth adapter (`aws/adapters/oidc-auth.js`, the shape in `src/auth.js`);
-`src/http.js` is reused unchanged. The KMS key may be used by this function
-only. Behind CloudFront the client address comes from CloudFront's viewer
-address, trusted only on requests carrying CloudFront's origin header
-(`aws/lambda/apigw.js`). See `../../aws/README.md`.
+For miPharmacy's AWS environment, implement a KMS provider over AWS KMS (or
+Secrets Manager) with the four members documented at the top of
+`src/secret-store.js`, plus a DynamoDB settings store / audit log and an OIDC
+auth adapter with the shapes in `src/stores.js` and `src/auth.js`; `src/http.js`
+is reused unchanged.
 
 ## Tests
 

@@ -72,7 +72,7 @@ preview uses sample hours and no suburb, and says so.
 | File | What it does |
 |---|---|
 | `index.html` | The page: sign-in gate, editor, Settings, Edit HTML dialog, preview. |
-| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (Firebase web config, or OIDC endpoints on AWS). Non-secret. |
+| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (Firebase web config). Non-secret. |
 | `css/admin.css` | The prototype's editor styles plus the sign-in gate and save status, laid out with container queries (see Layout above). The screen itself uses `../css/screen.css`. |
 | `js/editor.js` | The editor: state, rendering, what each save sends, preview loop. |
 | `js/save-queue.js` | The write queue: one chain of writes per record, debounced edits, the save-status pill's state, and `flush()` (waits for every write, including follow-ups, before the editor switches or deletes a pharmacy). |
@@ -80,7 +80,7 @@ preview uses sample hours and no suburb, and says so.
 | `js/icon-picker.js` | The searchable Material Symbols picker for a service chip. |
 | `js/model.js` | No DOM: admin records → render config, content defaults, validation, service filter, experience URL, playback duration, `editsSince()` (what changed while a create was in flight). Unit-tested in `../test/admin-model.test.mjs`. |
 | `js/api.js` | API client for the config API and the PH API proxy. |
-| `js/auth.js` | Sign-in: Firebase Auth (Google or email and password); OpenID Connect with PKCE on AWS (Cognito or the retailer's identity provider, one Sign in button, tokens in this tab's session storage, silent refresh); or a pasted token for local development. |
+| `js/auth.js` | Sign-in: Firebase Auth (Google or email and password), or a pasted token for local development. |
 | `js/icons.js` | The Material Symbols names for the icon picker. |
 | `tools/dev-server.mjs` | Everything on one local origin, in memory, loaded with the seed (below). For tests it also returns `downHosts` (add a PH base URL's host and the mock Location API refuses it: failover) and `logLines` (every line the config API and the proxy logged). Used by `test/editor.e2e.mjs` and `../test/e2e/full-stack.test.mjs`. |
 | `test/editor.e2e.mjs` | End-to-end tests in Chromium against the dev server. |
@@ -108,8 +108,3 @@ config (`auth.mode: 'firebase'`). The committed `config.js` keeps `firebase: nul
 claim (`config-api/scripts/set-admin-claim.js`). To serve it anywhere else, serve `pharmacy-screen/`
 statically the same way, set `auth.firebase` in `config.js`, and add the editor's origin to
 `PS_ALLOWED_ORIGINS` / `PH_ALLOWED_ORIGINS` if it is served from a different origin than the API.
-
-On AWS (`../../aws/`), `npm run deploy:aws` serves the same staged files from S3 through CloudFront and writes
-`config.js` with `auth.mode: 'oidc'` and the sign-in endpoints (Cognito's hosted sign-in, or the retailer's
-provider). Admins are the members of the Cognito group `admin`, or carry the admin claim the stack names.
-`../../aws/test/ui/admin-oidc.test.mjs` tests this sign-in in Chromium.
