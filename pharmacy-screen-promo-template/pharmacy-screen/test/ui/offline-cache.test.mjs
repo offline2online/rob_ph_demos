@@ -4,7 +4,8 @@
 //   - a deploy that changes nothing downloads nothing; one that changes a shell file is picked up by the player's
 //     update check, downloaded once, and the page reloads itself onto it;
 //   - with the server gone, the screen still starts and plays the promotion.
-// The data is the seed fixtures (mockapi=1); sw=1 turns the worker on for a local server.
+// The data is the seed fixtures (mockapi=1); sw=1 turns the worker on for a local server; now= pins the store's
+// clock to a weekday noon, so the "Open today" bar reads the same whatever time the suite runs.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -28,7 +29,7 @@ before(async () => {
   pub = path.join(out, 'public');
   hits = {};
   server = await serve(0, pub, hits);
-  base = `http://127.0.0.1:${server.address().port}/pharmacy-screen.html?mockapi=1&sw=1&device=TEST&promo=morning&orientation=portrait`;
+  base = `http://127.0.0.1:${server.address().port}/pharmacy-screen.html?mockapi=1&sw=1&device=TEST&promo=morning&orientation=portrait&now=wed-12:00`;
   browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 });
 after(async () => { await browser.close(); if (server.listening) { server.closeAllConnections(); server.close(); } });
@@ -85,6 +86,7 @@ test('cached start, update only on change, and an offline start', async () => {
   await page.reload();
   const offline = await playing(page);
   assert.ok(offline.logo.includes('Beaumaris Pharmacy'), 'plays offline');
-  assert.match(offline.text, /OPEN TODAY|Open today/i);
+  // The Open today bar, in whichever state the store's real clock puts it (the test runs at any hour).
+  assert.match(offline.text, /Open today|Opens today|Closing soon|Closed now/i);
   await context.close();
 });

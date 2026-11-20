@@ -1,5 +1,6 @@
 // Unit tests for the admin editor's data model (admin/js/model.js): config API records -> the render
 // engine's config, content shapes, validation and the service library filter. node --test, no install.
+import * as R from '../js/render.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as M from '../admin/js/model.js';
@@ -141,17 +142,31 @@ test('occasions: the Occasion drop-down is the promotion template, content keeps
   const c = M.newContentFor({ promoId: 'occasions' }, 'occasion');
   assert.deepEqual(Object.keys(c.occasions), ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']);
   for (const [id, o] of Object.entries(c.occasions)) {
-    assert.equal(o.scenes.length, 3, id);
-    assert.ok(o.scenes.some((x) => /\$\{Suburb\}/.test(x.title)), `${id} uses \${Suburb}`);
+    assert.equal(o.beats.length, id === 'christmas' ? 2 : 3, id);
+    assert.ok(o.beats.some((x) => /\$\{Suburb\}/.test(x.text)), `${id} uses \${Suburb}`);
     assert.equal(/StoreName/.test(JSON.stringify(o)), ['christmas', 'new-year'].includes(id), `${id} store-name rule`);
   }
+  // The approved default copy, beat by beat (label line / main line).
+  const lines = (id) => c.occasions[id].beats.map((b) => [b.label, b.text].filter((x) => x !== undefined).join(' / '));
+  assert.deepEqual(lines('christmas'), ['Merry Christmas, ${Suburb}', 'With warm wishes / from the whole ${StoreName} team']);
+  assert.deepEqual(lines('new-year'), ['Happy<br>New Year', 'Thank you for a great year, ${Suburb}', "Here's to a healthy year ahead / from the whole ${StoreName} team"]);
+  assert.deepEqual(lines('australia-day'), ['26 January / Happy Australia Day, ${Suburb}', 'Enjoy the sunshine', 'Stay sun safe this summer / Slip, slop, slap']);
+  assert.deepEqual(lines('valentines-day'), ["14 February / Happy Valentine's Day, ${Suburb}", 'Look after the ones you love', 'and yourself, too']);
+  assert.deepEqual(lines('easter'), ['Happy Easter, ${Suburb}', 'Wishing you a restful long weekend', 'Take time to recharge']);
+  assert.deepEqual(lines('anzac-day'), ['25 April / Anzac Day', 'Lest we forget', 'Remembering together, ${Suburb}']);
   // Switching template kind and back keeps the other kind's fields; a broken occasion is refilled.
-  const mixed = M.ensureContent({ slots: [], greeting: 'G', occasions: { easter: { scenes: [{ title: 'Mine' }, {}, {}] } } }, 'occasion');
+  const mixed = M.ensureContent({ slots: [], greeting: 'G', occasions: { easter: { beats: [{ text: 'Mine' }, {}] } } }, 'occasion');
   assert.equal(mixed.greeting, 'G');
-  assert.equal(mixed.occasions.easter.scenes[0].title, 'Mine');
-  assert.equal(typeof mixed.occasions.easter.scenes[1].line1, 'string');
-  assert.ok(mixed.occasions.christmas.scenes.length === 3);
-  assert.equal(M.loopSeconds(mixed.occasions.easter), 10);
+  assert.equal(mixed.occasions.easter.beats[0].text, 'Mine');
+  assert.equal(mixed.occasions.easter.beats[2].text, 'Take time to recharge');
+  assert.equal(mixed.occasions.christmas.beats.length, 2);
+  assert.equal(M.loopSeconds(mixed.occasions.easter), 12);
+  assert.equal(M.playbackSeconds(M.loopSeconds(mixed.occasions.christmas)), 13);
+  // Copy saved before the standalone designs: unedited, the new defaults; edited, kept beat by beat.
+  const legacy = (id) => ({ scenes: R.LEGACY_OCCASION_COPY[id].map((x) => ({ ...x })) });
+  const old = M.ensureContent({ occasions: { christmas: legacy('christmas'), easter: { scenes: [{ title: 'Hoppy Easter', sub: '', line1: '', line2: '' }, ...legacy('easter').scenes.slice(1)] } } }, 'occasion');
+  assert.deepEqual(old.occasions.christmas, R.defaultOccasion('christmas'));
+  assert.deepEqual(old.occasions.easter.beats.map((b) => b.text), ['Hoppy Easter', 'Here for you<br>over Easter', 'Thank you,<br>${Suburb}']);
   assert.deepEqual(M.orderPromotions([{ promoId: 'occasions', name: 'O' }, { promoId: 'closed', name: 'C' }, { promoId: 'x', name: 'X' }]).map((p) => p.promoId), ['closed', 'occasions', 'x']);
   // The preview's render config maps the occasion template onto the render engine's built-in.
   const cfg = M.renderConfig({ pharmacies: [], promotions: [{ id: 'p-o', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-valentines-day' }], templates: [] });
@@ -193,4 +208,33 @@ test('master template: detaching, re-inheriting, syncing and a new pharmacy star
   assert.equal(fresh.greeting, 'M');
   assert.equal(fresh.close.title, 'MC');
   assert.equal(M.newPharmacyContent([{ id: 'p', promoId: 'x', templateId: M.BUILTIN_SCENES, master: { greeting: 'G', slots: [], close: { title: 't' } } }], templates).p.greeting, 'G');
+});
+
+test('tokens set by hand: every token the pharmacy uses, master template included, and setting one', () => {
+  const tpls = [...templates, { id: 'tpl2', name: 'Scenes, custom', kind: 'promotion-scenes', builtIn: false, html: '<div>${Headline}${Website}</div>' }];
+  const promos = [
+    { id: 'p-m', name: 'Morning', promoId: 'morning', templateId: M.BUILTIN_SCENES, master: { greeting: 'Good morning,<br>${Suburb}', introTitle: 'Call ${Phone}', introSub: '', slots: [], close: { title: 'Bye' }, footer: { show: false } } },
+    { id: 'p-o', name: 'Occasions', promoId: 'occasions', templateId: M.occasionTemplateId('christmas') },
+    { id: 'p-x', name: 'Extra', promoId: 'extra', templateId: 'tpl2' },
+  ];
+  const ph = { id: 'ph1', content: { 'p-x': { greeting: 'Hello', introTitle: '${Unused', introSub: '', slots: [], close: { title: '${Offer}' } } }, tokens: { Suburb: 'Beaumaris', Old: 'left over' } };
+  const list = M.usedTokens(ph, promos, tpls);
+  assert.deepEqual(list.map((t) => t.name), ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime', 'Offer', 'Old', 'Website']);
+  const by = Object.fromEntries(list.map((t) => [t.name, t]));
+  assert.deepEqual(by.Suburb, { name: 'Suburb', data: true, value: 'Beaumaris', promotions: ['Morning', 'Occasions'] });
+  assert.deepEqual(by.Phone.promotions, ['Morning'], 'from the master template');
+  assert.deepEqual(by.StoreName.promotions, ['Occasions'], 'the occasion sign-off');
+  assert.deepEqual(by.CloseTime.promotions, ['Extra'], 'the Open today bar, unless hidden (an occasion has none)');
+  assert.deepEqual(by.Website.promotions, ['Extra'], 'custom template HTML; its layout slots are not listed');
+  assert.deepEqual(by.Old, { name: 'Old', data: false, value: 'left over', promotions: [] });
+  // Detaching a section uses the pharmacy's own copy instead of the master's.
+  const det = { ...ph, content: { ...ph.content, 'p-m': { introTitle: 'Plain' } }, detached: { 'p-m': ['greeting'] } };
+  const detList = M.usedTokens(det, promos, tpls);
+  assert.ok(!detList.some((t) => t.name === 'Phone'), 'the master greeting section no longer plays');
+  assert.deepEqual(detList.find((t) => t.name === 'Suburb').promotions, ['Occasions']);
+  // setToken: blank removes.
+  assert.deepEqual(M.setToken(ph, 'Phone', '03 1234'), { Suburb: 'Beaumaris', Old: 'left over', Phone: '03 1234' });
+  assert.deepEqual(M.setToken(ph, 'Old', '  '), { Suburb: 'Beaumaris' });
+  // renderConfig passes them to the render engine.
+  assert.deepEqual(M.renderConfig({ pharmacies: [{ ...ph, storeCode: 'A1', colours: {} }], promotions: promos, templates: tpls }).pharmacies[0].tokens, { Suburb: 'Beaumaris', Old: 'left over' });
 });

@@ -170,134 +170,83 @@
     "occasions": {
      "occasions": {
       "christmas": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Merry Christmas,<br>${Suburb}",
-         "sub": "",
-         "line1": "Season's greetings",
-         "line2": "From all of us, to all of you"
+         "text": "Merry Christmas, ${Suburb}"
         },
         {
-         "title": "Here for you<br>this season",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Thank you for shopping local"
-        },
-        {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Merry Christmas from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "With warm wishes",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "new-year": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy New Year,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a bright year ahead",
-         "line2": "Here’s to new beginnings"
+         "text": "Happy<br>New Year"
         },
         {
-         "title": "New year,<br>same friendly faces",
-         "sub": "Here when you need us",
-         "line1": "Please check our hours before you visit",
-         "line2": "Holiday hours may change"
+         "text": "Thank you for a great year, ${Suburb}"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Happy New Year from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "Here's to a healthy year ahead",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "australia-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Australia Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "Celebrating our local community",
-         "line2": "Everyone is welcome here"
+         "label": "26 January",
+         "text": "Happy Australia Day, ${Suburb}"
         },
         {
-         "title": "Proud to be part<br>of the community",
-         "sub": "Public holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe and happy public holiday"
+         "text": "Enjoy the sunshine"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "For making this a great place to be",
-         "line2": ""
+         "label": "Stay sun safe this summer",
+         "text": "Slip, slop, slap"
         }
        ]
       },
       "valentines-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Valentine's Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "A day to show you care",
-         "line2": "For partners, family and friends"
+         "label": "14 February",
+         "text": "Happy Valentine's Day, ${Suburb}"
         },
         {
-         "title": "Share a little<br>kindness today",
-         "sub": "Big or small, it all counts",
-         "line1": "A kind word goes a long way",
-         "line2": "Look out for the people you love"
+         "text": "Look after the ones you love"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Valentine's Day",
-         "line2": ""
+         "text": "and yourself, too"
         }
        ]
       },
       "easter": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Easter,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Easter break",
-         "line2": "From all of us, to all of you"
+         "text": "Happy Easter, ${Suburb}"
         },
         {
-         "title": "Here for you<br>over Easter",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe long weekend"
+         "text": "Wishing you a restful long weekend"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Have a safe and happy Easter",
-         "line2": ""
+         "text": "Take time to recharge"
         }
        ]
       },
       "anzac-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Anzac Day",
-         "sub": "25 April",
-         "line1": "We pause to remember",
-         "line2": "All who served and sacrificed"
+         "label": "25 April",
+         "text": "Anzac Day"
         },
         {
-         "title": "We will<br>remember them",
-         "sub": "",
-         "line1": "Honouring those who served",
-         "line2": "And those who serve today"
+         "text": "Lest we forget"
         },
         {
-         "title": "Lest we forget,<br>${Suburb}",
-         "sub": "",
-         "line1": "",
-         "line2": ""
+         "text": "Remembering together, ${Suburb}"
         }
        ]
       }
@@ -436,134 +385,83 @@
     "occasions": {
      "occasions": {
       "christmas": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Merry Christmas,<br>${Suburb}",
-         "sub": "",
-         "line1": "Season's greetings",
-         "line2": "From all of us, to all of you"
+         "text": "Merry Christmas, ${Suburb}"
         },
         {
-         "title": "Here for you<br>this season",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Thank you for shopping local"
-        },
-        {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Merry Christmas from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "With warm wishes",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "new-year": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy New Year,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a bright year ahead",
-         "line2": "Here’s to new beginnings"
+         "text": "Happy<br>New Year"
         },
         {
-         "title": "New year,<br>same friendly faces",
-         "sub": "Here when you need us",
-         "line1": "Please check our hours before you visit",
-         "line2": "Holiday hours may change"
+         "text": "Thank you for a great year, ${Suburb}"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Happy New Year from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "Here's to a healthy year ahead",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "australia-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Australia Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "Celebrating our local community",
-         "line2": "Everyone is welcome here"
+         "label": "26 January",
+         "text": "Happy Australia Day, ${Suburb}"
         },
         {
-         "title": "Proud to be part<br>of the community",
-         "sub": "Public holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe and happy public holiday"
+         "text": "Enjoy the sunshine"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "For making this a great place to be",
-         "line2": ""
+         "label": "Stay sun safe this summer",
+         "text": "Slip, slop, slap"
         }
        ]
       },
       "valentines-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Valentine's Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "A day to show you care",
-         "line2": "For partners, family and friends"
+         "label": "14 February",
+         "text": "Happy Valentine's Day, ${Suburb}"
         },
         {
-         "title": "Share a little<br>kindness today",
-         "sub": "Big or small, it all counts",
-         "line1": "A kind word goes a long way",
-         "line2": "Look out for the people you love"
+         "text": "Look after the ones you love"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Valentine's Day",
-         "line2": ""
+         "text": "and yourself, too"
         }
        ]
       },
       "easter": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Easter,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Easter break",
-         "line2": "From all of us, to all of you"
+         "text": "Happy Easter, ${Suburb}"
         },
         {
-         "title": "Here for you<br>over Easter",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe long weekend"
+         "text": "Wishing you a restful long weekend"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Have a safe and happy Easter",
-         "line2": ""
+         "text": "Take time to recharge"
         }
        ]
       },
       "anzac-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Anzac Day",
-         "sub": "25 April",
-         "line1": "We pause to remember",
-         "line2": "All who served and sacrificed"
+         "label": "25 April",
+         "text": "Anzac Day"
         },
         {
-         "title": "We will<br>remember them",
-         "sub": "",
-         "line1": "Honouring those who served",
-         "line2": "And those who serve today"
+         "text": "Lest we forget"
         },
         {
-         "title": "Lest we forget,<br>${Suburb}",
-         "sub": "",
-         "line1": "",
-         "line2": ""
+         "text": "Remembering together, ${Suburb}"
         }
        ]
       }
@@ -702,134 +600,83 @@
     "occasions": {
      "occasions": {
       "christmas": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Merry Christmas,<br>${Suburb}",
-         "sub": "",
-         "line1": "Season's greetings",
-         "line2": "From all of us, to all of you"
+         "text": "Merry Christmas, ${Suburb}"
         },
         {
-         "title": "Here for you<br>this season",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Thank you for shopping local"
-        },
-        {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Merry Christmas from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "With warm wishes",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "new-year": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy New Year,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a bright year ahead",
-         "line2": "Here’s to new beginnings"
+         "text": "Happy<br>New Year"
         },
         {
-         "title": "New year,<br>same friendly faces",
-         "sub": "Here when you need us",
-         "line1": "Please check our hours before you visit",
-         "line2": "Holiday hours may change"
+         "text": "Thank you for a great year, ${Suburb}"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Happy New Year from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "Here's to a healthy year ahead",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "australia-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Australia Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "Celebrating our local community",
-         "line2": "Everyone is welcome here"
+         "label": "26 January",
+         "text": "Happy Australia Day, ${Suburb}"
         },
         {
-         "title": "Proud to be part<br>of the community",
-         "sub": "Public holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe and happy public holiday"
+         "text": "Enjoy the sunshine"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "For making this a great place to be",
-         "line2": ""
+         "label": "Stay sun safe this summer",
+         "text": "Slip, slop, slap"
         }
        ]
       },
       "valentines-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Valentine's Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "A day to show you care",
-         "line2": "For partners, family and friends"
+         "label": "14 February",
+         "text": "Happy Valentine's Day, ${Suburb}"
         },
         {
-         "title": "Share a little<br>kindness today",
-         "sub": "Big or small, it all counts",
-         "line1": "A kind word goes a long way",
-         "line2": "Look out for the people you love"
+         "text": "Look after the ones you love"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Valentine's Day",
-         "line2": ""
+         "text": "and yourself, too"
         }
        ]
       },
       "easter": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Easter,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Easter break",
-         "line2": "From all of us, to all of you"
+         "text": "Happy Easter, ${Suburb}"
         },
         {
-         "title": "Here for you<br>over Easter",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe long weekend"
+         "text": "Wishing you a restful long weekend"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Have a safe and happy Easter",
-         "line2": ""
+         "text": "Take time to recharge"
         }
        ]
       },
       "anzac-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Anzac Day",
-         "sub": "25 April",
-         "line1": "We pause to remember",
-         "line2": "All who served and sacrificed"
+         "label": "25 April",
+         "text": "Anzac Day"
         },
         {
-         "title": "We will<br>remember them",
-         "sub": "",
-         "line1": "Honouring those who served",
-         "line2": "And those who serve today"
+         "text": "Lest we forget"
         },
         {
-         "title": "Lest we forget,<br>${Suburb}",
-         "sub": "",
-         "line1": "",
-         "line2": ""
+         "text": "Remembering together, ${Suburb}"
         }
        ]
       }
@@ -968,134 +815,83 @@
     "occasions": {
      "occasions": {
       "christmas": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Merry Christmas,<br>${Suburb}",
-         "sub": "",
-         "line1": "Season's greetings",
-         "line2": "From all of us, to all of you"
+         "text": "Merry Christmas, ${Suburb}"
         },
         {
-         "title": "Here for you<br>this season",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Thank you for shopping local"
-        },
-        {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Merry Christmas from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "With warm wishes",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "new-year": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy New Year,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a bright year ahead",
-         "line2": "Here’s to new beginnings"
+         "text": "Happy<br>New Year"
         },
         {
-         "title": "New year,<br>same friendly faces",
-         "sub": "Here when you need us",
-         "line1": "Please check our hours before you visit",
-         "line2": "Holiday hours may change"
+         "text": "Thank you for a great year, ${Suburb}"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Happy New Year from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "Here's to a healthy year ahead",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "australia-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Australia Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "Celebrating our local community",
-         "line2": "Everyone is welcome here"
+         "label": "26 January",
+         "text": "Happy Australia Day, ${Suburb}"
         },
         {
-         "title": "Proud to be part<br>of the community",
-         "sub": "Public holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe and happy public holiday"
+         "text": "Enjoy the sunshine"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "For making this a great place to be",
-         "line2": ""
+         "label": "Stay sun safe this summer",
+         "text": "Slip, slop, slap"
         }
        ]
       },
       "valentines-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Valentine's Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "A day to show you care",
-         "line2": "For partners, family and friends"
+         "label": "14 February",
+         "text": "Happy Valentine's Day, ${Suburb}"
         },
         {
-         "title": "Share a little<br>kindness today",
-         "sub": "Big or small, it all counts",
-         "line1": "A kind word goes a long way",
-         "line2": "Look out for the people you love"
+         "text": "Look after the ones you love"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Valentine's Day",
-         "line2": ""
+         "text": "and yourself, too"
         }
        ]
       },
       "easter": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Easter,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Easter break",
-         "line2": "From all of us, to all of you"
+         "text": "Happy Easter, ${Suburb}"
         },
         {
-         "title": "Here for you<br>over Easter",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe long weekend"
+         "text": "Wishing you a restful long weekend"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Have a safe and happy Easter",
-         "line2": ""
+         "text": "Take time to recharge"
         }
        ]
       },
       "anzac-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Anzac Day",
-         "sub": "25 April",
-         "line1": "We pause to remember",
-         "line2": "All who served and sacrificed"
+         "label": "25 April",
+         "text": "Anzac Day"
         },
         {
-         "title": "We will<br>remember them",
-         "sub": "",
-         "line1": "Honouring those who served",
-         "line2": "And those who serve today"
+         "text": "Lest we forget"
         },
         {
-         "title": "Lest we forget,<br>${Suburb}",
-         "sub": "",
-         "line1": "",
-         "line2": ""
+         "text": "Remembering together, ${Suburb}"
         }
        ]
       }
@@ -1234,134 +1030,83 @@
     "occasions": {
      "occasions": {
       "christmas": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Merry Christmas,<br>${Suburb}",
-         "sub": "",
-         "line1": "Season's greetings",
-         "line2": "From all of us, to all of you"
+         "text": "Merry Christmas, ${Suburb}"
         },
         {
-         "title": "Here for you<br>this season",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Thank you for shopping local"
-        },
-        {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Merry Christmas from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "With warm wishes",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "new-year": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy New Year,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a bright year ahead",
-         "line2": "Here’s to new beginnings"
+         "text": "Happy<br>New Year"
         },
         {
-         "title": "New year,<br>same friendly faces",
-         "sub": "Here when you need us",
-         "line1": "Please check our hours before you visit",
-         "line2": "Holiday hours may change"
+         "text": "Thank you for a great year, ${Suburb}"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Happy New Year from the whole ${StoreName} team.",
-         "line2": ""
+         "label": "Here's to a healthy year ahead",
+         "text": "from the whole ${StoreName} team"
         }
        ]
       },
       "australia-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Australia Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "Celebrating our local community",
-         "line2": "Everyone is welcome here"
+         "label": "26 January",
+         "text": "Happy Australia Day, ${Suburb}"
         },
         {
-         "title": "Proud to be part<br>of the community",
-         "sub": "Public holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe and happy public holiday"
+         "text": "Enjoy the sunshine"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "For making this a great place to be",
-         "line2": ""
+         "label": "Stay sun safe this summer",
+         "text": "Slip, slop, slap"
         }
        ]
       },
       "valentines-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Valentine's Day,<br>${Suburb}",
-         "sub": "",
-         "line1": "A day to show you care",
-         "line2": "For partners, family and friends"
+         "label": "14 February",
+         "text": "Happy Valentine's Day, ${Suburb}"
         },
         {
-         "title": "Share a little<br>kindness today",
-         "sub": "Big or small, it all counts",
-         "line1": "A kind word goes a long way",
-         "line2": "Look out for the people you love"
+         "text": "Look after the ones you love"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Valentine's Day",
-         "line2": ""
+         "text": "and yourself, too"
         }
        ]
       },
       "easter": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Happy Easter,<br>${Suburb}",
-         "sub": "",
-         "line1": "Wishing you a happy Easter break",
-         "line2": "From all of us, to all of you"
+         "text": "Happy Easter, ${Suburb}"
         },
         {
-         "title": "Here for you<br>over Easter",
-         "sub": "Holiday hours may change",
-         "line1": "Please check our hours before you visit",
-         "line2": "Have a safe long weekend"
+         "text": "Wishing you a restful long weekend"
         },
         {
-         "title": "Thank you,<br>${Suburb}",
-         "sub": "",
-         "line1": "Have a safe and happy Easter",
-         "line2": ""
+         "text": "Take time to recharge"
         }
        ]
       },
       "anzac-day": {
-       "scenes": [
+       "beats": [
         {
-         "title": "Anzac Day",
-         "sub": "25 April",
-         "line1": "We pause to remember",
-         "line2": "All who served and sacrificed"
+         "label": "25 April",
+         "text": "Anzac Day"
         },
         {
-         "title": "We will<br>remember them",
-         "sub": "",
-         "line1": "Honouring those who served",
-         "line2": "And those who serve today"
+         "text": "Lest we forget"
         },
         {
-         "title": "Lest we forget,<br>${Suburb}",
-         "sub": "",
-         "line1": "",
-         "line2": ""
+         "text": "Remembering together, ${Suburb}"
         }
        ]
       }

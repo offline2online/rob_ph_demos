@@ -2,21 +2,22 @@
 //
 // The editor works on the config API's records (config-api/README.md → "Data model"):
 //   pharmacy  {id, storeCode, name, colours {primary, accent}, logo {url} | null, content {<promotion record id>: {...}},
-//              detached? {<promotion record id>: [master section id, …]}, version}
+//              detached? {<promotion record id>: [master section id, …]}, tokens? {<token name>: text}, version}
 //   promotion {id, name, promoId, templateId, master? {...}, version}
 //   template  {id, name, kind 'promotion-scenes' | 'opening-hours' | 'occasion', occasion?, builtIn, html, css, backgrounds {portrait, landscape}}
 //   service   {id, label, icon, category, headline, accent, line1, line2, offeredBy [store codes]}
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, defaultOccasion, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION } from '../../js/render.js';
+import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, OCCASION_LOOP, DEFAULT_HTML, footerConfig } from '../../js/render.js';
+import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
 export const BUILTIN_HOURS = 'builtin-opening-hours';
 // The six occasion templates (config-api/src/builtins.js), picked by the Occasions promotion's Occasion drop-down.
 export const occasionTemplateId = (occasion) => 'builtin-occasion-' + occasion;
 export const BUILTIN_OCCASION = occasionTemplateId(DEFAULT_OCCASION);
-export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, templateId: occasionTemplateId(o.id), signOff: /\$\{StoreName\}/.test(o.scenes.map((x) => x.line1).join(' ')) }));
+export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, templateId: occasionTemplateId(o.id), signOff: o.beats.some((b) => /\$\{StoreName\}/.test(b.text)) }));
 const RENDER_BUILTIN = { [BUILTIN_SCENES]: 't_scenes', [BUILTIN_HOURS]: 't_hours', ...Object.fromEntries(OCCASION_IDS.map((id) => [occasionTemplateId(id), 't_occ_' + id])) };
 
 /** 'scenes', 'hours' or 'occasion' for a template kind. */
@@ -70,17 +71,10 @@ export function ensureContent(content, base) {
   const c = content && typeof content === 'object' ? clone(content) : {};
   const def = defaultContent(base);
   if (base === 'occasion') {
-    // Every occasion's copy is kept, so switching occasion and back loses nothing.
+    // Every occasion's copy is kept, so switching occasion and back loses nothing. Each is {beats: [{label?, text}]}:
+    // copy saved in the old three-scene shape becomes beats (render.js occasionCopy: unedited, the new defaults).
     if (!c.occasions || typeof c.occasions !== 'object' || Array.isArray(c.occasions)) c.occasions = {};
-    for (const id of OCCASION_IDS) {
-      const o = c.occasions[id];
-      if (!o || !Array.isArray(o.scenes) || o.scenes.length !== 3) { c.occasions[id] = defaultOccasion(id); continue; }
-      o.scenes = o.scenes.map((x, i) => {
-        const d = def.occasions[id].scenes[i], v = x && typeof x === 'object' ? x : {};
-        for (const k of ['title', 'sub', 'line1', 'line2']) if (typeof v[k] !== 'string') v[k] = d[k];
-        return v;
-      });
-    }
+    for (const id of OCCASION_IDS) c.occasions[id] = occasionCopy(id, c.occasions[id]);
   } else if (base === 'hours') {
     if (!Array.isArray(c.headlines) || !c.headlines.length) c.headlines = def.headlines;
     while (c.headlines.length < 3) c.headlines.push('');
@@ -121,7 +115,7 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 export const SECTION_NAMES = { greeting: 'Greeting', slots: 'Promotion slots', close: 'Walk-in close', headlines: 'Headlines', address: 'Address', occasions: 'Occasion copy', footer: 'Open today bar' };
 
 /** The master sections a template kind shows, in the order the editor draws them. */
-export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions', 'footer'] : ['greeting', 'slots', 'close', 'footer']);
+export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions'] : ['greeting', 'slots', 'close', 'footer']);
 
 /** What a pharmacy plays for one promotion: the master's sections, with its own copy of each detached section. */
 export function effectiveContent(master, own, detached) {
@@ -186,6 +180,7 @@ export function renderConfig({ pharmacies = [], promotions = [], templates = [] 
       brand: { p: (ph.colours && ph.colours.primary) || '#0f1050', a: (ph.colours && ph.colours.accent) || '#5ee6b0' },
       logo: mediaUrl(ph.logo),
       content: Object.fromEntries(promotions.filter((p) => ph.content && ph.content[p.id]).map((p) => [p.promoId, ph.content[p.id]])),
+      tokens: cleanTokens(ph.tokens),
     })),
   };
 }
@@ -259,8 +254,8 @@ export function filterServices(services, { q = '', storeCode = '', mine = true }
 /** The campaign URL Personalisation Hub plays. The player swaps ${UniqueDeviceID} for each screen's ID. */
 export const templateUrl = (screenPage, promoId, orientation) => `${screenPage}?device=\${UniqueDeviceID}&promo=${promoId}&orientation=${orientation === 'landscape' ? 'landscape' : 'portrait'}`;
 
-/** Total loop length (seconds) of a scenes promotion's content, or of one occasion's copy ({scenes}). */
-export const loopSeconds = (d) => (Array.isArray(d.scenes) ? d.scenes.reduce((a, x, i) => a + (+(x && x.dur) || [3, 3, 4][i] || 3), 0)
+/** Total loop length (seconds) of a scenes promotion's content, or of one occasion's copy ({beats}: its fixed loop). */
+export const loopSeconds = (d) => (Array.isArray(d.beats) ? OCCASION_LOOP
   : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
 
 /** Scene durations are 1-60 seconds; anything else falls back to the default. */
@@ -281,4 +276,69 @@ export function editsSince(sent, ph) {
   const was = sent.content || {}, now = ph.content || {};
   const content = Object.keys(now).filter((id) => !same(was[id], now[id]));
   return { details, content };
+}
+
+// ── tokens set by hand (Settings → Tokens) ──
+
+/** What each data token shows when it is not set by hand (the Tokens card's placeholders). */
+export const TOKEN_SOURCES = {
+  Suburb: 'Suburb from Personalisation Hub',
+  StoreName: 'Pharmacy name',
+  Phone: 'Phone number from Personalisation Hub',
+  CloseTime: 'Today\u2019s closing time',
+  OpenTime: 'Today\u2019s opening time',
+};
+
+// The Open today bar's messages, unless the bar is hidden.
+const footerOf = (c) => { const f = footerConfig(c); return f.show === false ? [] : [f.open, f.closing, f.before, f.closed]; };
+const strings = (v, out = []) => {
+  if (typeof v === 'string') out.push(v);
+  else if (Array.isArray(v)) v.forEach((x) => strings(x, out));
+  else if (v && typeof v === 'object') Object.values(v).forEach((x) => strings(x, out));
+  return out;
+};
+
+/**
+ * The tokens pharmacy `ph` can set by hand: every settable ${Token} its screens use, in the copy each promotion
+ * plays for it (the master template's sections it inherits and its own) and in each promotion's template HTML,
+ * plus any token it has a value for that nothing uses any more (so it can be cleared). Data tokens first, in
+ * DATA_TOKENS order, then the others by name. Returns [{name, data, value, promotions: [promotion name, …]}].
+ */
+export function usedTokens(ph, promotions, templates) {
+  const uses = new Map();
+  const add = (name, promoName) => {
+    if (!isSettableToken(name)) return;
+    if (!uses.has(name)) uses.set(name, []);
+    if (promoName && !uses.get(name).includes(promoName)) uses.get(name).push(promoName);
+  };
+  for (const p of orderPromotions(promotions)) {
+    const base = baseOfTemplate(templates, p.templateId);
+    // What the screen plays (js/render.js resolvePromotion): the effective content, or the template's defaults
+    // where it does not fit the template.
+    let c = effectiveContent(p.master, ph && ph.content && ph.content[p.id], detachedOf(ph, p.id));
+    if (base === 'hours' ? !Array.isArray(c.headlines) : base === 'scenes' && !Array.isArray(c.slots)) c = defaultContent(base);
+    let copy;
+    if (base === 'occasion') {
+      const occ = occasionOfTemplate(p.templateId) || DEFAULT_OCCASION, o = c.occasions && c.occasions[occ];
+      copy = [occasionCopy(occ, o)]; // an occasion has no Open today bar
+    } else if (base === 'hours') copy = [c.headlines];
+    else copy = [c.greeting, c.introTitle, c.introSub, c.slots, c.close, footerOf(c)];
+    const t = (templates || []).find((x) => x.id === p.templateId);
+    const html = (t && !t.builtIn && t.html) || DEFAULT_HTML[base] || '';
+    for (const s of [...strings(copy), html]) for (const name of tokensIn(s)) add(name, p.name);
+  }
+  const values = cleanTokens(ph && ph.tokens);
+  for (const name of Object.keys(values)) add(name);
+  const rank = (n) => (DATA_TOKENS.includes(n) ? DATA_TOKENS.indexOf(n) : DATA_TOKENS.length);
+  return [...uses.keys()]
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .map((name) => ({ name, data: DATA_TOKENS.includes(name), value: values[name] || '', promotions: uses.get(name) }));
+}
+
+/** `ph.tokens` with `name` set to `value` (blank removes it, so the store's data shows again). Returns a new object. */
+export function setToken(ph, name, value) {
+  const all = { ...((ph && ph.tokens) || {}) };
+  const v = String(value ?? '');
+  if (v.trim()) all[name] = v; else delete all[name];
+  return all;
 }

@@ -6,6 +6,9 @@
 <title>Pharmacy Screen Template</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Figtree:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap">
+<!-- The live preview draws the Occasions templates with the screen's own self-hosted fonts and photo. -->
+<link rel="stylesheet" href="../css/occasion-fonts.css">
+<link rel="stylesheet" href="../css/occasion-media.css">
 <link rel="stylesheet" href="../css/screen.css">
 <link rel="stylesheet" href="css/admin.css">
 </head>
@@ -132,6 +135,11 @@
         <label class="f"><span>Store code *</span><input id="sCode" placeholder="e.g. VIC-MP-006" autocapitalize="characters"></label>
       </div>
       <span class="hint" id="codeErr" style="color:var(--err)" hidden></span>
+    </div>
+    <div class="card" id="tokensCard" style="margin-top:16px">
+      <div class="sect">Tokens <span class="ms help" title="The tokens this pharmacy's promotions and templates use, including the master template's. Leave a token blank to show the store's own data. Type a value to show it on this pharmacy's screens instead.">info</span></div>
+      <div class="grid2" id="tokList"></div>
+      <span class="hint" id="tokEmpty" hidden>No promotion or template uses a token yet.</span>
     </div>
     <div class="card" id="brandingCard" style="margin-top:16px">
       <div class="sect">Branding <span class="tag">template config</span></div>

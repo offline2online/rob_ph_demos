@@ -48,3 +48,31 @@ test('${StoreName} in copy is the escaped store name (Occasions sign-offs)', () 
   assert.equal(applyStoreName(fill('Merry Christmas from the whole ${StoreName} team.', 'Beaumaris'), "O'Brien's Pharmacy"), "Merry Christmas from the whole O'Brien's Pharmacy team.");
   assert.equal(applyStoreName(rich('Thanks from ${StoreName}', ''), 'A <b>&</b> B'), 'Thanks from A &lt;b&gt;&amp;&lt;/b&gt; B');
 });
+
+test('tokens set by hand: settable names, cleaning and applying', async () => {
+  const { DATA_TOKENS, SLOT_TOKENS, isSettableToken, tokensIn, cleanTokens, applyTokens, TEMPLATE_TOKENS } = await import('../js/tokens.js');
+  assert.deepEqual(DATA_TOKENS, ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime']);
+  for (const k of Object.values(TEMPLATE_TOKENS).flat()) assert.equal(isSettableToken(k), DATA_TOKENS.includes(k), k);
+  assert.equal(isSettableToken('Website'), true);
+  for (const k of ['1st', 'my token', '_x', '__proto__', '']) assert.equal(isSettableToken(k), false, k);
+  assert.deepEqual(tokensIn('Hi ${Suburb}, call ${Phone} or ${Suburb}'), ['Suburb', 'Phone']);
+  assert.deepEqual(cleanTokens({ Suburb: ' Beaumaris ', Phone: '  ', Headline: 'x', Website: 'a.example', Bad: 5 }), { Suburb: 'Beaumaris', Website: 'a.example' });
+  assert.deepEqual(cleanTokens(['Suburb']), {});
+  assert.equal(applyTokens('Visit ${Website} · ${Other}', { Website: '<b>a</b>' }), 'Visit &lt;b&gt;a&lt;/b&gt; · ${Other}');
+  // The config API refuses the same template slots (config-api/src/validate.js).
+  const { createRequire } = await import('node:module');
+  const validate = createRequire(import.meta.url)('../config-api/src/validate.js');
+  assert.deepEqual([...validate.SLOT_TOKENS].sort(), [...SLOT_TOKENS].sort());
+});
+
+test('tokens set by hand win over the store data on the screen', async () => {
+  const { storeModel, footerMessage } = await import('../js/render.js');
+  const campaign = { data: { store_location: { store_code: 'VIC-MP-001', store_name: 'PH name' }, store_info: { address_info: { suburb: 'Wrong', phone_number: '03 0000 0000' } } } };
+  const cfg = (tokens) => ({ pharmacies: [{ storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', content: {}, tokens }] });
+  let s = storeModel(campaign, cfg(undefined));
+  assert.deepEqual([s.suburb, s.name, s.phone], ['Wrong', 'Beaumaris Pharmacy', '03 0000 0000']);
+  s = storeModel(campaign, cfg({ Suburb: 'Beaumaris', StoreName: 'MiPharmacy Beaumaris', Phone: '03 9589 0000', CloseTime: '9PM', Website: 'x.example' }));
+  assert.deepEqual([s.suburb, s.name, s.phone], ['Beaumaris', 'MiPharmacy Beaumaris', '03 9589 0000']);
+  assert.equal(s.tokens.Website, 'x.example');
+  assert.match(footerMessage(s, {}, { state: 'open', closeTime: 1140 }), /9PM/);
+});

@@ -124,7 +124,9 @@ export function fromPublishedConfig(pub) {
   }
   const colours = (pub && pub.colours) || {};
   return {
-    pharmacies: [{ storeCode: String((pub && pub.storeCode) || ''), name: (pub && pub.name) || '', brand: { p: colours.primary || '#0f1050', a: colours.accent || '#5ee6b0' }, logo: (pub && pub.logo) || null, content }],
+    pharmacies: [{ storeCode: String((pub && pub.storeCode) || ''), name: (pub && pub.name) || '', brand: { p: colours.primary || '#0f1050', a: colours.accent || '#5ee6b0' }, logo: (pub && pub.logo) || null, content,
+      // Token values set by hand on the pharmacy (Admin → Settings → Tokens).
+      tokens: pub && pub.tokens && typeof pub.tokens === 'object' && !Array.isArray(pub.tokens) ? pub.tokens : {} }],
     promotions,
     templates,
   };

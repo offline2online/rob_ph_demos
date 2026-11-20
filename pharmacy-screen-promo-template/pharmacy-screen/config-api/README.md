@@ -67,7 +67,7 @@ Firestore (`PS_FIRESTORE_ROOT`, default `pharmacyScreen`):
 
 | Path | What | Client access (rules) |
 | --- | --- | --- |
-| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately) | none |
+| `pharmacyScreen/config/pharmacies/{id}` | `storeCode`, `name`, `colours {primary, accent}`, `logo {path, url, contentType} \| null`, `content {<promotion id>: {...}}`, `detached {<promotion id>: [section ids]}` (only when a section is managed separately), `tokens {<token name>: text}` (only when a token is set by hand; names as `js/tokens.js` `isSettableToken`, never a template slot; text up to 200 characters, 50 per pharmacy; blank values dropped) | none |
 | `pharmacyScreen/config/promotions/{id}` | `name`, `promoId`, `templateId`, `master {...}` (the master template's content; only once saved) | none |
 | `pharmacyScreen/config/templates/{id}` | custom templates: `name`, `kind`, `basedOn`, `html`, `css`, `backgrounds {portrait, landscape}` | none |
 | `pharmacyScreen/config/services/{id}` | `label`, `icon`, `category`, `headline`, `accent`, `line1`, `line2`, `offeredBy [store codes]` | none |
@@ -106,14 +106,17 @@ to the built-in of that kind.
 occasion: `builtin-occasion-christmas`, `-new-year`, `-australia-day`,
 `-valentines-day`, `-easter`, `-anzac-day`. Each carries `occasion` (the
 part after `builtin-occasion-`), which the published config passes on so the
-screen draws that occasion (`../js/render.js` → `OCCASIONS`). The seeded
+screen draws that occasion (`../js/render.js` → `OCCASIONS`, the standalone
+designs in `../js/occasions.js`, the Christmas photo and fonts self-hosted in
+`../css/`; the built-ins carry no html, css or backgrounds). The seeded
 Occasions promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
 the admin editor's Occasion drop-down sets its `templateId` to another one.
 They can't be cloned (400: there is no editable HTML version of an
 occasion). A pharmacy's content for an occasion promotion keeps every
-occasion's copy, `content.occasions.<occasion>.scenes[3]` (greeting, message,
-sign-off: `title`, `sub`, `line1`, `line2`, `dur`), plus the promotion's
-`footer`.
+occasion's copy, `content.occasions.<occasion>.beats[]` (one per beat of the
+design, Christmas 2 and the others 3: `text`, plus `label` where the design
+has a label line). Copy saved earlier as `scenes[3]` (`title`, `sub`,
+`line1`, `line2`) is still read by the screen and the editor.
 
 **Media** goes to the bucket `PS_MEDIA_BUCKET` (default
 `<project>-pharmacy-screen-media`) under `pharmacyScreen/media/logos/{pharmacyId}/…`
@@ -145,9 +148,12 @@ field (`src/publish.js`), so nothing else on the records can reach it:
       "content": { "…": "this pharmacy's content for the promotion" }
     }
   },
+  "tokens": { "Suburb": "Beaumaris" },
   "publishedAt": "2026-11-20T01:00:00.000Z"
 }
 ```
+
+`tokens` (the pharmacy's hand-set token values) is there only when it has any.
 
 A built-in's `html`/`css` are empty: the screen renders built-ins with its
 own engine.

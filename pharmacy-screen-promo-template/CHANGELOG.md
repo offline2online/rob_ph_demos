@@ -8,8 +8,26 @@ release handed to miPharmacy is tagged and packaged with this file and the `docs
 Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 ([docs/RELEASING.md](docs/RELEASING.md)).
 
+### Added
+
+- **Settings → Tokens: set any token's value by hand, per pharmacy.** Settings lists every `${…}` token the
+  pharmacy's promotions and templates use (the master template's inherited sections included), with the
+  promotions that use each. A value typed there shows on that pharmacy's screens instead of the store's data
+  (`${Suburb}`, `${StoreName}`, `${Phone}`, `${CloseTime}`, `${OpenTime}`), or instead of nothing for any other
+  token a custom template or copy uses; blank goes back to the store's data. Stored as the pharmacy's `tokens`
+  and published with its screen config ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) → "Template tokens").
+
 ### Changed
 
+- **Occasions: the six templates are the approved standalone designs.** Christmas (a photo of a lit tree with
+  flickering sparkles), New Year's (fireworks), Australia Day (the flag waving), Valentine's Day (rising hearts),
+  Easter (bouncing eggs) and Anzac Day (a dawn glow and a poppy, fades only), each filling the screen in both
+  orientations with no brand panel, logo, brand colours, icon tiles or Open today bar. The copy plays as beats on a
+  12 s loop (Christmas 2, the others 3); set the playback duration to 13 s. New default copy; the editor shows each
+  beat's lines (a main line, and a small label line where the design has one). Fonts and the Christmas photo are
+  self-hosted with the screen. Under reduced motion every decoration stands still (New Year's firework flashes and
+  Easter's egg shadows included) and the beats still change. Copy never edited takes the new defaults (the seed
+  upgrades the pharmacies it made); edited copy is kept.
 - **Admin editor: pharmacies are managed in Settings.** Adding a pharmacy, its details (name, store code) and
   its branding (colours, logo) moved from the promotions page into Settings, beside the Personalisation Hub API.
   The promotions page now has only a **Promo preview** drop-down to pick the pharmacy whose copy is edited and

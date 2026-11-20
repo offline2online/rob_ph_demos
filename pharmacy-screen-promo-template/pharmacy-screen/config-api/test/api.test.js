@@ -531,3 +531,26 @@ test("master template: a promotion's master is inherited section by section; det
   const pub = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
   assert.ok(!("detached" in pub) && !("master" in pub.promotions.morning));
 });
+
+test("tokens set by hand: saved on the pharmacy, published to its screens, blank values cleared, slots refused", async () => {
+  const { call } = setup();
+  const { ph } = await seedBasics(call);
+  const pub = async () => (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.ok(!("tokens" in (await pub())), "no tokens: the published config keeps its earlier shape");
+
+  const r = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens: { Suburb: "  Beaumaris ", Website: "mipharmacy.example", Phone: "" } } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.tokens, { Suburb: "Beaumaris", Website: "mipharmacy.example" }, "trimmed; blank values dropped");
+  assert.deepEqual((await pub()).tokens, { Suburb: "Beaumaris", Website: "mipharmacy.example" });
+  // Another field's save keeps them.
+  assert.deepEqual((await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { name: "Renamed" } })).body.tokens, { Suburb: "Beaumaris", Website: "mipharmacy.example" });
+
+  // Validation: template slots, bad names, non-text and over-long values are refused.
+  for (const tokens of [{ Headline: "x" }, { "my token": "x" }, { "1st": "x" }, { Suburb: 5 }, { Suburb: "x".repeat(201) }, ["Suburb"]]) {
+    assert.equal((await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens } })).status, 400, JSON.stringify(tokens).slice(0, 40));
+  }
+  // Clearing every value removes the field from the record and the published config.
+  const back = await call("PATCH", `/api/admin/pharmacies/${ph.id}`, { body: { tokens: {} } });
+  assert.equal(back.body.tokens, undefined);
+  assert.ok(!("tokens" in (await pub())));
+});

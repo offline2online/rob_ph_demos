@@ -116,10 +116,13 @@ The weekly hours, the public holiday line and the phone number come from Persona
 
 In place of Template, the Occasions promotion has an **Occasion** drop-down: Christmas, New Year's, Australia
 Day, Valentine's Day, Easter, Anzac Day. It applies to all pharmacies and plays until you change it; nothing
-switches by date. For each occasion each pharmacy has three scenes (Greeting, Message, Sign-off: headline,
-accent line, line 1, line 2, seconds on screen) and the Open today bar. Every occasion keeps its own copy, so
-switching back and forth loses nothing. Christmas and New Year's sign off with `${StoreName}`. Anzac Day is
-commemorative and plays without decoration.
+switches by date. Each occasion is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
+Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
+poppy), with no logo, brand colours or Open today bar. Its copy plays as beats on a 12-second loop (Christmas has
+two, the others three): for each beat each pharmacy edits the **Main line** and, where the design has one, the
+small label line. Set the campaign's playback duration to **13 seconds**. Every occasion keeps its own copy, so
+switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
+Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
 ## Templates
 
@@ -143,6 +146,13 @@ Deleting a custom template moves the promotions that used it back to the built-i
 
 - **Pharmacies**: the pharmacy picker, **Add pharmacy**, **Reset** and **Delete** ("Add a pharmacy" above).
 - **Pharmacy details**: name and store code.
+- **Tokens**: every `${…}` token this pharmacy's promotions and templates use, including the master template's
+  sections it inherits, with the promotions that use each. Leave a token blank to show the store's own data
+  (the placeholder says where it comes from: the suburb and phone number from Personalisation Hub, the pharmacy
+  name, today's opening or closing time). Type a value to show it on this pharmacy's screens instead, for
+  example when Personalisation Hub has the wrong suburb. A token only a custom template or your own copy uses
+  (e.g. `${Website}`) shows nothing until it has a value here. Changes save as you type and show in the
+  preview; clear the field to go back to the store's data. Available once the pharmacy is created.
 - **Branding**: colours and logo ("Branding and logo" above).
 - **Personalisation Hub API**: the **API base URL** and the **API token (x-api-key)**. The token is write-only;
   after saving you see only that it is set and its last 4 characters, with Replace and Remove. Usually set once

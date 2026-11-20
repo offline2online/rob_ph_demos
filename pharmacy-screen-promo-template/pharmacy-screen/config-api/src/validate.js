@@ -33,7 +33,15 @@ const LIMITS = {
   serviceText: 400,
   offeredBy: 500,
   depth: 12,
+  tokens: 50, // hand-set token values per pharmacy
+  tokenValue: 200,
 };
+
+// Token values a pharmacy sets by hand (Admin → Settings → Tokens): names as js/tokens.js isSettableToken() —
+// letters, digits and underscores, starting with a letter, never one of the template slots the render engine
+// fills with layout (js/tokens.js SLOT_TOKENS; test/tokens.test.mjs checks the two lists agree).
+const TOKEN_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+const SLOT_TOKENS = Object.freeze(["Logo", "Headline", "AccentLine", "Content", "Icon", "ServiceLabel", "Line1", "Line2", "Tiles", "Footer", "OpenToday", "Chevron", "ViewBox", "EdgePath", "HoursCard", "HolidayNote", "ContactLine", "Decor"]);
 
 function isPlainObject(v) {
   return v !== null && typeof v === "object" && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -152,6 +160,7 @@ function normalisePharmacy(input, stored = {}) {
   const cleanContent = {};
   for (const [promotionId, value] of Object.entries(content)) cleanContent[promotionId] = contentValue(value, `content.${promotionId}`);
   const detached = normaliseDetached(merged.detached);
+  const tokens = normaliseTokens(merged.tokens);
   return {
     storeCode: normaliseStoreCode(merged.storeCode),
     name: str(merged.name, "name"),
@@ -161,7 +170,27 @@ function normalisePharmacy(input, stored = {}) {
     // Only when the pharmacy manages a section itself, so a record that
     // inherits everything keeps its earlier shape.
     ...(Object.keys(detached).length ? { detached } : {}),
+    // Only when the pharmacy sets a token by hand.
+    ...(Object.keys(tokens).length ? { tokens } : {}),
   };
+}
+
+// {<token name>: text}: token values the pharmacy sets by hand. Blank values
+// are dropped (the token then shows the store's data again).
+function normaliseTokens(value) {
+  if (value === undefined || value === null) return {};
+  if (!isPlainObject(value)) throw bad("tokens must be an object keyed by token name");
+  const out = {};
+  for (const [name, text] of Object.entries(value)) {
+    if (!TOKEN_NAME_RE.test(name)) throw bad(`tokens has an invalid token name "${name}" (letters, digits and underscores, starting with a letter)`);
+    if (SLOT_TOKENS.includes(name)) throw bad(`tokens.${name} is a template slot and cannot be set by hand`);
+    if (typeof text !== "string") throw bad(`tokens.${name} must be text`);
+    const v = text.trim();
+    if (v.length > LIMITS.tokenValue) throw bad(`tokens.${name} is longer than ${LIMITS.tokenValue} characters`);
+    if (v) out[name] = v;
+  }
+  if (Object.keys(out).length > LIMITS.tokens) throw bad(`tokens holds more than ${LIMITS.tokens} values`);
+  return out;
 }
 
 // One promotion's content (a pharmacy's, or a promotion's master template).
@@ -248,6 +277,7 @@ module.exports = {
   ApiError,
   bad,
   LIMITS,
+  SLOT_TOKENS,
   TEMPLATE_KINDS,
   ORIENTATIONS,
   isPlainObject,

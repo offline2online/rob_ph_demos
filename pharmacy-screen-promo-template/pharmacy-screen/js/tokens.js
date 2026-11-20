@@ -3,9 +3,13 @@
 // Copy uses Personalisation Hub's token format, ${TokenName}:
 //   ${Suburb}    store_info.address_info.suburb. With no suburb it is blanked, together with its
 //                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
-//   ${StoreName} the pharmacy's name (Occasions copy: "Merry Christmas from the whole ${StoreName} team.").
+//   ${StoreName} the pharmacy's name (Occasions copy: "from the whole ${StoreName} team").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
+//
+// A pharmacy can set any token's value by hand (Admin → Settings → Tokens; pharmacy.tokens, a map of token name ->
+// text). A set value wins over the store's data: ${Suburb}, ${StoreName}, ${Phone}, ${CloseTime} and ${OpenTime}
+// (DATA_TOKENS), and any other token name used in copy or template HTML, which otherwise renders as nothing.
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -90,3 +94,32 @@ export const TEMPLATE_TOKENS = {
   hours: ['Logo', 'Headline', 'HoursCard', 'HolidayNote', 'ContactLine', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
   occasion: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'Line1', 'Line2', 'Tiles', 'Decor', 'Footer', 'OpenToday', 'HolidayNote', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
 };
+
+/** Tokens filled from the store's data (the Location API, the pharmacy's name, today's hours). */
+export const DATA_TOKENS = ['Suburb', 'StoreName', 'Phone', 'CloseTime', 'OpenTime'];
+
+/** Template slots the render engine fills with layout (headline, logo, tiles, ...): never set by hand. */
+export const SLOT_TOKENS = [...new Set(Object.values(TEMPLATE_TOKENS).flat())].filter((k) => !DATA_TOKENS.includes(k));
+
+/** A token name a pharmacy may set: letters, digits and underscores, starting with a letter, not a template slot. */
+export const TOKEN_NAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,39}$/;
+export const isSettableToken = (name) => TOKEN_NAME_RE.test(String(name)) && !SLOT_TOKENS.includes(String(name));
+
+/** The ${Token} names in a string, in order of first use. */
+export function tokensIn(text) {
+  const out = [];
+  for (const m of String(text ?? '').matchAll(/\$\{(\w+)\}/g)) if (!out.includes(m[1])) out.push(m[1]);
+  return out;
+}
+
+/** A pharmacy's hand-set token values: settable names with non-blank text only (trimmed). */
+export function cleanTokens(tokens) {
+  const out = {};
+  if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) return out;
+  for (const [k, v] of Object.entries(tokens)) if (isSettableToken(k) && typeof v === 'string' && v.trim()) out[k] = v.trim();
+  return out;
+}
+
+/** ${Token}s in already-safe HTML for every name in `values` (own properties only), escaped; others are left alone. */
+export const applyTokens = (html, values) =>
+  String(html).replace(/\$\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(values, k) ? esc(values[k]) : m));
