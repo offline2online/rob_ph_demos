@@ -75,16 +75,17 @@
 @keyframes riseIn{from{opacity:0;transform:translateY(70px) scale(.92)}to{opacity:1;transform:none}}
 .s-title,.s-sub{font-size:calc(var(--fs)*var(--kb,1))!important}
 .s-title{--fs:58px}.s-sub{--fs:38px}
-/* landscape 1920x1080: a narrow brand arrow on the left (js/fit-text.js geom(): 580px, tip at x=780), the headline
-   wrapping inside it, and the content (tiles, opening hours) filling the rest of the screen */
+/* landscape 1920x1080: a narrow brand arrow on the left (js/fit-text.js geom(): 580px, tip at x=780), the logo and
+   the headline centred in its straight-sided part (the headline on the arrow tip's line, wrapping inside the panel),
+   and the content (tiles, opening hours) filling the rest of the screen */
 .screen.land{width:1920px;height:1080px}
-.land .s-logo{left:80px;right:auto;top:48px;justify-items:start}
-.land .s-logo img{height:140px;max-width:440px;object-position:left center}
+.land .s-logo{left:24px;right:auto;width:532px;top:48px;justify-items:center}
+.land .s-logo img{height:140px;max-width:440px}
 .land .s-mark{width:420px;height:140px}
-.land .s-head{left:72px;right:auto;width:476px;top:220px;bottom:160px;align-content:center;justify-items:start;text-align:left}
-.land.closed .s-head{bottom:60px}
-.land .s-head h2{font-size:calc(84px*var(--k,1))}
-.land .s-head p{font-size:calc(36px*var(--k,1))}
+.land .s-head{left:24px;right:auto;width:532px;top:220px;bottom:340px;align-content:center;justify-items:center;text-align:center}
+.land.closed .s-head{bottom:220px}
+.land .s-head h2{font-size:calc(96px*var(--k,1))}
+.land .s-head p{font-size:calc(40px*var(--k,1))}
 .land .s-chev{left:auto;margin-left:0}
 .land .s-body{left:850px;right:70px;top:40px;bottom:150px;gap:34px}
 .land .s-tiles{gap:calc(48px*var(--tz))}

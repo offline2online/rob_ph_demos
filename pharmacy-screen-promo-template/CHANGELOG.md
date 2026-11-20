@@ -143,6 +143,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Fixed
 
+- **Landscape Morning, Afternoon and Closed: the brand panel's headline is centred and larger.** After the panel
+  was narrowed, its headline sat left-aligned, below the arrow's centre line, at 84px. The headline and its accent
+  line are now centred in the panel, across its width and on the arrow tip's line, and drawn at 96px and 40px (were
+  84px and 36px); a headline too wide for the panel still shrinks to fit inside it. The logo above is centred in
+  the panel too. Portrait and Seasonal are unchanged.
 - **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
   the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
   of the page jumping.

@@ -2,7 +2,7 @@
 //
 // Portrait (1080x1920): a brand triangle panel across the top, its tip at y=920 (830 on the hours template).
 // Landscape (1920x1080): a narrow brand arrow panel on the left (580px wide, its tip at x=780), so the content on the
-// right has most of the screen; the headline wraps inside the panel's straight-sided part.
+// right has most of the screen; the headline wraps inside the panel's straight-sided part, centred in it (css/screen.css).
 // fitText() shrinks the headline block (--k) until every line sits inside the panel with a 24px margin,
 // and the content block (--kb) until it fits its box. auditScene() re-checks the result with no margin.
 // Seasonal templates (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
