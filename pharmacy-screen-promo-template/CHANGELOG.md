@@ -122,6 +122,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   The promotions page now has only a **Promo preview** drop-down to pick the pharmacy whose copy is edited and
   previewed. Settings' button back reads **Back to promotions**.
 
+- **Landscape opening hours: a much larger card.** On a landscape screen the opening hours card (Closed, or any
+  promotion on the Opening hours template) now fills most of the screen right of the brand arrow: 1040px wide and
+  about 860px tall (was 950px by about 640px), with the day names and times at 58px (was 40px) in 100px rows, the
+  "Opening hours" title at 68px, a larger "CLOSED NOW" badge and a larger public holiday note and phone line under
+  it, so the hours read from across the store. A day with two sessions keeps both on one line, set smaller. Portrait
+  is unchanged.
+
 ### Removed
 
 - **Settings → Store record** (the device ID lookup of the Location API record). The preview always uses sample

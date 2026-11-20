@@ -410,7 +410,8 @@ export function renderScene(el, opts) {
   const T = {};
   if (hours) {
     hl = `<h2>${rich((d.headlines || [])[seq[scene].k], sub)}</h2>`;
-    const rows = weeklyRows(s.sessions).map((r) => `<div class="s-row"><span>${r.name}</span>${r.text ? `<span>${esc(r.text)}</span>` : '<span class="closed">Closed</span>'}</div>`).join('');
+    // .multi: a day with more than one session, whose longer line the landscape card sets smaller (css/screen.css)
+    const rows = weeklyRows(s.sessions).map((r) => `<div class="s-row${r.text && r.text.includes(', ') ? ' multi' : ''}"><span>${r.name}</span>${r.text ? `<span>${esc(r.text)}</span>` : '<span class="closed">Closed</span>'}</div>`).join('');
     T.HoursCard = `<div class="s-card"><div class="ch"><h3>Opening hours</h3><span class="s-badge">CLOSED NOW</span></div>${rows}</div>`;
     const bits = [s.phone ? `Phone ${esc(s.phone)}` : '', d.showAddress && s.address ? esc(s.address) : ''].filter(Boolean).join(' · ');
     T.HolidayNote = `<span class="n1">${HOLIDAY_NOTE}</span>`;

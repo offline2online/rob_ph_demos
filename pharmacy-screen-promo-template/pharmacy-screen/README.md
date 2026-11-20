@@ -237,6 +237,9 @@ run holds the train's deploy; see "CI" below.
   occasion line leaves the occasion's text box, and each failure names the device, store, promo, orientation,
   scene and bar state. Self-tests make one headline far too long and check that exactly that scene is named, and
   show that a long occasion line is shrunk to fit while far too much copy fails, naming the beat.
+- `test/ui/landscape-hours.test.mjs`: the landscape opening hours screen: the hours card fills most of the screen
+  right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
+  the holiday note sits under the card, and portrait is unchanged.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
   suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
