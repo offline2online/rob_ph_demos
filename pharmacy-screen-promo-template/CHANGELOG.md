@@ -26,6 +26,14 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Pharmacy view: no `${Suburb}` hint, remote config or Copy experience URL.** `admin/?store=<store code>` no
+  longer shows "Use ${Suburb} in any line to insert the suburb. In headlines, Enter adds a line break.", "Remote
+  config for this pharmacy", or Copy experience URL with the Playback duration and its info tooltip under the
+  preview. The full editor still shows all three ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Pharmacy view").
+- **Pharmacy view: no promotion name, promo ID and template section on Morning, Afternoon and Closed.** The grey
+  section (name, promo ID, template, Edit HTML, `promo=` line) is no longer shown on any non-occasion promotion in
+  `admin/?store=<store code>`; Occasions still shows only its Occasion drop-down. The admin view is unchanged
+  ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Pharmacy view").
 - **Pharmacy view shows only the promotions, titled "Display Promotions".** `admin/?store=<store code>` no longer
   shows Promo preview, the "Pharmacy view" label or Settings (the pharmacy's details, tokens and branding are set
   in the full editor). On Occasions it shows only the Occasion drop-down, which can be changed there, without the

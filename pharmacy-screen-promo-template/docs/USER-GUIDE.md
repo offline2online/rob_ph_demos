@@ -166,13 +166,14 @@ In the pharmacy view:
 - **Occasions shows only the Occasion drop-down.** Pick the occasion the screens play there; there is no
   promotion name, promo ID or `promo=` line. The occasion is the Occasions promotion's, so the change reaches
   every pharmacy's screens, as it does in the full editor.
-- **Shared by every pharmacy, so read-only**: the promotion name, promo ID and template of the other promotions,
-  and the templates
-  themselves (**Edit HTML** opens read-only, without Clone: "Shared by every pharmacy. Only an administrator can
-  change it.").
-- **Not shown**: scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
-  the Personalisation Hub API settings), the master template, New promotion and Delete promotion. An
-  administrator sets the pharmacy's details, tokens and branding in the full editor.
+- **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
+  template, **Edit HTML** and the `promo=` line is not shown on any promotion but Occasions: they are shared by
+  every pharmacy and only an administrator changes them, in the full editor.
+- **Not shown**: the promotion name, promo ID and template section (except the Occasion drop-down), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+  the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
+  "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
+  URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the
+  pharmacy's details, tokens and branding, and sets up the campaign, in the full editor.
 
 Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
 
