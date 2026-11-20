@@ -77,6 +77,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | F1 | Play every promo ID (`morning`, `afternoon`, `closed`, `occasions` and any you added) in `orientation=portrait` | Each plays its scenes in order and loops | ☐ | ☐ |
 | F2 | The same in `orientation=landscape` | Each plays, with the brand arrow instead of the triangle | ☐ | ☐ |
 | F3 | Occasions: in the editor switch the Occasion through all six, with the campaign's playback duration at 13 s | The screen plays each occasion's own full-screen animation, its copy as beats on a 12 s loop (Christmas: the tree photo with sparkles, 2 beats); no logo, brand panel or Open today bar; Anzac Day fades only | ☐ | ☐ |
+| F3a | Timings: in the editor change the seconds of a Closed headline and of an occasion beat, then set the campaign's playback duration to the one the editor shows | The timeline, Loop and Playback duration follow; on the screen that headline and that beat stay up for the new time, the last scene finishes, and the occasion's fades still play | ☐ | ☐ |
 | F4 | Watch every scene of every promotion in both orientations | No headline, accent line or line leaves the brand panel or the screen (A2 checks the seeded copy automatically) | ☐ | ☐ |
 | F5 | In the editor, make a headline very long | The preview shrinks it to stay inside the panel | ☐ | ☐ |
 | F6 | `promo=nope` | "Promotion not found" | ☐ | ☐ |
@@ -103,6 +104,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | H5 | Promo preview → Master template; change the Morning greeting's Line 2 | Every pharmacy whose greeting says "Inherited from master" shows it on screen within 60 s; its logo and colours stay its own | ☐ | ☐ |
 | H6 | On a pharmacy, Morning → greeting → Edit for this pharmacy; change Line 2; then change the master again | A message says the greeting is now managed separately; the screen keeps the pharmacy's copy; Revert to master brings the master's back | ☐ | ☐ |
 | H7 | Open the editor in Personalisation Hub on a tablet (or a window about 1024–1180px wide); expand, then collapse, PH's left menu, in Portrait and Landscape | The preview stays on the right of the editor and in view in every state; it narrows with the menu expanded and never drops below the editor | ☐ | ☐ |
+| H8 | Open `<site>/admin/?store=VIC-MP-002` and sign in; on Morning, Edit for this pharmacy on the greeting, change Line 1; Add promotion → Blank promotion; open Edit HTML and Settings; reload; then open `<site>/admin/?store=NOPE-1` | "Pharmacy view · VIC-MP-002" beside Promo preview, which lists only that pharmacy; edits save and the screen shows them within 60 s; promotion name, promo ID, template and Edit HTML are read-only (no Clone, no New or Delete promotion); Settings has details (store code read-only), Tokens and Branding only; the reload keeps the lock; NOPE-1 shows "Pharmacy not found" | ☐ | ☐ |
 
 ## I. On the PH player (Android 12)
 

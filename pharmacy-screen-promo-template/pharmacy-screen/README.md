@@ -78,12 +78,15 @@ orientations (1080×1920 and 1920×1080); the layout switches by a container que
 | Easter | A pastel meadow with bouncing painted eggs | "Happy Easter, ${Suburb}" · "Wishing you a restful long weekend" · "Take time to recharge" |
 | Anzac Day | Solemn: a dawn glow, a single poppy, fades only | "25 April / Anzac Day" · "Lest we forget" · "Remembering together, ${Suburb}" |
 
-The copy plays as **beats on a 12 s loop** (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by the designs'
-CSS: the player draws the occasion once and sets no timers. The playback duration to set in PH is **13 s**.
+The copy plays as **beats on a 12 s loop** by default (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by
+the designs' CSS: the player draws the occasion once and sets no timers. The playback duration to set in PH is
+**13 s** at the defaults. Each beat's seconds on screen can be changed in the editor (`beats[i].dur`, 1–60 s); the
+loop is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
+fades as the designs), and the editor's Playback duration follows. At the defaults the designs' own CSS plays.
 `scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
 decorations stand still and the beats still change.
 
-Copy is per pharmacy and per occasion (`content.occasions.<occasion>.beats[]`: `{label?, text}`, a label only on
+Copy is per pharmacy and per occasion (`content.occasions.<occasion>.beats[]`: `{label?, text, dur?}`, a label only on
 the beats whose design has one), with defaults in `js/render.js` → `OCCASIONS`. The main line is rich text (line
 breaks, bold, italic), the label plain. `${Suburb}` works in all six (with no suburb, `, ${Suburb}` is dropped,
 comma included) and `${StoreName}` in Christmas and New Year's. A line too long for the design's text box is shrunk

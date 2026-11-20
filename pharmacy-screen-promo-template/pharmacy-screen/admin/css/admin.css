@@ -41,6 +41,10 @@ h1{font-size:20px;font-weight:700;margin:0}
 .toolbar.inSettings>:not(#setBtn){display:none!important}
 .toolbar.inSettings #setBtn{order:-1}
 .toolbar.phbar{margin-bottom:0}
+/* Pharmacy view (admin/?store=<code>): the lock beside Promo preview; it shrinks with an ellipsis, never wraps. */
+.toolbar .lockpill{flex:0 0 auto;min-width:0;max-width:60%;height:32px;box-sizing:border-box;color:var(--primary);background:var(--primary-tint);border-color:transparent;white-space:nowrap}
+.lockpill .ms{font-size:16px;flex:none}
+.lockpill-tx{overflow:hidden;text-overflow:ellipsis;min-width:0}
 #setBtn[aria-pressed=true]{background:var(--primary-tint);border-color:var(--primary);color:var(--primary)}
 .card{border:1px solid var(--border);border-radius:8px;background:var(--bg);padding:16px;display:grid;gap:12px;min-width:0}
 .card+.card{margin-top:16px}

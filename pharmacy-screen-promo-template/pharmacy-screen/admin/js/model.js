@@ -9,7 +9,7 @@
 // and maps them to the shape the shared render engine (../js/render.js) takes, so the live preview draws
 // exactly what a screen draws.
 
-import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, OCCASION_LOOP, DEFAULT_HTML, footerConfig } from '../../js/render.js';
+import { defaultContent, occasionCopy, OCCASIONS, OCCASION_IDS, DEFAULT_OCCASION, DEFAULT_HTML, footerConfig, beatSeconds, defaultHeadlineSeconds, sceneSeconds } from '../../js/render.js';
 import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/tokens.js';
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
@@ -103,7 +103,7 @@ export const MASTER_SECTIONS = {
   greeting: ['greeting', 'introTitle', 'introSub', 'introDur'],
   slots: ['slots'],
   close: ['close'],
-  headlines: ['headlines'],
+  headlines: ['headlines', 'headlineDurs'],
   address: ['showAddress'],
   occasions: ['occasions'],
   footer: ['footer'],
@@ -232,6 +232,13 @@ export function promoIdError(id, promotions, selfId) {
 
 export const normStoreCode = (v) => String(v || '').toUpperCase().replace(/\s+/g, '');
 
+/** The store code an `admin/?store=<code>` (or `?storeCode=<code>`) link opens the editor locked to (the pharmacy
+ *  view), normalised like a typed store code; `store` wins if both are set. Null when the link has neither. */
+export function storeFromQuery(search) {
+  const q = new URLSearchParams(search || '');
+  return normStoreCode(q.get('store') || q.get('storeCode')) || null;
+}
+
 /** '' or why this store code can't be used. */
 export function storeCodeError(code, pharmacies, selfId) {
   if (!code) return 'Add a store code. The Location API returns it for this pharmacy’s screens.';
@@ -254,16 +261,25 @@ export function filterServices(services, { q = '', storeCode = '', mine = true }
 /** The campaign URL Personalisation Hub plays. The player swaps ${UniqueDeviceID} for each screen's ID. */
 export const templateUrl = (screenPage, promoId, orientation) => `${screenPage}?device=\${UniqueDeviceID}&promo=${promoId}&orientation=${orientation === 'landscape' ? 'landscape' : 'portrait'}`;
 
-/** Total loop length (seconds) of a scenes promotion's content, or of one occasion's copy ({beats}: its fixed loop). */
-export const loopSeconds = (d) => (Array.isArray(d.beats) ? OCCASION_LOOP
+/** Seconds each opening-hours headline shows: its own (headlineDurs[i]) or the default (2.7, 2.7, 2.6 for three). */
+export const headlineSeconds = (d) => { const n = (d.headlines || []).length || 1, durs = Array.isArray(d.headlineDurs) ? d.headlineDurs : []; return defaultHeadlineSeconds(n).map((t, i) => sceneSeconds(durs[i], t)); };
+
+const sum = (a) => Math.round(a.reduce((x, y) => x + y, 0) * 1000) / 1000;
+/**
+ * Total loop length (seconds) of a promotion's content: one occasion's copy ({beats}: each beat's seconds, 12 s at
+ * the defaults), an opening-hours promotion's headlines (base 'hours'), or a scenes promotion's greeting, slots and
+ * close.
+ */
+export const loopSeconds = (d, base) => (Array.isArray(d.beats) ? sum(d.beats.map((b) => beatSeconds(b, d.beats.length)))
+  : base === 'hours' ? sum(headlineSeconds(d))
   : (+d.introDur || 3) + (d.slots || []).reduce((a, x) => a + (+x.dur || 2), 0) + (+(d.close && d.close.dur) || 2));
 
-/** Scene durations are 1-60 seconds; anything else falls back to the default. */
 /** Seconds to enter as the campaign's playback duration: the promotion's length plus one second, rounded up, so
  *  the last scene finishes before the player moves on. */
 export const playbackSeconds = (total) => Math.ceil(Math.round(((+total || 0) + 1) * 1000) / 1000);
 /** The setup tooltip beside "Playback duration". */
 export const playbackHelp = (n) => `To run this promotion, open the campaign's Creative tab, turn on Experience URL and paste this URL in. Set the playback duration to ${n} seconds, which is one second longer than the promotion so the last scene finishes. Then save and activate the campaign to put it live.`;
+/** Scene durations are 1-60 seconds; anything else falls back to the default. */
 export const clampDur = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 0 ? Math.max(1, Math.min(60, n)) : undefined; };
 
 /**

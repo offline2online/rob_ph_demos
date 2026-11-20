@@ -178,6 +178,14 @@ A flag is on when present with any value except `0`, `false`, `no` or `off`.
 
 ### Admin page (`admin/`)
 
+Typed into the editor's link to open the **pharmacy view**: the editor locked to one pharmacy
+([USER-GUIDE.md](USER-GUIDE.md) → "Pharmacy view"). Example: `https://<site>/admin/?store=VIC-MP-002`.
+
+| Parameter | Meaning |
+|---|---|
+| `store` | A pharmacy's store code (case and spaces ignored, like a typed store code). The editor opens locked to that pharmacy; an unknown code shows "Pharmacy not found". Without it, the full admin view |
+| `storeCode` | Same as `store`; `store` wins if both are set |
+
 Set by the identity provider when it sends a signer-in back to the editor (AWS, OIDC authorization code + PKCE);
 never typed by a person.
 

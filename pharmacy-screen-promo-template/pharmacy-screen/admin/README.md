@@ -17,13 +17,22 @@ Spec: the project's requirements 7 and 9-19.
 | Promotions (shared by all pharmacies) | Tabs, New promotion (name, promo ID, template, including an occasion), rename, change promo ID (unique), delete (click twice) | `/api/admin/promotions` |
 | Template | Drop-down and the Edit HTML modal: built-ins read-only, Clone template, rename, delete (its promotions fall back to the built-in), portrait/landscape backgrounds, HTML with `${…}` token chips, scoped CSS, Reset to default | `/api/admin/templates` |
 | Scenes (scenes templates) | Top: Greeting, one scene per service (rich-text headline, accent line, chip label, searchable Material Symbols icon, line 1, line 2), per-scene duration, drag-and-drop and up/down reorder, delete, Add promotion from the whole service library (searchable, grouped; Close adds nothing) or blank, a just-added promotion deleted with one click, Tail: Walk-in close, Footer: Open today bar (show toggle and four messages with `${CloseTime}` / `${OpenTime}`) | `PUT /api/admin/pharmacies/{id}/content/{promotionId}` |
-| Opening hours (hours templates) | Three rich-text headlines, show address toggle | the same |
-| Occasions (occasion templates) | **Occasion** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template), then that occasion's beats (Christmas 2, the others 3, sharing the fixed 12 s loop): each a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
+| Opening hours (hours templates) | Three rich-text headlines, each with its seconds on screen (1–60; default 2.7, 2.7, 2.6), show address toggle | the same |
+| Occasions (occasion templates) | **Occasion** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template), then that occasion's beats (Christmas 2, the others 3; by default sharing a 12 s loop): each with its seconds on screen (1–60), a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
 | Settings → Tokens | Every `${…}` token the pharmacy's promotions use (its own copy, the master template's sections it inherits, the Open today bar, template HTML; layout slots excluded), with the promotions using each and an input to set its value by hand (blank = the store's data, shown as the placeholder). Data tokens first, then the others by name; a value no promotion uses any more is still listed so it can be cleared (`model.js` `usedTokens`) | `PATCH /api/admin/pharmacies/{id}` (`tokens`) |
 | Settings → Pharmacies | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
 | Settings → Pharmacy details | Name, store code (unique, checked as you type and again by the API) | `PATCH /api/admin/pharmacies/{id}` |
 | Settings → Branding | Primary and accent colours; logo (transparent PNG) upload, replace, remove | `PATCH …/{id}`, `PUT/DELETE …/{id}/logo` |
 | Settings → Personalisation Hub API | API base URL and write-only token (Save / Replace / Remove; only its last 4 characters are ever shown) | `/api/settings/ph-api` |
+
+**Pharmacy view** (`admin/?store=<store code>` or `?storeCode=`, read by `model.js` `storeFromQuery`): after
+sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`). Promo preview lists only it (disabled)
+with a "Pharmacy view · <code>" pill; its content, details (store code read-only), tokens and branding are edited
+as in the admin view. Promotion name, promo ID and template, and templates (Edit HTML, no Clone) are read-only;
+New / Delete promotion, the master template, Settings → Pharmacies and Personalisation Hub API are hidden, and
+every write handler for them returns early. An unknown store code shows "Pharmacy not found". It never writes the
+remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).
+The API is unchanged: it still requires the admin role for every call.
 
 Edits save as you type (debounced, about half a second), with "Saving… / All changes saved" beside the title.
 Every write carries the record's version (`If-Match`), so an edit made on top of another admin's newer save

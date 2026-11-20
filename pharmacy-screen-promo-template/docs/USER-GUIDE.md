@@ -97,7 +97,7 @@ Service copy needs TGA advertising review before go-live.
 - **Reorder** scenes by dragging, or with the up/down buttons.
 - **Delete** a scene (click again to confirm; one you have just added deletes with one click).
 - **Timings**: each scene has its own seconds on screen (1–60). The timeline and Playback duration update as
-  you change them.
+  you change them. The Closed headlines and every occasion beat have the same control.
 
 **Copy tips**
 
@@ -111,7 +111,8 @@ Service copy needs TGA advertising review before go-live.
 
 ## Opening hours (Closed)
 
-Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}") and **Show address under phone**.
+Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}"), each with its own seconds on screen
+(1–60; by default 2.7, 2.7 and 2.6, an 8-second loop), and **Show address under phone**.
 The weekly hours, the public holiday line and the phone number come from Personalisation Hub.
 
 ## Occasions
@@ -120,9 +121,10 @@ In place of Template, the Occasions promotion has an **Occasion** drop-down: Chr
 Day, Valentine's Day, Easter, Anzac Day. It applies to all pharmacies and plays until you change it; nothing
 switches by date. Each occasion is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
-poppy), with no logo, brand colours or Open today bar. Its copy plays as beats on a 12-second loop (Christmas has
-two, the others three): for each beat each pharmacy edits the **Main line** and, where the design has one, the
-small label line. Set the campaign's playback duration to **13 seconds**. Every occasion keeps its own copy, so
+poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
+three), by default on a 12-second loop: for each beat each pharmacy edits its seconds on screen (1–60), the **Main
+line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
+editor shows beside Copy experience URL (**13 seconds** at the default timings). Every occasion keeps its own copy, so
 switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
 Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
@@ -141,6 +143,28 @@ occasion templates. Built-ins are read-only; occasion templates can't be cloned.
 6. Pick the template for any promotion in the Template drop-down: templates are reusable across promotions.
 
 Deleting a custom template moves the promotions that used it back to the built-in of the same kind.
+
+## Pharmacy view
+
+Add a store code to the editor's link to open it for **one pharmacy only**:
+`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in you see the same editor and
+live preview, with **Pharmacy view · VIC-MP-002** beside Promo preview, which lists only that pharmacy and cannot
+be changed. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
+"Pharmacy not found"; the link without a store code opens the full editor as before.
+
+In the pharmacy view:
+
+- **Its own content is fully editable.** **Edit for this pharmacy** makes any inherited section its own; edit
+  every line, add promotions from the service library or blank, reorder, retime and delete them, and
+  **Revert to master** to inherit again. Edits save as you type and reach that pharmacy's screens as usual.
+- **Settings** shows its **Pharmacy details** (the store code is read-only), **Tokens** and **Branding**.
+- **Shared by every pharmacy, so read-only**: the promotion name, promo ID and template, and the templates
+  themselves (**Edit HTML** opens read-only, without Clone: "Shared by every pharmacy. Only an administrator can
+  change it.").
+- **Not shown**: the master template, the other pharmacies (adding, resetting or deleting one), New promotion,
+  Delete promotion and the Personalisation Hub API settings.
+
+Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
 
 ## Settings
 
