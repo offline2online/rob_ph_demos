@@ -118,7 +118,9 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
-Core, not here.
+Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
+and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
+in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
 
 ## 3. Template tokens
 
@@ -239,7 +241,8 @@ Tokens set by hand: a pharmacy's optional `"tokens": { "<token name>": "<text>" 
 blank values are dropped and the field is left out when none are set. The published screen config carries it
 as it is.
 
-Promotion: `{ "name", "promoId", "templateId", "master"? }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
+Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where `schedule` is `{ "type": "none" }`
+(the default; nothing is stored) or `{ "type": "annual", "from": "MM-DD", "to": "MM-DD" }`. Custom template: `{ "name", "kind", "basedOn", "html", "css",
 "backgrounds": { "portrait", "landscape" } }`. Service (library slot): `{ "label", "icon", "category",
 "headline", "accent", "line1", "line2", "offeredBy": [store codes] }`.
 
@@ -269,7 +272,8 @@ as every write that affects it, copied field by field (`config-api/src/publish.j
 }
 ```
 
-`tokens` is present only when the pharmacy has set a token by hand.
+`tokens` is present only when the pharmacy has set a token by hand. A promotion's `schedule`
+(`{ "type": "annual", "from": "MM-DD", "to": "MM-DD" }`) is present only when it has an annual schedule.
 
 ## 5. PH API token
 

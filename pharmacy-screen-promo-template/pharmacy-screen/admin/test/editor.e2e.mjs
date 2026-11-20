@@ -235,6 +235,13 @@ test('promotions: create, unique promo ID, rename, delete with confirm', async (
   await page.click('#newPromoBtn');
   await page.fill('#npName', 'Weekend');
   assert.equal(await page.inputValue('#npToken'), 'weekend');
+  // Schedule: No schedule by default, no dates; Annual shows a start and an end date.
+  assert.equal(await page.inputValue('#npSch'), 'none');
+  assert.equal(await page.$('#npFromd'), null);
+  await page.selectOption('#npSch', 'annual');
+  await page.waitForSelector('#npFromd');
+  await page.selectOption('#npFromd', '1'); await page.selectOption('#npFromm', '11');
+  await page.selectOption('#npTod', '15'); await page.selectOption('#npTom', '1');
   await page.fill('#npToken', 'morning');
   await page.click('#npCreate');
   assert.match(await page.textContent('#npErr'), /already used/);
@@ -242,6 +249,19 @@ test('promotions: create, unique promo ID, rename, delete with confirm', async (
   await page.click('#npCreate');
   await page.waitForSelector('#dpTabs button:has-text("Weekend")[aria-selected=true]');
   assert.match(await page.textContent('#pmUrl'), /promo=weekend/);
+  assert.deepEqual((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule, { type: 'annual', from: '11-01', to: '01-15' });
+  assert.equal(await page.inputValue('#pmSch'), 'annual');
+  assert.equal(await page.inputValue('#pmFromm'), '11');
+  // Back to No schedule: the dates go, on the page and on the server.
+  await page.selectOption('#pmSch', 'none');
+  assert.equal(await page.$('#pmFromd'), null);
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule, undefined);
+  // An existing promotion can be given one too.
+  await page.selectOption('#pmSch', 'annual');
+  await page.selectOption('#pmTod', '30'); await page.selectOption('#pmTom', '12');
+  await settle(page);
+  assert.equal((await api('GET', '/api/admin/promotions')).body.find((x) => x.promoId === 'weekend').schedule.to, '12-30');
   await page.fill('#pmToken', 'closed');
   assert.match(await page.textContent('#pmErr'), /already used/);
   await page.fill('#pmToken', 'sat-sun');

@@ -70,8 +70,13 @@ Promotions are **shared by all pharmacies**: the tabs across the top. Each has a
 campaign URL's `promo=` names) and a template. The defaults are Morning (`morning`), Afternoon (`afternoon`),
 Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own copy for each one.
 
-- **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template → **Create
-  promotion**. It appears for every pharmacy.
+- **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template, **Schedule** →
+  **Create promotion**. It appears for every pharmacy. Schedule is **No schedule** by default; choose **Annual**
+  to give it a start and an end date (day and month, inclusive) that repeat every year. A Seasonal template has no
+  Schedule here: its seasons have their own dates (Dates card).
+- Change an existing promotion's **Schedule** under its promo ID and template (No schedule, or Annual with
+  Starts / Ends). Personalisation Hub Core still decides when a campaign plays; the dates go out with the
+  promotion's screen config.
 - Rename it or change its promo ID in **Promotion name** / **Promo ID**. Changing a promo ID means changing
   the campaign URL in PH too.
 - **Delete promotion** (click again to delete for all pharmacies).

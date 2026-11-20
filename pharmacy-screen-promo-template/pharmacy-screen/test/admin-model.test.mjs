@@ -297,3 +297,13 @@ test('seasonal: dates saved on a season survive ensureContent; bad dates are dro
   assert.ok(!('from' in c.occasions.easter), 'an invalid month is not kept');
   assert.equal(c.occasions['new-year'].beats.length, 3);
 });
+
+test('schedule: No schedule by default; Annual keeps a start and an end date', () => {
+  assert.deepEqual(M.SCHEDULE_TYPES.map((t) => t.name), ['No schedule', 'Annual']);
+  assert.deepEqual(M.scheduleOf({}), { type: 'none' });
+  assert.deepEqual(M.scheduleOf({ schedule: { type: 'annual', from: '11-01', to: '01-15' } }), { type: 'annual', from: '11-01', to: '01-15' });
+  assert.deepEqual(M.scheduleOf({ schedule: { type: 'annual', from: '13-01', to: '01-15' } }), { type: 'none' }, 'a bad date is no schedule');
+  assert.deepEqual(M.defaultAnnual(new Date(2026, 2, 5)), { type: 'annual', from: '03-05', to: '12-31' });
+  assert.equal(M.scheduleText({ type: 'none' }), 'No schedule');
+  assert.equal(M.scheduleText({ type: 'annual', from: '11-01', to: '01-15' }), 'Every year, 1 Nov to 15 Jan');
+});

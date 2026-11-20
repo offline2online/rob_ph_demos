@@ -221,14 +221,36 @@ function normaliseDetached(value) {
   return out;
 }
 
+// A promotion's schedule: { type: "none" } (the default, also what a missing
+// or null schedule means) or { type: "annual", from: "MM-DD", to: "MM-DD" },
+// inclusive dates that repeat every year. Returns null for "none", so a
+// promotion with no schedule stores none.
+const MONTH_DAY = /^(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+const DAYS_IN_MONTH = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+function scheduleValue(value) {
+  if (value === undefined || value === null) return null;
+  if (!isPlainObject(value)) throw bad('schedule must be an object: { "type": "none" } or { "type": "annual", "from": "MM-DD", "to": "MM-DD" }');
+  if (value.type === "none") return null;
+  if (value.type !== "annual") throw bad('schedule.type must be "none" or "annual"');
+  const day = (v, field) => {
+    const m = MONTH_DAY.exec(typeof v === "string" ? v : "");
+    if (!m || +m[2] > DAYS_IN_MONTH[+m[1] - 1]) throw bad(`schedule.${field} must be a month and day, "MM-DD"`);
+    return v;
+  };
+  return { type: "annual", from: day(value.from, "from"), to: day(value.to, "to") };
+}
+
 function normalisePromotion(input, stored = {}) {
   if (!isPlainObject(input)) throw bad("Request body must be a JSON object");
   const merged = { ...stored, ...input };
   const master = merged.master === undefined || merged.master === null ? null : contentValue(merged.master, "master");
+  const schedule = scheduleValue(merged.schedule);
   return {
     name: str(merged.name, "name"),
     promoId: normalisePromoId(merged.promoId),
     templateId: str(merged.templateId, "templateId", { max: 80 }),
+    // Annual schedule only; no schedule (the default) is left out.
+    ...(schedule ? { schedule } : {}),
     // The master template's content for this promotion (src/inherit.js);
     // left out until one is saved.
     ...(master ? { master } : {}),

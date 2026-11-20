@@ -567,6 +567,28 @@ function monthDayPick(id, label, md) {
 }
 const readMonthDay = (id) => { const m = +$(id + 'm').value, d = Math.min(+$(id + 'd').value, DAYS_IN[m - 1]); return String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
 
+// A promotion's Schedule: No schedule (the default) or Annual, which shows a start and an end date that repeat every
+// year. Drawn into #npSched (New promotion) and #pmSched (the selected promotion), with ids prefixed np / pm.
+const SCHEDULE_HELP = 'When this promotion runs. No schedule (the default): it plays whenever Personalisation Hub Core plays its promo ID. Annual: from the start date to the end date every year, inclusive; the dates are saved with the promotion and go out in its screen config.';
+function scheduleFields(prefix, s) {
+  const x = M.scheduleOf({ schedule: s }), annual = x.type === 'annual';
+  return `<label class="f"><span>Schedule <span class="ms help" title="${esc(SCHEDULE_HELP)}">info</span></span><select id="${prefix}Sch" aria-label="Schedule">${M.SCHEDULE_TYPES.map((t) => `<option value="${t.id}" ${t.id === x.type ? 'selected' : ''}>${t.name}</option>`).join('')}</select></label>`
+    + (annual ? monthDayPick(prefix + 'From', 'Starts', x.from) + monthDayPick(prefix + 'To', 'Ends', x.to) : '');
+}
+const readSchedule = (prefix) => ($(prefix + 'Sch').value === 'annual' ? { type: 'annual', from: readMonthDay(prefix + 'From'), to: readMonthDay(prefix + 'To') } : { type: 'none' });
+function drawSchedule(prefix, s, onChange) {
+  const el = $(prefix + 'Sched');
+  el.innerHTML = scheduleFields(prefix, s);
+  el.onchange = (e) => {
+    if (e.target.id === prefix + 'Sch') {
+      // Switching to Annual shows its dates (today to 31 Dec until changed); back to No schedule hides them.
+      el.innerHTML = scheduleFields(prefix, e.target.value === 'annual' ? M.defaultAnnual() : null);
+      $(prefix + 'Sch').focus();
+    }
+    if (onChange) onChange(readSchedule(prefix));
+  };
+}
+
 /**
  * A seasonal promotion: this pharmacy's dates and copy for the season the promotion is set to. The dates card says
  * (in both views, as "Every year: <start> to <end>"; read-only in the pharmacy view) when the screen plays this season
@@ -683,6 +705,9 @@ function renderPromoMeta() {
   $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Season' : 'Template';
   $('pmTpl').setAttribute('aria-label', occ ? 'Season' : 'Template');
   $('pmHtml').hidden = occ;
+  // Schedule: not on Seasonal (its seasons have their own dates, in the Dates card).
+  $('pmSched').hidden = occ;
+  if (!occ) drawSchedule('pm', x.schedule, (sch) => { if (S.lock) return; const p = promo(); p.schedule = sch; savePromotion(p); });
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = !!S.lock || S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
 }
@@ -697,7 +722,7 @@ async function reloadPromotions() {
 function savePromotion(p) {
   Save.later(`promo:${p.id}`, `promo:${p.id}`, async () => {
     try {
-      const res = await api.updatePromotion(p.id, { name: p.name, promoId: p.promoId, templateId: p.templateId }, p.version);
+      const res = await api.updatePromotion(p.id, { name: p.name, promoId: p.promoId, templateId: p.templateId, schedule: M.scheduleOf(p) }, p.version);
       p.version = res.version;
       showPmErr('');
     } catch (e) {
@@ -737,8 +762,10 @@ $('pmDel').onclick = async () => {
   } catch (e) { showPmErr(e.message); }
 };
 let npTouched = false;
-$('newPromoBtn').onclick = () => { if (S.lock) return; $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; npTouched = false; $('npName').focus(); };
+$('newPromoBtn').onclick = () => { if (S.lock) return; $('npType').innerHTML = tplOptions(M.BUILTIN_SCENES, true); $('newPromo').hidden = false; $('npName').value = ''; $('npToken').value = ''; $('npErr').hidden = true; drawSchedule('np', null); $('npSched').hidden = false; npTouched = false; $('npName').focus(); };
 $('npCancel').onclick = () => { $('newPromo').hidden = true; };
+// A seasonal template's dates are its seasons' own (the Dates card), so a new seasonal promotion has no Schedule.
+$('npType').onchange = (e) => { $('npSched').hidden = !!M.occasionOfTemplate(e.target.value); };
 $('npName').oninput = (e) => { if (!npTouched) $('npToken').value = M.slug(e.target.value); };
 $('npToken').oninput = () => { npTouched = true; };
 $('npCreate').onclick = async () => {
@@ -749,7 +776,8 @@ $('npCreate').onclick = async () => {
   show(er); if (er) return;
   $('npCreate').disabled = true;
   try {
-    const rec = await Save.queue('promo:new', () => api.createPromotion({ name, promoId: t, templateId: $('npType').value }));
+    const schedule = $('npSched').hidden ? { type: 'none' } : readSchedule('np');
+    const rec = await Save.queue('promo:new', () => api.createPromotion({ name, promoId: t, templateId: $('npType').value, ...(schedule.type === 'annual' ? { schedule } : {}) }));
     S.promotions.push(rec);
     $('newPromo').hidden = true;
     selectPromo(rec.id);

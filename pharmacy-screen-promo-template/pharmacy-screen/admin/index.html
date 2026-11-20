@@ -101,6 +101,7 @@
           <label class="f"><span>Promo ID</span><input id="npToken" placeholder="e.g. weekend"></label>
           <label class="f"><span>Template</span><select id="npType"></select></label>
         </div>
+        <div class="grid3" id="npSched"></div>
         <span class="hint" id="npErr" style="color:var(--err)" hidden></span>
         <div style="display:flex;gap:8px"><button type="button" class="primary" id="npCreate">Create promotion</button><button type="button" class="text" id="npCancel">Cancel</button></div>
       </div>
@@ -110,6 +111,7 @@
           <label class="f"><span>Promo ID <span class="ms" style="font-size:14px;cursor:help" title="Personalisation Hub Core plays this promotion with promo=&lt;ID&gt; in the campaign URL.">info</span></span><input id="pmToken"></label>
           <label class="f"><span>Template</span><span class="tplpick"><select id="pmTpl" autocomplete="off"></select><button type="button" id="pmHtml" title="Edit or clone this template"><span class="ms">code</span><span class="tlb">Edit HTML</span></button></span></label>
         </div>
+        <div class="grid3" id="pmSched"></div>
         <div class="pm-row"><code class="pill" id="pmUrl" style="font:12px ui-monospace,Menlo,Consolas,monospace"></code><span class="hint" id="pmErr" style="color:var(--err)" hidden></span>
           <button type="button" class="text" id="pmDel" style="color:var(--err);margin-left:auto"><span class="ms">delete</span><span id="pmDelTx">Delete promotion</span></button></div>
       </div>

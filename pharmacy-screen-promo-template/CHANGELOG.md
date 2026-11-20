@@ -15,6 +15,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   view (`admin/?store=<code>`). The pharmacy view now shows the Dates card, read-only: Starts and Ends as plain
   read-only fields, no pickers (an administrator still sets the dates in the full editor). Easter shows this
   year's Good Friday to Easter Monday.
+- **Editor: Schedule on new and existing promotions.** New promotion has a **Schedule** drop-down, **No schedule**
+  by default; **Annual** shows a start and an end date (day and month, inclusive) that repeat every year. The same
+  Schedule shows under an existing promotion's promo ID and template (not on Seasonal, whose seasons keep their
+  Dates card). The config API stores and validates it (`schedule`, `"MM-DD"`) and publishes it in the screen
+  config; Personalisation Hub Core still decides when a campaign plays ([docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md)).
 - **Editor: see each "Open today" bar message in the preview.** Under Footer: Open today bar, "Open today bar in
   the preview" has tabs for Store's time, While open, Last 30 minutes, Before opening and After closing; the
   preview's bar shows the chosen message and that message is marked "In preview". It works while the bar is
