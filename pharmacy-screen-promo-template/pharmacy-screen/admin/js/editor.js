@@ -87,10 +87,11 @@ function content(id = S.dpTab) {
 const previewCode = () => S.cur.storeCode || 'NEW';
 
 function previewModel() {
-  const ph = { ...S.cur, storeCode: previewCode() };
+  // The master template previews its ${Suburb} / ${StoreName} / ${Phone} tokens as written (M.previewPharmacy).
+  const ph = { ...M.previewPharmacy(S.cur), storeCode: previewCode() };
   const cfg = M.renderConfig({ pharmacies: [ph], promotions: S.promotions, templates: S.templates });
   content();
-  const store = storeModel(M.campaignForPreview(null, previewCode(), S.cur.name), cfg);
+  const store = storeModel(M.campaignForPreview(null, previewCode(), ph.name), cfg);
   const play = resolvePromotion(cfg, store, promo().promoId);
   return { cfg, store, play };
 }

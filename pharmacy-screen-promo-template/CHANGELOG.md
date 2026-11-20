@@ -10,6 +10,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Master template preview shows its tokens as written.** In Promo preview → **Master template**, the preview
+  prints `${Suburb}`, `${StoreName}` and `${Phone}` as typed ("Good morning, ${Suburb}", "Serving ${Suburb}",
+  "Phone ${Phone}", "from the whole ${StoreName} team") instead of blanking them, so it is clear the master's copy
+  carries a token. `${CloseTime}` / `${OpenTime}` keep the sample times. Preview only: a pharmacy's preview and the
+  screens are unchanged ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Master template").
 - **Seasonal dates show as a yearly schedule in both views.** A season's **Dates** card header reads **Every
   year: <start> to <end>** (for example "Every year: 15 Dec to 27 Dec") in the admin editor and in the pharmacy
   view (`admin/?store=<code>`). The pharmacy view now shows the Dates card, read-only: Starts and Ends as plain

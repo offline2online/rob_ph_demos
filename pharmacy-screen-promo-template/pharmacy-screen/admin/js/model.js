@@ -217,6 +217,17 @@ export function campaignForPreview(record, storeCode, name) {
   return c;
 }
 
+// The master template has no store of its own, so its preview shows the data tokens as written: ${StoreName},
+// ${Suburb} and ${Phone} appear in the copy exactly as typed, making clear the master carries them. ${CloseTime} /
+// ${OpenTime} keep the sample hours' times (the "Open today bar in the preview" tabs). Preview only: nothing saved.
+export const MASTER_PREVIEW_TOKENS = { Suburb: '${Suburb}', Phone: '${Phone}' };
+
+/** The pharmacy record the editor's preview draws: a pharmacy as it is; the master template with its tokens as written. */
+export function previewPharmacy(ph) {
+  if (!ph || !ph.isMaster) return ph;
+  return { ...ph, name: '${StoreName}', tokens: { ...cleanTokens(ph.tokens), ...MASTER_PREVIEW_TOKENS } };
+}
+
 /** The read-only store fields Settings shows, with their paths in the Location API response. */
 export function storeFields(record) {
   const d = (record && (record.data || record)) || {};

@@ -662,6 +662,10 @@ test('master template: every pharmacy inherits it section by section; a section 
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.isMaster);
   assert.equal(await page.isVisible('#masterCard'), true);
   assert.equal(await page.$('#dpBody .inh-bar'), null);
+  // The master's preview shows its tokens as written: the greeting carries ${Suburb}.
+  await page.click('#dpTabs button:has-text("Morning")');
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => /Good morning,\s*\$\{Suburb\}/.test(document.querySelector('#screen .s-head h2').textContent));
   // Seeded from Beaumaris: the master's Morning greeting is Beaumaris's fixture copy.
   const master = (await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master;
   assert.equal(master.introSub, 'No fuss. Just ask in store.');
@@ -676,6 +680,9 @@ test('master template: every pharmacy inherits it section by section; a section 
   await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
   assert.equal(await page.isHidden('#masterCard'), true);
+  // A pharmacy's preview fills its tokens in: no token shows as written.
+  await page.click('#tl button[data-i="0"]');
+  await page.waitForFunction(() => !/\$\{/.test(document.querySelector('#screen').textContent));
   assert.deepEqual(await page.$$eval('#dpBody .inh', (s) => s.map((x) => x.dataset.sec)), ['greeting', 'slots', 'close', 'footer']);
   assert.ok((await page.$$eval('#dpBody .inh-pill', (p) => p.map((x) => x.textContent))).every((t) => /Inherited from master/.test(t)));
   assert.equal(await page.inputValue('#dis'), 'Walk in, no appointment');

@@ -40,7 +40,9 @@ launch pharmacy (VIC-MP-001 to 005) back to its sample content.
 
 The **Promo preview** drop-down's first entry, **Master template**, holds the default content of every promotion: the
 greeting, the promotion slots, the walk-in close, the Open today bar, the opening-hours headlines and address
-toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours. Every pharmacy uses it, including each one you add, so a change here reaches every
+toggle, and the seasonal copy. Edit it like a pharmacy's content; the preview uses the default colours and shows the tokens as written, so
+`${Suburb}`, `${StoreName}` and `${Phone}` appear in the copy exactly as typed ("Good morning, ${Suburb}",
+"Phone ${Phone}"); `${CloseTime}` / `${OpenTime}` show the sample hours' times. A pharmacy's preview fills them in. Every pharmacy uses it, including each one you add, so a change here reaches every
 screen that inherits it. A promotion with no master saved yet starts from a pharmacy's content (pick which one)
 until you edit it or click **Save as master**.
 
