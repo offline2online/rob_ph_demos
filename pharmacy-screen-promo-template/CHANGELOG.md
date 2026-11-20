@@ -78,6 +78,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   (service tiles, the large service icon, the copy under them, the opening hours card and holiday note) starts
   about 340px further left and is drawn larger. Portrait and Seasonal are unchanged; the "Screen
   not set up" page in landscape follows the same narrower panel.
+- **Preview: "Sample opening hours" has its own row and always shows in full.** The pill was cut off with an
+  ellipsis beside Play in a normal-width preview column. It now sits on a row of its own under the Portrait and
+  Landscape tabs, centred, with its info tooltip beside it, and wraps onto two lines in a very narrow column instead
+  of being shortened. The tooltip opens below the row. The preview screen is 34px shorter to make room, so the whole
+  preview still fits the visible height ([docs/USER-GUIDE.md](docs/USER-GUIDE.md)).
 - **Preview: "Sample store data" is now "Sample opening hours", with an info tooltip.** The pill beside Play under
   the preview names what is sample (the opening hours), and its info icon explains that each screen uses its own
   store's actual opening and closing hours from Personalisation Hub, for the day and time the promotion plays
