@@ -46,16 +46,16 @@ menu-board demo). Its `pharmacyScreen` block is the one for this project.
 ## Adapters (how an AWS deployment slots in)
 
 `createConfigApi({ store, blobs, auth, allowedOrigins, now, log })` takes
-three small adapters and knows nothing about Firebase. To deploy on AWS for
-miPharmacy, write the three adapters (e.g. DynamoDB, S3, Cognito/OIDC) and a
-Lambda entry that maps API Gateway events to `api.handle(...)` — the routes,
+three small adapters and knows nothing about Firebase. The AWS deployment for
+miPharmacy (`../../aws/`) supplies DynamoDB, S3 and OIDC adapters and a Lambda
+entry that maps API Gateway events to `api.handle(...)` — the routes,
 validation, publishing and audit stay as they are.
 
-| Adapter | Methods | Firebase | Local / tests |
-| --- | --- | --- | --- |
-| store | `transaction(fn)` with `tx.get / tx.list / tx.set / tx.delete`; `get`, `list(coll, {orderBy, desc, limit})`, `newId()` | `firestore-store.js` | `memory-store.js` |
-| blobs | `put(path, buffer, contentType) -> {path, url}`, `delete(path)` | `createGcsBlobs` | `createMemoryBlobs` |
-| auth | `identify(authorizationHeader) -> {uid, email, admin} \| null` | `createFirebaseAuth` | `createStaticAuth` |
+| Adapter | Methods | Firebase | AWS (`../../aws/adapters/`) | Local / tests |
+| --- | --- | --- | --- | --- |
+| store | `transaction(fn)` with `tx.get / tx.list / tx.set / tx.delete`; `get`, `list(coll, {orderBy, desc, limit})`, `newId()` | `firestore-store.js` | `dynamodb-store.js` | `memory-store.js` |
+| blobs | `put(path, buffer, contentType) -> {path, url}`, `delete(path)` | `createGcsBlobs` | `s3-blobs.js` | `createMemoryBlobs` |
+| auth | `identify(authorizationHeader) -> {uid, email, admin} \| null` | `createFirebaseAuth` | `oidc-auth.js` (Cognito or the retailer's IdP) | `createStaticAuth` |
 
 A store transaction must be all-or-nothing and serialisable (reads before
 writes); that is what makes store codes and promo IDs unique under concurrent
@@ -233,6 +233,7 @@ HTTP API never passes it).
 
 ```
 npm test               # API and validators against the in-memory adapters (no network)
+                       # (PS_TEST_STORE=<module> runs the API suite on another store; aws/test/ uses it for DynamoDB)
 npm run test:emulator  # Firestore + Storage rules and the Firestore adapter, on the emulators (needs Java)
 ```
 

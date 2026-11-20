@@ -461,6 +461,7 @@ test("secret store configuration: missing KMS key, local store refused on Cloud 
   assert.equal(secretStoreFromEnv({ PH_SECRET_STORE: "gcp-kms" }), null);
   assert.equal(secretStoreFromEnv({ PH_SECRET_STORE: "local", PH_LOCAL_KMS_KEY: LOCAL_KEY, K_SERVICE: "fn" }), null);
   assert.equal(secretStoreFromEnv({ PH_SECRET_STORE: "local", PH_LOCAL_KMS_KEY: LOCAL_KEY, K_SERVICE: "fn", PH_ALLOW_LOCAL_KMS: "1" }), null, "no override on Cloud Functions");
+  assert.equal(secretStoreFromEnv({ PH_SECRET_STORE: "local", PH_LOCAL_KMS_KEY: LOCAL_KEY, AWS_LAMBDA_FUNCTION_NAME: "fn" }), null, "refused on AWS Lambda too");
   assert.ok(secretStoreFromEnv({ PH_SECRET_STORE: "local", PH_LOCAL_KMS_KEY: LOCAL_KEY }));
   assert.throws(() => gcpKmsProvider({}), /PH_TOKEN_KMS_KEY/);
 

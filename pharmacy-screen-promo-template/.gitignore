@@ -1,3 +1,6 @@
 .deploy/
 node_modules/
 *-debug.log
+.deploy-aws/
+aws/cdk.out/
+aws/cdk.context.json
