@@ -91,7 +91,7 @@
     {
       "source": "pharmacy-screen/config-api",
       "codebase": "pharmacy-screen-config-api",
-      "runtime": "nodejs20",
+      "runtime": "nodejs22",
       "ignore": [
         "node_modules",
         ".git",
@@ -105,7 +105,7 @@
     {
       "source": "pharmacy-screen/ph-proxy",
       "codebase": "pharmacy-screen-ph-proxy",
-      "runtime": "nodejs20",
+      "runtime": "nodejs22",
       "ignore": [
         "node_modules",
         ".git",
