@@ -90,7 +90,6 @@ code.kp{font:11px ui-monospace,Menlo,Consolas,monospace;color:var(--muted);margi
 .svc .ic{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;flex:none}
 .svc .ic .ms{color:#fff;font-variation-settings:'FILL' 1;font-size:20px}
 .svct{display:grid;min-width:0;line-height:1.3}.svct b{font-weight:500;font-size:13px}.svct span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.svct .svcat{font-size:11px}
 .svc[aria-pressed=true]{background:var(--primary-tint)}
 .dur{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:400;color:var(--muted);margin-right:6px}
 .dur .ms{font-size:16px}

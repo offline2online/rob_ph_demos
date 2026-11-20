@@ -212,6 +212,9 @@ const bindRt = (id, set) => bindRichText(id, set, changed);
 
 // icon picker: searchable Material Symbols, icon-picker.js
 
+// Promotion slots added since the page loaded: deleting one of these needs no confirmation.
+const justAdded = new WeakSet();
+
 function renderDp() {
   closePicker(); setTimeout(() => markEditor());
   renderPromoTabs(); renderPromoMeta();
@@ -227,7 +230,7 @@ function renderDp() {
   }
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const F = footerConfig(d);
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span><div><div class="slot"><div class="slot-h">Top: Greeting<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="ddur" min="1" max="60" step="0.5" value="${+d.introDur || 3}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('dg', 'Headline', d.greeting)}${f('dit', 'Line 1', d.introTitle)}${f('dis', 'Line 2', d.introSub)}</div></div></div>
    <div id="slotList" style="display:grid;gap:12px">${d.slots.map((x, i) => `<div class="slot" data-i="${i}"><div class="slot-h"><span class="ms drag" title="Drag to reorder" aria-label="Drag to reorder">drag_indicator</span><span class="ic" style="background:${esc(s.colours.primary)}"><span class="ms">${esc(x.icon)}</span></span>Promotion ${i + 1}<span class="hint" style="font-weight:400">· ${esc(x.label)}</span>
       <span style="margin-left:auto;display:flex;gap:2px;align-items:center"><label class="dur" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="s${i}dur" min="1" max="60" step="0.5" value="${+x.dur || 2}" aria-label="Seconds on screen">s</label><button type="button" class="text mv" data-mv="-1" ${i ? '' : 'disabled'} title="Move up" aria-label="Move up"><span class="ms">arrow_upward</span></button><button type="button" class="text mv" data-mv="1" ${i < d.slots.length - 1 ? '' : 'disabled'} title="Move down" aria-label="Move down"><span class="ms">arrow_downward</span></button>
       <button type="button" class="text del" ${d.slots.length > 1 ? '' : 'disabled'} style="color:var(--err)" title="Delete promotion" aria-label="Delete promotion ${i + 1}"><span class="ms">delete</span><span class="delt"></span></button></span></div>
@@ -239,11 +242,11 @@ function renderDp() {
    <button type="button" id="addSlot" ${d.slots.length >= 6 ? 'disabled' : ''} style="justify-self:start" aria-expanded="false"><span class="ms">add</span>Add promotion</button>
    <div class="svcpick" id="svcPick" hidden>
      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><input type="search" id="svcQ" placeholder="Search ${S.services.length} services" style="flex:1;min-width:180px" autocomplete="off">
-       <label class="chk"><input type="checkbox" id="svcMine" checked>Offered by ${esc(s.name || 'this pharmacy')}</label>
-       <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button></div>
+       <button type="button" class="text" id="svcBlank"><span class="ms">edit_note</span>Blank promotion</button>
+       <button type="button" class="text" id="svcClose" title="Close without adding" aria-label="Close without adding"><span class="ms">close</span>Close</button></div>
      <div class="svclist" id="svcList"></div></div>
-   <div class="slot"><div class="slot-h">Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
-   <div class="slot" id="footSlot"><div class="slot-h">Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
+   <div class="slot"><div class="slot-h">Tail: Walk-in close<label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="cdur" min="1" max="60" step="0.5" value="${+d.close.dur || 2}" aria-label="Seconds on screen">s</label></div><div class="stack">${rt('cl1', 'Headline', d.close.title)}${f('cl2', 'Accent line', d.close.sub)}${f('cl3', 'Line 1', d.close.line1)}${f('cl4', 'Line 2', d.close.line2)}</div></div>
+   <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
      <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
      <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
   const on = (id, fn) => { $(id).oninput = (e) => { fn(e.target.value); changed(); }; };
@@ -256,18 +259,23 @@ function renderDp() {
   const reflow = () => { scene = 0; elapsed = 0; lastKey = ''; changed(); renderDp(); };
   const drawSvc = () => {
     const used = new Set(d.slots.map((x) => x.svc));
-    const groups = M.filterServices(S.services, { q: $('svcQ').value, storeCode: s.storeCode, mine: $('svcMine').checked });
-    const names = (codes) => (codes || []).map((c) => esc((S.pharmacies.find((p) => p.storeCode === c) || {}).name || c)).join(' · ');
+    // Every service in the library, whatever the pharmacy: its own service list may be out of date.
+    const groups = M.filterServices(S.services, { q: $('svcQ').value, mine: false });
     $('svcList').innerHTML = groups.length ? groups.map((g) => `<div class="svccat">${esc(g.category)}</div>` + g.services.map((v) => `<button type="button" class="svc" data-id="${esc(v.id)}" ${used.has(v.id) ? 'aria-pressed="true"' : ''}>
       <span class="ic" style="background:linear-gradient(145deg,${tileTop(s.colours.primary)},${esc(s.colours.primary)})"><span class="ms">${esc(v.icon)}</span></span>
-      <span class="svct"><b>${esc(v.headline || v.label)}</b><span>${esc(v.accent)}</span><span class="svcat">${names(v.offeredBy)}</span></span>
+      <span class="svct"><b>${esc(v.headline || v.label)}</b><span>${esc(v.accent)}</span></span>
       ${used.has(v.id) ? '<span class="hint">Added</span>' : ''}</button>`).join('')).join('')
-      : `<div class="hint">No services match. Clear the search${$('svcMine').checked ? ' or untick the filter' : ''}.</div>`;
+      : '<div class="hint">No services match. Clear the search.</div>';
   };
-  $('addSlot').onclick = () => { const p = $('svcPick'); p.hidden = !p.hidden; $('addSlot').setAttribute('aria-expanded', !p.hidden); if (!p.hidden) { drawSvc(); $('svcQ').focus(); } };
-  $('svcQ').oninput = drawSvc; $('svcMine').onchange = drawSvc;
-  $('svcBlank').onclick = () => { d.slots.push(M.blankSlot()); reflow(); };
-  $('svcList').onclick = (e) => { const b = e.target.closest('.svc'); if (!b) return; const v = S.services.find((x) => x.id === b.dataset.id); if (v) { d.slots.push(M.serviceToSlot(v)); reflow(); } };
+  const showPick = (open) => { $('svcPick').hidden = !open; $('addSlot').setAttribute('aria-expanded', open); if (open) { $('svcQ').value = ''; drawSvc(); $('svcQ').focus(); } };
+  $('addSlot').onclick = () => showPick($('svcPick').hidden);
+  // Closing the picker adds nothing.
+  $('svcClose').onclick = () => { showPick(false); $('addSlot').focus(); };
+  $('svcPick').onkeydown = (e) => { if (e.key === 'Escape') { e.stopPropagation(); showPick(false); $('addSlot').focus(); } };
+  $('svcQ').oninput = drawSvc;
+  const addSlot = (x) => { justAdded.add(x); d.slots.push(x); reflow(); };
+  $('svcBlank').onclick = () => addSlot(M.blankSlot());
+  $('svcList').onclick = (e) => { const b = e.target.closest('.svc'); if (!b) return; const v = S.services.find((x) => x.id === b.dataset.id); if (v) addSlot(M.serviceToSlot(v)); };
   const SL = $('slotList'); let dragFrom = null;
   SL.querySelectorAll('.slot').forEach((el) => {
     const i = +el.dataset.i, h = el.querySelector('.drag');
@@ -279,7 +287,8 @@ function renderDp() {
     el.querySelectorAll('.mv').forEach((b) => { b.onclick = () => { const j = i + +b.dataset.mv; [d.slots[i], d.slots[j]] = [d.slots[j], d.slots[i]]; reflow(); }; });
     const del = el.querySelector('.del'); let armed = false;
     del.onclick = () => {
-      if (!armed) { armed = true; del.querySelector('.delt').textContent = 'Confirm'; setTimeout(() => { armed = false; if (del.isConnected) del.querySelector('.delt').textContent = ''; }, 3000); return; }
+      // A slot added in this session is discarded with one click; an existing one asks to confirm.
+      if (!armed && !justAdded.has(d.slots[i])) { armed = true; del.querySelector('.delt').textContent = 'Confirm'; setTimeout(() => { armed = false; if (del.isConnected) del.querySelector('.delt').textContent = ''; }, 3000); return; }
       d.slots.splice(i, 1); reflow();
     };
   });

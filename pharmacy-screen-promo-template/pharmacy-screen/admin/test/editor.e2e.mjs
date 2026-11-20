@@ -209,18 +209,19 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
   await ctx.close();
 });
 
-test('scenes: add from the service library (this pharmacy\'s services), reorder, durations, delete', async () => {
+test('scenes: add from the whole service library, reorder, durations, delete', async () => {
   const { ctx, page } = await open();
   await page.selectOption('#storeSel', 'seed-pharmacy-vic-mp-004');
   await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-004');
   await page.click('#dpTabs button:has-text("Morning")');
   const before = await page.$$eval('#slotList .slot', (s) => s.length);
   await page.click('#addSlot');
-  const shown = await page.$$eval('#svcList .svc', (b) => b.map((x) => x.dataset.id));
+  // every service in the library, for every pharmacy: no "offered by" filter or labels
   const services = (await api('GET', '/api/admin/services')).body;
-  assert.ok(shown.length > 0 && shown.every((id) => services.find((s) => s.id === id).offeredBy.includes('VIC-MP-004')));
-  await page.uncheck('#svcMine');
+  assert.ok(services.some((s) => !s.offeredBy.includes('VIC-MP-004')));
   assert.equal(await page.$$eval('#svcList .svc', (b) => b.length), services.length);
+  assert.equal(await page.$('#svcMine'), null);
+  assert.doesNotMatch(await page.textContent('#svcPick'), /offered by/i);
   await page.fill('#svcQ', 'first aid');
   await page.click('#svcList .svc');
   assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before + 1);
@@ -234,12 +235,54 @@ test('scenes: add from the service library (this pharmacy\'s services), reorder,
   let c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-morning'];
   assert.equal(c.slots[last - 1].label, 'First aid');
   assert.equal(c.slots[last - 1].dur, 4);
-  await page.click(`#slotList .slot[data-i="${last - 1}"] .del`);
+  // a just-added promotion is deleted with one click
   await page.click(`#slotList .slot[data-i="${last - 1}"] .del`);
   assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
   await settle(page);
   c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004')).body.content['seed-promotion-morning'];
   assert.ok(!c.slots.some((s) => s.label === 'First aid'));
+  // an existing promotion still asks to confirm
+  await page.click('#slotList .slot[data-i="0"] .del');
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  assert.match(await page.textContent('#slotList .slot[data-i="0"] .del'), /Confirm/);
+  await ctx.close();
+});
+
+test('scenes: Add promotion picker closes without adding; a new promotion can be removed at once', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  await page.click('#dpTabs button:has-text("Afternoon")');
+  const heads = await page.$$eval('#dpBody .slot-h', (h) => h.map((x) => x.textContent.trim()));
+  assert.ok(heads.some((t) => t.startsWith('Top: Greeting')), heads.join('|'));
+  assert.ok(heads.some((t) => t.startsWith('Tail: Walk-in close')), heads.join('|'));
+  assert.ok(heads.some((t) => t.startsWith('Footer: Open today bar')), heads.join('|'));
+  assert.equal(await page.isChecked('#ftShow'), true);
+  const before = await page.$$eval('#slotList .slot', (s) => s.length);
+  const scenes = await page.$$eval('#tl button', (b) => b.length);
+  // Close button: nothing added
+  await page.click('#addSlot');
+  assert.equal(await page.isVisible('#svcPick'), true);
+  await page.click('#svcClose');
+  assert.equal(await page.isHidden('#svcPick'), true);
+  assert.equal(await page.getAttribute('#addSlot', 'aria-expanded'), 'false');
+  // Escape: nothing added
+  await page.click('#addSlot');
+  await page.press('#svcQ', 'Escape');
+  assert.equal(await page.isHidden('#svcPick'), true);
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  assert.equal(await page.$$eval('#tl button', (b) => b.length), scenes);
+  // add a blank promotion, then delete it straight away: preview timeline follows
+  await page.click('#addSlot');
+  await page.click('#svcBlank');
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before + 1);
+  await page.waitForFunction((n) => document.querySelectorAll('#tl button').length === n, scenes + 1);
+  await page.click(`#slotList .slot[data-i="${before}"] .del`);
+  assert.equal(await page.$$eval('#slotList .slot', (s) => s.length), before);
+  await page.waitForFunction((n) => document.querySelectorAll('#tl button').length === n, scenes);
+  await settle(page);
+  const c = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-afternoon'];
+  assert.equal(c.slots.length, before);
+  assert.deepEqual(errors, []);
   await ctx.close();
 });
 
