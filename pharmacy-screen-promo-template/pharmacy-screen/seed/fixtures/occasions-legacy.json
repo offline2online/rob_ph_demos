@@ -1,0 +1,137 @@
+{
+  "_doc": "The Occasions copy the seed wrote before the standalone designs (20 Nov 2026), per occasion. seed.js gives a pharmacy or promotion master it made, still holding exactly this copy for an occasion, the new default copy (pharmacies.json); copy anyone edited is kept. Equal to LEGACY_OCCASION_COPY in ../../js/render.js (seed/test/seed.test.js checks).",
+  "occasions": {
+    "christmas": {
+      "scenes": [
+        {
+          "title": "Merry Christmas,<br>${Suburb}",
+          "sub": "",
+          "line1": "Season's greetings",
+          "line2": "From all of us, to all of you"
+        },
+        {
+          "title": "Here for you<br>this season",
+          "sub": "Holiday hours may change",
+          "line1": "Please check our hours before you visit",
+          "line2": "Thank you for shopping local"
+        },
+        {
+          "title": "Thank you,<br>${Suburb}",
+          "sub": "",
+          "line1": "Merry Christmas from the whole ${StoreName} team.",
+          "line2": ""
+        }
+      ]
+    },
+    "new-year": {
+      "scenes": [
+        {
+          "title": "Happy New Year,<br>${Suburb}",
+          "sub": "",
+          "line1": "Wishing you a bright year ahead",
+          "line2": "Here’s to new beginnings"
+        },
+        {
+          "title": "New year,<br>same friendly faces",
+          "sub": "Here when you need us",
+          "line1": "Please check our hours before you visit",
+          "line2": "Holiday hours may change"
+        },
+        {
+          "title": "Thank you,<br>${Suburb}",
+          "sub": "",
+          "line1": "Happy New Year from the whole ${StoreName} team.",
+          "line2": ""
+        }
+      ]
+    },
+    "australia-day": {
+      "scenes": [
+        {
+          "title": "Happy Australia Day,<br>${Suburb}",
+          "sub": "",
+          "line1": "Celebrating our local community",
+          "line2": "Everyone is welcome here"
+        },
+        {
+          "title": "Proud to be part<br>of the community",
+          "sub": "Public holiday hours may change",
+          "line1": "Please check our hours before you visit",
+          "line2": "Have a safe and happy public holiday"
+        },
+        {
+          "title": "Thank you,<br>${Suburb}",
+          "sub": "",
+          "line1": "For making this a great place to be",
+          "line2": ""
+        }
+      ]
+    },
+    "valentines-day": {
+      "scenes": [
+        {
+          "title": "Happy Valentine's Day,<br>${Suburb}",
+          "sub": "",
+          "line1": "A day to show you care",
+          "line2": "For partners, family and friends"
+        },
+        {
+          "title": "Share a little<br>kindness today",
+          "sub": "Big or small, it all counts",
+          "line1": "A kind word goes a long way",
+          "line2": "Look out for the people you love"
+        },
+        {
+          "title": "Thank you,<br>${Suburb}",
+          "sub": "",
+          "line1": "Wishing you a happy Valentine's Day",
+          "line2": ""
+        }
+      ]
+    },
+    "easter": {
+      "scenes": [
+        {
+          "title": "Happy Easter,<br>${Suburb}",
+          "sub": "",
+          "line1": "Wishing you a happy Easter break",
+          "line2": "From all of us, to all of you"
+        },
+        {
+          "title": "Here for you<br>over Easter",
+          "sub": "Holiday hours may change",
+          "line1": "Please check our hours before you visit",
+          "line2": "Have a safe long weekend"
+        },
+        {
+          "title": "Thank you,<br>${Suburb}",
+          "sub": "",
+          "line1": "Have a safe and happy Easter",
+          "line2": ""
+        }
+      ]
+    },
+    "anzac-day": {
+      "scenes": [
+        {
+          "title": "Anzac Day",
+          "sub": "25 April",
+          "line1": "We pause to remember",
+          "line2": "All who served and sacrificed"
+        },
+        {
+          "title": "We will<br>remember them",
+          "sub": "",
+          "line1": "Honouring those who served",
+          "line2": "And those who serve today"
+        },
+        {
+          "title": "Lest we forget,<br>${Suburb}",
+          "sub": "",
+          "line1": "",
+          "line2": ""
+        }
+      ]
+    }
+  }
+}

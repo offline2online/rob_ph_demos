@@ -4,6 +4,8 @@
 // Landscape (1920x1080): a brand arrow panel on the left, its tip at x=1120.
 // fitText() shrinks the headline block (--k) until every line sits inside the panel with a 24px margin,
 // and the content block (--kb) until it fits its box. auditScene() re-checks the result with no margin.
+// Occasions (js/occasions.js) fill the screen with no panel: fitOccasion() shrinks each beat's copy (--k) until every
+// line sits inside the template's text box (.txt), and auditScene() checks the beat on screen against that box.
 
 export function geom(land, hours) {
   if (!land) {
@@ -88,6 +90,45 @@ export function fitText(el, G) {
   return { k: +k.toFixed(2), ok, kb: +kb.toFixed(2), okb };
 }
 
+// The rects of every line of text under `root`, in screen pixels.
+function textRects(root, toS) {
+  const doc = root.ownerDocument, rg = doc.createRange(), out = [];
+  const walker = doc.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */);
+  let t;
+  while ((t = walker.nextNode())) {
+    if (!t.nodeValue.trim()) continue;
+    rg.selectNodeContents(t);
+    for (const r0 of rg.getClientRects()) { const r = toS(r0); if (r.r - r.l >= 1) out.push({ r, text: t.nodeValue.trim() }); }
+  }
+  return out;
+}
+// The first line of a beat that leaves the occasion's text box, or null.
+function beatOverflow(beat, box, toS) {
+  return textRects(beat, toS).find(({ r }) => r.l < box.l - 1 || r.r > box.r + 1 || r.t < box.t - 1 || r.b > box.b + 1) || null;
+}
+
+/** Shrink each beat of an occasion (el: the .screen, already rendered) until its copy fits the text box. */
+export function fitOccasion(el, G) {
+  const txt = el.querySelector('.occ .txt');
+  if (!txt) return { k: [], ok: true };
+  el.classList.add('measure');
+  const toS = toScreen(el, G);
+  const box = toS(txt.getBoundingClientRect());
+  const ks = [];
+  let ok = true;
+  for (const beat of txt.querySelectorAll('.b')) {
+    let k = 1, fits = false;
+    for (; k >= 0.4; k -= 0.04) {
+      beat.style.setProperty('--k', k.toFixed(2));
+      if ((fits = !beatOverflow(beat, box, toS))) break;
+    }
+    ks.push(+Math.max(k, 0.4).toFixed(2));
+    ok = ok && fits;
+  }
+  el.classList.remove('measure');
+  return { k: ks, ok };
+}
+
 /**
  * Overflow audit of the scene on screen: every headline line inside the brand panel, the content inside
  * its box, and every other piece of copy (hours card, notes, footer) inside the screen. Returns problems[].
@@ -96,6 +137,17 @@ export function auditScene(el, G) {
   el.classList.add('measure');
   const toS = toScreen(el, G);
   const problems = [];
+  // An occasion: the beat on screen (a held one, or every beat while the loop plays) inside the text box.
+  const txt = el.querySelector('.occ .txt');
+  if (txt) {
+    const box = toS(txt.getBoundingClientRect());
+    const held = txt.querySelectorAll('.b.on');
+    for (const beat of held.length ? held : txt.querySelectorAll('.b')) {
+      const over = beatOverflow(beat, box, toS);
+      if (over) problems.push(`"${over.text.slice(0, 40)}" leaves the text box`);
+    }
+    if (box.l < -1 || box.t < -1 || box.r > G.W + 1 || box.b > G.H + 1) problems.push('the text box leaves the screen');
+  }
   if (!headFits(el, G, toS, 0)) problems.push('headline leaves the brand panel');
   if (!bodyFits(el, toS)) problems.push('content leaves its box');
   const rg = el.ownerDocument.createRange();

@@ -44,6 +44,10 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
   (Occasions, on a store seeded before it existed), each pharmacy the seed made (fixed id) gets its fixture
   content for that promotion if it has none; nothing else on it changes, and hand-made pharmacies are left as
   they are. The next run is a no-op.
+- **Old Occasions copy is upgraded.** A pharmacy, or a default promotion's master, that the seed made and that
+  still holds an occasion's old default copy (`fixtures/occasions-legacy.json`, the three-scene copy from before
+  the standalone designs) gets that occasion's new default copy from the fixtures. Copy anyone edited is kept.
+  The next run is a no-op.
 - **Never overwrites edits unless `--reset`.** With `--reset`, a seeded record that differs from the fixture
   is put back (pharmacy name, colours, logo and its content for the four default promotions; promotion name,
   promo ID and template, so Occasions goes back to Christmas; service copy). Content for other promotions and records the seed doesn't know about
@@ -58,5 +62,6 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
 
 `test/seed.test.js` covers the ticket's test steps (empty store → 5 / 4 / 8 / 28; second run changes
 nothing; an edit survives a re-run, `--reset` restores it; a store seeded before Occasions gets it, then a re-run
-is a no-op) and checks the fixtures against the prototype data
+is a no-op; a store seeded with the old occasion copy gets the new defaults on seed-made records and keeps edited
+copy) and checks the fixtures against the prototype data
 the screen page plays (`../fixtures/config.json`) and the mock Location API data.

@@ -76,7 +76,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 |---|---|---|---|---|
 | F1 | Play every promo ID (`morning`, `afternoon`, `closed`, `occasions` and any you added) in `orientation=portrait` | Each plays its scenes in order and loops | ☐ | ☐ |
 | F2 | The same in `orientation=landscape` | Each plays, with the brand arrow instead of the triangle | ☐ | ☐ |
-| F3 | Occasions: in the editor switch the Occasion through all six | The screen plays each (Anzac Day without decoration or bounce) | ☐ | ☐ |
+| F3 | Occasions: in the editor switch the Occasion through all six, with the campaign's playback duration at 13 s | The screen plays each occasion's own full-screen animation, its copy as beats on a 12 s loop (Christmas: the tree photo with sparkles, 2 beats); no logo, brand panel or Open today bar; Anzac Day fades only | ☐ | ☐ |
 | F4 | Watch every scene of every promotion in both orientations | No headline, accent line or line leaves the brand panel or the screen (A2 checks the seeded copy automatically) | ☐ | ☐ |
 | F5 | In the editor, make a headline very long | The preview shrinks it to stay inside the panel | ☐ | ☐ |
 | F6 | `promo=nope` | "Promotion not found" | ☐ | ☐ |

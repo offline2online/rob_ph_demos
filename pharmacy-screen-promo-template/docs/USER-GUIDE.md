@@ -116,10 +116,13 @@ The weekly hours, the public holiday line and the phone number come from Persona
 
 In place of Template, the Occasions promotion has an **Occasion** drop-down: Christmas, New Year's, Australia
 Day, Valentine's Day, Easter, Anzac Day. It applies to all pharmacies and plays until you change it; nothing
-switches by date. For each occasion each pharmacy has three scenes (Greeting, Message, Sign-off: headline,
-accent line, line 1, line 2, seconds on screen) and the Open today bar. Every occasion keeps its own copy, so
-switching back and forth loses nothing. Christmas and New Year's sign off with `${StoreName}`. Anzac Day is
-commemorative and plays without decoration.
+switches by date. Each occasion is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
+Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
+poppy), with no logo, brand colours or Open today bar. Its copy plays as beats on a 12-second loop (Christmas has
+two, the others three): for each beat each pharmacy edits the **Main line** and, where the design has one, the
+small label line. Set the campaign's playback duration to **13 seconds**. Every occasion keeps its own copy, so
+switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
+Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
 ## Templates
 
