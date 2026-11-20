@@ -1033,6 +1033,7 @@ const testRounds = require("./test-rounds");
 // Hidden-from-website rule shared with the export, the live feed and the
 // Support Inbox (3HabqHlC4WwL137CYTv1).
 const faqFeed = require("./faq-feed");
+const docLibrary = require("./documentation-library");
 
 const CATEGORIES = [
   "Pricing & Offers", "Product Assets", "HQ Admin", "Retail Admin",
@@ -4902,6 +4903,161 @@ const TOOLS = [
         release: releaseSummary(target.release),
         appliesToRelease: applies,
       });
+    },
+  },
+  // ── Documentation library (Support › Documentation), read-only ──────────
+  // The internal docs library that replaced Confluence: `docCategories`
+  // (sections and folders) and `docArticles` (the documents, every migrated
+  // Confluence page among them). Members only, like the console page; the
+  // writes stay in the console's own editor. search_console (source
+  // "documentation") searches their text; these two list and read them.
+  {
+    name: "list_documentation",
+    description: "The documentation library (Support › Documentation: the team's internal product and technical documentation, including every page migrated from Confluence), without the text. Returns {sections: [{id, name, parentId, location, documents}], categoryId, totalDocuments, offset, documents: [{id, title, slug, location, categoryId, docType, status, needsReview, archived, updatedAt, url, origin}], nextOffset}. categoryId narrows to one section or folder and everything under it. Documents under Archive (or from archived Confluence pages) are left out unless includeArchived is true. To search the text, use search_console with sources [\"documentation\"]; read one with get_documentation.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        categoryId: { type: "string", description: "A section or folder id (from sections). Its sub-folders are included." },
+        includeArchived: { type: "boolean", description: "Also documents under Archive and drafts. Default false." },
+        offset: { type: "integer", minimum: 0, description: "Where to start (the previous page's nextOffset)." },
+        limit: { type: "integer", minimum: 1, maximum: 100, description: "Documents per page. Default 50, max 100." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      const cats = new Map();
+      (await db().collection("docCategories").get()).forEach((d) => cats.set(d.id, d.data() || {}));
+      const categoryId = args.categoryId ? String(args.categoryId) : null;
+      if (categoryId && !cats.has(categoryId)) return toolError(`No documentation section with id ${categoryId}. Call list_documentation without categoryId to see the sections.`);
+      const within = categoryId ? new Set(docLibrary.subtreeIds(cats, categoryId)) : null;
+      const offset = Number.isInteger(Number(args.offset)) && Number(args.offset) > 0 ? Number(args.offset) : 0;
+      const limit = Math.max(1, Math.min(100, Number.isInteger(Number(args.limit)) && Number(args.limit) > 0 ? Number(args.limit) : 50));
+      const counts = new Map();
+      const rows = [];
+      const snap = await db().collection("docArticles").select("title", "slug", "categoryId", "docType", "status", "needsReview", "source", "order", "updatedAt").limit(MAX_READ_DOCS * 2).get();
+      snap.forEach((d) => {
+        const a = d.data() || {};
+        counts.set(a.categoryId || null, (counts.get(a.categoryId || null) || 0) + 1);
+        if (within && !within.has(a.categoryId)) return;
+        const archived = a.status !== "published" || docLibrary.isArchived(cats, a);
+        if (archived && args.includeArchived !== true) return;
+        const src = docLibrary.sourceOf(a);
+        rows.push({
+          id: d.id, title: a.title || d.id, slug: a.slug || null, location: docLibrary.locationOf(cats, a.categoryId) || null, categoryId: a.categoryId || null,
+          docType: a.docType || null, status: a.status || null, needsReview: a.needsReview === true, archived,
+          updatedAt: tsToISO(a.updatedAt), url: `${PUBLIC_ORIGIN}/#doc/${d.id}`,
+          origin: src ? { system: src.system, pageId: src.pageId, space: src.space, lastUpdated: src.lastUpdated } : null,
+          _order: docLibrary.orderOf(a),
+        });
+      });
+      rows.sort((x, y) => String(x.location || "").localeCompare(String(y.location || "")) || x._order - y._order || String(x.title).localeCompare(String(y.title)));
+      if (offset > rows.length) return toolError(`offset ${offset} is past the end: ${rows.length} documents match.`);
+      const page = rows.slice(offset, offset + limit).map((r) => { const o = Object.assign({}, r); delete o._order; return o; });
+      const out = { categoryId, totalDocuments: rows.length, offset, documents: page, nextOffset: offset + limit < rows.length ? offset + limit : null };
+      if (offset === 0) {
+        out.sections = [...cats.entries()]
+          .map(([id, c]) => ({ id, name: c.name || id, parentId: c.parentId || null, location: docLibrary.locationOf(cats, id), documents: counts.get(id) || 0, _order: docLibrary.orderOf(c) }))
+          .filter((c) => !within || within.has(c.id))
+          .sort((x, y) => x.location.localeCompare(y.location) || x._order - y._order)
+          .map((c) => { delete c._order; return c; });
+      }
+      return textResult(JSON.stringify(out));
+    },
+  },
+  {
+    name: "get_documentation",
+    description: "Read ONE document of the documentation library (Support › Documentation, including pages migrated from Confluence) as Markdown, a page or a section at a time. docId is the id from search_console (source \"documentation\") or list_documentation (a migrated page's id is cf-<Confluence page id>); slug works too. Returns {id, title, slug, location, categoryId, docType, status, needsReview, archived, summary, keywords, projectId, origin (system, pageId, space, path, lastUpdated, archived, url for a migrated page), updatedAt, url, totalChars, offset, content, nextOffset}. Paging, outline and section work as in get_project_document: pages are maxChars long (default 40000, max 50000), nextOffset is null on the last, the first page (or outline:true) carries outline [{level, heading, offset}], and section reads one heading's part.",
+    scope: "board.read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        docId: { type: "string", description: "Document id, e.g. cf-268075017." },
+        slug: { type: "string", description: "The document's slug, if you don't have the id." },
+        section: { type: "string", description: "Heading text to read just that section." },
+        offset: { type: "integer", minimum: 0, description: "Where to start reading (the previous page's nextOffset)." },
+        maxChars: { type: "integer", minimum: 1, maximum: DOC_PAGE_MAX, description: `Page length. Default ${DOC_PAGE_DEFAULT}, max ${DOC_PAGE_MAX}.` },
+        outline: { type: "boolean", description: "Include the heading outline even when not on the first page." },
+      },
+      additionalProperties: false,
+    },
+    async run(args) {
+      if (!args.docId && !args.slug) return toolError("Give docId (or slug). search_console with sources [\"documentation\"] or list_documentation finds one.");
+      let snap = null;
+      if (args.docId) {
+        const s = await db().collection("docArticles").doc(String(args.docId)).get();
+        if (s.exists) snap = s;
+      }
+      if (!snap && args.slug) {
+        const q = await db().collection("docArticles").where("slug", "==", String(args.slug)).limit(1).get();
+        if (!q.empty) snap = q.docs[0];
+      }
+      if (!snap) return toolError("No document with that id or slug. Use search_console with sources [\"documentation\"], or list_documentation, to find one.");
+      let offset = 0;
+      if (args.offset !== undefined && args.offset !== null) {
+        offset = Number(args.offset);
+        if (!Number.isInteger(offset) || offset < 0) return toolError("offset must be a non-negative integer.");
+      }
+      let maxChars = DOC_PAGE_DEFAULT;
+      if (args.maxChars !== undefined && args.maxChars !== null) {
+        maxChars = Number(args.maxChars);
+        if (!Number.isInteger(maxChars) || maxChars < 1) return toolError("maxChars must be a positive integer.");
+        maxChars = Math.min(maxChars, DOC_PAGE_MAX);
+      }
+      const a = snap.data() || {};
+      const cats = new Map();
+      (await db().collection("docCategories").get()).forEach((d) => cats.set(d.id, d.data() || {}));
+      const full = docLibrary.bodyMarkdown(a);
+      const outline = outlineOf(full);
+      let text = full;
+      let sectionOffset = null;
+      let sectionName = null;
+      if (args.section !== undefined && args.section !== null && String(args.section).trim() !== "") {
+        const sec = findSection(full, outline, args.section);
+        if (!sec) {
+          const list = outline.slice(0, 200).map((h) => `${"#".repeat(h.level)} ${clip(h.heading, 120)}`).join("\n");
+          return toolError(`No section matching "${clip(String(args.section), 200)}" in ${a.title || snap.id}. Headings:\n${list || "(none — the document has no headings)"}`);
+        }
+        text = full.slice(sec.start, sec.end);
+        sectionOffset = sec.start;
+        sectionName = sec.heading;
+      }
+      if (offset > text.length || (offset === text.length && text.length > 0)) {
+        return toolError(`offset ${offset} is past the end: ${sectionName ? "the section" : "the document"} has ${text.length} characters.`);
+      }
+      const out = {
+        id: snap.id, title: a.title || snap.id, slug: a.slug || null, location: docLibrary.locationOf(cats, a.categoryId) || null, categoryId: a.categoryId || null,
+        docType: a.docType || null, status: a.status || null, needsReview: a.needsReview === true,
+        archived: a.status !== "published" || docLibrary.isArchived(cats, a),
+        summary: a.summary || "", keywords: Array.isArray(a.keywords) ? a.keywords : [], projectId: a.projectId || null,
+        origin: docLibrary.sourceOf(a), updatedAt: tsToISO(a.updatedAt), url: `${PUBLIC_ORIGIN}/#doc/${snap.id}`,
+      };
+      if (sectionName !== null) { out.section = sectionName; out.sectionOffset = sectionOffset; }
+      out.totalChars = text.length;
+      out.offset = offset;
+      if ((offset === 0 && sectionName === null) || args.outline === true) {
+        out.outline = [];
+        let used = 0;
+        for (const h of outline) {
+          const entry = { level: h.level, heading: clip(h.heading, DOC_HEADING_MAX), offset: h.offset };
+          const len = JSON.stringify(entry).length + 1;
+          if (used + len > DOC_OUTLINE_BUDGET) { out.outlineTruncated = true; break; }
+          out.outline.push(entry);
+          used += len;
+        }
+      }
+      const build = (end) => Object.assign({}, out, { content: text.slice(offset, end), nextOffset: end < text.length ? end : null });
+      let hi = safePageEnd(text, offset, Math.min(text.length, offset + maxChars));
+      if (JSON.stringify(build(hi)).length > DOC_RESULT_MAX) {
+        let lo = offset;
+        while (hi - lo > 1) {
+          const mid = lo + Math.floor((hi - lo) / 2);
+          if (JSON.stringify(build(mid)).length <= DOC_RESULT_MAX) lo = mid; else hi = mid;
+        }
+        hi = safePageEnd(text, offset, lo);
+        if (hi <= offset) hi = Math.min(text.length, offset + 2);
+      }
+      return textResult(JSON.stringify(build(hi)));
     },
   },
   // ── FAQ / Help Center: write tools ───────────────────────────────────────

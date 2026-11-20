@@ -29,6 +29,7 @@ const SOURCES = Object.freeze({
   prospect: { label: "Prospects (TAM)", access: "list_prospects" },
   support: { label: "Support threads", access: "list_support_threads" },
   document: { label: "Project documents", access: "get_project_document" },
+  documentation: { label: "Documentation library", access: "get_documentation" },
   skill: { label: "Skills", access: "get_skill" },
 });
 const SOURCE_NAMES = Object.freeze(Object.keys(SOURCES));

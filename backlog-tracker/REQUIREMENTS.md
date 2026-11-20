@@ -8254,3 +8254,13 @@ Confluence (see `README.md` → "Documentation").
   fields (SEO & agents, Hide from website, live link) are not offered, and no
   product/program is required.
 - Outdated documents are kept in Archive, never deleted.
+- Agents reach every document read-only over MCP (20 Nov 2026):
+  `search_console` with source `documentation` searches them on the same
+  index, ranking (BM25 plus vectors) and caches as every other source, and a
+  page is found by its section or folder name too; `list_documentation`
+  lists the sections and documents; `get_documentation` reads one as
+  Markdown, a page or a section at a time; both are Code Mode script tools;
+  `get_topic_context` packs include them. Documents under Archive, from an
+  archived Confluence page, or not published are hidden from a search unless
+  `includeArchived` is set. A section renamed or moved re-indexes the
+  documents under it. See `MCP.md` → "Documentation library".
