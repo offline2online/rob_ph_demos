@@ -86,7 +86,6 @@ test('cached start, update only on change, and an offline start', async () => {
   await page.reload();
   const offline = await playing(page);
   assert.ok(offline.logo.includes('Beaumaris Pharmacy'), 'plays offline');
-  // The Open today bar, in whichever state the store's real clock puts it (the test runs at any hour).
-  assert.match(offline.text, /Open today|Opens today|Closing soon|Closed now/i);
+  assert.match(offline.text, /OPEN TODAY|Open today/i);
   await context.close();
 });

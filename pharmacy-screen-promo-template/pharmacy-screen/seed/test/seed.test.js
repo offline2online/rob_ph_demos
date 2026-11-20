@@ -70,7 +70,7 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 se
     assert.equal(screen.logo, p.logo.url);
     assert.deepEqual(Object.keys(screen.promotions), ["afternoon", "closed", "morning", "occasions"]);
     assert.deepEqual([screen.promotions.occasions.template.kind, screen.promotions.occasions.template.occasion], ["occasion", "christmas"]);
-    assert.deepEqual(screen.promotions.occasions.content.occasions.christmas.beats[1], { label: "With warm wishes", text: "from the whole ${StoreName} team" });
+    assert.match(screen.promotions.occasions.content.occasions.christmas.scenes[2].line1, /from the whole \$\{StoreName\} team/);
     assert.ok(!/StoreName/.test(JSON.stringify(screen.promotions.occasions.content.occasions.easter)), "Easter signs off with the suburb only");
     assert.equal(screen.promotions.closed.template.kind, "opening-hours");
     assert.ok(screen.promotions.morning.content.greeting.startsWith("Good morning"));
@@ -215,50 +215,6 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
   const again = await seed();
   assert.equal(again.promotions.created.length + again.pharmacies.updated.length + again.pharmacies.created.length, 0);
   assert.deepEqual(store.dump(), before, "re-running is a no-op");
-});
-
-test("an environment seeded with the old occasion copy: seed-made records get the new defaults, edited copy is kept", async () => {
-  const { store, svc, seed } = setup();
-  const f = loadFixtures();
-  const legacy = f.legacyOccasions;
-  // What an earlier seed wrote: every occasion's old three-scene default copy, on the pharmacies and the master.
-  const oldCopy = () => JSON.parse(JSON.stringify(legacy));
-  const old = { ...f, pharmacies: f.pharmacies.map((p) => ({ ...p, content: { ...p.content, occasions: { occasions: oldCopy() } } })) };
-  await seed({ fixtures: old });
-  const occId = (await svc.listPromotions()).find((p) => p.promoId === "occasions").id;
-  // Someone edits Easter on Beaumaris (still the old shape), and Christmas on the master.
-  const ph = await svc.getPharmacy(ids.pharmacy("vic-mp-001"));
-  ph.content[occId].occasions.easter.scenes[0].title = "Hoppy Easter";
-  await svc.updatePharmacy({ uid: "u-admin", email: null }, ph.id, { content: ph.content });
-  const promo = (await svc.listPromotions()).find((p) => p.id === occId);
-  const master = JSON.parse(JSON.stringify(promo.master));
-  master.occasions.christmas.scenes[0].title = "Merry Xmas";
-  await svc.updatePromotion({ uid: "u-admin", email: null }, occId, { master });
-
-  const report = await seed();
-  assert.deepEqual(report.pharmacies.updated.sort(), CODES);
-  assert.deepEqual(report.promotions.updated, ["occasions"]);
-  const fresh = f.pharmacies[0].content.occasions.occasions;
-  for (const p of await svc.listPharmacies()) {
-    const occ = (await svc.getPharmacy(p.id)).content[occId].occasions;
-    assert.deepEqual(occ.christmas, fresh.christmas, `${p.storeCode} christmas`);
-    if (p.storeCode === "VIC-MP-001") assert.equal(occ.easter.scenes[0].title, "Hoppy Easter", "hand-edited copy is kept");
-    else assert.deepEqual(occ.easter, fresh.easter, `${p.storeCode} easter`);
-  }
-  const m = (await svc.listPromotions()).find((p) => p.id === occId).master.occasions;
-  assert.equal(m.christmas.scenes[0].title, "Merry Xmas", "an edited master occasion is kept");
-  assert.deepEqual(m["anzac-day"], fresh["anzac-day"], "an unedited master occasion gets the new copy");
-
-  const before = store.dump();
-  const again = await seed();
-  assert.equal(again.pharmacies.updated.length + again.promotions.updated.length, 0);
-  assert.deepEqual(store.dump(), before, "re-running is a no-op");
-});
-
-test("the legacy occasion copy the seed upgrades is the copy the screen treats as unedited", async () => {
-  const { LEGACY_OCCASION_COPY } = await import("../../js/render.js");
-  const legacy = loadFixtures().legacyOccasions;
-  assert.deepEqual(Object.fromEntries(Object.entries(legacy).map(([k, v]) => [k, v.scenes])), LEGACY_OCCASION_COPY);
 });
 
 test("summary and arguments", () => {

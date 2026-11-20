@@ -106,17 +106,14 @@ to the built-in of that kind.
 occasion: `builtin-occasion-christmas`, `-new-year`, `-australia-day`,
 `-valentines-day`, `-easter`, `-anzac-day`. Each carries `occasion` (the
 part after `builtin-occasion-`), which the published config passes on so the
-screen draws that occasion (`../js/render.js` → `OCCASIONS`, the standalone
-designs in `../js/occasions.js`, the Christmas photo and fonts self-hosted in
-`../css/`; the built-ins carry no html, css or backgrounds). The seeded
+screen draws that occasion (`../js/render.js` → `OCCASIONS`). The seeded
 Occasions promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
 the admin editor's Occasion drop-down sets its `templateId` to another one.
 They can't be cloned (400: there is no editable HTML version of an
 occasion). A pharmacy's content for an occasion promotion keeps every
-occasion's copy, `content.occasions.<occasion>.beats[]` (one per beat of the
-design, Christmas 2 and the others 3: `text`, plus `label` where the design
-has a label line). Copy saved earlier as `scenes[3]` (`title`, `sub`,
-`line1`, `line2`) is still read by the screen and the editor.
+occasion's copy, `content.occasions.<occasion>.scenes[3]` (greeting, message,
+sign-off: `title`, `sub`, `line1`, `line2`, `dur`), plus the promotion's
+`footer`.
 
 **Media** goes to the bucket `PS_MEDIA_BUCKET` (default
 `<project>-pharmacy-screen-media`) under `pharmacyScreen/media/logos/{pharmacyId}/…`

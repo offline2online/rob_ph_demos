@@ -103,12 +103,26 @@
 .land .s-row{height:68px;font-size:36px;padding:0 30px}
 .land .s-note{left:1180px;right:70px;top:auto;bottom:46px;gap:10px}
 .land .s-note .n1{font-size:36px}.land .s-note .n2{font-size:28px}
-/* Occasions (promo=occasions): a standalone, full-screen animation per occasion, drawn by js/render.js
-   renderOccasion() with the designs' own CSS (js/occasions.js, injected once), fonts (css/occasion-fonts.css) and
-   media (css/occasion-media.css). The screen element only frames it; its beats keep playing under reduced motion
-   (the designs stop their decorations themselves), so the rule below leaves them alone. */
-.screen.occasion{background:#000}
-@media (prefers-reduced-motion:reduce){.screen:not(.occasion) *{animation:none!important;transition:none!important}}
+/* Occasions (promo=occasions): the scenes layout with themed icon tiles, a second footer line (the public holiday
+   note) and a decoration of small seasonal symbols in the brand panel's free corners that twinkle and drift.
+   Anzac Day (.solemn) is commemorative: no decoration, tiles fade in without the bounce, and a slower, smaller float. */
+.occ .s-foot{gap:2px}
+.occ .s-foot .f2{font-size:30px;letter-spacing:.02em}
+.land.occ .s-foot{height:130px}
+.land.occ .s-foot .f1{font-size:40px}
+.land.occ .s-foot .f2{font-size:24px}
+.occ .s-ico .o-poppy{width:62%;height:62%;display:block;filter:drop-shadow(0 4px 8px rgba(0,0,0,.25))}
+.o-decor{position:absolute;inset:0;pointer-events:none}
+.o-decor .ms{position:absolute;transform:translate(-50%,-50%);color:var(--s-a);opacity:.5;font-variation-settings:'FILL' 1,'wght' 500;animation:twinkle 3.6s ease-in-out infinite}
+.o-decor .d2,.o-decor .d5{animation-delay:-1.2s}.o-decor .d3,.o-decor .d6{animation-delay:-2.4s}
+@keyframes twinkle{0%,100%{opacity:.28;transform:translate(-50%,-50%) translateY(4px)}50%{opacity:.6;transform:translate(-50%,-50%) translateY(-4px)}}
+.enter .o-decor{animation:fIn .8s .2s ease-out both}
+.solemn.enter .s-tile{animation-name:fIn;animation-duration:.9s;animation-timing-function:ease-out}
+.solemn.enter .s-head h2{animation-duration:.8s}
+.solemn .s-tiles .s-ico,.solemn .bigwrap .s-ico{animation:bobS 4.4s ease-in-out infinite}
+.solemn .s-tiles .s-tile:nth-child(even) .s-ico{animation-delay:-2.2s}
+@keyframes bobS{0%,100%{transform:translateY(3px)}50%{transform:translateY(-3px)}}
+@media (prefers-reduced-motion:reduce){.screen *{animation:none!important;transition:none!important}}
 
 /* messages in place of a screen: invalid URL, not set up, data could not load */
 .screen.msg{background:#1d2125;color:#fff;display:grid;place-items:center}

@@ -10,7 +10,7 @@
 // Testing parameters (not used by the PH player):
 //   mockapi=1          use the seed fixtures (fixtures/campaign-data.json, fixtures/config.json) instead of the API
 //   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
-//   scene=<n>          hold on scene n (0-based) instead of playing the loop (an occasion: beat n, held still)
+//   scene=<n>          hold on scene n (0-based) instead of playing the loop
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
 
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS } from './render.js';
@@ -90,14 +90,11 @@ function clearTimers() { timers.forEach(clearTimeout); timers = []; }
 function show(i, enter) {
   const seq = sequence(play);
   scene = ((i % seq.length) + seq.length) % seq.length;
-  // An occasion is one continuous animation: while playing, its beats loop in CSS (12 s) with no timers or redraws.
-  const loop = playing && play.base === 'occasion';
-  if (loop) scene = 0;
-  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter, loop });
+  last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter });
   lastStateKey = stateKey();
   shown = 'scene';
   clearTimers();
-  if (!playing || loop) return;
+  if (!playing) return;
   const t = seq[scene].t * 1000;
   timers.push(setTimeout(() => el.classList.add('leaving'), Math.max(0, t - 250)));
   timers.push(setTimeout(() => show(scene + 1, true), t));
@@ -184,8 +181,7 @@ function debugInfo(s) {
 
 // The "Open today" bar follows the store's clock (store_timezone): re-check at the turn of every minute.
 function minuteTick() {
-  // (An occasion shows nothing that depends on the store's hours: no redraw, so its loop carries on.)
-  if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) show(scene, false);
+  if (play && store && stateKey() !== lastStateKey) show(scene, false);
   if (panel && data) panel.then((p) => p && p.update(debugInfo(data.state)));
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }
@@ -221,7 +217,7 @@ function createDebugPanelLazy() {
   return import('./debug-panel.js').then(({ createDebugPanel }) => createDebugPanel(document, {
     onTestTime(t) {
       testTime = t;
-      if (play && play.base !== 'occasion') show(scene, false);
+      if (play) show(scene, false);
       if (data) panel.then((p) => p && p.update(debugInfo(data.state)));
     },
   })).catch(() => null);
@@ -234,8 +230,8 @@ window.pharmacyScreen = {
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   occasions: () => OCCASION_IDS.slice(),
-  /** Stop playback and show one promotion's scene, exactly as it renders after its entrance (an occasion: beat i,
-   *  held still). `occasion`: play that occasion on an occasion promotion (the copy-fit audit checks every one). */
+  /** Stop playback and show one promotion's scene, exactly as it renders after its entrance. `occasion`: play that
+   *  occasion on an occasion promotion (the copy-fit audit checks every one). */
   show(promoId, i, occasion) {
     playing = false;
     clearTimers();
@@ -243,8 +239,6 @@ window.pharmacyScreen = {
     show(i, false);
     return this.info;
   },
-  /** Resolves once what is on screen is final (an occasion: its fonts are in and its copy refitted). */
-  settled() { return last && last.ready ? last.ready.then(() => true) : Promise.resolve(true); },
   audit() { return last ? auditScene(el, last.G) : ['nothing rendered']; },
 };
 

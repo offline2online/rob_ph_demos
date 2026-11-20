@@ -1,8 +1,7 @@
 // Overflow audit (copy fit): renders every store x promotion x scene x orientation from the fixtures in headless
 // Chromium (an occasion promotion once per occasion: Christmas, New Year's, Australia Day, Valentine's Day, Easter,
-// Anzac Day, each beat held with this store's copy for it, once its fonts are in), at each "Open today" bar state,
-// and fails if any copy leaves the brand panel, its content box, an occasion's text box or the screen.
-// Usage: node tools/overflow-audit.mjs   (exit 1 on any problem)
+// Anzac Day, each with this store's copy for it), at each "Open today" bar state, and fails if any copy leaves the brand panel, its content box or the
+// screen. Usage: node tools/overflow-audit.mjs   (exit 1 on any problem)
 // Uses the sandbox's preinstalled Playwright/Chromium; set CHROMIUM_PATH to use another browser binary.
 //
 // Also a module: runAudit() is what test/ui/copy-fit.test.mjs runs, with a changed config to prove a headline that
@@ -61,7 +60,7 @@ export async function runAudit({ devices = DEVICES, orientations = ORIENTATIONS,
               const nScenes = occasion ? (await page.evaluate(([p, o]) => window.pharmacyScreen.show(p, 0, o), [promo, occasion])).scenes.length : info.scenes.length;
               const tag = occasion ? `${promo}/${occasion}` : promo;
               for (let i = 0; i < nScenes; i++) {
-                const r = await page.evaluate(async ([p, n, o]) => { const inf = window.pharmacyScreen.show(p, n, o || undefined); await window.pharmacyScreen.settled(); return { inf, problems: window.pharmacyScreen.audit() }; }, [promo, i, occasion]);
+                const r = await page.evaluate(([p, n, o]) => { const inf = window.pharmacyScreen.show(p, n, o || undefined); return { inf, problems: window.pharmacyScreen.audit() }; }, [promo, i, occasion]);
                 scenes.push({ device, store: r.inf.store, promo, occasion: r.inf.occasion, orientation, scene: i + 1, name: r.inf.scenes[i], bar: label });
                 for (const pr of r.problems) failures.push(`${device} ${r.inf.store} ${tag} ${orientation} scene ${i + 1} (${r.inf.scenes[i]}) bar=${label}: ${pr}`);
               }

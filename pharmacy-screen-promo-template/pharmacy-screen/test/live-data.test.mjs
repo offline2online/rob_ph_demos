@@ -300,7 +300,7 @@ test('mockapi=1 reads the seed fixtures the same way, and an unknown device is n
 
 test('published config: an occasion template plays its occasion (t_occ_<occasion>), with that occasion\'s copy', () => {
   const ph = { id: 'rec-ph', storeCode: 'VIC-MP-001', name: 'Beaumaris Pharmacy', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null,
-    content: { 'rec-occ': { occasions: { easter: { beats: [{ text: 'Hoppy Easter, ${Suburb}' }, { text: 'M' }, { text: 'Rest up' }] } } } } };
+    content: { 'rec-occ': { occasions: { easter: { scenes: [{ title: 'Happy Easter,<br>${Suburb}', sub: '', line1: 'L1', line2: '' }, { title: 'M' }, { title: 'Lest', line1: '' }] } } } } };
   const promos = [{ id: 'rec-occ', promoId: 'occasions', name: 'Occasions', templateId: 'builtin-occasion-easter' }];
   const cfg = fromPublishedConfig(buildScreenConfig(ph, promos, [], '2026-11-20T00:00:00.000Z'));
   assert.deepEqual(cfg.promotions, [{ id: 'occasions', promoId: 'occasions', name: 'Occasions', template: 't_occ_easter' }]);
@@ -308,14 +308,12 @@ test('published config: an occasion template plays its occasion (t_occ_<occasion
   const play = resolvePromotion(cfg, store, 'occasions');
   assert.equal(play.base, 'occasion');
   assert.equal(play.occasion, 'easter');
-  assert.equal(play.content.beats[0].text, 'Hoppy Easter, ${Suburb}');
-  // Three beats sharing the 12 s loop.
-  assert.deepEqual(sequence(play).map((x) => x.t), [4, 4, 4]);
-  // Christmas, not yet edited: the default copy, two beats (6 s each), signing off with the store name.
+  assert.equal(play.content.scenes[0].title, 'Happy Easter,<br>${Suburb}');
+  assert.deepEqual(sequence(play).map((x) => x.t), [3, 3, 4]);
+  // Christmas, not yet edited: the default copy, signing off with the store name.
   const xmas = resolvePromotion(cfg, store, 'occasions', { occasion: 'christmas' });
   assert.equal(xmas.occasion, 'christmas');
-  assert.deepEqual(sequence(xmas).map((x) => x.t), [6, 6]);
-  assert.deepEqual(xmas.content.beats[1], { label: 'With warm wishes', text: 'from the whole ${StoreName} team' });
+  assert.match(xmas.content.scenes[2].line1, /from the whole \$\{StoreName\} team\.$/);
 });
 
 test('published config: tokens set by hand reach the screen and win over the store data', () => {

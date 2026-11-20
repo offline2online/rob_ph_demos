@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Occasions | One of the six occasion templates (seeded Christmas) | The chosen occasion's standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
+| `occasions` | Occasions | One of the six occasion templates (seeded Christmas) | Greeting, message and sign-off for the chosen occasion; "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here.
@@ -140,18 +140,18 @@ Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.
 |---|---|---|
 | `${Logo}` | all | The pharmacy logo (Location API logo, else the uploaded one) |
 | `${Headline}` | all | The scene's headline, sized to fit the brand panel |
-| `${AccentLine}` | scenes | The accent line under the headline |
-| `${Content}` | scenes | The scene body (tiles or icon, line 1, line 2) as the built-in draws it |
-| `${Icon}` | scenes | The scene's large icon tile |
+| `${AccentLine}` | scenes, occasion | The accent line under the headline |
+| `${Content}` | scenes, occasion | The scene body (tiles or icon, line 1, line 2) as the built-in draws it |
+| `${Icon}` | scenes, occasion | The scene's large icon tile |
 | `${ServiceLabel}` | scenes | The service chip label |
-| `${Line1}` | scenes | Line 1 |
-| `${Line2}` | scenes | Line 2 |
-| `${Tiles}` | scenes | The row of icon tiles (greeting and close scenes) |
-| `${Decor}` | occasion | Reserved: the occasion templates are drawn whole (`js/occasions.js`), so it renders as nothing |
-| `${Footer}` | scenes | The "Open today" bar, or nothing when it is hidden |
-| `${OpenToday}` | scenes | The bar's message text only |
+| `${Line1}` | scenes, occasion | Line 1 |
+| `${Line2}` | scenes, occasion | Line 2 |
+| `${Tiles}` | scenes, occasion | The row of icon tiles (greeting and close scenes) |
+| `${Decor}` | occasion | The occasion's seasonal symbols |
+| `${Footer}` | scenes, occasion | The "Open today" bar, or nothing when it is hidden |
+| `${OpenToday}` | scenes, occasion | The bar's message text only |
 | `${HoursCard}` | hours | The weekly opening hours card |
-| `${HolidayNote}` | hours | "Public Holidays: Please call to confirm" |
+| `${HolidayNote}` | hours, occasion | "Public Holidays: Please call to confirm" |
 | `${ContactLine}` | hours | Phone (and address when "show address" is on) |
 | `${Chevron}` | all | The brand chevron graphic |
 | `${ViewBox}` | all | SVG view box of the screen (`0 0 1080 1920` or `0 0 1920 1080`) |
@@ -204,17 +204,15 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "occasions": { "christmas": { "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team" } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
+      "occasions": { "christmas": { "scenes": [ { "title": "Merry Christmas,<br>${Suburb}", "sub": "", "line1": "…", "line2": "…", "dur": 3 } /* 3 scenes */ ] } /* one per occasion */ },
+      "footer": { "show": true }
     }
   }
 }
 ```
 
 - Scene durations (`dur`, `introDur`) are 1–60 seconds; missing ones use the defaults (greeting 3 s, service 2 s,
-  close 2 s). An occasion's beats share its fixed 12 s loop (no `dur`).
-- Occasion beats: `text` is the main line (rich text), `label` the small label line, present only on the beats
-  whose design has one. Copy saved in the earlier shape (`scenes[3]` of `title`, `sub`, `line1`, `line2`) still
-  plays: unedited as the new defaults, edited beat by beat (`title` as the main line, `sub` as the label).
+  close 2 s; occasion scenes 3, 3 and 4 s).
 - Rich text (headlines, bar messages) keeps only bold, italic, line breaks and `<span class="reg">` /
   `<span class="acc">`; everything else is stripped.
 - Content is bounded at 200 KB per promotion.

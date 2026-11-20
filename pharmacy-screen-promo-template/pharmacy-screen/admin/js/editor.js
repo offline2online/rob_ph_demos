@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, OCCASION_SCENES } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 
@@ -69,7 +69,7 @@ function content(id = S.dpTab) {
   const all = S.cur.content || (S.cur.content = {});
   if (S.cur.isMaster && !all[p.id]) all[p.id] = p.master || M.clone((S.masterSrc && S.masterSrc.content && S.masterSrc.content[p.id]) || M.newContentFor({ promoId: p.promoId }, baseOf(id)));
   const b = baseOf(id), c = all[p.id];
-  const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].beats) && c.occasions[o.id].beats.length === occasionOf(o.id).beats.length)
+  const fits = b === 'occasion' ? c && c.occasions && M.OCCASION_CHOICES.every((o) => c.occasions[o.id] && Array.isArray(c.occasions[o.id].scenes) && c.occasions[o.id].scenes.length === 3)
     : b === 'hours' ? c && Array.isArray(c.headlines) && c.headlines.length >= 3 : c && Array.isArray(c.slots) && c.close && typeof c.greeting === 'string';
   if (!fits) all[p.id] = c ? M.ensureContent(c, b) : M.newContentFor(p, b);
   if (!S.cur.isMaster && p.master) {
@@ -104,20 +104,16 @@ new ResizeObserver(fit).observe($('stage'));
 
 function renderScreen(force) {
   if (!S.cur || !S.promotions.length) return;
-  // An occasion plays as one CSS loop: while playing it is drawn once (and again only when its copy, orientation or
-  // promotion changes, restarting the loop and the timeline with it); paused, the selected beat is held still.
-  const occLoop = isOcc() && playing;
-  const minute = occLoop ? 0 : Math.floor(Date.now() / 60000);
-  const key = [S.cur.id, S.dpTab, occLoop ? 'loop' : scene, ver, orient, minute].join('|');
+  const minute = Math.floor(Date.now() / 60000);
+  const key = [S.cur.id, S.dpTab, scene, ver, orient, minute].join('|');
   if (key === lastKey && !force) return;
-  if (occLoop) { scene = 0; elapsed = 0; }
   const sceneChanged = !lastKey.startsWith([S.cur.id, S.dpTab, scene].join('|') + '|');
   lastKey = key;
   const el = $('screen');
   try {
     model = previewModel();
     if (scene >= sequence(model.play).length) scene = 0;
-    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, enter: sceneChanged, loop: occLoop });
+    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, enter: sceneChanged });
   } catch (e) {
     model = null;
     renderMessage(el, orient, 'Preview unavailable', (e && (e.detail || e.message)) || String(e));
@@ -435,27 +431,32 @@ function showMasterChrome(on) {
 }
 
 /**
- * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to, one card per beat of the
- * design (a main line, and a small label line where the design has one). The beats share the template's fixed 12 s
- * loop. The occasion itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion
- * keeps its own copy.
+ * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to (greeting, message,
+ * sign-off: headline, accent line, line 1, line 2, seconds on screen) and the Open today bar. The occasion
+ * itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion keeps its own copy.
  */
 function renderOccasion(B, d) {
   const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
-  const o = d.occasions[occ.id], secs = M.loopSeconds(o) / occ.beats.length;
+  const o = d.occasions[occ.id], F = footerConfig(d), s = S.cur;
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
-  const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
-  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">Loop ${M.loopSeconds(o)}s</span>
-   <div id="occList" style="display:grid;gap:12px">${occ.beats.map((layout, i) => {
-    const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
-    return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}<span class="hint" style="margin-left:auto;font-weight:400" title="How long this shows on screen"><span class="ms" style="font-size:16px">timer</span> ${secs}s</span></div>
-     <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
-  }).join('')}</div>`;
-  occ.beats.forEach((layout, i) => {
-    const x = o.beats[i];
-    bindRt(`o${i}text`, (v) => { x.text = v; });
-    if (layout.label) $(`o${i}label`).oninput = (e) => { x.label = e.target.value; changed(); };
+  const icon = (i) => { const n = i ? occ.icons[i - 1] : occ.tiles[0]; return n === 'poppy' ? 'local_florist' : n; };
+  B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start"></span>
+   <div id="occList" style="display:grid;gap:12px">${o.scenes.map((x, i) => `<div class="slot" data-o="${i}"><div class="slot-h"><span class="ic" style="background:linear-gradient(145deg,${tileTop(s.colours.primary)},${esc(s.colours.primary)})"><span class="ms">${esc(icon(i))}</span></span>${['Top: ', '', 'Tail: '][i]}${OCCASION_SCENES[i]}
+     <label class="dur" style="margin-left:auto" title="How long this shows on screen"><span class="ms">timer</span><input type="number" id="o${i}dur" min="1" max="60" step="0.5" value="${+x.dur || [3, 3, 4][i]}" aria-label="Seconds on screen">s</label></div>
+     <div class="stack">${rt(`o${i}title`, 'Headline', x.title)}${f(`o${i}sub`, 'Accent line', x.sub)}${f(`o${i}line1`, 'Line 1', x.line1)}${f(`o${i}line2`, 'Line 2', x.line2)}</div></div>`).join('')}</div>
+   <div class="slot" id="footSlot"><div class="slot-h">Footer: Open today bar<label class="chk" style="margin-left:auto;font-weight:400"><input type="checkbox" id="ftShow" ${F.show !== false ? 'checked' : ''}>Show</label></div>
+     <div class="stack">${rt('ftOpen', 'While open', F.open)}${rt('ftClosing', 'Last 30 minutes', F.closing)}${rt('ftBefore', 'Before opening', F.before)}${rt('ftClosed', 'After closing', F.closed)}</div>
+     <span class="hint">Use \${CloseTime} and \${OpenTime} for today's hours.</span></div>`;
+  const total = () => { const t = M.loopSeconds(o); $('loopLen').textContent = `Loop ${t % 1 ? t.toFixed(1) : t}s`; };
+  o.scenes.forEach((x, i) => {
+    $(`o${i}dur`).oninput = (e) => { x.dur = M.clampDur(e.target.value); changed(); total(); };
+    bindRt(`o${i}title`, (v) => { x.title = v; });
+    ['sub', 'line1', 'line2'].forEach((k) => { $(`o${i}${k}`).oninput = (e) => { x[k] = e.target.value; changed(); }; });
   });
+  total();
+  const fset = (k, v) => { d.footer = Object.assign({}, footerConfig(d), { [k]: v }); };
+  bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
+  $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
 }
 
 // ───────────────────────── promotions (shared) ─────────────────────────

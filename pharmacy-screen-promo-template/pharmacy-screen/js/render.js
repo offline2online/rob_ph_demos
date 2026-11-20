@@ -8,101 +8,79 @@
 
 import { DAYS, parseOpeningHours, storeNow, storeState, fmtShort, weeklyRows } from './hours.js';
 import { esc, rich, fill, timeTokens, fillTemplate, applyStoreName, cleanTokens, applyTokens, DATA_TOKENS } from './tokens.js';
-import { geom, ptsPath, ptsClip, fitText, fitOccasion } from './fit-text.js';
-import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
+import { geom, ptsPath, ptsClip, fitText } from './fit-text.js';
 
 // ---------- occasions ----------
 // The "Occasions" promotion (promo=occasions) plays one of six read-only built-in templates, one per occasion.
-// Which one is the promotion's template, picked in the admin editor's Occasion drop-down (no date logic). Each is a
-// standalone, full-screen animation (js/occasions.js, the approved designs): no brand panel, logo, brand colours,
-// icon tiles or Open today bar. Its copy plays as beats on a 12 s loop (Christmas 2 beats, the others 3); a beat is
-// a main line and, where the design has one, a small label line (above it, or for Australia Day's last beat a pill
-// below it). The copy is each pharmacy's own (content.occasions[<occasion>] = {beats: [{label?, text}]}), with
-// ${Suburb} in all six and ${StoreName} in Christmas and New Year's. Anzac Day is commemorative: fades only.
-// design: the template's key in js/occasions.js. fonts: what to load before fitting the copy (document.fonts.load).
-const BT = (main, text, label) => ({ main, text, ...label });
-const ABOVE = (cls, value, span) => ({ label: { cls, pos: 'above', span: !!span, value } });
-const BELOW = (cls, value) => ({ label: { cls, pos: 'below', value } });
+// Which one is the promotion's template, picked in the admin editor's Occasion drop-down (no date logic). Each
+// occasion has three scenes: a greeting over themed icon tiles, a message, and a sign-off. Christmas and New
+// Year's sign off with ${StoreName}; the others use ${Suburb} only. Visuals are neutral seasonal symbols (Anzac
+// Day is commemorative: a remembrance poppy, dawn, no decoration and calmer motion); copy makes no product or
+// health claim. Icons are Material Symbols names, except 'poppy', drawn as an inline SVG.
+const OS = (title, sub, line1, line2) => ({ title, sub, line1, line2 });
 export const OCCASIONS = [
   {
-    id: 'christmas', name: 'Christmas', design: 'christmas',
-    fonts: ['italic 600 1em "Playfair Display"', '500 1em "Playfair Display"', '500 1em "Outfit"'],
-    beats: [BT('hl', 'Merry Christmas, ${Suburb}'), BT('sub', 'from the whole ${StoreName} team', ABOVE('kicker', 'With warm wishes'))],
+    id: 'christmas', name: 'Christmas', tiles: ['park', 'featured_seasonal_and_gifts', 'star'], icons: ['ac_unit', 'volunteer_activism'], decor: 'ac_unit',
+    scenes: [
+      OS('Merry Christmas,<br>${Suburb}', '', "Season's greetings", 'From all of us, to all of you'),
+      OS('Here for you<br>this season', 'Holiday hours may change', 'Please check our hours before you visit', 'Thank you for shopping local'),
+      OS('Thank you,<br>${Suburb}', '', 'Merry Christmas from the whole ${StoreName} team.', ''),
+    ],
   },
   {
-    id: 'new-year', name: "New Year's", design: 'newyear',
-    fonts: ['900 1em "Big Shoulders Display"', '800 1em "Big Shoulders Display"', '400 1em "Outfit"'],
-    beats: [BT('hl', 'Happy<br>New Year'), BT('sub', 'Thank you for a great year, ${Suburb}'), BT('sub sm', 'from the whole ${StoreName} team', ABOVE('kicker', "Here's to a healthy year ahead"))],
+    id: 'new-year', name: "New Year's", tiles: ['celebration', 'flare', 'hourglass_bottom'], icons: ['calendar_month', 'volunteer_activism'], decor: 'flare',
+    scenes: [
+      OS('Happy New Year,<br>${Suburb}', '', 'Wishing you a bright year ahead', 'Here’s to new beginnings'),
+      OS('New year,<br>same friendly faces', 'Here when you need us', 'Please check our hours before you visit', 'Holiday hours may change'),
+      OS('Thank you,<br>${Suburb}', '', 'Happy New Year from the whole ${StoreName} team.', ''),
+    ],
   },
   {
-    id: 'australia-day', name: 'Australia Day', design: 'ausday',
-    fonts: ['400 1em "Archivo Black"', '700 1em "Archivo"'],
-    beats: [BT('hl', 'Happy Australia Day, ${Suburb}', ABOVE('kicker', '26 January', true)), BT('hl', 'Enjoy the sunshine'), BT('hl', 'Slip, slop, slap', BELOW('sub', 'Stay sun safe this summer'))],
+    id: 'australia-day', name: 'Australia Day', tiles: ['wb_sunny', 'diversity_3', 'beach_access'], icons: ['groups', 'handshake'], decor: 'wb_sunny',
+    scenes: [
+      OS('Happy Australia Day,<br>${Suburb}', '', 'Celebrating our local community', 'Everyone is welcome here'),
+      OS('Proud to be part<br>of the community', 'Public holiday hours may change', 'Please check our hours before you visit', 'Have a safe and happy public holiday'),
+      OS('Thank you,<br>${Suburb}', '', 'For making this a great place to be', ''),
+    ],
   },
   {
-    id: 'valentines-day', name: "Valentine's Day", design: 'valentine',
-    fonts: ['italic 400 1em "DM Serif Display"', '500 1em "Outfit"'],
-    beats: [BT('hl', "Happy Valentine's Day, ${Suburb}", ABOVE('kicker', '14 February')), BT('hl', 'Look after the ones you love'), BT('hl', 'and yourself, too')],
+    id: 'valentines-day', name: "Valentine's Day", tiles: ['favorite', 'local_florist', 'mail'], icons: ['volunteer_activism', 'favorite'], decor: 'favorite',
+    scenes: [
+      OS("Happy Valentine's Day,<br>${Suburb}", '', 'A day to show you care', 'For partners, family and friends'),
+      OS('Share a little<br>kindness today', 'Big or small, it all counts', 'A kind word goes a long way', 'Look out for the people you love'),
+      OS('Thank you,<br>${Suburb}', '', "Wishing you a happy Valentine's Day", ''),
+    ],
   },
   {
-    id: 'easter', name: 'Easter', design: 'easter',
-    fonts: ['600 1em "Fredoka"'],
-    beats: [BT('hl', 'Happy Easter, ${Suburb}'), BT('hl', 'Wishing you a restful long weekend'), BT('hl', 'Take time to recharge')],
+    id: 'easter', name: 'Easter', tiles: ['egg', 'cruelty_free', 'local_florist'], icons: ['calendar_month', 'egg_alt'], decor: 'local_florist',
+    scenes: [
+      OS('Happy Easter,<br>${Suburb}', '', 'Wishing you a happy Easter break', 'From all of us, to all of you'),
+      OS('Here for you<br>over Easter', 'Holiday hours may change', 'Please check our hours before you visit', 'Have a safe long weekend'),
+      OS('Thank you,<br>${Suburb}', '', 'Have a safe and happy Easter', ''),
+    ],
   },
   {
-    id: 'anzac-day', name: 'Anzac Day', design: 'anzac', solemn: true,
-    fonts: ['500 1em "Cormorant Garamond"', '600 1em "Cormorant Garamond"', 'italic 500 1em "Cormorant Garamond"'],
-    beats: [BT('hl', 'Anzac Day', ABOVE('kicker', '25 April')), BT('hl', 'Lest we forget'), BT('sub', 'Remembering together, ${Suburb}')],
+    id: 'anzac-day', name: 'Anzac Day', tiles: ['poppy', 'wb_twilight', 'military_tech'], icons: ['wb_twilight', 'poppy'], decor: '', solemn: true,
+    scenes: [
+      OS('Anzac Day', '25 April', 'We pause to remember', 'All who served and sacrificed'),
+      OS('We will<br>remember them', '', 'Honouring those who served', 'And those who serve today'),
+      OS('Lest we forget,<br>${Suburb}', '', '', ''),
+    ],
   },
 ];
 export const OCCASION_IDS = OCCASIONS.map((o) => o.id);
 export const DEFAULT_OCCASION = 'christmas';
-/** One loop of an occasion's beats, in seconds (the designs' CSS animations). The playback duration is this + 1. */
-export const OCCASION_LOOP = 12;
+export const OCCASION_SCENES = ['Greeting', 'Message', 'Sign-off'];
+const OCCASION_DUR = [3, 3, 4];
 export const occasionOf = (id) => OCCASIONS.find((o) => o.id === id) || OCCASIONS[0];
-/** The editor's name for each line of a beat: the label line by where the design puts it, and the main line. */
-export const occasionFieldName = (beat, key) => (key === 'label' ? (beat.label && beat.label.pos === 'below' ? 'Line below' : 'Small line above') : 'Main line');
-/** One occasion's default copy: {beats: [{label?, text}]}, a label only on the beats whose design has one. */
-export const defaultOccasion = (id) => ({ beats: occasionOf(id).beats.map((b) => (b.label ? { label: b.label.value, text: b.text } : { text: b.text })) });
-
-// The copy the occasion templates carried before the standalone designs (three scenes of headline, accent line,
-// line 1, line 2): seed/fixtures/occasions-legacy.json holds the same, for the seed's upgrade of seeded pharmacies.
-// Copy still equal to it (never edited) plays the new defaults; edited copy is kept and plays beat by beat, each
-// scene's headline as the main line and its accent line as the label (where the beat has one).
-const OS = (title, sub, line1, line2) => ({ title, sub, line1, line2 });
-export const LEGACY_OCCASION_COPY = {
-  christmas: [OS('Merry Christmas,<br>${Suburb}', '', "Season's greetings", 'From all of us, to all of you'), OS('Here for you<br>this season', 'Holiday hours may change', 'Please check our hours before you visit', 'Thank you for shopping local'), OS('Thank you,<br>${Suburb}', '', 'Merry Christmas from the whole ${StoreName} team.', '')],
-  'new-year': [OS('Happy New Year,<br>${Suburb}', '', 'Wishing you a bright year ahead', 'Here’s to new beginnings'), OS('New year,<br>same friendly faces', 'Here when you need us', 'Please check our hours before you visit', 'Holiday hours may change'), OS('Thank you,<br>${Suburb}', '', 'Happy New Year from the whole ${StoreName} team.', '')],
-  'australia-day': [OS('Happy Australia Day,<br>${Suburb}', '', 'Celebrating our local community', 'Everyone is welcome here'), OS('Proud to be part<br>of the community', 'Public holiday hours may change', 'Please check our hours before you visit', 'Have a safe and happy public holiday'), OS('Thank you,<br>${Suburb}', '', 'For making this a great place to be', '')],
-  'valentines-day': [OS("Happy Valentine's Day,<br>${Suburb}", '', 'A day to show you care', 'For partners, family and friends'), OS('Share a little<br>kindness today', 'Big or small, it all counts', 'A kind word goes a long way', 'Look out for the people you love'), OS('Thank you,<br>${Suburb}', '', "Wishing you a happy Valentine's Day", '')],
-  easter: [OS('Happy Easter,<br>${Suburb}', '', 'Wishing you a happy Easter break', 'From all of us, to all of you'), OS('Here for you<br>over Easter', 'Holiday hours may change', 'Please check our hours before you visit', 'Have a safe long weekend'), OS('Thank you,<br>${Suburb}', '', 'Have a safe and happy Easter', '')],
-  'anzac-day': [OS('Anzac Day', '25 April', 'We pause to remember', 'All who served and sacrificed'), OS('We will<br>remember them', '', 'Honouring those who served', 'And those who serve today'), OS('Lest we forget,<br>${Suburb}', '', '', '')],
-};
-const sameCopy = (a, b) => ['title', 'sub', 'line1', 'line2'].every((k) => String((a && a[k]) || '') === String((b && b[k]) || ''));
-const isLegacyDefault = (id, scenes) => Array.isArray(scenes) && scenes.length === 3 && scenes.every((x, i) => sameCopy(x, LEGACY_OCCASION_COPY[id][i]) && !(x && x.dur));
-
-/**
- * A pharmacy's saved copy for one occasion as {beats}, whatever shape it was saved in: the current shape with any
- * missing line filled from the defaults, the old three-scene shape (unedited: the new defaults; edited: kept, beat by
- * beat), or the defaults when there is none.
- */
-export function occasionCopy(id, saved) {
-  const occ = occasionOf(id), def = defaultOccasion(occ.id);
-  const str = (v, d) => (typeof v === 'string' ? v : d);
-  if (saved && Array.isArray(saved.beats)) {
-    return { beats: def.beats.map((d, i) => { const v = saved.beats[i] && typeof saved.beats[i] === 'object' ? saved.beats[i] : {}; return 'label' in d ? { label: str(v.label, d.label), text: str(v.text, d.text) } : { text: str(v.text, d.text) }; }) };
-  }
-  if (saved && Array.isArray(saved.scenes) && !isLegacyDefault(occ.id, saved.scenes)) {
-    return { beats: def.beats.map((d, i) => { const v = saved.scenes[i] && typeof saved.scenes[i] === 'object' ? saved.scenes[i] : {}; return 'label' in d ? { label: str(v.sub, d.label), text: str(v.title, d.text) } : { text: str(v.title, d.text) }; }) };
-  }
-  return def;
-}
+/** One occasion's default copy: {scenes: [greeting, message, sign-off]}, each {title, sub, line1, line2}. */
+export const defaultOccasion = (id) => ({ scenes: occasionOf(id).scenes.map((x) => ({ ...x })) });
 
 // ---------- built-in templates ----------
 export const BUILTIN_TEMPLATES = [
   { id: 't_scenes', name: 'Promotion scenes', base: 'scenes', builtin: true },
   { id: 't_hours', name: 'Opening hours', base: 'hours', builtin: true },
-  ...OCCASIONS.map((o) => ({ id: 't_occ_' + o.id, name: o.name, base: 'occasion', occasion: o.id, builtin: true })), // drawn by renderOccasion()
+  ...OCCASIONS.map((o) => ({ id: 't_occ_' + o.id, name: o.name, base: 'occasion', occasion: o.id, builtin: true })),
 ];
 
 export const DEFAULT_HTML = {
@@ -120,6 +98,14 @@ export const DEFAULT_HTML = {
 \${Chevron}
 \${HoursCard}
 <div class="s-note">\${HolidayNote}\${ContactLine}</div>`,
+  occasion: `<div class="s-top"></div>
+\${Decor}
+<svg class="s-edge" viewBox="\${ViewBox}"><path d="\${EdgePath}"/></svg>
+<div class="s-logo">\${Logo}</div>
+<div class="s-head">\${Headline}\${AccentLine}</div>
+\${Chevron}
+<div class="s-body">\${Content}</div>
+\${Footer}`,
 };
 
 // The "Open today" bar: one message per store state, each may use ${CloseTime} / ${OpenTime}.
@@ -186,6 +172,8 @@ export function storeModel(campaignData, config) {
   };
 }
 
+const isOccasionCopy = (o) => !!o && Array.isArray(o.scenes) && o.scenes.length === 3 && o.scenes.every((x) => x && typeof x === 'object');
+
 /**
  * A promotion by its promo ID, with its template (custom or built-in) and this store's content for it.
  * opts.occasion: play that occasion instead of the one the promotion is set to (an occasion promotion only; the
@@ -204,8 +192,9 @@ export function resolvePromotion(config, store, promoId, opts = {}) {
   if (template.base === 'occasion') {
     // Content keeps every occasion's copy (content.occasions[<occasion>]), so switching occasion and back loses nothing.
     const occasion = occasionOf(template.occasion).id;
-    const copy = occasionCopy(occasion, content && content.occasions && content.occasions[occasion]);
-    return { promo, promoId: promoIdOf(promo), template, base: 'occasion', occasion, content: { beats: copy.beats } };
+    const saved = content && content.occasions && content.occasions[occasion];
+    const copy = isOccasionCopy(saved) ? saved : defaultOccasion(occasion);
+    return { promo, promoId: promoIdOf(promo), template, base: 'occasion', occasion, content: { scenes: copy.scenes, footer: content && content.footer } };
   }
   const base = template.base === 'hours' ? 'hours' : 'scenes';
   const fits = base === 'hours' ? content && Array.isArray(content.headlines) : content && Array.isArray(content.slots);
@@ -220,8 +209,7 @@ export function sequence(play) {
     const n = (d.headlines || []).length || 1;
     return n === 3 ? [{ k: 0, t: 2.7 }, { k: 1, t: 2.7 }, { k: 2, t: 2.6 }] : Array.from({ length: n }, (_, i) => ({ k: i, t: +(8 / n).toFixed(2) }));
   }
-  // An occasion's beats share its CSS loop equally (Christmas 6 s + 6 s, the others 4 s each).
-  if (play.base === 'occasion') return d.beats.map((x, i) => ({ k: i, t: OCCASION_LOOP / d.beats.length }));
+  if (play.base === 'occasion') return d.scenes.map((x, i) => ({ k: i, t: +x.dur || OCCASION_DUR[i] || 3 }));
   return [{ k: 'intro', t: +d.introDur || 3 }, ...d.slots.map((x, i) => ({ k: i, t: +x.dur || 2 })), { k: 'close', t: +(d.close && d.close.dur) || 2 }];
 }
 
@@ -229,7 +217,7 @@ export function sceneName(play, i) {
   const s = sequence(play)[i];
   if (!s) return '';
   if (play.base === 'hours') return 'Headline ' + (i + 1);
-  if (play.base === 'occasion') return 'Beat ' + (i + 1);
+  if (play.base === 'occasion') return OCCASION_SCENES[i] || 'Scene ' + (i + 1);
   return s.k === 'intro' ? 'Greeting' : s.k === 'close' ? 'Walk in' : play.content.slots[s.k].label;
 }
 
@@ -272,7 +260,16 @@ export function scopeCss(css, scope = '#screen') {
 const safeUrl = (u) => (/^(data:image\/(png|webp|jpeg|gif|svg\+xml);base64,|https:\/\/|\.{0,2}\/)/i.test(String(u || '')) ? String(u) : '');
 
 // ---------- render ----------
-const ico = (n, big) => `<div class="s-ico${big ? ' big' : ''}"><span class="ms">${esc(n)}</span></div>`;
+// The remembrance poppy (Anzac Day): four red petals, black centre.
+const POPPY = '<svg class="o-poppy" viewBox="0 0 100 100" aria-hidden="true"><g fill="#d3242f"><circle cx="50" cy="29" r="23"/><circle cx="29" cy="51" r="23"/><circle cx="71" cy="51" r="23"/><circle cx="50" cy="71" r="23"/></g><g fill="#a51a24" opacity=".55"><circle cx="50" cy="50" r="19"/></g><circle cx="50" cy="50" r="11" fill="#1b1b1b"/></svg>';
+const glyph = (n) => (n === 'poppy' ? POPPY : `<span class="ms">${esc(n)}</span>`);
+function ico(n, big) { return `<div class="s-ico${big ? ' big' : ''}">${glyph(n)}</div>`; }
+// Themed decoration in the brand panel's free corners: small seasonal symbols that twinkle (none on Anzac Day).
+const DECOR = { portrait: [[70, 150, 54], [170, 250, 34], [120, 345, 26], [1010, 150, 54], [910, 250, 34], [960, 345, 26]], landscape: [[700, 70, 52], [790, 175, 32], [660, 215, 24]] };
+function decorHtml(occ, land) {
+  if (!occ.decor) return '';
+  return `<div class="o-decor" aria-hidden="true">${DECOR[land ? 'landscape' : 'portrait'].map(([x, y, s], i) => `<span class="ms d${i + 1}" style="left:${x}px;top:${y}px;font-size:${s}px">${esc(occ.decor)}</span>`).join('')}</div>`;
+}
 function logoHtml(store) {
   const src = safeUrl(store.logo);
   return src ? `<img src="${esc(src)}" alt="${esc(store.name)}">` : '<div class="s-mark">Pharmacy logo</div>';
@@ -288,16 +285,14 @@ export function footerMessage(store, content, state) {
 
 /**
  * Render one scene into `el` (the 1080x1920 / 1920x1080 .screen element, id "screen").
- * opts: { store, play, orientation, scene, now: {day, min} | undefined, enter: boolean, loop: boolean }
- * An occasion promotion draws its whole animation (renderOccasion): with opts.loop its beats play on their CSS loop,
- * otherwise beat `scene` is held still.
- * Returns { G, fit, state, ready } (ready: a promise, settled once an occasion's fonts are in and its copy refitted).
+ * opts: { store, play, orientation, scene, now: {day, min} | undefined, enter: boolean }
+ * Returns { G, fit, state }.
  */
 export function renderScene(el, opts) {
   const { store, play } = opts;
-  if (play.base === 'occasion') return renderOccasion(el, opts);
   const land = opts.orientation === 'landscape';
   const hours = play.base === 'hours';
+  const occ = play.base === 'occasion' ? occasionOf(play.occasion) : null;
   const seq = sequence(play);
   const scene = Math.max(0, Math.min(seq.length - 1, opts.scene | 0));
   const now = opts.now || storeNow(store.tz);
@@ -322,6 +317,24 @@ export function renderScene(el, opts) {
     const bits = [s.phone ? `Phone ${esc(s.phone)}` : '', d.showAddress && s.address ? esc(s.address) : ''].filter(Boolean).join(' · ');
     T.HolidayNote = `<span class="n1">${HOLIDAY_NOTE}</span>`;
     T.ContactLine = bits ? `<span class="n2">${bits}</span>` : '';
+  } else if (occ) {
+    // ${Suburb} and ${StoreName} in the copy; headlines are rich text, the other lines plain.
+    const R = (t) => applyStoreName(rich(t, sub), s.name), P = (t) => applyStoreName(fill(t, sub), s.name);
+    const k = seq[scene].k, x = d.scenes[k] || {};
+    hl = `<h2>${R(x.title)}</h2>`;
+    const a = P(x.sub); acc = a ? `<p>${a}</p>` : '';
+    T.Line1 = P(x.line1); T.Line2 = P(x.line2);
+    const lines = (cls) => (T.Line1 ? `<h3 class="s-title ${cls}">${T.Line1}</h3>` : '') + (T.Line2 ? `<p class="s-sub ${cls}">${T.Line2}</p>` : '');
+    const tiles = `<div class="s-tiles">${occ.tiles.map((n, i) => `<div class="s-tile d${i + 1}">${ico(n)}</div>`).join('')}</div>`;
+    T.Tiles = tiles;
+    if (k === 0) body = tiles + lines('d3');
+    else { T.Icon = ico(occ.icons[k - 1] || occ.tiles[0], true); body = `<div class="bigwrap">${T.Icon}</div>` + lines('d1'); }
+    T.Decor = decorHtml(occ, land);
+    const f1 = footerMessage(s, d, state);
+    T.OpenToday = f1;
+    T.HolidayNote = esc(HOLIDAY_NOTE);
+    T.Footer = footerConfig(d).show === false ? '' : `<div class="s-foot"><span class="f1">${f1}</span><span class="f2">${T.HolidayNote}</span></div>`;
+    T.Content = body;
   } else {
     const sc = seq[scene].k;
     const n = d.slots.length, tz = n <= 3 ? 1 : n === 4 ? 0.8 : n === 5 ? 0.66 : 0.56;
@@ -348,7 +361,7 @@ export function renderScene(el, opts) {
   }
 
   const G = geom(land, hours);
-  el.className = 'screen' + (land ? ' land' : '') + (hours ? ' closed' : '') + (opts.enter ? ' enter' : '');
+  el.className = 'screen' + (land ? ' land' : '') + (hours ? ' closed' : '') + (occ ? ` occ occ-${occ.id}${occ.solemn ? ' solemn' : ''}` : '') + (opts.enter ? ' enter' : '');
   Object.assign(T, {
     ViewBox: `0 0 ${G.W} ${G.H}`, EdgePath: ptsPath(G.edge), Logo: logoHtml(s), Headline: hl, AccentLine: acc,
     Chevron: `<svg class="s-chev" viewBox="0 0 90 50" style="${G.chev}"><path d="M8 8 L45 42 L82 8"/></svg>`,
@@ -372,57 +385,7 @@ export function renderScene(el, opts) {
   el.style.backgroundSize = bg ? 'cover' : '';
   el.style.backgroundPosition = bg ? 'center' : '';
   const fit = fitText(el, G);
-  return { G, fit, state, ready: Promise.resolve() };
-}
-
-/** The occasion templates' CSS (js/occasions.js), added to the document once. */
-function occasionStyles(doc) {
-  if (doc.getElementById('occasion-styles')) return;
-  const st = doc.createElement('style');
-  st.id = 'occasion-styles';
-  st.textContent = OCCASION_CSS;
-  doc.head.appendChild(st);
-}
-
-/** One beat of an occasion: its label line (above or below, where the design has one) and its main line. */
-function beatHtml(layout, copy, i, on, R, P) {
-  const text = R(copy.text), lab = layout.label ? P(copy.label) : '';
-  const label = lab ? `<div class="${layout.label.cls}">${layout.label.span ? `<span>${lab}</span>` : lab}</div>` : '';
-  const main = text ? `<div class="${layout.main}">${text}</div>` : '';
-  const pos = layout.label && layout.label.pos;
-  return `<div class="b b${i + 1}${on ? ' on' : ''}">${pos === 'above' ? label : ''}${main}${pos === 'below' ? label : ''}</div>`;
-}
-
-/**
- * An occasion template, drawn whole: the design's decorations and the pharmacy's copy as beats, filling the screen.
- * ${Suburb} (blanked with its comma when the store has none) and ${StoreName} in every line; the main lines are rich
- * text (line breaks, bold, italic), the label lines plain. Each beat's copy is shrunk to fit the text box if it must
- * (fitOccasion), again once the occasion's fonts have loaded.
- */
-export function renderOccasion(el, opts) {
-  const { store, play } = opts;
-  const land = opts.orientation === 'landscape';
-  const occ = occasionOf(play.occasion), design = OCCASION_DESIGNS[occ.design];
-  const beats = play.content.beats;
-  const scene = Math.max(0, Math.min(beats.length - 1, opts.scene | 0));
-  const state = storeState(store.sessions, opts.now || storeNow(store.tz));
-  const doc = el.ownerDocument;
-  occasionStyles(doc);
-  // Tokens the pharmacy set by hand (Settings → Tokens) beyond the store's data, as in the other templates' copy.
-  const custom = Object.fromEntries(Object.entries(store.tokens || {}).filter(([k]) => !DATA_TOKENS.includes(k)));
-  const T = (h) => applyTokens(applyStoreName(h, store.name), { ...custom, Phone: store.phone || '' });
-  const R = (t) => T(rich(t, store.suburb)), P = (t) => T(fill(t, store.suburb));
-  el.removeAttribute('style');
-  el.className = 'screen occasion' + (land ? ' land' : '');
-  const copy = occ.beats.map((layout, i) => beatHtml(layout, beats[i] || {}, i, !opts.loop && i === scene, R, P)).join('');
-  el.innerHTML = `<div class="occ occ-${occ.design}${opts.loop ? '' : ' hold'}">${design.fx}<div class="txt">${copy}</div></div>`;
-  const G = { W: land ? 1920 : 1080, H: land ? 1080 : 1920, inside: () => true };
-  const fit = fitOccasion(el, G);
-  const root = el.firstElementChild;
-  const fonts = doc.fonts && doc.fonts.load ? Promise.all(occ.fonts.map((f) => doc.fonts.load(f).catch(() => null))) : Promise.resolve();
-  // Measured again once the fonts are in, unless the screen has been redrawn since.
-  const ready = fonts.then(() => { if (el.firstElementChild === root) Object.assign(fit, fitOccasion(el, G)); });
-  return { G, fit, state, ready };
+  return { G, fit, state };
 }
 
 /**

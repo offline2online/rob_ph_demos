@@ -63,41 +63,16 @@ editor is never touched).
 
 A fourth default promotion for every pharmacy. It plays one of six read-only built-in templates, Christmas,
 New Year's, Australia Day, Valentine's Day, Easter and Anzac Day: whichever the promotion's template is. An admin
-picks it in the editor's **Occasion** drop-down (seeded: Christmas); nothing switches by date.
+picks it in the editor's **Occasion** drop-down (seeded: Christmas); nothing switches by date. Each occasion has
+three scenes in the Promotion scenes layout and animations: a greeting over three themed icon tiles, a message
+and a sign-off with a large icon, the "Open today" bar with the public holiday line under it, and small seasonal
+symbols twinkling in the brand panel's free corners. Anzac Day is commemorative: a remembrance poppy, no
+decoration, tiles that fade in without the bounce and a slower, smaller float. All of it is off under reduced motion.
 
-Each occasion is a standalone, full-screen animation (the designs approved on 20 Nov 2026, `js/occasions.js`): no
-brand panel, pharmacy logo, brand colours, icon tiles, Open today bar or holiday line. It fills the screen in both
-orientations (1080×1920 and 1920×1080); the layout switches by a container query on `.occ`.
-
-| Occasion | Look | Beats (label line / main line) |
-|---|---|---|
-| Christmas | A real photo of a lit tree slowly drifting closer, flickering sparkles on the tree (above and below the copy in portrait, either side in landscape), very large centred copy | "Merry Christmas, ${Suburb}" · "With warm wishes / from the whole ${StoreName} team" |
-| New Year's | Midnight sky, firework bursts, poster type | "Happy New Year" · "Thank you for a great year, ${Suburb}" · "Here's to a healthy year ahead / from the whole ${StoreName} team" |
-| Australia Day | The Australian flag waving on a pole against a navy sky, in the flag colours | "26 January / Happy Australia Day, ${Suburb}" · "Enjoy the sunshine" · "Slip, slop, slap" with the pill "Stay sun safe this summer" |
-| Valentine's Day | Blush pink, rising hearts | "14 February / Happy Valentine's Day, ${Suburb}" · "Look after the ones you love" · "and yourself, too" |
-| Easter | A pastel meadow with bouncing painted eggs | "Happy Easter, ${Suburb}" · "Wishing you a restful long weekend" · "Take time to recharge" |
-| Anzac Day | Solemn: a dawn glow, a single poppy, fades only | "25 April / Anzac Day" · "Lest we forget" · "Remembering together, ${Suburb}" |
-
-The copy plays as **beats on a 12 s loop** (Christmas 2 beats of 6 s, the others 3 of 4 s), driven by the designs'
-CSS: the player draws the occasion once and sets no timers. The playback duration to set in PH is **13 s**.
-`scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
-decorations stand still and the beats still change.
-
-Copy is per pharmacy and per occasion (`content.occasions.<occasion>.beats[]`: `{label?, text}`, a label only on
-the beats whose design has one), with defaults in `js/render.js` → `OCCASIONS`. The main line is rich text (line
-breaks, bold, italic), the label plain. `${Suburb}` works in all six (with no suburb, `, ${Suburb}` is dropped,
-comma included) and `${StoreName}` in Christmas and New Year's. A line too long for the design's text box is shrunk
-to fit (`fitOccasion()` in `js/fit-text.js`). Copy saved in the earlier three-scene shape still plays: never
-edited, as the new defaults; edited, beat by beat (each scene's headline as the main line, its accent line as the
-label). No product or health claims.
-
-Fonts (all SIL OFL 1.1) are self-hosted in `css/occasion-fonts.css` like Figtree and Material Symbols: Playfair
-Display, Outfit, Big Shoulders Display, Archivo Black, Archivo, DM Serif Display, Fredoka and Cormorant Garamond
-(`node tools/fetch-fonts.mjs occasions`). The Christmas background ships with the screen in
-`css/occasion-media.css`, as a data: URL, so no screen calls out for it.
-
-**Credit:** the Christmas photo (a lit Christmas tree) is by Olena Bohovyk on Unsplash
-(`photo-1603561128963-5f4d971c4959`), used under the Unsplash Licence (free for commercial use).
+Copy is per pharmacy and per occasion (`content.occasions.<occasion>.scenes[]`: headline, accent line, line 1,
+line 2, seconds), with defaults in `js/render.js` → `OCCASIONS`. Christmas and New Year's sign off with
+`${StoreName}` ("Merry Christmas from the whole ${StoreName} team."); the others use `${Suburb}` only. No product
+or health claims.
 
 ## Run it locally
 
@@ -142,7 +117,7 @@ against `fixtures/config.json`, so the two cannot drift apart silently.
 | `device` | Required. The screen's device ID. Without it the screen shows "Invalid screen URL". An unknown device, or a store with no config, shows "Screen not set up" with the device ID. |
 | `promo` | The promo ID to play (`morning`, `afternoon`, `closed`, `occasions`, …). Defaults to the first promotion. An unknown ID shows "Promotion not found". |
 | `orientation` | `portrait` (default, 1080x1920) or `landscape` (1920x1080). |
-| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the loop (an occasion: beat *n*, held still). |
+| `scene` | Testing only: hold on scene *n* (0-based) instead of playing the loop. |
 | `now` | Testing only: the store's local time, e.g. `now=fri-18:45`, to see each "Open today" bar message. |
 | `mockapi` | Testing only: `mockapi=1` uses the fixtures instead of the proxy and the config read. |
 | `debug` | Testing only: `debug=1` shows the debug panel (device, store code, source, last fetch of store data and config, server used, store time, bar state) with a test time override (day and time, Apply / Real time). |
@@ -156,18 +131,16 @@ Split so the admin editor's live preview can reuse the same code:
 |---|---|
 | `hours.js` | Opening hours: parses `opening_hours[]` (sessions may cross midnight), store time in `store_timezone`, the bar state (open, last 30 minutes, before opening, after closing), time formats, the weekly hours rows. No DOM. |
 | `tokens.js` | Token resolver: `${Suburb}` (blanked with its leading comma or line break when there is no suburb), `${StoreName}` (Occasions copy), `${CloseTime}` / `${OpenTime}`, template `${…}` slots, token values a pharmacy sets by hand (Settings → Tokens: `DATA_TOKENS`, `SLOT_TOKENS`, `cleanTokens`, `applyTokens`; a set value wins over the store's data), and the rich-text sanitiser (bold, italic, line break, regular and accent spans only). No DOM. |
-| `fit-text.js` | Panel geometry (triangle / arrow), `fitText()` (headline and content shrink to stay inside the panel), `fitOccasion()` (each occasion beat shrinks to stay inside its text box) and `auditScene()` (the overflow check). |
-| `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`, and `renderOccasion()` (an occasion drawn whole, its copy as beats; `occasionCopy()` reads any saved shape). |
-| `occasions.js` | The six approved Occasions designs: shared base CSS, each template's CSS and decoration markup (seeded scatter), unchanged from the design documents except that the copy comes from `render.js`. |
+| `fit-text.js` | Panel geometry (triangle / arrow), `fitText()` (headline and content shrink to stay inside the panel) and `auditScene()` (the overflow check). |
+| `render.js` | Render engine: store model from `campaign_data` + config, promotion and template resolution (built-ins "Promotion scenes", "Opening hours" and the six occasion templates, `OCCASIONS`; custom templates with scoped CSS and backgrounds), scene sequence and durations, brand colours, `renderScene()`. |
 | `live-data.js` | The one shared Location API client (requirement 8): proxy and config calls, server failover, polling with one request in flight, change detection, the `localStorage` cache, the screen states, and the published-config mapping; `?mockapi=1` swaps in the fixture client. No DOM. |
-| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes, re-renders on a data change and when the store's bar state changes (an occasion loops in CSS, with no timers), shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests. |
+| `player.js` | The page: reads the URL, gets live data through `live-data.js`, scales the screen to the viewport, plays the scenes, re-renders on a data change and when the store's bar state changes, shows the error states, and exposes `window.pharmacyScreen` for the audit and the tests. |
 | `debug-panel.js` | The `?debug=1` panel (styles in `css/debug.css`, loaded only then). |
 
 `css/screen.css` is the prototype's screen stylesheet, unchanged: scene animations matched to the Beaumaris
 videos (content fades out at scene end, headline fades in, icon tiles pop in one after another with labels
 after, copy fades up, icons float with the outer and middle tiles in opposite phase), all off under
-`prefers-reduced-motion` (except an occasion's beats, which keep changing). `css/occasion-fonts.css` and
-`css/occasion-media.css` hold the Occasions fonts and the Christmas photo as data: URLs (generated; don't edit).
+`prefers-reduced-motion`.
 
 ## Deploy
 
@@ -181,9 +154,7 @@ that folder's README.
 - `tools/fetch-fonts.mjs`: writes `css/fonts.css` (Figtree for the screen, Roboto for the debug panel) and
   `css/material-symbols.css` (Material Symbols Outlined, the filled weight-500 instance the screen draws, every
   icon) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google at runtime, so screens work
-  behind firewalls. Figtree and Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
-  `css/occasion-fonts.css` (the eight Occasions faces, SIL OFL 1.1); `node tools/fetch-fonts.mjs occasions` (or
-  `screen`) rewrites just that part.
+  behind firewalls. Figtree and Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0.
 - `tools/overflow-audit.mjs`: renders every fixture store x promotion x scene x orientation at each bar
   state and fails (exit 1) if any copy leaves the brand panel, its content box or the screen. Also exports
   `runAudit({devices, orientations, times, config, browser})` for the copy-fit test.
@@ -220,11 +191,9 @@ run holds the train's deploy; see "CI" below.
 
 - `test/ui/copy-fit.test.mjs`: the copy-fit audit (`tools/overflow-audit.mjs`, `runAudit()`): every seeded
   pharmacy x promotion x scene, portrait and landscape, at each "Open today" bar state, plus the `TEST-NO-SUBURB`
-  and `TEST-LATE-NIGHT` fixtures; the Occasions promotion once per occasion, all six, every beat held once its fonts
-  are in. It fails if any headline or content line leaves the brand panel, its content box or the screen, or any
-  occasion line leaves the occasion's text box, and each failure names the device, store, promo, orientation,
-  scene and bar state. Self-tests make one headline far too long and check that exactly that scene is named, and
-  show that a long occasion line is shrunk to fit while far too much copy fails, naming the beat.
+  and `TEST-LATE-NIGHT` fixtures; the Occasions promotion once per occasion, all six (1,890 scenes). It fails if any headline or content line leaves the brand panel,
+  its content box or the screen, and each failure names the device, store, promo, orientation, scene and bar
+  state. A self-test makes one headline far too long and checks that exactly that scene is named.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
   suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
