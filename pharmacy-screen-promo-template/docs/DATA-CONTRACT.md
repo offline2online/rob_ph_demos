@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Occasions | One of the six occasion templates (seeded Christmas) | The chosen occasion's standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
+| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here.
@@ -207,7 +207,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "occasions": { "christmas": { "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
+      "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
 }
@@ -223,7 +223,11 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Rich text (headlines, bar messages) keeps only bold, italic, line breaks and `<span class="reg">` /
   `<span class="acc">`; everything else is stripped.
 - Content is bounded at 200 KB per promotion.
-- Occasion keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- Occasion (season) keys: `christmas`, `new-year`, `australia-day`, `valentines-day`, `easter`, `anzac-day`.
+- Season dates: `from` and `to` (optional, `MM-DD`, inclusive, every year; `from` after `to` runs over New Year).
+  Missing or invalid, the defaults apply: Christmas `12-15`–`12-27`, New Year's `12-28`–`01-05`, Australia Day
+  `01-26`, Valentine's Day `02-14`, Easter Good Friday to Easter Monday (worked out for each year), Anzac Day
+  `04-25`. The screen plays the season whose dates hold the store's date, else the promotion's template.
 
 Master template: a promotion's optional `master` holds the default content (the same shape as one entry of
 `content` above) that every pharmacy inherits section by section; a pharmacy's optional

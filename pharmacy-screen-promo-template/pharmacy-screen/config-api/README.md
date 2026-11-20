@@ -109,8 +109,11 @@ part after `builtin-occasion-`), which the published config passes on so the
 screen draws that occasion (`../js/render.js` → `OCCASIONS`, the standalone
 designs in `../js/occasions.js`, the Christmas photo and fonts self-hosted in
 `../css/`; the built-ins carry no html, css or backgrounds). The seeded
-Occasions promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
-the admin editor's Occasion drop-down sets its `templateId` to another one.
+Seasonal promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
+the admin editor's Season drop-down sets its `templateId` to another one
+(what plays outside every season's dates; each season's `from` / `to` dates
+ride in the pharmacy content, `content.occasions.<season>`, and the screen
+picks the season by date).
 They can't be cloned (400: there is no editable HTML version of an
 occasion). A pharmacy's content for an occasion promotion keeps every
 occasion's copy, `content.occasions.<occasion>.beats[]` (one per beat of the

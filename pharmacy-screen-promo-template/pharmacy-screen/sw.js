@@ -3,7 +3,7 @@
 //
 // Registered by js/player.js with scope pharmacy-screen.html only, so the admin editor is never touched.
 //
-//   The shell (the page, its scripts and stylesheets, which carry the self-hosted fonts, icons and the Occasions photo, about 1.5 MB) is
+//   The shell (the page, its scripts and stylesheets, which carry the self-hosted fonts, icons and the Seasonal Christmas photo, about 1.5 MB) is
 //   downloaded once into a cache named after BUILD and served from that cache from then on, with no request at all.
 //   scripts/deploy.mjs stamps BUILD with a hash of the shell's files, so this file's bytes change exactly when the
 //   shell changes. The browser compares sw.js on every page load and the player asks again every 30 minutes

@@ -11,7 +11,7 @@ import { createSaveQueue } from './save-queue.js';
 import { rt, bindRichText } from './rich-text.js';
 import { openPicker, closePicker } from './icon-picker.js';
 import * as M from './model.js';
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds } from '../../js/render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
 
@@ -511,23 +511,49 @@ function showMasterChrome(on) {
   if (card) card.hidden = !on;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAYS_IN = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+/** A day and month picker for one end of a season's dates ("MM-DD"). */
+function monthDayPick(id, label, md) {
+  const [m, d] = md.split('-').map(Number);
+  return `<label class="f"><span>${label}</span><span class="mdpick"><select id="${id}d" aria-label="${label}: day">${Array.from({ length: 31 }, (_, i) => `<option value="${i + 1}" ${i + 1 === d ? 'selected' : ''}>${i + 1}</option>`).join('')}</select>
+    <select id="${id}m" aria-label="${label}: month">${MONTHS.map((x, i) => `<option value="${i + 1}" ${i + 1 === m ? 'selected' : ''}>${x}</option>`).join('')}</select></span></label>`;
+}
+const readMonthDay = (id) => { const m = +$(id + 'm').value, d = Math.min(+$(id + 'd').value, DAYS_IN[m - 1]); return String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'); };
+
 /**
- * An occasion promotion: this pharmacy's copy for the occasion the promotion is set to, one card per beat of the
- * design (a main line, and a small label line where the design has one), each with its own seconds on screen (the
- * loop is their sum; at the defaults, an equal share of the design's 12 s). The occasion itself is picked in the Occasion drop-down above (shared by every pharmacy); each occasion
- * keeps its own copy.
+ * A seasonal promotion: this pharmacy's dates and copy for the season the promotion is set to. The dates card says
+ * when the screen plays this season by itself each year (from and to, inclusive, in the store's time zone; Easter
+ * moves each year, so its dates are worked out: Good Friday to Easter Monday). Then one card per beat of the design (a
+ * main line, and a small label line where the design has one), each with its own seconds on screen (the loop is their
+ * sum; at the defaults, an equal share of the design's 12 s). The season itself is picked in the Season drop-down
+ * above (shared by every pharmacy; what plays outside every season's dates); each season keeps its own copy and dates.
  */
 function renderOccasion(B, d) {
   const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
   const o = d.occasions[occ.id];
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
+  const year = new Date().getFullYear(), r = seasonDates(occ.id, o, year), movable = occ.season && occ.season.easter && !seasonDatesOf(o).from;
+  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.`;
+  const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occWhen" style="margin-left:auto;font-weight:400">${esc(fmtMonthDay(r.from))}${r.to !== r.from ? ' to ' + esc(fmtMonthDay(r.to)) : ''}${movable ? ' this year' : ''}</span></div>
+    ${movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>` : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`}</div>`;
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
-   <div id="occList" style="display:grid;gap:12px">${occ.beats.map((layout, i) => {
+   <div id="occList" style="display:grid;gap:12px">${dates}${occ.beats.map((layout, i) => {
     const x = o.beats[i], keys = layout.label ? (layout.label.pos === 'below' ? ['text', 'label'] : ['label', 'text']) : ['text'];
     return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
      <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
   }).join('')}</div>`;
+  if (!movable) {
+    const setDates = () => {
+      o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
+      $('occWhen').textContent = fmtMonthDay(o.from) + (o.to !== o.from ? ' to ' + fmtMonthDay(o.to) : '');
+      changed();
+    };
+    ['occFromd', 'occFromm', 'occTod', 'occTom'].forEach((id) => { $(id).onchange = setDates; });
+  }
+  // The pharmacy view: dates are set by an administrator, like the seconds on screen.
+  if (S.lock) $('occDates').hidden = true;
   occ.beats.forEach((layout, i) => {
     const x = o.beats[i];
     bindRt(`o${i}text`, (v) => { x.text = v; });
@@ -577,12 +603,12 @@ $('dpPrev').onclick = () => tabsStep(-1);
 $('dpNext').onclick = () => tabsStep(1);
 $('dpTabs').addEventListener('scroll', tabsSync, { passive: true });
 new ResizeObserver(tabsActiveIntoView).observe($('dpTabs'));
-// The template drop-down: built-ins and custom templates. Occasion templates are picked in the Occasion
-// drop-down of an occasion promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
+// The template drop-down: built-ins and custom templates. Seasonal templates are picked in the Season
+// drop-down of a seasonal promotion instead (occasionOptions); a new promotion can start as one (withOccasions).
 function tplOptions(sel, withOccasions) {
   const g = (lab, arr) => (arr.length ? `<optgroup label="${lab}">${arr.map((t) => `<option value="${esc(t.id)}" ${t.id === sel ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : '');
   const occ = (t) => t.kind === 'occasion';
-  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Occasion', S.templates.filter(occ)) : '');
+  return g('Built-in', S.templates.filter((t) => t.builtIn && !occ(t))) + g('Custom', S.templates.filter((t) => !t.builtIn)) + (withOccasions ? g('Seasonal', S.templates.filter(occ)) : '');
 }
 function occasionOptions(sel) {
   return M.OCCASION_CHOICES.map((o) => `<option value="${esc(o.templateId)}" ${o.templateId === sel ? 'selected' : ''}>${esc(o.name)}</option>`).join('');
@@ -592,18 +618,18 @@ function renderPromoMeta() {
   const x = promo();
   const occ = !!x && isOcc(x.id);
   // Pharmacy view: the grey promotion section (name, promo ID, template, promo= line) is not shown on Morning,
-  // Afternoon, Closed or any other non-occasion promotion; Occasions keeps only its Occasion drop-down.
+  // Afternoon, Closed or any other non-seasonal promotion; Seasonal keeps only its Season drop-down.
   $('promoMeta').hidden = !x || (!!S.lock && !occ);
   if (!x) return;
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only (and the
-  // section hidden, above). On an Occasions promotion it shows only the Occasion drop-down, which can be changed.
+  // section hidden, above). On the Seasonal promotion it shows only the Season drop-down, which can be changed.
   const occOnly = !!S.lock && occ;
   $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
   $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
-  // An occasion promotion picks its occasion here (read-only built-ins: nothing to edit or clone).
-  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Occasion' : 'Template';
-  $('pmTpl').setAttribute('aria-label', occ ? 'Occasion' : 'Template');
+  // A seasonal promotion picks its season here (read-only built-ins: nothing to edit or clone).
+  $('pmTpl').closest('label').querySelector('span').textContent = occ ? 'Season' : 'Template';
+  $('pmTpl').setAttribute('aria-label', occ ? 'Season' : 'Template');
   $('pmHtml').hidden = occ;
   $('pmUrl').textContent = 'promo=' + x.promoId; $('pmErr').hidden = true; $('pmDel').hidden = !!S.lock || S.promotions.length < 2;
   pmArm = false; $('pmDelTx').textContent = 'Delete promotion';
@@ -634,7 +660,7 @@ function savePromotion(p) {
 }
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
-  if (S.lock && !isOcc()) return; // the pharmacy view changes only an Occasions promotion's occasion
+  if (S.lock && !isOcc()) return; // the pharmacy view changes only the Seasonal promotion's season
   const p = promo(); p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();

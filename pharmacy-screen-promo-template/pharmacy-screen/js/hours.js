@@ -47,6 +47,26 @@ export function storeNow(tz, date = new Date(), override = null) {
   }
 }
 
+/** The store's date ({y, m, d}) at `date` (default now) in time zone tz, for the seasonal promotion's dates. */
+export function storeDate(tz, date = new Date()) {
+  try {
+    const p = new Intl.DateTimeFormat('en-AU', { timeZone: tz || 'Australia/Melbourne', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(date);
+    const g = (k) => +p.find((x) => x.type === k).value;
+    return { y: g('year'), m: g('month'), d: g('day') };
+  } catch (e) {
+    return { y: date.getFullYear(), m: date.getMonth() + 1, d: date.getDate() };
+  }
+}
+
+/** Parse a test-date string: "2026-12-20" or "12-20" (this year), as {y, m, d}, or null. */
+export function parseTestDate(v, fallbackYear) {
+  const m = /^(?:(\d{4})-)?(\d{1,2})-(\d{1,2})$/.exec(String(v || '').trim());
+  if (!m) return null;
+  const y = m[1] ? +m[1] : fallbackYear, mo = +m[2], d = +m[3];
+  const t = new Date(Date.UTC(y, mo - 1, d));
+  return t.getUTCMonth() === mo - 1 && t.getUTCDate() === d ? { y, m: mo, d } : null;
+}
+
 /** Parse a test-time string: "fri-18:45", "fri 18:45" or "18:45" (today). */
 export function parseTestTime(v, fallbackDay) {
   const m = /^(?:([a-z]{3})[a-z]*[\sT-]+)?(\d{1,2}):(\d{2})$/i.exec(String(v || '').trim());

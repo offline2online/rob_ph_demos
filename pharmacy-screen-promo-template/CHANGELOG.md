@@ -10,6 +10,18 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Occasions is now Seasonal, and it switches by date.** The fourth default promotion, its tab, its drop-down
+  (now **Season**) and every label in the editor and the docs say Seasonal instead of Occasions; its promo ID stays
+  `occasions`, so existing campaign URLs keep working. Each season has start and end dates, the same every year:
+  Christmas 15–27 December, New Year's 28 December–5 January, Australia Day 26 January, Valentine's Day 14
+  February, Easter Good Friday to Easter Monday (worked out for each year) and Anzac Day 25 April. The screen plays
+  the season whose dates hold today in the store's time zone and moves to the next one by itself at midnight, so
+  nobody has to change the drop-down; outside every season's dates it plays the season picked in the drop-down.
+  An administrator can change a season's dates in the editor (**Dates** card above the beats; saved with the
+  season's copy as `content.occasions.<season>.from` / `.to`, `MM-DD`, inherited from the master template like
+  the copy). The pharmacy view doesn't show the dates. The seed renames its default promotion still called
+  Occasions, and the editor shows it as Seasonal until then. New testing parameter `date=YYYY-MM-DD`.
+
 - **Pharmacy view: `admin/?store=<store code>` (or `?storeCode=`) opens the editor locked to that pharmacy.** The
   same editor and preview as the admin view, labelled "Pharmacy view · <store code>", with everything that is the
   pharmacy's own editable (inherited sections made its own, promotions added from the service library or blank,

@@ -1,5 +1,5 @@
 {
-  "_doc": "Built-in templates (requirement 11): Promotion scenes, Opening hours and one per occasion (the Occasions promotion). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
+  "_doc": "Built-in templates (requirement 11): Promotion scenes, Opening hours and one per season (the Seasonal promotion). Read-only and defined in code (config-api/src/builtins.js), so the seed never writes them: it checks the store lists exactly these. Kept here so the fixtures describe the whole seeded config.",
   "templates": [
     {
       "id": "builtin-promotion-scenes",

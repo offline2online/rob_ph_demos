@@ -61,7 +61,7 @@ test('loads the pharmacies, promotions and a live preview from the server', asyn
   assert.match(opts[0], /Beaumaris Pharmacy · VIC-MP-001/);
   // Promo preview offers the master template first, then the same pharmacies.
   assert.deepEqual(await page.$$eval('#pvSel option', (o) => o.map((x) => x.textContent)), ['Master template', ...opts]);
-  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Occasions']);
+  assert.deepEqual(await page.$$eval('#dpTabs button', (b) => b.map((x) => x.textContent.replace(/^(campaign|schedule|celebration)/, ''))), ['Morning', 'Afternoon', 'Closed', 'Seasonal']);
   assert.equal(await page.$$eval('#tl button', (b) => b.length), 5);
   await page.click('#playBtn'); // pause
   await page.click('#tl button[data-i="0"]');
@@ -298,13 +298,13 @@ test('templates: built-ins read-only, clone, edit HTML with token chips, unsafe 
   await ctx.close();
 });
 
-test('occasions: the Occasion drop-down picks what promo=occasions plays; each occasion keeps its own copy', async () => {
+test('seasonal: the Season drop-down picks what promo=occasions plays outside every season\'s dates; each season keeps its own copy and dates', async () => {
   const { ctx, page, errors } = await open();
-  await page.click('#dpTabs button:has-text("Occasions")');
+  await page.click('#dpTabs button:has-text("Seasonal")');
   await own(page);
   await page.click('#playBtn'); // pause
-  // The Template drop-down is the Occasion drop-down here, Christmas by default; occasion templates have no Edit HTML.
-  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
+  // The Template drop-down is the Season drop-down here, Christmas by default; seasonal templates have no Edit HTML.
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
   assert.deepEqual(await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent)), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#pmHtml'), true);
@@ -312,7 +312,17 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
   assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
   assert.equal(await page.textContent('#pbSecs'), '13s');
-  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Main line', 'Seconds on screen', 'Small line above', 'Main line']);
+  // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
+  assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
+  assert.deepEqual([await page.inputValue('#occFromd'), await page.inputValue('#occFromm'), await page.inputValue('#occTod'), await page.inputValue('#occTom')], ['15', '12', '27', '12']);
+  await page.selectOption('#occTod', '24');
+  assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
+  await settle(page);
+  const xmasDates = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas;
+  assert.deepEqual([xmasDates.from, xmasDates.to], ['12-15', '12-24']);
+  await page.selectOption('#occTod', '27');
+  assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
   // Each beat has its own seconds on screen: the loop, the timeline and the playback duration follow, and the playing
   // preview runs the beats on keyframes of that length.
   assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['6', '6']);
@@ -341,6 +351,10 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
   await page.click('#tl button[data-i="0"]');
   await page.waitForFunction(() => document.querySelector('#screen .occ.occ-easter .b1.on') && /Happy Easter/.test(document.querySelector('#screen .b1.on').textContent));
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2', '3Beat 3']);
+  // Easter moves each year: its dates are worked out (Good Friday to Easter Monday), not picked.
+  assert.equal(await page.isVisible('#occEaster'), true);
+  assert.equal(await page.$$eval('#occDates select', (e) => e.length), 0);
+  assert.match(await page.textContent('#occWhen'), / this year$/);
   await page.fill('#o1text', 'Have a safe long weekend, everyone');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
@@ -925,19 +939,20 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
   assert.equal(scr.promotions.morning.content.slots.length, 3);
   assert.equal(await page.isHidden('#addSlot'), true);
-  // Opening hours and Occasions hide their timings too.
+  // Opening hours and Seasonal hide their timings too (and Seasonal its dates).
   await page.click('#dpTabs button:has-text("Closed")');
   assert.equal(await page.isHidden('#h0dur'), true);
   await page.click('#dpTabs button:has-text("Morning")');
-  // Occasions: only the Occasion drop-down (no promotion name, promo ID or promo= pill), and the occasion can be
+  // Seasonal: only the Season drop-down (no promotion name, promo ID or promo= pill), and the season can be
   // changed here; it is what the screen plays.
-  await page.click('#dpTabs button:has-text("Occasions")');
+  await page.click('#dpTabs button:has-text("Seasonal")');
   assert.equal(await page.isVisible('#promoMeta'), true);
   for (const id of ['#pmName', '#pmToken', '#pmUrl', '#pmHtml', '#pmDel']) assert.equal(await page.isHidden(id), true, id);
   assert.equal(await page.isVisible('#pmTpl'), true);
-  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
+  assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Season');
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.isHidden('#o0dur'), true);
+  assert.equal(await page.isHidden('#occDates'), true, 'season dates are set by an administrator');
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');

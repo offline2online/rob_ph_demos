@@ -99,6 +99,7 @@ button.text{border-color:transparent;background:none;color:var(--primary);paddin
 .meta-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.4fr);gap:10px 12px;align-items:end}
 @container edcol (max-width:700px){.meta-row{grid-template-columns:minmax(0,.9fr) minmax(0,.8fr) minmax(0,1.7fr)}}
 @container (max-width:480px){.meta-row{grid-template-columns:minmax(0,1fr)}}
+.mdpick{display:flex;gap:6px;min-width:0}.mdpick select:first-child{flex:0 0 72px}.mdpick select:last-child{flex:1;min-width:0}
 .tplpick{display:flex;gap:6px;min-width:0}.tplpick select{flex:1;min-width:0}.tplpick button{flex:none;white-space:nowrap}
 .pm-row{display:flex;gap:8px;align-items:center;min-width:0}
 .pm-row #pmUrl{display:block;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

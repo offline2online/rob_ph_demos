@@ -12,9 +12,11 @@
 //   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
 //   scene=<n>          hold on scene n (0-based) instead of playing the loop (an occasion: beat n, held still)
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
+//   date=<YYYY-MM-DD>  pretend the store's date is this, e.g. date=2026-12-20 (which season the Seasonal promotion
+//                      plays; MM-DD for this year)
 
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError, OCCASION_IDS } from './render.js';
-import { parseTestTime, storeNow, storeState } from './hours.js';
+import { parseTestTime, parseTestDate, storeNow, storeDate, storeState } from './hours.js';
 import { auditScene } from './fit-text.js';
 import { parseServers, createLiveClient, createMockClient, createScreenData, screenView } from './live-data.js';
 
@@ -26,6 +28,7 @@ const params = {
   orientation: q.get('orientation') === 'landscape' ? 'landscape' : 'portrait',
   hold: q.has('scene') ? Math.max(0, parseInt(q.get('scene'), 10) || 0) : null,
   now: q.get('now') || '',
+  date: q.get('date') || '',
   mock: flag('mockapi'),
   debug: flag('debug'),
 };
@@ -79,6 +82,8 @@ function testNow() {
   return parseTestTime(params.now, storeNow(tzOf()).day) || undefined;
 }
 const nowForStore = () => testNow() || storeNow(tzOf());
+/** The store's date ({y, m, d}): which season the Seasonal promotion plays. */
+const todayForStore = () => { const real = storeDate(tzOf()); return (params.date && parseTestDate(params.date, real.y)) || real; };
 
 function stateKey() {
   const s = storeState(store.sessions, nowForStore());
@@ -147,7 +152,7 @@ async function apply(s) {
   try {
     nextStore = storeModel(s.campaign, s.config);
     const promoId = params.promo || ((s.config.promotions || [])[0] || {}).promoId || ((s.config.promotions || [])[0] || {}).id;
-    nextPlay = resolvePromotion(s.config, nextStore, promoId);
+    nextPlay = resolvePromotion(s.config, nextStore, promoId, { today: todayForStore() });
   } catch (e) { fail(e); return; }
   const first = !started || shown !== 'scene';
   config = s.config; store = nextStore; play = nextPlay;
@@ -184,8 +189,13 @@ function debugInfo(s) {
 
 // The "Open today" bar follows the store's clock (store_timezone): re-check at the turn of every minute.
 function minuteTick() {
-  // (An occasion shows nothing that depends on the store's hours: no redraw, so its loop carries on.)
-  if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) show(scene, false);
+  // (A season shows nothing that depends on the store's hours: no redraw, so its loop carries on, until its dates
+  // end or another season's begin: then the season for the new date starts, with nobody needing to change anything.)
+  if (play && store && play.base === 'occasion' && playing) {
+    let next = null;
+    try { next = resolvePromotion(config, store, play.promoId, { today: todayForStore() }); } catch (e) { next = null; }
+    if (next && next.occasion !== play.occasion) { play = next; show(0, true); }
+  } else if (play && store && play.base !== 'occasion' && stateKey() !== lastStateKey) show(scene, false);
   if (panel && data) panel.then((p) => p && p.update(debugInfo(data.state)));
   setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
 }
@@ -230,7 +240,7 @@ function createDebugPanelLazy() {
 // Hook for the overflow audit, the screen tests and the admin editor's tests.
 window.pharmacyScreen = {
   get ready() { return !!play || !!el.querySelector('.s-msg,.s-setup-body'); },
-  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
+  get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   occasions: () => OCCASION_IDS.slice(),

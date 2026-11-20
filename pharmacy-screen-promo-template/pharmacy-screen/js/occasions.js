@@ -1,4 +1,4 @@
-// The six Occasions designs (approved 20 Nov 2026): standalone, full-screen animations, one per occasion, with no brand
+// The six Seasonal designs (internally "occasions") (approved 20 Nov 2026): standalone, full-screen animations, one per occasion, with no brand
 // panel, logo, brand colours, icon tiles or Open today bar. The source below is the approved prototype's template
 // definitions (board documents "Occasion template designs", parts 1 and 2), unchanged except that each template's
 // copy block (<div class="txt">) is left out: js/render.js draws the copy from each pharmacy's own content

@@ -21,6 +21,8 @@
 // and a default promotion the seed made earlier with no master template yet
 // gets the master (the content of the pharmacy promotions.json's masterFrom
 // names, Beaumaris).
+// Seasonal (20 Nov 2026): the default promotion the seed made as "Occasions",
+// still carrying that name, is renamed Seasonal (its promo ID stays occasions).
 // Occasions copy (20 Nov 2026, the standalone designs): a pharmacy or a
 // promotion master the seed made that still holds an occasion's old default
 // copy (fixtures/occasions-legacy.json, never edited) gets that occasion's new
@@ -100,6 +102,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
 const sameData = (a, b) => same(canon(a), canon(b));
 
+// Old default promotion names (by fixture key) the seed renames when a promotion it made still carries one.
+const LEGACY_NAMES = { occasions: "Occasions" };
+
 /**
  * Occasion copy (content.occasions) with every occasion still holding its old
  * default copy replaced by the new default from `fresh`; null when nothing
@@ -171,6 +176,12 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       continue;
     }
     promotionIdByPromoId[p.promoId] = existing.id;
+    let renamed = false;
+    if (!reset && existing.id === ids.promotion(p.key) && existing.name === LEGACY_NAMES[p.key] && p.name !== existing.name) {
+      // A default promotion the seed made, still carrying its old default name (Occasions, now Seasonal).
+      Object.assign(existing, await svc.updatePromotion(SEED_ACTOR, existing.id, { name: p.name }));
+      renamed = true;
+    }
     const want = normalisePromotion(fields);
     const have = normalisePromotion({ name: existing.name, promoId: existing.promoId, templateId: existing.templateId, master: existing.master });
     if (reset && !same(want, have)) {
@@ -185,6 +196,8 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeOccasions(existing.master, master, fixtures.legacyOccasions)) {
       // A master the seed made still holding old default occasion copy.
       await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeOccasions(existing.master, master, fixtures.legacyOccasions) });
+      report.promotions.updated.push(p.promoId);
+    } else if (renamed) {
       report.promotions.updated.push(p.promoId);
     } else {
       report.promotions.unchanged.push(p.promoId);

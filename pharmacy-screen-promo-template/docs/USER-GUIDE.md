@@ -68,7 +68,7 @@ In **Settings** → *Branding*, for the pharmacy picked in *Pharmacies*:
 
 Promotions are **shared by all pharmacies**: the tabs across the top. Each has a name, a **promo ID** (what the
 campaign URL's `promo=` names) and a template. The defaults are Morning (`morning`), Afternoon (`afternoon`),
-Closed (`closed`) and Occasions (`occasions`). Each pharmacy fills in its own copy for each one.
+Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own copy for each one.
 
 - **New promotion**: Name, Promo ID (lower-case letters, digits and hyphens, unique), Template → **Create
   promotion**. It appears for every pharmacy.
@@ -117,16 +117,23 @@ Three rotating **headlines** (e.g. "Sorry, we're closed", "Serving ${Suburb}"), 
 (1–60; by default 2.7, 2.7 and 2.6, an 8-second loop), and **Show address under phone**.
 The weekly hours, the public holiday line and the phone number come from Personalisation Hub.
 
-## Occasions
+## Seasonal
 
-In place of Template, the Occasions promotion has an **Occasion** drop-down: Christmas, New Year's, Australia
-Day, Valentine's Day, Easter, Anzac Day. It applies to all pharmacies and plays until you change it; nothing
-switches by date. Each occasion is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
+The Seasonal promotion (`promo=occasions`) changes by itself through the year. Each season has dates, the same
+every year: Christmas 15–27 December, New Year's 28 December–5 January, Australia Day 26 January, Valentine's
+Day 14 February, Easter Good Friday to Easter Monday (Easter moves, so its dates are worked out each year) and
+Anzac Day 25 April. On those dates, in the store's time zone, the screens play that season, and at midnight
+they move on to the next season by themselves: nobody needs to change anything. To change a season's dates,
+pick the season and set **Starts** and **Ends** in its **Dates** card (above its beats).
+
+In place of Template, the Seasonal promotion has a **Season** drop-down: Christmas, New Year's, Australia
+Day, Valentine's Day, Easter, Anzac Day. It picks the season you are editing and previewing, and the season the
+screens play outside every season's dates. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
 three), by default on a 12-second loop: for each beat each pharmacy edits its seconds on screen (1–60), the **Main
 line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
-editor shows beside Copy experience URL (**13 seconds** at the default timings). Every occasion keeps its own copy, so
+editor shows beside Copy experience URL (**13 seconds** at the default timings). Every season keeps its own copy and dates, so
 switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
 Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
@@ -165,13 +172,14 @@ In the pharmacy view:
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
   walk-in close, opening-hours headlines, occasion beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
-- **Occasions shows only the Occasion drop-down.** Pick the occasion the screens play there; there is no
-  promotion name, promo ID or `promo=` line. The occasion is the Occasions promotion's, so the change reaches
-  every pharmacy's screens, as it does in the full editor.
+- **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
+  there; there is no promotion name, promo ID or `promo=` line, and no Dates card (an administrator sets the
+  dates in the full editor). The season is the Seasonal promotion's, so the change reaches every pharmacy's
+  screens, as it does in the full editor.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
-  template, **Edit HTML** and the `promo=` line is not shown on any promotion but Occasions: they are shared by
+  template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Occasion drop-down), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, season dates, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the

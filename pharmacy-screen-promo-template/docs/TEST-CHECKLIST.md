@@ -30,7 +30,7 @@ From a clean checkout, in `pharmacy-screen-promo-template/`:
 | B2 | `curl <site>/api/health` | `{"ok":true}` | ☐ | ☐ |
 | B3 | Open `<site>/pharmacy-screen.html?device=TEST&promo=morning&orientation=portrait&mockapi=1` | A Beaumaris morning promotion plays from mock data | ☐ | ☐ |
 | B4 | Sign in to Admin as a user **without** the admin role | "Admin role required"; no editor | ☐ | ☐ |
-| B5 | Sign in as an admin; load launch data (ours: `node pharmacy-screen/seed/seed.js --project rob-ph-demos`; AWS: `npm run seed:aws -- --region <r>`) | Five pharmacies, promotions Morning, Afternoon, Closed, Occasions, 28 services in Add promotion | ☐ | ☐ |
+| B5 | Sign in as an admin; load launch data (ours: `node pharmacy-screen/seed/seed.js --project rob-ph-demos`; AWS: `npm run seed:aws -- --region <r>`) | Five pharmacies, promotions Morning, Afternoon, Closed, Seasonal, 28 services in Add promotion | ☐ | ☐ |
 
 ## C. PH API token
 
@@ -76,7 +76,8 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 |---|---|---|---|---|
 | F1 | Play every promo ID (`morning`, `afternoon`, `closed`, `occasions` and any you added) in `orientation=portrait` | Each plays its scenes in order and loops | ☐ | ☐ |
 | F2 | The same in `orientation=landscape` | Each plays, with the brand arrow instead of the triangle | ☐ | ☐ |
-| F3 | Occasions: in the editor switch the Occasion through all six, with the campaign's playback duration at 13 s | The screen plays each occasion's own full-screen animation, its copy as beats on a 12 s loop (Christmas: the tree photo with sparkles, 2 beats); no logo, brand panel or Open today bar; Anzac Day fades only | ☐ | ☐ |
+| F3 | Seasonal: in the editor switch the Season through all six (add `&date=2026-07-01` to the screen URL, a day outside every season), with the campaign's playback duration at 13 s | The screen plays each occasion's own full-screen animation, its copy as beats on a 12 s loop (Christmas: the tree photo with sparkles, 2 beats); no logo, brand panel or Open today bar; Anzac Day fades only | ☐ | ☐ |
+| F3b | Seasonal dates: open the screen URL with `&date=2026-12-20`, then `2027-01-02`, `2027-01-26`, `2027-02-14`, `2027-03-26`, `2027-04-25` (whatever the Season drop-down says) | Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day in turn; in the editor, Christmas's Dates card shows 15 Dec to 27 Dec and Easter shows Good Friday to Easter Monday | ☐ | ☐ |
 | F3a | Timings: in the editor change the seconds of a Closed headline and of an occasion beat, then set the campaign's playback duration to the one the editor shows | The timeline, Loop and Playback duration follow; on the screen that headline and that beat stay up for the new time, the last scene finishes, and the occasion's fades still play | ☐ | ☐ |
 | F4 | Watch every scene of every promotion in both orientations | No headline, accent line or line leaves the brand panel or the screen (A2 checks the seeded copy automatically) | ☐ | ☐ |
 | F5 | In the editor, make a headline very long | The preview shrinks it to stay inside the panel | ☐ | ☐ |

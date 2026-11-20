@@ -122,7 +122,7 @@ test("templates: built-ins listed and read-only; custom clone, edit, delete", as
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-occasion-easter", { body: { name: "Mine" } })).status, 403);
   const occClone = await call("POST", "/api/admin/templates/builtin-occasion-easter/clone", { body: { name: "Easter copy" } });
   assert.equal(occClone.status, 400);
-  assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /occasion template/);
+  assert.match(occClone.body.error.message || JSON.stringify(occClone.body), /seasonal template: it has no editable HTML.*Season drop-down/);
 
   assert.equal((await call("PATCH", "/api/admin/templates/builtin-promotion-scenes", { body: { name: "Mine" } })).status, 403);
   assert.equal((await call("DELETE", "/api/admin/templates/builtin-opening-hours")).status, 403);
@@ -468,7 +468,7 @@ test("an Occasions promotion: picking an occasion is its template, and the publi
   assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: copy })).status, 200);
   let cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
   assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.kind, cfg.promotions.occasions.template.occasion], ["builtin-occasion-christmas", "occasion", "christmas"]);
-  // The editor's Occasion drop-down: switch to Easter and save.
+  // The editor's Season drop-down: switch to Easter and save.
   const upd = await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-easter" } });
   assert.equal(upd.status, 200);
   cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;

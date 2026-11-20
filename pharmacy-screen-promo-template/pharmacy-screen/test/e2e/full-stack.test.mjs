@@ -96,8 +96,9 @@ test('the screen on a mock device plays every promotion in both orientations, ea
   assert.ok(dev.upstreamCalls.length > 0 && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token upstream');
 });
 
-test('Occasions: promo=occasions plays the standalone Christmas design, signing off with the store name; the admin picks Easter and the same URL plays Easter', async () => {
-  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00';
+test('Seasonal: promo=occasions plays the standalone Christmas design, signing off with the store name; the admin picks Easter and the same URL plays Easter; in a season\'s dates the screen plays that season by itself', async () => {
+  // date=: a day outside every season's dates, so the season the promotion is set to plays (whatever today is).
+  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00&date=2026-07-01';
   // Nothing at runtime leaves our own origin: fonts and the Christmas photo are self-hosted (no Google Fonts, no Unsplash).
   const outside = [];
   const ctx0 = await browser.newContext({ viewport: { width: 540, height: 960 } });
@@ -125,7 +126,7 @@ test('Occasions: promo=occasions plays the standalone Christmas design, signing 
 
   // Playing (no scene=): the beats loop in CSS; reduced motion stills the decorations and the beats still change.
   const ctx1 = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' });
-  s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00', { ctx: ctx1 });
+  s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00&date=2026-07-01', { ctx: ctx1 });
   const motion = await s.page.evaluate(() => {
     const cs = (q) => getComputedStyle(document.querySelector('#screen ' + q));
     return { root: document.querySelector('#screen .occ').className, sparkle: cs('.gl i').animationName, photo: cs('.photo').animationName, beat: cs('.b1').animationName, gl: cs('.gl').display, gp: cs('.gp').display };
@@ -143,7 +144,7 @@ test('Occasions: promo=occasions plays the standalone Christmas design, signing 
       version = r.body.version;
       for (const orientation of ['portrait', 'landscape']) {
         const ctx = await browser.newContext({ viewport: orientation === 'portrait' ? { width: 540, height: 960 } : { width: 960, height: 540 }, reducedMotion: 'reduce' });
-        s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&now=wed-12:00`, { ctx });
+        s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&now=wed-12:00&date=2026-07-01`, { ctx });
         const still = await s.page.evaluate(() => {
           const occ = document.querySelector('#screen .occ');
           const moving = [];
@@ -182,6 +183,27 @@ test('Occasions: promo=occasions plays the standalone Christmas design, signing 
       }
       await s.ctx.close();
     }
+    // Still set to Easter, but on a day in another season's dates the same URL plays that season, with nobody
+    // changing anything: Christmas (15-27 Dec), New Year's (28 Dec-5 Jan), Anzac Day (25 Apr).
+    for (const [date, want] of [['2026-12-20', 'christmas'], ['2027-01-02', 'new-year'], ['2027-04-25', 'anzac-day'], ['2027-03-26', 'easter']]) {
+      s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=0&now=wed-12:00&date=${date}`);
+      info = await s.page.evaluate(() => window.pharmacyScreen.info);
+      assert.equal(info.occasion, want, date);
+      assert.equal(info.auto, true, `${date}: picked by its dates`);
+      await s.ctx.close();
+    }
+    // A playing screen switches by itself at the store's midnight: 23:58 on 14 Dec in Melbourne (UTC+11) plays
+    // Easter (no season's dates), and two minutes later, 15 Dec, Christmas, without a reload.
+    const cctx = await browser.newContext({ viewport: { width: 540, height: 960 } });
+    const cpage = await cctx.newPage();
+    await cpage.clock.install({ time: new Date('2026-12-14T12:58:00Z') });
+    await cpage.goto(`${dev.base}/pharmacy-screen.html?device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait`);
+    await cpage.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.info, null, { timeout: 20000 });
+    assert.equal(await cpage.evaluate(() => window.pharmacyScreen.info.occasion), 'easter');
+    await cpage.evaluate(() => { window.__marker = 1; });
+    await cpage.clock.runFor(3 * 60 * 1000);
+    assert.deepEqual(await cpage.evaluate(() => [window.pharmacyScreen.info.occasion, window.pharmacyScreen.info.auto, window.__marker]), ['christmas', true, 1]);
+    await cctx.close();
   } finally {
     const now = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
     await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-christmas', expectedVersion: now.version } });

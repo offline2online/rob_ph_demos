@@ -14,7 +14,8 @@ import { DATA_TOKENS, isSettableToken, tokensIn, cleanTokens } from '../../js/to
 
 export const BUILTIN_SCENES = 'builtin-promotion-scenes';
 export const BUILTIN_HOURS = 'builtin-opening-hours';
-// The six occasion templates (config-api/src/builtins.js), picked by the Occasions promotion's Occasion drop-down.
+// The six seasonal templates (config-api/src/builtins.js; internally "occasion"), picked by the Seasonal promotion's
+// Season drop-down.
 export const occasionTemplateId = (occasion) => 'builtin-occasion-' + occasion;
 export const BUILTIN_OCCASION = occasionTemplateId(DEFAULT_OCCASION);
 export const OCCASION_CHOICES = OCCASIONS.map((o) => ({ id: o.id, name: o.name, templateId: occasionTemplateId(o.id), signOff: o.beats.some((b) => /\$\{StoreName\}/.test(b.text)) }));
@@ -112,7 +113,7 @@ const SECTION_OF_KEY = Object.fromEntries(Object.entries(MASTER_SECTIONS).flatMa
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** The editor's name for each section, as its card reads. */
-export const SECTION_NAMES = { greeting: 'Greeting', slots: 'Promotion slots', close: 'Walk-in close', headlines: 'Headlines', address: 'Address', occasions: 'Occasion copy', footer: 'Open today bar' };
+export const SECTION_NAMES = { greeting: 'Greeting', slots: 'Promotion slots', close: 'Walk-in close', headlines: 'Headlines', address: 'Address', occasions: 'Seasonal copy and dates', footer: 'Open today bar' };
 
 /** The master sections a template kind shows, in the order the editor draws them. */
 export const sectionsForBase = (base) => (base === 'hours' ? ['headlines', 'address'] : base === 'occasion' ? ['occasions'] : ['greeting', 'slots', 'close', 'footer']);
@@ -155,9 +156,19 @@ export function syncInherited(content, master, detached) {
   return content;
 }
 
+/** The default promotion's name before it was renamed Seasonal (20 Nov 2026), and its name now. */
+export const LEGACY_SEASONAL_NAME = 'Occasions';
+export const SEASONAL_NAME = 'Seasonal';
+/** A seasonal promotion still carrying the old default name shows (and is saved, on its next save) as Seasonal. */
+export function renameLegacy(p) {
+  if (p && p.name === LEGACY_SEASONAL_NAME && occasionOfTemplate(p.templateId)) p.name = SEASONAL_NAME;
+  return p;
+}
+
 /** Promotions in the order the editor shows them: the four defaults first, then by creation. */
 export function orderPromotions(promotions) {
   const rank = { morning: 0, afternoon: 1, closed: 2, occasions: 3 };
+  for (const p of promotions || []) renameLegacy(p);
   return [...(promotions || [])].sort((a, b) => (rank[a.promoId] ?? 9) - (rank[b.promoId] ?? 9) || String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.name).localeCompare(String(b.name)));
 }
 

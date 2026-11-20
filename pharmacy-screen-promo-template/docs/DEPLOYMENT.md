@@ -143,8 +143,8 @@ The KMS key rotates itself every 90 days; nothing to do.
    the exact URL for the selected promotion and orientation.
 4. **Playback duration**: enter the number the editor shows beside Copy experience URL ("Playback duration: N s",
    the promotion's length plus one second) so the last scene finishes. Save and activate.
-5. **Schedule** which promotion plays when (morning, afternoon, closed, occasions) in PH Core; the template does
-   no scheduling of its own.
+5. **Schedule** which promotion plays when (morning, afternoon, closed, seasonal) in PH Core; the template does
+   no scheduling of its own, except that Seasonal plays the season whose dates hold the store's date.
 6. A screen that shows **"Screen not set up"** with a device ID at the bottom is not registered to a store in PH,
    or its store has no pharmacy in the editor. "Invalid screen URL" means the campaign URL lost `device=`.
 
