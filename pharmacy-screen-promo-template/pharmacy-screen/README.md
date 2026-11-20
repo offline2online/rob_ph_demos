@@ -178,6 +178,9 @@ run holds the train's deploy; see "CI" below.
   (built with `config-api/src/publish.js`) and the proxy's `store_info.logo_url` (built with
   `ph-proxy/src/location-proxy.js`).
 - `test/admin-model.test.mjs`: the editor's model, including promo ID and store code validation and uniqueness.
+- `test/handover-docs.test.mjs`: the handover docs (`../docs/`) list exactly the environment variables and query
+  parameters the code reads, `.env.example` holds placeholders only, links resolve, and the template token list
+  matches `js/tokens.js`.
 - `ph-proxy/test/`, `config-api/test/` and `seed/test/` (their own `npm test`): token saved as ciphertext only,
   never logged or returned; admin-only writes; store codes and promo IDs unique (also under concurrent creates);
   the public screen read carrying no secret or admin field; the seed.

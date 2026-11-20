@@ -5,6 +5,32 @@ app to configure pharmacies, promotions and templates, and the back end behind t
 API token, Location API proxy). Requirements and the concept README are on the board (project "Pharmacy Screen
 Promo Template").
 
+## Handover package
+
+New here? **[START-HERE.md](START-HERE.md)** is one page: deploy to AWS in one command, connect PH, test.
+
+| Document | For |
+|---|---|
+| [START-HERE.md](START-HERE.md) | The one-page quick start |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Architecture, prerequisites, install, PH token and rotation, registering screens and the campaign URL, upgrade, rollback, uninstall |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) + [.env.example](.env.example) | Every setting, deploy option, environment variable and query parameter |
+| [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md) | The Location API request and fields used, a full sample, promo IDs, template tokens, config schema, error states |
+| [docs/TEST-CHECKLIST.md](docs/TEST-CHECKLIST.md) | Our environment first, then miPharmacy sign-off |
+| [docs/USER-GUIDE.md](docs/USER-GUIDE.md) | The admin editor: pharmacies, branding, promotions, service library, copy and timings, templates |
+| [AGENTS.md](AGENTS.md), [CLAUDE.md](CLAUDE.md) | Instructions for coding and deployment agents |
+| [CHANGELOG.md](CHANGELOG.md) | What changed, per release |
+
+Mock data for running with no PH instance is in `pharmacy-screen/fixtures/` (`mockapi=1`) and the seed in
+`pharmacy-screen/seed/`. `npm run check:docs` (part of `check:all`) fails when an environment variable or query
+parameter in the code is missing from `docs/CONFIGURATION.md`, or the other way round.
+
+Quick start (AWS):
+
+```bash
+cd pharmacy-screen-promo-template
+npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in address>
+```
+
 | Folder | What it is |
 |---|---|
 | `pharmacy-screen/` | The screen page and its render modules ([README](pharmacy-screen/README.md)) |
@@ -17,6 +43,7 @@ Promo Template").
 | `ci/deploy-pharmacy-screen.yml` | GitHub Actions workflow to install (see "Continuous deploy") |
 | `test/` | Deploy config checks and the deployed admin sign-in gate (`test/ui/admin-gate.test.mjs`) |
 | `aws/` | The deployment target for the retailer's own AWS account: AWS adapters, Lambda entries, CDK stack, one-command install and teardown ([README](aws/README.md)) |
+| `docs/`, `START-HERE.md`, `AGENTS.md`, `CLAUDE.md`, `.env.example`, `CHANGELOG.md` | The handover package (above); not published |
 
 ## Our test environment (Firebase project `rob-ph-demos`)
 
@@ -137,7 +164,8 @@ Everything about it (options, first-run steps, the test checklist on AWS, limits
 ```bash
 cd pharmacy-screen-promo-template
 npm run check          # deploy config, staging allow-list, plan, URLs (offline)
-npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests
+npm run check:all      # plus the screen, config API, PH API proxy and seed unit tests, and the handover docs check
+npm run check:docs     # the handover docs check alone: env vars and query parameters in code = docs/CONFIGURATION.md
 npm run check:admin    # the deployed admin sign-in gate, then the editor's end-to-end tests (Playwright + Chromium)
 npm run check:aws      # the AWS target: adapters, Lambda entries, CDK template, deploy plan, OIDC sign-in (aws/README.md)
 cd pharmacy-screen/config-api && npm install && npm run test:emulator   # Firestore + Storage rules (needs Java)
