@@ -849,7 +849,13 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isHidden('#toolbar'), true);
   for (const id of ['#pvSel', '#setBtn', '#settingsView']) assert.equal(await page.isHidden(id), true, id);
   assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.cur.id), 'seed-pharmacy-vic-mp-005');
-  // Shared promotion settings are read-only; creating or deleting a promotion is not offered.
+  // The grey promotion section (name, promo ID, template, promo= line) is not shown on Morning, Afternoon or Closed;
+  // the fields stay read-only underneath. Creating or deleting a promotion is not offered.
+  for (const tab of ['Morning', 'Afternoon', 'Closed']) {
+    await page.click(`#dpTabs button:has-text("${tab}")`);
+    for (const id of ['#promoMeta', '#pmName', '#pmToken', '#pmTpl', '#pmUrl', '#pmHtml']) assert.equal(await page.isHidden(id), true, `${tab} ${id}`);
+  }
+  await page.click('#dpTabs button:has-text("Morning")');
   assert.equal(await page.$eval('#pmName', (e) => e.readOnly), true);
   assert.equal(await page.$eval('#pmToken', (e) => e.readOnly), true);
   assert.equal(await page.isDisabled('#pmTpl'), true);
@@ -896,18 +902,10 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.click('#dpTabs button:has-text("Closed")');
   assert.equal(await page.isHidden('#h0dur'), true);
   await page.click('#dpTabs button:has-text("Morning")');
-  // Templates are shared: Edit HTML opens read-only, with no Clone.
-  await page.click('#pmHtml');
-  assert.equal(await page.isHidden('#tmClone'), true);
-  assert.equal(await page.isHidden('#tmDel'), true);
-  assert.equal(await page.textContent('#tmLockTx'), 'Shared by every pharmacy. Only an administrator can change it.');
-  await page.click('#hdTabs [data-t="html"]');
-  assert.equal(await page.$eval('#hdHtml', (e) => e.readOnly), true);
-  await page.click('#hdDone');
   // Occasions: only the Occasion drop-down (no promotion name, promo ID or promo= pill), and the occasion can be
   // changed here; it is what the screen plays.
-  assert.equal(await page.isVisible('#pmName'), true);
   await page.click('#dpTabs button:has-text("Occasions")');
+  assert.equal(await page.isVisible('#promoMeta'), true);
   for (const id of ['#pmName', '#pmToken', '#pmUrl', '#pmHtml', '#pmDel']) assert.equal(await page.isHidden(id), true, id);
   assert.equal(await page.isVisible('#pmTpl'), true);
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
@@ -921,7 +919,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
   await page.click('#dpTabs button:has-text("Morning")');
-  assert.equal(await page.isVisible('#pmName'), true);
+  assert.equal(await page.isHidden('#promoMeta'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.
   await page.reload();
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });

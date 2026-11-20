@@ -29,9 +29,10 @@ Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 sign-in the editor is locked to that pharmacy (`S.lock` in `editor.js`, `applyLock`): the page is titled
 "Display Promotions" and shows only the promotions. The toolbar (Promo preview and Settings) is hidden, so the
 pharmacy's details, tokens and branding, Settings → Pharmacies and Personalisation Hub API are not reachable; its
-content is edited as in the admin view. Promotion name, promo ID and template, and templates (Edit HTML, no Clone)
-are read-only, except that on an Occasions promotion only the Occasion drop-down shows and it can be changed
-(it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
+content is edited as in the admin view. The grey promotion section (promotion name, promo ID, template, Edit HTML
+and the `promo=` line) is not shown on Morning, Afternoon, Closed or any other non-occasion promotion
+(`renderPromoMeta` hides `#promoMeta`); on an Occasions promotion only the Occasion drop-down shows and it can be
+changed (it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
 are hidden, and every write handler for them returns early. Each inherited section's action reads "Edit"; every
 scene's seconds-on-screen control is hidden (`hideTimings`: timings are set by an administrator); Add promotion is
 hidden once a promotion has 3 slots (`PHARMACY_MAX_SLOTS`; the admin view allows 6); and "Restore to default"

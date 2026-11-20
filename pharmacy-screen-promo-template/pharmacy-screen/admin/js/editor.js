@@ -573,12 +573,14 @@ function occasionOptions(sel) {
 let pmArm = false;
 function renderPromoMeta() {
   const x = promo();
-  $('promoMeta').hidden = !x;
+  const occ = !!x && isOcc(x.id);
+  // Pharmacy view: the grey promotion section (name, promo ID, template, promo= line) is not shown on Morning,
+  // Afternoon, Closed or any other non-occasion promotion; Occasions keeps only its Occasion drop-down.
+  $('promoMeta').hidden = !x || (!!S.lock && !occ);
   if (!x) return;
-  const occ = isOcc(x.id);
   $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
-  // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only here.
-  // On an Occasions promotion the pharmacy view shows only the Occasion drop-down, and it can change the occasion.
+  // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only (and the
+  // section hidden, above). On an Occasions promotion it shows only the Occasion drop-down, which can be changed.
   const occOnly = !!S.lock && occ;
   $('pmName').readOnly = $('pmToken').readOnly = !!S.lock; $('pmTpl').disabled = !!S.lock && !occ;
   $('pmName').closest('label').hidden = $('pmToken').closest('label').hidden = $('pmUrl').hidden = occOnly;
