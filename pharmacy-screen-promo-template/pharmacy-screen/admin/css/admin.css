@@ -243,3 +243,6 @@ div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
 .inh-alert.warn{background:rgba(250,173,20,.10);border-color:var(--warn)}
 .inh-alert.warn>.ms{color:var(--warn)}
 .inh-alert select{width:auto}
+/* "Open today bar in the preview": which bar message the preview shows (editor.js renderBarTabs) */
+.bartabs{display:grid;gap:6px;margin-top:8px;min-width:0}
+.bartabs-h{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}

@@ -1026,3 +1026,65 @@ test('Edit for this pharmacy / Edit / Revert to master keep the page where it wa
     }
   }
 });
+
+test('Open today bar: each message can be shown in the preview, by tab or by clicking into it', async () => {
+  const { ctx, page, errors } = await open();
+  await page.click('#playBtn'); // pause
+  // A pharmacy the other tests leave inheriting every section.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
+  const bar = () => page.$eval('#screen .s-foot .f1', (e) => e.textContent.trim());
+  const tab = () => page.$eval('#barTabs button[aria-selected="true"]', (b) => b.textContent);
+  const marked = () => page.$$eval('#footSlot .rtf.focus .rt', (e) => e.map((x) => x.id));
+  // The tabs, with the store's time selected; the section is inherited from the master and they still work.
+  assert.deepEqual(await page.$$eval('#barTabs button', (b) => b.map((x) => x.textContent)), ["Store's time", 'While open', 'Last 30 minutes', 'Before opening', 'After closing']);
+  assert.equal(await tab(), "Store's time");
+  assert.equal(await page.$eval('.inh[data-sec="footer"] #footSlot', (e) => e.inert), true);
+  assert.deepEqual(await marked(), []);
+  const want = { 'While open': [/^Open today until \d/, 'ftOpen'], 'Last 30 minutes': [/^Closing soon · \d/, 'ftClosing'], 'Before opening': [/^Opens today at 9AM$/, 'ftBefore'], 'After closing': [/^Closed now$/, 'ftClosed'] };
+  for (const [label, [re, box]] of Object.entries(want)) {
+    await page.click(`#barTabs button:text-is("${label}")`);
+    assert.equal(await tab(), label);
+    assert.match(await bar(), re, label);
+    assert.deepEqual(await marked(), [box], label);
+  }
+  // The same close time in "While open" and "Last 30 minutes".
+  await page.click('#barTabs button:text-is("While open")');
+  const close = (await bar()).match(/\d[\d.]*[AP]M/)[0];
+  await page.click('#barTabs button:text-is("Last 30 minutes")');
+  assert.equal((await bar()).match(/\d[\d.]*[AP]M/)[0], close);
+  // Managed separately: clicking into a message shows it, and typing updates the bar as you type.
+  await own(page);
+  await page.click('#barTabs button:text-is("After closing")');
+  await page.click('#ftBefore');
+  assert.equal(await tab(), 'Before opening');
+  assert.deepEqual(await marked(), ['ftBefore']);
+  assert.match(await bar(), /^Opens today at 9AM$/);
+  await page.keyboard.press('End');
+  await page.keyboard.type(' sharp');
+  await page.waitForFunction(() => /sharp$/.test(document.querySelector('#screen .s-foot .f1').textContent.trim()));
+  // Anywhere else in the promotion: back to the store's clock.
+  await page.click('#dit');
+  assert.equal(await tab(), "Store's time");
+  assert.deepEqual(await marked(), []);
+  await page.click('#barTabs button:text-is("While open")');
+  await page.click('#barTabs button:text-is("Store\'s time")');
+  assert.equal(await tab(), "Store's time");
+  assert.deepEqual(await marked(), []);
+  // A new pharmacy or promotion starts on the store's time again.
+  await page.click('#barTabs button:text-is("After closing")');
+  await page.click('#dpTabs button:nth-child(2)');
+  await page.click('#dpTabs button:nth-child(1)');
+  assert.equal(await tab(), "Store's time");
+  await settle(page);
+  // Put the pharmacy back to inheriting, for the other tests.
+  for (let i = 0; i < 8; i++) {
+    const b = await page.$('#dpBody .inh-act[data-own="1"]');
+    if (!b) break;
+    await b.click();
+    await settle(page);
+  }
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});

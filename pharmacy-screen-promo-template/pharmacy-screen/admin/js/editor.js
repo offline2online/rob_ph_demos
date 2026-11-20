@@ -14,6 +14,7 @@ import * as M from './model.js';
 import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, DEFAULT_HTML, footerConfig, boost, tileTop, occasionOf, occasionFieldName, beatSeconds, seasonDates, seasonDatesOf, fmtMonthDay } from '../../js/render.js';
 import { esc, TEMPLATE_TOKENS } from '../../js/tokens.js';
 import { geom } from '../../js/fit-text.js';
+import { nowInState, storeNow } from '../../js/hours.js';
 
 const $ = (id) => document.getElementById(id);
 const pref = {
@@ -99,6 +100,29 @@ function previewModel() {
 let ver = 0, scene = 0, elapsed = 0, playing = true, last = performance.now(), lastKey = '', model = null;
 const seq = () => (model ? sequence(model.play) : [{ k: 0, t: 3 }]);
 
+// "Open today bar in the preview": which message the preview's bar shows. null follows the store's clock (what the
+// screen does); otherwise the preview is drawn at a store time today in that state (hours.js nowInState). Editor only.
+const BAR_STATES = [
+  { k: null, label: "Store's time" },
+  { k: 'open', label: 'While open', box: 'ftOpen' },
+  { k: 'closing', label: 'Last 30 minutes', box: 'ftClosing' },
+  { k: 'before', label: 'Before opening', box: 'ftBefore' },
+  { k: 'closed', label: 'After closing', box: 'ftClosed' },
+];
+let barState = null, barFor = '';
+function previewNow(store) {
+  if (!barState || !store) return undefined;
+  return nowInState(store.sessions, barState, storeNow(store.tz)) || undefined;
+}
+function markBar() {
+  BAR_STATES.forEach((x) => { const b = x.box && $(x.box); if (b) b.closest('.rtf').classList.toggle('focus', x.k === barState); });
+  document.querySelectorAll('#barTabs button').forEach((b) => b.setAttribute('aria-selected', String((b.dataset.st || null) === barState)));
+}
+function setBarState(k) {
+  if (k === barState) return;
+  barState = k; lastKey = ''; renderScreen(true); markBar();
+}
+
 function fit() {
   const st = $('stage'), w = st.clientWidth;
   $('screen').style.transform = `scale(${w / (orient === 'landscape' ? 1920 : 1080)})`;
@@ -111,7 +135,7 @@ function renderScreen(force) {
   // promotion changes, restarting the loop and the timeline with it); paused, the selected beat is held still.
   const occLoop = isOcc() && playing;
   const minute = occLoop ? 0 : Math.floor(Date.now() / 60000);
-  const key = [S.cur.id, S.dpTab, occLoop ? 'loop' : scene, ver, orient, minute].join('|');
+  const key = [S.cur.id, S.dpTab, occLoop ? 'loop' : scene, ver, orient, minute, barState].join('|');
   if (key === lastKey && !force) return;
   if (occLoop) { scene = 0; elapsed = 0; }
   const sceneChanged = !lastKey.startsWith([S.cur.id, S.dpTab, scene].join('|') + '|');
@@ -120,7 +144,7 @@ function renderScreen(force) {
   try {
     model = previewModel();
     if (scene >= sequence(model.play).length) scene = 0;
-    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, enter: sceneChanged, loop: occLoop });
+    renderScene(el, { store: model.store, play: model.play, orientation: orient, scene, now: previewNow(model.store), enter: sceneChanged, loop: occLoop });
   } catch (e) {
     model = null;
     renderMessage(el, orient, 'Preview unavailable', (e && (e.detail || e.message)) || String(e));
@@ -150,6 +174,7 @@ function markEditor() {
   document.querySelectorAll('.focus').forEach((x) => x.classList.remove('focus'));
   const el = editorTarget(scene);
   if (el) el.classList.add('focus');
+  markBar();
   return el;
 }
 function goScene(i, scroll) {
@@ -164,6 +189,11 @@ $('playBtn').onclick = () => setPlaying(!playing);
 $('stage').onclick = () => goScene(scene, true);
 $('dpBody').addEventListener('focusin', (e) => {
   if (e.target.closest('.icp-pop')) return;
+  // Into an Open today bar message: the preview shows that message. Anywhere else in the promotion except the bar
+  // and its tabs: back to the store's clock.
+  const box = BAR_STATES.find((x) => x.box && e.target.closest('#' + x.box));
+  if (box) setBarState(box.k);
+  else if (!e.target.closest('#footSlot, .bartabs, .inh[data-sec="footer"]')) setBarState(null);
   let i = -1;
   const sl = e.target.closest('.slot');
   if (isOcc()) { if (sl && sl.dataset.o !== undefined) i = +sl.dataset.o; }
@@ -268,6 +298,8 @@ const justAdded = new WeakSet();
 function renderDp() {
   closePicker(); setTimeout(() => markEditor());
   renderPromoTabs(); renderPromoMeta();
+  const bf = S.cur ? `${S.cur.id}|${S.dpTab}` : '';
+  if (bf !== barFor) { barFor = bf; barState = null; lastKey = ''; }
   const B = $('dpBody');
   if (!S.promotions.length) { B.innerHTML = '<span class="hint">No promotions yet. Add one with New promotion.</span>'; return; }
   const s = S.cur, d = content();
@@ -365,7 +397,21 @@ function renderDp() {
   bindRt('ftOpen', (v) => fset('open', v)); bindRt('ftClosing', (v) => fset('closing', v)); bindRt('ftBefore', (v) => fset('before', v)); bindRt('ftClosed', (v) => fset('closed', v));
   $('ftShow').onchange = (e) => { fset('show', e.target.checked); changed(); };
   bindRt('cl1', (v) => { d.close.title = v; }); on('cl2', (v) => { d.close.sub = v; }); on('cl3', (v) => { d.close.line1 = v; }); on('cl4', (v) => { d.close.line2 = v; });
-  hideTimings(B); decorateSections(B);
+  hideTimings(B); decorateSections(B); renderBarTabs();
+}
+
+/** The "Open today bar in the preview" tabs, just under the bar's messages. They sit outside the section, so they
+ *  work while it is inherited from the master (read-only). Preview only: nothing is saved. */
+function renderBarTabs() {
+  const foot = $('footSlot');
+  if (!foot) return;
+  const row = document.createElement('div');
+  row.className = 'bartabs';
+  row.innerHTML = `<span class="bartabs-h">Open today bar in the preview<span class="ms help" tabindex="0" role="img" aria-label="About this preview" title="Shows the bar's message for each time of day in the preview only. Screens always show the message for the store's own time.">info</span></span>
+    <div class="tabs" role="tablist" id="barTabs" aria-label="Open today bar in the preview">${BAR_STATES.map((x) => `<button type="button" role="tab" ${x.k ? `data-st="${x.k}"` : ''} aria-selected="${x.k === barState}">${esc(x.label)}</button>`).join('')}</div>`;
+  foot.after(row);
+  $('barTabs').onclick = (e) => { const b = e.target.closest('button'); if (b) setBarState(b.dataset.st || null); };
+  markBar();
 }
 
 // ───────────────────────── master template (requirement 23) ─────────────────────────

@@ -10,6 +10,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Added
 
+- **Editor: see each "Open today" bar message in the preview.** Under Footer: Open today bar, "Open today bar in
+  the preview" has tabs for Store's time, While open, Last 30 minutes, Before opening and After closing; the
+  preview's bar shows the chosen message and that message is marked "In preview". It works while the bar is
+  inherited from the master, and clicking into a message shows it. Preview only: screens still follow the store's
+  clock ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Copy tips").
 - **Occasions is now Seasonal, and it switches by date.** The fourth default promotion, its tab, its drop-down
   (now **Season**) and every label in the editor and the docs say Seasonal instead of Occasions; its promo ID stays
   `occasions`, so existing campaign URLs keep working. Each season has start and end dates, the same every year:

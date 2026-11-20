@@ -111,3 +111,21 @@ test('${CloseTime} / ${OpenTime} for a session crossing midnight, from the store
   assert.deepEqual(bar('2026-11-20T15:00:00Z'), ['closed', '2AM|8PM']); // Sat 02:00: next opening is next Friday
   assert.deepEqual(bar('2026-11-20T08:00:00Z'), ['before', '2AM|8PM']); // Fri 19:00
 });
+
+test('nowInState: a store time today for each "Open today" bar message (the editor preview)', async () => {
+  const { nowInState } = await import('../js/hours.js');
+  const wed = { day: 'wed', min: 600 };
+  assert.deepEqual(nowInState(beaumaris, 'open', wed), at('wed', '09:30'));
+  assert.deepEqual(nowInState(beaumaris, 'closing', wed), at('wed', '18:30'));
+  assert.deepEqual(nowInState(beaumaris, 'before', wed), at('wed', '00:00'));
+  assert.deepEqual(nowInState(beaumaris, 'closed', wed), at('wed', '19:00'));
+  for (const s of ['open', 'closing', 'before', 'closed']) assert.equal(storeState(beaumaris, nowInState(beaumaris, s, wed)).state, s);
+  // Sunday has no hours: open, closing and before come from Monday; closed is now.
+  const sun = { day: 'sun', min: 600 };
+  assert.deepEqual(nowInState(beaumaris, 'open', sun), at('mon', '09:30'));
+  assert.deepEqual(nowInState(beaumaris, 'closed', sun), at('sun', '00:00'));
+  // Always open: never before or after closing.
+  const always = parseOpeningHours(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'].map((d) => day(d, '00:00', '00:00')));
+  assert.equal(nowInState(always, 'before', wed), null);
+  assert.equal(nowInState([], 'open', wed), null);
+});

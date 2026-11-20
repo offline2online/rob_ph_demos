@@ -124,3 +124,24 @@ export function weeklyRows(sessions) {
     return { day: d, name: DAY_NAMES[d], text: own.length ? own.map((s) => `${fmtLong(s.open)} – ${fmtLong(s.close)}`).join(', ') : null };
   });
 }
+
+/**
+ * A store time {day, min} at which the store is in `want` ('open' | 'closing' | 'before' | 'closed'), for the
+ * editor's preview of each "Open today" bar message. Looks from `today` 00:00 through the week in 5-minute steps,
+ * so it is today wherever today allows (no session today: the first day that has one). 'open' is taken an hour into
+ * the session where that is still open, so the bar reads as a normal open time. null when the hours never give it.
+ */
+export function nowInState(sessions, want, today) {
+  const d0 = Math.max(0, dayIndex(today && today.day));
+  for (let m = 0; m < WEEK; m += 5) {
+    const t = (d0 * 1440 + m) % WEEK;
+    const at = { day: DAYS[Math.floor(t / 1440)], min: t % 1440 };
+    if (storeState(sessions, at).state !== want) continue;
+    if (want === 'open') {
+      const t2 = (t + 60) % WEEK, later = { day: DAYS[Math.floor(t2 / 1440)], min: t2 % 1440 };
+      if (storeState(sessions, later).state === 'open') return later;
+    }
+    return at;
+  }
+  return null;
+}

@@ -108,6 +108,10 @@ Service copy needs TGA advertising review before go-live.
   the comma or line break before it.
 - Bar messages use `${CloseTime}` and `${OpenTime}` (worked out in the store's time zone), e.g. "Open today until
   ${CloseTime}".
+- To see each bar message in the preview, use **Open today bar in the preview** under the bar: Store's time (what
+  screens do), While open, Last 30 minutes, Before opening or After closing. The message shown is marked "In
+  preview". Clicking into a message you can edit shows it too; clicking anywhere else in the promotion goes back to
+  the store's time. This only changes the preview: screens always show the message for the store's own time.
 - Long headlines shrink automatically to stay inside the brand panel; if one becomes very small, shorten it.
 - "Public Holidays: Please call to confirm" is always shown; you don't need to write it.
 
