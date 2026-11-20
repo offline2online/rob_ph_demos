@@ -47,6 +47,8 @@ h1{font-size:20px;font-weight:700;margin:0}
 .card+.card{margin-top:16px}
 .sect{font-size:12px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px;justify-content:space-between}
 .sect .tag{letter-spacing:0;text-transform:none;font-weight:400;font-size:12px;border-radius:9999px;padding:1px 8px;background:var(--primary-tint);color:var(--primary)}
+.sect .restore{display:flex;align-items:center;gap:2px;letter-spacing:0;text-transform:none;font-weight:400}
+.sect .restore button.text{min-height:28px;padding:0 6px;white-space:nowrap}
 .grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 12px}
 .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 12px}
 @container (max-width:520px){.grid2,.grid3{grid-template-columns:minmax(0,1fr)}}

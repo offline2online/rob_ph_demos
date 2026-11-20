@@ -32,7 +32,11 @@ pharmacy's details, tokens and branding, Settings → Pharmacies and Personalisa
 content is edited as in the admin view. Promotion name, promo ID and template, and templates (Edit HTML, no Clone)
 are read-only, except that on an Occasions promotion only the Occasion drop-down shows and it can be changed
 (it sets the shared promotion's occasion, as in the admin view). New / Delete promotion and the master template
-are hidden, and every write handler for them returns early. An unknown store code shows "Pharmacy not found". It never writes the
+are hidden, and every write handler for them returns early. Each inherited section's action reads "Edit"; every
+scene's seconds-on-screen control is hidden (`hideTimings`: timings are set by an administrator); Add promotion is
+hidden once a promotion has 3 slots (`PHARMACY_MAX_SLOTS`; the admin view allows 6); and "Restore to default"
+replaces the "shared by all pharmacies" tag (`renderRestore` / `restoreDefaults`: two clicks, then the pharmacy's
+content takes each master's copy and `detached` is cleared, so every section inherits again). An unknown store code shows "Pharmacy not found". It never writes the
 remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).
 The API is unchanged: it still requires the admin role for every call.
 

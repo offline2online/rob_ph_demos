@@ -30,6 +30,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   shows Promo preview, the "Pharmacy view" label or Settings (the pharmacy's details, tokens and branding are set
   in the full editor). On Occasions it shows only the Occasion drop-down, which can be changed there, without the
   promotion name, promo ID or `promo=` line ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Pharmacy view").
+- **Pharmacy view: Restore to default, "Edit", no timings, at most 3 slots.** "Restore to default" replaces
+  "shared by all pharmacies" at the top of the page and puts every section of every promotion back to the master
+  template (two clicks). "Edit for this pharmacy" reads "Edit". Scene timings are hidden (set by an administrator
+  in the full editor); slots can still be reordered and deleted. Add promotion is hidden once a promotion has 3
+  slots ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Pharmacy view").
 - **Timings for every scene of every template.** Besides the Promotion scenes' greeting, slots and close, each
   Closed (opening hours) headline and each occasion beat now has its own seconds on screen (1–60) in the editor.
   The timeline, Loop and Playback duration follow; at the default timings nothing changes (Closed 2.7 + 2.7 +

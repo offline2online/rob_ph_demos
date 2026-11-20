@@ -84,7 +84,8 @@
 
     <div id="contentView">
     <div class="card promo-mod">
-      <div class="sect">Promotions <span class="tag" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span></div>
+      <div class="sect">Promotions <span class="tag" id="promoShared" title="Promotions are shared by all pharmacies. Personalisation Hub Core schedules which one plays, using its promo ID.">shared by all pharmacies</span>
+        <span class="restore" id="restoreWrap" hidden><button type="button" class="text" id="restoreBtn"><span class="ms">settings_backup_restore</span><span id="restoreTx">Restore to default</span></button><span class="ms help" title="Puts every section of every promotion back to the master template. This pharmacy's own changes are discarded.">info</span></span></div>
       <div class="promo-bar">
         <div class="tabscroll" id="dpScroll">
           <button type="button" class="tsarrow" id="dpPrev" tabindex="-1" aria-label="Scroll promotions left" hidden><span class="ms">chevron_left</span></button>

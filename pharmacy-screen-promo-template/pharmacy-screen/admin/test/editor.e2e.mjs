@@ -830,7 +830,7 @@ test('with the PH left menu expanded on a tablet or small laptop, the preview st
   }
 });
 
-test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions, titled Display Promotions; its own content is editable, shared things are not', async () => {
+test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions, titled Display Promotions; its own content is editable, shared things and timings are not', async () => {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 1000 } });
   const page = await ctx.newPage();
   const errors = [];
@@ -855,6 +855,16 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isDisabled('#pmTpl'), true);
   assert.equal(await page.isHidden('#newPromoBtn'), true);
   assert.equal(await page.isHidden('#pmDel'), true);
+  // The top of the page offers Restore to default instead of "shared by all pharmacies"; nothing to restore yet.
+  assert.equal(await page.isHidden('#promoShared'), true);
+  assert.equal(await page.isVisible('#restoreBtn'), true);
+  assert.equal(await page.textContent('#restoreTx'), 'Restore to default');
+  assert.equal(await page.isDisabled('#restoreBtn'), true);
+  // Each inherited section's action is simply "Edit".
+  assert.deepEqual(await page.$$eval('#dpBody .inh-act', (b) => b.map((x) => x.textContent.replace('edit', '').trim())), ['Edit', 'Edit', 'Edit', 'Edit']);
+  // Timings are set by an administrator only: no scene shows its seconds on screen.
+  assert.equal(await page.$$eval('#dpBody .dur', (d) => d.length) > 0, true);
+  assert.equal(await page.$$eval('#dpBody .dur', (d) => d.every((x) => x.hidden && x.offsetParent === null)), true);
   // Its own content: make the greeting its own and edit it; it saves and reaches its screen.
   await page.click('.inh[data-sec="greeting"] .inh-act');
   await settle(page);
@@ -862,15 +872,30 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await settle(page);
   let scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
   assert.equal(scr.promotions.morning.content.introTitle, 'This pharmacy only');
-  // Add a promotion slot (blank) to its own slots.
+  assert.equal(await page.isDisabled('#restoreBtn'), false);
+  // Its own slots: at most 3, so Add promotion is hidden at 3 and back after a delete. Slots can still be
+  // reordered and deleted, but their timings stay hidden.
   await page.click('.inh[data-sec="slots"] .inh-act');
   await settle(page);
-  const before = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body.promotions.morning.content.slots.length;
+  assert.equal(await page.$$eval('#slotList .slot', (x) => x.length), 3);
+  assert.equal(await page.isHidden('#addSlot'), true);
+  assert.equal(await page.isHidden('#s0dur'), true);
+  assert.equal(await page.isVisible('#slotList .slot[data-i="0"] .mv[data-mv="1"]'), true);
+  await page.click('#slotList .slot[data-i="2"] .del');
+  await page.click('#slotList .slot[data-i="2"] .del'); // confirm
+  await settle(page);
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body.promotions.morning.content.slots.length, 2);
+  assert.equal(await page.isVisible('#addSlot'), true);
   await page.click('#addSlot');
   await page.click('#svcBlank');
   await settle(page);
   scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
-  assert.equal(scr.promotions.morning.content.slots.length, before + 1);
+  assert.equal(scr.promotions.morning.content.slots.length, 3);
+  assert.equal(await page.isHidden('#addSlot'), true);
+  // Opening hours and Occasions hide their timings too.
+  await page.click('#dpTabs button:has-text("Closed")');
+  assert.equal(await page.isHidden('#h0dur'), true);
+  await page.click('#dpTabs button:has-text("Morning")');
   // Templates are shared: Edit HTML opens read-only, with no Clone.
   await page.click('#pmHtml');
   assert.equal(await page.isHidden('#tmClone'), true);
@@ -887,6 +912,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isVisible('#pmTpl'), true);
   assert.equal(await page.$eval('#pmTpl', (e) => e.closest('label').querySelector('span').textContent), 'Occasion');
   assert.equal(await page.isDisabled('#pmTpl'), false);
+  assert.equal(await page.isHidden('#o0dur'), true);
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
@@ -901,13 +927,22 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
   assert.equal(await page.evaluate(() => window.pharmacyAdmin.state.lock), 'VIC-MP-005');
   assert.equal(await page.evaluate(() => localStorage.getItem('ps-admin-pharmacy')), null);
-  // Put it back: inherit the master again.
+  // Restore to default (second click confirms): every section inherits the master template again, on the screen too.
   await page.click('#playBtn');
-  await page.click('.inh[data-sec="greeting"] .inh-act');
-  await settle(page);
-  await page.click('.inh[data-sec="slots"] .inh-act');
+  const master = (await api('GET', '/api/admin/promotions/seed-promotion-morning')).body.master;
+  await page.click('#restoreBtn');
+  assert.equal(await page.textContent('#restoreTx'), 'Click again to restore');
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body.detached['seed-promotion-morning'].length, 2);
+  await page.click('#restoreBtn');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body.detached, undefined);
+  scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
+  assert.equal(scr.promotions.morning.content.introTitle, master.introTitle);
+  assert.equal(scr.promotions.morning.content.slots.length, master.slots.length);
+  assert.equal(await page.inputValue('#dit'), master.introTitle);
+  assert.ok((await page.$$eval('#dpBody .inh-pill', (p) => p.map((x) => x.textContent))).every((t) => /Inherited from master/.test(t)));
+  assert.equal(await page.isDisabled('#restoreBtn'), true);
+  assert.equal(await page.textContent('#restoreTx'), 'Restore to default');
   // ?storeCode= works too.
   await signInAt('/admin/?storeCode=VIC-MP-005');
   await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.state.lock === 'VIC-MP-005', null, { timeout: 20000 });
