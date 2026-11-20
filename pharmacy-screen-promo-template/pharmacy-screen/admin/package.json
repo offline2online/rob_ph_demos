@@ -1,0 +1,10 @@
+{
+  "name": "pharmacy-screen-admin",
+  "private": true,
+  "description": "Pharmacy Screen Promo Template: the admin editor (static ES modules, no build step) and its end-to-end tests.",
+  "type": "module",
+  "scripts": {
+    "dev": "node tools/dev-server.mjs 8790",
+    "test": "node --test --test-concurrency=1 test/editor.e2e.mjs"
+  }
+}
