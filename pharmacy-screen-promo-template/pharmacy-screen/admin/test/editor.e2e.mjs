@@ -765,3 +765,44 @@ test('on a tablet the preview scrolls up until the orientation tabs lock to the 
     }
   }
 });
+
+test('with the PH left menu expanded on a tablet or small laptop, the preview stays beside the editor and in view', async () => {
+  // Ticket IrKm7Pajph6dMIRvULez: below a 920px frame the preview used to drop under the whole editor and seemed to
+  // disappear. 1024 - 256 = 768px and 1180 - 256 = 924px frames; the collapsed menu (70px) is checked too.
+  const shell = `<!doctype html><html><head><style>html,body{margin:0;height:100%}body{display:flex}
+    aside{width:256px;flex:none;background:#333}body.collapsed aside{width:70px}
+    main{flex:1;min-width:0;display:flex}iframe{border:0;flex:1;min-width:0;height:100%}</style></head>
+    <body><aside></aside><main><iframe src="/admin/"></iframe></main></body></html>`;
+  for (const viewport of [{ width: 1024, height: 768 }, { width: 1180, height: 820 }]) {
+    const ctx = await browser.newContext({ viewport });
+    const page = await ctx.newPage();
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.route('**/ph-shell.html', (r) => r.fulfill({ contentType: 'text/html', body: shell }));
+    await page.goto(dev.base + '/ph-shell.html');
+    const fr = page.frame({ url: /\/admin\/$/ });
+    await fr.fill('#gateTokenIn', 'dev-admin');
+    await fr.click('#gateToken button[type=submit]');
+    await fr.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
+    for (const or of ['portrait', 'landscape']) {
+      await fr.click(`#orTabs [data-or="${or}"]`);
+      for (const state of ['expanded', 'collapsed', 'expanded']) {
+        await page.evaluate((s) => document.body.classList.toggle('collapsed', s === 'collapsed'), state);
+        await fr.waitForFunction((w) => innerWidth === w, viewport.width - (state === 'collapsed' ? 70 : 256));
+        const m = await fr.evaluate(() => {
+          const r = (s) => document.querySelector(s).getBoundingClientRect();
+          const ed = r('.edcol'), pv = r('.pv'), st = r('.stage');
+          return { frame: innerWidth, edRight: Math.round(ed.right), edTop: Math.round(ed.top), pvLeft: Math.round(pv.left), pvTop: Math.round(pv.top),
+            stageW: Math.round(st.width), stageBottom: Math.round(st.bottom), vh: innerHeight, pageOverflow: document.documentElement.scrollWidth - innerWidth };
+        });
+        const where = `${viewport.width}px ${or}, menu ${state}: ${JSON.stringify(m)}`;
+        assert.ok(m.pvLeft >= m.edRight, `the preview is to the right of the editor, ${where}`);
+        assert.ok(Math.abs(m.pvTop - m.edTop) <= 2, `the preview starts level with the editor, not below it, ${where}`);
+        assert.ok(m.stageW >= 200 && m.stageBottom <= m.vh, `the preview screen is visible without scrolling, ${where}`);
+        assert.equal(m.pageOverflow, 0, where);
+      }
+    }
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  }
+});

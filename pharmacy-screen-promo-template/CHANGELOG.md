@@ -19,6 +19,11 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Editor: the preview stays beside the editor when Personalisation Hub's left menu is expanded.** On a tablet or
+  small laptop the expanded menu left a frame under 920px, where the preview used to drop below the whole editor
+  and seemed to disappear. It now narrows and stays in view beside the editor down to a 600px frame; only a
+  phone-sized frame stacks it under the editor ([pharmacy-screen/admin/README.md](pharmacy-screen/admin/README.md)
+  → "Layout in the Personalisation Hub frame").
 - **Occasions: the six templates are the approved standalone designs.** Christmas (a photo of a lit tree with
   flickering sparkles), New Year's (fireworks), Australia Day (the flag waving), Valentine's Day (rising hearts),
   Easter (bouncing eggs) and Anzac Day (a dawn glow and a poppy, fades only), each filling the screen in both

@@ -102,6 +102,7 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | H4 | Copy experience URL | `<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<id>&orientation=<o>` | ☐ | ☐ |
 | H5 | Promo preview → Master template; change the Morning greeting's Line 2 | Every pharmacy whose greeting says "Inherited from master" shows it on screen within 60 s; its logo and colours stay its own | ☐ | ☐ |
 | H6 | On a pharmacy, Morning → greeting → Edit for this pharmacy; change Line 2; then change the master again | A message says the greeting is now managed separately; the screen keeps the pharmacy's copy; Revert to master brings the master's back | ☐ | ☐ |
+| H7 | Open the editor in Personalisation Hub on a tablet (or a window about 1024–1180px wide); expand, then collapse, PH's left menu, in Portrait and Landscape | The preview stays on the right of the editor and in view in every state; it narrows with the menu expanded and never drops below the editor | ☐ | ☐ |
 
 ## I. On the PH player (Android 12)
 

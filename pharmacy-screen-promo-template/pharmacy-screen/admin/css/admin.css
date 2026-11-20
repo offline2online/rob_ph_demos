@@ -27,7 +27,10 @@ h1{font-size:20px;font-weight:700;margin:0}
 .count{color:var(--muted);margin:2px 0 16px}
 .count b{color:var(--text)}
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,clamp(360px,36cqi,400px));gap:24px;align-items:start}
-@container frame (max-width:920px){.wrap{grid-template-columns:minmax(0,1fr)}}
+/* the preview stays beside the editor when PH's left menu is expanded (256px): on a 1024px iPad that leaves a
+   ~730px frame. It narrows instead of dropping below the editor, and stacks only on a phone-sized frame. */
+@container frame (max-width:920px){.wrap{grid-template-columns:minmax(0,1fr) minmax(0,clamp(240px,38cqi,360px));gap:16px}}
+@container frame (max-width:600px){.wrap{grid-template-columns:minmax(0,1fr)}}
 .edcol{container:edcol/inline-size;min-width:0}
 .toolbar{display:flex;flex-wrap:nowrap;gap:8px;align-items:end;margin-bottom:16px;min-width:0}
 .toolbar>button{flex:none;white-space:nowrap}
@@ -212,7 +215,8 @@ details summary{cursor:pointer;color:var(--primary)}
 [hidden]{display:none!important}
 .stage{height:auto;min-height:0;width:min(100%,calc(min(100vh - 250px,760px) * .5625))}
 div.f{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
-@container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}
+@container frame (max-width:920px){.wrap.isLand{grid-template-columns:minmax(0,1fr) minmax(0,min(640px,44cqi))}}
+@container frame (max-width:600px){.wrap.isLand{grid-template-columns:minmax(0,1fr)}.pv{position:static}}
 /* Master template (requirement 23): each section of a pharmacy's promotion says whether it is inherited from the
    master template (read-only here) or managed separately, with the action to switch. Outlined pill, text button,
    light alert (ph-designer components). */
