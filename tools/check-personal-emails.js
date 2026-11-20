@@ -12,7 +12,8 @@
 // Allowed without listing:
 //   - reserved domains (RFC 2606 / 6761): example, example.com|org|net,
 //     *.example, *.test, *.invalid, *.localhost
-//   - service identities: *.iam.gserviceaccount.com, *.firebaseapp.com,
+//   - service identities: *.iam.gserviceaccount.com,
+//     *.developer.gserviceaccount.com (Compute Engine default), *.firebaseapp.com,
 //     *.noreply.github.com, noreply.github.com
 //   - role mailboxes on any domain (support@, you@, noreply@ …; ROLE_LOCALS)
 // Anything else must be listed in .personal-email-allowlist at the repo root
@@ -34,7 +35,7 @@ const path = require("path");
 const EMAIL_RE = /[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}/g;
 
 const RESERVED_DOMAIN_RE = /(^|\.)(example|test|invalid|localhost)$|(^|\.)example\.(com|org|net)$/i;
-const SERVICE_DOMAIN_RE = /(^|\.)(iam\.gserviceaccount\.com|firebaseapp\.com|noreply\.github\.com)$/i;
+const SERVICE_DOMAIN_RE = /(^|\.)(iam\.gserviceaccount\.com|developer\.gserviceaccount\.com|firebaseapp\.com|noreply\.github\.com)$/i;
 const ROLE_LOCALS = new Set([
   "support", "help", "helpdesk", "info", "hello", "contact", "enquiries", "sales", "admin", "administrator",
   "noreply", "no-reply", "donotreply", "do-not-reply", "notifications", "alerts", "you", "your", "yourname",

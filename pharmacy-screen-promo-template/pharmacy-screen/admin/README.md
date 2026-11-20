@@ -77,10 +77,11 @@ Firebase Auth.
 
 ## Deploying
 
-Serve `pharmacy-screen/` statically (the editor imports `../js/` and `../css/`), with `/api/**` rewritten to
-the two functions as their READMEs say (`config-api/README.md` → "Deploying", `ph-proxy/README.md`). Set
-`auth.firebase` in `config.js` to the Firebase web app config, add the editor's origin to
-`PS_ALLOWED_ORIGINS` / `PH_ALLOWED_ORIGINS` if it is served from a different origin than the API, and grant
-admins the `admin` claim (`config-api/scripts/set-admin-claim.js`). Reset is offered only where
-`seed/fixtures/` is served beside the editor. Wiring this into the one-command deploy is the "Deploy to our
-test environment" ticket.
+`npm run deploy` in `pharmacy-screen-promo-template/` publishes the editor with the screen on our test
+environment (Firebase project `rob-ph-demos`; URLs in that folder's README). It stages `admin/` without its
+`test/`, `tools/`, package files and README, publishes `seed/fixtures/` beside it (so Reset works), rewrites
+`/api/**` to the two functions, and writes the published `config.js` with the project's Firebase web app
+config (`auth.mode: 'firebase'`). The committed `config.js` keeps `firebase: null`. Grant admins the `admin`
+claim (`config-api/scripts/set-admin-claim.js`). To serve it anywhere else, serve `pharmacy-screen/`
+statically the same way, set `auth.firebase` in `config.js`, and add the editor's origin to
+`PS_ALLOWED_ORIGINS` / `PH_ALLOWED_ORIGINS` if it is served from a different origin than the API.

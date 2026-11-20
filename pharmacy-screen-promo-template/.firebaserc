@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "rob-ph-demos"
+  },
+  "targets": {
+    "rob-ph-demos": {
+      "hosting": {
+        "pharmacy-screen": ["rob-ph-demos-pharmacy-screen"]
+      },
+      "storage": {
+        "pharmacy-screen-media": ["rob-ph-demos-pharmacy-screen-media"]
+      }
+    }
+  }
+}
