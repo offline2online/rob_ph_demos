@@ -68,7 +68,14 @@ export const STAGE_DIR = ".deploy";
 // Writes <out>/public (Hosting's "public") and <out>/firestore.rules (the
 // Firestore "rules"), fresh every run. firebase.json points at both.
 export function stage(root = ROOT, out = join(root, STAGE_DIR)) {
-  const pub = join(out, "public");
+  const build = stagePublic(root, join(out, "public"));
+  copyFileSync(join(root, RULES_SOURCE), join(out, "firestore.rules"));
+  return `staged ${PUBLIC_ENTRIES.join(", ")} and ${RULES_SOURCE} in ${STAGE_DIR}/ (screen build ${build})`;
+}
+
+// The published files alone (no rules), sw.js stamped; returns the build id. The rules live outside this folder,
+// so a release package (scripts/release.mjs), which has no repo root, stages and tests through this.
+export function stagePublic(root = ROOT, pub = join(root, STAGE_DIR, "public")) {
   rmSync(pub, { recursive: true, force: true });
   mkdirSync(pub, { recursive: true });
   for (const entry of PUBLIC_ENTRIES) {
@@ -78,9 +85,7 @@ export function stage(root = ROOT, out = join(root, STAGE_DIR)) {
       filter: (src) => src === from || !STAGE_SKIP.test(src.slice(from.length)),
     });
   }
-  copyFileSync(join(root, RULES_SOURCE), join(out, "firestore.rules"));
-  const build = stampServiceWorker(pub);
-  return `staged ${PUBLIC_ENTRIES.join(", ")} and ${RULES_SOURCE} in ${STAGE_DIR}/ (screen build ${build})`;
+  return stampServiceWorker(pub);
 }
 
 // The screen's service worker (pharmacy-screen/sw.js) keeps the page, its scripts and stylesheets on the device and
