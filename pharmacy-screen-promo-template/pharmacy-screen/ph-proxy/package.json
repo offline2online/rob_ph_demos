@@ -3,7 +3,7 @@
   "description": "Pharmacy Screen Promo Template: encrypted PH API token settings and the Location API proxy (Cloud Functions 2nd gen)",
   "private": true,
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "scripts": {
