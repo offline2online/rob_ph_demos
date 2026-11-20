@@ -1,0 +1,87 @@
+// Token resolver for the pharmacy screen, shared with the admin editor. No DOM: runs under `node --test`.
+//
+// Copy uses Personalisation Hub's token format, ${TokenName}:
+//   ${Suburb}    store_info.address_info.suburb. With no suburb it is blanked, together with its
+//                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
+//   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
+// Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
+
+export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const SUB = /\$\{Suburb\}|\{store\}/g;
+const SUBGAP = /,?\s*(<br>)?\s*(\$\{Suburb\}|\{store\})/g;
+
+/**
+ * Rich-text sanitiser for headlines and bar messages. Keeps only bold, italic, line breaks and the two
+ * styling spans the editor writes (<span class="reg"> regular weight, <span class="acc"> accent colour).
+ * Every other tag is dropped and its text kept; <div>/<p> become line breaks; script/style are removed.
+ */
+export function clean(html) {
+  const src = String(html || '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, '');
+  const out = [];
+  const stack = []; // {src, close}
+  const re = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)\b([^>]*)>/g;
+  let last = 0, m;
+  const text = (t) => out.push(t.replace(/</g, '&lt;').replace(/>/g, '&gt;'));
+  const ends = () => out.join('').replace(/\s+$/, '');
+  while ((m = re.exec(src))) {
+    if (m.index > last) text(src.slice(last, m.index));
+    last = re.lastIndex;
+    const closing = !!m[1], tag = m[2].toLowerCase(), attrs = m[3] || '';
+    if (closing) {
+      const i = stack.map((s) => s.src).lastIndexOf(tag);
+      if (i < 0) continue;
+      while (stack.length > i) { const s = stack.pop(); if (s.close) out.push(s.close); }
+      continue;
+    }
+    if (tag === 'br') { out.push('<br>'); continue; }
+    if (/\/\s*$/.test(attrs)) continue; // other self-closing tags: dropped
+    let open = '', close = '';
+    if (tag === 'b' || tag === 'strong') { open = '<b>'; close = '</b>'; }
+    else if (tag === 'i' || tag === 'em') { open = '<i>'; close = '</i>'; }
+    else if (tag === 'span') {
+      const cls = (/class\s*=\s*["']([^"']*)["']/i.exec(attrs) || [])[1] || '';
+      const list = cls.split(/\s+/);
+      if (list.includes('acc')) { open = '<span class="acc">'; close = '</span>'; }
+      else if (list.includes('reg')) { open = '<span class="reg">'; close = '</span>'; }
+    } else if (tag === 'div' || tag === 'p') {
+      const sofar = ends();
+      if (sofar && !/<br>$/.test(sofar)) out.push('<br>');
+    }
+    if (open) out.push(open);
+    stack.push({ src: tag, close });
+  }
+  if (last < src.length) text(src.slice(last));
+  while (stack.length) { const s = stack.pop(); if (s.close) out.push(s.close); }
+  return out.join('').replace(/(<br>)+$/, '');
+}
+
+/** ${Suburb} in already-safe HTML: insert the escaped suburb, or blank it with its leading comma / line break. */
+export function applySuburb(html, suburb) {
+  const v = String(suburb || '').trim();
+  return v ? String(html).replace(SUB, esc(v)) : String(html).replace(SUBGAP, '');
+}
+
+/** Rich text (headlines, bar messages) -> safe HTML with ${Suburb} resolved. */
+export const rich = (t, suburb) => applySuburb(clean(t), suburb);
+
+/** Plain text (accent line, line 1, line 2, intro lines) -> escaped text with ${Suburb} resolved. */
+export function fill(t, suburb) {
+  const v = String(suburb || '').trim(), x = String(t || '');
+  return esc(v ? x.replace(SUB, v) : x.replace(SUBGAP, ''));
+}
+
+/** ${CloseTime} / ${OpenTime} in already-safe HTML. */
+export const timeTokens = (html, closeTime, openTime) =>
+  String(html).replace(/\$\{CloseTime\}/g, esc(closeTime || '')).replace(/\$\{OpenTime\}/g, esc(openTime || ''));
+
+/** Fill a template's ${Token} slots from T; an unknown token renders as nothing. */
+export const fillTemplate = (html, T) => String(html || '').replace(/\$\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(T, k) ? T[k] : ''));
+
+/** The slots each built-in template base offers to custom template HTML (shown as chips in the editor). */
+export const TEMPLATE_TOKENS = {
+  scenes: ['Logo', 'Headline', 'AccentLine', 'Content', 'Icon', 'ServiceLabel', 'Line1', 'Line2', 'Tiles', 'Footer', 'OpenToday', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
+  hours: ['Logo', 'Headline', 'HoursCard', 'HolidayNote', 'ContactLine', 'Chevron', 'ViewBox', 'EdgePath', 'Suburb', 'StoreName', 'Phone'],
+};

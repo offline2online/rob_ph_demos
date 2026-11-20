@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// Storage rules for the pharmacy screen media bucket (logos and template
+// backgrounds). Meant for a bucket of its own (PS_MEDIA_BUCKET, default
+// "<project>-pharmacy-screen-media"), so deploying it never touches the rules
+// of the project's default bucket, which the menu-board demo uses.
+//
+// Read:  public, media under pharmacyScreen/media/ only — the screens load
+//        logos and backgrounds from here by URL.
+// Write: never from a client. Only the config API writes, with the Admin SDK
+//        (which bypasses these rules), after checking the admin claim.
+//
+// Tested by test/rules.test.js.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /pharmacyScreen/media/{allPaths=**} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -217,6 +217,23 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // ── pharmacyScreen (Pharmacy Screen Promo Template) ──────────────────────
+    // Config store for the pharmacy screens: pharmacyScreen/config/** (admin
+    // records), pharmacyScreen/audit/** (audit log) and
+    // pharmacyScreen/published/screens/{storeCode} (what a screen renders).
+    // Read:  public, published screen config only — it never holds secrets
+    //        (built by allow-list in
+    //        pharmacy-screen-promo-template/pharmacy-screen/config-api/src/publish.js).
+    // Write: never from a client. Only the config API (Admin SDK, which
+    //        bypasses these rules) writes, after checking the admin claim.
+    // Everything else under pharmacyScreen/ falls through to the deny below.
+    // Tested by pharmacy-screen-promo-template/pharmacy-screen/config-api/test/rules.test.js.
+
+    match /pharmacyScreen/published/screens/{storeCode} {
+      allow get, list: if true;
+      allow write: if false;
+    }
+
     // ── deny everything else ────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

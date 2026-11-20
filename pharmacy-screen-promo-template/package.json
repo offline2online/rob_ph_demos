@@ -1,0 +1,16 @@
+{
+  "name": "pharmacy-screen-promo-template",
+  "private": true,
+  "description": "Pharmacy Screen Promo Template: one-command deploy to our Firebase test environment (rob-ph-demos) and the deploy checks.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:plan": "node scripts/deploy.mjs --dry-run",
+    "check": "node --test test/*.test.mjs",
+    "check:all": "node --test test/*.test.mjs && npm --prefix pharmacy-screen test && npm --prefix pharmacy-screen/config-api test && npm --prefix pharmacy-screen/ph-proxy test && npm --prefix pharmacy-screen/seed test",
+    "check:admin": "node --test test/ui/admin-gate.test.mjs && npm --prefix pharmacy-screen/admin test"
+  }
+}

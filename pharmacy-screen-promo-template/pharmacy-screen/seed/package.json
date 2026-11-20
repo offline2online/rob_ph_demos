@@ -1,0 +1,10 @@
+{
+  "name": "pharmacy-screen-seed",
+  "private": true,
+  "description": "Pharmacy Screen Promo Template: seed data (five launch pharmacies, default promotions, built-in templates, service library) and the script that loads it into the config store.",
+  "type": "commonjs",
+  "scripts": {
+    "seed": "node seed.js",
+    "test": "node --test test/seed.test.js"
+  }
+}

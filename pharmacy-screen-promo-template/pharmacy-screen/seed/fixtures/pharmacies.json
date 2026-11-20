@@ -1,0 +1,495 @@
+{
+  "_doc": "Five launch pharmacies. content is keyed by promo ID (the seed maps it to each promotion's record id). logo.file is base64 of the transparent WebP from the concept prototype's LOGOS, relative to this folder. device is the mock device in ../../fixtures/campaign-data.json.",
+  "pharmacies": [
+    {
+      "key": "vic-mp-001",
+      "storeCode": "VIC-MP-001",
+      "name": "Beaumaris Pharmacy",
+      "device": "DEVICE-VIC-MP-001",
+      "colours": {
+        "primary": "#0f1050",
+        "accent": "#5ee6b0"
+      },
+      "logo": {
+        "file": "logos/VIC-MP-001.webp.b64",
+        "contentType": "image/webp"
+      },
+      "content": {
+        "morning": {
+          "greeting": "Good morning,<br>${Suburb}",
+          "introTitle": "Three reasons to walk in",
+          "introSub": "No fuss. Just ask in store.",
+          "slots": [
+            {
+              "label": "Blood pressure",
+              "icon": "monitor_heart",
+              "title": "Blood pressure checks",
+              "sub": "Free, as often as you like",
+              "line1": "Know your numbers",
+              "line2": "Pop in this morning"
+            },
+            {
+              "label": "MedsCheck",
+              "icon": "pill",
+              "title": "MedsCheck",
+              "sub": "Know your medicines better",
+              "line1": "Sit down with your pharmacist",
+              "line2": "Review your medicines together"
+            },
+            {
+              "label": "Medicine packs",
+              "icon": "calendar_month",
+              "title": "Weekly medicine packs",
+              "sub": "Websterpaks, sorted for you",
+              "line1": "The right dose, every day",
+              "line2": "Ask us to set one up"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care since 1952"
+          }
+        },
+        "afternoon": {
+          "greeting": "Good afternoon,<br>${Suburb}",
+          "introTitle": "Three reasons to walk in",
+          "introSub": "No fuss. Just ask in store.",
+          "slots": [
+            {
+              "label": "Vaccinations",
+              "icon": "vaccines",
+              "title": "Vaccinations",
+              "sub": "No appointment needed",
+              "line1": "Flu, whooping cough and MMR",
+              "line2": "Given by our trained pharmacists"
+            },
+            {
+              "label": "Sleep apnoea",
+              "icon": "bedtime",
+              "title": "Sleep apnoea",
+              "sub": "Screening and sleep studies",
+              "line1": "Advice, CPAP machines and masks",
+              "line2": "Talk to us on your way home"
+            },
+            {
+              "label": "Ear piercing",
+              "icon": "hearing",
+              "title": "Ear piercing",
+              "sub": "Ask in store to book",
+              "line1": "Standard lobe piercing",
+              "line2": "Under 16? Bring a parent"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care since 1952"
+          }
+        },
+        "closed": {
+          "headlines": [
+            "Sorry, we're closed",
+            "Serving ${Suburb}<br><span class=\"reg\">since 1952</span>",
+            "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"
+          ],
+          "showAddress": false
+        }
+      }
+    },
+    {
+      "key": "vic-mp-002",
+      "storeCode": "VIC-MP-002",
+      "name": "North Ringwood Family Pharmacy",
+      "device": "DEVICE-VIC-MP-002",
+      "colours": {
+        "primary": "#035c2f",
+        "accent": "#f39a4a"
+      },
+      "logo": {
+        "file": "logos/VIC-MP-002.webp.b64",
+        "contentType": "image/webp"
+      },
+      "content": {
+        "morning": {
+          "greeting": "Good morning,<br>${Suburb}",
+          "introTitle": "Three reasons to walk in",
+          "introSub": "No fuss. Just ask in store.",
+          "slots": [
+            {
+              "label": "Diabetes care",
+              "icon": "bloodtype",
+              "title": "Diabetes care",
+              "sub": "Glucose monitoring and advice",
+              "line1": "Talk to our diabetes educator",
+              "line2": "Pop in this morning"
+            },
+            {
+              "label": "Blood pressure",
+              "icon": "monitor_heart",
+              "title": "Blood pressure checks",
+              "sub": "Free, as often as you like",
+              "line1": "Know your numbers",
+              "line2": "No appointment needed"
+            },
+            {
+              "label": "Vitamins",
+              "icon": "nutrition",
+              "title": "Vitamins and wellbeing",
+              "sub": "Advice that suits you",
+              "line1": "Ask our team what fits",
+              "line2": "Stay well this season"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "afternoon": {
+          "greeting": "Good afternoon,<br>${Suburb}",
+          "introTitle": "Grab it on the way home",
+          "introSub": "Quick help, no wait.",
+          "slots": [
+            {
+              "label": "Cold and flu",
+              "icon": "sick",
+              "title": "Kids cold and flu",
+              "sub": "Relief for little ones",
+              "line1": "Ask a pharmacist what suits",
+              "line2": "Right for their age"
+            },
+            {
+              "label": "Lunchbox",
+              "icon": "lunch_dining",
+              "title": "Lunchbox snacks",
+              "sub": "Healthy, easy options",
+              "line1": "Ready for tomorrow",
+              "line2": "Grab a few on your way"
+            },
+            {
+              "label": "Sunscreen",
+              "icon": "wb_sunny",
+              "title": "Sunscreen",
+              "sub": "Sun safe after school",
+              "line1": "SPF50+ for the whole family",
+              "line2": "Slip, slop, slap"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "closed": {
+          "headlines": [
+            "Sorry, we're closed",
+            "Serving ${Suburb}",
+            "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"
+          ],
+          "showAddress": false
+        }
+      }
+    },
+    {
+      "key": "vic-mp-003",
+      "storeCode": "VIC-MP-003",
+      "name": "Ocean Grove Terrace Pharmacy",
+      "device": "DEVICE-VIC-MP-003",
+      "colours": {
+        "primary": "#1a2c76",
+        "accent": "#c64250"
+      },
+      "logo": {
+        "file": "logos/VIC-MP-003.webp.b64",
+        "contentType": "image/webp"
+      },
+      "content": {
+        "morning": {
+          "greeting": "Good morning,<br>${Suburb}",
+          "introTitle": "Ready for the beach?",
+          "introSub": "Everything for your day out.",
+          "slots": [
+            {
+              "label": "Sunscreen",
+              "icon": "wb_sunny",
+              "title": "Sunscreen",
+              "sub": "SPF50+ for the whole family",
+              "line1": "Reapply every two hours",
+              "line2": "Grab it before the beach"
+            },
+            {
+              "label": "Hydration",
+              "icon": "water_drop",
+              "title": "Hydration",
+              "sub": "Stay topped up",
+              "line1": "Electrolytes for hot days",
+              "line2": "Pop in this morning"
+            },
+            {
+              "label": "Recovery",
+              "icon": "sports_gymnastics",
+              "title": "Sports recovery",
+              "sub": "For surfers and walkers",
+              "line1": "Strapping, rubs and supports",
+              "line2": "Ask our team"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "afternoon": {
+          "greeting": "Good afternoon,<br>${Suburb}",
+          "introTitle": "Take a look around",
+          "introSub": "Something for everyone.",
+          "slots": [
+            {
+              "label": "Gifts",
+              "icon": "redeem",
+              "title": "Gifts",
+              "sub": "Found something for someone?",
+              "line1": "Gift wrapping in store",
+              "line2": "Ask at the counter"
+            },
+            {
+              "label": "Beauty",
+              "icon": "face",
+              "title": "Beauty and skincare",
+              "sub": "After-sun and skincare",
+              "line1": "Advice from our team",
+              "line2": "Find what suits you"
+            },
+            {
+              "label": "Travel",
+              "icon": "luggage",
+              "title": "Holiday essentials",
+              "sub": "Travel sizes and first aid",
+              "line1": "Everything for your stay",
+              "line2": "Pop in anytime"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "closed": {
+          "headlines": [
+            "Sorry, we're closed",
+            "Serving ${Suburb}",
+            "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"
+          ],
+          "showAddress": false
+        }
+      }
+    },
+    {
+      "key": "vic-mp-004",
+      "storeCode": "VIC-MP-004",
+      "name": "Vermont South Pharmacy",
+      "device": "DEVICE-VIC-MP-004",
+      "colours": {
+        "primary": "#0076be",
+        "accent": "#c0d632"
+      },
+      "logo": {
+        "file": "logos/VIC-MP-004.webp.b64",
+        "contentType": "image/webp"
+      },
+      "content": {
+        "morning": {
+          "greeting": "Good morning,<br>${Suburb}",
+          "introTitle": "Before you shop",
+          "introSub": "Drop in on your centre run.",
+          "slots": [
+            {
+              "label": "MedsCheck",
+              "icon": "pill",
+              "title": "MedsCheck",
+              "sub": "Know your medicines better",
+              "line1": "Sit down with your pharmacist",
+              "line2": "Review your medicines together"
+            },
+            {
+              "label": "Script on File",
+              "icon": "prescriptions",
+              "title": "Script on File",
+              "sub": "Reorder without the paper",
+              "line1": "We keep your scripts safe",
+              "line2": "Ready when you finish shopping"
+            },
+            {
+              "label": "Blood pressure",
+              "icon": "monitor_heart",
+              "title": "Blood pressure checks",
+              "sub": "Free, as often as you like",
+              "line1": "Know your numbers",
+              "line2": "No appointment needed"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "afternoon": {
+          "greeting": "Good afternoon,<br>${Suburb}",
+          "introTitle": "Quick grabs",
+          "introSub": "In and out in minutes.",
+          "slots": [
+            {
+              "label": "Pain relief",
+              "icon": "healing",
+              "title": "Pain relief",
+              "sub": "Ask what suits you",
+              "line1": "Our pharmacist can help",
+              "line2": "Quick and easy"
+            },
+            {
+              "label": "Allergy",
+              "icon": "allergy",
+              "title": "Allergy and hay fever",
+              "sub": "Spring is here",
+              "line1": "Sprays, tablets and eye drops",
+              "line2": "Ask our team"
+            },
+            {
+              "label": "Skincare",
+              "icon": "face",
+              "title": "Skincare",
+              "sub": "Advice that suits your skin",
+              "line1": "Brands you know",
+              "line2": "Find what suits you"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "closed": {
+          "headlines": [
+            "Sorry, we're closed",
+            "Serving ${Suburb}",
+            "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"
+          ],
+          "showAddress": false
+        }
+      }
+    },
+    {
+      "key": "vic-mp-005",
+      "storeCode": "VIC-MP-005",
+      "name": "O'Brien's Pharmacy",
+      "device": "DEVICE-VIC-MP-005",
+      "colours": {
+        "primary": "#374731",
+        "accent": "#cfe6bd"
+      },
+      "logo": {
+        "file": "logos/VIC-MP-005.webp.b64",
+        "contentType": "image/webp"
+      },
+      "content": {
+        "morning": {
+          "greeting": "Good morning,<br>${Suburb}",
+          "introTitle": "Three reasons to walk in",
+          "introSub": "We speak your language.",
+          "slots": [
+            {
+              "label": "Medicine packs",
+              "icon": "calendar_month",
+              "title": "Weekly medicine packs",
+              "sub": "Websterpaks, sorted for you",
+              "line1": "The right dose, every day",
+              "line2": "Ask us to set one up"
+            },
+            {
+              "label": "Medicine review",
+              "icon": "clinical_notes",
+              "title": "Medicine reviews",
+              "sub": "Know your medicines better",
+              "line1": "Sit down with your pharmacist",
+              "line2": "Help in several languages"
+            },
+            {
+              "label": "Flu vaccine",
+              "icon": "vaccines",
+              "title": "Flu vaccinations",
+              "sub": "No appointment needed",
+              "line1": "Given by our trained pharmacists",
+              "line2": "Protect your family"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "afternoon": {
+          "greeting": "Good afternoon,<br>${Suburb}",
+          "introTitle": "On your way home?",
+          "introSub": "We make it easy.",
+          "slots": [
+            {
+              "label": "Vitamins",
+              "icon": "nutrition",
+              "title": "Vitamins and wellness",
+              "sub": "Top up on your way home",
+              "line1": "Advice that suits you",
+              "line2": "Ask our team"
+            },
+            {
+              "label": "Home delivery",
+              "icon": "local_shipping",
+              "title": "Free home delivery",
+              "sub": "We bring it to you",
+              "line1": "Scripts and everyday needs",
+              "line2": "Ask in store to set up"
+            },
+            {
+              "label": "Scripts",
+              "icon": "prescriptions",
+              "title": "Script on File",
+              "sub": "Reorder without the paper",
+              "line1": "We keep your scripts safe",
+              "line2": "Ask us how"
+            }
+          ],
+          "close": {
+            "title": "Walk in today",
+            "sub": "Speak directly with a pharmacist",
+            "line1": "We look forward to seeing you",
+            "line2": "Trusted local care"
+          }
+        },
+        "closed": {
+          "headlines": [
+            "Sorry, we're closed",
+            "Serving ${Suburb}",
+            "Public Holidays:<br><span class=\"reg\">Please call to confirm</span>"
+          ],
+          "showAddress": false
+        }
+      }
+    }
+  ]
+}
