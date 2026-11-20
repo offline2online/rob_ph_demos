@@ -21,6 +21,10 @@
 // and a default promotion the seed made earlier with no master template yet
 // gets the master (the content of the pharmacy promotions.json's masterFrom
 // names, Beaumaris).
+// Occasions copy (20 Nov 2026, the standalone designs): a pharmacy or a
+// promotion master the seed made that still holds an occasion's old default
+// copy (fixtures/occasions-legacy.json, never edited) gets that occasion's new
+// default copy from the fixtures; copy anyone edited is kept as it is.
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
 // and a pharmacy's content for promotions other than the four defaults is
@@ -78,6 +82,7 @@ function loadFixtures() {
     promotions: readJson(path.join(FIXTURES, "promotions.json")).promotions,
     masterFrom: readJson(path.join(FIXTURES, "promotions.json")).masterFrom || null,
     templates: readJson(path.join(FIXTURES, "templates.json")).templates,
+    legacyOccasions: readJson(path.join(FIXTURES, "occasions-legacy.json")).occasions,
     services: readJson(path.join(FIXTURES, "services.json")).services,
     campaignData: readJson(CAMPAIGN_DATA).devices,
   };
@@ -91,6 +96,27 @@ function campaignDataFor(deviceId, fixtures = loadFixtures()) {
 // ── seeding ────────────────────────────────────────────────────────────────
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// Equal as data, whatever order the store returns object keys in (Firestore maps are unordered).
+const canon = (v) => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])])) : v);
+const sameData = (a, b) => same(canon(a), canon(b));
+
+/**
+ * Occasion copy (content.occasions) with every occasion still holding its old
+ * default copy replaced by the new default from `fresh`; null when nothing
+ * changes. Edited copy, and occasions `fresh` has no copy for, are kept.
+ */
+function upgradeOccasions(content, fresh, legacy) {
+  if (!content || !content.occasions || typeof content.occasions !== "object" || !fresh || !fresh.occasions || !legacy) return null;
+  let changed = false;
+  const occasions = { ...content.occasions };
+  for (const [id, copy] of Object.entries(occasions)) {
+    if (legacy[id] && fresh.occasions[id] && sameData(copy, legacy[id])) {
+      occasions[id] = fresh.occasions[id];
+      changed = true;
+    }
+  }
+  return changed ? { ...content, occasions } : null;
+}
 const logoHash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 20);
 // The path setLogo() stores a logo under (content-hash named), to tell
 // whether a stored logo is the fixture's without downloading it.
@@ -156,6 +182,10 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       // promotion made by hand is left exactly as it is.
       await svc.updatePromotion(SEED_ACTOR, existing.id, { master });
       report.promotions.updated.push(p.promoId);
+    } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeOccasions(existing.master, master, fixtures.legacyOccasions)) {
+      // A master the seed made still holding old default occasion copy.
+      await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeOccasions(existing.master, master, fixtures.legacyOccasions) });
+      report.promotions.updated.push(p.promoId);
     } else {
       report.promotions.unchanged.push(p.promoId);
     }
@@ -187,6 +217,13 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       const have = existing.content || {};
       const seeded = existing.id === ids.pharmacy(ph.key);
       const added = seeded ? Object.fromEntries(Object.entries(content).filter(([id]) => createdPromotionIds.has(id) && !have[id])) : {};
+      // Old default occasion copy on a pharmacy the seed made: the new defaults.
+      if (seeded) {
+        for (const [id, value] of Object.entries(content)) {
+          const up = !added[id] && upgradeOccasions(have[id], value, fixtures.legacyOccasions);
+          if (up) added[id] = up;
+        }
+      }
       if (Object.keys(added).length) {
         await svc.updatePharmacy(SEED_ACTOR, existing.id, { content: { ...have, ...added } });
         report.pharmacies.updated.push(ph.storeCode);
@@ -306,4 +343,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, ids, SEED_ACTOR };
+module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeOccasions, ids, SEED_ACTOR };

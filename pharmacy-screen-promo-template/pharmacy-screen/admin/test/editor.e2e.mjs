@@ -289,25 +289,40 @@ test('occasions: the Occasion drop-down picks what promo=occasions plays; each o
   assert.deepEqual(await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent)), ['Christmas', "New Year's", 'Australia Day', "Valentine's Day", 'Easter', 'Anzac Day']);
   assert.equal(await page.inputValue('#pmTpl'), 'builtin-occasion-christmas');
   assert.equal(await page.isHidden('#pmHtml'), true);
-  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Greeting', '2Message', '3Sign-off']);
-  await page.click('#tl button[data-i="2"]');
-  await page.waitForFunction(() => document.querySelector('#screen .s-body') && /team\.$/.test(document.querySelector('#screen .s-body').textContent.trim()));
+  // Christmas: two beats, each a card of its lines; the preview draws the standalone design (no brand panel).
+  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
+  assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
+  assert.equal(await page.textContent('#pbSecs'), '13s');
+  assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Main line', 'Small line above', 'Main line']);
+  await page.click('#tl button[data-i="1"]');
+  await page.waitForFunction(() => document.querySelector('#screen .occ.occ-christmas.hold .b2.on'));
+  assert.equal(await page.$$eval('#screen .s-top, #screen .s-logo, #screen .s-foot', (e) => e.length), 0);
   // ${StoreName} is the pharmacy's name as saved (an earlier test may have renamed it).
   const name = await page.evaluate(() => window.pharmacyAdmin.state.cur.name);
-  assert.ok((await page.$eval('#screen .s-title', (e) => e.textContent)) === `Merry Christmas from the whole ${name} team.`);
-  // Edit Christmas's sign-off, then switch to Easter and save.
-  await page.fill('#o2line1', 'Merry Christmas from all of us at ${StoreName}.');
+  assert.equal(await page.$eval('#screen .b2 .sub', (e) => e.textContent), `from the whole ${name} team`);
+  assert.equal(await page.$eval('#screen .b2 .kicker', (e) => e.textContent), 'With warm wishes');
+  // Edit Christmas's second beat, then switch to Easter and edit a line there.
+  await page.fill('#o1text', 'from all of us at ${StoreName}');
+  await page.waitForFunction(() => /from all of us at/.test(document.querySelector('#screen .b2 .sub').textContent));
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await page.click('#tl button[data-i="0"]');
-  await page.waitForFunction(() => /Happy Easter/.test(document.querySelector('#screen .s-head h2').textContent));
-  await page.fill('#o1line2', 'Have a safe long weekend, everyone');
+  await page.waitForFunction(() => document.querySelector('#screen .occ.occ-easter .b1.on') && /Happy Easter/.test(document.querySelector('#screen .b1.on').textContent));
+  assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2', '3Beat 3']);
+  await page.fill('#o1text', 'Have a safe long weekend, everyone');
   await settle(page);
   assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
   const screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
   assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
-  assert.equal(screen.content.occasions.easter.scenes[1].line2, 'Have a safe long weekend, everyone');
-  assert.equal(screen.content.occasions.christmas.scenes[2].line1, 'Merry Christmas from all of us at ${StoreName}.', 'Christmas copy kept');
+  assert.equal(screen.content.occasions.easter.beats[1].text, 'Have a safe long weekend, everyone');
+  assert.equal(screen.content.occasions.christmas.beats[1].text, 'from all of us at ${StoreName}', 'Christmas copy kept');
   assert.ok(!/StoreName/.test(JSON.stringify(screen.content.occasions.easter)), 'Easter: suburb only, no store-name sign-off');
+  // Every occasion previews its own design, in both orientations.
+  for (const o of ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
+    await page.selectOption('#pmTpl', 'builtin-occasion-' + o);
+    await page.waitForFunction((d) => document.querySelector('#screen .occ.occ-' + d), { christmas: 'christmas', 'new-year': 'newyear', 'australia-day': 'ausday', 'valentines-day': 'valentine', easter: 'easter', 'anzac-day': 'anzac' }[o]);
+  }
+  await page.selectOption('#pmTpl', 'builtin-occasion-easter');
+  await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-easter .b2'); return b && /Have a safe long weekend, everyone/.test(b.textContent); }, null, { timeout: 5000 });
   // Back to Christmas for the other tests.
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   await settle(page);

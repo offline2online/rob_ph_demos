@@ -37,19 +37,37 @@ test('every seeded pharmacy x promotion x scene fits, in portrait and landscape'
       }
     }
   }
-  // Occasions: every occasion, for every seeded store and orientation (and the no-suburb store), all three scenes.
+  // Occasions: every occasion, for every seeded store and orientation (and the no-suburb store), every beat
+  // (Christmas has two, the others three).
   const OCC = ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day'];
   for (const device of [...seeded.map((c) => 'DEVICE-' + c), 'TEST-NO-SUBURB']) {
     for (const occasion of OCC) {
       for (const orientation of ['portrait', 'landscape']) {
         const n = r.scenes.filter((s) => s.device === device && s.promo === 'occasions' && s.occasion === occasion && s.orientation === orientation && s.bar === 'open').length;
-        assert.equal(n, 3, `${device} occasions/${occasion} ${orientation}: ${n} scenes audited`);
+        assert.equal(n, occasion === 'christmas' ? 2 : 3, `${device} occasions/${occasion} ${orientation}: ${n} scenes audited`);
       }
     }
   }
   assert.ok(DEVICES.includes('TEST-NO-SUBURB') && DEVICES.includes('TEST-LATE-NIGHT'), 'the edge-case fixtures are audited too');
   // Every bar state is exercised on the promotion templates.
   assert.deepEqual([...new Set(r.scenes.filter((s) => s.promo === 'morning').map((s) => s.bar))].sort(), ['before', 'closed', 'closing', 'open']);
+});
+
+test('occasion copy is shrunk to its text box; copy that cannot fit fails the audit and names the beat', async () => {
+  // A long line on Easter: auto-fit shrinks it into the text box, so it passes.
+  const ok = copy(CONFIG);
+  const occ = ok.pharmacies.find((p) => p.storeCode === 'VIC-MP-001').content.occasions.occasions;
+  occ.easter = { beats: [{ text: 'Happy Easter to everyone in ${Suburb} and the surrounding neighbourhoods' }, { text: 'Wishing you a restful long weekend' }, { text: 'Take time to recharge' }] };
+  ok.promotions.find((p) => p.id === 'occasions').template = 't_occ_easter';
+  const r = await runAudit({ browser, config: ok, devices: ['DEVICE-VIC-MP-001'], orientations: ['portrait', 'landscape'], times: { open: 'wed-12:00' } });
+  assert.deepEqual(r.failures, []);
+  // Far too much copy for any size: the beat is named.
+  const bad = copy(ok);
+  bad.pharmacies.find((p) => p.storeCode === 'VIC-MP-001').content.occasions.occasions.easter.beats[1].text = 'Wishing you a restful long weekend, '.repeat(20).trim();
+  const r2 = await runAudit({ browser, config: bad, devices: ['DEVICE-VIC-MP-001'], orientations: ['portrait'], times: { open: 'wed-12:00' } });
+  const occFails = r2.failures.filter((f) => / occasions\/easter /.test(f));
+  assert.ok(occFails.length >= 1, 'the over-long beat was not caught: ' + r2.failures.join(' | '));
+  for (const f of occFails) assert.match(f, /^DEVICE-VIC-MP-001 VIC-MP-001 occasions\/easter portrait scene 2 \(Beat 2\) bar=open: ".+" leaves the text box/);
 });
 
 test('a headline too long to fit fails the audit and names the scene', async () => {

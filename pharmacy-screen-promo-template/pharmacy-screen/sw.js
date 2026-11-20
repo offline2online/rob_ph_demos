@@ -3,7 +3,7 @@
 //
 // Registered by js/player.js with scope pharmacy-screen.html only, so the admin editor is never touched.
 //
-//   The shell (the page, its scripts and stylesheets, which carry the self-hosted fonts and icons, about 700 KB) is
+//   The shell (the page, its scripts and stylesheets, which carry the self-hosted fonts, icons and the Occasions photo, about 1.5 MB) is
 //   downloaded once into a cache named after BUILD and served from that cache from then on, with no request at all.
 //   scripts/deploy.mjs stamps BUILD with a hash of the shell's files, so this file's bytes change exactly when the
 //   shell changes. The browser compares sw.js on every page load and the player asks again every 30 minutes
@@ -28,6 +28,8 @@ const SHELL = [
   'pharmacy-screen.html',
   'css/fonts.css',
   'css/material-symbols.css',
+  'css/occasion-fonts.css',
+  'css/occasion-media.css',
   'css/screen.css',
   'css/debug.css',
   'js/player.js',
@@ -36,6 +38,7 @@ const SHELL = [
   'js/fit-text.js',
   'js/live-data.js',
   'js/tokens.js',
+  'js/occasions.js',
   'js/debug-panel.js',
 ];
 const shellUrls = new Set(SHELL.map((p) => new URL(p, self.location).href));

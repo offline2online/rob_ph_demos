@@ -3,7 +3,7 @@
 // Copy uses Personalisation Hub's token format, ${TokenName}:
 //   ${Suburb}    store_info.address_info.suburb. With no suburb it is blanked, together with its
 //                leading comma and/or line break ("Good morning,<br>${Suburb}" -> "Good morning").
-//   ${StoreName} the pharmacy's name (Occasions copy: "Merry Christmas from the whole ${StoreName} team.").
+//   ${StoreName} the pharmacy's name (Occasions copy: "from the whole ${StoreName} team").
 //   ${CloseTime} ${OpenTime}   the current session's times, e.g. "7PM" (the "Open today" bar).
 // Templates use the same format for their slots (${Headline}, ${Content}, ... see TEMPLATE_TOKENS).
 //

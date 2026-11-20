@@ -96,15 +96,76 @@ test('the screen on a mock device plays every promotion in both orientations, ea
   assert.ok(dev.upstreamCalls.length > 0 && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token upstream');
 });
 
-test('Occasions: promo=occasions plays Christmas, signing off with the store name; the admin picks Easter and the same URL plays Easter', async () => {
-  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=2&now=wed-12:00';
-  let s = await screen(url);
+test('Occasions: promo=occasions plays the standalone Christmas design, signing off with the store name; the admin picks Easter and the same URL plays Easter', async () => {
+  const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00';
+  // Nothing at runtime leaves our own origin: fonts and the Christmas photo are self-hosted (no Google Fonts, no Unsplash).
+  const outside = [];
+  const ctx0 = await browser.newContext({ viewport: { width: 540, height: 960 } });
+  ctx0.on('request', (r) => { if (!r.url().startsWith(dev.base) && !r.url().startsWith('data:')) outside.push(r.url()); });
+  let s = await screen(url, { ctx: ctx0 });
   let info = await s.page.evaluate(() => window.pharmacyScreen.info);
-  assert.deepEqual([info.promo, info.occasion, info.scenes], ['occasions', 'christmas', ['Greeting', 'Message', 'Sign-off']]);
+  assert.deepEqual([info.promo, info.occasion, info.scenes], ['occasions', 'christmas', ['Beat 1', 'Beat 2']]);
   const name = (await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.name;
-  assert.match(await screenText(s.page), new RegExp(`from the whole ${name} team\\.`));
+  await s.page.evaluate(() => window.pharmacyScreen.settled());
+  assert.match(await screenText(s.page), new RegExp(`from the whole ${name} team`));
+  // Standalone: the photo, the sparkles, no logo, brand panel or Open today bar.
+  const look = await s.page.evaluate(() => ({
+    root: document.querySelector('#screen .occ').className,
+    photo: getComputedStyle(document.querySelector('#screen .occ .photo')).backgroundImage.slice(0, 30),
+    sparkles: document.querySelectorAll('#screen .occ .gp i').length,
+    brand: document.querySelectorAll('#screen .s-top, #screen .s-logo, #screen .s-foot, #screen .s-edge').length,
+  }));
+  assert.equal(look.root, 'occ occ-christmas hold');
+  assert.match(look.photo, /^url\("data:image\/jpeg;base64,/);
+  assert.ok(look.sparkles > 20, 'sparkles on the tree');
+  assert.equal(look.brand, 0);
   assert.deepEqual(await s.page.evaluate(() => window.pharmacyScreen.audit()), []);
+  assert.deepEqual(outside, [], 'no request leaves the origin');
   await s.ctx.close();
+
+  // Playing (no scene=): the beats loop in CSS; reduced motion stills the decorations and the beats still change.
+  const ctx1 = await browser.newContext({ viewport: { width: 960, height: 540 }, reducedMotion: 'reduce' });
+  s = await screen('device=DEVICE-VIC-MP-001&promo=occasions&orientation=landscape&now=wed-12:00', { ctx: ctx1 });
+  const motion = await s.page.evaluate(() => {
+    const cs = (q) => getComputedStyle(document.querySelector('#screen ' + q));
+    return { root: document.querySelector('#screen .occ').className, sparkle: cs('.gl i').animationName, photo: cs('.photo').animationName, beat: cs('.b1').animationName, gl: cs('.gl').display, gp: cs('.gp').display };
+  });
+  assert.deepEqual(motion, { root: 'occ occ-christmas', sparkle: 'none', photo: 'none', beat: 'xmasB1', gl: 'block', gp: 'none' });
+  await s.ctx.close();
+
+  // Every design under reduced motion: no decoration (or its ::before/::after) animates, the beats still do.
+  const promo0 = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
+  let version = promo0.version;
+  try {
+    for (const id of ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
+      const r = await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: `builtin-occasion-${id}`, expectedVersion: version } });
+      assert.equal(r.status, 200, id);
+      version = r.body.version;
+      for (const orientation of ['portrait', 'landscape']) {
+        const ctx = await browser.newContext({ viewport: orientation === 'portrait' ? { width: 540, height: 960 } : { width: 960, height: 540 }, reducedMotion: 'reduce' });
+        s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&now=wed-12:00`, { ctx });
+        const still = await s.page.evaluate(() => {
+          const occ = document.querySelector('#screen .occ');
+          const moving = [];
+          for (const el of occ.querySelectorAll('*')) {
+            if (el.closest('.txt')) continue;
+            for (const pseudo of [null, '::before', '::after']) {
+              const name = getComputedStyle(el, pseudo).animationName;
+              if (name && name !== 'none') moving.push(`${el.className || el.tagName}${pseudo || ''}: ${name}`);
+            }
+          }
+          const beats = [...occ.querySelectorAll('.txt .b')].map((b) => getComputedStyle(b).animationName);
+          return { root: occ.className, moving, beats };
+        });
+        assert.deepEqual(still.moving, [], `${id} ${orientation}: decorations still`);
+        assert.ok(still.beats.length >= 2 && still.beats.every((n) => n !== 'none'), `${id} ${orientation}: beats still change`);
+        await s.ctx.close();
+      }
+    }
+  } finally {
+    const now = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
+    await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-christmas', expectedVersion: now.version } });
+  }
 
   const promo = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
   assert.equal((await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-easter', expectedVersion: promo.version } })).status, 200);
@@ -115,7 +176,7 @@ test('Occasions: promo=occasions plays Christmas, signing off with the store nam
       assert.equal(info.occasion, 'easter');
       assert.match(await screenText(s.page), /Happy Easter/);
       for (let i = 0; i < 3; i++) {
-        const t = await s.page.evaluate((n) => { window.pharmacyScreen.show('occasions', n); return document.getElementById('screen').innerText; }, i);
+        const t = await s.page.evaluate(async (n) => { window.pharmacyScreen.show('occasions', n); await window.pharmacyScreen.settled(); return document.getElementById('screen').innerText; }, i);
         assert.ok(!t.includes(name), `Easter scene ${i + 1} has no store-name sign-off`);
         assert.deepEqual(await s.page.evaluate(() => window.pharmacyScreen.audit()), [], `Easter ${orientation} scene ${i + 1}`);
       }

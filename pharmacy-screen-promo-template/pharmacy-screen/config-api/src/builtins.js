@@ -12,7 +12,10 @@
 // of one, so its `kind` says which built-in it falls back to.
 //
 // The occasion templates (kind "occasion", with `occasion` naming which one)
-// are drawn entirely by the screen page (js/render.js OCCASIONS). The admin
+// are drawn entirely by the screen page (js/render.js OCCASIONS): the
+// approved standalone designs in js/occasions.js, with their fonts and the
+// Christmas background photo self-hosted beside the page (css/occasion-*.css),
+// so their html, css and backgrounds here stay empty. The admin
 // editor's Occasion drop-down sets the Occasions promotion's templateId to one
 // of them; they can't be cloned (an occasion has no editable HTML version).
 
