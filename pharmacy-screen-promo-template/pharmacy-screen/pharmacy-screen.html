@@ -6,9 +6,13 @@
 <title>Pharmacy Screen</title>
 <!-- Campaign URL (the PH player swaps ${UniqueDeviceID} for the screen's own ID; the URL never carries a store code):
      pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&orientation=<portrait|landscape> -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Roboto:wght@400;500;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block">
+<!-- Where the screen's data comes from: base URLs, comma-separated, each serving /api/device/** (the back-end
+     proxy) and /api/screens/** (the public config read). Tried last-good first, then in this order.
+     Empty: this page's own origin (the Hosting rewrites). -->
+<meta name="pharmacy-screen-api" content="">
+<!-- Fonts and icons are self-hosted (tools/fetch-fonts.mjs), so a screen behind a firewall never calls Google. -->
+<link rel="stylesheet" href="css/fonts.css">
+<link rel="stylesheet" href="css/material-symbols.css">
 <link rel="stylesheet" href="css/screen.css">
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden}

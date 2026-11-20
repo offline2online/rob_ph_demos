@@ -111,3 +111,20 @@
 .s-msg .ms{font-size:160px;color:rgba(255,255,255,.5)}
 .s-msg h2{margin:0;font-size:72px;font-weight:700}
 .s-msg p{margin:0;font-size:36px;color:rgba(255,255,255,.7);overflow-wrap:anywhere}
+
+/* "Screen not set up": the brand panel (default colours, or the store's logo) with the device ID small at the
+   bottom; and the red badge on "Screen data could not load" when every server fails with nothing cached */
+.setup .s-setup-mark{position:absolute;left:0;right:0;top:150px;display:grid;justify-items:center}
+.setup .s-setup-mark .ms{font-size:240px;color:rgba(255,255,255,.6);font-variation-settings:'FILL' 1,'wght' 500}
+.s-setup-body{position:absolute;left:80px;right:80px;top:960px;display:grid;gap:28px;justify-items:center;text-align:center}
+.s-setup-body h2{margin:0;font-size:84px;line-height:1.05;font-weight:800;color:var(--s-p);text-wrap:balance}
+.s-setup-body p{margin:0;font-size:40px;line-height:1.3;color:#6b7280;overflow-wrap:anywhere;text-wrap:balance}
+.s-devid{position:absolute;left:80px;right:80px;bottom:64px;text-align:center;font-size:28px;color:#6b7280;overflow-wrap:anywhere}
+.s-devid b{font-weight:600;color:var(--s-p);font-variant-numeric:tabular-nums}
+.land .s-setup-mark{right:auto;width:820px;top:0;bottom:0;align-content:center}
+.land .s-setup-body{left:1190px;right:70px;top:0;bottom:120px;align-content:center}
+.land .s-setup-body h2{font-size:72px}
+.land .s-setup-body p{font-size:34px}
+.land .s-devid{left:1190px;right:70px;bottom:46px;font-size:24px}
+.s-errbadge{display:inline-flex;align-items:center;gap:16px;margin-top:12px;padding:12px 32px;border-radius:9999px;border:2px solid #ff4d4f;background:rgba(255,77,79,.14);color:#fff;font-size:32px;font-weight:600}
+.s-errbadge i{width:18px;height:18px;border-radius:50%;background:#ff4d4f}

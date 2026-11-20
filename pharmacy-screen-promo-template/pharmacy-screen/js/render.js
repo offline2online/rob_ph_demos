@@ -87,7 +87,8 @@ export function storeModel(campaignData, config) {
     address: addr.address || '',
     sessions: parseOpeningHours(info.opening_hours),
     brand: { p: (ph.brand && ph.brand.p) || '#0f1050', a: (ph.brand && ph.brand.a) || '#5ee6b0' },
-    logo: data.logo_url || ph.logo || null,
+    // The store logo from the Location API (PH-181; the proxy returns it at store_info.logo_url) wins over the config logo.
+    logo: safeUrl(info.logo_url) || safeUrl(data.logo_url) || ph.logo || null,
     content: ph.content || {},
   };
 }
@@ -259,11 +260,42 @@ export function renderScene(el, opts) {
   return { G, fit, state };
 }
 
-/** A plain message in place of the screen (invalid URL, not set up, data could not load). */
-export function renderMessage(el, orientation, title, detail) {
+/**
+ * A plain message in place of the screen (invalid URL, promotion not found, data could not load).
+ * opts.badge: a red status badge under the message (every server failing with nothing cached).
+ */
+export function renderMessage(el, orientation, title, detail, opts = {}) {
   el.className = 'screen msg' + (orientation === 'landscape' ? ' land' : '');
   el.removeAttribute('style');
-  el.innerHTML = `<div class="s-msg"><span class="ms">tv_off</span><h2>${esc(title)}</h2>${detail ? `<p>${esc(detail)}</p>` : ''}</div>`;
+  const badge = opts.badge ? `<span class="s-errbadge" role="status"><i></i>${esc(opts.badge)}</span>` : '';
+  el.innerHTML = `<div class="s-msg"><span class="ms">tv_off</span><h2>${esc(title)}</h2>${detail ? `<p>${esc(detail)}</p>` : ''}${badge}</div>`;
+}
+
+export const DEFAULT_BRAND = { p: '#0f1050', a: '#5ee6b0' };
+
+/**
+ * "Screen not set up", drawn in the screen's own brand panel (default colours, or the store's logo when the
+ * Location API returned one) with the device ID small at the bottom, so whoever installs the screen can
+ * register it. opts: { orientation, title, detail, device, logo, brand }
+ */
+export function renderNotSetUp(el, opts) {
+  const land = opts.orientation === 'landscape';
+  const brand = opts.brand || DEFAULT_BRAND;
+  const G = geom(land, true);
+  el.className = 'screen setup closed' + (land ? ' land' : '');
+  el.removeAttribute('style');
+  el.style.setProperty('--s-p', brand.p);
+  el.style.setProperty('--s-p2', boost(brand.p, 1.8));
+  el.style.setProperty('--s-a', brand.a);
+  el.style.setProperty('--s-bg', '#f1f3f8');
+  el.style.setProperty('--s-bg2', '#e6eaf3');
+  el.style.setProperty('--s-ink', brand.p);
+  const logo = safeUrl(opts.logo);
+  el.innerHTML = `<div class="s-top" style="clip-path:${ptsClip(G.pts)}"></div>`
+    + `<svg class="s-edge" viewBox="0 0 ${G.W} ${G.H}"><path d="${ptsPath(G.edge)}"/></svg>`
+    + (logo ? `<div class="s-logo"><img src="${esc(logo)}" alt=""></div>` : '<div class="s-setup-mark"><span class="ms">tv_off</span></div>')
+    + `<div class="s-setup-body"><h2>${esc(opts.title || 'Screen not set up')}</h2>${opts.detail ? `<p>${esc(opts.detail)}</p>` : ''}</div>`
+    + (opts.device ? `<div class="s-devid">Device ID <b>${esc(opts.device)}</b></div>` : '');
 }
 
 export { DAYS };

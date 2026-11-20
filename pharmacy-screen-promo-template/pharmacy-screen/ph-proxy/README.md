@@ -74,7 +74,7 @@ wrapped the data key.
         "logo_url": null } },
     "meta": { "server": "https://ph.mipharmacy.net", "fetchedAt": "…", "cached": false } }
   ```
-  `logo_url` is filled once the Location API returns a store logo (PH-181): the first https or `data:image/…` value of `store_info.logo_url | logo | store_logo`, `store_location.logo_url | logo | store_logo`, or `data.logo_url | logo`.
+  `logo_url` is filled once the Location API returns a store logo (PH-181): the first https or `data:image/…` value of `store_info.logo_url | logo | store_logo`, `store_location.logo_url | logo | store_logo`, or `data.logo_url | logo`. The screen reads it from `data.store_info.logo_url` (`../js/render.js` `storeModel`) and falls back to the config logo.
 
 ### Error codes
 

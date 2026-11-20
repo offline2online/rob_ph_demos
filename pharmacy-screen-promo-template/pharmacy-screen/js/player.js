@@ -1,32 +1,43 @@
-// The player page: reads the campaign URL, loads the store's data and the config, and plays the promotion.
+// The player page: reads the campaign URL, gets the store's data and config live, and plays the promotion.
 //
 //   pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&orientation=<portrait|landscape>
 //
-// For this build the store data and config come from local fixtures (fixtures/campaign-data.json holds mock
-// Location API campaign_data responses keyed by device ID; fixtures/config.json holds the pharmacies,
-// promotions and templates). Live data replaces loadData() in a later ticket; nothing else here changes.
+// Store data comes from the back-end proxy (GET /api/device/{device}/campaign_data, ph-proxy/), config from
+// the public config read (GET /api/screens/{store_code}, config-api/), both through js/live-data.js: polled
+// every 30 s / 60 s, last good server first, re-rendered only on change, last good result kept in
+// localStorage. The servers are the page's <meta name="pharmacy-screen-api"> (empty: this page's origin).
 //
 // Testing parameters (not used by the PH player):
-//   scene=<n>        hold on scene n (0-based) instead of playing the loop
+//   mockapi=1          use the seed fixtures (fixtures/campaign-data.json, fixtures/config.json) instead of the API
+//   debug=1            show the debug panel: device, store code, last fetch, server used, test time override
+//   scene=<n>          hold on scene n (0-based) instead of playing the loop
 //   now=<day>-<HH:MM>  pretend the store's local time is this, e.g. now=fri-18:45 (the "Open today" bar)
 
-import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, ScreenError } from './render.js';
+import { storeModel, resolvePromotion, sequence, sceneName, renderScene, renderMessage, renderNotSetUp, ScreenError } from './render.js';
 import { parseTestTime, storeNow, storeState } from './hours.js';
 import { auditScene } from './fit-text.js';
+import { parseServers, createLiveClient, createMockClient, createScreenData, screenView } from './live-data.js';
 
 const q = new URLSearchParams(location.search);
+const flag = (k) => q.has(k) && !/^(0|false|no|off)$/i.test(q.get(k) || '');
 const params = {
   device: (q.get('device') || '').trim(),
   promo: (q.get('promo') || '').trim(),
   orientation: q.get('orientation') === 'landscape' ? 'landscape' : 'portrait',
   hold: q.has('scene') ? Math.max(0, parseInt(q.get('scene'), 10) || 0) : null,
   now: q.get('now') || '',
+  mock: flag('mockapi'),
+  debug: flag('debug'),
 };
+// An unswapped ${UniqueDeviceID} is not a device ID.
+if (params.device.includes('${')) params.device = '';
 
 const stage = document.getElementById('stage');
 const el = document.getElementById('screen');
-let config = null, campaign = null, store = null, play = null;
+const meta = document.querySelector('meta[name="pharmacy-screen-api"]');
+let config = null, store = null, play = null, data = null, panel = null; // panel: a promise of the debug panel (debug=1)
 let scene = 0, playing = params.hold === null, timers = [], lastStateKey = '', last = null;
+let testTime = null, started = false, fontsWaited = false, shown = '';
 
 function fit() {
   const W = params.orientation === 'landscape' ? 1920 : 1080, H = params.orientation === 'landscape' ? 1080 : 1920;
@@ -37,13 +48,16 @@ function fit() {
 }
 addEventListener('resize', fit);
 
+const tzOf = () => (store && store.tz) || 'Australia/Melbourne';
 function testNow() {
-  if (!params.now || !store) return undefined;
-  return parseTestTime(params.now, storeNow(store.tz).day) || undefined;
+  if (testTime) return testTime;
+  if (!params.now) return undefined;
+  return parseTestTime(params.now, storeNow(tzOf()).day) || undefined;
 }
+const nowForStore = () => testNow() || storeNow(tzOf());
 
 function stateKey() {
-  const s = storeState(store.sessions, testNow() || storeNow(store.tz));
+  const s = storeState(store.sessions, nowForStore());
   return [s.state, s.openTime, s.closeTime].join('|');
 }
 
@@ -54,6 +68,7 @@ function show(i, enter) {
   scene = ((i % seq.length) + seq.length) % seq.length;
   last = renderScene(el, { store, play, orientation: params.orientation, scene, now: testNow(), enter });
   lastStateKey = stateKey();
+  shown = 'scene';
   clearTimers();
   if (!playing) return;
   const t = seq[scene].t * 1000;
@@ -61,46 +76,134 @@ function show(i, enter) {
   timers.push(setTimeout(() => show(scene + 1, true), t));
 }
 
-function fail(e) {
+function message(title, detail, opts) {
   clearTimers();
-  if (e instanceof ScreenError) {
-    renderMessage(el, params.orientation, e.title, e.code === 'not-set-up' && params.device ? `${e.detail} Device ${params.device}` : e.detail);
-  } else {
-    renderMessage(el, params.orientation, 'Screen data could not load', String((e && e.message) || e));
-  }
+  play = null;
+  shown = 'message';
+  renderMessage(el, params.orientation, title, detail, opts);
 }
 
-async function loadData() {
-  const get = async (p) => { const r = await fetch(p, { cache: 'no-store' }); if (!r.ok) throw new Error(`${p}: HTTP ${r.status}`); return r.json(); };
-  const [c, d] = await Promise.all([get('fixtures/config.json'), get('fixtures/campaign-data.json')]);
-  return { config: c, campaign: (d.devices || {})[params.device] || null };
+function notSetUp(detail, logo) {
+  clearTimers();
+  play = null;
+  shown = 'not-set-up';
+  renderNotSetUp(el, { orientation: params.orientation, title: 'Screen not set up', detail, device: params.device, logo });
 }
 
-async function start() {
-  fit();
-  if (!params.device) { renderMessage(el, params.orientation, 'Invalid screen URL', 'This screen’s campaign URL has no device ID.'); return; }
-  try {
-    ({ config, campaign } = await loadData());
-    if (!campaign) throw new ScreenError('not-set-up', 'Screen not set up', 'This device is not linked to a store.');
-    store = storeModel(campaign, config);
-    const promoId = params.promo || ((config.promotions || [])[0] || {}).id;
-    play = resolvePromotion(config, store, promoId);
-  } catch (e) { fail(e); return; }
-  // Copy is fitted to the panel by measuring it, so wait (up to 3s) for the web fonts before the first scene.
-  let fontsIn = false;
+function fail(e) {
+  if (e instanceof ScreenError && e.code === 'not-set-up') notSetUp(e.detail);
+  else if (e instanceof ScreenError) message(e.title, e.detail);
+  else message('Screen data could not load', String((e && e.message) || e));
+}
+
+// Copy is fitted to the panel by measuring it, so wait (up to 3 s) for the fonts before the first scene.
+async function fontsReady() {
+  if (fontsWaited) return;
+  fontsWaited = true;
   const fonts = (document.fonts && document.fonts.ready) || Promise.resolve();
+  let fontsIn = false;
   await Promise.race([fonts.then(() => { fontsIn = true; }), new Promise((r) => setTimeout(r, 3000))]);
-  show(params.hold === null ? 0 : params.hold, true);
-  // The "Open today" bar follows the store's clock: re-render when the store's state changes.
-  setInterval(() => { if (play && stateKey() !== lastStateKey) show(scene, false); }, 15000);
-  // Fonts that arrived after that: fit the copy again with the real glyph widths.
   if (!fontsIn) fonts.then(() => { if (play) show(scene, false); });
 }
 
-// Hook for the overflow audit and the admin editor's tests.
+/** Render what the data says, called only when it changed. */
+async function apply(s) {
+  const v = screenView(s);
+  if (v.kind === 'invalid') return message('Invalid screen URL', 'This screen’s campaign URL has no valid device ID.');
+  if (v.kind === 'not-set-up') {
+    const logo = s.campaign && s.campaign.store_info ? s.campaign.store_info.logo_url : null;
+    return notSetUp(v.reason === 'store' ? `Store ${v.storeCode} has no screen content yet.` : 'This device is not linked to a store in Personalisation Hub.', logo);
+  }
+  if (v.kind === 'offline') return message('Screen data could not load', 'No server answered. The screen will keep trying.', { badge: 'Offline · retrying' });
+  if (v.kind !== 'ready') return;
+  let nextStore, nextPlay;
+  try {
+    nextStore = storeModel(s.campaign, s.config);
+    const promoId = params.promo || ((s.config.promotions || [])[0] || {}).promoId || ((s.config.promotions || [])[0] || {}).id;
+    nextPlay = resolvePromotion(s.config, nextStore, promoId);
+  } catch (e) { fail(e); return; }
+  const first = !started || shown !== 'scene';
+  config = s.config; store = nextStore; play = nextPlay;
+  if (first) {
+    started = true;
+    await fontsReady();
+    if (!play) return; // replaced by a message while the fonts loaded
+    show(params.hold === null ? 0 : params.hold, true);
+  } else {
+    // New data for the same screen: redraw the current scene in place, the loop carries on.
+    show(scene, false);
+  }
+}
+
+function debugInfo(s) {
+  const f = [s.lastStore, s.lastConfig].filter(Boolean);
+  const failing = f.some((x) => x.kind === 'down');
+  const health = !f.length ? 'wait' : failing ? (s.campaign ? 'warn' : 'bad') : s.lastStore && s.lastStore.kind !== 'ok' ? 'bad' : 'ok';
+  const latest = [s.lastStore, s.lastConfig].filter((x) => x && x.server !== null && x.server !== undefined).sort((a, b) => b.at - a.at)[0];
+  const t = store || s.campaign ? nowForStore() : null;
+  return {
+    device: params.device,
+    storeCode: s.storeCode,
+    source: s.mock ? 'Mock fixtures (mockapi=1)' : s.fromCache ? 'Last good data (cached)' : 'Live',
+    lastStore: s.lastStore,
+    lastConfig: s.lastConfig,
+    server: latest ? latest.server : null,
+    health,
+    storeTime: t,
+    barState: store ? storeState(store.sessions, nowForStore()).state : null,
+    testTime: testNow() || null,
+  };
+}
+
+// The "Open today" bar follows the store's clock (store_timezone): re-check at the turn of every minute.
+function minuteTick() {
+  if (play && store && stateKey() !== lastStateKey) show(scene, false);
+  if (panel && data) panel.then((p) => p && p.update(debugInfo(data.state)));
+  setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
+}
+
+function start() {
+  fit();
+  if (params.debug) {
+    panel = createDebugPanelLazy();
+  }
+  if (!params.device) {
+    message('Invalid screen URL', 'This screen’s campaign URL has no device ID.');
+    if (panel) panel.then((p) => p && p.update(debugInfo({ mock: params.mock })));
+    return;
+  }
+  const client = params.mock ? createMockClient() : createLiveClient({ servers: parseServers(meta && meta.content) });
+  let storage = null;
+  try { storage = window.localStorage; } catch (e) { storage = null; }
+  data = createScreenData({
+    client,
+    device: params.device,
+    storage,
+    onUpdate: (s, changed) => {
+      if (changed) apply(s);
+      if (panel) panel.then((p) => p && p.update(debugInfo(s)));
+    },
+  });
+  data.start();
+  setTimeout(minuteTick, 60000 - (Date.now() % 60000) + 50);
+}
+
+// The debug panel is loaded only with debug=1, so the PH player never fetches it.
+function createDebugPanelLazy() {
+  return import('./debug-panel.js').then(({ createDebugPanel }) => createDebugPanel(document, {
+    onTestTime(t) {
+      testTime = t;
+      if (play) show(scene, false);
+      if (data) panel.then((p) => p && p.update(debugInfo(data.state)));
+    },
+  })).catch(() => null);
+}
+
+// Hook for the overflow audit, the screen tests and the admin editor's tests.
 window.pharmacyScreen = {
-  get ready() { return !!play || !!el.querySelector('.s-msg'); },
+  get ready() { return !!play || !!el.querySelector('.s-msg,.s-setup-body'); },
   get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
+  get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
   /** Stop playback and show one promotion's scene, exactly as it renders after its entrance. */
   show(promoId, i) {

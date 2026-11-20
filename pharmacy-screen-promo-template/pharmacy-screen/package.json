@@ -6,7 +6,9 @@
   "scripts": {
     "serve": "node tools/serve.mjs 8080",
     "test": "node --test test/*.test.mjs",
+    "test:ui": "node --test test/ui/*.test.mjs",
     "audit": "node tools/overflow-audit.mjs",
-    "check": "node --test test/*.test.mjs && node tools/overflow-audit.mjs"
+    "fonts": "node tools/fetch-fonts.mjs",
+    "check": "node --test test/*.test.mjs && node --test test/ui/*.test.mjs && node tools/overflow-audit.mjs"
   }
 }

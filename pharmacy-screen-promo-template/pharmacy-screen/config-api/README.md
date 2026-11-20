@@ -243,9 +243,11 @@ ticket. Its Hosting rewrites: `/api/screens/**`, `/api/admin/**` and
 only to the media bucket, never to the project's default bucket (the
 menu-board demo uses it).
 
-**For the screen's live-data ticket:** the published config is not the
-prototype's `fixtures/config.json` shape. Map it in `loadData()`: a
-promotion's `template.kind` is the fixture's `base`
-(`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`),
+**The screen reads this** through `fromPublishedConfig()` in
+`../js/live-data.js`, which maps it onto the render engine's
+`fixtures/config.json` shape: a promotion's `template.kind` is the fixture's
+`base` (`promotion-scenes` → `t_scenes`, `opening-hours` → `t_hours`),
 `colours` is `brand`, `logo` is a URL, and `promotions` is keyed by promo ID
-with that pharmacy's `content` inside.
+with that pharmacy's `content` inside. `../test/live-data.test.mjs` builds a
+published config with `src/publish.js` and checks the mapping, so a change to
+either side shows up there.

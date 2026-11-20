@@ -26,7 +26,7 @@ try {
     page.on('pageerror', (e) => failures.push(`page error: ${e.message}`));
     for (const device of devices) {
       for (const [label, now] of Object.entries(TIMES)) {
-        await page.goto(`${base}?device=${device}&orientation=${orientation}&scene=0&now=${now}`);
+        await page.goto(`${base}?mockapi=1&device=${device}&orientation=${orientation}&scene=0&now=${now}`);
         await page.waitForFunction(() => window.pharmacyScreen && window.pharmacyScreen.ready);
         await page.evaluate(() => document.fonts.ready);
         const promos = await page.evaluate(() => window.pharmacyScreen.promotions());

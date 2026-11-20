@@ -1,5 +1,5 @@
-// Minimal static server for running the screen locally with its fixtures:
-//   node tools/serve.mjs [port]   ->  http://localhost:8080/pharmacy-screen.html?device=TEST&promo=morning
+// Minimal static server for running the screen locally (add mockapi=1 to use its fixtures):
+//   node tools/serve.mjs [port]   ->  http://localhost:8080/pharmacy-screen.html?mockapi=1&device=TEST&promo=morning
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,5 +21,5 @@ export function serve(port = 0) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const s = await serve(+process.argv[2] || 8080);
-  console.log(`Serving ${ROOT} at http://localhost:${s.address().port}/pharmacy-screen.html?device=TEST&promo=morning&orientation=portrait`);
+  console.log(`Serving ${ROOT} at http://localhost:${s.address().port}/pharmacy-screen.html?mockapi=1&device=TEST&promo=morning&orientation=portrait`);
 }
