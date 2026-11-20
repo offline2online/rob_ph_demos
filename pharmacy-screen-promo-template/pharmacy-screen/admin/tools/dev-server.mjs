@@ -10,7 +10,9 @@
 //
 //   node admin/tools/dev-server.mjs [port]     ->  http://localhost:8790/admin/
 //
-// Also used by the end-to-end test (admin/test/editor.e2e.mjs).
+// Also used by the end-to-end tests (admin/test/editor.e2e.mjs, test/e2e/full-stack.test.mjs). For those it returns
+//   downHosts  a Set of hosts: a PH API base URL whose host is in it refuses the connection (failover tests)
+//   logLines   every line the config API and the proxy logged, as it would reach Cloud Logging (quiet or not)
 
 import http from 'node:http';
 import fs from 'node:fs';
@@ -44,7 +46,8 @@ async function readBody(req) {
 }
 
 export async function startDevServer({ port = 0, seed = true, quiet = false } = {}) {
-  const log = quiet ? () => {} : (level, msg) => console.error(`[${level}] ${msg}`);
+  const logLines = [];
+  const log = (level, msg) => { logLines.push(`[config-api] [${level}] ${msg}`); if (!quiet) console.error(`[${level}] ${msg}`); };
   const store = createMemoryStore();
   const blobs = createMemoryBlobs({ baseUrl: '/media/' });
   const configApi = createConfigApi({ store, blobs, auth: createStaticAuth(USERS), log });
@@ -52,7 +55,12 @@ export async function startDevServer({ port = 0, seed = true, quiet = false } = 
 
   const devices = JSON.parse(fs.readFileSync(path.join(ROOT, 'fixtures/campaign-data.json'), 'utf8')).devices || {};
   const upstreamCalls = [];
+  const downHosts = new Set();
   const fetchImpl = async (url, opts) => {
+    if (downHosts.has(new URL(url).host)) {
+      upstreamCalls.push({ url, key: opts && opts.headers && opts.headers['x-api-key'], refused: true });
+      throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+    }
     const m = /\/location-api\/device\/([^/]+)\/campaign_data$/.exec(new URL(url).pathname);
     const udid = m && decodeURIComponent(m[1]);
     upstreamCalls.push({ url, key: opts && opts.headers && opts.headers['x-api-key'] });
@@ -68,7 +76,7 @@ export async function startDevServer({ port = 0, seed = true, quiet = false } = 
     secretStore: createEnvelopeSecretStore({ kms: localKmsProvider({ keyBase64: crypto.randomBytes(32).toString('base64'), env: {} }) }),
     auth: { verify: async (h) => { const m = /^Bearer\s+(.+)$/i.exec(String((h && (h.authorization || h.Authorization)) || '')); return (m && USERS[m[1].trim()]) || null; } },
     fetchImpl,
-    baseLogger: quiet ? { info() {}, warn() {}, error() {}, log() {} } : console,
+    baseLogger: Object.fromEntries(['info', 'warn', 'error', 'log'].map((lv) => [lv, (line) => { logLines.push(`[ph-proxy] [${lv}] ${line}`); if (!quiet) console.error(line); }])),
   });
 
   const server = http.createServer(async (req, res) => {
@@ -114,7 +122,7 @@ export async function startDevServer({ port = 0, seed = true, quiet = false } = 
   });
   await new Promise((resolve) => server.listen(port, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
-  return { server, base, store, blobs, phSettings, phAudit, upstreamCalls, close: () => new Promise((r) => server.close(r)) };
+  return { server, base, store, blobs, phSettings, phAudit, upstreamCalls, downHosts, logLines, close: () => new Promise((r) => server.close(r)) };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

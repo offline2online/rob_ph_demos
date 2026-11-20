@@ -59,7 +59,7 @@ preview uses sample hours and no suburb, and says so.
 | `js/api.js` | API client for the config API and the PH API proxy. |
 | `js/auth.js` | Sign-in: Firebase Auth (Google or email and password), or a pasted token for local development. |
 | `js/icons.js` | The Material Symbols names for the icon picker. |
-| `tools/dev-server.mjs` | Everything on one local origin, in memory, loaded with the seed (below). |
+| `tools/dev-server.mjs` | Everything on one local origin, in memory, loaded with the seed (below). For tests it also returns `downHosts` (add a PH base URL's host and the mock Location API refuses it: failover) and `logLines` (every line the config API and the proxy logged). Used by `test/editor.e2e.mjs` and `../test/e2e/full-stack.test.mjs`. |
 | `test/editor.e2e.mjs` | End-to-end tests in Chromium against the dev server. |
 
 ## Run it locally

@@ -43,16 +43,21 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 ```bash
 cd pharmacy-screen-promo-template/pharmacy-screen
 npm run serve        # http://localhost:8080/pharmacy-screen.html?mockapi=1&device=TEST&promo=morning&orientation=portrait
-npm test             # unit tests: opening hours, tokens, live data (node --test, no install)
-npm run test:ui      # the screen on live data in headless Chromium: the ticket's test steps (needs Playwright)
-npm run audit        # overflow audit in headless Chromium (needs Playwright)
+npm test             # unit tests for the page: opening hours, tokens, live data, admin model (node --test, no install)
+npm run test:units   # those plus the PH API proxy, the config API and the seed (no install)
+npm run test:ui      # in headless Chromium: the screen on live data, and the copy-fit audit (needs Playwright)
+npm run test:e2e     # end to end on the local stack: screen, admin editor, config API and proxy (needs Playwright)
+npm run test:ci      # all three: what CI runs (about 30 s); `npm run check` is the same
+npm run audit        # the copy-fit audit on its own, listing every problem (exit 1 on any)
 npm run fonts        # re-download the self-hosted fonts into css/ (build time only; needs the internet)
 ```
 
-No install step: the page is static ES modules, and the tools use Node's standard library (`test:ui` and the
-audit also use Playwright with Chromium, preinstalled in a Claude Code cloud session). A local static server has
-no `/api`, so run it with `mockapi=1`, or point the `pharmacy-screen-api` meta tag at a running proxy and config
-API (`config-api`: `npm run dev:seed`).
+No install step: the page is static ES modules, and the tools use Node's standard library (the browser and
+end-to-end tests also use Playwright with Chromium, preinstalled in a Claude Code cloud session; elsewhere
+`npm install --no-save playwright@1.56.1 && npx playwright install chromium` here). A local static server has
+no `/api`, so run it with `mockapi=1`, point the `pharmacy-screen-api` meta tag at a running proxy and config
+API (`config-api`: `npm run dev:seed`), or run everything on one origin with `node admin/tools/dev-server.mjs`
+(`/pharmacy-screen.html?device=DEVICE-VIC-MP-001` once a PH API token is saved in the editor's Settings).
 
 ## Fixtures (`mockapi=1`)
 
@@ -108,22 +113,71 @@ after, copy fades up, icons float with the outer and middle tiles in opposite ph
   icon) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google at runtime, so screens work
   behind firewalls. Figtree and Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0.
 - `tools/overflow-audit.mjs`: renders every fixture store x promotion x scene x orientation at each bar
-  state and fails (exit 1) if any copy leaves the brand panel, its content box or the screen.
+  state and fails (exit 1) if any copy leaves the brand panel, its content box or the screen. Also exports
+  `runAudit({devices, orientations, times, config, browser})` for the copy-fit test.
 
 ## Tests
 
-- `test/hours.test.mjs`, `test/tokens.test.mjs`: opening hours and tokens.
+All of it runs in CI on every pull request touching this folder and on every ticket landing on the train
+(`ci/pharmacy-screen-tests.yml`, `npm run test:ci`; see "CI" below).
+
+**Unit** (`npm run test:units`)
+
+- `test/hours.test.mjs`: the bar state (open, last 30 minutes, before opening, after closing, a closed day),
+  sessions crossing midnight and the end of the week, the store time from a real instant in `store_timezone`
+  (Melbourne, Perth, Brisbane; Melbourne's daylight-saving change), `${CloseTime}` / `${OpenTime}` for a session
+  crossing midnight, time formats.
+- `test/tokens.test.mjs`: `${Suburb}` replaced, and blanked with its comma or line break; the rich-text
+  sanitiser; template slots.
 - `test/live-data.test.mjs`: failover, 30 s / 60 s polling, one request in flight, re-render only on change,
   network drop and restart from the cache, the error states, a device moving store, the published-config mapping
   (built with `config-api/src/publish.js`) and the proxy's `store_info.logo_url` (built with
   `ph-proxy/src/location-proxy.js`).
+- `test/admin-model.test.mjs`: the editor's model, including promo ID and store code validation and uniqueness.
+- `ph-proxy/test/`, `config-api/test/` and `seed/test/` (their own `npm test`): token saved as ciphertext only,
+  never logged or returned; admin-only writes; store codes and promo IDs unique (also under concurrent creates);
+  the public screen read carrying no secret or admin field; the seed.
+
+**Browser** (`npm run test:ui`)
+
+- `test/ui/copy-fit.test.mjs`: the copy-fit audit (`tools/overflow-audit.mjs`, `runAudit()`): every seeded
+  pharmacy x promotion x scene, portrait and landscape, at each "Open today" bar state, plus the `TEST-NO-SUBURB`
+  and `TEST-LATE-NIGHT` fixtures (882 scenes). It fails if any headline or content line leaves the brand panel,
+  its content box or the screen, and each failure names the device, store, promo, orientation, scene and bar
+  state. A self-test makes one headline far too long and checks that exactly that scene is named.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
   suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
   own origin (self-hosted fonts).
 
+**End to end** (`npm run test:e2e`, on `admin/tools/dev-server.mjs` with a PH API token and two base URLs saved)
+
+- `test/e2e/full-stack.test.mjs`: a mock device playing every promotion in both orientations through the real
+  proxy and config API (each scene audited); an edit in the admin editor reaching a running screen at its next
+  60 s config poll, without a reload; the proxy failing over to the second base URL when the first refuses, and a
+  fresh screen showing "Screen data could not load" when both do; an offline screen keeping its last good data,
+  restarting from the cache and going live again; security: the settings read shows only "set" and the last 4,
+  the token is stored only as ciphertext, device and screen reads carry no token, envelope, base URL or audit
+  field, every write endpoint refuses a non-admin (403) and an anonymous caller, and the token appears in no
+  response, log line or audit entry of the whole run.
+- `admin/test/editor.e2e.mjs`: the editor's own end-to-end tests (see `admin/README.md`).
+
+**Deliberately breaking it**: change `LAST_MINUTES` or the timezone handling in `js/hours.js` and the hours tests
+fail; make a headline too long to fit (in `fixtures/config.json`, or in the editor) and the copy-fit audit fails
+naming the scene.
+
+### CI
+
+`ci/pharmacy-screen-tests.yml` runs `test:units`, `test:ui` and `test:e2e` on Ubuntu 24.04 with Playwright
+1.56.1, on pull requests touching `pharmacy-screen-promo-template/**`, on pushes to the train
+(`deploy/pharmacy-screen-promo-template`) and by hand. The backlog pipeline cannot add files under
+`.github/workflows/`, so it ships here; it gates deployment once a person copies it to
+`.github/workflows/pharmacy-screen-tests.yml` and adds
+`{ workflow: "pharmacy-screen-tests.yml", prefix: "pharmacy-screen-promo-template/", label: "Pharmacy Screen tests" }`
+to `TRAIN_TEST_WORKFLOWS` in `backlog-tracker/scripts/run-backlog-automation.js`, in the same commit.
+
 ## Admin editor (`admin/`)
 
 The signed-in editor for pharmacies, promotions, templates and scenes, saving to the config API, with a live
 preview drawn by `js/render.js`. See `admin/README.md`. `npm test` here also runs the editor's model tests
-(`test/admin-model.test.mjs`); its end-to-end tests are `cd admin && npm test`.
+(`test/admin-model.test.mjs`); its end-to-end tests are `cd admin && npm test` (also part of `npm run test:e2e`).
