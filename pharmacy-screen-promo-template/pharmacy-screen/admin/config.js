@@ -7,6 +7,9 @@
 //   auth.mode   'firebase': sign in with Firebase Auth; admins carry the `admin` custom claim
 //               (config-api/scripts/set-admin-claim.js). auth.firebase is the web app config
 //               ({apiKey, authDomain, projectId}) from the Firebase console.
+//               'oidc': OpenID Connect sign-in (the AWS deployment: Cognito or the retailer's identity provider).
+//               auth.oidc is {clientId, authorizeUrl, tokenUrl, logoutUrl, logoutParam, scopes}; the AWS deploy
+//               writes it (aws/infra/stack.js). Admins carry the admin claim the stack names (aws/README.md).
 //               'token': paste an access token. Local development only (admin/tools/dev-server.mjs serves its
 //               own copy of this file with mode 'token'); never deploy it.
 export default {
