@@ -7625,7 +7625,11 @@ of `public/css/styles.css`); server `functions/aidan-chat.js` (the endpoint),
   head with a four-point sparkle, inlined so it takes the button's white) at
   32 px. On a phone (640 px and under) it sits 16 px from the right and 16 px
   above the tab bar, and on Leads above the page's own New lead button. The
-  page keeps room under its last row so the launcher never covers it. The
+  page keeps room under its last row so the launcher never covers it, and
+  while an overlay is open (a modal, the search, the slide-over, the profile
+  menu, the Staff Kanban Filters menu) the launcher steps aside, so it never
+  sits on that overlay's own buttons (on a 360 px phone it covered the
+  Filters menu's Done button, Staff Kanban TC-08). The
   whiteboard's full-screen page (`whiteboard.html`) has no launcher.
 - **SUP-AID-55** **The panel.** Built from the skill's tokens, since no
   capture of the platform's open chat panel exists yet (to be matched later

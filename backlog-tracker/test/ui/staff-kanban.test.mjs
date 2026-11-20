@@ -359,6 +359,9 @@ T("TC-08", "secondary filters live in the Filters menu; a filter change keeps th
   const p = await open(prof, "#staff-kanban", { height: Math.min(prof.height, 700) });
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), true);
   await press(p, "#kb-filter-toggle");
+  // The open menu is the page's action: the Aidan launcher steps out of its way
+  // (on a 360 px phone it used to sit on the menu's Done button).
+  assert.notEqual(await p.evaluate(() => { const l = document.getElementById("aidan-chat-launcher"); return l ? getComputedStyle(l).visibility : "none"; }), "visible", "the Aidan launcher steps aside while Filters is open");
   await p.selectOption("#kb-type", "bug");
   await p.waitForTimeout(100);
   assert.equal(await p.$eval("#kb-filter-panel", (e) => e.hidden), false, "menu stays open while adjusting");

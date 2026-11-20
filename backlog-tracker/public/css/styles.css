@@ -3399,10 +3399,12 @@ html[data-console-role="viewer"] .lead-prio-tools { display: none; }
 .aidan-send:disabled { opacity: .45; cursor: not-allowed; }
 .aidan-mic:focus-visible, .aidan-send:focus-visible, .aidan-list-row:focus-visible, .aidan-stop:focus-visible { outline: 2px solid #169bc2; outline-offset: 2px; }
 
-/* An overlay (a modal, the search, the slide-over, the profile menu) is the
-   page's action while it is open: the launcher steps out of its way, and an
-   open panel drops under it (a link in the panel can open a ticket's modal). */
-html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden]), .nav-drawer-backdrop.open, #profile-menu:not([hidden])) .aidan-launcher { visibility: hidden; pointer-events: none; }
+/* An overlay (a modal, the search, the slide-over, the profile menu, the
+   Staff Kanban Filters menu) is the page's action while it is open: the
+   launcher steps out of its way, and an open panel drops under it (a link in
+   the panel can open a ticket's modal). On a small phone the Filters menu
+   runs down to the launcher's corner, so its Done button sat under it. */
+html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden]), .nav-drawer-backdrop.open, #profile-menu:not([hidden]), #kb-filter-panel:not([hidden])) .aidan-launcher { visibility: hidden; pointer-events: none; }
 html:has(.modal-backdrop:not([hidden]), .cmdk-backdrop:not([hidden])) .aidan-panel { z-index: 19; }
 /* Room under the last thing on a page, so the launcher never sits on it. */
 .app:not([hidden]) { padding-bottom: calc(var(--aidan-bottom) + 64px + 16px); }
