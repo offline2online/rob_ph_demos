@@ -26,12 +26,12 @@ after(async () => {
   if (dev) await dev.close();
 });
 
-async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 } } = {}) {
+async function open(token = 'dev-admin', { viewport = { width: 1400, height: 1000 }, path = '/admin/' } = {}) {
   const ctx = await browser.newContext({ viewport });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
-  await page.goto(dev.base + '/admin/');
+  await page.goto(dev.base + path);
   await page.fill('#gateTokenIn', token);
   await page.click('#gateToken button[type=submit]');
   if (token === 'dev-admin') await page.waitForFunction(() => window.pharmacyAdmin && window.pharmacyAdmin.ready, null, { timeout: 20000 });
@@ -972,4 +972,35 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isHidden('#app'), true);
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('Edit for this pharmacy / Edit / Revert to master keep the page where it was', async () => {
+  // The panel is redrawn when a section switches; the button clicked stays at the same place on screen (it used
+  // to move, or jump the page), in the admin view and in the pharmacy view, at desktop and phone widths.
+  for (const viewport of [{ width: 1400, height: 700 }, { width: 390, height: 800 }]) {
+    for (const path of ['/admin/', '/admin/?store=VIC-MP-002']) {
+      const { ctx, page, errors } = await open('dev-admin', { viewport, path });
+      await page.click('#playBtn'); // pause, so nothing else redraws the panel
+      if (path === '/admin/') {
+        await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-002');
+        await page.waitForFunction(() => window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-002');
+      }
+      const where = (sec) => page.$eval(`.inh[data-sec="${sec}"] .inh-act`, (b) => Math.round(b.getBoundingClientRect().top));
+      const toMiddle = (sec) => page.$eval(`.inh[data-sec="${sec}"] .inh-act`, (b) => b.scrollIntoView({ block: 'center' }));
+      // greeting, then footer: the greeting's "managed separately" message goes when the footer's is shown, above it
+      for (const sec of ['greeting', 'footer', 'footer', 'greeting']) {
+        await toMiddle(sec);
+        const before = await where(sec), scrolled = await page.evaluate(() => document.scrollingElement.scrollTop);
+        assert.ok(scrolled > 0 || sec === 'greeting', `${path} ${viewport.width} ${sec}: the page is scrolled`);
+        await page.click(`.inh[data-sec="${sec}"] .inh-act`);
+        await settle(page);
+        assert.ok(Math.abs((await where(sec)) - before) <= 1, `${path} ${viewport.width} ${sec}: the button stayed put`);
+        assert.equal(await page.evaluate((s) => document.activeElement === document.querySelector(`.inh[data-sec="${s}"] .inh-act`), sec), true);
+      }
+      // back to inheriting everything, for the other tests
+      assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  }
 });

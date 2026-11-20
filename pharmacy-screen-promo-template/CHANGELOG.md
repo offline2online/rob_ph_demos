@@ -77,6 +77,12 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   store data; to check a screen's store, open its campaign URL with `&debug=1`. The proxy endpoint
   (`GET /api/device/{id}/campaign_data`) is unchanged: screens still use it.
 
+### Fixed
+
+- **Edit for this pharmacy / Edit / Revert to master no longer move the page.** In the admin and pharmacy views
+  the button you clicked stays where it was on screen (and keeps the focus) while the section switches, instead
+  of the page jumping.
+
 ## [0.1.0] — first handover candidate
 
 Tested in our environment (Firebase `rob-ph-demos`); not yet shared with miPharmacy.

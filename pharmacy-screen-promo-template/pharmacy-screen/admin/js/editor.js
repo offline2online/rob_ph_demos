@@ -407,6 +407,21 @@ function decorateSections(B) {
   B.querySelectorAll('.inh-x').forEach((b) => { b.onclick = () => { S.note = null; b.closest('.inh-alert').remove(); }; });
 }
 
+/** Run `redraw` without moving the page: the element `sel` names (found again after the redraw) stays at the same
+ *  height on screen, and takes the focus back if it had it, so the page never jumps away from where you clicked.
+ *  Without an element to hold on to, the page keeps its scroll position. */
+function keepPlace(sel, redraw) {
+  const se = document.scrollingElement || document.documentElement;
+  const was = document.querySelector(sel), x = se.scrollLeft, y = se.scrollTop;
+  const top = was ? was.getBoundingClientRect().top : null;
+  const hadFocus = !!was && (document.activeElement === was || was.contains(document.activeElement));
+  redraw();
+  const now = document.querySelector(sel);
+  if (hadFocus && now) now.focus({ preventScroll: true });
+  se.scrollTop = y; se.scrollLeft = x; // the redraw may have dropped it (a shorter page, focus lost to the body)
+  if (now && top !== null) se.scrollTop += now.getBoundingClientRect().top - top;
+}
+
 /** Manage section `sec` of the selected promotion separately for this pharmacy (on), or inherit it again (off). */
 async function setSection(sec, on) {
   const ph = S.cur, p = promo();
@@ -414,7 +429,9 @@ async function setSection(sec, on) {
   await Save.flush();
   ph.detached = M.setDetached(ph, p.id, sec, on);
   S.note = on ? { promotionId: p.id, sec } : null;
-  ver++; lastKey = ''; renderDp(); renderJson(); renderRestore(); // renderDp → content(): an inherited section takes the master's copy again
+  // renderDp → content(): an inherited section takes the master's copy again. It redraws the whole panel, so
+  // keep the section's Edit / Revert button where it was on screen, and focused.
+  keepPlace(`#dpBody .inh[data-sec="${sec}"] .inh-act`, () => { ver++; lastKey = ''; renderDp(); renderJson(); renderRestore(); });
   const id = ph.id;
   await Save.queue(`ph:${id}`, async () => {
     // Its own copy first (the master's, until edited), then the switch, so the screen never plays an empty section.
