@@ -51,6 +51,26 @@ them for this project). Everything a back end needs from the cloud goes through 
 auth, secret store; see each function's README), so an AWS deployment for miPharmacy adds adapters and an
 entry point without changing the API.
 
+The screen polls its store data (the Location API through `/api/device/…`) every 30 s and its published config
+(`/api/screens/{store_code}`) every 60 s, one request in flight per endpoint, re-rendering only on change
+(`pharmacy-screen/README.md` → "How the screen gets its data (live)").
+
+## Security
+
+The same code runs in both environments; only the adapters behind it differ.
+
+| | Our test environment (`rob-ph-demos`) | miPharmacy's environment |
+|---|---|---|
+| PH API token at rest | Envelope-encrypted (AES-256-GCM data key) in Firestore `pharmacyScreen/private/settings/phApi`, the data key wrapped by Cloud KMS key `ph-api-token` | The same envelope with the data key wrapped by AWS KMS, or the token held in AWS Secrets Manager, inside the retailer's VPC (target not built yet) |
+| Who can decrypt | Only `pharmacyScreenPhApi`; the key can be used only by the functions' service account | Only the proxy, by its IAM role |
+| Admin sign-in | Firebase Auth, custom claim `admin` | Cognito or miPharmacy's identity provider (OIDC), same admin role check |
+
+In both, the token is write-only in Admin → Settings (only its last 4 characters are shown), never in plain text,
+browser storage or page source, and never sent to a screen: the proxy adds `x-api-key` to Location API calls
+itself. Saving, replacing and removing it need the admin role and are audit-logged. The adapters are described in
+`pharmacy-screen/ph-proxy/README.md` ("How the token is protected", and the AWS note at the end of "Deploying to
+our test environment") and `pharmacy-screen/config-api/README.md` ("Adapters").
+
 ## Deploy (one command)
 
 From a clean checkout, with Node 20+, the Google Cloud CLI signed in as a project owner (`gcloud auth login`
