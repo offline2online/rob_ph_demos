@@ -1,5 +1,5 @@
 {
-  "_doc": "Five launch pharmacies. content is keyed by promo ID (the seed maps it to each promotion's record id). logo.file is base64 of the transparent WebP from the concept prototype's LOGOS, relative to this folder. device is the mock device in ../../fixtures/campaign-data.json.",
+  "_doc": "Five launch pharmacies. content is keyed by promo ID (the seed maps it to each promotion's record id). Every season's beats carry their seconds on screen (dur), as set on the live master on 21 Nov 2026: each season's loop totals 7 s (seed/test/seed.test.js checks). logo.file is base64 of the transparent WebP from the concept prototype's LOGOS, relative to this folder. device is the mock device in ../../fixtures/campaign-data.json.",
   "pharmacies": [
     {
       "key": "vic-mp-001",
@@ -102,25 +102,30 @@
             "christmas": {
               "beats": [
                 {
-                  "text": "Merry Christmas, ${Suburb}"
+                  "text": "Merry Christmas, ${Suburb}",
+                  "dur": 3
                 },
                 {
                   "label": "With warm wishes",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 4
                 }
               ]
             },
             "new-year": {
               "beats": [
                 {
-                  "text": "Happy<br>New Year"
+                  "text": "Happy<br>New Year",
+                  "dur": 2
                 },
                 {
-                  "text": "Thank you for a great year, ${Suburb}"
+                  "text": "Thank you for a great year, ${Suburb}",
+                  "dur": 2
                 },
                 {
                   "label": "Here's to a healthy year ahead",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 3
                 }
               ]
             },
@@ -128,14 +133,17 @@
               "beats": [
                 {
                   "label": "26 January",
-                  "text": "Happy Australia Day, ${Suburb}"
+                  "text": "Happy Australia Day, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Enjoy the sunshine"
+                  "text": "Enjoy the sunshine",
+                  "dur": 2
                 },
                 {
                   "label": "Stay sun safe this summer",
-                  "text": "Slip, slop, slap"
+                  "text": "Slip, slop, slap",
+                  "dur": 3
                 }
               ]
             },
@@ -143,26 +151,32 @@
               "beats": [
                 {
                   "label": "14 February",
-                  "text": "Happy Valentine's Day, ${Suburb}"
+                  "text": "Happy Valentine's Day, ${Suburb}",
+                  "dur": 3
                 },
                 {
-                  "text": "Look after the ones you love"
+                  "text": "Look after the ones you love",
+                  "dur": 2
                 },
                 {
-                  "text": "and yourself, too"
+                  "text": "and yourself, too",
+                  "dur": 2
                 }
               ]
             },
             "easter": {
               "beats": [
                 {
-                  "text": "Happy Easter, ${Suburb}"
+                  "text": "Happy Easter, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Wishing you a restful long weekend"
+                  "text": "Wishing you a restful long weekend",
+                  "dur": 3
                 },
                 {
-                  "text": "Take time to recharge"
+                  "text": "Take time to recharge",
+                  "dur": 2
                 }
               ]
             },
@@ -170,13 +184,16 @@
               "beats": [
                 {
                   "label": "25 April",
-                  "text": "Anzac Day"
+                  "text": "Anzac Day",
+                  "dur": 3
                 },
                 {
-                  "text": "Lest we forget"
+                  "text": "Lest we forget",
+                  "dur": 2
                 },
                 {
-                  "text": "Remembering together, ${Suburb}"
+                  "text": "Remembering together, ${Suburb}",
+                  "dur": 2
                 }
               ]
             }
@@ -285,25 +302,30 @@
             "christmas": {
               "beats": [
                 {
-                  "text": "Merry Christmas, ${Suburb}"
+                  "text": "Merry Christmas, ${Suburb}",
+                  "dur": 3
                 },
                 {
                   "label": "With warm wishes",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 4
                 }
               ]
             },
             "new-year": {
               "beats": [
                 {
-                  "text": "Happy<br>New Year"
+                  "text": "Happy<br>New Year",
+                  "dur": 2
                 },
                 {
-                  "text": "Thank you for a great year, ${Suburb}"
+                  "text": "Thank you for a great year, ${Suburb}",
+                  "dur": 2
                 },
                 {
                   "label": "Here's to a healthy year ahead",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 3
                 }
               ]
             },
@@ -311,14 +333,17 @@
               "beats": [
                 {
                   "label": "26 January",
-                  "text": "Happy Australia Day, ${Suburb}"
+                  "text": "Happy Australia Day, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Enjoy the sunshine"
+                  "text": "Enjoy the sunshine",
+                  "dur": 2
                 },
                 {
                   "label": "Stay sun safe this summer",
-                  "text": "Slip, slop, slap"
+                  "text": "Slip, slop, slap",
+                  "dur": 3
                 }
               ]
             },
@@ -326,26 +351,32 @@
               "beats": [
                 {
                   "label": "14 February",
-                  "text": "Happy Valentine's Day, ${Suburb}"
+                  "text": "Happy Valentine's Day, ${Suburb}",
+                  "dur": 3
                 },
                 {
-                  "text": "Look after the ones you love"
+                  "text": "Look after the ones you love",
+                  "dur": 2
                 },
                 {
-                  "text": "and yourself, too"
+                  "text": "and yourself, too",
+                  "dur": 2
                 }
               ]
             },
             "easter": {
               "beats": [
                 {
-                  "text": "Happy Easter, ${Suburb}"
+                  "text": "Happy Easter, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Wishing you a restful long weekend"
+                  "text": "Wishing you a restful long weekend",
+                  "dur": 3
                 },
                 {
-                  "text": "Take time to recharge"
+                  "text": "Take time to recharge",
+                  "dur": 2
                 }
               ]
             },
@@ -353,13 +384,16 @@
               "beats": [
                 {
                   "label": "25 April",
-                  "text": "Anzac Day"
+                  "text": "Anzac Day",
+                  "dur": 3
                 },
                 {
-                  "text": "Lest we forget"
+                  "text": "Lest we forget",
+                  "dur": 2
                 },
                 {
-                  "text": "Remembering together, ${Suburb}"
+                  "text": "Remembering together, ${Suburb}",
+                  "dur": 2
                 }
               ]
             }
@@ -468,25 +502,30 @@
             "christmas": {
               "beats": [
                 {
-                  "text": "Merry Christmas, ${Suburb}"
+                  "text": "Merry Christmas, ${Suburb}",
+                  "dur": 3
                 },
                 {
                   "label": "With warm wishes",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 4
                 }
               ]
             },
             "new-year": {
               "beats": [
                 {
-                  "text": "Happy<br>New Year"
+                  "text": "Happy<br>New Year",
+                  "dur": 2
                 },
                 {
-                  "text": "Thank you for a great year, ${Suburb}"
+                  "text": "Thank you for a great year, ${Suburb}",
+                  "dur": 2
                 },
                 {
                   "label": "Here's to a healthy year ahead",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 3
                 }
               ]
             },
@@ -494,14 +533,17 @@
               "beats": [
                 {
                   "label": "26 January",
-                  "text": "Happy Australia Day, ${Suburb}"
+                  "text": "Happy Australia Day, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Enjoy the sunshine"
+                  "text": "Enjoy the sunshine",
+                  "dur": 2
                 },
                 {
                   "label": "Stay sun safe this summer",
-                  "text": "Slip, slop, slap"
+                  "text": "Slip, slop, slap",
+                  "dur": 3
                 }
               ]
             },
@@ -509,26 +551,32 @@
               "beats": [
                 {
                   "label": "14 February",
-                  "text": "Happy Valentine's Day, ${Suburb}"
+                  "text": "Happy Valentine's Day, ${Suburb}",
+                  "dur": 3
                 },
                 {
-                  "text": "Look after the ones you love"
+                  "text": "Look after the ones you love",
+                  "dur": 2
                 },
                 {
-                  "text": "and yourself, too"
+                  "text": "and yourself, too",
+                  "dur": 2
                 }
               ]
             },
             "easter": {
               "beats": [
                 {
-                  "text": "Happy Easter, ${Suburb}"
+                  "text": "Happy Easter, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Wishing you a restful long weekend"
+                  "text": "Wishing you a restful long weekend",
+                  "dur": 3
                 },
                 {
-                  "text": "Take time to recharge"
+                  "text": "Take time to recharge",
+                  "dur": 2
                 }
               ]
             },
@@ -536,13 +584,16 @@
               "beats": [
                 {
                   "label": "25 April",
-                  "text": "Anzac Day"
+                  "text": "Anzac Day",
+                  "dur": 3
                 },
                 {
-                  "text": "Lest we forget"
+                  "text": "Lest we forget",
+                  "dur": 2
                 },
                 {
-                  "text": "Remembering together, ${Suburb}"
+                  "text": "Remembering together, ${Suburb}",
+                  "dur": 2
                 }
               ]
             }
@@ -651,25 +702,30 @@
             "christmas": {
               "beats": [
                 {
-                  "text": "Merry Christmas, ${Suburb}"
+                  "text": "Merry Christmas, ${Suburb}",
+                  "dur": 3
                 },
                 {
                   "label": "With warm wishes",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 4
                 }
               ]
             },
             "new-year": {
               "beats": [
                 {
-                  "text": "Happy<br>New Year"
+                  "text": "Happy<br>New Year",
+                  "dur": 2
                 },
                 {
-                  "text": "Thank you for a great year, ${Suburb}"
+                  "text": "Thank you for a great year, ${Suburb}",
+                  "dur": 2
                 },
                 {
                   "label": "Here's to a healthy year ahead",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 3
                 }
               ]
             },
@@ -677,14 +733,17 @@
               "beats": [
                 {
                   "label": "26 January",
-                  "text": "Happy Australia Day, ${Suburb}"
+                  "text": "Happy Australia Day, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Enjoy the sunshine"
+                  "text": "Enjoy the sunshine",
+                  "dur": 2
                 },
                 {
                   "label": "Stay sun safe this summer",
-                  "text": "Slip, slop, slap"
+                  "text": "Slip, slop, slap",
+                  "dur": 3
                 }
               ]
             },
@@ -692,26 +751,32 @@
               "beats": [
                 {
                   "label": "14 February",
-                  "text": "Happy Valentine's Day, ${Suburb}"
+                  "text": "Happy Valentine's Day, ${Suburb}",
+                  "dur": 3
                 },
                 {
-                  "text": "Look after the ones you love"
+                  "text": "Look after the ones you love",
+                  "dur": 2
                 },
                 {
-                  "text": "and yourself, too"
+                  "text": "and yourself, too",
+                  "dur": 2
                 }
               ]
             },
             "easter": {
               "beats": [
                 {
-                  "text": "Happy Easter, ${Suburb}"
+                  "text": "Happy Easter, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Wishing you a restful long weekend"
+                  "text": "Wishing you a restful long weekend",
+                  "dur": 3
                 },
                 {
-                  "text": "Take time to recharge"
+                  "text": "Take time to recharge",
+                  "dur": 2
                 }
               ]
             },
@@ -719,13 +784,16 @@
               "beats": [
                 {
                   "label": "25 April",
-                  "text": "Anzac Day"
+                  "text": "Anzac Day",
+                  "dur": 3
                 },
                 {
-                  "text": "Lest we forget"
+                  "text": "Lest we forget",
+                  "dur": 2
                 },
                 {
-                  "text": "Remembering together, ${Suburb}"
+                  "text": "Remembering together, ${Suburb}",
+                  "dur": 2
                 }
               ]
             }
@@ -834,25 +902,30 @@
             "christmas": {
               "beats": [
                 {
-                  "text": "Merry Christmas, ${Suburb}"
+                  "text": "Merry Christmas, ${Suburb}",
+                  "dur": 3
                 },
                 {
                   "label": "With warm wishes",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 4
                 }
               ]
             },
             "new-year": {
               "beats": [
                 {
-                  "text": "Happy<br>New Year"
+                  "text": "Happy<br>New Year",
+                  "dur": 2
                 },
                 {
-                  "text": "Thank you for a great year, ${Suburb}"
+                  "text": "Thank you for a great year, ${Suburb}",
+                  "dur": 2
                 },
                 {
                   "label": "Here's to a healthy year ahead",
-                  "text": "from the whole ${StoreName} team"
+                  "text": "from the whole ${StoreName} team",
+                  "dur": 3
                 }
               ]
             },
@@ -860,14 +933,17 @@
               "beats": [
                 {
                   "label": "26 January",
-                  "text": "Happy Australia Day, ${Suburb}"
+                  "text": "Happy Australia Day, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Enjoy the sunshine"
+                  "text": "Enjoy the sunshine",
+                  "dur": 2
                 },
                 {
                   "label": "Stay sun safe this summer",
-                  "text": "Slip, slop, slap"
+                  "text": "Slip, slop, slap",
+                  "dur": 3
                 }
               ]
             },
@@ -875,26 +951,32 @@
               "beats": [
                 {
                   "label": "14 February",
-                  "text": "Happy Valentine's Day, ${Suburb}"
+                  "text": "Happy Valentine's Day, ${Suburb}",
+                  "dur": 3
                 },
                 {
-                  "text": "Look after the ones you love"
+                  "text": "Look after the ones you love",
+                  "dur": 2
                 },
                 {
-                  "text": "and yourself, too"
+                  "text": "and yourself, too",
+                  "dur": 2
                 }
               ]
             },
             "easter": {
               "beats": [
                 {
-                  "text": "Happy Easter, ${Suburb}"
+                  "text": "Happy Easter, ${Suburb}",
+                  "dur": 2
                 },
                 {
-                  "text": "Wishing you a restful long weekend"
+                  "text": "Wishing you a restful long weekend",
+                  "dur": 3
                 },
                 {
-                  "text": "Take time to recharge"
+                  "text": "Take time to recharge",
+                  "dur": 2
                 }
               ]
             },
@@ -902,13 +984,16 @@
               "beats": [
                 {
                   "label": "25 April",
-                  "text": "Anzac Day"
+                  "text": "Anzac Day",
+                  "dur": 3
                 },
                 {
-                  "text": "Lest we forget"
+                  "text": "Lest we forget",
+                  "dur": 2
                 },
                 {
-                  "text": "Remembering together, ${Suburb}"
+                  "text": "Remembering together, ${Suburb}",
+                  "dur": 2
                 }
               ]
             }

@@ -358,8 +358,9 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.equal(await page.isHidden('#pmHtml'), true);
   // Christmas: two beats, each a card of its lines; the preview draws the standalone design (no brand panel).
   assert.deepEqual(await page.$$eval('#tl button .lb', (b) => b.map((x) => x.textContent)), ['1Beat 1', '2Beat 2']);
-  assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
-  assert.equal(await page.textContent('#pbSecs'), '13s');
+  // The seeded seconds (3 s + 4 s): every season's loop is 7 s, so the playback duration is 8 s.
+  assert.equal(await page.textContent('#loopLen'), 'Loop 7s');
+  assert.equal(await page.textContent('#pbSecs'), '8s');
   // Each Main line has its "+ Add token" menu (aria-label "Add token") on its label row.
   assert.deepEqual(await page.$$eval('#occList .slot [aria-label], #occList .slot input', (e) => e.map((x) => x.getAttribute('aria-label') || x.closest('label').querySelector('span').textContent)), ['Starts: day', 'Starts: month', 'Ends: day', 'Ends: month', 'Seconds on screen', 'Add token', 'Main line', 'Seconds on screen', 'Small line above', 'Add token', 'Main line']);
   // Christmas's dates: 15 to 27 December by default; changing them is saved with the copy and reaches the screen.
@@ -381,18 +382,18 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.equal((await seasonOpts())[0], 'Christmas (15 Dec – 27 Dec)');
   // Each beat has its own seconds on screen: the loop, the timeline and the playback duration follow, and the playing
   // preview runs the beats on keyframes of that length.
-  assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['6', '6']);
+  assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), ['3', '4']);
   await page.fill('#o0dur', '8');
-  assert.equal(await page.textContent('#loopLen'), 'Loop 14s');
-  await page.waitForFunction(() => document.getElementById('pbSecs').textContent === '15s');
+  assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
+  await page.waitForFunction(() => document.getElementById('pbSecs').textContent === '13s');
   assert.match(await page.getAttribute('#tl button[data-i="0"]', 'title'), /· 8s$/);
   await page.click('#playBtn'); // play
-  await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-christmas:not(.hold) .b1'); return b && getComputedStyle(b).animationDuration === '14s'; });
+  await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-christmas:not(.hold) .b1'); return b && getComputedStyle(b).animationDuration === '12s' && /^occT8_4B1$/.test(getComputedStyle(b).animationName); });
   await page.click('#playBtn'); // pause
   await settle(page);
   assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas.beats[0].dur, 8);
-  await page.fill('#o0dur', '6');
-  assert.equal(await page.textContent('#loopLen'), 'Loop 12s');
+  await page.fill('#o0dur', '3');
+  assert.equal(await page.textContent('#loopLen'), 'Loop 7s');
   await page.click('#tl button[data-i="1"]');
   await page.waitForFunction(() => document.querySelector('#screen .occ.occ-christmas.hold .b2.on'));
   assert.equal(await page.$$eval('#screen .s-top, #screen .s-logo, #screen .s-foot', (e) => e.length), 0);
@@ -419,10 +420,14 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.equal(screen.content.occasions.easter.beats[1].text, 'Have a safe long weekend, everyone');
   assert.equal(screen.content.occasions.christmas.beats[1].text, 'from all of us at ${StoreName}', 'Christmas copy kept');
   assert.ok(!/StoreName/.test(JSON.stringify(screen.content.occasions.easter)), 'Easter: suburb only, no store-name sign-off');
-  // Every occasion previews its own design, in both orientations.
+  // Every occasion previews its own design, in both orientations, and shows its seeded seconds: a 7 s loop.
   for (const o of ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
     await page.selectOption('#pmTpl', 'builtin-occasion-' + o);
     await page.waitForFunction((d) => document.querySelector('#screen .occ.occ-' + d), { christmas: 'christmas', 'new-year': 'newyear', 'australia-day': 'ausday', 'valentines-day': 'valentine', easter: 'easter', 'anzac-day': 'anzac' }[o]);
+    const secs = { christmas: ['3', '4'], 'new-year': ['2', '2', '3'], 'australia-day': ['2', '2', '3'], 'valentines-day': ['3', '2', '2'], easter: ['2', '3', '2'], 'anzac-day': ['3', '2', '2'] }[o];
+    await page.waitForFunction((n) => document.querySelectorAll('#occList input[type=number]').length === n, secs.length);
+    assert.deepEqual(await page.$$eval('#occList input[type=number]', (e) => e.map((x) => x.value)), secs, `${o}: seconds per beat`);
+    assert.equal(await page.textContent('#loopLen'), 'Loop 7s', `${o}: loop`);
   }
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await page.waitForFunction(() => { const b = document.querySelector('#screen .occ-easter .b2'); return b && /Have a safe long weekend, everyone/.test(b.textContent); }, null, { timeout: 5000 });

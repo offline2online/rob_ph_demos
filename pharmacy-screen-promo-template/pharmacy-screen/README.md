@@ -93,6 +93,9 @@ the designs' CSS: the player draws the occasion once and sets no timers. The pla
 **13 s** at the defaults. Each beat's seconds on screen can be changed in the editor (`beats[i].dur`, 1–60 s); the
 loop is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
 fades as the designs), and the editor's Playback duration follows. At the defaults the designs' own CSS plays.
+The seeded and mock data set every beat's seconds so that each season's loop is **7 s** (Christmas 3 + 4, New
+Year's and Australia Day 2 + 2 + 3, Valentine's Day and Anzac Day 3 + 2 + 2, Easter 2 + 3 + 2; playback duration
+**8 s**), as set on the live master: see `seed/README.md` → "Season timings".
 `scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
 decorations stand still and the beats still change.
 

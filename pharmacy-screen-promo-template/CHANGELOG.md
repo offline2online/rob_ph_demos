@@ -10,6 +10,13 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Seeded seasons play on a 7-second loop.** The launch data now carries the seconds on screen set on the live
+  master for every season's beats: Christmas 3 + 4, New Year's 2 + 2 + 3, Australia Day 2 + 2 + 3, Valentine's Day
+  3 + 2 + 2, Easter 2 + 3 + 2, Anzac Day 3 + 2 + 2. A fresh install shows **Loop 7s** and a playback duration of
+  **8 s** for every season (was 12 s and 13 s); the mock data (`mockapi=1`) matches. Re-running the seed gives these
+  seconds to a season the seed made that has none on any beat, and leaves a season whose seconds someone set in the
+  editor as it is. A beat with no seconds still takes its share of the design's 12 s loop
+  ([pharmacy-screen/seed/README.md](pharmacy-screen/seed/README.md)).
 - **Edits reach screens sooner, with less traffic.** A running screen now checks its published config every 15 s
   (was 60 s) and the config API answers `304` with no body while nothing changed (`ETag`); the CDN holds the config
   5 s (was 15 s). An edit in the editor is on screen within about 20 s (was up to 76 s). Store data from PH's

@@ -115,7 +115,7 @@ are 1–40 lower-case letters, digits and hyphens, unique across promotions.
 | `morning` | Morning | Promotion scenes (`builtin-promotion-scenes`) | Greeting, service chips, one scene per service, "Walk in today" close; "Open today" bar |
 | `afternoon` | Afternoon | Promotion scenes | The same, with afternoon copy |
 | `closed` | Closed | Opening hours (`builtin-opening-hours`) | Rotating headlines, the full week's hours, "Public Holidays: Please call to confirm", phone |
-| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats on a 12 s loop (playback duration 13 s); no "Open today" bar |
+| `occasions` | Seasonal | One of the six seasonal templates (seeded Christmas) | The season whose dates hold the store's date (else the chosen one): its standalone animation, its copy as beats, each for its own seconds (seeded: a 7 s loop, playback duration 8 s; with no seconds set, a 12 s loop and 13 s); no "Open today" bar |
 
 Admins can add more (Admin → New promotion). Which promotion plays when is scheduled in Personalisation Hub
 Core, not here. A promotion can carry a **Schedule**: No schedule (the default, nothing stored) or Annual, a start
@@ -221,7 +221,7 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
       "showAddress": false
     },
     "<promotion id, occasion template>": {
-      "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}" }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 6 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
+      "occasions": { "christmas": { "from": "12-15", "to": "12-27", "beats": [ { "text": "Merry Christmas, ${Suburb}", "dur": 3 }, { "label": "With warm wishes", "text": "from the whole ${StoreName} team", "dur": 4 } ] } /* one per occasion; Christmas 2 beats, the others 3 */ }
     }
   }
 }
@@ -230,7 +230,8 @@ record also has `version`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. F
 - Scene durations (`dur`, `introDur`) are 1–60 seconds; missing ones use the defaults (greeting 3 s, service 2 s,
   close 2 s). The Closed headlines' seconds are `headlineDurs[i]` (optional, `null` or missing for the default:
   2.7, 2.7, 2.6 for three headlines; part of the `headlines` master section). An occasion beat's seconds are its
-  optional `dur`; missing ones share the design's 12 s loop equally (Christmas 6 s each, the others 4 s).
+  optional `dur`; missing ones share the design's 12 s loop equally (Christmas 6 s each, the others 4 s). The seed
+  sets every beat's `dur` so each season's loop totals 7 s (`pharmacy-screen/seed/README.md` → "Season timings").
 - Occasion beats: `text` is the main line (rich text), `label` the small label line, present only on the beats
   whose design has one. Copy saved in the earlier shape (`scenes[3]` of `title`, `sub`, `line1`, `line2`) still
   plays: unedited as the new defaults, edited beat by beat (`title` as the main line, `sub` as the label).

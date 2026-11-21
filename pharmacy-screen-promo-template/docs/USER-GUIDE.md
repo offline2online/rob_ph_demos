@@ -152,9 +152,10 @@ Easter shows this year's Good Friday to Easter Monday). They are the dates in th
 change as soon as you change them there. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
-three), by default on a 12-second loop: for each beat each pharmacy edits its seconds on screen (1–60), the **Main
+three), each for its own seconds on screen. As installed every season's loop is 7 seconds (the editor shows
+**Loop 7s**): for each beat each pharmacy edits its seconds on screen (1–60), the **Main
 line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
-editor shows beside Copy experience URL (**13 seconds** at the default timings). Every season keeps its own copy and dates, so
+editor shows beside Copy experience URL (**8 seconds** with the installed timings). Every season keeps its own copy and dates, so
 switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
 Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
