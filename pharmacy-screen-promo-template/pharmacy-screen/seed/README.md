@@ -5,7 +5,7 @@ fixtures as mock data for local runs and tests.
 
 | What | Where | Count |
 |---|---|---|
-| Launch pharmacies: store code, name, primary/accent colours, logo, morning/afternoon/closed/occasions content | `fixtures/pharmacies.json`, logos in `fixtures/logos/<store code>.webp.b64` (base64 of the transparent WebP from the prototype's `LOGOS`) | 5: VIC-MP-001 Beaumaris Pharmacy, VIC-MP-002 North Ringwood Family Pharmacy, VIC-MP-003 Ocean Grove Terrace Pharmacy, VIC-MP-004 Vermont South Pharmacy, VIC-MP-005 O'Brien's Pharmacy |
+| Launch pharmacies: store code, name, primary/accent colours, logo, morning/afternoon/closed/occasions content (each season's beats with their seconds on screen, 7 s a loop) | `fixtures/pharmacies.json`, logos in `fixtures/logos/<store code>.webp.b64` (base64 of the transparent WebP from the prototype's `LOGOS`) | 5: VIC-MP-001 Beaumaris Pharmacy, VIC-MP-002 North Ringwood Family Pharmacy, VIC-MP-003 Ocean Grove Terrace Pharmacy, VIC-MP-004 Vermont South Pharmacy, VIC-MP-005 O'Brien's Pharmacy |
 | Default promotions | `fixtures/promotions.json` | 4: Morning (`promo=morning`), Afternoon (`promo=afternoon`), Closed (`promo=closed`), Seasonal (`promo=occasions`, on Christmas; a promotion the seed made earlier as Occasions is renamed Seasonal on the next run) |
 | Built-in templates "Promotion scenes", "Opening hours" and the six occasions (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day) | `fixtures/templates.json` (description only: they are read-only and live in code, `../config-api/src/builtins.js`, so the seed checks them and writes nothing) | 8 |
 | Service library: copy, icon, category, offered-by store codes | `fixtures/services.json` (field names are the config API's: `headline` is the prototype's title, `accent` its sub line) | 28 |
@@ -48,6 +48,23 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
   still holds an occasion's old default copy (`fixtures/occasions-legacy.json`, the three-scene copy from before
   the standalone designs) gets that occasion's new default copy from the fixtures. Copy anyone edited is kept.
   The next run is a no-op.
+- **Season timings.** Every season's beats carry their seconds on screen (`dur`), as set on the live master on
+  21 Nov 2026; each loop totals 7 s, so the playback duration is 8 s:
+
+  | Season | Seconds per beat |
+  |---|---|
+  | Christmas | 3, 4 |
+  | New Year's | 2, 2, 3 |
+  | Australia Day | 2, 2, 3 |
+  | Valentine's Day | 3, 2, 2 |
+  | Easter | 2, 3, 2 |
+  | Anzac Day | 3, 2, 2 |
+
+  A pharmacy, or a default promotion's master, that the seed made and whose season is still on the old default
+  timings (no `dur` on any of its beats, the same number of beats) gets these seconds on a plain re-run; only `dur`
+  is written, so its lines and dates stay. A season with a `dur` on any beat (someone set it in the editor) is kept
+  as it is, and so is anything made by hand. The next run is a no-op. The screen's default for a beat with no
+  `dur` (its share of the design's 12 s loop, `../js/render.js`) is unchanged.
 - **Never overwrites edits unless `--reset`.** With `--reset`, a seeded record that differs from the fixture
   is put back (pharmacy name, colours, logo and its content for the four default promotions; promotion name,
   promo ID and template, so Occasions goes back to Christmas; service copy). Content for other promotions and records the seed doesn't know about
@@ -63,5 +80,6 @@ For a local API already holding the seed: `cd ../config-api && npm run dev:seed`
 `test/seed.test.js` covers the ticket's test steps (empty store → 5 / 4 / 8 / 28; second run changes
 nothing; an edit survives a re-run, `--reset` restores it; a store seeded before Occasions gets it, then a re-run
 is a no-op; a store seeded with the old occasion copy gets the new defaults on seed-made records and keeps edited
-copy) and checks the fixtures against the prototype data
+copy; every season's beats in the fixtures carry their seconds and total exactly 7; a store seeded before the
+season timings gets them, and timings or copy someone edited are kept) and checks the fixtures against the prototype data
 the screen page plays (`../fixtures/config.json`) and the mock Location API data.

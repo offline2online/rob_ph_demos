@@ -27,6 +27,12 @@
 // promotion master the seed made that still holds an occasion's old default
 // copy (fixtures/occasions-legacy.json, never edited) gets that occasion's new
 // default copy from the fixtures; copy anyone edited is kept as it is.
+// Season timings (21 Nov 2026): every season's beats carry their seconds on
+// screen in the fixtures (each loop totals 7 s, as set on the live master). A
+// pharmacy or a promotion master the seed made whose season is still on the
+// old default timings (no seconds on any of its beats) gets the fixture's
+// seconds; its copy and dates are kept, and a season with seconds on any beat
+// (someone set them in the editor) is left as it is.
 // With --reset, seeded records that differ from the fixtures are put back to
 // the fixture values (records the seed doesn't know about are never touched,
 // and a pharmacy's content for promotions other than the four defaults is
@@ -123,6 +129,37 @@ function upgradeOccasions(content, fresh, legacy) {
   }
   return changed ? { ...content, occasions } : null;
 }
+
+/**
+ * Occasion copy (content.occasions) with the seconds on screen from `fresh`
+ * added to every occasion still on the old default timings: the same number of
+ * beats as `fresh`, and no `dur` on any of them. null when nothing changes.
+ * Only `dur` is written: the stored lines and dates stay. An occasion with a
+ * `dur` on any beat (set in the editor), in the old scenes shape, or with a
+ * different number of beats is kept as it is.
+ */
+function upgradeTimings(content, fresh) {
+  if (!content || !content.occasions || typeof content.occasions !== "object" || !fresh || !fresh.occasions) return null;
+  const isBeat = (b) => b && typeof b === "object" && !Array.isArray(b);
+  const timed = (b) => isBeat(b) && b.dur !== undefined && b.dur !== null;
+  let changed = false;
+  const occasions = { ...content.occasions };
+  for (const [id, copy] of Object.entries(occasions)) {
+    const want = fresh.occasions[id];
+    if (!want || !Array.isArray(want.beats) || !want.beats.length || !want.beats.every(timed)) continue;
+    if (!copy || !Array.isArray(copy.beats) || copy.beats.length !== want.beats.length) continue;
+    if (!copy.beats.every(isBeat) || copy.beats.some(timed)) continue;
+    occasions[id] = { ...copy, beats: copy.beats.map((b, i) => ({ ...b, dur: want.beats[i].dur })) };
+    changed = true;
+  }
+  return changed ? { ...content, occasions } : null;
+}
+
+/** Both upgrades of seeded occasion content (old default copy, then old default timings); null when nothing changes. */
+function upgradeSeasonal(content, fresh, legacy) {
+  const copy = upgradeOccasions(content, fresh, legacy);
+  return upgradeTimings(copy || content, fresh) || copy;
+}
 const logoHash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex").slice(0, 20);
 // The path setLogo() stores a logo under (content-hash named), to tell
 // whether a stored logo is the fixture's without downloading it.
@@ -194,9 +231,9 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       // promotion made by hand is left exactly as it is.
       await svc.updatePromotion(SEED_ACTOR, existing.id, { master });
       report.promotions.updated.push(p.promoId);
-    } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeOccasions(existing.master, master, fixtures.legacyOccasions)) {
-      // A master the seed made still holding old default occasion copy.
-      await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeOccasions(existing.master, master, fixtures.legacyOccasions) });
+    } else if (!reset && master && existing.id === ids.promotion(p.key) && upgradeSeasonal(existing.master, master, fixtures.legacyOccasions)) {
+      // A master the seed made still holding old default occasion copy, or a season on the old default timings.
+      await svc.updatePromotion(SEED_ACTOR, existing.id, { master: upgradeSeasonal(existing.master, master, fixtures.legacyOccasions) });
       report.promotions.updated.push(p.promoId);
     } else if (renamed) {
       report.promotions.updated.push(p.promoId);
@@ -231,10 +268,10 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
       const have = existing.content || {};
       const seeded = existing.id === ids.pharmacy(ph.key);
       const added = seeded ? Object.fromEntries(Object.entries(content).filter(([id]) => createdPromotionIds.has(id) && !have[id])) : {};
-      // Old default occasion copy on a pharmacy the seed made: the new defaults.
+      // Old default occasion copy, or a season on the old default timings, on a pharmacy the seed made: the new defaults.
       if (seeded) {
         for (const [id, value] of Object.entries(content)) {
-          const up = !added[id] && upgradeOccasions(have[id], value, fixtures.legacyOccasions);
+          const up = !added[id] && upgradeSeasonal(have[id], value, fixtures.legacyOccasions);
           if (up) added[id] = up;
         }
       }
@@ -248,6 +285,11 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     }
     // --reset: the fixture's fields and its content for the seeded
     // promotions; content for other promotions stays.
+    // A pharmacy's own season for the Seasonal promotion (config-api/src/seasonal.js) is not fixture data: kept.
+    for (const [id, value] of Object.entries(content)) {
+      const season = existing.content && existing.content[id] && existing.content[id].season;
+      if (season && value && value.season === undefined) content[id] = { ...value, season };
+    }
     const want = normalisePharmacy({ ...fields, content: { ...(existing.content || {}), ...content } });
     const have = normalisePharmacy({ storeCode: existing.storeCode, name: existing.name, colours: existing.colours, content: existing.content || {} });
     let changed = false;
@@ -357,4 +399,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeOccasions, ids, SEED_ACTOR };
+module.exports = { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeOccasions, upgradeTimings, ids, SEED_ACTOR };

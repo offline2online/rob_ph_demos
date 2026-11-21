@@ -25,7 +25,7 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
    last server that answered is tried first, then the others in order, one request at a time (8 s timeout each).
 4. **Polling**: store data every 20 s, config every 15 s (answered `304` with no body while nothing changed), one
    request in flight per endpoint, and both at once when the page is shown again or the network returns. The screen re-renders
-   only when what it shows changed (new hours reach it within 30 s, no reload), and re-checks the "Open today" bar
+   only when what it shows changed (new hours reach it within about 35 s: the 20 s poll plus the proxy's 15 s cache, no reload), and re-checks the "Open today" bar
    at the turn of every minute in `store_timezone`.
 5. **Resilience**: the last good result is kept in memory and in `localStorage`
    (`pharmacy-screen:last:<device>`), so a screen keeps playing through a network drop and comes back with its
@@ -93,6 +93,9 @@ the designs' CSS: the player draws the occasion once and sets no timers. The pla
 **13 s** at the defaults. Each beat's seconds on screen can be changed in the editor (`beats[i].dur`, 1–60 s); the
 loop is then their sum, played on keyframes `renderOccasion()` writes for those timings (`occasionTiming()`, same
 fades as the designs), and the editor's Playback duration follows. At the defaults the designs' own CSS plays.
+The seeded and mock data set every beat's seconds so that each season's loop is **7 s** (Christmas 3 + 4, New
+Year's and Australia Day 2 + 2 + 3, Valentine's Day and Anzac Day 3 + 2 + 2, Easter 2 + 3 + 2; playback duration
+**8 s**), as set on the live master: see `seed/README.md` → "Season timings".
 `scene=<n>` (and the editor's paused preview, and the copy-fit audit) hold beat n still. Under reduced motion the
 decorations stand still and the beats still change.
 
@@ -242,7 +245,7 @@ run holds the train's deploy; see "CI" below.
   right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
   the holiday note sits under the card, and portrait is unchanged.
 - `test/ui/live-screen.test.mjs`: the screen in Chromium with the proxy and config read routed: the right store's
-  suburb, hours and phone; changed hours within 30 s without a reload; network killed and restored; unknown,
+  suburb, hours and phone; changed hours at the next store poll (every 20 s) without a reload; network killed and restored; unknown,
   unconfigured and missing device; offline badge; the debug panel at every bar state; no request leaves the page's
   own origin (self-hosted fonts).
 
@@ -250,7 +253,7 @@ run holds the train's deploy; see "CI" below.
 
 - `test/e2e/full-stack.test.mjs`: a mock device playing every promotion in both orientations through the real
   proxy and config API (each scene audited); an edit in the admin editor reaching a running screen at its next
-  60 s config poll, without a reload; the proxy failing over to the second base URL when the first refuses, and a
+  config poll (every 15 s), without a reload; the proxy failing over to the second base URL when the first refuses, and a
   fresh screen showing "Screen data could not load" when both do; an offline screen keeping its last good data,
   restarting from the cache and going live again; security: the settings read shows only "set" and the last 4,
   the token is stored only as ciphertext, device and screen reads carry no token, envelope, base URL or audit

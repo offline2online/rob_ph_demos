@@ -8,7 +8,8 @@
 // these records at all (it has its own encrypted settings store), and this
 // view could not carry it even if it did.
 
-const { BUILTIN_BY_ID, builtInFor } = require("./builtins");
+const { BUILTIN_BY_ID, builtInFor, occasionTemplateId } = require("./builtins");
+const { seasonOfPromotion, seasonFor } = require("./seasonal");
 const { effectiveContent } = require("./inherit");
 
 const PUBLISHED_SCHEMA_VERSION = 1;
@@ -43,6 +44,12 @@ function resolveTemplate(templateId, templatesById) {
   };
 }
 
+// The pharmacy's season is published as the template it plays, not as content.
+function withoutSeason(content) {
+  const { season: _season, ...rest } = content;
+  return rest;
+}
+
 // pharmacy: a stored pharmacy record (with id); promotions: every promotion
 // (with id); templates: every custom template (with id). Returns the public
 // document for pharmacy.storeCode.
@@ -52,17 +59,20 @@ function buildScreenConfig(pharmacy, promotions, templates, publishedAt) {
   const detached = pharmacy.detached || {};
   const promos = {};
   for (const p of [...promotions].sort((a, b) => a.promoId.localeCompare(b.promoId))) {
+    // A Seasonal promotion plays this pharmacy's own season (src/seasonal.js),
+    // not the one the promotion itself is set to.
+    const season = seasonOfPromotion(p) ? seasonFor(p, content[p.id]) : null;
     promos[p.promoId] = {
       promoId: p.promoId,
       name: p.name,
-      template: resolveTemplate(p.templateId, templatesById),
+      template: resolveTemplate(season ? occasionTemplateId(season) : p.templateId, templatesById),
       // An annual schedule ({type, from, to}, "MM-DD", inclusive) when the
       // promotion has one; left out for no schedule (the default).
       ...(p.schedule && p.schedule.type === "annual" ? { schedule: { type: "annual", from: p.schedule.from, to: p.schedule.to } } : {}),
       // The master template's sections, except those this pharmacy manages
       // itself (src/inherit.js); the pharmacy's own content when the
       // promotion has no master.
-      content: effectiveContent(p.master, content[p.id], detached[p.id]),
+      content: withoutSeason(effectiveContent(p.master, content[p.id], detached[p.id])),
     };
   }
   return {

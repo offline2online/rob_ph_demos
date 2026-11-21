@@ -17,7 +17,8 @@ import { OCCASION_DESIGNS, OCCASION_CSS } from './occasions.js';
 // season has its dates (content.occasions[<season>].from / .to, "MM-DD", inclusive, each year; defaults in
 // OCCASIONS[].season, Easter Good Friday to Easter Monday, worked out for each year), and the screen plays the season
 // whose dates hold today (activeOccasion()), switching by itself at midnight. Outside every season's dates it plays
-// the season picked in the admin editor's Season drop-down (the promotion's template). Each is a
+// the season picked in the admin editor's Season drop-down (the pharmacy's own; the config API publishes it as the
+// promotion's template for that store, config-api/src/seasonal.js). Each is a
 // standalone, full-screen animation (js/occasions.js, the approved designs): no brand panel, logo, brand colours,
 // icon tiles or Open today bar. Its copy plays as beats on a 12 s loop (Christmas 2 beats, the others 3); a beat is
 // a main line and, where the design has one, a small label line (above it, or for Australia Day's last beat a pill

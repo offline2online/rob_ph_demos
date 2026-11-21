@@ -110,7 +110,7 @@ screen draws that occasion (`../js/render.js` → `OCCASIONS`, the standalone
 designs in `../js/occasions.js`, the Christmas photo and fonts self-hosted in
 `../css/`; the built-ins carry no html, css or backgrounds). The seeded
 Seasonal promotion (`promo=occasions`) uses `builtin-occasion-christmas`;
-the admin editor's Season drop-down sets its `templateId` to another one
+the promotion's `templateId` is the season a new pharmacy starts on; each pharmacy's own season is `content[<promotion id>].season` (`src/seasonal.js`), which the admin editor's Season drop-down sets
 (what plays outside every season's dates; each season's `from` / `to` dates
 ride in the pharmacy content, `content.occasions.<season>`, and the screen
 picks the season by date).

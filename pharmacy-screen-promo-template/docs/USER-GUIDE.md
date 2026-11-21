@@ -1,8 +1,20 @@
 # Admin user guide
 
-For the people who set up pharmacies and their screen content. The editor is at `https://<site>/admin/`
-(it can also be shown inside Personalisation Hub's HQ Admin). Sign in with your work account; you need the
-admin role, or you see "Admin role required".
+For the people who set up pharmacies and their screen content. The editor opens inside Personalisation Hub:
+**Pharmacy Promos** in HQ Admin and **Display Promotions** in Retail Admin. There is no separate sign-in: it
+uses your Personalisation Hub sign-in, and signing out of Personalisation Hub closes it.
+
+- **HQ Admin users with the `ADMIN` role are administrators**: the full editor, everything in this guide.
+- **Retail Admin users are store users** for their own store: the [pharmacy view](#pharmacy-view) of that one
+  pharmacy. They edit its copy of each promotion, choose which sections it manages itself and can **Restore to
+  default**. They cannot see another pharmacy, the master template or Settings.
+- Anyone else, or the editor's address (`https://<site>/admin/`) opened outside Personalisation Hub, sees
+  "Access denied".
+
+The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`: where the Personalisation Hub page hands no session over, the editor at `https://<site>/admin/` asks you to sign in with your work account, and you need the admin role or you see "Admin role required".
+
+On an AWS installation you sign in at `https://<site>/admin/` with your work account (admin role). How sign-in
+from Personalisation Hub works is in [PH-EMBED.md](PH-EMBED.md).
 
 Edits **save as you type**: "Saving…" then "All changes saved" beside the title. If someone else saved the same
 record after you opened it, the editor asks you to reload instead of overwriting their change. Every save is
@@ -152,9 +164,10 @@ Easter shows this year's Good Friday to Easter Monday). They are the dates in th
 change as soon as you change them there. It applies to all pharmacies. Each season is its own full-screen animation (Christmas: a lit tree; New Year's: fireworks;
 Australia Day: the flag; Valentine's Day: rising hearts; Easter: bouncing eggs; Anzac Day: a dawn glow and a
 poppy), with no logo, brand colours or Open today bar. Its copy plays as beats (Christmas has two, the others
-three), by default on a 12-second loop: for each beat each pharmacy edits its seconds on screen (1–60), the **Main
+three), each for its own seconds on screen. As installed every season's loop is 7 seconds (the editor shows
+**Loop 7s**): for each beat each pharmacy edits its seconds on screen (1–60), the **Main
 line** and, where the design has one, the small label line. Set the campaign's playback duration to the one the
-editor shows beside Copy experience URL (**13 seconds** at the default timings). Every season keeps its own copy and dates, so
+editor shows beside Copy experience URL (**8 seconds** with the installed timings). Every season keeps its own copy and dates, so
 switching back and forth loses nothing. Use `${Suburb}` in any line, and `${StoreName}` in Christmas and New
 Year's. A line that is too long is made smaller to fit. Anzac Day is commemorative: fades only.
 
@@ -177,7 +190,8 @@ Deleting a custom template moves the promotions that used it back to the built-i
 ## Pharmacy view
 
 Add a store code to the editor's link to open it for **one pharmacy only**:
-`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in the page is titled
+`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). Retail Admin's **Display Promotions**
+page opens this view for you, for your own store. The page is titled
 **Display Promotions** and shows only that pharmacy's promotions and the live preview: there is no Promo preview
 drop-down and no Settings. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
 "Pharmacy not found"; the link without a store code opens the full editor as before.
@@ -193,22 +207,23 @@ In the pharmacy view:
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
-- **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
-  there; each line shows the season's start and end dates after its name, as in the full editor
-  ("Christmas (15 Dec – 27 Dec)"). There is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
-  end dates, read-only, as **Every year: <start> to <end>** (an administrator sets the dates in the full editor).
-  The season is the Seasonal promotion's, so the change reaches every pharmacy's
-  screens, as it does in the full editor.
+- **Seasonal is the pharmacy's own.** The Season drop-down picks the season this pharmacy's screens play outside
+  every season's dates, and the Dates card sets when each season plays by itself every year. Both, and the
+  season's copy, belong to this pharmacy: changing them changes only its screens, and nothing an administrator
+  does to the master template changes them. **Copy from master** (click twice) replaces the copy and dates of
+  the season on screen with the master's as they are now.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, the season date pickers (the dates themselves show, read-only), Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the
   pharmacy's details, tokens and branding, and sets up the campaign, in the full editor.
 
-Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
+The link narrows what the editor shows; it does not give anyone access. An administrator can open the pharmacy
+view for any pharmacy. A Retail Admin user opens it for their own store without the admin role, and a store code
+in the link that is not their store shows "Access denied" ([PH-EMBED.md](PH-EMBED.md)).
 
 ## Settings
 

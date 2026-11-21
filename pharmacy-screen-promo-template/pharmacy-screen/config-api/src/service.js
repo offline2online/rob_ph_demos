@@ -26,6 +26,7 @@ const {
   ORIENTATIONS,
 } = require("./validate");
 const { BUILTIN_TEMPLATES, BUILTIN_BY_ID, OCCASION_KIND, builtInFor, isBuiltInId, builtInView } = require("./builtins");
+const { ownSeasonal } = require("./seasonal");
 const { buildScreenConfig } = require("./publish");
 const { MEDIA_PREFIX } = require("./adapters/blobs");
 
@@ -124,6 +125,18 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
         services: new Map(serviceRows.map((r) => [r.id, r])),
         at,
       };
+      // Seasonal content is each pharmacy's own (src/seasonal.js): before the
+      // write is applied every pharmacy takes what it plays now, so a change to
+      // a Seasonal promotion's master or season below reaches no store.
+      const seasonal = new Set();
+      for (const [id, ph] of cfg.pharmacies) {
+        const own = ownSeasonal(ph, promotions);
+        if (own) {
+          cfg.pharmacies.set(id, own);
+          seasonal.add(id);
+        }
+      }
+
       const out = mutate(cfg);
       const sets = out.set || [];
       const dels = out.del || [];
@@ -137,10 +150,28 @@ function createConfigService({ store, blobs, now = () => new Date().toISOString(
       for (const [c, id, rec] of sets) if (next[c]) next[c].set(id, { ...rec, id });
       for (const [c, id] of dels) if (next[c]) next[c].delete(id);
 
+      // And after it: a new pharmacy, a new Seasonal promotion, or a pharmacy
+      // whose seasonal content was cleared (Restore to default) starts from the
+      // master as it is now.
+      const started = [];
+      for (const [id, ph] of next.pharmacies) {
+        const own = ownSeasonal(ph, [...next.promotions.values()]);
+        if (own) {
+          next.pharmacies.set(id, own);
+          seasonal.add(id);
+          started.push(id);
+        }
+      }
+
       for (const [c, id, rec] of sets) tx.set(c, id, stripId(rec));
       for (const [c, id] of dels) tx.delete(c, id);
+      for (const id of seasonal) if (next.pharmacies.has(id)) tx.set("pharmacies", id, stripId(next.pharmacies.get(id)));
+      // The caller gets the record as it was stored.
+      if (out.result && out.result.id && seasonal.has(out.result.id) && sets.some(([c, id]) => c === "pharmacies" && id === out.result.id)) {
+        out.result = { ...next.pharmacies.get(out.result.id) };
+      }
 
-      const toPublish = out.republish === "all" ? [...next.pharmacies.keys()] : out.republish || [];
+      const toPublish = out.republish === "all" ? [...next.pharmacies.keys()] : [...(out.republish || []), ...started];
       const promos = [...next.promotions.values()];
       const customs = [...next.templates.values()];
       for (const pid of new Set(toPublish)) {

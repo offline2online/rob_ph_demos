@@ -60,6 +60,9 @@ const promo = (id = S.dpTab) => S.promotions.find((p) => p.id === id) || S.promo
 const baseOf = (id = S.dpTab) => (promo(id) ? M.baseOfTemplate(S.templates, promo(id).templateId) : 'scenes');
 const isHours = (id = S.dpTab) => baseOf(id) === 'hours';
 const isOcc = (id = S.dpTab) => baseOf(id) === 'occasion';
+// The season on screen for a Seasonal promotion: the pharmacy's own (M.seasonOf); in the master template view, the
+// promotion's (where a new pharmacy starts).
+const seasonOf = (p = promo()) => M.seasonOf(p, S.cur && !S.cur.isMaster && S.cur.content ? S.cur.content[p.id] : null);
 const tmpl = (id) => M.findTemplate(S.templates, id);
 const curT = () => tmpl(promo().templateId);
 /** Templates are shared by every pharmacy: read-only for built-ins, and for everything in the pharmacy view. */
@@ -436,6 +439,19 @@ function decorateSections(B) {
   for (const sec of M.sectionsForBase(baseOf())) {
     const el = els[sec];
     if (!el) continue;
+    if (sec === 'occasions') {
+      // Seasonal content is always the pharmacy's own; the master only reaches it when the pharmacy copies it.
+      const wrap = document.createElement('div');
+      wrap.className = 'inh own';
+      wrap.dataset.sec = sec;
+      wrap.innerHTML = `<div class="inh-bar"><span class="pill inh-pill"><span class="ms">storefront</span>This pharmacy's own</span>
+        <span class="ms help" tabindex="0" role="img" aria-label="About seasonal content" title="The season, its copy and its dates are this pharmacy's own. Changes to the master template never reach its screens. Copy from master replaces this season's copy and dates with the master's as they are now.">info</span>
+        <button type="button" class="text" id="occCopyMaster" style="margin-left:auto;min-height:28px;padding:0 6px;white-space:nowrap" ${canEdit && p.master.occasions ? '' : 'disabled'}><span class="ms">content_copy</span>${cmArm ? 'Click again to copy' : 'Copy from master'}</button></div>`;
+      el.replaceWith(wrap);
+      wrap.append(el);
+      wrap.querySelector('#occCopyMaster').onclick = copySeasonFromMaster;
+      continue;
+    }
     const own = det.has(sec), name = M.SECTION_NAMES[sec];
     const wrap = document.createElement('div');
     wrap.className = 'inh' + (own ? ' own' : '');
@@ -492,7 +508,10 @@ async function setSection(sec, on) {
  *  every section of every promotion back to the master template; available while any section is managed
  *  separately, and asks for a second click before it discards this pharmacy's own changes. */
 let rsArm = false;
-const ownSections = (ph) => Object.values((ph && ph.detached) || {}).some((l) => Array.isArray(l) && l.length);
+// Seasonal content is always the pharmacy's own and is not part of Restore to default: its own "Copy from master"
+// brings one season back, when the pharmacy asks.
+const ownSections = (ph) => Object.values((ph && ph.detached) || {}).some((l) => Array.isArray(l) && l.some((s) => s !== 'occasions'));
+const seasonalOnly = (detached) => Object.fromEntries(Object.entries(detached || {}).filter(([, l]) => Array.isArray(l) && l.includes('occasions')).map(([id]) => [id, ['occasions']]));
 function renderRestore() {
   $('restoreWrap').hidden = !S.lock; $('promoShared').hidden = !!S.lock;
   if (!S.lock || !S.cur) return;
@@ -508,17 +527,31 @@ async function restoreDefaults() {
   if (!rsArm) { rsArm = true; renderRestore(); setTimeout(() => { rsArm = false; renderRestore(); }, 4000); return; }
   rsArm = false;
   await Save.flush();
-  ph.detached = {};
+  ph.detached = seasonalOnly(ph.detached);
   S.note = null;
-  const ids = S.promotions.filter((p) => p.master).map((p) => p.id);
+  const ids = S.promotions.filter((p) => p.master && !isOcc(p.id)).map((p) => p.id);
   for (const id of ids) content(id); // each inherited section takes the master's copy again
   ver++; lastKey = ''; scene = 0; elapsed = 0; renderDp(); renderJson(); renderRestore();
   const id = ph.id;
   await Save.queue(`ph:${id}`, async () => {
     for (const pid of ids) { const a = await api.setContent(id, pid, ph.content[pid], ph.version); ph.version = a.version; }
-    const b = await api.updatePharmacy(id, { detached: {} }, ph.version); ph.version = b.version;
+    const b = await api.updatePharmacy(id, { detached: ph.detached }, ph.version); ph.version = b.version;
     if (S.cur === ph) syncListRow();
   });
+}
+
+/** Seasonal: put the master's copy, dates and timings of the season on screen into this pharmacy's own, as they are
+ *  now. The pharmacy's act, asked for twice; nothing else ever brings a master change to it. */
+let cmArm = false;
+function copySeasonFromMaster() {
+  const ph = S.cur, p = promo();
+  if (!ph || ph.isMaster || !ph.id || !isOcc() || !p.master || !p.master.occasions) return;
+  if (!cmArm) { cmArm = true; renderDp(); setTimeout(() => { if (cmArm) { cmArm = false; renderDp(); } }, 4000); return; }
+  cmArm = false;
+  const id = seasonOf(p), from = p.master.occasions[id];
+  if (from) { content().occasions[id] = M.clone(from); delete ph._syn; content(); }
+  changed();
+  scene = 0; elapsed = 0; lastKey = ''; renderDp(); renderJson();
 }
 $('restoreBtn').onclick = () => restoreDefaults().catch(Save.fail);
 
@@ -597,10 +630,10 @@ function drawSchedule(prefix, s, onChange) {
  * moves each year, so its dates are worked out: Good Friday to Easter Monday). Then one card per beat of the design (a
  * main line, and a small label line where the design has one), each with its own seconds on screen (the loop is their
  * sum; at the defaults, an equal share of the design's 12 s). The season itself is picked in the Season drop-down
- * above (shared by every pharmacy; what plays outside every season's dates); each season keeps its own copy and dates.
+ * above (the pharmacy's own; what plays outside every season's dates); each season keeps its own copy and dates.
  */
 function renderOccasion(B, d) {
-  const occ = occasionOf(M.occasionOfTemplate(promo().templateId));
+  const occ = occasionOf(seasonOf());
   const o = d.occasions[occ.id];
   const f = (id, lab, val) => `<label class="f"><span>${lab}</span><input id="${id}" value="${esc(val)}"></label>`;
   const field = (layout, x, i, key) => (key === 'label' ? f(`o${i}label`, occasionFieldName(layout, 'label'), x.label) : rt(`o${i}text`, occasionFieldName(layout, 'text'), x.text));
@@ -608,11 +641,9 @@ function renderOccasion(B, d) {
   const span = (from, to) => fmtMonthDay(from) + (to !== from ? ' to ' + fmtMonthDay(to) : '');
   // Both views show the start and end dates as a yearly schedule ("Every year: 15 Dec to 27 Dec"). The admin view can
   // change them; the pharmacy view shows them read-only (an administrator sets them, like the seconds on screen).
-  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.${S.lock ? ' Your administrator sets these dates.' : ''}`;
-  const roDate = (id, label, md) => `<label class="f"><span>${label}</span><input id="${id}" value="${esc(fmtMonthDay(md))}" readonly></label>`;
+  const datesHelp = `The screen plays ${occ.name} by itself from the start date to the end date every year, in the store's time zone. Outside every season's dates it plays the season picked above.`;
   const pickers = movable ? `<span class="hint" id="occEaster">Good Friday to Easter Monday, worked out each year</span>`
-    : S.lock ? `<div class="grid2">${roDate('occFromRo', 'Starts', r.from)}${roDate('occToRo', 'Ends', r.to)}</div>`
-      : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`;
+    : `<div class="grid2">${monthDayPick('occFrom', 'Starts', r.from)}${monthDayPick('occTo', 'Ends', r.to)}</div>`;
   const dates = `<div class="slot" id="occDates"><div class="slot-h">Dates<span class="ms help" title="${esc(datesHelp)}">info</span><span class="pill" id="occYearly" style="margin-left:auto;font-weight:400"><span class="ms" style="font-size:14px" aria-hidden="true">event_repeat</span><span>Every year:</span><span id="occWhen">${esc(span(r.from, r.to))}${movable ? ' this year' : ''}</span></span></div>
     ${pickers}</div>`;
   B.innerHTML = `<span class="pill" id="loopLen" style="justify-self:start">${loopText(M.loopSeconds(o))}</span>
@@ -621,7 +652,7 @@ function renderOccasion(B, d) {
     return `<div class="slot" data-o="${i}"><div class="slot-h">Beat ${i + 1}${durInput(`o${i}dur`, beatSeconds(x, occ.beats.length))}</div>
      <div class="stack">${keys.map((k) => field(layout, x, i, k)).join('')}</div></div>`;
   }).join('')}</div>`;
-  if (!movable && !S.lock) {
+  if (!movable) {
     const setDates = () => {
       o.from = readMonthDay('occFrom'); o.to = readMonthDay('occTo');
       $('occWhen').textContent = span(o.from, o.to);
@@ -705,7 +736,7 @@ function renderPromoMeta() {
   // Afternoon, Closed or any other non-seasonal promotion; Seasonal keeps only its Season drop-down.
   $('promoMeta').hidden = !x || (!!S.lock && !occ);
   if (!x) return;
-  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(x.templateId) : tplOptions(x.templateId);
+  $('pmName').value = x.name; $('pmToken').value = x.promoId; $('pmTpl').innerHTML = occ ? occasionOptions(M.occasionTemplateId(seasonOf(x))) : tplOptions(x.templateId);
   // Pharmacy view: the promotion's name, promo ID and template are shared by every pharmacy, so read-only (and the
   // section hidden, above). On the Seasonal promotion it shows only the Season drop-down, which can be changed.
   const occOnly = !!S.lock && occ;
@@ -748,7 +779,15 @@ function savePromotion(p) {
 $('pmHtml').onclick = () => openHtml();
 $('pmTpl').onchange = (e) => {
   if (S.lock && !isOcc()) return; // the pharmacy view changes only the Seasonal promotion's season
-  const p = promo(); p.templateId = e.target.value;
+  const p = promo();
+  if (isOcc() && !S.cur.isMaster) {
+    // A pharmacy's season is its own: saved with its content, and only its screens follow.
+    content().season = M.occasionOfTemplate(e.target.value) || seasonOf(p);
+    changed();
+    scene = 0; elapsed = 0; renderDp(); renderJson();
+    return;
+  }
+  p.templateId = e.target.value;
   savePromotion(p);
   scene = 0; elapsed = 0; ver++; renderDp(); renderJson();
 };
@@ -1086,14 +1125,14 @@ $('logoIn').onchange = async (e) => {
 async function selectPharmacy(id) {
   await Save.flush();
   const rec = await api.getPharmacy(id);
-  S.cur = { ...rec, content: rec.content || {} };
+  S.cur = M.ownSeasonal({ ...rec, content: rec.content || {} }, S.promotions);
   S.note = null;
   if (!S.lock) pref.set('pharmacy', id); // the pharmacy view never changes the admin view's remembered pharmacy
   renderStoreSel(); loadStore();
 }
 function newDraft() {
   // A new pharmacy starts with each promotion's master template and inherits every section of it.
-  return { id: null, storeCode: '', name: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: M.newPharmacyContent(S.promotions, S.templates) };
+  return M.ownSeasonal({ id: null, storeCode: '', name: '', colours: { primary: '#0f1050', accent: '#5ee6b0' }, logo: null, content: M.newPharmacyContent(S.promotions, S.templates) }, S.promotions);
 }
 let delArm = false;
 $('storeSel').onchange = $('pvSel').onchange = (e) => { if (S.lock) return; if (e.target.value === MASTER_ID) selectMaster().catch(Save.fail); else if (e.target.value) selectPharmacy(e.target.value).catch(Save.fail); };

@@ -14,7 +14,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, ids } = require("../seed");
+const { seedConfig, loadFixtures, campaignDataFor, summarise, parseArgs, upgradeTimings, ids } = require("../seed");
 const { createMemoryStore } = require("../../config-api/src/adapters/memory-store");
 const { createMemoryBlobs } = require("../../config-api/src/adapters/blobs");
 const { createConfigService } = require("../../config-api/src/service");
@@ -70,7 +70,7 @@ test("step 1: an empty store gets 5 pharmacies, 4 promotions, 8 templates, 28 se
     assert.equal(screen.logo, p.logo.url);
     assert.deepEqual(Object.keys(screen.promotions), ["afternoon", "closed", "morning", "occasions"]);
     assert.deepEqual([screen.promotions.occasions.template.kind, screen.promotions.occasions.template.occasion], ["occasion", "christmas"]);
-    assert.deepEqual(screen.promotions.occasions.content.occasions.christmas.beats[1], { label: "With warm wishes", text: "from the whole ${StoreName} team" });
+    assert.deepEqual(screen.promotions.occasions.content.occasions.christmas.beats[1], { label: "With warm wishes", text: "from the whole ${StoreName} team", dur: 4 });
     assert.ok(!/StoreName/.test(JSON.stringify(screen.promotions.occasions.content.occasions.easter)), "Easter signs off with the suburb only");
     assert.equal(screen.promotions.closed.template.kind, "opening-hours");
     assert.ok(screen.promotions.morning.content.greeting.startsWith("Good morning"));
@@ -201,7 +201,9 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
 
   const report = await seed();
   assert.deepEqual(report.promotions.created, ["occasions"]);
-  assert.deepEqual(report.pharmacies.updated.sort(), CODES);
+  // Every pharmacy takes the new promotion's seasonal content as its own when the promotion is created
+  // (config-api/src/seasonal.js), so there is nothing left for the seed to add to them.
+  assert.deepEqual(report.pharmacies.updated, []);
   const occ = (await svc.listPromotions()).find((p) => p.promoId === "occasions");
   assert.equal(occ.templateId, "builtin-occasion-christmas");
   for (const p of await svc.listPharmacies()) {
@@ -273,6 +275,103 @@ test("an environment seeded with the old occasion copy: seed-made records get th
   const again = await seed();
   assert.equal(again.pharmacies.updated.length + again.promotions.updated.length, 0);
   assert.deepEqual(store.dump(), before, "re-running is a no-op");
+});
+
+// The seconds on screen the owner set on the live master (read from the published config on 21 Nov 2026).
+const SEASON_SECONDS = {
+  christmas: [3, 4],
+  "new-year": [2, 2, 3],
+  "australia-day": [2, 2, 3],
+  "valentines-day": [3, 2, 2],
+  easter: [2, 3, 2],
+  "anzac-day": [3, 2, 2],
+};
+const withoutSeconds = (occasions) => Object.fromEntries(Object.entries(occasions).map(([id, o]) => [id, { ...o, beats: o.beats.map(({ dur: _d, ...b }) => b) }]));
+
+test("fixtures: every season's beats carry their seconds on screen and total exactly 7", async () => {
+  const f = loadFixtures();
+  assert.deepEqual(f.pharmacies.map((p) => p.storeCode).sort(), CODES);
+  for (const p of f.pharmacies) {
+    const occ = p.content.occasions.occasions;
+    assert.deepEqual(Object.keys(occ), Object.keys(SEASON_SECONDS), `${p.storeCode} has the six seasons`);
+    for (const [id, o] of Object.entries(occ)) {
+      for (const [i, b] of o.beats.entries()) assert.ok(Number.isFinite(b.dur) && b.dur >= 1 && b.dur <= 60, `${p.storeCode} ${id} beat ${i + 1} has its seconds`);
+      assert.deepEqual(o.beats.map((b) => b.dur), SEASON_SECONDS[id], `${p.storeCode} ${id} seconds per beat`);
+      assert.equal(o.beats.reduce((a, b) => a + b.dur, 0), 7, `${p.storeCode} ${id} totals 7 s`);
+    }
+  }
+  // A fresh environment: the master (Beaumaris's content) and every store's screen play each season on a 7 s loop.
+  const { svc, seed } = setup();
+  await seed();
+  const master = (await svc.listPromotions()).find((p) => p.promoId === "occasions").master.occasions;
+  for (const [id, secs] of Object.entries(SEASON_SECONDS)) assert.deepEqual(master[id].beats.map((b) => b.dur), secs, `master ${id}`);
+  for (const code of CODES) {
+    const occ = (await svc.getScreenConfig(code)).promotions.occasions.content.occasions;
+    for (const [id, secs] of Object.entries(SEASON_SECONDS)) assert.deepEqual(occ[id].beats.map((b) => b.dur), secs, `${code} ${id}`);
+  }
+});
+
+test("an environment seeded before the season timings: seasons with no seconds get them, timings and copy someone edited are kept", async () => {
+  const { store, svc, seed } = setup();
+  const f = loadFixtures();
+  // What the seed wrote before 21 Nov 2026: the same copy with no seconds on any beat.
+  const old = { ...f, pharmacies: f.pharmacies.map((p) => ({ ...p, content: { ...p.content, occasions: { occasions: withoutSeconds(p.content.occasions.occasions) } } })) };
+  await seed({ fixtures: old });
+  const actor = { uid: "u-admin", email: null, admin: true };
+  const occId = (await svc.listPromotions()).find((p) => p.promoId === "occasions").id;
+  // On the master someone set Christmas's first beat to 8 s (one beat only), and moved Easter's dates.
+  const master = JSON.parse(JSON.stringify((await svc.getPromotion(occId)).master));
+  master.occasions.christmas.beats[0].dur = 8;
+  Object.assign(master.occasions.easter, { from: "04-01", to: "04-08" });
+  await svc.updatePromotion(actor, occId, { master });
+  // On Beaumaris someone set every New Year's beat, and reworded an Anzac Day line without touching its seconds.
+  const ph = await svc.getPharmacy(ids.pharmacy("vic-mp-001"));
+  ph.content[occId].occasions["new-year"].beats.forEach((b) => { b.dur = 5; });
+  ph.content[occId].occasions["anzac-day"].beats[1].text = "We will remember them";
+  await svc.updatePharmacy(actor, ph.id, { content: ph.content });
+
+  const report = await seed();
+  assert.deepEqual(report.pharmacies.updated.sort(), CODES);
+  assert.deepEqual(report.promotions.updated, ["occasions"]);
+  assert.equal(report.pharmacies.created.length + report.promotions.created.length, 0);
+  const fresh = f.pharmacies[0].content.occasions.occasions;
+  const m = (await svc.getPromotion(occId)).master.occasions;
+  assert.deepEqual(m.christmas.beats.map((b) => b.dur), [8, undefined], "a season with seconds set on any beat is left as it is");
+  assert.deepEqual(m.easter, { ...fresh.easter, from: "04-01", to: "04-08" }, "edited dates are kept, the seconds are added");
+  for (const id of ["new-year", "australia-day", "valentines-day", "anzac-day"]) assert.deepEqual(m[id], fresh[id], `master ${id} gets the new timings`);
+  for (const p of await svc.listPharmacies()) {
+    const occ = (await svc.getPharmacy(p.id)).content[occId].occasions;
+    for (const [id, secs] of Object.entries(SEASON_SECONDS)) {
+      if (p.storeCode === "VIC-MP-001" && id === "new-year") assert.deepEqual(occ[id].beats.map((b) => b.dur), [5, 5, 5], "edited timings are kept");
+      else assert.deepEqual(occ[id].beats.map((b) => b.dur), secs, `${p.storeCode} ${id}`);
+    }
+    if (p.storeCode === "VIC-MP-001") assert.equal(occ["anzac-day"].beats[1].text, "We will remember them", "reworded copy is kept");
+    else assert.deepEqual(occ, fresh, `${p.storeCode} equals the fixtures`);
+  }
+
+  const before = store.dump();
+  const again = await seed();
+  assert.equal(again.pharmacies.updated.length + again.promotions.updated.length, 0);
+  assert.deepEqual(store.dump(), before, "re-running is a no-op");
+  // A promotion and a pharmacy made by hand (not the seed's ids) are never given timings.
+  const hand = setup();
+  await hand.svc.createPromotion(actor, { name: "Seasonal", promoId: "occasions", templateId: "builtin-occasion-christmas", master: old.pharmacies[0].content.occasions });
+  await hand.seed();
+  const handMaster = (await hand.svc.listPromotions()).find((p) => p.promoId === "occasions").master.occasions;
+  assert.ok(Object.values(handMaster).every((o) => o.beats.every((b) => b.dur === undefined)), "a hand-made promotion's master is left as it is");
+});
+
+test("season timings are only added where every beat can take one", () => {
+  const fresh = { occasions: { christmas: { beats: [{ text: "A", dur: 3 }, { text: "B", dur: 4 }] } } };
+  const up = (christmas) => upgradeTimings({ occasions: { christmas } }, fresh);
+  assert.deepEqual(up({ from: "12-01", to: "12-26", beats: [{ text: "X" }, { label: "L", text: "Y" }] }), { occasions: { christmas: { from: "12-01", to: "12-26", beats: [{ text: "X", dur: 3 }, { label: "L", text: "Y", dur: 4 }] } } });
+  assert.equal(up({ beats: [{ text: "X", dur: 6 }, { text: "Y" }] }), null, "seconds set on one beat");
+  assert.equal(up({ beats: [{ text: "X" }] }), null, "a different number of beats");
+  assert.equal(up({ scenes: [{ title: "X" }] }), null, "the old scenes shape");
+  assert.equal(up({ beats: [{ text: "X", dur: 3 }, { text: "Y", dur: 4 }] }), null, "already timed");
+  assert.equal(upgradeTimings({ occasions: { easter: { beats: [{ text: "X" }] } } }, fresh), null, "a season the fixtures have no timings for");
+  assert.equal(upgradeTimings({ greeting: "Hi" }, fresh), null, "content with no seasons");
+  assert.equal(upgradeTimings(null, fresh), null);
 });
 
 test("the legacy occasion copy the seed upgrades is the copy the screen treats as unedited", async () => {

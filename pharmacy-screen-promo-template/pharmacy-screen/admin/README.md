@@ -18,7 +18,7 @@ Spec: the project's requirements 7, 9-19 and 25 (the pharmacy view).
 | Template | Drop-down and the Edit HTML modal: built-ins read-only, Clone template, rename, delete (its promotions fall back to the built-in), portrait/landscape backgrounds, HTML with `${…}` token chips, scoped CSS, Reset to default | `/api/admin/templates` |
 | Scenes (scenes templates) | Top: Greeting, one scene per service (rich-text headline, accent line, chip label, searchable Material Symbols icon, line 1, line 2), per-scene duration, drag-and-drop and up/down reorder, delete, Add promotion from the whole service library (searchable, grouped; Close adds nothing) or blank, a just-added promotion deleted with one click, Tail: Walk-in close, Footer: Open today bar (show toggle and four messages with `${CloseTime}` / `${OpenTime}`; "Open today bar in the preview" tabs show each message in the preview, preview only) | `PUT /api/admin/pharmacies/{id}/content/{promotionId}` |
 | Opening hours (hours templates) | Three rich-text headlines, each with its seconds on screen (1–60; default 2.7, 2.7, 2.6), show address toggle | the same |
-| Seasonal (occasion templates) | **Season** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template and what plays outside every season's dates), then that season's **Dates** card (**Starts** / **Ends**, day and month, saved as `from` / `to`; its header reads **Every year: <start> to <end>**; Easter shows its worked-out Good Friday to Easter Monday instead; read-only in the pharmacy view: the same header, **Starts** / **Ends** as read-only fields, no pickers) and its beats (Christmas 2, the others 3; by default sharing a 12 s loop): each with its seconds on screen (1–60), a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
+| Seasonal (occasion templates) | **Season** drop-down in place of Template (Christmas, New Year's, Australia Day, Valentine's Day, Easter, Anzac Day; shared by all pharmacies, it is the promotion's template and what plays outside every season's dates), then that season's **Dates** card (**Starts** / **Ends**, day and month, saved as `from` / `to`; its header reads **Every year: <start> to <end>**; Easter shows its worked-out Good Friday to Easter Monday instead; read-only in the pharmacy view: the same header, **Starts** / **Ends** as read-only fields, no pickers) and its beats (Christmas 2, the others 3; seeded with seconds that total a 7 s loop, and sharing a 12 s loop when none are set): each with its seconds on screen (1–60), a rich-text **Main line** and, where the design has one, a plain **Small line above** (Australia Day's last beat: **Line below**). The preview draws the standalone design; paused, it holds the selected beat. Each occasion keeps its own copy. Occasion templates have no Edit HTML (read-only, not cloneable) | `PATCH /api/admin/promotions/{id}` (occasion), `PUT …/content/{promotionId}` (copy) |
 | + Add token | On the label row of every rich-text field (each headline, the hours headlines, the seasonal Main lines, the Open today bar messages; `rich-text.js`): a menu of Store name, Suburb, Brand name, Store code, State, Phone number, Website, Languages spoken by store staff and Localised copy (`ADD_TOKENS` in `js/tokens.js`) that inserts `${Token}` at the caret (else at the end). Escape or a click elsewhere closes it | the field's own save |
 | Settings → Tokens | Every `${…}` token the pharmacy's promotions use (its own copy, the master template's sections it inherits, the Open today bar, template HTML; layout slots and the live `${StoreName}` / `${CloseTime}` / `${OpenTime}` excluded; `${StoreName}` is shown beside the Pharmacy name label in Pharmacy details), with the promotions using each and an input to set its value by hand (blank = the store's data, shown as the placeholder). Data tokens first, then the others by name; a value no promotion uses any more is still listed so it can be cleared (`model.js` `usedTokens`) | `PATCH /api/admin/pharmacies/{id}` (`tokens`) |
 | Settings → Pharmacies | Pharmacy picker, Add pharmacy, Reset (launch pharmacies: back to the seed content), Delete (click twice) | `/api/admin/pharmacies` |
@@ -42,7 +42,12 @@ under the preview (`#cpRow`, with its tooltip) are hidden; and "Restore to defau
 replaces the "shared by all pharmacies" tag (`renderRestore` / `restoreDefaults`: two clicks, then the pharmacy's
 content takes each master's copy and `detached` is cleared, so every section inherits again). An unknown store code shows "Pharmacy not found". It never writes the
 remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).
-The API is unchanged: it still requires the admin role for every call.
+The link grants nothing: the server decides by the session. An administrator can open the pharmacy view for
+any pharmacy. A Retail Admin session from Personalisation Hub is a store user: it always opens this view, for its
+own store, without the admin role, and a store code in the URL that is not its own shows "Access denied". The
+API holds a store user to the routes marked `store` in `../config-api/src/api.js` and to its own pharmacies
+(`../config-api/src/service.js`); every other call still requires the admin role
+([docs/PH-EMBED.md](../../docs/PH-EMBED.md)).
 
 Edits save as you type (debounced, about half a second), with "Saving… / All changes saved" beside the title.
 Every write carries the record's version (`If-Match`), so an edit made on top of another admin's newer save
@@ -108,7 +113,7 @@ edge and never wider than it, so it is not clipped in a narrow preview column or
 | File | What it does |
 |---|---|
 | `index.html` | The page: sign-in gate, editor, Settings, Edit HTML dialog, preview. |
-| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (Firebase web config, or OIDC endpoints on AWS). Non-secret. |
+| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (`mode: 'ph'` with Personalisation Hub's origins in `auth.ph.parentOrigins` on our Firebase environment, the Firebase web config, or OIDC endpoints on AWS). Non-secret. |
 | `css/admin.css` | The prototype's editor styles plus the sign-in gate and save status, laid out with container queries (see Layout above). The screen itself uses `../css/screen.css`. |
 | `js/editor.js` | The editor: state, rendering, what each save sends, preview loop. |
 | `js/save-queue.js` | The write queue: one chain of writes per record, debounced edits, the save-status pill's state, and `flush()` (waits for every write, including follow-ups, before the editor switches or deletes a pharmacy). |
@@ -116,7 +121,7 @@ edge and never wider than it, so it is not clipped in a narrow preview column or
 | `js/icon-picker.js` | The searchable Material Symbols picker for a service chip. |
 | `js/model.js` | No DOM: admin records → render config, content defaults, validation, service filter, experience URL, playback duration, `editsSince()` (what changed while a create was in flight). Unit-tested in `../test/admin-model.test.mjs`. |
 | `js/api.js` | API client for the config API and the PH API proxy. |
-| `js/auth.js` | Sign-in: Firebase Auth (Google or email and password); OpenID Connect with PKCE on AWS (Cognito or the retailer's identity provider, one Sign in button, tokens in this tab's session storage, silent refresh); or a pasted token for local development. |
+| `js/auth.js` | Sign-in. `auth.mode: 'ph'` (our Firebase environment): no sign-in of its own; the Personalisation Hub page that embeds the editor (HQ Admin or Retail Admin) hands over its session by `postMessage`, the server swaps it for a short editor session carrying the role (administrator, or store user for one store) and its stores, and anything else shows "Access denied" ([docs/PH-EMBED.md](../../docs/PH-EMBED.md)). The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase` (`auth.ph.fallback: 'firebase'`). `auth.mode: 'firebase'`: Firebase Auth (Google or email and password); OpenID Connect with PKCE on AWS (Cognito or the retailer's identity provider, one Sign in button, tokens in this tab's session storage, silent refresh); or a pasted token for local development. |
 | `js/icons.js` | The Material Symbols names for the icon picker. |
 | `tools/dev-server.mjs` | Everything on one local origin, in memory, loaded with the seed (below). For tests it also returns `downHosts` (add a PH base URL's host and the mock Location API refuses it: failover) and `logLines` (every line the config API and the proxy logged). Used by `test/editor.e2e.mjs` and `../test/e2e/full-stack.test.mjs`. |
 | `test/editor.e2e.mjs` | End-to-end tests in Chromium against the dev server. |
@@ -131,8 +136,9 @@ npm test          # end-to-end tests (Playwright + Chromium, ~1 minute)
 
 The dev server runs the config API and the PH API proxy in memory with the seed data, a local key standing in
 for KMS, and a mock Location API answering from `../fixtures/campaign-data.json` for any saved token (devices
-`DEVICE-VIC-MP-001` … `005`, `TEST`). It serves its own `config.js` in token mode; the deployed one uses
-Firebase Auth.
+`DEVICE-VIC-MP-001` … `005`, `TEST`). It serves its own `config.js` in token mode; the deployed one uses the
+Personalisation Hub session (`auth.mode: 'ph'`; `npm run dev:ph` runs that mode locally, with `/__ph-host.html`
+playing the PH page, and `npm run test:ph` tests it).
 
 ## Deploying
 
@@ -140,7 +146,10 @@ Firebase Auth.
 environment (Firebase project `rob-ph-demos`; URLs in that folder's README). It stages `admin/` without its
 `test/`, `tools/`, package files and README, publishes `seed/fixtures/` beside it (so Reset works), rewrites
 `/api/**` to the two functions, and writes the published `config.js` with the project's Firebase web app
-config (`auth.mode: 'firebase'`). The committed `config.js` keeps `firebase: null`. Grant admins the `admin`
+config and the sign-in `PS_ADMIN_AUTH` names: `ph` (`auth.mode: 'ph'`, sign-in from Personalisation Hub only),
+`ph+firebase` (the default: the same, with `auth.ph.fallback: 'firebase'`) or `firebase` (`auth.mode: 'firebase'`);
+see [docs/PH-EMBED.md](../../docs/PH-EMBED.md) and `docs/CONFIGURATION.md` → `PS_ADMIN_AUTH`. The committed
+`config.js` keeps `firebase: null`. The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`: grant its admins the `admin`
 claim (`config-api/scripts/set-admin-claim.js`). To serve it anywhere else, serve `pharmacy-screen/`
 statically the same way, set `auth.firebase` in `config.js`, and add the editor's origin to
 `PS_ALLOWED_ORIGINS` / `PH_ALLOWED_ORIGINS` if it is served from a different origin than the API.
