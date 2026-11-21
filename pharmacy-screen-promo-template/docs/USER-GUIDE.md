@@ -1,8 +1,20 @@
 # Admin user guide
 
-For the people who set up pharmacies and their screen content. The editor is at `https://<site>/admin/`
-(it can also be shown inside Personalisation Hub's HQ Admin). Sign in with your work account; you need the
-admin role, or you see "Admin role required".
+For the people who set up pharmacies and their screen content. The editor opens inside Personalisation Hub:
+**Pharmacy Promos** in HQ Admin and **Display Promotions** in Retail Admin. There is no separate sign-in: it
+uses your Personalisation Hub sign-in, and signing out of Personalisation Hub closes it.
+
+- **HQ Admin users with the `ADMIN` role are administrators**: the full editor, everything in this guide.
+- **Retail Admin users are store users** for their own store: the [pharmacy view](#pharmacy-view) of that one
+  pharmacy. They edit its copy of each promotion, choose which sections it manages itself and can **Restore to
+  default**. They cannot see another pharmacy, the master template or Settings.
+- Anyone else, or the editor's address (`https://<site>/admin/`) opened outside Personalisation Hub, sees
+  "Access denied".
+
+The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`: where the Personalisation Hub page hands no session over, the editor at `https://<site>/admin/` asks you to sign in with your work account, and you need the admin role or you see "Admin role required".
+
+On an AWS installation you sign in at `https://<site>/admin/` with your work account (admin role). How sign-in
+from Personalisation Hub works is in [PH-EMBED.md](PH-EMBED.md).
 
 Edits **save as you type**: "Saving…" then "All changes saved" beside the title. If someone else saved the same
 record after you opened it, the editor asks you to reload instead of overwriting their change. Every save is
@@ -182,7 +194,8 @@ Deleting a custom template moves the promotions that used it back to the built-i
 ## Pharmacy view
 
 Add a store code to the editor's link to open it for **one pharmacy only**:
-`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). After sign-in the page is titled
+`https://<site>/admin/?store=VIC-MP-002` (or `?storeCode=VIC-MP-002`). Retail Admin's **Display Promotions**
+page opens this view for you, for your own store. The page is titled
 **Display Promotions** and shows only that pharmacy's promotions and the live preview: there is no Promo preview
 drop-down and no Settings. The link keeps working after a reload and after signing in again. A store code no pharmacy has shows
 "Pharmacy not found"; the link without a store code opens the full editor as before.
@@ -213,7 +226,9 @@ In the pharmacy view:
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the
   pharmacy's details, tokens and branding, and sets up the campaign, in the full editor.
 
-Signing in still needs the admin role: the link narrows what the editor shows, it does not give anyone access.
+The link narrows what the editor shows; it does not give anyone access. An administrator can open the pharmacy
+view for any pharmacy. A Retail Admin user opens it for their own store without the admin role, and a store code
+in the link that is not their store shows "Access denied" ([PH-EMBED.md](PH-EMBED.md)).
 
 ## Settings
 

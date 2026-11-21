@@ -35,7 +35,7 @@ npm run deploy:aws -- --region ap-southeast-2 --admin-email <your sign-in addres
 | Folder | What it is |
 |---|---|
 | `pharmacy-screen/` | The screen page and its render modules ([README](pharmacy-screen/README.md)) |
-| `pharmacy-screen/admin/` | The admin editor: pharmacies, promotions, templates and PH API Settings; Firebase sign-in, admin role required ([README](pharmacy-screen/admin/README.md)) |
+| `pharmacy-screen/admin/` | The admin editor: pharmacies, promotions, templates and PH API Settings; sign-in from Personalisation Hub, as an administrator or as a store user for one's own pharmacy ([docs/PH-EMBED.md](docs/PH-EMBED.md), [README](pharmacy-screen/admin/README.md)) |
 | `pharmacy-screen/config-api/` | Config API and store, Cloud Function `pharmacyScreenConfigApi` ([README](pharmacy-screen/config-api/README.md)) |
 | `pharmacy-screen/ph-proxy/` | PH API token settings and Location API proxy, Cloud Function `pharmacyScreenPhApi` ([README](pharmacy-screen/ph-proxy/README.md)) |
 | `pharmacy-screen/seed/` | Launch data and the script that loads it ([README](pharmacy-screen/seed/README.md)); not published |
@@ -73,7 +73,7 @@ What runs where:
 | Config store | Firestore `pharmacyScreen/` | Rules (repo-root `firestore.rules`): no client writes anywhere; public reads only of `pharmacyScreen/published/screens/*`; settings and token documents (`pharmacyScreen/private/**`) unreadable |
 | Logos and backgrounds | Bucket `rob-ph-demos-pharmacy-screen-media` | Its own bucket, so its rules (`config-api/rules/storage.rules`) never replace the default bucket's (the menu-board demo's) |
 | PH API token | Firestore `pharmacyScreen/private/settings/phApi`, envelope-encrypted | Data key wrapped by Cloud KMS `projects/rob-ph-demos/locations/global/keyRings/pharmacy-screen/cryptoKeys/ph-api-token` (90-day rotation); decrypted only inside `pharmacyScreenPhApi` |
-| Admin sign-in | Firebase Auth (Google, or email and password), custom claim `admin` | Both APIs refuse a signed-in account without the claim (403). The editor fails closed: it shows only after `/api/admin/me` returns 200; a sign-in that can't load, a non-admin or a server error shows a blocked message instead. The deploy writes the Firebase web app config (web app "Pharmacy Screen admin", created on the first deploy) into the published `admin/config.js`; the committed one has none, so an unstaged copy refuses to sign in |
+| Admin sign-in | From Personalisation Hub ([docs/PH-EMBED.md](docs/PH-EMBED.md)): the HQ Admin or Retail Admin page that embeds the editor hands over its session, and the server checks it with PH (`POST /api/auth/ph-session`) | No sign-in of its own. An HQ Admin session with role `ADMIN` is an administrator (everything); a Retail Admin session is a store user for its own store (the pharmacy view only, held to that store on the server); anything else, or the editor opened outside PH, shows "Access denied". The editor can be framed only by PH. `PS_ADMIN_AUTH` at deploy time chooses `ph`, `ph+firebase` (the changeover default) or `firebase` ([docs/CONFIGURATION.md](docs/CONFIGURATION.md) → `PS_ADMIN_AUTH`, `PS_REQUIRE_PH_SESSION`). The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`: Firebase Auth (Google, or email and password), custom claim `admin`; both APIs refuse a signed-in account without the claim (403). The editor fails closed: it shows only after `/api/admin/me` returns 200; a sign-in that can't load, an account with no role or a server error shows a blocked message instead. The deploy writes the Firebase web app config (web app "Pharmacy Screen admin", created on the first deploy) into the published `admin/config.js`; the committed one has none, so an unstaged copy refuses to sign in |
 | PH API base URL | `https://ph.mipharmacy.net` (default, non-secret) | Changed in Admin → Settings |
 
 Function settings are non-secret and live beside each function in `.env.rob-ph-demos` (the Firebase CLI loads
@@ -93,7 +93,7 @@ The same code runs in both environments; only the adapters behind it differ.
 |---|---|---|
 | PH API token at rest | Envelope-encrypted (AES-256-GCM data key) in Firestore `pharmacyScreen/private/settings/phApi`, the data key wrapped by Cloud KMS key `ph-api-token` | The same envelope (AES-256-GCM data key) in DynamoDB item `pharmacyScreen#private`, the data key wrapped by a customer-managed AWS KMS key (90-day rotation, encryption context = the envelope's AAD), in the retailer's AWS account; the Lambdas can run inside their VPC (`aws/README.md`). AWS Secrets Manager holds only CloudFront's origin header, not the token |
 | Who can decrypt | Only `pharmacyScreenPhApi`; the key can be used only by the functions' service account | Only the proxy, by its IAM role |
-| Admin sign-in | Firebase Auth, custom claim `admin` | Cognito or miPharmacy's identity provider (OIDC), same admin role check |
+| Admin sign-in | The Personalisation Hub session of the person looking at the editor, checked by the server with PH: administrator or store user ([docs/PH-EMBED.md](docs/PH-EMBED.md)) | Cognito or miPharmacy's identity provider (OIDC), same admin role check; sign-in from Personalisation Hub is not wired there yet |
 
 In both, the token is write-only in Admin → Settings (only its last 4 characters are shown), never in plain text,
 browser storage or page source, and never sent to a screen: the proxy adds `x-api-key` to Location API calls
@@ -124,11 +124,12 @@ run; this step runs with `--skip-setup` too), then deploys Hosting, both functio
 
 After the first deploy:
 
-1. Turn on Google sign-in once if it is off: Firebase console → Authentication → Sign-in method → Google
-   (the deploy warns when it is).
-2. Sign in at the admin URL once (it shows "Admin role required"), then grant yourself the admin role:
-   `cd pharmacy-screen/config-api && npm install && node scripts/set-admin-claim.js --project rob-ph-demos --email <your sign-in address>`.
-   Sign out and in again to pick it up.
+1. Sign-in is from Personalisation Hub ([docs/PH-EMBED.md](docs/PH-EMBED.md)): give the functions' service
+   account `roles/iam.serviceAccountTokenCreator` on itself once, and have the HQ Admin (Pharmacy Promos) and
+   Retail Admin (Display Promotions) pages hand their session to the editor ("What PH's iframe pages must do").
+   An HQ Admin user with role `ADMIN` is then an administrator, and a Retail Admin user is a store user for
+   their own store; there is no role to grant by hand.
+2. The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`, for opening the editor where the PH page hands no session over: turn on Google sign-in once if it is off (Firebase console → Authentication → Sign-in method → Google; the deploy warns when it is), sign in at the admin URL once (it shows "Admin role required"), grant yourself the admin role with `cd pharmacy-screen/config-api && npm install && node scripts/set-admin-claim.js --project rob-ph-demos --email <your sign-in address>`, then sign out and in again to pick it up.
 3. Admin → Settings: enter the PH API token. It is write-only; only its last 4 characters are shown.
 4. Load the launch data (five pharmacies, default promotions, service library) once:
    `node pharmacy-screen/seed/seed.js --project rob-ph-demos` (see `pharmacy-screen/seed/README.md`).

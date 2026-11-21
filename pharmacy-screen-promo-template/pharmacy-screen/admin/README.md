@@ -42,7 +42,12 @@ under the preview (`#cpRow`, with its tooltip) are hidden; and "Restore to defau
 replaces the "shared by all pharmacies" tag (`renderRestore` / `restoreDefaults`: two clicks, then the pharmacy's
 content takes each master's copy and `detached` is cleared, so every section inherits again). An unknown store code shows "Pharmacy not found". It never writes the
 remembered pharmacy. The OIDC sign-in keeps the page's query across the round trip (`auth.js`, `pending.back`).
-The API is unchanged: it still requires the admin role for every call.
+The link grants nothing: the server decides by the session. An administrator can open the pharmacy view for
+any pharmacy. A Retail Admin session from Personalisation Hub is a store user: it always opens this view, for its
+own store, without the admin role, and a store code in the URL that is not its own shows "Access denied". The
+API holds a store user to the routes marked `store` in `../config-api/src/api.js` and to its own pharmacies
+(`../config-api/src/service.js`); every other call still requires the admin role
+([docs/PH-EMBED.md](../../docs/PH-EMBED.md)).
 
 Edits save as you type (debounced, about half a second), with "Saving… / All changes saved" beside the title.
 Every write carries the record's version (`If-Match`), so an edit made on top of another admin's newer save
@@ -108,7 +113,7 @@ edge and never wider than it, so it is not clipped in a narrow preview column or
 | File | What it does |
 |---|---|
 | `index.html` | The page: sign-in gate, editor, Settings, Edit HTML dialog, preview. |
-| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (Firebase web config, or OIDC endpoints on AWS). Non-secret. |
+| `config.js` | Deployment settings: `apiBase`, `screenPage`, `auth` (`mode: 'ph'` with Personalisation Hub's origins in `auth.ph.parentOrigins` on our Firebase environment, the Firebase web config, or OIDC endpoints on AWS). Non-secret. |
 | `css/admin.css` | The prototype's editor styles plus the sign-in gate and save status, laid out with container queries (see Layout above). The screen itself uses `../css/screen.css`. |
 | `js/editor.js` | The editor: state, rendering, what each save sends, preview loop. |
 | `js/save-queue.js` | The write queue: one chain of writes per record, debounced edits, the save-status pill's state, and `flush()` (waits for every write, including follow-ups, before the editor switches or deletes a pharmacy). |
@@ -116,7 +121,7 @@ edge and never wider than it, so it is not clipped in a narrow preview column or
 | `js/icon-picker.js` | The searchable Material Symbols picker for a service chip. |
 | `js/model.js` | No DOM: admin records → render config, content defaults, validation, service filter, experience URL, playback duration, `editsSince()` (what changed while a create was in flight). Unit-tested in `../test/admin-model.test.mjs`. |
 | `js/api.js` | API client for the config API and the PH API proxy. |
-| `js/auth.js` | Sign-in: Firebase Auth (Google or email and password); OpenID Connect with PKCE on AWS (Cognito or the retailer's identity provider, one Sign in button, tokens in this tab's session storage, silent refresh); or a pasted token for local development. |
+| `js/auth.js` | Sign-in. `auth.mode: 'ph'` (our Firebase environment): no sign-in of its own; the Personalisation Hub page that embeds the editor (HQ Admin or Retail Admin) hands over its session by `postMessage`, the server swaps it for a short editor session carrying the role (administrator, or store user for one store) and its stores, and anything else shows "Access denied" ([docs/PH-EMBED.md](../../docs/PH-EMBED.md)). The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase` (`auth.ph.fallback: 'firebase'`). `auth.mode: 'firebase'`: Firebase Auth (Google or email and password); OpenID Connect with PKCE on AWS (Cognito or the retailer's identity provider, one Sign in button, tokens in this tab's session storage, silent refresh); or a pasted token for local development. |
 | `js/icons.js` | The Material Symbols names for the icon picker. |
 | `tools/dev-server.mjs` | Everything on one local origin, in memory, loaded with the seed (below). For tests it also returns `downHosts` (add a PH base URL's host and the mock Location API refuses it: failover) and `logLines` (every line the config API and the proxy logged). Used by `test/editor.e2e.mjs` and `../test/e2e/full-stack.test.mjs`. |
 | `test/editor.e2e.mjs` | End-to-end tests in Chromium against the dev server. |
@@ -131,8 +136,9 @@ npm test          # end-to-end tests (Playwright + Chromium, ~1 minute)
 
 The dev server runs the config API and the PH API proxy in memory with the seed data, a local key standing in
 for KMS, and a mock Location API answering from `../fixtures/campaign-data.json` for any saved token (devices
-`DEVICE-VIC-MP-001` … `005`, `TEST`). It serves its own `config.js` in token mode; the deployed one uses
-Firebase Auth.
+`DEVICE-VIC-MP-001` … `005`, `TEST`). It serves its own `config.js` in token mode; the deployed one uses the
+Personalisation Hub session (`auth.mode: 'ph'`; `npm run dev:ph` runs that mode locally, with `/__ph-host.html`
+playing the PH page, and `npm run test:ph` tests it).
 
 ## Deploying
 
@@ -140,7 +146,10 @@ Firebase Auth.
 environment (Firebase project `rob-ph-demos`; URLs in that folder's README). It stages `admin/` without its
 `test/`, `tools/`, package files and README, publishes `seed/fixtures/` beside it (so Reset works), rewrites
 `/api/**` to the two functions, and writes the published `config.js` with the project's Firebase web app
-config (`auth.mode: 'firebase'`). The committed `config.js` keeps `firebase: null`. Grant admins the `admin`
+config and the sign-in `PS_ADMIN_AUTH` names: `ph` (`auth.mode: 'ph'`, sign-in from Personalisation Hub only),
+`ph+firebase` (the default: the same, with `auth.ph.fallback: 'firebase'`) or `firebase` (`auth.mode: 'firebase'`);
+see [docs/PH-EMBED.md](../../docs/PH-EMBED.md) and `docs/CONFIGURATION.md` → `PS_ADMIN_AUTH`. The committed
+`config.js` keeps `firebase: null`. The Firebase sign-in is the fallback while `PS_ADMIN_AUTH=ph+firebase`: grant its admins the `admin`
 claim (`config-api/scripts/set-admin-claim.js`). To serve it anywhere else, serve `pharmacy-screen/`
 statically the same way, set `auth.firebase` in `config.js`, and add the editor's origin to
 `PS_ALLOWED_ORIGINS` / `PH_ALLOWED_ORIGINS` if it is served from a different origin than the API.
