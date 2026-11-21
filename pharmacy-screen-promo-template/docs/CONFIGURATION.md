@@ -43,6 +43,7 @@ Saving, replacing and removing the token need the admin role and are audit-logge
 | Request timeout per server (screen) | 8 s | `live-data.js` |
 | "Last 30 minutes" bar state | 30 minutes before close | `pharmacy-screen/js/hours.js` `LAST_MINUTES` |
 | Screen update check (service worker) | Every 30 minutes, and on every page load | `pharmacy-screen/js/player.js` |
+| Playback (screen) | Once through, then the last scene stays (still following the store's clock and new data) until the next campaign loads; from the first scene again when the page is loaded or shown again, or a season changes at midnight; `loop=1` loops forever. The editor's preview always loops | `pharmacy-screen/js/player.js` |
 | Public config cache | 5 s (`Cache-Control: public, max-age=5`, with an `ETag`) | `config-api/src/api.js` |
 | Upload limits | Logos PNG/WebP ≤ 2 MB; backgrounds PNG/JPEG/WebP ≤ 5 MB (≤ 4 MB on AWS) | `config-api/src/service.js` |
 
@@ -175,6 +176,7 @@ https://<site>/pharmacy-screen.html?device=${UniqueDeviceID}&promo=<promo id>&or
 | `device` | Device ID, `[A-Za-z0-9._:-]`, 1–128 characters | None: "Invalid screen URL" | `${UniqueDeviceID}` (PH swaps in the screen's ID) | **Yes** |
 | `promo` | A promo ID (see [DATA-CONTRACT.md](DATA-CONTRACT.md) → "Promo IDs") | The first promotion | `morning` | **Yes** |
 | `orientation` | `portrait` (1080x1920) or `landscape` (1920x1080) | `portrait` | `landscape` | **Yes** |
+| `loop` | Flag: loop the promotion forever, for a screen that shows this one campaign only. Without it the promotion plays once through and stays on its last scene (a Seasonal promotion: its last beat) until the player loads the next campaign; it plays from the start again when the page is loaded or shown again, or a season changes at midnight | Off: plays once, then holds its last scene | `loop=1` | Optional: only on a screen with no rotation |
 | `mockapi` | Flag: read the fixtures (`pharmacy-screen/fixtures/`) instead of the API | Off | `mockapi=1` | No, testing only |
 | `debug` | Flag: show the debug panel (device, store code, last fetches, server used, store time, bar state) with a test time override | Off | `debug=1` | No, testing only |
 | `scene` | Hold on scene *n* (0-based) instead of playing the loop | Plays the loop | `scene=2` | No, testing only |

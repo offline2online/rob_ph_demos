@@ -74,7 +74,8 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 
 | # | Do | Expect | Ours | miPharmacy |
 |---|---|---|---|---|
-| F1 | Play every promo ID (`morning`, `afternoon`, `closed`, `occasions` and any you added) in `orientation=portrait` | Each plays its scenes in order and loops | ☐ | ☐ |
+| F1 | Play every promo ID (`morning`, `afternoon`, `closed`, `occasions` and any you added) in `orientation=portrait` | Each plays its scenes in order once, then stays on its last scene (Seasonal: its last beat), fully drawn, with no fade out; 30 s later it is still there. Seasonal's decorations keep moving | ☐ | ☐ |
+| F1a | Switch to another tab and back (or reload) while a promotion holds its last scene; then add `&loop=1` to the URL | Shown again or reloaded, it plays from the first scene; with `loop=1` it goes back to the first scene after the last and loops, as before | ☐ | ☐ |
 | F2 | The same in `orientation=landscape` | Each plays, with the brand arrow instead of the triangle; on Morning, Afternoon and Closed the arrow is narrow (under a third of the screen), the headline wraps inside it and the tiles or opening hours fill the rest | ☐ | ☐ |
 | F2a | Play `promo=closed` in `orientation=landscape` and stand back from the screen | The opening hours card fills most of the screen right of the brand arrow (about half the screen's width, four fifths of its height), each day and its times in large type that reads from a distance, with the public holiday note and phone number under it; nothing touches the arrow or leaves the screen | ☐ | ☐ |
 | F2b | In `orientation=landscape`, watch the left-hand brand panel on `morning`, `afternoon` and `closed` | The logo and the headline (with its accent line) are centred in the coloured panel, left to right and level with the arrow's point; the headline is large (about 96px on a 1080p screen, slightly smaller for a long word such as "Vaccinations") and no line leaves the panel | ☐ | ☐ |

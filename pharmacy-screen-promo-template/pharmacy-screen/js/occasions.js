@@ -12,7 +12,8 @@
 // screen; the layout switches by a container query on .occ, so no orientation class is needed. Beats play in turn on
 // a 12 s CSS loop (Christmas: 2 beats). OCCASION_CSS adds to the design:
 //   - font sizes scaled by --k (set per beat by js/render.js fitOccasion() when a line is too long for the text box);
-//   - .hold: one beat (.on) shown still, for a held scene, the editor's paused preview and the copy-fit audit.
+//   - .hold: one beat (.on) shown still, for a held scene, the editor's paused preview and the copy-fit audit;
+//   - .once: the beats play once and the last one stays (the player); without it they loop (the editor, loop=1).
 // Reduced motion: the decorations stand still, the beats still change (COMMON's media query).
 
 /* deterministic scatter so the exported HTML is stable */
@@ -210,8 +211,16 @@ const scaleFonts = (css) => css.replace(/(font(?:-size)?:[^;}]*)/g, (decl) => de
 const HOLD = `
 .occ.hold .b{animation:none;opacity:0;transform:none}
 .occ.hold .b.on{opacity:1}
+.occ.once .b{animation-iteration-count:1}
+.occ.once .b3{animation-name:occB3Once}
+.occ-christmas.once .b2{animation-name:xmasB2Once}
+@keyframes occB3Once{0%,66%{opacity:0;transform:var(--from,translateY(5cqmin))}71%,100%{opacity:1;transform:none}}
+@keyframes xmasB2Once{0%,50%{opacity:0;transform:var(--from)}56%,100%{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.occ .fx::before,.occ .fx::after,.occ .fx *::before,.occ .fx *::after,.occ .anim::before,.occ .anim::after{animation:none!important}}
 `;
+// .once: the beats play one time through and the last beat stays on screen, fully drawn (the player, unless loop=1):
+// each beat runs its keyframes once (fill-mode both keeps where it ends), and the last beat (.b3, Christmas .b2) runs
+// a copy of its design's keyframes that ends visible instead of fading out. The decorations (.fx) keep moving.
 // Reduced motion: COMMON stills .fx, .fx * and .anim but not their ::before/::after (New Year's flashes, Easter's egg
 // shadows), so the last rule above stills those too. The beats (.b) keep changing.
 /** All six templates' CSS: the shared base, each design, the held-beat and reduced-motion rules. Injected once per document. */
