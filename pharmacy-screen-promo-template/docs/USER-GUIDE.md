@@ -99,10 +99,6 @@ Closed (`closed`) and Seasonal (`occasions`). Each pharmacy fills in its own cop
 
 Which promotion plays when is set in Personalisation Hub's scheduling, not here.
 
-On a screen, a promotion plays once through and then stays on its last scene until the screen moves on to its
-next campaign; the next time it comes round, it plays from the start. A screen that shows only this one campaign
-can loop it instead: add `&loop=1` to the end of its campaign URL. The preview here always loops.
-
 ## Promotion scenes (Morning, Afternoon and similar)
 
 The scenes play in order:

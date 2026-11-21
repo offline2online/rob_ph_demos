@@ -122,11 +122,6 @@ Core, not here. A promotion can carry a **Schedule**: No schedule (the default, 
 and an end date (`"MM-DD"`, inclusive) that repeat every year. The dates are saved with the promotion and published
 in its screen config (`schedule`) for scheduling; the screen itself still plays whatever promotion `promo=` names.
 
-The screen plays the promotion once through and then holds its last scene (a Seasonal promotion: its last beat)
-until the player loads its next campaign, so the campaign's playback duration only needs to cover one play-through
-(the editor's Playback duration). It plays from the start again each time the page is loaded or shown again.
-`loop=1` on the URL loops it forever instead ([CONFIGURATION.md](CONFIGURATION.md) → "Query parameters").
-
 ## 3. Template tokens
 
 Copy and template HTML use Personalisation Hub's token format, `${TokenName}`.

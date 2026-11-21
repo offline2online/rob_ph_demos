@@ -10,13 +10,6 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
-- **A promotion plays once, then holds its last scene.** On a player a promotion plays inside a rotation of
-  campaigns: it now plays through once and stays on its last scene (Seasonal: its last beat), fully drawn, until
-  the next campaign loads, instead of starting again from the first scene. The held scene still follows the
-  store's clock and new data. It plays from the start again when the page is loaded or shown again, or a season
-  changes at midnight. `loop=1` on the screen URL keeps the old behaviour (loop forever) for a screen that shows one
-  campaign only ([docs/CONFIGURATION.md](docs/CONFIGURATION.md) → "Query parameters"). The editor's preview still
-  loops.
 - **Seeded seasons play on a 7-second loop.** The launch data now carries the seconds on screen set on the live
   master for every season's beats: Christmas 3 + 4, New Year's 2 + 2 + 3, Australia Day 2 + 2 + 3, Valentine's Day
   3 + 2 + 2, Easter 2 + 3 + 2, Anzac Day 3 + 2 + 2. A fresh install shows **Loop 7s** and a playback duration of
