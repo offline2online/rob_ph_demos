@@ -261,7 +261,7 @@ Promotion: `{ "name", "promoId", "templateId", "schedule"?, "master"? }`, where 
 
 ### Published screen config (what a screen reads)
 
-`GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 15 s. Rebuilt in the same transaction
+`GET /api/screens/{storeCode}`: public, no sign-in, no secrets, cached 5 s. Rebuilt in the same transaction
 as every write that affects it, copied field by field (`config-api/src/publish.js`):
 
 ```json

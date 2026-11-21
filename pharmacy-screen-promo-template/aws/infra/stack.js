@@ -143,7 +143,7 @@ class PharmacyScreenStack extends cdk.Stack {
       readTimeout: Duration.seconds(30),
       customHeaders: { "x-origin-verify": originVerify.secretValue.unsafeUnwrap() },
     });
-    // The public screen config: the API answers Cache-Control max-age=15, which
+    // The public screen config: the API answers Cache-Control max-age=5, which
     // this policy honours (up to 60 s), keyed by path and ?promo= only.
     const screensCache = new cloudfront.CachePolicy(this, "ScreensCache", {
       comment: `${p.stackName}: published screen config`,

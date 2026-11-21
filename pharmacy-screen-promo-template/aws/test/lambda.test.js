@@ -218,7 +218,7 @@ test("config API on Lambda: admin CRUD with an OIDC token, uploads to S3, public
     const cfg = JSON.parse(screen.body);
     assert.equal(cfg.logo, logo.url);
     assert.deepEqual(Object.keys(cfg.promotions), ["morning"]);
-    assert.match(screen.headers["Cache-Control"] || screen.headers["cache-control"], /max-age=15/);
+    assert.match(screen.headers["Cache-Control"] || screen.headers["cache-control"], /max-age=5\b/);
 
     const big = await configLambda.handler(event("PUT", `/api/admin/pharmacies/${id}/logo`, { headers: { ...admin, "content-type": "image/png" }, body: Buffer.alloc(configLambda.MAX_UPLOAD_BYTES + 1), base64: true }));
     assert.equal(big.statusCode, 413);

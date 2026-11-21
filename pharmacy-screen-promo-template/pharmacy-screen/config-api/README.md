@@ -170,7 +170,7 @@ same). JSON in and out; errors are `{"error": {"code", "message"}}` with
 `duplicate-promo-id` / `version-conflict`, 413 `too-large`, 415
 `unsupported-media-type`.
 
-### Public (no sign-in, CORS `*`, cached 15 s)
+### Public (no sign-in, CORS `*`, cached 5 s)
 
 | Method | Path | |
 | --- | --- | --- |
