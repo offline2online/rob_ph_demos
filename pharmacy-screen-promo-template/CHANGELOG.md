@@ -17,6 +17,17 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   seconds to a season the seed made that has none on any beat, and leaves a season whose seconds someone set in the
   editor as it is. A beat with no seconds still takes its share of the design's 12 s loop
   ([pharmacy-screen/seed/README.md](pharmacy-screen/seed/README.md)).
+- **Seasonal content is each pharmacy's own; the master never reaches a live store.** Before, the Season drop-down
+  was the promotion's template, shared by every pharmacy, and every pharmacy inherited the master's seasonal copy,
+  dates and timings live, so an edit to the master changed every screen at once. Now each pharmacy has its own
+  season (which one plays outside every season's dates), and its own copy, dates and timings for every season. The
+  Season drop-down and the Dates card save to the pharmacy on screen, in the admin view and the pharmacy view, and
+  only that pharmacy's screens follow. The master is where a new pharmacy starts, and what a pharmacy gets when it
+  chooses **Copy from master** for the season on screen; nothing else brings a master change to a store. Existing
+  pharmacies keep exactly what they played: the server gives each one its own copy before any change to the master
+  is applied (`config-api/src/seasonal.js`). Restore to default leaves seasonal content alone. Morning, Afternoon
+  and Closed inherit from the master as before ([docs/USER-GUIDE.md](docs/USER-GUIDE.md) → "Seasonal").
+
 - **Edits reach screens sooner, with less traffic.** A running screen now checks its published config every 15 s
   (was 60 s) and the config API answers `304` with no body while nothing changed (`ETag`); the CDN holds the config
   5 s (was 15 s). An edit in the editor is on screen within about 20 s (was up to 76 s). Store data from PH's

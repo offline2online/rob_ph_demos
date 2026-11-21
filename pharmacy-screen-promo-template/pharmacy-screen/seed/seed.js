@@ -285,6 +285,11 @@ async function seedConfig({ store, blobs, reset = false, fixtures = loadFixtures
     }
     // --reset: the fixture's fields and its content for the seeded
     // promotions; content for other promotions stays.
+    // A pharmacy's own season for the Seasonal promotion (config-api/src/seasonal.js) is not fixture data: kept.
+    for (const [id, value] of Object.entries(content)) {
+      const season = existing.content && existing.content[id] && existing.content[id].season;
+      if (season && value && value.season === undefined) content[id] = { ...value, season };
+    }
     const want = normalisePharmacy({ ...fields, content: { ...(existing.content || {}), ...content } });
     const have = normalisePharmacy({ storeCode: existing.storeCode, name: existing.name, colours: existing.colours, content: existing.content || {} });
     let changed = false;

@@ -201,7 +201,9 @@ test("a store seeded before Occasions existed gets the Occasions promotion and i
 
   const report = await seed();
   assert.deepEqual(report.promotions.created, ["occasions"]);
-  assert.deepEqual(report.pharmacies.updated.sort(), CODES);
+  // Every pharmacy takes the new promotion's seasonal content as its own when the promotion is created
+  // (config-api/src/seasonal.js), so there is nothing left for the seed to add to them.
+  assert.deepEqual(report.pharmacies.updated, []);
   const occ = (await svc.listPromotions()).find((p) => p.promoId === "occasions");
   assert.equal(occ.templateId, "builtin-occasion-christmas");
   for (const p of await svc.listPharmacies()) {

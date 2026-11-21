@@ -42,6 +42,9 @@ const api = async (method, path, { token = 'dev-admin', body } = {}) => {
   const r = await fetch(dev.base + path, { method, headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, body: await r.json().catch(() => null), text: '' };
 };
+// Seasonal content is always a pharmacy's own (config-api/src/seasonal.js), so its section is always detached:
+// what a test means by "inherits everything" is every other section.
+const detachedOf = (rec) => { const d = Object.fromEntries(Object.entries(rec.detached || {}).filter(([id]) => id !== 'seed-promotion-occasions')); return Object.keys(d).length ? d : undefined; };
 const headline = (page) => page.$eval('#screen .s-head h2', (e) => e.textContent);
 // The seeded promotions have a master template (Beaumaris's content), so a pharmacy inherits every section.
 // Tests that edit a pharmacy's own copy first set the selected promotion's sections to be managed separately.
@@ -414,7 +417,10 @@ test('seasonal: the Season drop-down picks what promo=occasions plays outside ev
   assert.match(await page.textContent('#occWhen'), / this year$/);
   await page.fill('#o1text', 'Have a safe long weekend, everyone');
   await settle(page);
-  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
+  // The season is this pharmacy's own: the promotion itself (where a new pharmacy starts) and every other store stay on Christmas.
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
+  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-001')).body.content['seed-promotion-occasions'].season, 'easter');
+  assert.equal((await api('GET', '/api/screens/VIC-MP-002', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
   const screen = (await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions;
   assert.deepEqual([screen.template.kind, screen.template.occasion], ['occasion', 'easter']);
   assert.equal(screen.content.occasions.easter.beats[1].text, 'Have a safe long weekend, everyone');
@@ -650,7 +656,7 @@ test('edits made while a new pharmacy is being created are saved too, and the pi
   const rec = (await api('GET', `/api/admin/pharmacies/${created.id}`)).body;
   assert.equal(rec.name, 'Hampton Street Pharmacy');
   assert.equal(rec.colours.accent, '#123456');
-  assert.equal(rec.detached, undefined, 'a new pharmacy inherits every section');
+  assert.equal(detachedOf(rec), undefined, 'a new pharmacy inherits every section');
   // another admin sees both after a reload
   const b = await open();
   await b.page.selectOption('#pvSel', created.id);
@@ -732,7 +738,7 @@ test('master template: every pharmacy inherits it section by section; a section 
   assert.match(await page.textContent('.inh[data-sec="greeting"] .inh-pill'), /Managed separately/);
   await page.fill('#dis', 'Ringwood only');
   await settle(page);
-  assert.deepEqual((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, { 'seed-promotion-morning': ['greeting'] });
+  assert.deepEqual(detachedOf((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body), { 'seed-promotion-morning': ['greeting'] });
   scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
   assert.equal(scr.promotions.morning.content.introSub, 'Ringwood only');
   // A later master change no longer reaches it, but still reaches the sections it inherits.
@@ -750,7 +756,7 @@ test('master template: every pharmacy inherits it section by section; a section 
   await page.click('.inh[data-sec="greeting"] .inh-act');
   await settle(page);
   assert.equal(await page.inputValue('#dis'), 'Master again');
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+  assert.equal(detachedOf((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body), undefined);
   scr = (await api('GET', '/api/screens/VIC-MP-002?promo=morning', { token: null })).body;
   assert.equal(scr.promotions.morning.content.introSub, 'Master again');
   // Settings works on pharmacies: opened from the master template it shows the first pharmacy.
@@ -1021,24 +1027,38 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal(await page.isDisabled('#pmTpl'), false);
   assert.equal(await page.isHidden('#o0dur'), true);
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
+  // The season picked here is this pharmacy's own: its screen plays it, the promotion and the other stores do not move.
   await page.selectOption('#pmTpl', 'builtin-occasion-easter');
   await settle(page);
-  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-easter');
+  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
   assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.template.occasion, 'easter');
+  assert.equal((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
   await page.selectOption('#pmTpl', 'builtin-occasion-christmas');
   await settle(page);
-  assert.equal((await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body.templateId, 'builtin-occasion-christmas');
-  // The season's start and end dates show here too, every year, read-only: an administrator sets them.
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.template.occasion, 'christmas');
+  // The season's start and end dates are the pharmacy's own too: changed here, only its screen follows them.
   assert.equal(await page.isVisible('#occDates'), true, 'the pharmacy view shows the season dates');
   assert.match(await page.textContent('#occYearly'), /Every year:\d{1,2} [A-Z][a-z]{2}( to \d{1,2} [A-Z][a-z]{2})?$/);
-  assert.equal(await page.$$eval('#occDates select', (e) => e.length), 0, 'no date pickers in the pharmacy view');
-  for (const id of ['#occFromRo', '#occToRo']) assert.equal(await page.$eval(id, (e) => e.readOnly), true, id);
-  assert.equal(await page.textContent('#occWhen'), `${await page.inputValue('#occFromRo')} to ${await page.inputValue('#occToRo')}`);
+  assert.equal(await page.$$eval('#occDates select', (e) => e.length), 4, 'date pickers in the pharmacy view');
+  await page.selectOption('#occTod', '24');
+  assert.equal(await page.textContent('#occWhen'), '15 Dec to 24 Dec');
+  await settle(page);
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.content.occasions.christmas.to, '12-24');
+  assert.notEqual((await api('GET', '/api/screens/VIC-MP-001', { token: null })).body.promotions.occasions.content.occasions.christmas.to, '12-24');
   // The Season drop-down shows each season's dates after its name here too; the selected season's match its Dates card.
   const lockOpts = await page.$$eval('#pmTpl option', (o) => o.map((x) => x.textContent));
   assert.equal(lockOpts.length, 6);
   for (const t of lockOpts) assert.match(t, /^.+ \(\d{1,2} [A-Z][a-z]{2}( – \d{1,2} [A-Z][a-z]{2})?\)$/, t);
-  assert.equal(lockOpts[0], `Christmas (${await page.inputValue('#occFromRo')} – ${await page.inputValue('#occToRo')})`);
+  assert.equal(lockOpts[0], 'Christmas (15 Dec – 24 Dec)');
+  // Seasonal content is the pharmacy's own: no "Inherited from master", and Copy from master (asked twice) takes the
+  // master's dates and copy for this season as they are now.
+  assert.match(await page.textContent('.inh[data-sec="occasions"] .inh-pill'), /This pharmacy's own/);
+  await page.click('#occCopyMaster');
+  assert.match(await page.textContent('#occCopyMaster'), /Click again to copy/);
+  await page.click('#occCopyMaster');
+  await settle(page);
+  assert.equal(await page.textContent('#occWhen'), '15 Dec to 27 Dec');
+  assert.equal((await api('GET', '/api/screens/VIC-MP-005', { token: null })).body.promotions.occasions.content.occasions.christmas.to, undefined);
   await page.click('#dpTabs button:has-text("Morning")');
   assert.equal(await page.isHidden('#promoMeta'), true);
   // Reload: the same pharmacy, still locked. The admin view's remembered pharmacy is untouched.
@@ -1054,7 +1074,7 @@ test('pharmacy view: admin/?store=<code> shows only that pharmacy\'s promotions,
   assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body.detached['seed-promotion-morning'].length, 2);
   await page.click('#restoreBtn');
   await settle(page);
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body.detached, undefined);
+  assert.equal(detachedOf((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-005')).body), undefined);
   scr = (await api('GET', '/api/screens/VIC-MP-005?promo=morning', { token: null })).body;
   assert.equal(scr.promotions.morning.content.introTitle, master.introTitle);
   assert.equal(scr.promotions.morning.content.slots.length, master.slots.length);
@@ -1099,7 +1119,7 @@ test('Edit for this pharmacy / Edit / Revert to master keep the page where it wa
         assert.equal(await page.evaluate((s) => document.activeElement === document.querySelector(`.inh[data-sec="${s}"] .inh-act`), sec), true);
       }
       // back to inheriting everything, for the other tests
-      assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+      assert.equal(detachedOf((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body), undefined);
       assert.deepEqual(errors, []);
       await ctx.close();
     }
@@ -1163,7 +1183,7 @@ test('Open today bar: each message can be shown in the preview, by tab or by cli
     await b.click();
     await settle(page);
   }
-  assert.equal((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body.detached, undefined);
+  assert.equal(detachedOf((await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-002')).body), undefined);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -1232,6 +1252,49 @@ test('+ Add token above every headline field lists the available tokens and inse
   await settle(page);
   const rec = await api('GET', '/api/admin/pharmacies/seed-pharmacy-vic-mp-004');
   assert.match(rec.body.content['seed-promotion-morning'].greeting, / at \$\{StoreCode\}$/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('seasonal master: editing its copy, dates, timings or season changes no store\'s screen; a store takes it only by Copy from master', async () => {
+  const { ctx, page, errors } = await open();
+  const CODES = ['VIC-MP-001', 'VIC-MP-002', 'VIC-MP-003', 'VIC-MP-004', 'VIC-MP-005'];
+  const seasonal = async (code) => { const p = (await api('GET', `/api/screens/${code}`, { token: null })).body.promotions.occasions; return { template: p.template, content: p.content }; };
+  const before = {};
+  for (const c of CODES) before[c] = await seasonal(c);
+
+  await page.selectOption('#pvSel', '__master');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur && window.pharmacyAdmin.state.cur.isMaster);
+  await page.click('#dpTabs button:has-text("Seasonal")');
+  await page.click('#playBtn'); // pause
+  const master = async () => (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
+  const season = (await master()).templateId.replace('builtin-occasion-', '');
+  // Copy, a beat's seconds, the dates, then the season itself.
+  await page.fill('#o0text', 'Master edit that no store asked for');
+  await page.fill('#o0dur', '9');
+  if (await page.$('#occTod')) await page.selectOption('#occTod', '20');
+  await settle(page);
+  const other = season === 'easter' ? 'builtin-occasion-anzac-day' : 'builtin-occasion-easter';
+  await page.selectOption('#pmTpl', other);
+  await settle(page);
+  const m = await master();
+  assert.equal(m.templateId, other, 'the master itself did change');
+  assert.equal(m.master.occasions[season].beats[0].text, 'Master edit that no store asked for');
+  assert.equal(m.master.occasions[season].beats[0].dur, 9);
+  for (const c of CODES) assert.deepEqual(await seasonal(c), before[c], `${c}: its screen plays exactly what it played`);
+
+  // One store copies that season from the master: it, and only it, now plays the master's copy.
+  await page.selectOption('#pvSel', 'seed-pharmacy-vic-mp-003');
+  await page.waitForFunction(() => window.pharmacyAdmin.state.cur && window.pharmacyAdmin.state.cur.storeCode === 'VIC-MP-003');
+  await page.click('#dpTabs button:has-text("Seasonal")');
+  assert.equal(await page.inputValue('#pmTpl'), `builtin-occasion-${season}`, 'the store still shows its own season');
+  await page.click('#occCopyMaster');
+  await page.click('#occCopyMaster');
+  await settle(page);
+  const copied = await seasonal('VIC-MP-003');
+  assert.equal(copied.content.occasions[season].beats[0].text, 'Master edit that no store asked for');
+  assert.equal(copied.template.occasion, season, 'copying a season does not change which season the store plays');
+  for (const c of CODES.filter((x) => x !== 'VIC-MP-003')) assert.deepEqual(await seasonal(c), before[c], c);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

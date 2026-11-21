@@ -207,16 +207,15 @@ In the pharmacy view:
 - **Timings are set by an administrator only.** No scene shows its seconds on screen (greeting, promotion slots,
   walk-in close, opening-hours headlines, season beats); the screens play the timings set in the full editor.
 - **At most 3 promotion slots.** Add promotion is hidden once a promotion has 3 slots; delete one to add another.
-- **Seasonal shows only the Season drop-down.** Pick the season the screens play outside every season's dates
-  there; each line shows the season's start and end dates after its name, as in the full editor
-  ("Christmas (15 Dec – 27 Dec)"). There is no promotion name, promo ID or `promo=` line. The season's **Dates** card shows its start and
-  end dates, read-only, as **Every year: <start> to <end>** (an administrator sets the dates in the full editor).
-  The season is the Seasonal promotion's, so the change reaches every pharmacy's
-  screens, as it does in the full editor.
+- **Seasonal is the pharmacy's own.** The Season drop-down picks the season this pharmacy's screens play outside
+  every season's dates, and the Dates card sets when each season plays by itself every year. Both, and the
+  season's copy, belong to this pharmacy: changing them changes only its screens, and nothing an administrator
+  does to the master template changes them. **Copy from master** (click twice) replaces the copy and dates of
+  the season on screen with the master's as they are now.
 - **No promotion settings on Morning, Afternoon or Closed.** The grey section with the promotion name, promo ID,
   template, **Edit HTML** and the `promo=` line is not shown on any promotion but Seasonal: they are shared by
   every pharmacy and only an administrator changes them, in the full editor.
-- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, the season date pickers (the dates themselves show, read-only), Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
+- **Not shown**: the promotion name, promo ID and template section (except the Season drop-down), scene timings, Promo preview, Settings (the pharmacy's details, tokens and branding, the other pharmacies and
   the Personalisation Hub API settings), the master template, New promotion and Delete promotion, the
   "Use ${Suburb} in any line…" hint and "Remote config for this pharmacy" under the promotions, and **Copy experience
   URL** with the **Playback duration** and its info tooltip under the preview. An administrator sets the

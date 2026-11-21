@@ -105,7 +105,13 @@ test('the screen on a mock device plays every promotion in both orientations, ea
   assert.ok(dev.upstreamCalls.length > 0 && dev.upstreamCalls.every((c) => c.key === TOKEN), 'the proxy adds the saved token upstream');
 });
 
-test('Seasonal: promo=occasions plays the standalone Christmas design, signing off with the store name; the admin picks Easter and the same URL plays Easter; in a season\'s dates the screen plays that season by itself', async () => {
+// The Season drop-down: a pharmacy's season is its own (config-api/src/seasonal.js), saved with its content.
+async function setSeason(season, pharmacyId = 'seed-pharmacy-vic-mp-001') {
+  const own = (await api('GET', `/api/admin/pharmacies/${pharmacyId}`)).body.content['seed-promotion-occasions'] || {};
+  return api('PUT', `/api/admin/pharmacies/${pharmacyId}/content/seed-promotion-occasions`, { body: { ...own, season } });
+}
+
+test('Seasonal: promo=occasions plays the standalone Christmas design, signing off with the store name; the pharmacy picks Easter and the same URL plays Easter; in a season\'s dates the screen plays that season by itself', async () => {
   // date=: a day outside every season's dates, so the season the promotion is set to plays (whatever today is).
   const url = 'device=DEVICE-VIC-MP-001&promo=occasions&orientation=portrait&scene=1&now=wed-12:00&date=2026-07-01';
   // Nothing at runtime leaves our own origin: fonts and the Christmas photo are self-hosted (no Google Fonts, no Unsplash).
@@ -145,13 +151,9 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
   await s.ctx.close();
 
   // Every design under reduced motion: no decoration (or its ::before/::after) animates, the beats still do.
-  const promo0 = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
-  let version = promo0.version;
   try {
     for (const id of ['christmas', 'new-year', 'australia-day', 'valentines-day', 'easter', 'anzac-day']) {
-      const r = await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: `builtin-occasion-${id}`, expectedVersion: version } });
-      assert.equal(r.status, 200, id);
-      version = r.body.version;
+      assert.equal((await setSeason(id)).status, 200, id);
       for (const orientation of ['portrait', 'landscape']) {
         const ctx = await browser.newContext({ viewport: orientation === 'portrait' ? { width: 540, height: 960 } : { width: 960, height: 540 }, reducedMotion: 'reduce' });
         s = await screen(`device=DEVICE-VIC-MP-001&promo=occasions&orientation=${orientation}&now=wed-12:00&date=2026-07-01`, { ctx });
@@ -174,12 +176,10 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
       }
     }
   } finally {
-    const now = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
-    await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-christmas', expectedVersion: now.version } });
+    await setSeason('christmas');
   }
 
-  const promo = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
-  assert.equal((await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-easter', expectedVersion: promo.version } })).status, 200);
+  assert.equal((await setSeason('easter')).status, 200);
   try {
     for (const orientation of ['portrait', 'landscape']) {
       s = await screen(url.replace('portrait', orientation).replace('scene=2', 'scene=0'), { landscape: orientation === 'landscape' });
@@ -215,8 +215,7 @@ test('Seasonal: promo=occasions plays the standalone Christmas design, signing o
     assert.deepEqual(await cpage.evaluate(() => [window.pharmacyScreen.info.occasion, window.pharmacyScreen.info.auto, window.__marker]), ['christmas', true, 1]);
     await cctx.close();
   } finally {
-    const now = (await api('GET', '/api/admin/promotions/seed-promotion-occasions')).body;
-    await api('PATCH', '/api/admin/promotions/seed-promotion-occasions', { body: { templateId: 'builtin-occasion-christmas', expectedVersion: now.version } });
+    await setSeason('christmas');
   }
 });
 

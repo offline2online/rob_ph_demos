@@ -494,12 +494,16 @@ test("an Occasions promotion: picking an occasion is its template, and the publi
   assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: copy })).status, 200);
   let cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
   assert.deepEqual([cfg.promotions.occasions.template.id, cfg.promotions.occasions.template.kind, cfg.promotions.occasions.template.occasion], ["builtin-occasion-christmas", "occasion", "christmas"]);
-  // The editor's Season drop-down: switch to Easter and save.
-  const upd = await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-easter" } });
-  assert.equal(upd.status, 200);
+  // The editor's Season drop-down saves the pharmacy's own season (src/seasonal.js; test/seasonal.test.js).
+  const mine = (await call("GET", `/api/admin/pharmacies/${ph.id}`)).body.content[occ.id];
+  assert.equal((await call("PUT", `/api/admin/pharmacies/${ph.id}/content/${occ.id}`, { body: { ...mine, season: "easter" } })).status, 200);
   cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
   assert.equal(cfg.promotions.occasions.template.occasion, "easter");
   assert.equal(cfg.promotions.occasions.content.occasions.easter.scenes[0].title, "Happy Easter,<br>${Suburb}");
+  // The promotion's own season is only where a new pharmacy starts: changing it moves no existing store.
+  assert.equal((await call("PATCH", `/api/admin/promotions/${occ.id}`, { body: { templateId: "builtin-occasion-anzac-day" } })).status, 200);
+  cfg = (await call("GET", "/api/screens/VIC-MP-001", { auth: null })).body;
+  assert.equal(cfg.promotions.occasions.template.occasion, "easter");
 });
 
 test("master template: a promotion's master is inherited section by section; detached sections are the pharmacy's own", async () => {

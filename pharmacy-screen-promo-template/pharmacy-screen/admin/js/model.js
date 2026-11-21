@@ -141,6 +141,33 @@ export function effectiveContent(master, own, detached) {
   return out;
 }
 
+/** The season a pharmacy plays for a Seasonal promotion: its own pick (content.season), else the promotion's. */
+export const seasonOf = (p, ownContent) => (ownContent && OCCASION_IDS.includes(ownContent.season) ? ownContent.season : occasionOfTemplate(p && p.templateId) || DEFAULT_OCCASION);
+
+/**
+ * Seasonal content is each pharmacy's own (config-api/src/seasonal.js, which this mirrors): its season, and every
+ * season's copy, dates and timings. A pharmacy that has not got its own yet takes what it plays now (the master's),
+ * in place, exactly as the server does on the next write. Returns `ph`.
+ */
+export function ownSeasonal(ph, promotions) {
+  if (!ph || ph.isMaster) return ph;
+  for (const p of promotions || []) {
+    const fallback = occasionOfTemplate(p.templateId);
+    if (!fallback) continue;
+    const all = ph.content || (ph.content = {});
+    const own = isObj(all[p.id]) ? all[p.id] : (all[p.id] = {});
+    const det = detachedOf(ph, p.id);
+    const hasCopy = isObj(own.occasions) && (OCCASION_IDS.includes(own.season) || det.includes('occasions'));
+    if (!hasCopy) {
+      const playing = effectiveContent(p.master, own, det.filter((s) => s !== 'occasions'));
+      if (isObj(playing.occasions)) own.occasions = playing.occasions;
+    }
+    if (!OCCASION_IDS.includes(own.season)) own.season = fallback;
+    if (!det.includes('occasions')) ph.detached = setDetached(ph, p.id, 'occasions', true);
+  }
+  return ph;
+}
+
 /** The sections pharmacy `ph` manages itself for promotion `promotionId`. */
 export const detachedOf = (ph, promotionId) => ((ph && ph.detached && ph.detached[promotionId]) || []).slice();
 
@@ -193,7 +220,12 @@ const mediaUrl = (m) => (m && typeof m.url === 'string' ? m.url : null);
 export function renderConfig({ pharmacies = [], promotions = [], templates = [] }) {
   const customs = templates.filter((t) => !t.builtIn && !RENDER_BUILTIN[t.id]);
   return {
-    promotions: promotions.map((p) => ({ id: p.promoId, promoId: p.promoId, name: p.name, template: RENDER_BUILTIN[p.templateId] || p.templateId })),
+    // A Seasonal promotion plays the pharmacy's own season (seasonOf), where the config is one pharmacy's.
+    promotions: promotions.map((p) => {
+      const one = pharmacies.length === 1 && occasionOfTemplate(p.templateId) ? pharmacies[0] : null;
+      const tid = one ? occasionTemplateId(seasonOf(p, one.content && (one.content[p.id] || one.content[p.promoId]))) : p.templateId;
+      return { id: p.promoId, promoId: p.promoId, name: p.name, template: RENDER_BUILTIN[tid] || tid };
+    }),
     templates: customs.map((t) => ({
       id: t.id, name: t.name, base: baseOfKind(t.kind), html: t.html || '', css: t.css || '',
       bgPortrait: mediaUrl(t.backgrounds && t.backgrounds.portrait), bgLandscape: mediaUrl(t.backgrounds && t.backgrounds.landscape),
@@ -385,7 +417,7 @@ export function usedTokens(ph, promotions, templates) {
     if (base === 'hours' ? !Array.isArray(c.headlines) : base === 'scenes' && !Array.isArray(c.slots)) c = defaultContent(base);
     let copy;
     if (base === 'occasion') {
-      const occ = occasionOfTemplate(p.templateId) || DEFAULT_OCCASION, o = c.occasions && c.occasions[occ];
+      const occ = seasonOf(p, ph && ph.content && ph.content[p.id]), o = c.occasions && c.occasions[occ];
       copy = [occasionCopy(occ, o)]; // an occasion has no Open today bar
     } else if (base === 'hours') copy = [c.headlines];
     else copy = [c.greeting, c.introTitle, c.introSub, c.slots, c.close, footerOf(c)];
