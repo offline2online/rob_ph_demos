@@ -66,6 +66,25 @@ let config = null, store = null, play = null, data = null, panel = null; // pane
 let scene = 0, playing = params.hold === null, timers = [], lastStateKey = '', last = null;
 let testTime = null, started = false, fontsWaited = false, shown = '';
 
+// The Seasonal templates' fonts and Christmas photo (css/occasion-fonts.css, css/occasion-media.css, most of the
+// screen's bytes) are loaded only when a Seasonal promotion plays, once; any other promotion never asks for them.
+// The deploy rewrites these paths to the fingerprinted copies (scripts/deploy.mjs buildShell), and the service worker
+// keeps them on the device with the rest of the screen, so a Seasonal promotion still plays offline.
+const OCCASION_STYLESHEETS = ['css/occasion-fonts.css', 'css/occasion-media.css'];
+let occasionCss = null, occasionCssIn = false;
+function loadOccasionCss() {
+  if (!occasionCss) {
+    occasionCss = Promise.all(OCCASION_STYLESHEETS.map((href) => new Promise((resolve) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.onload = link.onerror = () => resolve(); // failed: the copy still plays, in the fallback fonts
+      document.head.appendChild(link);
+    }))).then(() => { occasionCssIn = true; });
+  }
+  return occasionCss;
+}
+
 function fit() {
   const W = params.orientation === 'landscape' ? 1920 : 1080, H = params.orientation === 'landscape' ? 1080 : 1920;
   const k = Math.min(innerWidth / W, innerHeight / H);
@@ -93,6 +112,12 @@ function stateKey() {
 function clearTimers() { timers.forEach(clearTimeout); timers = []; }
 
 function show(i, enter) {
+  // A Seasonal promotion before its stylesheets are in (one the data switched to): drawn now, and again once they
+  // are, so its copy is fitted in its own fonts.
+  if (play.base === 'occasion' && !occasionCssIn) {
+    const p = play;
+    loadOccasionCss().then(() => { if (play === p) show(scene, false); });
+  }
   const seq = sequence(play);
   scene = ((i % seq.length) + seq.length) % seq.length;
   // An occasion is one continuous animation: while playing, its beats loop in CSS (12 s) with no timers or redraws.
@@ -158,6 +183,7 @@ async function apply(s) {
   config = s.config; store = nextStore; play = nextPlay;
   if (first) {
     started = true;
+    if (play.base === 'occasion') await loadOccasionCss();
     await fontsReady();
     if (!play) return; // replaced by a message while the fonts loaded
     show(params.hold === null ? 0 : params.hold, true);
@@ -247,7 +273,8 @@ function createDebugPanelLazy() {
 
 // Hook for the overflow audit, the screen tests and the admin editor's tests.
 window.pharmacyScreen = {
-  get ready() { return !!play || !!el.querySelector('.s-msg,.s-setup-body'); },
+  // A scene drawn (not only chosen: the first one waits for the fonts, and a Seasonal one for its stylesheets), or a message.
+  get ready() { return (!!play && shown === 'scene') || !!el.querySelector('.s-msg,.s-setup-body'); },
   get info() { return play ? { store: store.code, promo: play.promoId, base: play.base, occasion: play.occasion || null, auto: !!play.auto, scene, scenes: sequence(play).map((s, i) => sceneName(play, i)), fit: last && last.fit, state: last && last.state.state } : null; },
   get data() { return data ? JSON.parse(JSON.stringify({ storeCode: data.state.storeCode, deviceStatus: data.state.deviceStatus, configStatus: data.state.configStatus, fromCache: data.state.fromCache, lastStore: data.state.lastStore, lastConfig: data.state.lastConfig, view: screenView(data.state).kind })) : null; },
   promotions: () => (config ? config.promotions.map((p) => p.promoId || p.token || p.id) : []),
@@ -261,8 +288,8 @@ window.pharmacyScreen = {
     show(i, false);
     return this.info;
   },
-  /** Resolves once what is on screen is final (an occasion: its fonts are in and its copy refitted). */
-  settled() { return last && last.ready ? last.ready.then(() => true) : Promise.resolve(true); },
+  /** Resolves once what is on screen is final (an occasion: its stylesheets and fonts are in and its copy refitted). */
+  settled() { return Promise.resolve(occasionCss).then(() => (last && last.ready) || null).then(() => true); },
   audit() { return last ? auditScene(el, last.G) : ['nothing rendered']; },
 };
 

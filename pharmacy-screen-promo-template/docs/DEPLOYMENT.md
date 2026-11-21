@@ -14,7 +14,7 @@ this guide is about AWS. Every setting named here is in [CONFIGURATION.md](CONFI
                            │                                                                                │
  PH player (Android 12) ───┼─▶ CloudFront (HTTPS, your domain) ──┬─▶ S3 site bucket (private)              │
  Admin browser ────────────┤        │                            │     pharmacy-screen.html, js/, css/,    │
-                           │        │                            │     sw.js, admin/                       │
+                           │        │                            │     sw.js, assets/, admin/              │
                            │        │ /pharmacyScreen/media/*    └─▶ S3 media bucket (logos, backgrounds)  │
                            │        │ /api/*  (+ origin header)                                            │
                            │        ▼                                                                      │
@@ -157,7 +157,10 @@ The KMS key rotates itself every 90 days; nothing to do.
    `npm run deploy:aws -- --region <region> [the options you installed with]`. CloudFormation updates in place;
    data in DynamoDB and S3 is kept.
 3. Screens pick up the new screen page by themselves: each player checks for a new version on every load and
-   every 30 minutes, downloads it once and reloads onto it (`sw.js`).
+   every 30 minutes, downloads only the files that changed and reloads onto it (`sw.js`). The page and `sw.js` are
+   served `no-cache`; everything under `assets/` (fingerprinted scripts, stylesheets, fonts, the Christmas photo)
+   is uploaded first with `Cache-Control: immutable` and earlier builds' files are kept, so a player still on the
+   previous page can finish loading it.
 4. Run the smoke part of [TEST-CHECKLIST.md](TEST-CHECKLIST.md) (health, a screen in each orientation, Settings).
 
 ## Roll back

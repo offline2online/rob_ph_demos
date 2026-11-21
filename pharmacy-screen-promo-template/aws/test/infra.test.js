@@ -16,8 +16,9 @@ const { PharmacyScreenStack, PH_ROUTES, CONFIG_ROUTES } = require("../infra/stac
 const { normaliseParams } = require("../infra/params");
 
 const assets = fs.mkdtempSync(path.join(os.tmpdir(), "ps-aws-assets-"));
-for (const d of ["site/admin", "lambda"]) fs.mkdirSync(path.join(assets, d), { recursive: true });
+for (const d of ["site/admin", "site/assets/js", "lambda"]) fs.mkdirSync(path.join(assets, d), { recursive: true });
 fs.writeFileSync(path.join(assets, "site/admin/index.html"), "<!doctype html>");
+fs.writeFileSync(path.join(assets, "site/assets/js/player.0123456789.js"), "");
 fs.writeFileSync(path.join(assets, "lambda/index.js"), "");
 
 function synth(extra = {}) {
@@ -151,7 +152,7 @@ test("infra: the retailer's own OIDC provider instead of Cognito; custom domain 
 
 test("infra: the admin editor's config.js is written at deploy time with the sign-in endpoints", () => {
   const { json } = synth();
-  const [, dep] = ofType(json, "Custom::CDKBucketDeployment")[0];
+  const dep = ofType(json, "Custom::CDKBucketDeployment").map(([, r]) => r).find((r) => !r.Properties.DestinationBucketKeyPrefix);
   const markers = JSON.stringify(dep.Properties.SourceMarkers || []);
   assert.match(markers, /oauth2\/authorize/);
   assert.match(markers, /oauth2\/token/);
@@ -175,4 +176,24 @@ test("infra: parameters are checked before anything is deployed", () => {
   assert.match(errs({ cognitoDomainPrefix: "my-cognito-login" }), /cognitoDomainPrefix/);
   assert.match(errs({ region: "sydney" }), /region/);
   assert.equal(errs({ region: "ap-southeast-2" }), "");
+});
+
+test("infra: the screen's fingerprinted assets/ are uploaded first, kept a year and never pruned; the rest is no-cache", () => {
+  const { json } = synth();
+  const deps = ofType(json, "Custom::CDKBucketDeployment");
+  assert.equal(deps.length, 2);
+  const [assetsId, assetsDep] = deps.find(([, r]) => r.Properties.DestinationBucketKeyPrefix === "assets/");
+  assert.deepEqual(assetsDep.Properties.SystemMetadata, { "cache-control": "public, max-age=31536000, immutable" });
+  assert.equal(assetsDep.Properties.Prune, false, "a player still on the previous page can finish loading it");
+  const [, site] = deps.find(([, r]) => !r.Properties.DestinationBucketKeyPrefix);
+  assert.deepEqual(site.Properties.SystemMetadata, { "cache-control": "no-cache" });
+  assert.deepEqual(site.Properties.Exclude, ["assets/*"], "the page upload neither uploads nor prunes assets/");
+  assert.ok((site.DependsOn || []).includes(assetsId), "the page is uploaded after the files it names");
+  // A site staged empty (cdk destroy) synthesizes without assets/.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), "ps-aws-empty-"));
+  fs.mkdirSync(path.join(empty, "site"));
+  const { params } = normaliseParams({ region: "ap-southeast-2", siteAsset: path.join(empty, "site"), lambdaAsset: path.join(assets, "lambda") });
+  const app = new cdk.App();
+  const stack = new PharmacyScreenStack(app, params.stackName, { env: { account: "111122223333", region: "ap-southeast-2" }, params });
+  assert.equal(ofType(app.synth().getStackByName(stack.stackName).template, "Custom::CDKBucketDeployment").length, 1);
 });

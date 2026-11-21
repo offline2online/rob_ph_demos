@@ -118,6 +118,8 @@ With `debug=1`, use the panel's test time (or `now=<day>-<HH:MM>`), on a store o
 | I2 | The same in landscape on a landscape screen | It plays | ☐ | ☐ |
 | I3 | Leave it running for an hour | No freeze; hours and the bar stay current | ☐ | ☐ |
 | I4 | Deploy a change, wait up to 30 minutes | The player picks up the new version by itself | ☐ | ☐ |
+| I5 | On an Android 12 player and a Chrome OS player, open the campaign URL with `debug=1` and time the first paint, before and after this release | First paint is faster than before (the page no longer waits for 1.5 MB of stylesheets) | ☐ | ☐ |
+| I6 | Restart the player with the network unplugged; then play the Seasonal promotion (`promo=occasions`) the same way | Both still play offline; the Seasonal one in its own fonts, with the Christmas photo in December | ☐ | ☐ |
 
 ## J. Tear down (AWS test account only)
 

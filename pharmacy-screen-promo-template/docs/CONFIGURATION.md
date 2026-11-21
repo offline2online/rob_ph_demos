@@ -43,6 +43,7 @@ Saving, replacing and removing the token need the admin role and are audit-logge
 | Request timeout per server (screen) | 8 s | `live-data.js` |
 | "Last 30 minutes" bar state | 30 minutes before close | `pharmacy-screen/js/hours.js` `LAST_MINUTES` |
 | Screen update check (service worker) | Every 30 minutes, and on every page load | `pharmacy-screen/js/player.js` |
+| Screen file caching | `assets/` (fingerprinted scripts, stylesheets, fonts, photo): `public, max-age=31536000, immutable`; the page, `sw.js` and everything else: `no-cache` | `firebase.json`, `aws/infra/stack.js` |
 | Public config cache | 5 s (`Cache-Control: public, max-age=5`, with an `ETag`) | `config-api/src/api.js` |
 | Upload limits | Logos PNG/WebP ≤ 2 MB; backgrounds PNG/JPEG/WebP ≤ 5 MB (≤ 4 MB on AWS) | `config-api/src/service.js` |
 

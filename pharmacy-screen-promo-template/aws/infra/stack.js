@@ -20,6 +20,8 @@
 // Everything is deleted with the stack unless retainData is set, which keeps
 // the table, the media bucket, the KMS key and the user pool.
 
+const fs = require("node:fs");
+const nodePath = require("node:path");
 const cdk = require("aws-cdk-lib");
 const s3 = require("aws-cdk-lib/aws-s3");
 const s3deploy = require("aws-cdk-lib/aws-s3-deployment");
@@ -333,18 +335,36 @@ class PharmacyScreenStack extends cdk.Stack {
       logoutParam: oidc.logoutParam,
       scopes: p.oidcScopes,
     });
-    new s3deploy.BucketDeployment(this, "SiteUpload", {
+    // The screen's fingerprinted files (assets/: scripts, stylesheets, fonts, the Christmas photo; their names are
+    // the hash of their content, scripts/deploy.mjs buildShell) are uploaded first and kept by browsers and the CDN
+    // for a year: a name never changes what it answers. Earlier builds' files are kept (no prune), so a player still
+    // on the previous page can finish loading it. Everything else (the page, sw.js, the admin editor) is no-cache,
+    // and uploaded after, so a page never names a file that is not there yet.
+    // (A site staged empty, as for cdk destroy, has no assets/.)
+    const assetsDir = nodePath.join(p.siteAsset, "assets");
+    const assetUpload = fs.existsSync(assetsDir) && new s3deploy.BucketDeployment(this, "SiteAssetsUpload", {
+      sources: [s3deploy.Source.asset(assetsDir)],
+      destinationBucket: siteBucket,
+      destinationKeyPrefix: "assets/",
+      cacheControl: [s3deploy.CacheControl.fromString("public, max-age=31536000, immutable")],
+      prune: false,
+      memoryLimit: 512,
+    });
+    const siteUpload = new s3deploy.BucketDeployment(this, "SiteUpload", {
       sources: [
-        s3deploy.Source.asset(p.siteAsset, { exclude: ["admin/config.js"] }),
+        s3deploy.Source.asset(p.siteAsset, { exclude: ["admin/config.js", "assets/*"] }),
         s3deploy.Source.data("admin/config.js", adminConfigJs(editorConfig, (v) => this.toJsonString(v))),
       ],
       destinationBucket: siteBucket,
       distribution,
       distributionPaths: ["/*"],
       cacheControl: [s3deploy.CacheControl.noCache()],
+      // assets/ is the upload above's: excluded files are neither uploaded nor pruned here.
+      exclude: ["assets/*"],
       prune: true,
       memoryLimit: 512,
     });
+    if (assetUpload) siteUpload.node.addDependency(assetUpload);
 
     // ── outputs (scripts/deploy.mjs prints them) ────────────────────────
     const out = (id, value, description) => new CfnOutput(this, id, { value, description });

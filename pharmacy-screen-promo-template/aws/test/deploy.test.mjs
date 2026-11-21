@@ -75,6 +75,8 @@ test("stage: the site holds the screen and admin only; the functions hold their 
   assert.ok(existsSync(join(site, "admin", "js", "auth.js")));
   const sw = readFileSync(join(site, "sw.js"), "utf8");
   assert.ok(!sw.includes("__PHARMACY_SCREEN_BUILD__"), "the service worker is stamped with the build id, as on Firebase");
+  assert.match(readFileSync(join(site, "pharmacy-screen.html"), "utf8"), /src="assets\/js\/player\.[0-9a-f]{10}\.js"/, "the page names its fingerprinted copies, as on Firebase");
+  assert.ok(readdirSync(join(site, "assets", "fonts")).length > 0, "the fonts are files in assets/");
   for (const never of ["config-api", "ph-proxy", "seed/seed.js", "admin/test", "admin/tools", "admin/package.json"]) {
     assert.ok(!existsSync(join(site, never)), `${never} is not published`);
   }

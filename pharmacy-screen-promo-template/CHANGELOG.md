@@ -10,6 +10,18 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
 
 ### Changed
 
+- **Players download only what changed after a deploy, and the first load is lighter.** The deploy now publishes
+  every script and stylesheet under a name made from its content (`assets/`, kept by the browser and the CDN for a
+  year) and writes the fonts and the Christmas photo out as their own files; only `pharmacy-screen.html` and `sw.js`
+  are re-checked. After a deploy a player's service worker keeps every unchanged file and downloads the rest (a
+  one-line change to the player script: `sw.js`, the page and that script), instead of the whole 1.5 MB screen. A
+  player without the service worker no longer revalidates its scripts, stylesheets and fonts on every load. The
+  page waits on about 14 KB of stylesheets instead of 1.5 MB: the Seasonal fonts and photo load only when a
+  Seasonal promotion plays (and are still kept for offline), Roboto moved to the debug panel's stylesheet, the icon
+  font holds only the icons the editor offers (about 280 KB instead of 430 KB), and the player's modules are
+  preloaded. A scene's fitted copy is remembered, so the loop does not re-measure it on every pass. On AWS the
+  stack uploads `assets/` first with the long cache and keeps earlier builds' files
+  ([pharmacy-screen/README.md](pharmacy-screen/README.md) → "Kept on the device", "First load").
 - **Seeded seasons play on a 7-second loop.** The launch data now carries the seconds on screen set on the live
   master for every season's beats: Christmas 3 + 4, New Year's 2 + 2 + 3, Australia Day 2 + 2 + 3, Valentine's Day
   3 + 2 + 2, Easter 2 + 3 + 2, Anzac Day 3 + 2 + 2. A fresh install shows **Loop 7s** and a playback duration of

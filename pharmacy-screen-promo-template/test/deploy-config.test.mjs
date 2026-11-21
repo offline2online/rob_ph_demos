@@ -59,6 +59,29 @@ test(".firebaserc targets rob-ph-demos: a dedicated Hosting site and the media b
   assert.equal(t.bucket, "rob-ph-demos-pharmacy-screen-media");
 });
 
+// Hosting's header globs, with the extglob @(a|b) the rules use.
+function headerGlobToRe(glob) {
+  let re = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") { re += ".*"; i++; }
+    else if (c === "*") re += "[^/]*";
+    else if (c === "@" && glob[i + 1] === "(") { const end = glob.indexOf(")", i); re += "(" + glob.slice(i + 2, end).split("|").map((s) => s.replace(/[.+?^$()|[\]\\]/g, "\\$&")).join("|") + ")"; i = end; }
+    else re += c.replace(/[.+?^$()|[\]\\]/g, "\\$&");
+  }
+  return new RegExp("^" + re + "$");
+}
+const cacheControlOf = (path) => hosting.headers.filter((h) => headerGlobToRe(h.source).test(path)).flatMap((h) => h.headers.filter((x) => x.key === "Cache-Control").map((x) => x.value));
+
+test("the screen's fingerprinted assets/ are kept for a year; the page, sw.js and everything else are revalidated", () => {
+  for (const p of ["/assets/js/player.0123456789.js", "/assets/css/screen.0123456789.css", "/assets/fonts/0123456789abcdef.woff2", "/assets/media/0123456789abcdef.jpg"]) {
+    assert.deepEqual(cacheControlOf(p), ["public, max-age=31536000, immutable"], p);
+  }
+  for (const p of ["/pharmacy-screen.html", "/sw.js", "/js/render.js", "/css/screen.css", "/fixtures/config.json", "/seed/fixtures/pharmacies.json", "/admin/js/editor.js", "/admin/"]) {
+    assert.deepEqual(cacheControlOf(p), ["no-cache"], p);
+  }
+});
+
 test("the admin editor can only be framed by Personalisation Hub", () => {
   const admin = hosting.headers.find((h) => h.source === "/admin/**");
   const csp = admin.headers.find((h) => h.key === "Content-Security-Policy");
@@ -116,7 +139,7 @@ test("Hosting publishes the screen, the admin editor and its seed fixtures only 
     assert.ok(files.includes(want), `${want} is published`);
   }
   for (const f of files) {
-    assert.match(f, /^(pharmacy-screen\.html|sw\.js|(css|js|fixtures)\/[^/]+|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
+    assert.match(f, /^(pharmacy-screen\.html|sw\.js|(css|js|fixtures)\/[^/]+|assets\/(css\/[\w-]+\.[0-9a-f]{10}\.css|js\/[\w-]+\.[0-9a-f]{10}\.js|fonts\/[0-9a-f]{16}\.woff2|media\/[0-9a-f]{16}\.jpg)|admin\/(index\.html|config\.js|(css|js)\/[^/]+)|seed\/fixtures\/.+)$/, `${f} is in the allow-list`);
     assert.ok(!f.split("/").some((seg) => seg.startsWith(".") || ["test", "tools", "node_modules"].includes(seg)), `${f} must not be published`);
     assert.doesNotMatch(f, /(^|\/)(package(-lock)?\.json|README\.md)$/, `${f} must not be published`);
   }

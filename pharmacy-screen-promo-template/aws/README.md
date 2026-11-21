@@ -12,7 +12,7 @@ through small adapters (store, blobs, auth, secret store), and this folder suppl
 
 | Part | AWS | Notes |
 |---|---|---|
-| Screen and admin pages | S3 (private) behind **CloudFront**, one HTTPS domain | Same allow-listed files as the Firebase deploy. `/` redirects to `/admin/`. HSTS, `nosniff`, `Referrer-Policy: same-origin`. No `X-Frame-Options`: the editor is iframed into HQ Admin |
+| Screen and admin pages | S3 (private) behind **CloudFront**, one HTTPS domain | Same allow-listed files as the Firebase deploy. The screen's fingerprinted `assets/` are uploaded first with `Cache-Control: public, max-age=31536000, immutable` and never pruned (a player on the previous page can finish loading it); everything else is `no-cache`. `/` redirects to `/admin/`. HSTS, `nosniff`, `Referrer-Policy: same-origin`. No `X-Frame-Options`: the editor is iframed into HQ Admin |
 | API | **API Gateway** (HTTP API) → two **Lambda** functions (Node 24, arm64), optionally inside your VPC | `/api/health`, `/api/screens/**`, `/api/admin/**` → `ConfigApi`; `/api/settings/ph-api[/**]`, `/api/device/**` → `PhApi`. CloudFront routes `/api/*` to it on the same domain; `/api/screens/*` is cached up to 60 s as the API says (15 s) |
 | Config store | **DynamoDB** (on-demand, point-in-time recovery) | Pharmacies, promotions, templates, services, the audit log and the published screen configs, in one table (`pk`, `sk`). Transactions are serialisable, so store codes and promo IDs stay unique under concurrent edits (`adapters/dynamodb-store.js`) |
 | Logos and backgrounds | **S3** media bucket (private), served by CloudFront at `/pharmacyScreen/media/*` | Only `ConfigApi` may write it |

@@ -484,7 +484,8 @@ export function renderScene(el, opts) {
   const P = play.template;
   const html = applyTokens(fillTemplate(P.html || DEFAULT_HTML[play.base], T), { ...custom, StoreName: s.name, Phone: s.phone || '', State: s.state || '', StoreCode: s.storeCode || '' });
   const css = P.css ? scopeCss(P.css, '#' + (el.id || 'screen')) : '';
-  writeTemplate(el, (css ? `<style>${css}</style>` : '') + html);
+  const markup = (css ? `<style>${css}</style>` : '') + html;
+  writeTemplate(el, markup);
   const top = el.querySelector('.s-top');
   if (top) top.style.clipPath = ptsClip(G.pts);
   const ep = el.querySelector('.s-edge path');
@@ -494,8 +495,36 @@ export function renderScene(el, opts) {
   el.style.backgroundImage = bg ? `url("${bg}")` : '';
   el.style.backgroundSize = bg ? 'cover' : '';
   el.style.backgroundPosition = bg ? 'center' : '';
-  const fit = fitText(el, G);
+  const fit = fitScene(el, G, `${el.className}\n${markup}`);
   return { G, fit, state, ready: Promise.resolve() };
+}
+
+// A scene's fitted copy sizes, kept per content signature (the scene's class and its whole markup, so any change to
+// the copy, template, data or clock text is a new signature): the loop's next pass over the same scene, or a redraw
+// with nothing changed, sets the sizes it found last time instead of running the fit loop again. A fit measured
+// before the fonts are in is not kept. Bounded, and emptied when full.
+const FIT_MEMO = new Map();
+const FIT_MEMO_MAX = 64;
+/** How often the fit loop ran (misses) and how often a kept fit was reused (hits); for the tests. */
+export const fitMemoStats = { hits: 0, misses: 0 };
+function fitScene(el, G, key) {
+  const fonts = el.ownerDocument && el.ownerDocument.fonts;
+  const keep = !fonts || fonts.status === 'loaded';
+  const head = el.querySelector('.s-head'), body = el.querySelector('.s-body');
+  const hit = keep ? FIT_MEMO.get(key) : null;
+  if (hit) {
+    fitMemoStats.hits++;
+    if (head && hit.k !== null) head.style.setProperty('--k', hit.k);
+    if (body && hit.kb !== null) body.style.setProperty('--kb', hit.kb);
+    return { ...hit.fit };
+  }
+  fitMemoStats.misses++;
+  const fit = fitText(el, G);
+  if (keep) {
+    if (FIT_MEMO.size >= FIT_MEMO_MAX) FIT_MEMO.clear();
+    FIT_MEMO.set(key, { fit: { ...fit }, k: head ? head.style.getPropertyValue('--k') : null, kb: body ? body.style.getPropertyValue('--kb') : null });
+  }
+  return fit;
 }
 
 /** The occasion templates' CSS (js/occasions.js), added to the document once. */

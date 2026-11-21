@@ -45,20 +45,52 @@ The PH player swaps `${UniqueDeviceID}` for the screen's own ID. The URL never c
 it again only after a deploy has changed it. `js/player.js` registers it for `pharmacy-screen.html` only (the admin
 editor is never touched).
 
-- **The shell** (the page, `js/`, `css/`, about 700 KB with the self-hosted fonts and icons) is downloaded once into a
-  cache named after the build and then served from it with no request. The deploy stamps `BUILD` in the published
-  `sw.js` with a hash of exactly those files (`stampServiceWorker` in `../scripts/deploy.mjs`), so a deploy that
-  changes none of them leaves `sw.js` byte-identical and the players download nothing.
+- **The shell as published** (`buildShell` in `../scripts/deploy.mjs`, run by both deploys and the release
+  package): every file in `js/` and `css/` gets a fingerprinted copy in `assets/` (`assets/js/player.<hash>.js`,
+  named after its content; a module's copy imports its neighbours' copies), each base64 font and the Christmas
+  photo in the stylesheets is written out as its own file (`assets/fonts/<hash>.woff2`, `assets/media/<hash>.jpg`),
+  and `pharmacy-screen.html` names the copies. Everything in `assets/` is published `Cache-Control: public,
+  max-age=31536000, immutable`; `pharmacy-screen.html` and `sw.js` stay `no-cache`. So a player without the worker
+  (`nosw=1`, an old WebView) asks only for the page on a later load, never a script, stylesheet or font. The
+  originals in `js/` and `css/` stay published (no-cache) for the admin editor's preview.
+- **The worker** downloads the shell (the page and everything in `assets/`, the Seasonal fonts and photo included,
+  so a Seasonal promotion plays offline too) once into a cache named after the build and then serves it with no
+  request. The deploy stamps `FILES` in the published `sw.js` with every shell file and the hash of its content,
+  and `BUILD` with a hash of that list, so a deploy that changes none of them leaves `sw.js` byte-identical and the
+  players download nothing.
 - **Updates**: the browser checks `sw.js` on every page load and the player asks again every 30 minutes (one small
-  request, 304 while nothing changed). A new build is downloaded once, takes over, the old cache is deleted and the
-  page reloads itself onto it (the last good data comes straight back from localStorage).
+  request, 304 while nothing changed). A new build copies every file whose hash is unchanged from the old build's
+  cache and downloads only the rest (a one-line change to `js/player.js`: `sw.js`, the page and that one script),
+  checks each download against its hash, takes over, the old cache is deleted and the page reloads itself onto it
+  (the last good data comes straight back from localStorage). A download that does not match fails the install, so
+  the old build keeps playing until the next check.
 - **Images** (store logos, backgrounds) are kept after their first download (up to 100). **Data** (`/api/**`) is
   never cached by the worker: `live-data.js` polls it and keeps the last good copy in localStorage. The fixtures
   (`mockapi=1`) are network first with the last copy as a fallback.
 - Unstamped (a local server), the shell is network first, so an edit shows on the next reload.
 - Tested by `test/ui/offline-cache.test.mjs` (second start downloads none of the shell; an unchanged deploy downloads
-  nothing; a changed stylesheet is picked up by the update check and the page reloads onto it; the screen still plays
-  with the server stopped) and `../test/offline-cache.test.mjs` (staging, stamping, the shell list).
+  nothing; a changed `js/player.js` is picked up by the update check, which downloads `sw.js`, the page and that
+  script only, and the page reloads onto it; without the worker a second load asks for the page only; a Morning
+  promotion loads no Seasonal stylesheet; the screen, a Seasonal promotion included, still plays with the server
+  stopped) and `../test/offline-cache.test.mjs` (fingerprinting, the fonts as files, stamping, the shell list).
+
+## First load
+
+- **Render-blocking CSS is small**: the page links `css/fonts.css` (Figtree), `css/material-symbols.css` and
+  `css/screen.css` only, about 14 KB once the deploy has written the fonts out as files.
+- **The Seasonal stylesheets** (`css/occasion-fonts.css`, `css/occasion-media.css`: the eight display faces and the
+  Christmas photo) are loaded by `js/player.js` only when the promotion playing is a Seasonal one; a Morning,
+  Afternoon or Closed promotion never asks for them.
+- **Roboto**, the platform font, is used by the debug panel only, so it lives in `css/debug.css` (loaded with
+  `debug=1` only).
+- **Material Symbols** is cut down to the icons the editor's picker offers (`admin/js/icons.js`) and the screen's
+  own (`tv_off`): about 280 KB instead of 430 KB (`tools/subset-icons.py`). An icon name typed into a custom
+  template that the picker does not offer is not in the font.
+- **`modulepreload`** links for the whole static import graph of `js/player.js` let the browser fetch the modules
+  in parallel (`../test/offline-cache.test.mjs` checks the list matches the imports).
+- **Fitted copy is kept**: `renderScene()` keeps each scene's fitted sizes per content signature (the scene's whole
+  markup), so the loop's next pass over a scene, or a redraw with nothing changed, skips the fit loop
+  (`fitMemoStats` in `js/render.js`; `test/ui/first-load.test.mjs`).
 
 ## Seasonal (`promo=occasions`)
 
@@ -110,7 +142,8 @@ label). No product or health claims.
 Fonts (all SIL OFL 1.1) are self-hosted in `css/occasion-fonts.css` like Figtree and Material Symbols: Playfair
 Display, Outfit, Big Shoulders Display, Archivo Black, Archivo, DM Serif Display, Fredoka and Cormorant Garamond
 (`node tools/fetch-fonts.mjs occasions`). The Christmas background ships with the screen in
-`css/occasion-media.css`, as a data: URL, so no screen calls out for it.
+`css/occasion-media.css`, as a data: URL, so no screen calls out for it (the deploy writes each out as its own file).
+The player loads both stylesheets only when a Seasonal promotion plays.
 
 **Credit:** the Christmas photo (a lit Christmas tree) is by Olena Bohovyk on Unsplash
 (`photo-1603561128963-5f4d971c4959`), used under the Unsplash Licence (free for commercial use).
@@ -183,7 +216,8 @@ Split so the admin editor's live preview can reuse the same code:
 videos (content fades out at scene end, headline fades in, icon tiles pop in one after another with labels
 after, copy fades up, icons float with the outer and middle tiles in opposite phase), all off under
 `prefers-reduced-motion` (except an occasion's beats, which keep changing). `css/occasion-fonts.css` and
-`css/occasion-media.css` hold the Occasions fonts and the Christmas photo as data: URLs (generated; don't edit).
+`css/occasion-media.css` hold the Occasions fonts and the Christmas photo as data: URLs (generated; don't edit),
+loaded by `js/player.js` only for a Seasonal promotion. `css/debug.css` carries Roboto for the debug panel.
 
 ## Deploy
 
@@ -194,10 +228,12 @@ that folder's README.
 ## Tools
 
 - `tools/serve.mjs`: a static server for local runs, the audit and the UI tests.
-- `tools/fetch-fonts.mjs`: writes `css/fonts.css` (Figtree for the screen, Roboto for the debug panel) and
-  `css/material-symbols.css` (Material Symbols Outlined, the filled weight-500 instance the screen draws, every
-  icon) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google at runtime, so screens work
-  behind firewalls. Figtree and Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
+- `tools/fetch-fonts.mjs`: writes `css/fonts.css` (Figtree for the screen), the Roboto block of `css/debug.css`
+  (the debug panel) and `css/material-symbols.css` (Material Symbols Outlined, the filled weight-500 instance the
+  screen draws, cut down to the editor's icons and the screen's own by `tools/subset-icons.py`, which needs Python 3
+  with `pip install fonttools brotli`) as data: URLs, from Google Fonts at build time. Nothing is fetched from Google
+  at runtime, so screens work behind firewalls; the deploy writes each font out as a `.woff2` file. Figtree and
+  Roboto: SIL Open Font License 1.1; Material Symbols: Apache 2.0. It also writes
   `css/occasion-fonts.css` (the eight Occasions faces, SIL OFL 1.1); `node tools/fetch-fonts.mjs occasions` (or
   `screen`) rewrites just that part.
 - `tools/overflow-audit.mjs`: renders every fixture store x promotion x scene x orientation at each bar
@@ -241,6 +277,10 @@ run holds the train's deploy; see "CI" below.
   occasion line leaves the occasion's text box, and each failure names the device, store, promo, orientation,
   scene and bar state. Self-tests make one headline far too long and check that exactly that scene is named, and
   show that a long occasion line is shrunk to fit while far too much copy fails, naming the beat.
+- `test/ui/first-load.test.mjs`: a scene shown again reuses its fitted sizes (no fit loop) and changed copy is
+  fitted afresh; the cut-down icon font still draws the editor's icons and `tv_off` as icons; a Morning promotion
+  loads neither the Seasonal stylesheets nor the debug panel's, and `debug=1` loads Roboto with the panel.
+- `test/ui/offline-cache.test.mjs`: see "Kept on the device" above.
 - `test/ui/landscape-hours.test.mjs`: the landscape opening hours screen: the hours card fills most of the screen
   right of the brand arrow, its rows are 56px or larger, a day with two sessions stays on one line inside its row,
   the holiday note sits under the card, and portrait is unchanged.

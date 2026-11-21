@@ -10,13 +10,22 @@
      proxy) and /api/screens/** (the public config read). Tried last-good first, then in this order.
      Empty: this page's own origin (the Hosting rewrites). -->
 <meta name="pharmacy-screen-api" content="">
-<!-- Fonts and icons are self-hosted (tools/fetch-fonts.mjs), so a screen behind a firewall never calls Google. -->
+<!-- Fonts and icons are self-hosted (tools/fetch-fonts.mjs), so a screen behind a firewall never calls Google.
+     The Seasonal templates' fonts and photo (css/occasion-fonts.css, css/occasion-media.css) are loaded by
+     js/player.js only when the promotion playing is a Seasonal one; css/debug.css (with Roboto) only with debug=1.
+     The deploy (scripts/deploy.mjs buildShell) points every css/ and js/ URL here at its fingerprinted copy in
+     assets/ and writes the fonts out as .woff2 files there. -->
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/material-symbols.css">
-<!-- The Seasonal templates' own fonts and the Christmas photo, self-hosted the same way (data: URLs). -->
-<link rel="stylesheet" href="css/occasion-fonts.css">
-<link rel="stylesheet" href="css/occasion-media.css">
 <link rel="stylesheet" href="css/screen.css">
+<!-- The whole static import graph of js/player.js, fetched in parallel instead of one level at a time
+     (test/offline-cache.test.mjs checks the list). -->
+<link rel="modulepreload" href="js/render.js">
+<link rel="modulepreload" href="js/hours.js">
+<link rel="modulepreload" href="js/tokens.js">
+<link rel="modulepreload" href="js/fit-text.js">
+<link rel="modulepreload" href="js/occasions.js">
+<link rel="modulepreload" href="js/live-data.js">
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden}
   /* the screen is drawn at its real size (1080x1920 or 1920x1080) and scaled to fit the player's viewport */
