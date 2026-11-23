@@ -42,8 +42,9 @@
    staff filters stand out from the rest at a glance, at every width. */
 .kb-person-chip.on .kb-avatar { width: 36px; height: 36px; font-size: 15px; }
 .kb-person-chip.on .kb-avatar-none .material-symbols-outlined { font-size: 20px; }
-.kb-header-search { align-self: center; }
-.kb-header-search input { width: 200px; }
+/* Search sits in the pinned filter bar, between My tasks and Release, so it
+   stays to hand while the board scrolls. */
+.kb-filter-search input { width: 150px; }
 /* Desktop: every filter on one line, even with the sidebar open. Avatars
    overlap like Jira's, a picked person shows as a ring (name in the tooltip
    and on their swimlane), and the selects shrink to their content. */
@@ -697,7 +698,7 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
 @media (max-width: 640px) { .kb-team-photo-label { display: none; } }
 
 /* ── Pinned filter bar (21 Oct 2026) ────────────────────────────────────
-   Staff, My tasks, Release and Filters stay at the top while the board
+   Staff, My tasks, search, Release and Filters stay at the top while the board
    scrolls, with the column headers (desktop) or the column tabs (phone)
    pinned beneath them. Flagged, type, priority, sprint and label live in
    the Filters menu. */
@@ -749,6 +750,8 @@ html[data-page="staff-kanban"] .info-tip::after { display: none !important; }
   .kb-sticky .kb-people .kb-person-chip.on { background: transparent; }
   .kb-sticky .kb-filters select { flex: none; width: auto; max-width: 150px; min-height: 40px; }
   .kb-sticky .kb-mine { min-height: 40px; padding: 0 12px; }
+  .kb-sticky .kb-filters .kb-filter-search { order: 0; min-height: 40px; }
+  .kb-sticky .kb-filter-search input { width: 130px; }
   .kb-filter-panel { left: 0; right: 0; width: auto; grid-template-columns: minmax(0, 1fr); }
   .kb-filter-panel .kb-rfilter select { min-height: 44px; }
 
