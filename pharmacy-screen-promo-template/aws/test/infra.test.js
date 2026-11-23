@@ -89,6 +89,23 @@ test("infra: CloudFront routes /api, media and the site; API Gateway gets the or
   assert.equal(cfg.DefaultCacheBehavior.FunctionAssociations[0].EventType, "viewer-request");
   const [, phFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("PhApi"));
   assert.equal(phFn.Properties.Environment.Variables.PH_API_DEFAULT_BASE_URL, "https://ph.mipharmacy.net");
+  assert.equal(phFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, undefined, "unset: only the default base URL's host");
+});
+
+test("infra: --ph-api-allowed-hosts reaches PhApi as PH_API_ALLOWED_HOSTS, and is checked at deploy time", () => {
+  const { json } = synth({ phApiAllowedHosts: "ph.mipharmacy.net, PH-Backup.mipharmacy.net,.personalisationhub.com" });
+  const [, phFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("PhApi"));
+  assert.equal(phFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, "ph.mipharmacy.net,ph-backup.mipharmacy.net,.personalisationhub.com");
+  const [, cfgFn] = ofType(json, "AWS::Lambda::Function").find(([id]) => id.startsWith("ConfigApi"));
+  assert.equal(cfgFn.Properties.Environment.Variables.PH_API_ALLOWED_HOSTS, undefined, "only PhApi sends the token");
+
+  const errs = (v, extra = {}) => normaliseParams({ region: "ap-southeast-2", phApiAllowedHosts: v, ...extra }).errors;
+  assert.match(errs("*").join(), /"\*" \(any host\) is not allowed/);
+  assert.match(errs("https://ph.mipharmacy.net").join(), /is not a host name/);
+  assert.match(errs("ph.mipharmacy.net:443").join(), /is not a host name/);
+  assert.match(errs("ph-backup.mipharmacy.net").join(), /must include the host of phApiBaseUrl \(ph\.mipharmacy\.net\)/);
+  assert.deepEqual(errs(".mipharmacy.net"), []);
+  assert.deepEqual(errs("ph.example.com", { phApiBaseUrl: "https://ph.example.com" }), []);
 });
 
 test("infra: the origin secret reaches the functions by reference only, and each may read it", () => {

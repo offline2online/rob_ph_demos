@@ -26,6 +26,10 @@ Add changes here; at release time this section becomes `## [x.y.z] — <date>`
   (`PS_ORIGIN_VERIFY_SECRET_ARN`) and read it at run time; the value is no longer in a function's environment. With
   `--vpc-endpoints` a Secrets Manager endpoint is added. The screen read sees the viewer's address (not CloudFront's)
   for its limit.
+- **AWS: the PH API allowed hosts can be set at deploy time.** `--ph-api-allowed-hosts` passes
+  `PH_API_ALLOWED_HOSTS` to `PhApi` (before, an AWS install could only save base URLs on the host of
+  `--ph-api-base-url`, so a second or failover PH server was refused). It must include that host, and `*` is not
+  accepted; unset, nothing changes.
 
 ### Changed
 

@@ -64,6 +64,7 @@ All outputs are saved to `.deploy-aws/<stack>.outputs.json`. Running it again up
 | `--oidc-issuer <url> --oidc-client-id <id>` | Use your own identity provider instead of creating a Cognito pool. Its endpoints are read from the issuer's discovery document. The client must be a public client (no secret) allowing authorization code + PKCE, with `https://<site>/admin/` as redirect and post-logout URI |
 | `--admin-claim <claim> --admin-value <value>` | The ID token claim that grants the admin role (default `cognito:groups` = `admin`; with `--oidc-issuer`, `groups` = `admin`) |
 | `--ph-api-base-url <url>` | Default Personalisation Hub API base URL until an admin saves one in Settings (default `https://ph.mipharmacy.net`) |
+| `--ph-api-allowed-hosts <hosts>` | Comma-separated hosts an admin may save as a PH API base URL in Settings, e.g. `ph.mipharmacy.net,ph-backup.mipharmacy.net` (`.mipharmacy.net` allows any host under it). The PH API token is sent to these hosts, so any other host is refused (`BASE_URL_HOST_NOT_ALLOWED`). Must include the host of `--ph-api-base-url`; `*` is not accepted. Default: only the host of `--ph-api-base-url`. Sets `PH_API_ALLOWED_HOSTS` on `PhApi` |
 | `--admin-email <address>` | Cognito only: create that admin user and add it to the admin group |
 | `--retain-data` | Keep the table, media bucket, KMS key and user pool when the stack is deleted (recommended for production) |
 
@@ -104,7 +105,8 @@ The ticket's acceptance steps, against a deployed stack:
      `pk = pharmacyScreen#private` holds only `token.envelope` (`kms: "aws-kms"`, ciphertext, wrapped key) and
      `last4`; CloudTrail shows `Decrypt` calls only from the `PhApi` role, with the encryption context.
    - **Failover**: in Settings, put an unreachable base URL first and the real one second; a screen still
-     loads (the proxy tries the last good server first, then the rest).
+     loads (the proxy tries the last good server first, then the rest). Both hosts must be allowed: deploy with
+     `--ph-api-allowed-hosts` naming them (a host outside the list is refused with `BASE_URL_HOST_NOT_ALLOWED`).
    - **Android 12 playback**: the Campaign URL (portrait and landscape) in the PH player on the Android 12 device.
 3. **Tear down**: `npm run destroy:aws -- --region <r>` leaves no stack, bucket, table, function, user pool or
    log group of it behind (the KMS key shows "Pending deletion").

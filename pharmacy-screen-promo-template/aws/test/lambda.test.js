@@ -130,6 +130,12 @@ test("ph-proxy on Lambda: the PH API token is saved write-only, KMS-envelope-enc
     assert.equal((await phLambda.handler(event("PUT", "/api/settings/ph-api", { body: { token: TOKEN } }))).statusCode, 401, "signed out");
     assert.equal((await phLambda.handler(event("PUT", "/api/settings/ph-api", { headers: { authorization: ctx.viewer }, body: { token: TOKEN } }))).statusCode, 403, "not an admin");
 
+    // The token is only ever sent to hosts the deployment allows (PH_API_ALLOWED_HOSTS): any other is refused.
+    const refused = await phLambda.handler(event("PUT", "/api/settings/ph-api", { headers: { authorization: ctx.admin, "content-type": "application/json" }, body: { token: TOKEN, baseUrls: ["https://ph.example", "https://evil.example"] } }));
+    assert.equal(refused.statusCode, 400, refused.body);
+    assert.equal(JSON.parse(refused.body).error.code, "BASE_URL_HOST_NOT_ALLOWED", refused.body);
+    assert.ok(![...ctx.ddb.items.values()].some((i) => i.sk.S === "settings#phApi"), "nothing saved for a refused host");
+
     const put = await phLambda.handler(event("PUT", "/api/settings/ph-api", { headers: { authorization: ctx.admin, "content-type": "application/json" }, body: { token: TOKEN, baseUrls: ["https://down.example", "https://ph.example"] } }));
     assert.equal(put.statusCode, 200, put.body);
     const settings = JSON.parse(put.body).settings;

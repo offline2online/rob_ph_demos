@@ -11,6 +11,8 @@
 //   PH_TABLE, PH_ROOT          DynamoDB table and key prefix (the config table, apart from the config records)
 //   PH_TOKEN_KMS_KEY           KMS key ARN that wraps the token's data key
 //   PH_API_DEFAULT_BASE_URL    default PH API base URL(s) until an admin saves a list
+//   PH_API_ALLOWED_HOSTS       hosts an admin may save as a base URL (--ph-api-allowed-hosts; unset = the
+//                              default base URL's host). Any other host is refused: BASE_URL_HOST_NOT_ALLOWED
 //   PH_ALLOWED_ORIGINS, PH_PROXY_*, PH_RATE_LIMIT_*, PH_UPSTREAM_CALLS_PER_MIN   as in ph-proxy/.env.example
 //   PS_OIDC_ISSUER, PS_OIDC_AUDIENCE, PS_OIDC_JWKS_URI, PS_ADMIN_CLAIM, PS_ADMIN_VALUE   admin sign-in
 //   PS_ORIGIN_VERIFY_SECRET_ARN  the Secrets Manager secret holding CloudFront's origin header value (read at

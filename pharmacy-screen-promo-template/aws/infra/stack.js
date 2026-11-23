@@ -356,6 +356,8 @@ class PharmacyScreenStack extends cdk.Stack {
       PH_ROOT: STORE_ROOT,
       PH_TOKEN_KMS_KEY: tokenKey.keyArn,
       PH_API_DEFAULT_BASE_URL: p.phApiBaseUrl,
+      // Hosts an admin may save as a base URL; unset = the host of the default base URL only.
+      ...(p.phApiAllowedHosts.length ? { PH_API_ALLOWED_HOSTS: p.phApiAllowedHosts.join(",") } : {}),
       PH_ALLOWED_ORIGINS: siteUrl,
       PH_TRUSTED_PROXY_HOPS: "2",
       PS_ORIGIN_VERIFY_SECRET_ARN: originVerify.secretArn,

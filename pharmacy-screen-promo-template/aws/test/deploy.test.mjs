@@ -65,6 +65,7 @@ test("destroy: one command — deletes the stack, then the log groups it leaves"
 
 test("contextArgs: only set values, in a fixed order", () => {
   assert.deepEqual(contextArgs({ region: "ap-southeast-2", stackName: "S", vpcEndpoints: false, subnetIds: [] }), ["-c", "stackName=S", "-c", "region=ap-southeast-2"]);
+  assert.deepEqual(contextArgs({ phApiAllowedHosts: ["ph.mipharmacy.net", ".personalisationhub.com"] }), ["-c", "phApiAllowedHosts=ph.mipharmacy.net,.personalisationhub.com"]);
 });
 
 test("stage: the site holds the screen and admin only; the functions hold their code only", () => {
